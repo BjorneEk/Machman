@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4F8936062D956DA600E2B811 /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F8936052D956DA600E2B811 /* Virtualization.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		4F8935E82D956D5100E2B811 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		4F8935D62D956D5000E2B811 /* Machman.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Machman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935E72D956D5100E2B811 /* MachmanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F8936052D956DA600E2B811 /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4F8936062D956DA600E2B811 /* Virtualization.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +84,7 @@
 				4F8935D82D956D5000E2B811 /* Machman */,
 				4F8935EA2D956D5100E2B811 /* MachmanTests */,
 				4F8935F42D956D5100E2B811 /* MachmanUITests */,
+				4F8936042D956DA600E2B811 /* Frameworks */,
 				4F8935D72D956D5000E2B811 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +97,14 @@
 				4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		4F8936042D956DA600E2B811 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4F8936052D956DA600E2B811 /* Virtualization.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
