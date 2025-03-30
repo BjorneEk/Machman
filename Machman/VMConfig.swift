@@ -18,13 +18,15 @@ class VMConfig: Codable, Identifiable {
 	var memorySize: UInt64
 	var cpuCount: Int
 	var state: VMState = .stopped
+	var lastRan: Foundation.Date?
+	var created: Foundation.Date
 	weak var window: NSWindow?
 
 	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
 		self.name = name
 		self.memorySize = memorySize
 		self.cpuCount = cpuCount
-		
+		created = Foundation.Date()
 		createMainDiskImage(size: diskSize)
 		try saveVMConfig()
 	}
@@ -33,6 +35,8 @@ class VMConfig: Codable, Identifiable {
 		self.name = name
 		self.memorySize = memorySize
 		self.cpuCount = cpuCount
+		self.created = Foundation.Date()
+		self.lastRan = nil
 		try saveVMConfig()
 	}
 
@@ -44,6 +48,8 @@ class VMConfig: Codable, Identifiable {
 		let loadedConfig = try decoder.decode(VMConfig.self, from: data)
 		self.memorySize = loadedConfig.memorySize
 		self.cpuCount = loadedConfig.cpuCount
+		self.created = loadedConfig.created
+		self.lastRan = loadedConfig.lastRan
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -51,6 +57,8 @@ class VMConfig: Codable, Identifiable {
 		case memorySize
 		case cpuCount
 		case state
+		case lastRan
+		case created
 	}
 
 	func configFilePath(file: String) -> String {
@@ -93,6 +101,7 @@ class VMConfig: Codable, Identifiable {
 
 	func start(window: NSWindow? = nil) throws {
 		self.window = window
+		self.lastRan = Foundation.Date()
 		try updateState(state: .running)
 	}
 
