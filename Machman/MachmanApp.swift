@@ -13,18 +13,16 @@ let machmanVMDir: String = NSHomeDirectory() + "/.machman"
 
 @main
 struct MachmanApp: App {
-
-	/*let vmConfig = try! VMConfig(
-		name: "debian",
-		memorySize: 16 * 1024 * 1024 * 1024,
-		cpuCount: 8
-
-	)*/
+	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
 	var body: some Scene {
 		WindowGroup {
 			VMListView()
-			//VMView(vmController: VMController(vmConfig))
 		}
+	}
+}
+class AppDelegate: NSObject, NSApplicationDelegate {
+	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+		true
 	}
 }
