@@ -11,6 +11,7 @@ import Virtualization
 struct VirtualMachineView: NSViewRepresentable {
 	var virtualMachine: VZVirtualMachine
 
+
 	func makeNSView(context: Context) -> VZVirtualMachineView {
 		let vmView = VZVirtualMachineView(frame: .zero)
 		if #available(macOS 14.0, *) {
@@ -30,16 +31,14 @@ struct VirtualMachineView: NSViewRepresentable {
 
 struct VMView: View {
 	@ObservedObject var vmController: VMController
-
 	init(vmController: VMController) {
 		self.vmController = vmController
 	}
 
 	var body: some View {
 		if let vm = vmController.virtualMachine {
-			VirtualMachineView(virtualMachine: vm).onAppear {
-				vmController.startVM()
-			}
+			VirtualMachineView(virtualMachine: vm)
+			//	.onAppear { vmController.startVM() }
 		} else {
 			fatalError("No VM Configured")
 		}
