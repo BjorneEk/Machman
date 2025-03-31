@@ -8,24 +8,26 @@
 import SwiftUI
 
 var vmWindows: [String: NSWindow] = [:]
-let compBtnSize: CGFloat = 32
-let compBtnFontSize: CGFloat = 20
-
+//var compBtnSize: CGFloat = 32
+//var compBtnFontSize: CGFloat = 20
+var compBtnSize: CGFloat = 15
+var compBtnFontSize: CGFloat = 10
 protocol VMActionView: View {
 	var systemImageName: String { get }
 	var color: Color { get }
 
-	func label() -> AnyView
+	func label(bSize: CGFloat, fSize: CGFloat) -> AnyView
 	func hoverHandler() -> (Bool) -> Void
 }
+
 extension VMActionView {
-	func label() -> AnyView {
+	func label(bSize: CGFloat, fSize: CGFloat) -> AnyView {
 		AnyView(
 			Image(systemName: systemImageName)
-				.frame(width: compBtnSize, height: compBtnSize)
+				.frame(width: bSize, height: bSize)
 				.imageScale(.large)
 				.foregroundColor(color)
-				.font(.system(size: compBtnFontSize, weight: .medium))
+				.font(.system(size: fSize, weight: .medium))
 		)
 	}
 
@@ -39,11 +41,15 @@ extension VMActionView {
 		}
 	}
 }
+
 struct VMActionButton: VMActionView {
+	
 	let systemImageName: String
 	let color: Color
 	let action: () -> Void
 	let tooltip: String
+	var bSize: CGFloat = compBtnSize
+	var fSize: CGFloat = compBtnFontSize
 
 	init(systemImageName: String, tooltip: String, color: Color = .primary, action: @escaping () -> Void) {
 		self.systemImageName = systemImageName
@@ -51,10 +57,18 @@ struct VMActionButton: VMActionView {
 		self.action = action
 		self.tooltip = tooltip
 	}
+	init(systemImageName: String, tooltip: String, bSize: CGFloat, fSize: CGFloat, color: Color = .primary, action: @escaping () -> Void) {
+		self.systemImageName = systemImageName
+		self.color = color
+		self.action = action
+		self.tooltip = tooltip
+		self.bSize = bSize
+		self.fSize = fSize
+	}
 
 	var body: some View {
 		Button(action: action) {
-			label()
+			label(bSize: bSize, fSize: fSize)
 		}
 		.onHover(perform: hoverHandler())
 		.buttonStyle(.borderless)
@@ -77,7 +91,7 @@ struct VMListView: View {
 					Text("Machines")
 						.font(.system(size: 35, weight: .medium, design: .default))
 					Spacer()
-					NavigationLink(destination: NewVMView(viewModel: viewModel)) {
+					/*NavigationLink(destination: NewVMView(viewModel: viewModel)) {
 						Image(systemName: "plus")
 							.font(.system(size: 35, weight: .medium, design: .default))
 					}
@@ -87,6 +101,7 @@ struct VMListView: View {
 					.onHover { hovering in
 						if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
 					}
+					 */
 				}
 				.padding()
 				// List of components with three buttons each.

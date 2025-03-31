@@ -36,7 +36,6 @@ class VMController: NSObject, ObservableObject, VZVirtualMachineDelegate {
 		guard let intallerDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath:isoPath), readOnly: true) else {
 			fatalError("Failed to create installer's disk attachment.")
 		}
-
 		return VZUSBMassStorageDeviceConfiguration(attachment: intallerDiskAttachment)
 	}
 
@@ -50,6 +49,7 @@ class VMController: NSObject, ObservableObject, VZVirtualMachineDelegate {
 		networkDevice.attachment = VZBridgedNetworkDeviceAttachment(interface: interface)
 		return networkDevice
 	}
+
 	private func createNetworkDeviceConfiguration() -> VZVirtioNetworkDeviceConfiguration {
 		
 		let networkDevice = VZVirtioNetworkDeviceConfiguration()

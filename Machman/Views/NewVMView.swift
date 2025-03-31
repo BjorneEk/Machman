@@ -17,7 +17,7 @@ enum NewVMStatus {
 }
 
 struct NewVMView: View {
-	var viewModel = VMListViewModel()
+	var viewModel = NewVMListViewModel()
 	let defFontSize: CGFloat = 20
 	@State private var vmName: String = ""
 	@State private var vmMemory: UInt64 = 0
@@ -27,9 +27,9 @@ struct NewVMView: View {
 	@State private var vmMemoryGBString: String = ""
 	@State private var newVmStatus: NewVMStatus = .none
 	@State private var bounce = false
-	@Environment(\.dismiss) private var dismiss
+	//@Environment(\.presentationMode) var presentationMode: Binding<PresentationMode>
 
-	init(viewModel: VMListViewModel) {
+	init(viewModel: NewVMListViewModel) {
 		self.viewModel = viewModel
 	}
 
@@ -179,7 +179,7 @@ struct NewVMView: View {
 					HStack {
 						Button {
 							if createVM() {
-								dismiss()
+								//self.presentationMode.wrappedValue.dismiss()
 							}
 						} label: {
 							Image(systemName: "plus")

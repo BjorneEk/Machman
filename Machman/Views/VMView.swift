@@ -10,23 +10,25 @@ import Virtualization
 
 struct VirtualMachineView: NSViewRepresentable {
 	var virtualMachine: VZVirtualMachine
-
+	var onCreate: ((VZVirtualMachineView) -> Void)? = nil
 
 	func makeNSView(context: Context) -> VZVirtualMachineView {
-		let vmView = VZVirtualMachineView(frame: .zero)
+		let view = VZVirtualMachineView()
+		view.virtualMachine = virtualMachine
 		if #available(macOS 14.0, *) {
-			vmView.automaticallyReconfiguresDisplay = true
+			view.automaticallyReconfiguresDisplay = true
 		}
-		vmView.virtualMachine = virtualMachine
+		view.virtualMachine = virtualMachine
 		DispatchQueue.main.async {
-			vmView.window?.makeFirstResponder(vmView)
+			onCreate?(view)
+			view.window?.makeFirstResponder(view)
+
 		}
-		return vmView
+
+		return view
 	}
 
-	func updateNSView(_ nsView: VZVirtualMachineView, context: Context) {
-		// Update the view if needed.
-	}
+	func updateNSView(_ nsView: VZVirtualMachineView, context: Context) {}
 }
 
 struct VMView: View {

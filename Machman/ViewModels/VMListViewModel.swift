@@ -10,8 +10,8 @@ import AppKit
 import SwiftUI
 
 enum RunBtnState: String {
-	case run = "play.fill"
-	//case run  = "play.desktopcomputer"
+	//case run = "play.fill"
+	case run  = "power"
 	case stop = "stop.circle"
 
 	static func fromVMState(s: VMState) -> RunBtnState {

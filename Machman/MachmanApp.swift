@@ -17,7 +17,8 @@ struct MachmanApp: App {
 
 	var body: some Scene {
 		WindowGroup {
-			VMListView()
+			//VMListView()
+			VMNavigationView()
 		}
 	}
 }

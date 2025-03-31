@@ -7,11 +7,13 @@
 
 import Foundation
 import Virtualization
+import AppKit
 
 enum VMState: String, Codable {
 	case running
 	case stopped
 }
+
 struct HostMountPoint: Codable, Identifiable {
 	var id = UUID()
 	var path: String
@@ -182,9 +184,11 @@ class VMConfig: Codable, Identifiable {
 
 		return virtualCPUCount
 	}
+
 	static func maxMemoryInGB() -> Int {
 		return Int(Double(VZVirtualMachineConfiguration.maximumAllowedMemorySize) / 1024 * 1024 * 1024)
 	}
+
 	static func minMemoryInGB() -> Int {
 		return Int(Double(VZVirtualMachineConfiguration.maximumAllowedMemorySize) / 1024 * 1024 * 1024)
 	}
@@ -217,17 +221,12 @@ class VMConfig: Codable, Identifiable {
 	}
 
 	func rename(to newName: String) throws {
-		//try VMConfig.createNewVMDirectory(name: newName)
 		let oldName = self.name
 		let fileManager = FileManager.default
-		//let oldDiskPath = diskImagePath()
-		//let oldVMIdentifierPath = vmIdentifierPath()
-		//let oldEFIPath = EFIVariableStorePath()
 
 		self.name = newName
 		try fileManager.moveItem(at: URL(fileURLWithPath: "\(machmanVMDir)/\(oldName)"), to: URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)"))
 		try saveVMConfig()
-		//try VMConfig.deleteVMDirectory(name: oldName)
 	}
 
 	func setCPUCount(_ newValue: Int) throws {
@@ -240,7 +239,6 @@ class VMConfig: Codable, Identifiable {
 		try saveVMConfig()
 	}
 
-
 	static func deleteVMDirectory(name: String) throws {
 		try FileManager.default.removeItem(at: URL(fileURLWithPath: "\(machmanVMDir)/\(name)"))
 	}
@@ -252,8 +250,6 @@ class VMConfig: Codable, Identifiable {
 	func getCPUCounte() -> Int {
 		return min(VMConfig.computeMaxCPUCount(), self.cpuCount)
 	}
-
-
 
 	private func createVmIdentifier(_ vmIdentifierPath: String) -> VZGenericMachineIdentifier {
 		let machineIdentifier = VZGenericMachineIdentifier()
@@ -294,6 +290,88 @@ class VMConfig: Codable, Identifiable {
 		return VZEFIVariableStore(url: URL(fileURLWithPath: efiVarsPath))
 	}
 
+	static func isoImageDeviceConfig(isoPath: URL) throws -> VZUSBMassStorageDeviceConfiguration {
+		guard let intallerDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: isoPath, readOnly: true) else {
+			throw VirtualMachineError.critical("Failed to create installer's disk attachment.")
+		}
+		return VZUSBMassStorageDeviceConfiguration(attachment: intallerDiskAttachment)
+	}
 
+	static func networkDeviceConfig() -> VZVirtioNetworkDeviceConfiguration {
+		let networkDevice = VZVirtioNetworkDeviceConfiguration()
+		let natAttachment = VZNATNetworkDeviceAttachment()
+		networkDevice.attachment = natAttachment
+		return networkDevice
+	}
+
+	static func mainScreenSize(_ defaultWidth: Int, _ defaultHeight: Int) -> (width: Int, height: Int) {
+		var width = defaultWidth
+		var height = defaultHeight
+		if let mainScreen = NSScreen.main {
+			width = Int(mainScreen.frame.width)
+			height = Int(mainScreen.frame.height)
+		}
+		return (width: width, height: height)
+	}
+
+	static func graphicsDeviceConfig() -> VZVirtioGraphicsDeviceConfiguration {
+		let graphicsDevice = VZVirtioGraphicsDeviceConfiguration()
+		let size = mainScreenSize(2560, 1440)
+		graphicsDevice.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: size.width, heightInPixels: size.height)]
+		return graphicsDevice
+	}
+
+	static func inputAudioDeviceConfig() -> VZVirtioSoundDeviceConfiguration {
+		let inputAudioDevice = VZVirtioSoundDeviceConfiguration()
+		let inputStream = VZVirtioSoundDeviceInputStreamConfiguration()
+		inputStream.source = VZHostAudioInputStreamSource()
+		inputAudioDevice.streams = [inputStream]
+		return inputAudioDevice
+	}
+
+	static func outputAudioDeviceConfig() -> VZVirtioSoundDeviceConfiguration {
+		let outputAudioDevice = VZVirtioSoundDeviceConfiguration()
+		let outputStream = VZVirtioSoundDeviceOutputStreamConfiguration()
+		outputStream.sink = VZHostAudioOutputStreamSink()
+		outputAudioDevice.streams = [outputStream]
+		return outputAudioDevice
+	}
+
+	static func spiceAgentConsoleDeviceConfig() -> VZVirtioConsoleDeviceConfiguration {
+		let consoleDevice = VZVirtioConsoleDeviceConfiguration()
+
+		let spiceAgentPort = VZVirtioConsolePortConfiguration()
+		spiceAgentPort.name = VZSpiceAgentPortAttachment.spiceAgentPortName
+		spiceAgentPort.attachment = VZSpiceAgentPortAttachment()
+		consoleDevice.ports[0] = spiceAgentPort
+
+		return consoleDevice
+	}
+
+	func mainDiskDeviceConfig() throws -> VZVirtioBlockDeviceConfiguration {
+		guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: diskImagePath()), readOnly: false) else {
+			throw VirtualMachineError.critical("Failed to create main disk attachment for: \(name)")
+		}
+
+		let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
+		return mainDisk
+	}
+
+	func directoryShareDeviceConfig(mainTag: String) -> VZVirtioFileSystemDeviceConfiguration {
+		let sharedDirectories: [String: VZSharedDirectory] = Dictionary(
+			uniqueKeysWithValues: mountPoints.map { mount in
+				(mount.tag,
+				VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
+			}
+		)
+		let multipleDirectoryShare = VZMultipleDirectoryShare(directories: sharedDirectories)
+		let sharingConfiguration = VZVirtioFileSystemDeviceConfiguration(tag: mainTag)
+		sharingConfiguration.share = multipleDirectoryShare
+
+
+		return sharingConfiguration
+	}
+	
+	
 
 }
