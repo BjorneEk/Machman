@@ -12,6 +12,27 @@ enum VMState: String, Codable {
 	case running
 	case stopped
 }
+struct HostMountPoint: Codable, Identifiable {
+	var id = UUID()
+	var path: String
+	var tag: String
+
+	init(from decoder: any Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		self.path = try container.decode(String.self, forKey: .path)
+		self.tag = try container.decode(String.self, forKey: .tag)
+	}
+
+	init (path: String, tag: String) {
+		self.path = path
+		self.tag = tag
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case path
+		case tag
+	}
+}
 
 class VMConfig: Codable, Identifiable {
 	var name: String
@@ -20,6 +41,7 @@ class VMConfig: Codable, Identifiable {
 	var state: VMState = .stopped
 	var lastRan: Foundation.Date?
 	var created: Foundation.Date
+	var mountPoints: [HostMountPoint] = []
 	weak var window: NSWindow?
 
 	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
@@ -50,6 +72,7 @@ class VMConfig: Codable, Identifiable {
 		self.cpuCount = loadedConfig.cpuCount
 		self.created = loadedConfig.created
 		self.lastRan = loadedConfig.lastRan
+		self.mountPoints = loadedConfig.mountPoints
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -59,6 +82,7 @@ class VMConfig: Codable, Identifiable {
 		case state
 		case lastRan
 		case created
+		case mountPoints
 	}
 
 	func configFilePath(file: String) -> String {
@@ -97,6 +121,18 @@ class VMConfig: Codable, Identifiable {
 	func updateState(state: VMState) throws {
 		self.state = state
 		try saveVMConfig()
+	}
+
+	func addMountPoint(_ mountPoint: HostMountPoint) {
+		mountPoints.append(mountPoint)
+		try! saveVMConfig()
+	}
+	func removeMountPoint(_ mountPoint: HostMountPoint) {
+		guard let index = mountPoints.firstIndex(where: { $0.id == mountPoint.id }) else {
+			return
+		}
+		mountPoints.remove(at: index)
+		try! saveVMConfig()
 	}
 
 	func start(window: NSWindow? = nil) throws {

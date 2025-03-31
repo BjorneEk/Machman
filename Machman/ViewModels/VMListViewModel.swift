@@ -64,14 +64,12 @@ class VMListViewModel: ObservableObject {
 	}
 
 	func vmList() -> [(config: VMConfig, state: RunBtnState)] {
-		let mapped: [(config: VMConfig, state: RunBtnState)] = vmMap.map {
-			(
-				config: $0.value.config,
-				state: RunBtnState.fromVMState(s: $0.value.controller?.vmState() ?? .stopped)
-			)
-		}
-
-		return mapped.sorted(by: { $0.config.lastRan ?? .distantPast > $1.config.lastRan ?? .distantPast })
+		return vmMap.map {(
+			config: $0.value.config,
+			state: RunBtnState.fromVMState(s: $0.value.controller?.vmState() ?? .stopped)
+		)}.sorted(by: {
+			$0.config.lastRan ?? .distantPast > $1.config.lastRan ?? .distantPast
+		})
 	}
 
 	func runBtnLbl(c: VMConfig) -> RunBtnState {

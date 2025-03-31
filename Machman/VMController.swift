@@ -40,9 +40,22 @@ class VMController: NSObject, ObservableObject, VZVirtualMachineDelegate {
 		return VZUSBMassStorageDeviceConfiguration(attachment: intallerDiskAttachment)
 	}
 
-	private func createNetworkDeviceConfiguration() -> VZVirtioNetworkDeviceConfiguration {
+	private func createBridgeNetworkDeviceConfiguration() -> VZVirtioNetworkDeviceConfiguration {
+		guard let interface = VZBridgedNetworkInterface.networkInterfaces.first else {
+			print("No bridged network interfaces available")
+			return createNetworkDeviceConfiguration()
+		}
+
 		let networkDevice = VZVirtioNetworkDeviceConfiguration()
-		networkDevice.attachment = VZNATNetworkDeviceAttachment()
+		networkDevice.attachment = VZBridgedNetworkDeviceAttachment(interface: interface)
+		return networkDevice
+	}
+	private func createNetworkDeviceConfiguration() -> VZVirtioNetworkDeviceConfiguration {
+		
+		let networkDevice = VZVirtioNetworkDeviceConfiguration()
+		let natAttachment = VZNATNetworkDeviceAttachment()
+
+		networkDevice.attachment = natAttachment
 
 		return networkDevice
 	}
@@ -108,6 +121,21 @@ class VMController: NSObject, ObservableObject, VZVirtualMachineDelegate {
 		return mainDisk
 	}
 
+	func createDirectoryShareDeviceConfiguration() -> VZVirtioFileSystemDeviceConfiguration {
+		let directoriesToShare: [String: VZSharedDirectory] = Dictionary(
+			uniqueKeysWithValues: vmConfig.mountPoints.map { mount in
+				(mount.tag, VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
+			}
+		)
+		let multipleDirectoryShare = VZMultipleDirectoryShare(directories: directoriesToShare)
+		// Create the VZVirtioFileSystemDeviceConfiguration and assign it a unique tag.
+		let sharingConfiguration = VZVirtioFileSystemDeviceConfiguration(tag: "host-share")
+		sharingConfiguration.share = multipleDirectoryShare
+
+
+		return sharingConfiguration
+	}
+
 	private func createVMConfiguration(vmConfig: VMConfig, isoPath: String? = nil) throws -> VZVirtualMachineConfiguration {
 		let config = VZVirtualMachineConfiguration()
 		
@@ -144,7 +172,8 @@ class VMController: NSObject, ObservableObject, VZVirtualMachineDelegate {
 		config.keyboards = [VZUSBKeyboardConfiguration()]
 		config.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
 		config.consoleDevices = [createSpiceAgentConsoleDeviceConfiguration()]
-		
+		config.directorySharingDevices = [createDirectoryShareDeviceConfiguration()]
+
 		do {
 			try config.validate()
 		} catch {
