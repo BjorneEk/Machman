@@ -131,6 +131,27 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return configFilePath(file: "config")
 
 	}
+	func getDiskSize(disk: VMDisk) -> UInt64? {
+		let url = switch disk {
+			case .fromUrl(let url):
+				url
+			case .storage(let name, _):
+				localURL(file: "\(name).raw")
+			case .iso(let url):
+				url
+		}
+		print(url.path)
+		do {
+			let fileAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
+			if let fileSizeBytes = fileAttributes[.size] as? NSNumber {
+				//let sizeInGB = Double(truncating: fileSizeBytes) / 1_073_741_824 // 1024^3
+				return UInt64(Double(truncating: fileSizeBytes))
+			}
+		} catch {
+			return nil
+		}
+		return nil
+	}
 	func deleteDisk(disk: VMDisk) {
 		self.disks.removeAll { $0 == disk }
 		switch disk {

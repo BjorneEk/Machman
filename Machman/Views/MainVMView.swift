@@ -157,23 +157,18 @@ struct MainVMView: View {
 								case .storage(let n, _):
 									Text(n)
 								case .fromUrl(let url):
-									//Text(url.lastPathComponent)
 									Text(VMConfig.formatUrl(from: url, 2))
 								case .iso(let url):
-									//Text(url.lastPathComponent)
 									Text(VMConfig.formatUrl(from: url, 1))
 								}
 							}
 							TableColumn("size") { (entry: VMDisk) in
-								switch entry {
-								case .storage(_, let s):
-									Text("\(VMConfig.toGB(size: s)) GB")
-								case .fromUrl(_):
-									Text("?")
-								case .iso(_):
+								if let size = vm.config.getDiskSize(disk: entry) {
+									Text("\(VMConfig.toGB(size: size)) GB")
+								} else {
 									Text("?")
 								}
-							}.width(30)
+							}.width(40)
 							TableColumn("") { (entry: VMDisk) in
 								Button(action: {
 									DispatchQueue.main.async {
@@ -187,6 +182,7 @@ struct MainVMView: View {
 								}
 							}.width(20)
 						}.id(incr)
+						Divider()
 						AddDiskView(
 							addIso: {
 								self.incr += 1
@@ -203,7 +199,8 @@ struct MainVMView: View {
 					.padding(.bottom, 8)
 				}
 			}
-			.padding(.vertical, 2)
+			.padding(.vertical, 0)
+			Divider()
 			// MARK: row 2
 			GroupBox {
 				HStack {
