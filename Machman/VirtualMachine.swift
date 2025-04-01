@@ -26,34 +26,41 @@ enum VirtualMachineError: Error {
 }
 
 class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Identifiable  {
+	let id = UUID()
 	var virtualMachine: VZVirtualMachine? = nil
 	@State var config: VMConfig
 	@State var log: [VirtualMachineLog] = []
-	var vmView: VZVirtualMachineView?
+	//var vmView: VZVirtualMachineView?
 	var viewModel: NewVMListViewModel?
 
 	init(config: VMConfig) {
 		self.config = config
 		super.init()
 	}
-
+	static func == (lhs: VirtualMachine, rhs: VirtualMachine) -> Bool {
+		lhs.config.name == rhs.config.name
+	}
 	func log(_ e: VirtualMachineLog) {
 		self.log.append(e)
 	}
 
 	func log(error: String) {
+		print(error)
 		self.log.append(.error(error))
 	}
 
 	func log(message: String) {
+		print(message)
 		self.log.append(.message(message))
 	}
 
 	func log(warning: String) {
+		print(warning)
 		self.log.append(.warning(warning))
 	}
 
 	func err(msg: String) -> VirtualMachineError {
+		print(msg)
 		log(error: msg)
 		return .critical(msg)
 	}
@@ -66,45 +73,23 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 
 		let platform = VZGenericPlatformConfiguration()
 		let bootloader = VZEFIBootLoader()
-		let disksArray = NSMutableArray()
 
-		if let isoPath = isoPath {
-			platform.machineIdentifier = config.getVmIdentifier()
-			bootloader.variableStore = config.getEFIVariableStore()
-			do {
-				let isoImageDeviceConfig = try VMConfig.isoImageDeviceConfig(isoPath: isoPath)
-				disksArray.add(isoImageDeviceConfig)
-			} catch {
-				log(error: "\(error)")
-				return nil
-			}
-		} else {
-			platform.machineIdentifier = config.getVmIdentifier()
-			bootloader.variableStore = config.getEFIVariableStore()
-		}
+		platform.machineIdentifier = config.getVmIdentifier()
+		bootloader.variableStore = config.getEFIVariableStore()
 
 		vmConfig.platform = platform
 		vmConfig.bootLoader = bootloader
 
 		do {
-			let mainDiskDeviceConfig = try config.mainDiskDeviceConfig()
-			disksArray.add(mainDiskDeviceConfig)
+			vmConfig.storageDevices = try config.diskArray()
 		} catch {
 			log(error: "\(error)")
 			return nil
 		}
 
-		guard let disks = disksArray as? [VZStorageDeviceConfiguration] else {
-			log(error: "Invalid disksArray.")
-			return nil
-		}
-
-		vmConfig.storageDevices = disks
-
 		vmConfig.networkDevices = [VMConfig.networkDeviceConfig()]
 		vmConfig.graphicsDevices = [VMConfig.graphicsDeviceConfig()]
 		vmConfig.audioDevices = [VMConfig.inputAudioDeviceConfig(), VMConfig.outputAudioDeviceConfig()]
-
 		vmConfig.keyboards = [VZUSBKeyboardConfiguration()]
 		vmConfig.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
 		vmConfig.consoleDevices = [VMConfig.spiceAgentConsoleDeviceConfig()]
@@ -143,9 +128,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		)
 
 		// Create a VMView with the new controller.
-		let view = VirtualMachineView(virtualMachine: vm) { nativeView in
-			self.vmView = nativeView // Store the actual NSView
-		}
+		let view = VMView_new(vm: vm)
 		// Create a new NSWindow and host the VMView.
 
 		window.center()
@@ -242,25 +225,6 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 			}
 		}
 	}
-	func captureWindowImage_() -> NSImage {
-		guard let view = self.vmView else {
-			print("no vmView")
-			return VirtualMachine.blackImage(size: NSSize(width: 300, height: 200))
-		}
-
-
-		let bounds = view.bounds
-		guard let rep = view.bitmapImageRepForCachingDisplay(in: bounds) else {
-			print("Failed to create bitmap rep")
-			return VirtualMachine.blackImage(size: bounds.size)
-		}
-
-		view.cacheDisplay(in: bounds, to: rep)
-
-		let image = NSImage(size: bounds.size)
-		image.addRepresentation(rep)
-		return image
-	}
 
 	func stopVM() {
 		guard let vm = virtualMachine else {
@@ -288,7 +252,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		if self.config.state != .stopped {
 			try? self.config.stop()
 			self.viewModel?.forceUpdate()
-			self.log(message: "wondow closed and \(self.config.name) stopped successfully.")
+			self.log(message: "window closed and \(self.config.name) stopped successfully.")
 			self.virtualMachine = nil
 		}
 	}

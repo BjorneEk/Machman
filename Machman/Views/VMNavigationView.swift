@@ -10,44 +10,47 @@ import SwiftUI
 struct VMNavigationView: View {
 	@StateObject var viewModel = NewVMListViewModel()
 	@State private var navigate = false
+	@State private var selection: VirtualMachine?
+
 
 	var body: some View {
-		NavigationView {
-			VStack {
-				List {
-					NavigationLink(destination: NewVMView(viewModel: viewModel)) {
-
-						Image(systemName: "plus")
-							.font(.system(size: 20))
-							.foregroundColor(.green)
-							.padding(.leading)
-						Text("New VM")
-							.font(.system(size: 20))
+		NavigationSplitView {
+			List(selection: $selection) {
+				ForEach(viewModel.vmList(), id: \.id) { item in
+					HStack {
+						Image(systemName: viewModel.runBtnLbl(c: item.config).running() ? "pc" : "pause.fill")
+							.foregroundColor(viewModel.runBtnLbl(c: item.config).running() ? .blue : .primary)
+						Text(item.config.name)
+							.font(.callout)
+						Spacer()
 					}
-					.buttonStyle(.plain)
-					.help("Add new virtual machine")
-					.onHover { hovering in
-						if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-					}
-					ForEach(viewModel.vmList(), id: \.config.name) { item in
-						NavigationLink(destination: MainVMView(viewModel: viewModel, selectedItem: item)) {
-							HStack {
-								if viewModel.runBtnLbl(c: item.config).running() {
-									Image(systemName: "pc")
-										.foregroundColor(.blue)
-										.font(.system(size: 25, weight: .medium, design: .default))
-								} else {
-									Image(systemName: "pause.fill")
-										.font(.system(size: 25, weight: .medium, design: .default))
-								}
-								Text(item.config.name)
-									.font(.system(size: 15, weight: .medium, design: .default))
-								Spacer()
-							}
-						}
-					}
+					.tag(item)
 				}
-				.listStyle(PlainListStyle())
+			}
+			.onChange(of: selection) {
+				print("Selected VM: \(selection?.config.name ?? "none")")
+				navigate = !navigate
+			}
+			Button(action:{
+				selection = viewModel.addNewVM()
+			}) {
+				HStack {
+					Image(systemName: "plus")
+					Text("New VM")
+				}
+			}
+			.buttonStyle(.borderless)
+			.padding()
+		} detail: {
+			// 🧱 Detail View
+			if let selected = selection {
+				MainVMView(viewModel: viewModel, selectedItem: selected)
+					.onAppear {print("---Selected VM: \(selection?.config.name ?? "none")")}
+					.id(navigate)
+			} else {
+				Text("Select a VM")
+					.font(.title)
+					.foregroundColor(.secondary)
 			}
 		}
 	}

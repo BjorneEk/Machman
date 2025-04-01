@@ -24,7 +24,9 @@ class NewVMListViewModel: ObservableObject {
 			let vmList: [VirtualMachine] = try contents.filter { url in
 				let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
 				return resourceValues.isDirectory ?? false
-			}.map { try VirtualMachine(config: VMConfig(name: String($0.lastPathComponent))) }
+			}
+			.map { try? VirtualMachine(config: VMConfig(name: String($0.lastPathComponent))) }
+			.compactMap { $0 }
 			for (_, contf) in vmList.enumerated() {
 				vmMap["\(contf.config.name)"] = contf
 			}
@@ -127,7 +129,21 @@ class NewVMListViewModel: ObservableObject {
 		}
 		forceUpdate()
 	}
-
+	func addNewVM() -> VirtualMachine {
+		var name = "new-VM"
+		var nbr: Int = 1
+		while vmMap["\(name)\(nbr)"] != nil {
+			nbr += 1
+		}
+		name = "\(name)\(nbr)"
+		try! VMConfig.createNewVMDirectory(name: name)
+		let new = VirtualMachine(config: try! VMConfig(
+			name: name,
+			memorySize: 4,
+			cpuCount: VMConfig.computeMaxCPUCount()))
+		vmMap[name] = new
+		return new
+	}
 	func build(c: VMConfig) {
 		let panel = NSOpenPanel()
 		panel.canChooseFiles = true

@@ -11,7 +11,7 @@ import SwiftUI
 
 enum RunBtnState: String {
 	//case run = "play.fill"
-	case run  = "power"
+	case run  = "play.circle"
 	case stop = "stop.circle"
 
 	static func fromVMState(s: VMState) -> RunBtnState {

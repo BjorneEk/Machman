@@ -36,13 +36,27 @@ struct HostMountPoint: Codable, Identifiable {
 	}
 }
 
-class VMConfig: Codable, Identifiable {
+enum VMDisk: Codable, Identifiable, Equatable {
+	case storage(String, UInt64)
+	case fromUrl(URL)
+	case iso(URL)
+	var id: String {
+		switch self {
+		case .storage(let name, _): return "storage:\(name)"
+		case .fromUrl(let url): return "url:\(url.absoluteString)"
+		case .iso(let url): return "iso:\(url.absoluteString)"
+		}
+	}
+}
+
+class VMConfig: Codable, Identifiable, ObservableObject {
 	var name: String
 	var memorySize: UInt64
 	var cpuCount: Int
 	var state: VMState = .stopped
 	var lastRan: Foundation.Date?
 	var created: Foundation.Date
+	var disks: [VMDisk] = []
 	var mountPoints: [HostMountPoint] = []
 	weak var window: NSWindow?
 
@@ -51,7 +65,8 @@ class VMConfig: Codable, Identifiable {
 		self.memorySize = memorySize
 		self.cpuCount = cpuCount
 		created = Foundation.Date()
-		createMainDiskImage(size: diskSize)
+		try self.addNewStorageDisk(name: "disk", size: diskSize)
+		//createMainDiskImage(size: diskSize)
 		try saveVMConfig()
 	}
 
@@ -75,6 +90,8 @@ class VMConfig: Codable, Identifiable {
 		self.created = loadedConfig.created
 		self.lastRan = loadedConfig.lastRan
 		self.mountPoints = loadedConfig.mountPoints
+		self.disks = loadedConfig.disks
+		//self.addDisk(disk: .storage(URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)/disk.raw"), 0))
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -85,10 +102,16 @@ class VMConfig: Codable, Identifiable {
 		case lastRan
 		case created
 		case mountPoints
+		case disks
 	}
-
+	func getDisks() -> [VMDisk] {
+		self.disks
+	}
 	func configFilePath(file: String) -> String {
 		return "\(machmanVMDir)/\(self.name)/\(file)"
+	}
+	func localURL(file: String) -> URL {
+		return URL(fileURLWithPath: configFilePath(file: file))
 	}
 
 	func vmIdentifierPath() -> String {
@@ -107,6 +130,21 @@ class VMConfig: Codable, Identifiable {
 	func configPath() -> String {
 		return configFilePath(file: "config")
 
+	}
+	func deleteDisk(disk: VMDisk) {
+		self.disks.removeAll { $0 == disk }
+		switch disk {
+		case .storage(let name, _):
+			let url = localURL(file: "\(name).raw")
+			if NewVMListViewModel.confirmDialog(
+				message: "Delete disk \(VMConfig.formatUrl(from: url, 2))?",
+				informativeText: "\(name) remover do you wish to delete it?") {
+				try! FileManager.default.removeItem(at: url)
+			}
+		default:
+			break
+		}
+		
 	}
 
 	func saveVMConfig() throws {
@@ -150,8 +188,38 @@ class VMConfig: Codable, Identifiable {
 		//}
 		try updateState(state: .stopped)
 	}
+	public func addDisk(disk: VMDisk) {
+		disks.append(disk)
+		try! saveVMConfig()
+	}
 	// Load a VMConfig object from the given URL.
+	public func addIsoDisk(isoUrl: URL) throws {
+		addDisk(disk: .iso(isoUrl))
+	}
 
+	public func addNewStorageDisk(name: String, size: UInt64) throws {
+		let diskPath = self.configFilePath(file: "\(name).raw")
+		let diskUrl = URL(fileURLWithPath: diskPath)
+		let diskCreated = FileManager.default.createFile(
+			atPath: diskPath,
+			contents: nil,
+			attributes: nil
+		)
+		if !diskCreated {
+			throw VirtualMachineError.critical("Failed to create the main disk image: '\(diskPath)'")
+		}
+
+		guard let diskFileHandle = try? FileHandle(forWritingTo: diskUrl) else {
+			throw VirtualMachineError.critical("Failed to get the file handle for the main disk image: '\(diskPath)'")
+		}
+
+		do {
+			try diskFileHandle.truncate(atOffset: size)
+		} catch {
+			throw VirtualMachineError.critical("Failed to truncate the disk image: '\(diskPath)' (\(size))")
+		}
+		addDisk(disk: .storage(name, size))
+	}
 
 	private func createMainDiskImage(size: UInt64) {
 		let diskPath = diskImagePath()
@@ -290,12 +358,7 @@ class VMConfig: Codable, Identifiable {
 		return VZEFIVariableStore(url: URL(fileURLWithPath: efiVarsPath))
 	}
 
-	static func isoImageDeviceConfig(isoPath: URL) throws -> VZUSBMassStorageDeviceConfiguration {
-		guard let intallerDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: isoPath, readOnly: true) else {
-			throw VirtualMachineError.critical("Failed to create installer's disk attachment.")
-		}
-		return VZUSBMassStorageDeviceConfiguration(attachment: intallerDiskAttachment)
-	}
+
 
 	static func networkDeviceConfig() -> VZVirtioNetworkDeviceConfiguration {
 		let networkDevice = VZVirtioNetworkDeviceConfiguration()
@@ -348,13 +411,41 @@ class VMConfig: Codable, Identifiable {
 		return consoleDevice
 	}
 
-	func mainDiskDeviceConfig() throws -> VZVirtioBlockDeviceConfiguration {
-		guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: diskImagePath()), readOnly: false) else {
-			throw VirtualMachineError.critical("Failed to create main disk attachment for: \(name)")
+	func isoImageDeviceConfig(isoPath: URL) throws -> VZUSBMassStorageDeviceConfiguration {
+		guard let intallerDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: isoPath, readOnly: true) else {
+			throw VirtualMachineError.critical("Failed to create iso disk: '\(isoPath)' attachment for: \(name)")
+		}
+		return VZUSBMassStorageDeviceConfiguration(attachment: intallerDiskAttachment)
+	}
+
+	func diskDeviceConfig(diskUrl: URL) throws -> VZVirtioBlockDeviceConfiguration {
+		guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: diskUrl, readOnly: false) else {
+			throw VirtualMachineError.critical("Failed to create disk: '\(diskUrl)' attachment for: \(name)")
 		}
 
 		let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
 		return mainDisk
+	}
+	static func formatUrl(from url: URL, _ n: Int) -> String {
+		let components = url.pathComponents.filter { $0 != "/" }
+
+		guard n > 0 else { return "" }
+
+		let lastComponents = components.suffix(n)
+		return lastComponents.joined(separator: "/")
+	}
+
+	func diskArray() throws -> [VZStorageDeviceConfiguration] {
+		return try disks.map {
+			switch $0 {
+			case .iso(let url):
+				return try self.isoImageDeviceConfig(isoPath: url)
+			case .storage(let name, _):
+				return try self.diskDeviceConfig(diskUrl: self.localURL(file: "\(name).raw"))
+			case .fromUrl(let url):
+				return try self.diskDeviceConfig(diskUrl: url)
+			}
+		}
 	}
 
 	func directoryShareDeviceConfig(mainTag: String) -> VZVirtioFileSystemDeviceConfiguration {

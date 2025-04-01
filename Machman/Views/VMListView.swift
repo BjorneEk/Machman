@@ -24,10 +24,13 @@ extension VMActionView {
 	func label(bSize: CGFloat, fSize: CGFloat) -> AnyView {
 		AnyView(
 			Image(systemName: systemImageName)
-				.frame(width: bSize, height: bSize)
+				//.frame(width: bSize, height: bSize)
 				.imageScale(.large)
 				.foregroundColor(color)
-				.font(.system(size: fSize, weight: .medium))
+				.aspectRatio(1, contentMode: .fit)
+				.font(.largeTitle)
+				//.font(weight: .medium))
+				//.font(.system(size: fSize, weight: .medium))
 		)
 	}
 
