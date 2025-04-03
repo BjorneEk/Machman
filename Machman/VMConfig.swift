@@ -157,7 +157,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		switch disk {
 		case .storage(let name, _):
 			let url = localURL(file: "\(name).raw")
-			if NewVMListViewModel.confirmDialog(
+			if VMListViewModel.confirmDialog(
 				message: "Delete disk \(VMConfig.formatUrl(from: url, 2))?",
 				informativeText: "\(name) remover do you wish to delete it?") {
 				try! FileManager.default.removeItem(at: url)
@@ -165,7 +165,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		default:
 			break
 		}
-		
+		try? saveVMConfig()
+
 	}
 
 	func saveVMConfig() throws {

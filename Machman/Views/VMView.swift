@@ -32,18 +32,13 @@ struct VirtualMachineView: NSViewRepresentable {
 }
 
 struct VMView: View {
-	@ObservedObject var vmController: VMController
-	init(vmController: VMController) {
-		self.vmController = vmController
+	var vm: VZVirtualMachine
+	init(vm: VZVirtualMachine) {
+		self.vm = vm
 	}
 
 	var body: some View {
-		if let vm = vmController.virtualMachine {
-			VirtualMachineView(virtualMachine: vm)
-			//	.onAppear { vmController.startVM() }
-		} else {
-			fatalError("No VM Configured")
-		}
+		VirtualMachineView(virtualMachine: vm)
 	}
 }
 

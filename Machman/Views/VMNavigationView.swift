@@ -6,9 +6,76 @@
 //
 
 import SwiftUI
+protocol VMActionView: View {
+	var systemImageName: String { get }
+	var color: Color { get }
+
+	func label(bSize: CGFloat, fSize: CGFloat) -> AnyView
+	func hoverHandler() -> (Bool) -> Void
+}
+
+extension VMActionView {
+	func label(bSize: CGFloat, fSize: CGFloat) -> AnyView {
+		AnyView(
+			Image(systemName: systemImageName)
+				//.frame(width: bSize, height: bSize)
+				.imageScale(.large)
+				.foregroundColor(color)
+				.aspectRatio(1, contentMode: .fit)
+				.font(.largeTitle)
+				//.font(weight: .medium))
+				//.font(.system(size: fSize, weight: .medium))
+		)
+	}
+
+	func hoverHandler() -> (Bool) -> Void {
+		return { hovering in
+			if hovering {
+				NSCursor.pointingHand.push()
+			} else {
+				NSCursor.pop()
+			}
+		}
+	}
+}
+
+struct VMActionButton: VMActionView {
+
+	let systemImageName: String
+	let color: Color
+	let action: () -> Void
+	let tooltip: String
+	var bSize: CGFloat = 20
+	var fSize: CGFloat = 20
+
+	init(systemImageName: String, tooltip: String, color: Color = .primary, action: @escaping () -> Void) {
+		self.systemImageName = systemImageName
+		self.color = color
+		self.action = action
+		self.tooltip = tooltip
+	}
+	init(systemImageName: String, tooltip: String, bSize: CGFloat, fSize: CGFloat, color: Color = .primary, action: @escaping () -> Void) {
+		self.systemImageName = systemImageName
+		self.color = color
+		self.action = action
+		self.tooltip = tooltip
+		self.bSize = bSize
+		self.fSize = fSize
+	}
+
+	var body: some View {
+		Button(action: action) {
+			label(bSize: bSize, fSize: fSize)
+		}
+		.onHover(perform: hoverHandler())
+		.buttonStyle(.borderless)
+		.contentShape(Rectangle())
+		.help(self.tooltip)
+	}
+}
 
 struct VMNavigationView: View {
-	@StateObject var viewModel = NewVMListViewModel()
+	@StateObject var viewModel = VMListViewModel()
 	@State private var navigate = false
 	@State private var selection: VirtualMachine?
 
@@ -42,7 +109,7 @@ struct VMNavigationView: View {
 			.buttonStyle(.borderless)
 			.padding()
 		} detail: {
-			// 🧱 Detail View
+			// Detail View
 			if let selected = selection {
 				MainVMView(viewModel: viewModel, selectedItem: selected)
 					.onAppear {print("---Selected VM: \(selection?.config.name ?? "none")")}

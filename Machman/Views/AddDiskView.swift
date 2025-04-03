@@ -70,7 +70,7 @@ struct AddDiskView: View {
 								}
 							}
 							.placeholder(when: size.isEmpty) {
-										Text("Size GB (max \(NewVMView.getAvailableVMDiskSpace() ?? 0) GB)")
+								Text("Size GB (max \(Self.getAvailableVMDiskSpace() ?? 0) GB)")
 									.padding(.horizontal)
 											.foregroundColor(.secondary)
 						}

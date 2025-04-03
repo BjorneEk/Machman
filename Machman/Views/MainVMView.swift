@@ -11,6 +11,7 @@ struct EditableText: View {
 	let onSubmit: () -> Void
 	let onChange: (String) -> Void
 
+
 	@State private var isEditing = false
 	@FocusState private var isFocused: Bool
 
@@ -22,6 +23,7 @@ struct EditableText: View {
 		self._text = text
 		self.onSubmit = onSubmit
 		self.onChange = onChange
+
 
 	}
 
@@ -57,281 +59,53 @@ struct EditableText: View {
 }
 
 struct MainVMView: View {
-	@StateObject private var viewModel: NewVMListViewModel
+	@StateObject private var viewModel: VMListViewModel
+	@StateObject var previewViewModel: PreviewViewModel
+	@State private var previewWidth: CGFloat = 0
+
 	@State private var vm: VirtualMachine
 
-	@State private var vmMemory: UInt64
-	@State private var vmCpuCount: Int
-	@State private var vmMemoryGBString: String
 	@State private var vmName: String
 
-	@State private var refreshTrigger = 0
 
-	@State private var newPath: String = ""
-	@State private var newTag: String = ""
-	@State private var previewImage: NSImage?
-	@State private var incr: Int = 0
-	//@Environment(\.dismiss) private var dismiss
-
-	init(viewModel: @autoclosure @escaping () -> NewVMListViewModel = NewVMListViewModel(),
+	init(viewModel: @autoclosure @escaping () -> VMListViewModel = VMListViewModel(),
 		 selectedItem: VirtualMachine) {
 		_viewModel = StateObject(wrappedValue: viewModel())
 		vm = selectedItem
-		vmMemory = selectedItem.config.memorySize
-		vmCpuCount = selectedItem.config.cpuCount
-		vmMemoryGBString = VMConfig.toGB(size: selectedItem.config.memorySize).formatted()
 		vmName = selectedItem.config.name
+		_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: selectedItem))
 
 	}
 	init() {
-		let a  = NewVMListViewModel()
+		let a  = VMListViewModel()
 		_viewModel = StateObject(wrappedValue: a)
 		let b = a.vmList().first!
 		vm = b
-		vmMemory = b.config.memorySize
-		vmCpuCount = b.config.cpuCount
-		vmMemoryGBString = VMConfig.toGB(size: b.config.memorySize).formatted()
 		vmName = b.config.name
+		_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: b))
 	}
 
 	var body: some View {
 		VStack {
-			// MARK: row 1
-
 			HStack {
-				VStack {
-					if let img = previewImage {
-							Image(nsImage: img)
-								.resizable()
-								.aspectRatio(16/9, contentMode: .fit)
-								//.padding(.zero)
-								.cornerRadius(5)
-								.onTapGesture {
-									DispatchQueue.main.async {
-										vm.captureWindowImageInt { image in
-											self.previewImage = image
-										}
-									}
-								}
-						} else {
-							Rectangle()
-								.fill(Color.black)
-								.aspectRatio(16/9, contentMode: .fit)
-								//.padding(.zero)
-								.cornerRadius(12)
-								.overlay(
-									ProgressView()
-								)
-						}
-					Spacer()
-				}
-				//.padding(.vertical, 2)
-				.task {
-					vm.captureWindowImageInt { image in
-						previewImage = image
-					}
-				}
+				PreviewView(viewModel: previewViewModel)
+					.frame(minWidth: 170)
 				Spacer()
-				VStack {
-					GroupBox {
-						Table(vm.config.disks) {
-							TableColumn("Disks") { (entry: VMDisk) in
-								switch entry {
-								case .storage(_, _):
-									Image(systemName: "externaldrive.fill")
-										.contentShape(Rectangle())
-										.help("storage drive")
-								case .fromUrl(_):
-									Image(systemName: "externaldrive.fill.badge.icloud")
-										.contentShape(Rectangle())
-										.help("drive")
-								case .iso(_):
-									Image(systemName: "externaldrive.connected.to.line.below.fill")
-										.contentShape(Rectangle())
-										.help("iso image")
-								}
-							}
-							.width(40)
-							TableColumn("Info") { (entry: VMDisk) in
-								switch entry {
-								case .storage(let n, _):
-									Text(n)
-								case .fromUrl(let url):
-									Text(VMConfig.formatUrl(from: url, 2))
-								case .iso(let url):
-									Text(VMConfig.formatUrl(from: url, 1))
-								}
-							}
-							TableColumn("size") { (entry: VMDisk) in
-								if let size = vm.config.getDiskSize(disk: entry) {
-									Text("\(VMConfig.toGB(size: size)) GB")
-								} else {
-									Text("?")
-								}
-							}.width(40)
-							TableColumn("") { (entry: VMDisk) in
-								Button(action: {
-									DispatchQueue.main.async {
-										vm.config.deleteDisk(disk: entry)
-										self.incr += 1
-									}
-								}) {
-									Image(systemName: "trash")
-										.contentShape(Rectangle())
-										.help("Delete")
-								}
-							}.width(20)
-						}.id(incr)
-						Divider()
-						AddDiskView(
-							addIso: {
-								self.incr += 1
-								try! vm.config.addIsoDisk(isoUrl: $0)
-							},
-							addFrom: {
-								self.incr += 1
-								vm.config.addDisk(disk: .fromUrl($0))
-							}, addNew: {
-								self.incr += 1
-								try! vm.config.addNewStorageDisk(name: $0, size: $1)
-							})
-					}
-					.padding(.bottom, 8)
-				}
+				ConfigVMDisksView(vm: vm)
+					.frame(minWidth: 200)
+					.frame(minHeight: 250)
 			}
 			.padding(.vertical, 0)
 			Divider()
-			// MARK: row 2
-			GroupBox {
-				HStack {
-					HStack {
-						Text("\(vmCpuCount)")
-							.fontWeight(.bold)
-							.font(.title2)
-						Image(systemName: "cpu.fill")
-							.fontWeight(.bold)
-							.font(.title2)
-						Stepper("CPUs", value: $vmCpuCount, in: 1...VMConfig.computeMaxCPUCount())
-							.fontWeight(.bold)
-							.font(.title2)
-							.onChange(of: vmCpuCount) { oldValue, newValue in
-								DispatchQueue.main.async {
-									do {
-										try self.vm.config.setCPUCount(vmCpuCount)
-										vm.log(message: "Set CPU count for \(self.vm.config.name) to \(vmCpuCount)")
-									} catch {
-										vm.log(error: "Failed to set CPU count for VM from \(oldValue) to \(newValue): \(error.localizedDescription)")
-									}
-								}
-							}
-					}.padding(.trailing)
-					HStack {
-						EditableText($vmMemoryGBString)
-							.fontWeight(.bold)
-							.font(.title2)
-							.onReceive(vmMemoryGBString.publisher.collect()) { chars in
-								DispatchQueue.main.async {
-									vmMemoryGBString = String(chars.prefix(4).filter { "0123456789".contains($0) })
-									vmMemory = VMConfig.clampMemorySize(size: VMConfig.fromGB(size: Int(vmMemoryGBString) ?? 0))
-								}
-							}.onSubmit {
-								DispatchQueue.main.async {
-									vmMemory = VMConfig.clampMemorySize(size: VMConfig.fromGB(size: Int(vmMemoryGBString) ?? 0))
-									vmMemoryGBString = "\(VMConfig.toGB(size: vmMemory))"
-									do {
-										try self.vm.config.setMemorySize(vmMemory)
-										vm.log(message: "Set memory size for \(self.vm.config.name) to \(vmMemoryGBString) GB")
-									} catch {
-										vm.log(error: "Failed to set memory size for VM: \(error.localizedDescription)")
-									}
-								}
-							}
-						Image(systemName: "memorychip.fill")
-							.fontWeight(.bold)
-							.font(.title2)
-						Text("GB RAM")
-							.fontWeight(.bold)
-							.font(.title2)
-					}
-					Spacer()
-				}
-				.padding(.horizontal)
-				//.padding(.vertical, 2)
+			HStack {
+				ConfigVMView(vm: vm)
+					.frame(width: previewWidth)
+				ConfigVMHostMountsView(vm: vm)
+					.frame(minWidth: 200)
 			}
-			.padding(.vertical, 2)
-			// MARK: row 2
-			//Divider()
-			// MARK: Log Section
-			GroupBox {
-				VStack(alignment: .trailing, spacing: 12) {
-					GroupBox {
-						Table(vm.config.mountPoints) {
-							TableColumn("Host Path") { point in
-								Text(point.path)
-							}
-							.width(min: 150, ideal: 150, max: .infinity)
-							TableColumn("Tag") { point in
-								Text(point.tag)
-							}
-							.width(min: 60, ideal: 60, max: .infinity)
-							TableColumn("") { point in
-								Button(role: .destructive) {
-									vm.config.removeMountPoint(point)
-									refreshTrigger += 1
-								} label: {
-									Image(systemName: "trash")
-								}
-								.buttonStyle(.borderless)
-								.help("Delete this mount point")
-							}
-							.width(min: 15, ideal: 15, max: 15)
-						}
-						.id(refreshTrigger)
-						.frame(minHeight: 150)
-					}
-					.contentShape(Rectangle())
-					.help("mount -t virtiofs host-share /mnt/point")
-					Divider()
-
-					HStack {
-						Button(action: {
-							let panel = NSOpenPanel()
-							panel.canChooseFiles = true
-							panel.canChooseDirectories = true
-							panel.allowsMultipleSelection = false
-							panel.allowedContentTypes = [.directory]
-							panel.begin { response in
-								if response == .OK, let selectedURL = panel.url {
-									vm.log(message: "Selected file: \(selectedURL.path)")
-									newPath = selectedURL.path
-								} else {
-									vm.log(error: "No file selected")
-								}
-							}
-						}) {
-							Image(systemName: "folder.fill.badge.plus")
-								.font(.title2)
-						}
-						TextField("Path", text: $newPath)
-							.textFieldStyle(.roundedBorder)
-						TextField("Tag", text: $newTag)
-							.textFieldStyle(.roundedBorder)
-
-						Button(action: {
-							guard !newPath.isEmpty, !newTag.isEmpty else { return }
-							vm.config.addMountPoint(HostMountPoint(path: newPath, tag: newTag))
-							newPath = ""
-							newTag = ""
-						}) {
-							Image(systemName: "plus.circle.fill")
-								.font(.title2)
-						}
-						.buttonStyle(.plain)
-						.help("Add new mount point")
-					}
-				}
-				.padding()
-			}
+		}
+		.onPreferenceChange(PreviewWidthKey.self) { width in
+			previewWidth = width
 		}
 		.toolbar {
 			ToolbarItem(placement: .principal) {
@@ -367,11 +141,6 @@ struct MainVMView: View {
 			}
 			ToolbarItem {
 				Button(action: {
-					DispatchQueue.main.async {
-						vm.captureWindowImageInt { image in
-							previewImage = image
-						}
-					}
 					viewModel.run(c: vm.config)
 				}) {
 					Label(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
@@ -389,9 +158,88 @@ struct MainVMView: View {
 			}
 		}
 		.padding()
+		.background(FocusAndTopmostTracker { focused in
+			self.previewViewModel.onFocusEvent(focused: focused)
+		})
 
 	}
 }
+struct FocusAndTopmostTracker: NSViewRepresentable {
+	let onChange: (Bool) -> Void
+
+	class Coordinator: NSObject {
+		weak var window: NSWindow?
+		var onChange: (Bool) -> Void
+		var lastState: Bool = false
+		var checkTimer: Timer?
+
+		init(onChange: @escaping (Bool) -> Void) {
+			self.onChange = onChange
+		}
+
+		func attach(to window: NSWindow) {
+			self.window = window
+
+			NotificationCenter.default.addObserver(self,
+				selector: #selector(updateFocusState),
+				name: NSWindow.didBecomeKeyNotification,
+				object: window)
+
+			NotificationCenter.default.addObserver(self,
+				selector: #selector(updateFocusState),
+				name: NSWindow.didResignKeyNotification,
+				object: window)
+
+			startChecking()
+		}
+
+		@objc func updateFocusState() {
+			checkState()
+		}
+
+		func startChecking() {
+			checkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+				self.checkState()
+			}
+		}
+
+		func checkState() {
+			guard let window = window else { return }
+			let isKey = window.isKeyWindow
+			let isFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier == NSRunningApplication.current.processIdentifier
+
+			let currentState = isKey && isFrontmost
+			if currentState != lastState {
+				lastState = currentState
+				onChange(currentState)
+			}
+		}
+
+		deinit {
+			checkTimer?.invalidate()
+		}
+	}
+
+	func makeCoordinator() -> Coordinator {
+		return Coordinator(onChange: onChange)
+	}
+
+	func makeNSView(context: Context) -> NSView {
+		let view = NSView()
+		DispatchQueue.main.async {
+			if let window = view.window ?? NSApp.windows.first {
+				context.coordinator.attach(to: window)
+				context.coordinator.checkState()
+			}
+		}
+		return view
+	}
+
+
+
+	func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 
 #Preview {
 	MainVMView()

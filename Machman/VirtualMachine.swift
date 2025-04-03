@@ -30,8 +30,9 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 	var virtualMachine: VZVirtualMachine? = nil
 	@State var config: VMConfig
 	@State var log: [VirtualMachineLog] = []
+	@State var previewImage: NSImage?
 	//var vmView: VZVirtualMachineView?
-	var viewModel: NewVMListViewModel?
+	var viewModel: VMListViewModel?
 
 	init(config: VMConfig) {
 		self.config = config
@@ -64,7 +65,9 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		log(error: msg)
 		return .critical(msg)
 	}
-
+	func updatePreview(img: NSImage) {
+		self.previewImage = img
+	}
 	private func configureVM(isoPath: URL? = nil) -> VZVirtualMachineConfiguration? {
 		let vmConfig = VZVirtualMachineConfiguration()
 
@@ -104,7 +107,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		return vmConfig
 	}
 
-	public func startVMWindow(viewModel: NewVMListViewModel, isoPath: URL? = nil) throws {
+	public func startVMWindow(viewModel: VMListViewModel, isoPath: URL? = nil) throws {
 
 		guard let vmConf = configureVM(isoPath: isoPath) else {
 			throw err(msg: "Failed to create VM configuration")
@@ -128,7 +131,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		)
 
 		// Create a VMView with the new controller.
-		let view = VMView_new(vm: vm)
+		let view = VMView(vm: vm)
 		// Create a new NSWindow and host the VMView.
 
 		window.center()
@@ -163,16 +166,8 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		image.unlockFocus()
 		return image
 	}
-	func captureWindowImage() async -> NSImage {
-		await withCheckedContinuation { continuation in
-			captureWindowImageInt { image in
-				Task { @MainActor in
-					continuation.resume(returning: image)
-				}
-			}
-		}
-	}
-	func captureWindowImageInt(completion: @escaping (NSImage) -> Void) {
+
+	func captureWindowImage(completion: @escaping (NSImage) -> Void) {
 
 		Task {
 			do {
@@ -299,15 +294,5 @@ class FrameGrabber: NSObject, SCStreamOutput {
 		//Task {
 		//	try? await stream.stopCapture()
 		//}
-	}
-}
-struct VMView_new: View {
-	var vm: VZVirtualMachine
-	init(vm: VZVirtualMachine) {
-		self.vm = vm
-	}
-
-	var body: some View {
-		VirtualMachineView(virtualMachine: vm)
 	}
 }
