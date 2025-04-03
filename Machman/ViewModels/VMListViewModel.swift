@@ -105,7 +105,9 @@ class VMListViewModel: ObservableObject {
 	func addVM(vmConfig: VMConfig) {
 		vmMap[vmConfig.name] = VirtualMachine(config: vmConfig)
 	}
+	func onStopped() {
 
+	}
 	private func _run(c: VMConfig, iso: URL? = nil) {
 		let t = vmMap[c.name]
 		if let vm = t {

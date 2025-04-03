@@ -41,14 +41,14 @@ class PreviewViewModel: ObservableObject {
 	}
 
 	private func updatePreview() {
-		DispatchQueue.main.async {
+		//DispatchQueue.main.async {
 			if self.vm.config.state == .running {
 				self.vm.captureWindowImage { image in
 					self.previewImage = image
 					self.vm.updatePreview(img: image)
 				}
 			}
-		}
+		//}
 	}
 
 	func isLoading() -> Bool {
@@ -59,7 +59,7 @@ class PreviewViewModel: ObservableObject {
 		DispatchQueue.main.async {
 			let change = focused != self.isFocused
 			self.isFocused = focused
-			if self.isFocused {
+			if self.isFocused && self.vm.config.state == .running {
 				if change {
 					self.updatePreview()
 				}

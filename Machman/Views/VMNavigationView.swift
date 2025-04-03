@@ -77,8 +77,12 @@ struct VMActionButton: VMActionView {
 struct VMNavigationView: View {
 	@StateObject var viewModel = VMListViewModel()
 	@State private var navigate = false
-	@State private var selection: VirtualMachine?
+	@Binding private var selection: VirtualMachine?
 
+	init(viewModel: VMListViewModel = VMListViewModel(), selection: Binding<VirtualMachine?>) {
+		_viewModel = StateObject(wrappedValue: viewModel)
+		self._selection = selection
+	}
 
 	var body: some View {
 		NavigationSplitView {
@@ -121,8 +125,9 @@ struct VMNavigationView: View {
 			}
 		}
 	}
+	
 }
 
 #Preview {
-	VMNavigationView()
+	//VMNavigationView()
 }

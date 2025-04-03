@@ -240,11 +240,13 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		try? self.config.stop()
 		self.config.window = nil
 		self.virtualMachine = nil
+		viewModel?.onStopped()
 		viewModel?.forceUpdate()
 	}
 
 	func onStop() {
 		if self.config.state != .stopped {
+			viewModel?.onStopped()
 			try? self.config.stop()
 			self.viewModel?.forceUpdate()
 			self.log(message: "window closed and \(self.config.name) stopped successfully.")
