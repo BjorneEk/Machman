@@ -7,14 +7,15 @@
 
 import Foundation
 import SwiftUI
-
+/*
 class PreviewViewModel: ObservableObject {
 	@State private var vm: VirtualMachine
-	@Published private var previewImage: NSImage?
 
+	@Published private var previewImage: NSImage?
 	@State private var timer: Timer?
 	@Published private var isFocused = true
 	@State private var hUpdatePreview: Double
+	
 
 	init(vm: VirtualMachine, hUpdatePreview: Double = 10.0) {
 		self.vm = vm
@@ -70,3 +71,4 @@ class PreviewViewModel: ObservableObject {
 		}
 	}
 }
+*/

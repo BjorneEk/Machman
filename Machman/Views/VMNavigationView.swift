@@ -100,10 +100,12 @@ struct VMNavigationView: View {
 			}
 			.onChange(of: selection) {
 				print("Selected VM: \(selection?.config.name ?? "none")")
+				viewModel.select(vm: selection)
 				navigate = !navigate
 			}
 			Button(action:{
 				selection = viewModel.addNewVM()
+				viewModel.select(vm: selection)
 			}) {
 				HStack {
 					Image(systemName: "plus")
@@ -114,15 +116,15 @@ struct VMNavigationView: View {
 			.padding()
 		} detail: {
 			// Detail View
-			if let selected = selection {
-				MainVMView(viewModel: viewModel, selectedItem: selected)
+			//if let selected = selection {
+				MainVMView(viewModel: viewModel)
 					.onAppear {print("---Selected VM: \(selection?.config.name ?? "none")")}
 					.id(navigate)
-			} else {
+			/*} else {
 				Text("Select a VM")
 					.font(.title)
 					.foregroundColor(.secondary)
-			}
+			}*/
 		}
 	}
 	

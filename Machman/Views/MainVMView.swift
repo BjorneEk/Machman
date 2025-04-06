@@ -6,162 +6,114 @@
 //
 
 import SwiftUI
-struct EditableText: View {
-	@Binding var text: String
-	let onSubmit: () -> Void
-	let onChange: (String) -> Void
 
-
-	@State private var isEditing = false
-	@FocusState private var isFocused: Bool
-
-	init(
-		_ text: Binding<String>,
-		onSubmit: @escaping () -> Void = { },
-		onChange: @escaping (String) -> Void = { _ in }
-	) {
-		self._text = text
-		self.onSubmit = onSubmit
-		self.onChange = onChange
-
-
-	}
-
-
-	var body: some View {
-		Group {
-			if isEditing {
-				TextField("", text: $text, onCommit: {
-					isEditing = false
-					onSubmit()
-				})
-				//.textFieldStyle(.roundedBorder)
-				.focused($isFocused)
-
-				.frame(maxWidth: 200)
-				.onAppear {
-					DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-						isFocused = true
-					}
-				}
-				.onChange(of: text) {
-					onChange(text)
-				}
-			} else {
-				Text(text)
-					.help("double click to edit")
-					.onTapGesture(count: 2) {
-						isEditing = true
-					}
-			}
-		}
-	}
-}
 
 struct MainVMView: View {
 	@StateObject private var viewModel: VMListViewModel
-	@StateObject var previewViewModel: PreviewViewModel
+	//@StateObject var previewViewModel: PreviewViewModel
 	@State private var previewWidth: CGFloat = 0
+	//@State private var vm: VirtualMachine
+	
+	
 
-	@State private var vm: VirtualMachine
-
-	@State private var vmName: String
-
-
-	init(viewModel: @autoclosure @escaping () -> VMListViewModel = VMListViewModel(),
-		 selectedItem: VirtualMachine) {
+	init(viewModel: @autoclosure @escaping () -> VMListViewModel = VMListViewModel()) {
 		_viewModel = StateObject(wrappedValue: viewModel())
-		vm = selectedItem
-		vmName = selectedItem.config.name
-		_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: selectedItem))
+		//vm = selectedItem
+		//vmName = selectedItem.config.name
+		//_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: selectedItem))
 
 	}
 	init() {
 		let a  = VMListViewModel()
 		_viewModel = StateObject(wrappedValue: a)
-		let b = a.vmList().first!
-		vm = b
-		vmName = b.config.name
-		_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: b))
+		//let b = a.vmList().first!
+		//vm = b
+		//vmName = b.config.name
+		//_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: b))
 	}
 
 	var body: some View {
-		VStack {
-			HStack {
-				PreviewView(viewModel: previewViewModel)
-					.frame(minWidth: 170)
-				Spacer()
-				ConfigVMDisksView(vm: vm)
-					.frame(minWidth: 200)
-					.frame(minHeight: 250)
+		if let vm = viewModel.selected {
+			VStack {
+				HStack {
+					PreviewView(viewModel: viewModel)
+						.frame(minWidth: 170)
+					Spacer()
+					ConfigVMDisksView(vm: vm)
+						.frame(minWidth: 200)
+						.frame(minHeight: 250)
+				}
+				.padding(.vertical, 0)
+				Divider()
+				HStack {
+					ConfigVMView(vm: vm)
+						.frame(width: previewWidth)
+					ConfigVMHostMountsView(vm: vm)
+						.frame(minWidth: 200)
+				}
 			}
-			.padding(.vertical, 0)
-			Divider()
-			HStack {
-				ConfigVMView(vm: vm)
-					.frame(width: previewWidth)
-				ConfigVMHostMountsView(vm: vm)
-					.frame(minWidth: 200)
+			.onPreferenceChange(PreviewWidthKey.self) { width in
+				previewWidth = width
 			}
-		}
-		.onPreferenceChange(PreviewWidthKey.self) { width in
-			previewWidth = width
-		}
-		.toolbar {
-			ToolbarItem(placement: .principal) {
-				EditableText($vmName)
-					.font(.largeTitle)
+			.toolbar {
+				ToolbarItem(placement: .principal) {
+					EditableText($viewModel.vmName)
+						.font(.largeTitle)
 					//.font(.system(size: 25, weight: .medium, design: .default))
-					.onSubmit {
-						DispatchQueue.main.async {
-							if viewModel.hasVM(vmName) {
-								vm.log(error: "A VM named '\(vmName)' already exists.")
-								vmName = vm.config.name
-							}
-							if VMListViewModel.confirmDialog(
-								message: "Change VM name",
-								informativeText: "Are you shure you want to change the name of: '\(self.vm.config.name)' to '\(vmName)'") {
-								do {
-									let old = self.vm.config.name
-									try self.vm.config.rename(to: vmName)
-									vmName = vm.config.name
-									if let keyToRemove = viewModel.vmMap.first(where: { $0.key == old })?.key {
-										viewModel.vmMap.removeValue(forKey: keyToRemove)
-									}
-									viewModel.vmMap[old] = nil
-									viewModel.vmMap[vmName] = vm
-									vm.log(message: "Renamed \(old) to \(self.vm.config.name)")
-								} catch {
-									vm.log(error: "Failed to rename VM: \(error.localizedDescription)")
+						.onSubmit {
+							DispatchQueue.main.async {
+								if viewModel.hasVM(viewModel.vmName) {
+									vm.log(error: "A VM named '\(viewModel.vmName)' already exists.")
+									viewModel.vmName = vm.config.name
 								}
+								if VMListViewModel.confirmDialog(
+									message: "Change VM name",
+									informativeText: "Are you shure you want to change the name of: '\(vm.config.name)' to '\(viewModel.vmName)'") {
+									do {
+										let old = vm.config.name
+										try vm.config.rename(to: viewModel.vmName)
+										viewModel.vmName = vm.config.name
+										if let keyToRemove = viewModel.vmMap.first(where: { $0.key == old })?.key {
+											viewModel.vmMap.removeValue(forKey: keyToRemove)
+										}
+										viewModel.vmMap[old] = nil
+										viewModel.vmMap[viewModel.vmName] = vm
+										vm.log(message: "Renamed \(old) to \(vm.config.name)")
+									} catch {
+										vm.log(error: "Failed to rename VM: \(error.localizedDescription)")
+									}
+								}
+								viewModel.vmName = vm.config.name
 							}
-							vmName = vm.config.name
 						}
+				}
+				ToolbarItem {
+					Button(action: {
+						viewModel.run(c: vm.config)
+					}) {
+						Label(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
 					}
-			}
-			ToolbarItem {
-				Button(action: {
-					viewModel.run(c: vm.config)
-				}) {
-					Label(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
+					.help(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)")
 				}
-				.help(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)")
-			}
-			ToolbarItem {
-				Button(action: {
-					viewModel.delete(vm: vm)
-					vm.log(message: "deleted \(vm.config.name)")
-				}) {
-					Label("Delete", systemImage: "trash")
+				ToolbarItem {
+					Button(action: {
+						viewModel.delete(vm: vm)
+						vm.log(message: "deleted \(vm.config.name)")
+					}) {
+						Label("Delete", systemImage: "trash")
+					}
+					.help("delete \(vm.config.name)")
 				}
-				.help("delete \(vm.config.name)")
 			}
+			.padding()
+			.background(FocusAndTopmostTracker { focused in
+				self.viewModel.onFocusEvent(focused: focused)
+			})
+		} else {
+			Text("Select a VM")
+				.font(.title)
+				.foregroundColor(.secondary)
 		}
-		.padding()
-		.background(FocusAndTopmostTracker { focused in
-			self.previewViewModel.onFocusEvent(focused: focused)
-		})
-
 	}
 }
 struct FocusAndTopmostTracker: NSViewRepresentable {

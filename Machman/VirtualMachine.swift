@@ -204,9 +204,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 				let frameGrabber = FrameGrabber { image in
 					if let image = image {
 						completion(image)
-						print("here")
 					} else {
-						print("capture fail")
 						completion(VirtualMachine.blackImage(size: NSSize(width: 300, height: 200)))
 					}
 				}
@@ -292,9 +290,5 @@ class FrameGrabber: NSObject, SCStreamOutput {
 		nsImage.addRepresentation(rep)
 
 		callback(nsImage)
-
-		//Task {
-		//	try? await stream.stopCapture()
-		//}
 	}
 }

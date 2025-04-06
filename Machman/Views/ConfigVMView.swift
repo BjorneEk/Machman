@@ -143,6 +143,16 @@ struct ConfigVMView: View {
 					Spacer()
 				}
 				.padding(2)
+				if let lastUse = vm.config.lastRan {
+					HStack {
+						Text("last use:")
+							.fontWeight(.bold)
+							.font(.title2)
+						Text("\(lastUse)")
+						Spacer()
+					}
+					.padding(2)
+				}
 				HStack {
 					Text("created:")
 						//.padding(.trailing, 2)

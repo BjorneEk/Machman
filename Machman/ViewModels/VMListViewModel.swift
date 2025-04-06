@@ -41,8 +41,16 @@ enum RunBtnState: String {
 }
 
 class VMListViewModel: ObservableObject {
-	@Published var vmMap: [String: VirtualMachine] = [:]
-	@State var log: [VirtualMachineLog] = []
+	@Published var		vmMap: [String: VirtualMachine] = [:]
+	@State var			log: [VirtualMachineLog] = []
+
+	@Published private var	previewImage: NSImage?
+	@State private var		timer: Timer?
+	@Published private var	isFocused = true
+	@State private var		hUpdatePreview: Double = 4.0
+	@Published var				selected: VirtualMachine? = nil
+	@Published var				vmName: String = ""
+
 
 	init () {
 		let folderURL = URL(fileURLWithPath: machmanVMDir)
@@ -81,6 +89,72 @@ class VMListViewModel: ObservableObject {
 		self.log.append(.warning(warning))
 	}
 
+	func startTimer() {
+		//stopTimer()
+		DispatchQueue.main.async {
+			if self.timer != nil { return }
+			if let vm = self.selected {
+				if vm.config.state == .running && self.timer?.isValid ?? true {
+					print("timer started: \(Foundation.Date())")
+					self.timer = Timer.scheduledTimer(withTimeInterval: self.hUpdatePreview, repeats: true) { [weak self] _ in
+						if self?.isFocused ?? false {
+							self?.updatePreview()
+						} //else {
+						//self.stopTimer()
+						//}
+					}
+				}
+			}
+		}
+	}
+	func preview() -> NSImage? {
+		return (self.previewImage ?? self.selected?.previewImage)
+	}
+	func stopTimer() {
+		DispatchQueue.main.async {
+			print("timer stopped: \(Foundation.Date())")
+			self.timer?.invalidate()
+			self.timer = nil
+		}
+	}
+
+	private func updatePreview() {
+		DispatchQueue.main.async {
+			if let vm = self.selected {
+				if vm.config.state == .running && self.isFocused {
+					print("updated preview: \(self.selected?.config.name ?? "unkonwn") (\(Foundation.Date()))")
+					vm.captureWindowImage { image in
+						self.previewImage = image
+						vm.updatePreview(img: image)
+					}
+				}
+			}
+		}
+	}
+
+	func isLoading() -> Bool {
+		if let vm = self.selected {
+			return vm.config.state == .running && self.previewImage == nil
+		}
+		return false
+	}
+
+	func onFocusEvent(focused: Bool) {
+
+		if let vm = self.selected {
+			let change = focused != self.isFocused
+			self.isFocused = focused
+			if self.isFocused && vm.config.state == .running {
+				if change {
+					print("from onFocusEvent")
+					self.updatePreview()
+				}
+				self.startTimer()
+			} else {
+				self.stopTimer()
+			}
+		}
+	}
 
 	func vmList() -> [VirtualMachine] {
 		return vmMap.map {
@@ -102,6 +176,13 @@ class VMListViewModel: ObservableObject {
 		return vmMap[name] != nil
 	}
 
+	func select(vm: VirtualMachine?) {
+		self.selected = vm
+		self.vmName = vm?.config.name ?? ""
+		self.previewImage = vm?.previewImage
+		//stopTimer()
+	}
+
 	func addVM(vmConfig: VMConfig) {
 		vmMap[vmConfig.name] = VirtualMachine(config: vmConfig)
 	}
@@ -109,6 +190,7 @@ class VMListViewModel: ObservableObject {
 
 	}
 	private func _run(c: VMConfig, iso: URL? = nil) {
+		stopTimer()
 		let t = vmMap[c.name]
 		if let vm = t {
 			switch vm.config.state {
@@ -145,7 +227,7 @@ class VMListViewModel: ObservableObject {
 	}
 
 	func delete(vm: VirtualMachine) {
-
+		stopTimer()
 		if !VMListViewModel.confirmDialog(
 			message: "Delete \(vm.config.name)?",
 			informativeText: "Are you sure you want to delete \(vm.config.name)? This action cannot be undone.") {
@@ -159,6 +241,7 @@ class VMListViewModel: ObservableObject {
 		} catch {
 			log(error: "Failed to delete \(vm.config.name)")
 		}
+		self.selected = nil
 		forceUpdate()
 	}
 	func addNewVM() -> VirtualMachine {

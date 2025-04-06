@@ -16,9 +16,9 @@ struct PreviewWidthKey: PreferenceKey {
 
 struct PreviewView: View {
 
-	@ObservedObject private var viewModel: PreviewViewModel
+	@ObservedObject private var viewModel: VMListViewModel
 
-	init(viewModel: PreviewViewModel) {
+	init(viewModel: VMListViewModel) {
 		self.viewModel = viewModel
 	}
 

@@ -25,6 +25,7 @@ struct MachmanApp: App {
 				ForEach(viewModel.vmList(), id: \.id) { vm in
 					Button(vm.config.name) {
 						selection = vm
+						viewModel.select(vm: selection)
 					}
 					.help("show \(vm.config.name)")
 				}
@@ -35,6 +36,7 @@ struct MachmanApp: App {
 						Button(action: {
 							viewModel.run(c: vm.config)
 							selection = vm
+							viewModel.select(vm: selection)
 						}) {
 							Label("\(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
 						}
@@ -47,6 +49,7 @@ struct MachmanApp: App {
 						Button(action: {
 							viewModel.run(c: vm.config)
 							selection = vm
+							viewModel.select(vm: selection)
 						}) {
 							Label("\(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
 						}
@@ -56,6 +59,7 @@ struct MachmanApp: App {
 			CommandGroup(before: CommandGroupPlacement.newItem) {
 				Button(action: {
 					selection = viewModel.addNewVM()
+					viewModel.select(vm: selection)
 				}) {
 					Label("New VM", systemImage: "plus")
 				}
