@@ -45,16 +45,24 @@ class VMListViewModel: ObservableObject {
 	@State var			log: [VirtualMachineLog] = []
 
 	@Published private var	previewImage: NSImage?
-	@State private var		timer: Timer?
+
 	@Published private var	isFocused = true
-	@State private var		hUpdatePreview: Double = 4.0
+	private let				hUpdatePreview: Double = 4
 	@Published var				selected: VirtualMachine? = nil
 	@Published var				vmName: String = ""
 
+	private lazy var previewUpdateManager: PeriodicTaskManager<NSImage?> = {
+		return PeriodicTaskManager(
+			interval: hUpdatePreview,
+			task: self.getUpdatedPreviewImage,
+			update: self.setUpdatedPreviewImage
+		)
+	}()
 
 	init () {
 		let folderURL = URL(fileURLWithPath: machmanVMDir)
 		let fileManager = FileManager.default
+
 
 		do {
 			let contents = try fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
@@ -71,6 +79,7 @@ class VMListViewModel: ObservableObject {
 		} catch {
 			log(error: "Error reading machines: \(error)")
 		}
+		self.previewUpdateManager.debug = true
 	}
 
 	func log(_ e: VirtualMachineLog) {
@@ -89,71 +98,45 @@ class VMListViewModel: ObservableObject {
 		self.log.append(.warning(warning))
 	}
 
-	func startTimer() {
-		//stopTimer()
-		DispatchQueue.main.async {
-			if self.timer != nil { return }
-			if let vm = self.selected {
-				if vm.config.state == .running && self.timer?.isValid ?? true {
-					print("timer started: \(Foundation.Date())")
-					self.timer = Timer.scheduledTimer(withTimeInterval: self.hUpdatePreview, repeats: true) { [weak self] _ in
-						if self?.isFocused ?? false {
-							self?.updatePreview()
-						} //else {
-						//self.stopTimer()
-						//}
-					}
-				}
-			}
+	private func getUpdatedPreviewImage() -> NSImage? {
+		guard let vm = self.selected else { return nil }
+		let semaphore = DispatchSemaphore(value: 0)
+		var result: NSImage? = nil
+
+		vm.captureWindowImage { image in
+			result = image
+			semaphore.signal()
 		}
+
+		semaphore.wait()
+		return result
 	}
+
+	private func setUpdatedPreviewImage(img: NSImage?) {
+		guard let vm = self.selected else { return }
+		guard let img = img else { return }
+		self.previewImage = img
+		vm.updatePreview(img: img)
+	}
+
 	func preview() -> NSImage? {
 		return (self.previewImage ?? self.selected?.previewImage)
 	}
-	func stopTimer() {
-		DispatchQueue.main.async {
-			print("timer stopped: \(Foundation.Date())")
-			self.timer?.invalidate()
-			self.timer = nil
-		}
-	}
-
-	private func updatePreview() {
-		DispatchQueue.main.async {
-			if let vm = self.selected {
-				if vm.config.state == .running && self.isFocused {
-					print("updated preview: \(self.selected?.config.name ?? "unkonwn") (\(Foundation.Date()))")
-					vm.captureWindowImage { image in
-						self.previewImage = image
-						vm.updatePreview(img: image)
-					}
-				}
-			}
-		}
-	}
 
 	func isLoading() -> Bool {
-		if let vm = self.selected {
-			return vm.config.state == .running && self.previewImage == nil
-		}
-		return false
+		guard let vm = self.selected else { return false }
+		return vm.config.state == .running && self.previewImage == nil
 	}
 
 	func onFocusEvent(focused: Bool) {
-
-		if let vm = self.selected {
-			let change = focused != self.isFocused
-			self.isFocused = focused
-			if self.isFocused && vm.config.state == .running {
-				if change {
-					print("from onFocusEvent")
-					self.updatePreview()
-				}
-				self.startTimer()
-			} else {
-				self.stopTimer()
-			}
+		print("focus envent, focused: \(focused)")
+		guard let vm = self.selected else { return }
+		self.isFocused = focused
+		guard self.isFocused && vm.config.state == .running else {
+			self.previewUpdateManager.stop()
+			return
 		}
+		self.previewUpdateManager.start()
 	}
 
 	func vmList() -> [VirtualMachine] {
@@ -177,10 +160,10 @@ class VMListViewModel: ObservableObject {
 	}
 
 	func select(vm: VirtualMachine?) {
+		self.previewUpdateManager.stop()
 		self.selected = vm
 		self.vmName = vm?.config.name ?? ""
 		self.previewImage = vm?.previewImage
-		//stopTimer()
 	}
 
 	func addVM(vmConfig: VMConfig) {
@@ -190,22 +173,22 @@ class VMListViewModel: ObservableObject {
 
 	}
 	private func _run(c: VMConfig, iso: URL? = nil) {
-		stopTimer()
-		let t = vmMap[c.name]
-		if let vm = t {
-			switch vm.config.state {
-				case .stopped:
-					do {
-						try vm.startVMWindow(viewModel: self, isoPath: iso)
-					} catch {
-						log(error: "(\(vm.config.name)) \(error)")
-						try? vm.config.stop()
-					}
-				case .running:
-					vm.stopVM()
-			}
-		} else {
+		self.previewUpdateManager.stop()
+
+		guard let vm = vmMap[c.name] else {
 			log(error: "no VM named \(c.name)")
+			return
+		}
+		switch vm.config.state {
+			case .stopped:
+				do {
+					try vm.startVMWindow(viewModel: self, isoPath: iso)
+				} catch {
+					log(error: "(\(vm.config.name)) \(error)")
+					try? vm.config.stop()
+				}
+			case .running:
+				vm.stopVM()
 		}
 		forceUpdate()
 	}
@@ -227,7 +210,7 @@ class VMListViewModel: ObservableObject {
 	}
 
 	func delete(vm: VirtualMachine) {
-		stopTimer()
+		self.previewUpdateManager.stop()
 		if !VMListViewModel.confirmDialog(
 			message: "Delete \(vm.config.name)?",
 			informativeText: "Are you sure you want to delete \(vm.config.name)? This action cannot be undone.") {
@@ -244,6 +227,7 @@ class VMListViewModel: ObservableObject {
 		self.selected = nil
 		forceUpdate()
 	}
+
 	func addNewVM() -> VirtualMachine {
 		var name = "new-VM"
 		var nbr: Int = 1
@@ -258,21 +242,5 @@ class VMListViewModel: ObservableObject {
 			cpuCount: VMConfig.computeMaxCPUCount()))
 		vmMap[name] = new
 		return new
-	}
-	func build(c: VMConfig) {
-		let panel = NSOpenPanel()
-		panel.canChooseFiles = true
-		panel.canChooseDirectories = false
-		panel.allowsMultipleSelection = false
-		panel.allowedContentTypes = [.diskImage]
-		panel.begin { response in
-			if response == .OK, let selectedURL = panel.url {
-				self.log(message: "Selected file: \(selectedURL.path)")
-				self.log(message:"Building \(c.name)")
-				self._run(c: c, iso: selectedURL)
-			} else {
-				self.log(error: "Build Failed for: \(c.name), No ISO file selected.")
-			}
-		}
 	}
 }

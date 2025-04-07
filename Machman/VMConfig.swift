@@ -66,7 +66,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.cpuCount = cpuCount
 		created = Foundation.Date()
 		try self.addNewStorageDisk(name: "disk", size: diskSize)
-		//createMainDiskImage(size: diskSize)
 		try saveVMConfig()
 	}
 
@@ -91,7 +90,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.lastRan = loadedConfig.lastRan
 		self.mountPoints = loadedConfig.mountPoints
 		self.disks = loadedConfig.disks
-		//self.addDisk(disk: .storage(URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)/disk.raw"), 0))
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -104,6 +102,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case mountPoints
 		case disks
 	}
+
 	func getDisks() -> [VMDisk] {
 		self.disks
 	}
@@ -144,7 +143,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		do {
 			let fileAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
 			if let fileSizeBytes = fileAttributes[.size] as? NSNumber {
-				//let sizeInGB = Double(truncating: fileSizeBytes) / 1_073_741_824 // 1024^3
 				return UInt64(Double(truncating: fileSizeBytes))
 			}
 		} catch {
@@ -204,17 +202,17 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	func stop() throws {
-		//if let window = window {
 		window?.close()
 		self.window = nil
-		//}
 		try updateState(state: .stopped)
 	}
+
 	public func addDisk(disk: VMDisk) {
 		disks.append(disk)
 		try! saveVMConfig()
 	}
-	// Load a VMConfig object from the given URL.
+
+
 	public func addIsoDisk(isoUrl: URL) throws {
 		addDisk(disk: .iso(isoUrl))
 	}
@@ -353,15 +351,13 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		let vmIdentifierPath = vmIdentifierPath()
 		let fileURL = URL(fileURLWithPath: vmIdentifierPath)
 
-		if let data = try? Data(contentsOf: fileURL), !data.isEmpty {
-			if let machineIdentifier = VZGenericMachineIdentifier(dataRepresentation: data) {
-				return machineIdentifier
-			} else {
-				fatalError("Failed to create the machine identifier: '\(vmIdentifierPath)'")
-			}
-		} else {
+		guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
 			return createVmIdentifier(vmIdentifierPath)
 		}
+		guard let machineIdentifier = VZGenericMachineIdentifier(dataRepresentation: data) else {
+			fatalError("Failed to create the machine identifier: '\(vmIdentifierPath)'")
+		}
+		return machineIdentifier
 	}
 
 	private func createEFIVariableStore(_ efiVarsPath: String) -> VZEFIVariableStore {

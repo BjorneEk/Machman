@@ -168,16 +168,16 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 	}
 
 	func captureWindowImage(completion: @escaping (NSImage) -> Void) {
-
 		Task {
 			do {
 				// 1. Get list of shareable windows
 				let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 				guard let window = self.config.window else {
-					print("no window")
+					print("captureWindowImage: no window")
 					completion(VirtualMachine.blackImage(size: NSSize(width: 300, height: 200)))
 					return
 				}
+
 				// 2. Match our window
 				let windowID: CGWindowID = await MainActor.run {
 					CGWindowID(window.windowNumber)
@@ -186,7 +186,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 				guard let targetWindow = content.windows.first(where: {
 					$0.windowID == windowID
 				}) else {
-					print("Window not found in shareable content")
+					print("captureWindowImage: Window not found in shareable content")
 					completion(VirtualMachine.blackImage(size: NSSize(width: 300, height: 200)))
 					return
 				}
@@ -213,7 +213,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 				try stream.addStreamOutput(frameGrabber, type: .screen, sampleHandlerQueue: .main)
 				try await stream.startCapture()
 			} catch {
-				print("Capture error: \(error)")
+				print("captureWindowImage: Capture error: \(error)")
 				completion(VirtualMachine.blackImage(size: NSSize(width: 300, height: 200)))
 			}
 		}
