@@ -1,0 +1,30 @@
+# Agent notes (local only)
+CLAUDE.md
+
+# macOS
+.DS_Store
+
+# Xcode — user-specific state
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+
+# Xcode — build output
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Misc
+*.swp
+*~.nib
+
+# Machman test/dev VM data (MACHMAN_DATA_DIR)
+machman_data/
