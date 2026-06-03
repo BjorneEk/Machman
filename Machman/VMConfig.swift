@@ -59,6 +59,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var disks: [VMDisk] = []
 	var mountPoints: [HostMountPoint] = []
 	var boot: BootConfig = .efi
+	var macAddress: String?
 	weak var window: NSWindow?
 
 	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
@@ -92,6 +93,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.mountPoints = loadedConfig.mountPoints
 		self.disks = loadedConfig.disks
 		self.boot = loadedConfig.boot
+		self.macAddress = loadedConfig.macAddress
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -104,6 +106,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case mountPoints
 		case disks
 		case boot
+		case macAddress
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
@@ -120,6 +123,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.mountPoints = try c.decodeIfPresent([HostMountPoint].self, forKey: .mountPoints) ?? []
 		self.disks = try c.decodeIfPresent([VMDisk].self, forKey: .disks) ?? []
 		self.boot = try c.decodeIfPresent(BootConfig.self, forKey: .boot) ?? .efi
+		self.macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -133,6 +137,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encode(mountPoints, forKey: .mountPoints)
 		try c.encode(disks, forKey: .disks)
 		try c.encode(boot, forKey: .boot)
+		try c.encodeIfPresent(macAddress, forKey: .macAddress)
 	}
 
 	func getDisks() -> [VMDisk] {
@@ -410,10 +415,20 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 
 
-	static func networkDeviceConfig() -> VZVirtioNetworkDeviceConfiguration {
+	func getOrCreateMACAddress() -> VZMACAddress {
+		if let s = macAddress, let mac = VZMACAddress(string: s) {
+			return mac
+		}
+		let mac = VZMACAddress.randomLocallyAdministered()
+		self.macAddress = mac.string
+		try? saveVMConfig()
+		return mac
+	}
+
+	func networkDeviceConfig() -> VZVirtioNetworkDeviceConfiguration {
 		let networkDevice = VZVirtioNetworkDeviceConfiguration()
-		let natAttachment = VZNATNetworkDeviceAttachment()
-		networkDevice.attachment = natAttachment
+		networkDevice.attachment = VZNATNetworkDeviceAttachment()
+		networkDevice.macAddress = getOrCreateMACAddress()
 		return networkDevice
 	}
 

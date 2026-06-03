@@ -90,7 +90,7 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 			return nil
 		}
 
-		vmConfig.networkDevices = [VMConfig.networkDeviceConfig()]
+		vmConfig.networkDevices = [config.networkDeviceConfig()]
 		vmConfig.graphicsDevices = [VMConfig.graphicsDeviceConfig()]
 		vmConfig.audioDevices = [VMConfig.inputAudioDeviceConfig(), VMConfig.outputAudioDeviceConfig()]
 		vmConfig.keyboards = [VZUSBKeyboardConfiguration()]
