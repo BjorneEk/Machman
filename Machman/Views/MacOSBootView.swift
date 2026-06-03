@@ -96,7 +96,7 @@ struct MacOSBootView: View {
 				Image(systemName: "icloud.and.arrow.down")
 					.font(.title2)
 			}
-			.help("Download and install the latest macOS supported by this Mac")
+			.help("Download and install the newest macOS this host can install")
 			Spacer()
 		}
 		.disabled(controller.vmIsRunning)

@@ -91,10 +91,66 @@ final class MacInstaller {
 
 	// MARK: - Restore image resolution
 
-	static func versionString(_ v: OperatingSystemVersion) -> String {
+	// Index of all VirtualMac restore images. Third-party INDEX only — the listed download
+	// urls point at Apple's own CDN (updates.cdn-apple.com).
+	struct RestoreImageIndex: Codable {
+		struct Firmware: Codable {
+			var version: String
+			var buildid: String
+			var url: String
+			var filesize: Int64
+		}
+		var firmwares: [Firmware]
+	}
+
+	static let restoreImageIndexURL =
+		URL(string: "https://api.ipsw.me/v4/device/VirtualMac2,1?type=ipsw")!
+
+	nonisolated static func versionString(_ v: OperatingSystemVersion) -> String {
 		v.patchVersion == 0
 			? "\(v.majorVersion).\(v.minorVersion)"
 			: "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+	}
+
+	nonisolated static func parseVersion(_ s: String) -> OperatingSystemVersion? {
+		let parts = s.split(separator: ".").map { Int($0) }
+		guard !parts.isEmpty, parts.allSatisfy({ $0 != nil }) else { return nil }
+		return OperatingSystemVersion(
+			majorVersion: parts[0] ?? 0,
+			minorVersion: parts.count > 1 ? (parts[1] ?? 0) : 0,
+			patchVersion: parts.count > 2 ? (parts[2] ?? 0) : 0)
+	}
+
+	nonisolated static func versionLess(
+		_ a: OperatingSystemVersion, _ b: OperatingSystemVersion) -> Bool {
+		if a.majorVersion != b.majorVersion { return a.majorVersion < b.majorVersion }
+		if a.minorVersion != b.minorVersion { return a.minorVersion < b.minorVersion }
+		return a.patchVersion < b.patchVersion
+	}
+
+	nonisolated static func isVersion(
+		_ a: OperatingSystemVersion, atMost b: OperatingSystemVersion) -> Bool {
+		!versionLess(b, a)
+	}
+
+	// Newest image installable on a host running `host` (conservative rule: guest <= host —
+	// a newer guest fails at install time with VZError 10006 installationRequiresUpdate).
+	nonisolated static func newestCompatible(
+		in index: RestoreImageIndex,
+		host: OperatingSystemVersion) -> RestoreImageIndex.Firmware? {
+		let candidates = index.firmwares
+			.compactMap { fw -> (RestoreImageIndex.Firmware, OperatingSystemVersion)? in
+				guard let v = parseVersion(fw.version), isVersion(v, atMost: host) else {
+					return nil
+				}
+				return (fw, v)
+			}
+		return candidates.max { versionLess($0.1, $1.1) }?.0
+	}
+
+	private static func fetchRestoreImageIndex() async throws -> RestoreImageIndex {
+		let (data, _) = try await URLSession.shared.data(from: restoreImageIndexURL)
+		return try JSONDecoder().decode(RestoreImageIndex.self, from: data)
 	}
 
 	// Returns the resolved image plus, for the remote path, the downloaded file (which the
@@ -107,17 +163,47 @@ final class MacInstaller {
 			onResolved?(Self.versionString(image.operatingSystemVersion), image.buildVersion)
 			return (image, nil)
 		case .latestSupported:
-			let remote = try await Self.fetchLatestSupported()
-			onResolved?(Self.versionString(remote.operatingSystemVersion), remote.buildVersion)
-			let localURL = URL(fileURLWithPath: config.configFilePath(file: "restore.ipsw"))
-			try await download(from: remote.url, to: localURL)
-			do {
-				let image = try await VZMacOSRestoreImage.image(from: localURL)
-				return (image, localURL)
-			} catch {
-				try? FileManager.default.removeItem(at: localURL)   // corrupt download
-				throw error
+			let host = ProcessInfo.processInfo.operatingSystemVersion
+			// Prefer the index: it lets us pick the newest version this HOST can install, not
+			// just the newest for the hardware (which fails late with VZError 10006).
+			if let index = try? await Self.fetchRestoreImageIndex(),
+				let firmware = Self.newestCompatible(in: index, host: host),
+				let remote = URL(string: firmware.url) {
+				onResolved?(firmware.version, firmware.buildid)
+				return try await downloadAndLoad(from: remote, expectedSize: firmware.filesize)
 			}
+			// Fallback (index unreachable): Apple's hardware-filtered "latest supported", with
+			// an early host-version check so a too-new image fails BEFORE the multi-GB download.
+			let remote = try await Self.fetchLatestSupported()
+			let version = remote.operatingSystemVersion
+			guard Self.isVersion(version, atMost: host) else {
+				throw VirtualMachineError.critical(
+					"macOS \(Self.versionString(version)) requires a newer host. "
+					+ "Update macOS or install an older version from a local .ipsw")
+			}
+			onResolved?(Self.versionString(version), remote.buildVersion)
+			return try await downloadAndLoad(from: remote.url)
+		}
+	}
+
+	private func downloadAndLoad(
+		from remote: URL, expectedSize: Int64? = nil) async throws -> (VZMacOSRestoreImage, URL) {
+		let localURL = URL(fileURLWithPath: config.configFilePath(file: "restore.ipsw"))
+		try await download(from: remote, to: localURL)
+		do {
+			if let expectedSize = expectedSize {
+				let attrs = try FileManager.default.attributesOfItem(atPath: localURL.path)
+				let size = (attrs[.size] as? NSNumber)?.int64Value ?? -1
+				guard size == expectedSize else {
+					throw VirtualMachineError.critical(
+						"Restore image download incomplete (\(size) of \(expectedSize) bytes)")
+				}
+			}
+			let image = try await VZMacOSRestoreImage.image(from: localURL)
+			return (image, localURL)
+		} catch {
+			try? FileManager.default.removeItem(at: localURL)   // corrupt/incomplete download
+			throw error
 		}
 	}
 
