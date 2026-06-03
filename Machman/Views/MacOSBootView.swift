@@ -72,9 +72,9 @@ struct MacOSBootView: View {
 		if let message = message {
 			HStack {
 				Text(message)
-					.font(.caption)
 					.foregroundColor(.red)
 					.opacity(0.8)
+					.textSelection(.enabled)
 				Spacer()
 			}
 		}

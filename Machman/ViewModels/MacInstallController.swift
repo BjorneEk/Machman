@@ -111,7 +111,8 @@ final class MacInstallController: ObservableObject {
 				} else {
 					self.phase = .failed(error.localizedDescription)
 				}
-				self.vm.log(error: "macOS install failed: \(error.localizedDescription)")
+				// Log the full error: NSError domain/code (e.g. VZErrorDomain 10006) matter.
+				self.vm.log(error: "macOS install failed: \(error)")
 			}
 			self.installer = nil
 			self.downloadProgress = nil

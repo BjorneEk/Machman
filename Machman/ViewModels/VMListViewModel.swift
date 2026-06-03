@@ -86,15 +86,20 @@ class VMListViewModel: ObservableObject {
 		self.log.append(e)
 	}
 
+	// Until a log-viewer UI exists, the console is the only place errors are guaranteed visible,
+	// so every log call also prints (matching VirtualMachine's log functions).
 	func log(error: String) {
+		print(error)
 		self.log.append(.error(error))
 	}
 
 	func log(message: String) {
+		print(message)
 		self.log.append(.message(message))
 	}
 
 	func log(warning: String) {
+		print(warning)
 		self.log.append(.warning(warning))
 	}
 
