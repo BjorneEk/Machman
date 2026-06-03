@@ -46,7 +46,7 @@ struct MainVMView: View {
 				.padding(.vertical, 0)
 				Divider()
 				HStack {
-					ConfigVMView(vm: vm)
+					ConfigVMView(vm: vm, viewModel: viewModel)
 						.frame(width: previewWidth)
 					ConfigVMHostMountsView(vm: vm)
 						.frame(minWidth: 200)

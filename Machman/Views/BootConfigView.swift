@@ -11,17 +11,22 @@ import SwiftUI
 struct BootConfigView: View {
 	@State private var vm: VirtualMachine
 	@State private var selection: BootTab
+	@StateObject private var installController: MacInstallController
 
-	init(vm: VirtualMachine) {
+	init(vm: VirtualMachine, viewModel: VMListViewModel? = nil) {
 		self.vm = vm
 		if case .macOS = vm.config.boot {
 			selection = .mac
 		} else {
 			selection = .def
 		}
+		_installController = StateObject(
+			wrappedValue: MacInstallController(vm: vm, listViewModel: viewModel))
 	}
 
-	private var defaultDisabled: Bool { vm.config.boot.isMacInstalled }
+	private var defaultDisabled: Bool {
+		vm.config.boot.isMacInstalled || installController.phase == .installed
+	}
 
 	var body: some View {
 		GroupBox {
@@ -34,23 +39,19 @@ struct BootConfigView: View {
 				case .def:
 					DefaultBootView(vm: vm)
 				case .mac:
-					// Placeholder; the install workflow view lands with the installer wiring.
-					HStack {
-						Image(systemName: "apple.logo")
-							.foregroundColor(.secondary)
-						Text("Install macOS")
-							.foregroundColor(.secondary)
-						Spacer()
-					}
-					.padding(4)
+					MacOSBootView(controller: installController)
 				}
 			}
 			.padding(2)
 		}
 		.padding(2)
-		.id(vm.config.name)
 		.onAppear {
 			if defaultDisabled {
+				selection = .mac
+			}
+		}
+		.onChange(of: installController.phase) { _, newPhase in
+			if newPhase == .installed {
 				selection = .mac
 			}
 		}
