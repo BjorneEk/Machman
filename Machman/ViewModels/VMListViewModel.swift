@@ -203,6 +203,7 @@ class VMListViewModel: ObservableObject {
 	func onStopped() {
 
 	}
+	@MainActor
 	private func _run(c: VMConfig, iso: URL? = nil) {
 		self.previewUpdateManager.stop()
 
@@ -212,6 +213,10 @@ class VMListViewModel: ObservableObject {
 		}
 		switch vm.config.state {
 			case .stopped:
+				if macInstallControllers[vm.config.name]?.isInstalling ?? false {
+					log(error: "(\(vm.config.name)) cannot start while macOS is installing")
+					return
+				}
 				do {
 					try vm.startVMWindow(viewModel: self, isoPath: iso)
 				} catch {
@@ -224,6 +229,7 @@ class VMListViewModel: ObservableObject {
 		forceUpdate()
 	}
 
+	@MainActor
 	func run(c: VMConfig) {
 		_run(c: c)
 	}

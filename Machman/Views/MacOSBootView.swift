@@ -79,6 +79,13 @@ struct MacOSBootView: View {
 			}
 		}
 		Divider()
+		if controller.vmIsRunning {
+			HStack {
+				Text("Stop the VM before installing macOS")
+					.foregroundColor(.secondary)
+				Spacer()
+			}
+		}
 		HStack {
 			Button(action: { pickIPSW() }) {
 				Image(systemName: "folder.fill.badge.plus")
@@ -92,6 +99,7 @@ struct MacOSBootView: View {
 			.help("Download and install the latest macOS supported by this Mac")
 			Spacer()
 		}
+		.disabled(controller.vmIsRunning)
 	}
 
 	@ViewBuilder

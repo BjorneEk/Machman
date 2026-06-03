@@ -94,7 +94,10 @@ struct MainVMView: View {
 					}) {
 						Label(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
 					}
-					.help(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)")
+					.disabled(viewModel.isInstalling(vm))
+					.help(viewModel.isInstalling(vm)
+						? "macOS is installing; wait for it to finish"
+						: (viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)"))
 				}
 				ToolbarItem {
 					Button(action: {
