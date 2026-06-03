@@ -58,6 +58,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var created: Foundation.Date
 	var disks: [VMDisk] = []
 	var mountPoints: [HostMountPoint] = []
+	var boot: BootConfig = .efi
 	weak var window: NSWindow?
 
 	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
@@ -90,6 +91,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.lastRan = loadedConfig.lastRan
 		self.mountPoints = loadedConfig.mountPoints
 		self.disks = loadedConfig.disks
+		self.boot = loadedConfig.boot
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -101,6 +103,36 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case created
 		case mountPoints
 		case disks
+		case boot
+	}
+
+	// Explicit Codable so new fields can default when absent from older config files on disk.
+	// Every persisted field is enumerated here AND in encode(to:) AND in init(name:)'s manual
+	// copy — keep all three in lockstep when adding a field.
+	required init(from decoder: any Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.name = try c.decode(String.self, forKey: .name)
+		self.memorySize = try c.decode(UInt64.self, forKey: .memorySize)
+		self.cpuCount = try c.decode(Int.self, forKey: .cpuCount)
+		self.created = try c.decode(Foundation.Date.self, forKey: .created)
+		self.state = try c.decodeIfPresent(VMState.self, forKey: .state) ?? .stopped
+		self.lastRan = try c.decodeIfPresent(Foundation.Date.self, forKey: .lastRan)
+		self.mountPoints = try c.decodeIfPresent([HostMountPoint].self, forKey: .mountPoints) ?? []
+		self.disks = try c.decodeIfPresent([VMDisk].self, forKey: .disks) ?? []
+		self.boot = try c.decodeIfPresent(BootConfig.self, forKey: .boot) ?? .efi
+	}
+
+	func encode(to encoder: any Encoder) throws {
+		var c = encoder.container(keyedBy: CodingKeys.self)
+		try c.encode(name, forKey: .name)
+		try c.encode(memorySize, forKey: .memorySize)
+		try c.encode(cpuCount, forKey: .cpuCount)
+		try c.encode(state, forKey: .state)
+		try c.encodeIfPresent(lastRan, forKey: .lastRan)
+		try c.encode(created, forKey: .created)
+		try c.encode(mountPoints, forKey: .mountPoints)
+		try c.encode(disks, forKey: .disks)
+		try c.encode(boot, forKey: .boot)
 	}
 
 	func getDisks() -> [VMDisk] {
