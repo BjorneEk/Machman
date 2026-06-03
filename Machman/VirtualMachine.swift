@@ -69,35 +69,12 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		self.previewImage = img
 	}
 	private func configureVM(isoPath: URL? = nil) -> VZVirtualMachineConfiguration? {
-		let vmConfig = VZVirtualMachineConfiguration()
-
-		vmConfig.cpuCount = config.getCPUCounte()
-		vmConfig.memorySize = config.getMemorySize()
-
 		do {
-			vmConfig.platform = try config.makePlatform()
-			vmConfig.bootLoader = try config.makeBootLoader()
-			vmConfig.storageDevices = try config.diskArray()
+			return try config.makeVZVirtualMachineConfiguration()
 		} catch {
-			log(error: "\(error)")
+			log(error: "Failed to create configuration for \(config.name): \(error)")
 			return nil
 		}
-
-		vmConfig.networkDevices = [config.networkDeviceConfig()]
-		vmConfig.graphicsDevices = config.graphicsDevices()
-		vmConfig.audioDevices = [VMConfig.inputAudioDeviceConfig(), VMConfig.outputAudioDeviceConfig()]
-		vmConfig.keyboards = config.keyboards()
-		vmConfig.pointingDevices = config.pointingDevices()
-		vmConfig.consoleDevices = [VMConfig.spiceAgentConsoleDeviceConfig()]
-		vmConfig.directorySharingDevices = [config.directoryShareDeviceConfig(mainTag: "host-share")]
-
-		do {
-			try vmConfig.validate()
-		} catch {
-			log(error: "Failed to validate configuration for: \(config.name): \(error)")
-			return nil
-		}
-		return vmConfig
 	}
 
 	public func startVMWindow(viewModel: VMListViewModel, isoPath: URL? = nil) throws {

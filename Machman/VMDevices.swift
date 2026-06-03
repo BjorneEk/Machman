@@ -22,7 +22,11 @@ extension VMConfig {
 			platform.machineIdentifier = getVmIdentifier()
 			return platform
 		case .macOS:
-			throw VirtualMachineError.critical("macOS platform not supported yet")
+			let platform = VZMacPlatformConfiguration()
+			platform.hardwareModel = try getMacHardwareModel()
+			platform.machineIdentifier = try getMacMachineIdentifier()
+			platform.auxiliaryStorage = try getMacAuxiliaryStorage()
+			return platform
 		}
 	}
 
@@ -43,22 +47,71 @@ extension VMConfig {
 			loader.commandLine = k.commandLine
 			return loader
 		case .macOS:
-			throw VirtualMachineError.critical("macOS boot not supported yet")
+			return VZMacOSBootLoader()
 		}
 	}
 
-	// Generic (virtio / USB) graphics + input for EFI/Linux. The macOS guest overrides these with
-	// Mac graphics / keyboard / trackpad — added when macOS boot lands.
+	// Generic (virtio / USB) graphics + input for EFI/Linux; Mac graphics / keyboard / trackpad
+	// for a macOS guest. The Mac trackpad is only recognized by macOS 13+ guests, so a USB pointer
+	// rides alongside it as a fallback (per Apple guidance).
 	func graphicsDevices() -> [VZGraphicsDeviceConfiguration] {
-		[VMConfig.graphicsDeviceConfig()]
+		switch boot {
+		case .efi, .linuxKernel:
+			return [VMConfig.graphicsDeviceConfig()]
+		case .macOS:
+			let graphics = VZMacGraphicsDeviceConfiguration()
+			let size = VMConfig.mainScreenSize(2560, 1440)
+			graphics.displays = [VZMacGraphicsDisplayConfiguration(
+				widthInPixels: size.width, heightInPixels: size.height, pixelsPerInch: 80)]
+			return [graphics]
+		}
 	}
 
 	func keyboards() -> [VZKeyboardConfiguration] {
-		[VZUSBKeyboardConfiguration()]
+		switch boot {
+		case .efi, .linuxKernel:
+			return [VZUSBKeyboardConfiguration()]
+		case .macOS:
+			return [VZMacKeyboardConfiguration()]
+		}
 	}
 
 	func pointingDevices() -> [VZPointingDeviceConfiguration] {
-		[VZUSBScreenCoordinatePointingDeviceConfiguration()]
+		switch boot {
+		case .efi, .linuxKernel:
+			return [VZUSBScreenCoordinatePointingDeviceConfiguration()]
+		case .macOS:
+			return [VZMacTrackpadConfiguration(), VZUSBScreenCoordinatePointingDeviceConfiguration()]
+		}
+	}
+
+	func consoleDevices() -> [VZConsoleDeviceConfiguration] {
+		switch boot {
+		case .efi, .linuxKernel:
+			return [VMConfig.spiceAgentConsoleDeviceConfig()]
+		case .macOS:
+			return []
+		}
+	}
+
+	// Assembles the full VZ configuration. Shared by the normal boot path (VirtualMachine) and the
+	// macOS installer so the device list lives in exactly one place.
+	func makeVZVirtualMachineConfiguration() throws -> VZVirtualMachineConfiguration {
+		let vmConfig = VZVirtualMachineConfiguration()
+		vmConfig.cpuCount = getCPUCounte()
+		vmConfig.memorySize = getMemorySize()
+		vmConfig.platform = try makePlatform()
+		vmConfig.bootLoader = try makeBootLoader()
+		vmConfig.storageDevices = try diskArray()
+		vmConfig.networkDevices = [networkDeviceConfig()]
+		vmConfig.graphicsDevices = graphicsDevices()
+		vmConfig.audioDevices = [VMConfig.inputAudioDeviceConfig(), VMConfig.outputAudioDeviceConfig()]
+		vmConfig.keyboards = keyboards()
+		vmConfig.pointingDevices = pointingDevices()
+		vmConfig.consoleDevices = consoleDevices()
+		vmConfig.directorySharingDevices = [directoryShareDeviceConfig(mainTag: "host-share")]
+		try vmConfig.validate()
+		return vmConfig
 	}
 
 	// MARK: - Device factories
