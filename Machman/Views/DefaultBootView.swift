@@ -70,6 +70,11 @@ struct DefaultBootView: View {
 						}
 					}
 				Spacer()
+				if kernelMissing {
+					Text(kernelPath.isEmpty ? "kernel image required" : "kernel image not found")
+						.foregroundColor(.red)
+						.opacity(0.8)
+				}
 			}
 			Divider()
 			VStack {
@@ -79,8 +84,6 @@ struct DefaultBootView: View {
 							.font(.title2)
 					}
 					.help("Choose a kernel image (e.g. vmlinuz)")
-					Image(systemName: "doc.badge.gearshape")
-						.foregroundColor(.secondary)
 					TextField("kernel image", text: $kernelPath)
 						.textFieldStyle(.roundedBorder)
 						.onSubmit { pushSettings() }
@@ -91,14 +94,13 @@ struct DefaultBootView: View {
 							.font(.title2)
 					}
 					.help("Choose an initial ramdisk (optional)")
-					Image(systemName: "archivebox.fill")
-						.foregroundColor(.secondary)
 					TextField("initramfs (optional)", text: $initrdPath)
 						.textFieldStyle(.roundedBorder)
 						.onSubmit { pushSettings() }
 				}
 				HStack {
 					Image(systemName: "terminal.fill")
+						.font(.title2)
 						.foregroundColor(.secondary)
 					TextField("", text: $commandLine)
 						.textFieldStyle(.roundedBorder)
@@ -112,15 +114,6 @@ struct DefaultBootView: View {
 			}
 			.disabled(!kernelEnabled)
 			.opacity(kernelEnabled ? 1 : 0.55)
-			if kernelMissing {
-				HStack {
-					Text(kernelPath.isEmpty ? "kernel image required" : "kernel image not found")
-						.font(.caption)
-						.foregroundColor(.red)
-						.opacity(0.8)
-					Spacer()
-				}
-			}
 		}
 		.padding(4)
 	}
