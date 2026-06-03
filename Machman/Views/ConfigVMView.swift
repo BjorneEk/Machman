@@ -18,9 +18,10 @@ struct ConfigVMView: View {
 		GroupBox {
 			VStack {
 				HardwareConfigView(vm: vm)
+				BootConfigView(vm: vm)
+				HistoryView(vm: vm)
+				Spacer()
 			}
-			HistoryView(vm: vm)
-			Spacer()
 		}
 	}
 }
