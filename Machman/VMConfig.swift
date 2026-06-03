@@ -67,6 +67,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.name = name
 		self.memorySize = memorySize
 		self.cpuCount = cpuCount
+		self.macAddress = VZMACAddress.randomLocallyAdministered().string
 		created = Foundation.Date()
 		try self.addNewStorageDisk(name: "disk", size: diskSize)
 		try saveVMConfig()
@@ -76,6 +77,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.name = name
 		self.memorySize = memorySize
 		self.cpuCount = cpuCount
+		self.macAddress = VZMACAddress.randomLocallyAdministered().string
 		self.created = Foundation.Date()
 		self.lastRan = nil
 		try saveVMConfig()
@@ -96,6 +98,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.boot = loadedConfig.boot
 		self.macAddress = loadedConfig.macAddress
 		self.kernelSettings = loadedConfig.kernelSettings
+		if self.macAddress == nil {
+			// One-time migration: configs predating the field get a stable MAC on first load.
+			self.macAddress = VZMACAddress.randomLocallyAdministered().string
+			try saveVMConfig()
+		}
 	}
 
 	private enum CodingKeys: String, CodingKey {

@@ -5,21 +5,34 @@ import Virtualization
 
 struct MACAddressTests {
 
-	@Test func macIsGeneratedOnceAndPersists() throws {
+	@Test func macIsGeneratedAtCreationAndStable() throws {
 		try VMTestDir.withRedirectedDir {
 			let name = "mac-vm"
 			try VMConfig.createNewVMDirectory(name: name)
 			let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
-			#expect(cfg.macAddress == nil)
+			let mac = try #require(cfg.macAddress)              // assigned at creation
+			#expect(VZMACAddress(string: mac) != nil)
+			#expect(cfg.getOrCreateMACAddress().string == mac)  // backstop returns the same one
 
-			let first = cfg.getOrCreateMACAddress()
-			#expect(cfg.macAddress == first.string)       // generated value is persisted in-model
-			let second = cfg.getOrCreateMACAddress()
-			#expect(second.string == first.string)        // stable across calls
+			let reloaded = try VMConfig(name: name)             // survives a save/load cycle
+			#expect(reloaded.macAddress == mac)
+		}
+	}
 
-			let reloaded = try VMConfig(name: name)        // and across a save/load cycle
-			#expect(reloaded.macAddress == first.string)
-			#expect(reloaded.getOrCreateMACAddress().string == first.string)
+	@Test func legacyConfigGainsMACOnLoad() throws {
+		try VMTestDir.withRedirectedDir {
+			let name = "legacy-mac-vm"
+			try VMConfig.createNewVMDirectory(name: name)
+			let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+			cfg.macAddress = nil                                // simulate a legacy config
+			try cfg.saveVMConfig()
+
+			let migrated = try VMConfig(name: name)
+			let mac = try #require(migrated.macAddress)         // migration assigned one
+			#expect(VZMACAddress(string: mac) != nil)
+
+			let again = try VMConfig(name: name)                // and persisted it
+			#expect(again.macAddress == mac)
 		}
 	}
 
