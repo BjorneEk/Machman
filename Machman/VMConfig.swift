@@ -425,57 +425,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return mac
 	}
 
-	func networkDeviceConfig() -> VZVirtioNetworkDeviceConfiguration {
-		let networkDevice = VZVirtioNetworkDeviceConfiguration()
-		networkDevice.attachment = VZNATNetworkDeviceAttachment()
-		networkDevice.macAddress = getOrCreateMACAddress()
-		return networkDevice
-	}
-
-	static func mainScreenSize(_ defaultWidth: Int, _ defaultHeight: Int) -> (width: Int, height: Int) {
-		var width = defaultWidth
-		var height = defaultHeight
-		if let mainScreen = NSScreen.main {
-			width = Int(mainScreen.frame.width)
-			height = Int(mainScreen.frame.height)
-		}
-		return (width: width, height: height)
-	}
-
-	static func graphicsDeviceConfig() -> VZVirtioGraphicsDeviceConfiguration {
-		let graphicsDevice = VZVirtioGraphicsDeviceConfiguration()
-		let size = mainScreenSize(2560, 1440)
-		graphicsDevice.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: size.width, heightInPixels: size.height)]
-		return graphicsDevice
-	}
-
-	static func inputAudioDeviceConfig() -> VZVirtioSoundDeviceConfiguration {
-		let inputAudioDevice = VZVirtioSoundDeviceConfiguration()
-		let inputStream = VZVirtioSoundDeviceInputStreamConfiguration()
-		inputStream.source = VZHostAudioInputStreamSource()
-		inputAudioDevice.streams = [inputStream]
-		return inputAudioDevice
-	}
-
-	static func outputAudioDeviceConfig() -> VZVirtioSoundDeviceConfiguration {
-		let outputAudioDevice = VZVirtioSoundDeviceConfiguration()
-		let outputStream = VZVirtioSoundDeviceOutputStreamConfiguration()
-		outputStream.sink = VZHostAudioOutputStreamSink()
-		outputAudioDevice.streams = [outputStream]
-		return outputAudioDevice
-	}
-
-	static func spiceAgentConsoleDeviceConfig() -> VZVirtioConsoleDeviceConfiguration {
-		let consoleDevice = VZVirtioConsoleDeviceConfiguration()
-
-		let spiceAgentPort = VZVirtioConsolePortConfiguration()
-		spiceAgentPort.name = VZSpiceAgentPortAttachment.spiceAgentPortName
-		spiceAgentPort.attachment = VZSpiceAgentPortAttachment()
-		consoleDevice.ports[0] = spiceAgentPort
-
-		return consoleDevice
-	}
-
 	func isoImageDeviceConfig(isoPath: URL) throws -> VZUSBMassStorageDeviceConfiguration {
 		guard let intallerDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: isoPath, readOnly: true) else {
 			throw VirtualMachineError.critical("Failed to create iso disk: '\(isoPath)' attachment for: \(name)")

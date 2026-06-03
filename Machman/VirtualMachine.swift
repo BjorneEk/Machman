@@ -74,16 +74,9 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		vmConfig.cpuCount = config.getCPUCounte()
 		vmConfig.memorySize = config.getMemorySize()
 
-		let platform = VZGenericPlatformConfiguration()
-		let bootloader = VZEFIBootLoader()
-
-		platform.machineIdentifier = config.getVmIdentifier()
-		bootloader.variableStore = config.getEFIVariableStore()
-
-		vmConfig.platform = platform
-		vmConfig.bootLoader = bootloader
-
 		do {
+			vmConfig.platform = try config.makePlatform()
+			vmConfig.bootLoader = try config.makeBootLoader()
 			vmConfig.storageDevices = try config.diskArray()
 		} catch {
 			log(error: "\(error)")
@@ -91,10 +84,10 @@ class VirtualMachine: NSObject, ObservableObject, VZVirtualMachineDelegate, Iden
 		}
 
 		vmConfig.networkDevices = [config.networkDeviceConfig()]
-		vmConfig.graphicsDevices = [VMConfig.graphicsDeviceConfig()]
+		vmConfig.graphicsDevices = config.graphicsDevices()
 		vmConfig.audioDevices = [VMConfig.inputAudioDeviceConfig(), VMConfig.outputAudioDeviceConfig()]
-		vmConfig.keyboards = [VZUSBKeyboardConfiguration()]
-		vmConfig.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
+		vmConfig.keyboards = config.keyboards()
+		vmConfig.pointingDevices = config.pointingDevices()
 		vmConfig.consoleDevices = [VMConfig.spiceAgentConsoleDeviceConfig()]
 		vmConfig.directorySharingDevices = [config.directoryShareDeviceConfig(mainTag: "host-share")]
 
