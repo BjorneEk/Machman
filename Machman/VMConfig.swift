@@ -60,6 +60,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var mountPoints: [HostMountPoint] = []
 	var boot: BootConfig = .efi
 	var macAddress: String?
+	var kernelSettings: LinuxKernelBoot?
 	weak var window: NSWindow?
 
 	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
@@ -94,6 +95,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.disks = loadedConfig.disks
 		self.boot = loadedConfig.boot
 		self.macAddress = loadedConfig.macAddress
+		self.kernelSettings = loadedConfig.kernelSettings
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -107,6 +109,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case disks
 		case boot
 		case macAddress
+		case kernelSettings
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
@@ -124,6 +127,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.disks = try c.decodeIfPresent([VMDisk].self, forKey: .disks) ?? []
 		self.boot = try c.decodeIfPresent(BootConfig.self, forKey: .boot) ?? .efi
 		self.macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
+		self.kernelSettings = try c.decodeIfPresent(LinuxKernelBoot.self, forKey: .kernelSettings)
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -138,6 +142,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encode(disks, forKey: .disks)
 		try c.encode(boot, forKey: .boot)
 		try c.encodeIfPresent(macAddress, forKey: .macAddress)
+		try c.encodeIfPresent(kernelSettings, forKey: .kernelSettings)
 	}
 
 	func getDisks() -> [VMDisk] {
@@ -327,7 +332,13 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	static func clampMemorySize(size: UInt64) -> UInt64 {
-		var realMemorySize = max(size, VZVirtualMachineConfiguration.minimumAllowedMemorySize)
+		return clampMemorySize(size: size, floor: 0)
+	}
+
+	// `floor` lets a boot mode raise the lower bound (macOS guests carry install-time minimums).
+	static func clampMemorySize(size: UInt64, floor: UInt64) -> UInt64 {
+		let lower = max(floor, VZVirtualMachineConfiguration.minimumAllowedMemorySize)
+		var realMemorySize = max(size, lower)
 		realMemorySize = min(realMemorySize, VZVirtualMachineConfiguration.maximumAllowedMemorySize)
 		return realMemorySize
 	}
@@ -361,6 +372,34 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	func setMemorySize(_ newValue: UInt64) throws {
 		self.memorySize = newValue
+		try saveVMConfig()
+	}
+
+	var isKernelBoot: Bool {
+		if case .linuxKernel = boot { return true }
+		return false
+	}
+
+	// The kernel-boot checkbox: on -> boot from the persisted kernel draft, off -> EFI.
+	// The draft (`kernelSettings`) survives toggling off so the fields keep their values.
+	func setKernelBoot(enabled: Bool) throws {
+		let settings = kernelSettings
+			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
+		let newBoot: BootConfig = enabled ? .linuxKernel(settings) : .efi
+		try BootConfig.validateTransition(from: boot, to: newBoot)
+		if enabled {
+			kernelSettings = settings
+		}
+		boot = newBoot
+		try saveVMConfig()
+	}
+
+	// Writes the draft and, when kernel boot is active, keeps the live payload in sync.
+	func updateKernelSettings(_ settings: LinuxKernelBoot) throws {
+		kernelSettings = settings
+		if isKernelBoot {
+			boot = .linuxKernel(settings)
+		}
 		try saveVMConfig()
 	}
 
