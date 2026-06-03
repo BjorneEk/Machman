@@ -36,7 +36,14 @@ final class MacInstaller {
 	func install(source: Source) async throws {
 		// Resolve (and for .latestSupported, download) before touching any VM state, so a
 		// cancelled or failed download leaves the original boot mode untouched.
-		let image = try await resolveRestoreImage(source)
+		let (image, downloaded) = try await resolveRestoreImage(source)
+		defer {
+			// A downloaded restore image is install input only — never leave it behind,
+			// whether the install succeeded or failed.
+			if let downloaded = downloaded {
+				try? FileManager.default.removeItem(at: downloaded)
+			}
+		}
 		guard let requirements = image.mostFeaturefulSupportedConfiguration else {
 			throw VirtualMachineError.critical("Restore image is not supported on this host")
 		}
@@ -90,18 +97,27 @@ final class MacInstaller {
 			: "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
 	}
 
-	private func resolveRestoreImage(_ source: Source) async throws -> VZMacOSRestoreImage {
+	// Returns the resolved image plus, for the remote path, the downloaded file (which the
+	// caller must remove once the install is over).
+	private func resolveRestoreImage(
+		_ source: Source) async throws -> (image: VZMacOSRestoreImage, downloaded: URL?) {
 		switch source {
 		case .localIPSW(let url):
 			let image = try await VZMacOSRestoreImage.image(from: url)
 			onResolved?(Self.versionString(image.operatingSystemVersion), image.buildVersion)
-			return image
+			return (image, nil)
 		case .latestSupported:
 			let remote = try await Self.fetchLatestSupported()
 			onResolved?(Self.versionString(remote.operatingSystemVersion), remote.buildVersion)
 			let localURL = URL(fileURLWithPath: config.configFilePath(file: "restore.ipsw"))
 			try await download(from: remote.url, to: localURL)
-			return try await VZMacOSRestoreImage.image(from: localURL)
+			do {
+				let image = try await VZMacOSRestoreImage.image(from: localURL)
+				return (image, localURL)
+			} catch {
+				try? FileManager.default.removeItem(at: localURL)   // corrupt download
+				throw error
+			}
 		}
 	}
 
@@ -141,6 +157,8 @@ final class MacInstaller {
 			onDownloadProgress?(task.progress)
 			task.resume()
 		}
+		// If the final move fails, don't leak the holding file (no-op after a successful move).
+		defer { try? FileManager.default.removeItem(at: holding) }
 		if FileManager.default.fileExists(atPath: local.path) {
 			try FileManager.default.removeItem(at: local)
 		}
