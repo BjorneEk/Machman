@@ -31,6 +31,8 @@ final class MacInstallController: ObservableObject {
 	private var installer: MacInstaller?
 	private var version = "macOS"
 
+	var isInstalling: Bool { installer != nil }
+
 	init(vm: VirtualMachine, listViewModel: VMListViewModel?) {
 		self.vm = vm
 		self.listViewModel = listViewModel

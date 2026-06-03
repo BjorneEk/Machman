@@ -78,6 +78,7 @@ struct MainVMView: View {
 										}
 										viewModel.vmMap[old] = nil
 										viewModel.vmMap[viewModel.vmName] = vm
+										viewModel.rekeyInstallController(from: old, to: vm.config.name)
 										vm.log(message: "Renamed \(old) to \(vm.config.name)")
 									} catch {
 										vm.log(error: "Failed to rename VM: \(error.localizedDescription)")

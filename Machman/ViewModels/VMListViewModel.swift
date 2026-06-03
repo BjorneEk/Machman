@@ -59,6 +59,32 @@ class VMListViewModel: ObservableObject {
 		)
 	}()
 
+	// Install controllers live here (not in a view) so a running install keeps its phase and
+	// live progress when the user navigates between VMs, and so a second install of the same
+	// VM can't be started from a fresh pane.
+	private var macInstallControllers: [String: MacInstallController] = [:]
+
+	@MainActor
+	func installController(for vm: VirtualMachine) -> MacInstallController {
+		if let existing = macInstallControllers[vm.config.name] {
+			return existing
+		}
+		let controller = MacInstallController(vm: vm, listViewModel: self)
+		macInstallControllers[vm.config.name] = controller
+		return controller
+	}
+
+	@MainActor
+	func isInstalling(_ vm: VirtualMachine) -> Bool {
+		macInstallControllers[vm.config.name]?.isInstalling ?? false
+	}
+
+	func rekeyInstallController(from old: String, to new: String) {
+		if let controller = macInstallControllers.removeValue(forKey: old) {
+			macInstallControllers[new] = controller
+		}
+	}
+
 	init () {
 		let folderURL = URL(fileURLWithPath: machmanVMDir)
 		let fileManager = FileManager.default
@@ -223,6 +249,7 @@ class VMListViewModel: ObservableObject {
 		}
 
 		vmMap[vm.config.name] = nil
+		macInstallControllers[vm.config.name] = nil
 
 		do {
 			try VMConfig.deleteVMDirectory(name: vm.config.name)

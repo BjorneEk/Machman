@@ -11,7 +11,9 @@ import SwiftUI
 struct BootConfigView: View {
 	@State private var vm: VirtualMachine
 	@State private var selection: BootTab
-	@StateObject private var installController: MacInstallController
+	// Owned by VMListViewModel's per-VM cache so a running install survives navigating away;
+	// the local fallback only serves viewModel-less contexts (previews).
+	@ObservedObject private var installController: MacInstallController
 
 	init(vm: VirtualMachine, viewModel: VMListViewModel? = nil) {
 		self.vm = vm
@@ -20,8 +22,8 @@ struct BootConfigView: View {
 		} else {
 			selection = .def
 		}
-		_installController = StateObject(
-			wrappedValue: MacInstallController(vm: vm, listViewModel: viewModel))
+		_installController = ObservedObject(wrappedValue: viewModel?.installController(for: vm)
+			?? MacInstallController(vm: vm, listViewModel: nil))
 	}
 
 	private var defaultDisabled: Bool {
