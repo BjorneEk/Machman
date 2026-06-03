@@ -2,7 +2,6 @@ import Testing
 import Foundation
 @testable import Machman
 
-@Suite(.serialized)
 struct BootConfigTests {
 
 	@Test func bootConfigCasesRoundTrip() throws {
@@ -41,22 +40,16 @@ struct BootConfigTests {
 
 	// Exercises the real saveVMConfig() -> init(name:) path (the manual-copy enumeration site).
 	@Test func savedBootSurvivesReload() throws {
-		let original = machmanVMDir
-		let tmp = NSTemporaryDirectory() + "machman-test-\(UUID().uuidString)"
-		machmanVMDir = tmp
-		defer {
-			machmanVMDir = original
-			try? FileManager.default.removeItem(atPath: tmp)
+		try VMTestDir.withRedirectedDir {
+			let name = "rt-vm"
+			try VMConfig.createNewVMDirectory(name: name)
+			let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+			cfg.boot = .linuxKernel(LinuxKernelBoot(kernelPath: "/vmlinuz",
+				initialRamdiskPath: nil, commandLine: "console=hvc0 root=/dev/vda1 rw"))
+			try cfg.saveVMConfig()
+
+			let reloaded = try VMConfig(name: name)
+			#expect(reloaded.boot == cfg.boot)
 		}
-
-		let name = "rt-vm"
-		try VMConfig.createNewVMDirectory(name: name)
-		let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
-		cfg.boot = .linuxKernel(LinuxKernelBoot(kernelPath: "/vmlinuz",
-			initialRamdiskPath: nil, commandLine: "console=hvc0 root=/dev/vda1 rw"))
-		try cfg.saveVMConfig()
-
-		let reloaded = try VMConfig(name: name)
-		#expect(reloaded.boot == cfg.boot)
 	}
 }
