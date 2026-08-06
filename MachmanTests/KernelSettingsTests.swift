@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import Machman_desktop
+@testable import MachmanCore
 
 struct KernelSettingsTests {
 

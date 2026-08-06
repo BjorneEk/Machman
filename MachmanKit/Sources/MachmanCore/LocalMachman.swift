@@ -14,16 +14,16 @@ import Virtualization
 import MachmanAPI
 
 @MainActor
-final class LocalMachman: MachmanControlling {
+public final class LocalMachman: MachmanControlling {
 	private let registry: VMRegistry
 
-	init(registry: VMRegistry) {
+	public init(registry: VMRegistry) {
 		self.registry = registry
 	}
 
 	// MARK: - Host
 
-	func hostCapabilities() async throws -> HostCapabilities {
+	public func hostCapabilities() async throws -> HostCapabilities {
 		var freeDiskBytes: UInt64 = 0
 		let url = URL(fileURLWithPath: machmanVMDir)
 		if let values = try? url.resourceValues(
@@ -40,29 +40,29 @@ final class LocalMachman: MachmanControlling {
 
 	// MARK: - VM lifecycle
 
-	func listVMs() async throws -> [VMInfo] {
+	public func listVMs() async throws -> [VMInfo] {
 		registry.list().map { info(for: $0) }
 	}
 
-	func vm(named name: String) async throws -> VMInfo {
+	public func vm(named name: String) async throws -> VMInfo {
 		info(for: try lookup(name))
 	}
 
-	func createVM() async throws -> VMInfo {
+	public func createVM() async throws -> VMInfo {
 		info(for: try registry.create())
 	}
 
-	func deleteVM(named name: String) async throws {
+	public func deleteVM(named name: String) async throws {
 		try registry.delete(try lookup(name))
 	}
 
-	func renameVM(named name: String, to newName: String) async throws {
+	public func renameVM(named name: String, to newName: String) async throws {
 		try registry.rename(try lookup(name), to: newName)
 	}
 
 	// MARK: - Configuration
 
-	func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
+	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
 		let vm = try lookup(name)
 		let floors = vm.config.boot.hardwareFloors
 		if let cpuCount = cpuCount {
@@ -76,7 +76,7 @@ final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	func addDisk(vm name: String, _ disk: NewDisk) async throws {
+	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
 		let vm = try lookup(name)
 		switch disk.type {
 		case .storage:
@@ -99,7 +99,7 @@ final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	func removeDisk(vm name: String, diskID: String) async throws {
+	public func removeDisk(vm name: String, diskID: String) async throws {
 		let vm = try lookup(name)
 		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
 			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
@@ -108,13 +108,13 @@ final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	func addMount(vm name: String, path: String, tag: String) async throws {
+	public func addMount(vm name: String, path: String, tag: String) async throws {
 		let vm = try lookup(name)
 		try vm.config.addMountPoint(HostMountPoint(path: path, tag: tag))
 		registry.events.emit(.listChanged)
 	}
 
-	func removeMount(vm name: String, mountID: String) async throws {
+	public func removeMount(vm name: String, mountID: String) async throws {
 		let vm = try lookup(name)
 		guard let mount = vm.config.mountPoints.first(where: { $0.id.uuidString == mountID }) else {
 			throw MachmanError(code: .notFound, message: "no mount '\(mountID)' on \(name)")
@@ -123,7 +123,7 @@ final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	func setKernelBoot(vm name: String, enabled: Bool) async throws {
+	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
 		let vm = try lookup(name)
 		do {
 			try vm.config.setKernelBoot(enabled: enabled)
@@ -135,7 +135,7 @@ final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
+	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		let vm = try lookup(name)
 		try vm.config.updateKernelSettings(LinuxKernelBoot(
 			kernelPath: settings.kernelPath,
@@ -146,19 +146,19 @@ final class LocalMachman: MachmanControlling {
 
 	// MARK: - Run / stop / console
 
-	func start(vm name: String, options: StartOptions) async throws {
+	public func start(vm name: String, options: StartOptions) async throws {
 		try await registry.start(try lookup(name), openConsole: options.openConsole)
 	}
 
-	func stop(vm name: String, mode: StopMode) async throws {
+	public func stop(vm name: String, mode: StopMode) async throws {
 		try await registry.stop(try lookup(name), mode: mode)
 	}
 
-	func openConsole(vm name: String) async throws {
+	public func openConsole(vm name: String) async throws {
 		registry.openConsole(try lookup(name))
 	}
 
-	func consoleInfo(vm name: String) async throws -> ConsoleInfo {
+	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
 		let vm = try lookup(name)
 		if case .macOS = vm.config.boot {
 			return ConsoleInfo(logPath: nil)
@@ -166,7 +166,7 @@ final class LocalMachman: MachmanControlling {
 		return ConsoleInfo(logPath: vm.config.consoleLogPath())
 	}
 
-	func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
+	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
 		let vm = try lookup(name)
 		guard vm.state.isRunning else { return nil }
 		let image = await registry.captureImage(name: name)
@@ -175,21 +175,21 @@ final class LocalMachman: MachmanControlling {
 
 	// MARK: - macOS install
 
-	func startMacInstall(vm name: String, source: InstallSource) async throws {
+	public func startMacInstall(vm name: String, source: InstallSource) async throws {
 		try registry.installSession(for: try lookup(name)).startInstall(source: source)
 	}
 
-	func cancelMacInstall(vm name: String) async throws {
+	public func cancelMacInstall(vm name: String) async throws {
 		registry.installSession(for: try lookup(name)).cancel()
 	}
 
-	func macInstallPhase(vm name: String) async throws -> InstallPhase {
+	public func macInstallPhase(vm name: String) async throws -> InstallPhase {
 		registry.installSession(for: try lookup(name)).phase
 	}
 
 	// MARK: - Events
 
-	func events() async -> AsyncStream<VMEvent> {
+	public func events() async -> AsyncStream<VMEvent> {
 		registry.events.stream()
 	}
 

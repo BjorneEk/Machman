@@ -14,7 +14,7 @@ import MachmanAPI
 // One managed VM: persisted config plus (when running) its live runtime. Class identity is the
 // UI selection identity; the registry guarantees one instance per VM.
 @MainActor
-final class VirtualMachine: NSObject, Identifiable {
+public final class VirtualMachine: NSObject, Identifiable {
 	let config: VMConfig
 	var runtime: VMRuntime?
 	var previewImage: NSImage?
@@ -26,7 +26,8 @@ final class VirtualMachine: NSObject, Identifiable {
 		super.init()
 	}
 
-	var state: VMState { runtime?.state ?? .stopped }
+	public var name: String { config.name }
+	public var state: VMState { runtime?.state ?? .stopped }
 
 	func updatePreview(img: NSImage) {
 		previewImage = img
@@ -48,7 +49,7 @@ final class VirtualMachine: NSObject, Identifiable {
 }
 
 @MainActor
-final class VMRegistry {
+public final class VMRegistry {
 	let events = EventBus()
 	let presenter = ConsolePresenter()
 	private(set) var vms: [String: VirtualMachine] = [:]
@@ -56,7 +57,7 @@ final class VMRegistry {
 	// when the user navigates away, and a second install of the same VM can't start.
 	private var installSessions: [String: InstallSession] = [:]
 
-	init() {
+	public init() {
 		presenter.stopHandler = { [weak self] name, mode in
 			guard let self = self, let vm = self.vms[name] else { return }
 			Task {
@@ -91,7 +92,7 @@ final class VMRegistry {
 		}
 	}
 
-	func list() -> [VirtualMachine] {
+	public func list() -> [VirtualMachine] {
 		vms.values.sorted {
 			$0.config.lastRan ?? .distantPast > $1.config.lastRan ?? .distantPast
 		}
@@ -130,7 +131,7 @@ final class VMRegistry {
 		}
 	}
 
-	func stop(_ vm: VirtualMachine, mode: StopMode) async throws {
+	public func stop(_ vm: VirtualMachine, mode: StopMode) async throws {
 		guard let runtime = vm.runtime else { return }
 		switch mode {
 		case .soft:

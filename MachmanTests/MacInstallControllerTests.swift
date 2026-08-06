@@ -1,5 +1,5 @@
 import Testing
-@testable import Machman_desktop
+@testable import MachmanCore
 import MachmanAPI
 
 struct InstallSessionPhaseTests {

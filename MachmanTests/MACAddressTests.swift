@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import Virtualization
-@testable import Machman_desktop
+@testable import MachmanCore
 
 struct MACAddressTests {
 

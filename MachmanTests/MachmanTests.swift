@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import Machman_desktop
+@testable import MachmanCore
 
 struct MachmanTests {
 

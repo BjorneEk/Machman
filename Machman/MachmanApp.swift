@@ -12,8 +12,7 @@
 import SwiftUI
 import Cocoa
 import MachmanAPI
-
-// machmanVMDir (the root directory for all VM data) lives in DataDir.swift.
+import MachmanCore
 
 @main
 struct MachmanApp: App {
@@ -104,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 		let alert = NSAlert()
 		alert.messageText = running.count == 1
-			? "\(running[0].config.name) is still running"
+			? "\(running[0].name) is still running"
 			: "\(running.count) VMs are still running"
 		alert.informativeText = "Quitting stops every running VM "
 			+ "(they live in this app until the daemon split)."

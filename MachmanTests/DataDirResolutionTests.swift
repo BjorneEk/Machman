@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import Machman_desktop
+@testable import MachmanCore
 
 // Resolution precedence for the VM data dir: env var > user default > ~/.machman.
 // Each test uses its own UserDefaults suite so parallel test execution can't interfere.

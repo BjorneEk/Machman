@@ -1,5 +1,5 @@
 import Foundation
-@testable import Machman_desktop
+@testable import MachmanCore
 
 // machmanVMDir is a shared global and Swift Testing runs suites in parallel, so any test that
 // redirects it must hold this lock for the whole redirect to avoid clobbering a parallel test.

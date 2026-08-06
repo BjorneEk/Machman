@@ -10,6 +10,8 @@
 		4F8936062D956DA600E2B811 /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F8936052D956DA600E2B811 /* Virtualization.framework */; };
 		AA10000000000000000000C1 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B1 /* MachmanAPI */; };
 		AA10000000000000000000C2 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B2 /* MachmanAPI */; };
+		AA10000000000000000000C3 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B3 /* MachmanCore */; };
+		AA10000000000000000000C4 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B4 /* MachmanCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,6 +63,7 @@
 			files = (
 				4F8936062D956DA600E2B811 /* Virtualization.framework in Frameworks */,
 				AA10000000000000000000C1 /* MachmanAPI in Frameworks */,
+				AA10000000000000000000C3 /* MachmanCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,6 +72,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA10000000000000000000C2 /* MachmanAPI in Frameworks */,
+				AA10000000000000000000C4 /* MachmanCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -132,6 +136,7 @@
 			name = "Machman-desktop";
 			packageProductDependencies = (
 				AA10000000000000000000B1 /* MachmanAPI */,
+				AA10000000000000000000B3 /* MachmanCore */,
 			);
 			productName = "Machman-desktop";
 			productReference = 4F8935D62D956D5000E2B811 /* Machman-desktop.app */;
@@ -156,6 +161,7 @@
 			name = MachmanTests;
 			packageProductDependencies = (
 				AA10000000000000000000B2 /* MachmanAPI */,
+				AA10000000000000000000B4 /* MachmanCore */,
 			);
 			productName = MachmanTests;
 			productReference = 4F8935E72D956D5100E2B811 /* MachmanTests.xctest */;
@@ -597,6 +603,14 @@
 		AA10000000000000000000B2 /* MachmanAPI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanAPI;
+		};
+		AA10000000000000000000B3 /* MachmanCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanCore;
+		};
+		AA10000000000000000000B4 /* MachmanCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

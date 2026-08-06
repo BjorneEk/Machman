@@ -13,10 +13,16 @@ let package = Package(
 	platforms: [.macOS(.v15)],
 	products: [
 		.library(name: "MachmanAPI", targets: ["MachmanAPI"]),
+		.library(name: "MachmanCore", targets: ["MachmanCore"]),
 	],
 	targets: [
 		.target(
 			name: "MachmanAPI",
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		.target(
+			name: "MachmanCore",
+			dependencies: ["MachmanAPI"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 	]
