@@ -1,36 +1,26 @@
 //
 //  DataDir.swift
-//  Machman
+//  MachmanCore
 //
-//  Where all VM data lives. Resolution order:
-//    1. MACHMAN_DATA_DIR environment variable (Xcode scheme, scripts, tests)
-//    2. UserDefaults key "MachmanDataDir" (per-bundle-id, machine-local; lets dev builds point
-//       at a worktree dir even when launched from Finder/Spotlight, where env vars don't apply)
-//    3. ~/.machman (the production default)
-//  The mutable global stays for now — tests swap it directly (VMTestSupport); phase 1 of the
-//  machmand refactor encapsulates it behind the core layer.
+//  The engine's view of the data dir. Resolution itself lives in MachmanAPI (MachmanPaths) so
+//  clients can find the daemon's socket without linking the engine; this file pins the resolved
+//  value into the mutable global the engine uses (tests swap it via VMTestSupport) and enforces
+//  the dev guard.
 //
 
 import Foundation
 import AppKit
+import MachmanAPI
 
 var machmanVMDir: String = {
-	let dir = resolveMachmanDataDir()
+	let dir = MachmanPaths.dataDir()
 	enforceDevDataDirGuard(resolved: dir)
 	return dir
 }()
 
-func resolveMachmanDataDir(
-	env: [String: String] = ProcessInfo.processInfo.environment,
-	defaults: UserDefaults = .standard
-) -> String {
-	if let dir = env["MACHMAN_DATA_DIR"], !dir.isEmpty {
-		return dir
-	}
-	if let dir = defaults.string(forKey: "MachmanDataDir"), !dir.isEmpty {
-		return dir
-	}
-	return NSHomeDirectory() + "/.machman"
+// The daemon's socket, derived from the LIVE global so redirected test dirs get their own.
+func machmanSocketPath() -> String {
+	MachmanPaths.socketPath(dataDir: machmanVMDir)
 }
 
 // TODO(cutover): remove this guard when Machmand takes over ~/.machman as the production

@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanAPI
 @testable import MachmanCore
 
 // Resolution precedence for the VM data dir: env var > user default > ~/.machman.
@@ -17,7 +18,7 @@ struct DataDirResolutionTests {
 	@Test func envOverrideWinsOverDefaults() {
 		let defaults = makeDefaults("machman-test-datadir-env", dataDir: "/tmp/from-defaults")
 		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-env") }
-		let dir = resolveMachmanDataDir(
+		let dir = MachmanPaths.dataDir(
 			env: ["MACHMAN_DATA_DIR": "/tmp/from-env"], defaults: defaults)
 		#expect(dir == "/tmp/from-env")
 	}
@@ -25,21 +26,21 @@ struct DataDirResolutionTests {
 	@Test func defaultsUsedWhenEnvAbsent() {
 		let defaults = makeDefaults("machman-test-datadir-defaults", dataDir: "/tmp/from-defaults")
 		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-defaults") }
-		let dir = resolveMachmanDataDir(env: [:], defaults: defaults)
+		let dir = MachmanPaths.dataDir(env: [:], defaults: defaults)
 		#expect(dir == "/tmp/from-defaults")
 	}
 
 	@Test func emptyValuesAreTreatedAsUnset() {
 		let defaults = makeDefaults("machman-test-datadir-empty", dataDir: "")
 		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-empty") }
-		let dir = resolveMachmanDataDir(env: ["MACHMAN_DATA_DIR": ""], defaults: defaults)
+		let dir = MachmanPaths.dataDir(env: ["MACHMAN_DATA_DIR": ""], defaults: defaults)
 		#expect(dir == NSHomeDirectory() + "/.machman")
 	}
 
 	@Test func fallsBackToHomeMachman() {
 		let defaults = makeDefaults("machman-test-datadir-fallback")
 		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-fallback") }
-		let dir = resolveMachmanDataDir(env: [:], defaults: defaults)
+		let dir = MachmanPaths.dataDir(env: [:], defaults: defaults)
 		#expect(dir == NSHomeDirectory() + "/.machman")
 	}
 
