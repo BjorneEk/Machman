@@ -8,11 +8,7 @@
 import SwiftUI
 import Cocoa
 
-// Root directory for all VM data. Override via the MACHMAN_DATA_DIR environment variable
-// (used by tests to redirect at a throwaway dir); defaults to ~/.machman.
-var machmanVMDir: String = ProcessInfo.processInfo.environment["MACHMAN_DATA_DIR"]
-	?? (NSHomeDirectory() + "/.machman")
-
+// machmanVMDir (the root directory for all VM data) lives in DataDir.swift.
 
 @main
 struct MachmanApp: App {
