@@ -141,3 +141,13 @@ public struct RPCEmpty: Codable, Equatable, Sendable {
 
 	private enum NeverKey: CodingKey {}
 }
+
+// An explicit JSON null result ("result":null) — synthesized Codable would omit the key.
+public struct JSONNull: Codable, Equatable, Sendable {
+	public init() {}
+	public init(from decoder: Decoder) throws {}
+	public func encode(to encoder: Encoder) throws {
+		var c = encoder.singleValueContainer()
+		try c.encodeNil()
+	}
+}
