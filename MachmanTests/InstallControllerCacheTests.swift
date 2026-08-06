@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import Machman
+@testable import Machman_desktop
 
 struct InstallControllerCacheTests {
 

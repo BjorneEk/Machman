@@ -16,19 +16,19 @@
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 4F8935D52D956D5000E2B811;
-			remoteInfo = Machman;
+			remoteInfo = "Machman-desktop";
 		};
 		4F8935F22D956D5100E2B811 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 4F8935D52D956D5000E2B811;
-			remoteInfo = Machman;
+			remoteInfo = "Machman-desktop";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		4F8935D62D956D5000E2B811 /* Machman.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Machman.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F8935D62D956D5000E2B811 /* Machman-desktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Machman-desktop.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935E72D956D5100E2B811 /* MachmanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8936052D956DA600E2B811 /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
@@ -92,7 +92,7 @@
 		4F8935D72D956D5000E2B811 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				4F8935D62D956D5000E2B811 /* Machman.app */,
+				4F8935D62D956D5000E2B811 /* Machman-desktop.app */,
 				4F8935E72D956D5100E2B811 /* MachmanTests.xctest */,
 				4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */,
 			);
@@ -110,9 +110,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		4F8935D52D956D5000E2B811 /* Machman */ = {
+		4F8935D52D956D5000E2B811 /* Machman-desktop */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4F8935FB2D956D5100E2B811 /* Build configuration list for PBXNativeTarget "Machman" */;
+			buildConfigurationList = 4F8935FB2D956D5100E2B811 /* Build configuration list for PBXNativeTarget "Machman-desktop" */;
 			buildPhases = (
 				4F8935D22D956D5000E2B811 /* Sources */,
 				4F8935D32D956D5000E2B811 /* Frameworks */,
@@ -125,11 +125,11 @@
 			fileSystemSynchronizedGroups = (
 				4F8935D82D956D5000E2B811 /* Machman */,
 			);
-			name = Machman;
+			name = "Machman-desktop";
 			packageProductDependencies = (
 			);
-			productName = Machman;
-			productReference = 4F8935D62D956D5000E2B811 /* Machman.app */;
+			productName = "Machman-desktop";
+			productReference = 4F8935D62D956D5000E2B811 /* Machman-desktop.app */;
 			productType = "com.apple.product-type.application";
 		};
 		4F8935E62D956D5100E2B811 /* MachmanTests */ = {
@@ -215,7 +215,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4F8935D52D956D5000E2B811 /* Machman */,
+				4F8935D52D956D5000E2B811 /* Machman-desktop */,
 				4F8935E62D956D5100E2B811 /* MachmanTests */,
 				4F8935F02D956D5100E2B811 /* MachmanUITests */,
 			);
@@ -273,12 +273,12 @@
 /* Begin PBXTargetDependency section */
 		4F8935E92D956D5100E2B811 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 4F8935D52D956D5000E2B811 /* Machman */;
+			target = 4F8935D52D956D5000E2B811 /* Machman-desktop */;
 			targetProxy = 4F8935E82D956D5100E2B811 /* PBXContainerItemProxy */;
 		};
 		4F8935F32D956D5100E2B811 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 4F8935D52D956D5000E2B811 /* Machman */;
+			target = 4F8935D52D956D5000E2B811 /* Machman-desktop */;
 			targetProxy = 4F8935F22D956D5100E2B811 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -417,7 +417,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Machman;
+				INFOPLIST_KEY_CFBundleDisplayName = "Machman-desktop";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -425,7 +425,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "Gustaf-Franzen.Machman";
+				PRODUCT_BUNDLE_IDENTIFIER = "Gustaf-Franzen.Machman-desktop";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -448,7 +448,7 @@
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Machman;
+				INFOPLIST_KEY_CFBundleDisplayName = "Machman-desktop";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -456,7 +456,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "Gustaf-Franzen.Machman";
+				PRODUCT_BUNDLE_IDENTIFIER = "Gustaf-Franzen.Machman-desktop";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -478,7 +478,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Machman.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Machman";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Machman-desktop.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Machman-desktop";
 			};
 			name = Debug;
 		};
@@ -496,7 +496,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Machman.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Machman";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Machman-desktop.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Machman-desktop";
 			};
 			name = Release;
 		};
@@ -512,7 +512,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Machman;
+				TEST_TARGET_NAME = "Machman-desktop";
 			};
 			name = Debug;
 		};
@@ -528,7 +528,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Machman;
+				TEST_TARGET_NAME = "Machman-desktop";
 			};
 			name = Release;
 		};
@@ -544,7 +544,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4F8935FB2D956D5100E2B811 /* Build configuration list for PBXNativeTarget "Machman" */ = {
+		4F8935FB2D956D5100E2B811 /* Build configuration list for PBXNativeTarget "Machman-desktop" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4F8935FC2D956D5100E2B811 /* Debug */,
