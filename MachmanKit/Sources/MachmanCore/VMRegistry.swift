@@ -56,8 +56,17 @@ public final class VMRegistry {
 	// Sessions live here (not in a view) so a running install keeps its phase and progress
 	// when the user navigates away, and a second install of the same VM can't start.
 	private var installSessions: [String: InstallSession] = [:]
+	// Non-nil in a vmhost process: this registry manages exactly that one VM.
+	private let restrictedName: String?
 
-	public init() {
+	public convenience init() {
+		self.init(only: nil)
+	}
+
+	// `only`: restrict the registry to a single VM (the vmhost case) — the scan ignores every
+	// other directory and create() is refused.
+	public init(only restrictedName: String?) {
+		self.restrictedName = restrictedName
 		presenter.stopHandler = { [weak self] name, mode in
 			guard let self = self, let vm = self.vms[name] else { return }
 			Task {
@@ -87,6 +96,7 @@ public final class VMRegistry {
 				let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
 				guard values?.isDirectory ?? false else { continue }
 				let name = url.lastPathComponent
+				if let only = restrictedName, name != only { continue }
 				guard let config = try? VMConfig(name: name) else { continue }
 				vms[name] = VirtualMachine(config: config, events: events)
 			}
@@ -164,7 +174,22 @@ public final class VMRegistry {
 
 	// MARK: - Create / delete / rename
 
+	// Re-read one VM's config from disk (after a vmhost exits, the daemon's in-memory copy is
+	// stale — the vmhost owned the file while the VM ran).
+	func reload(name: String) {
+		guard vms[name] != nil else { return }
+		guard let fresh = try? VMConfig(name: name) else {
+			vms[name] = nil
+			events.emit(.listChanged)
+			return
+		}
+		vms[name] = VirtualMachine(config: fresh, events: events)
+	}
+
 	func create() throws -> VirtualMachine {
+		guard restrictedName == nil else {
+			throw VirtualMachineError.critical("a vmhost cannot create VMs")
+		}
 		var nbr = 1
 		while vms["new-VM\(nbr)"] != nil {
 			nbr += 1

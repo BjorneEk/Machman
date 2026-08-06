@@ -9,9 +9,9 @@
 /* Begin PBXBuildFile section */
 		AA10000000000000000000C1 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B1 /* MachmanAPI */; };
 		AA10000000000000000000C2 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B2 /* MachmanAPI */; };
-		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
 		AA10000000000000000000C4 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B4 /* MachmanCore */; };
 		AA10000000000000000000C5 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B5 /* MachmanClient */; };
+		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
 		BB200000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000A /* MachmanAPI */; };
 		BB200000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000B /* MachmanCore */; };
 /* End PBXBuildFile section */
@@ -729,15 +729,15 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanAPI;
 		};
-		AA10000000000000000000B7 /* MachmanClient */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MachmanClient;
-		};
 		AA10000000000000000000B4 /* MachmanCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanCore;
 		};
 		AA10000000000000000000B5 /* MachmanClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanClient;
+		};
+		AA10000000000000000000B7 /* MachmanClient */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanClient;
 		};
