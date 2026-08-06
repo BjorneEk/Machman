@@ -92,9 +92,13 @@ final class StubMachman: MachmanControlling {
 		_ = try get(name)
 		return ConsoleInfo(logPath: "/tmp/console.log")
 	}
+	// Large enough that its base64 response overflows a socket send buffer — regression
+	// guard for partial/EAGAIN writes on the server side.
+	var previewPayload = Data([0xFF, 0xD8, 0xFF])
+
 	func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
 		let vm = try get(name)
-		return vm.state.isRunning ? Data([0xFF, 0xD8, 0xFF]) : nil
+		return vm.state.isRunning ? previewPayload : nil
 	}
 	func startMacInstall(vm name: String, source: InstallSource) async throws { _ = try get(name) }
 	func cancelMacInstall(vm name: String) async throws { _ = try get(name) }
@@ -172,6 +176,25 @@ struct LoopbackTests {
 			.stateChanged(vm: "Debian", state: .stopped),
 		])
 
+		await client.disconnect()
+	}
+
+	@Test @MainActor func largeResponsesSurviveTheSocket() async throws {
+		let socketPath = NSTemporaryDirectory() + "mm-big-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian", state: .running)
+		// 2 MiB of noise ≈ a real console-window JPEG after base64 — far beyond the socket
+		// buffer, so the server must handle partial writes.
+		stub.previewPayload = Data((0..<(2 * 1024 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "big")
+		let echoed = try await client.preview(vm: "Debian", maxWidth: nil)
+		#expect(echoed == stub.previewPayload)
+		// The connection must still work afterwards.
+		#expect(try await client.vm(named: "Debian").name == "Debian")
 		await client.disconnect()
 	}
 

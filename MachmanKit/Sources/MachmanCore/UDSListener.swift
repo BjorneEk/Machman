@@ -112,6 +112,9 @@ final class UDSConnection {
 	init(fd: Int32) {
 		self.fd = fd
 		self.queue = DispatchQueue(label: "machman.uds.connection.\(fd)")
+		// accept() on BSD inherits O_NONBLOCK from the listening socket; writes here must
+		// block (large responses overflow the send buffer and would EAGAIN otherwise).
+		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
 		source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
 		source.setEventHandler { [weak self] in
 			self?.readAvailable()
@@ -154,10 +157,19 @@ final class UDSConnection {
 				var offset = 0
 				while offset < raw.count {
 					let n = write(self.fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
-					if n <= 0 {
-						return errno == EINTR
+					if n > 0 {
+						offset += n
+						continue
 					}
-					offset += n
+					if errno == EINTR {
+						continue
+					}
+					if errno == EAGAIN {
+						// Shouldn't happen on a blocking fd; wait out a full buffer anyway.
+						usleep(2000)
+						continue
+					}
+					return false
 				}
 				return true
 			}
