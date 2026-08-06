@@ -21,9 +21,11 @@ let package = Package(
 			name: "MachmanAPI",
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
+		// Core depends on the client lib too: the daemon's router speaks to its vmhost
+		// children through RemoteMachman, exactly like any other client.
 		.target(
 			name: "MachmanCore",
-			dependencies: ["MachmanAPI"],
+			dependencies: ["MachmanAPI", "MachmanClient"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 		// The client half: RemoteMachman over the socket. Depends on the API only —

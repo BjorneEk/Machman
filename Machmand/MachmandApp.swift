@@ -13,10 +13,11 @@ import MachmanAPI
 import MachmanCore
 
 // The one engine instance for this process; the app delegate reaches it for quit handling.
+// The router spawns one MachmanVMHost process per running VM and proxies to it.
 @MainActor
 enum Daemon {
 	static let registry = VMRegistry()
-	static let api = LocalMachman(registry: registry)
+	static let api = RoutingMachman(registry: registry, daemonVersion: version)
 	static let server = MachmanServer(api: api, daemonVersion: version)
 
 	static var version: String {
