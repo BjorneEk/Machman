@@ -22,9 +22,7 @@ struct MachmanApp: App {
 	@State var selection: String? = nil
 
 	init() {
-		let registry = VMRegistry()
-		let viewModel = VMListViewModel(api: LocalMachman(registry: registry))
-		_viewModel = StateObject(wrappedValue: viewModel)
+		_viewModel = StateObject(wrappedValue: VMListViewModel(api: EngineHolder.api))
 	}
 
 	var body: some Scene {
@@ -82,8 +80,45 @@ struct MachmanApp: App {
 		}
 	}
 }
+// The one engine instance for this process. SwiftUI may re-run App.init, so the engine lives
+// here rather than in the App struct; the app delegate also reaches it for quit handling.
+// Dies with the daemon split (Machmand owns the engine and quit semantics from phase 2 on).
+@MainActor
+enum EngineHolder {
+	static let registry = VMRegistry()
+	static let api = LocalMachman(registry: registry)
+}
+
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
+	// VMs can now outlive their console windows, so closing the last window must not kill
+	// the app (and with it, every running VM).
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-		true
+		false
+	}
+
+	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+		let registry = EngineHolder.registry
+		let running = registry.list().filter { $0.state.isRunning }
+		guard !running.isEmpty else { return .terminateNow }
+
+		let alert = NSAlert()
+		alert.messageText = running.count == 1
+			? "\(running[0].config.name) is still running"
+			: "\(running.count) VMs are still running"
+		alert.informativeText = "Quitting stops every running VM "
+			+ "(they live in this app until the daemon split)."
+		alert.addButton(withTitle: "Stop All & Quit")
+		alert.addButton(withTitle: "Cancel")
+		guard alert.runModal() == .alertFirstButtonReturn else {
+			return .terminateCancel
+		}
+		Task { @MainActor in
+			for vm in running {
+				try? await registry.stop(vm, mode: .force)
+			}
+			sender.reply(toApplicationShouldTerminate: true)
+		}
+		return .terminateLater
 	}
 }

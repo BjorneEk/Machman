@@ -57,8 +57,18 @@ final class VMRegistry {
 	private var installSessions: [String: InstallSession] = [:]
 
 	init() {
-		presenter.closeHandler = { [weak self] name in
-			self?.consoleWindowClosed(name)
+		presenter.stopHandler = { [weak self] name, mode in
+			guard let self = self, let vm = self.vms[name] else { return }
+			Task {
+				do {
+					try await self.stop(vm, mode: mode)
+				} catch {
+					vm.log(error: "Failed to stop VM: \(name): \(error)")
+				}
+			}
+		}
+		presenter.isRunning = { [weak self] name in
+			self?.vms[name]?.state.isRunning ?? false
 		}
 		scan()
 	}
@@ -138,19 +148,6 @@ final class VMRegistry {
 
 	func captureImage(name: String) async -> NSImage {
 		await presenter.captureImage(name: name)
-	}
-
-	// Today's behavior: the user closing the console window stops the VM. The close-prompt
-	// feature replaces this decision with the user's choice.
-	private func consoleWindowClosed(_ name: String) {
-		guard let vm = vms[name], vm.runtime != nil else { return }
-		Task {
-			do {
-				try await self.stop(vm, mode: .force)
-			} catch {
-				vm.log(error: "Failed to stop VM: \(name): \(error)")
-			}
-		}
 	}
 
 	// MARK: - Create / delete / rename

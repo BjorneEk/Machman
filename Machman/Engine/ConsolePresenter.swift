@@ -6,8 +6,9 @@
 //  client process: VZVirtualMachineView must live in the process that owns the VZVirtualMachine,
 //  so windows are presented here, engine-side, and clients only send commands about them.
 //
-//  Closing a window invokes closeHandler (the registry decides what happens to the VM);
-//  dropConsole closes programmatically without triggering it.
+//  Closing a window prompts: Close Window (VM keeps running) / Shut Down (ask the guest, with a
+//  force-stop offer if it doesn't comply) / Force Stop / Cancel. dropConsole closes
+//  programmatically and never prompts (the VM already went away).
 //
 
 import AppKit
@@ -15,13 +16,16 @@ import SwiftUI
 import Virtualization
 import ScreenCaptureKit
 import CoreMedia
+import MachmanAPI
 
 @MainActor
-final class ConsolePresenter: NSObject {
+final class ConsolePresenter: NSObject, NSWindowDelegate {
 	private var windows: [String: NSWindow] = [:]
-	private var observers: [String: NSObjectProtocol] = [:]
-	// Invoked when the *user* closes a console window.
-	var closeHandler: ((String) -> Void)?
+	// Injected by the registry: how to stop a VM, and whether it is still running.
+	var stopHandler: ((String, StopMode) -> Void)?
+	var isRunning: ((String) -> Bool)?
+
+	private let softStopGraceSeconds: Double = 30
 
 	func openConsole(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
@@ -40,17 +44,11 @@ final class ConsolePresenter: NSObject {
 		window.contentView = NSHostingView(rootView: VMView(vm: vz))
 		window.makeKeyAndOrderFront(nil)
 		window.isReleasedWhenClosed = false
+		window.delegate = self
 		windows[name] = window
-		observers[name] = NotificationCenter.default.addObserver(
-			forName: NSWindow.willCloseNotification, object: window, queue: .main
-		) { [weak self] _ in
-			Task { @MainActor [weak self] in
-				self?.userClosed(name)
-			}
-		}
 	}
 
-	// Close and forget without invoking the close handler (the VM went away on its own).
+	// Close and forget without prompting (the VM went away on its own).
 	func dropConsole(name: String) {
 		guard let window = windows[name] else { return }
 		forget(name)
@@ -61,17 +59,63 @@ final class ConsolePresenter: NSObject {
 		windows[name]
 	}
 
-	private func userClosed(_ name: String) {
-		guard windows[name] != nil else { return }
-		forget(name)
-		closeHandler?(name)
+	private func forget(_ name: String) {
+		windows[name]?.delegate = nil
+		windows[name] = nil
 	}
 
-	private func forget(_ name: String) {
-		if let token = observers.removeValue(forKey: name) {
-			NotificationCenter.default.removeObserver(token)
+	// MARK: - Close prompt
+
+	func windowShouldClose(_ sender: NSWindow) -> Bool {
+		guard let name = windows.first(where: { $0.value === sender })?.key else {
+			return true
 		}
-		windows[name] = nil
+		guard isRunning?(name) ?? false else {
+			forget(name)
+			return true
+		}
+		let alert = NSAlert()
+		alert.messageText = "\(name) is running"
+		alert.informativeText = "Close the console window and leave the VM running, "
+			+ "ask the guest to shut down, or stop it immediately?"
+		alert.addButton(withTitle: "Close Window")
+		alert.addButton(withTitle: "Shut Down")
+		alert.addButton(withTitle: "Force Stop")
+		alert.addButton(withTitle: "Cancel")
+		switch alert.runModal() {
+		case .alertFirstButtonReturn:      // Close Window — VM keeps running headless
+			forget(name)
+			return true
+		case .alertSecondButtonReturn:     // Shut Down — window stays to watch it happen
+			stopHandler?(name, .soft)
+			scheduleSoftStopEscalation(name)
+			return false
+		case .alertThirdButtonReturn:      // Force Stop — teardown closes the window
+			stopHandler?(name, .force)
+			return false
+		default:
+			return false
+		}
+	}
+
+	// If the guest ignores the shutdown request, offer force after a grace period.
+	private func scheduleSoftStopEscalation(_ name: String) {
+		Task { [weak self] in
+			try? await Task.sleep(for: .seconds(self?.softStopGraceSeconds ?? 30))
+			guard let self = self,
+				self.windows[name] != nil,
+				self.isRunning?(name) ?? false else {
+				return
+			}
+			let alert = NSAlert()
+			alert.messageText = "\(name) hasn't shut down yet"
+			alert.informativeText = "The guest hasn't responded to the shutdown request."
+			alert.addButton(withTitle: "Keep Waiting")
+			alert.addButton(withTitle: "Force Stop")
+			if alert.runModal() == .alertSecondButtonReturn {
+				self.stopHandler?(name, .force)
+			}
+		}
 	}
 
 	// MARK: - Window capture (previews)
