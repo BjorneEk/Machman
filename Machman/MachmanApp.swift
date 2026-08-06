@@ -40,27 +40,59 @@ struct MachmanApp: App {
 			}
 			CommandMenu("Run") {
 				ForEach(viewModel.vms) { vm in
-					if !vm.state.isRunning {
+					Menu(vm.name) {
 						Button(action: {
 							viewModel.startVM(vm.name)
 							selection = vm.name
 							viewModel.select(name: vm.name)
 						}) {
-							Label("\(vm.name)", systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
+							Label("Start", systemImage: "play.circle")
 						}
+						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+						Button(action: {
+							viewModel.startVM(vm.name, headless: true)
+							selection = vm.name
+							viewModel.select(name: vm.name)
+						}) {
+							Label("Start Headless", systemImage: "play.slash")
+						}
+						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+						Button(action: {
+							viewModel.openConsole(vm.name)
+							selection = vm.name
+							viewModel.select(name: vm.name)
+						}) {
+							Label("Open Window", systemImage: "macwindow.badge.plus")
+						}
+						.disabled(!vm.state.isRunning || vm.consoleOpen)
 					}
 				}
 			}
 			CommandMenu("Stop") {
 				ForEach(viewModel.vms) { vm in
-					if vm.state.isRunning {
+					Menu(vm.name) {
 						Button(action: {
-							viewModel.stopVM(vm.name)
+							viewModel.stopVM(vm.name, mode: .soft)
 							selection = vm.name
 							viewModel.select(name: vm.name)
 						}) {
-							Label("\(vm.name)", systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
+							Label("Shut Down", systemImage: "power")
 						}
+						.disabled(!vm.state.isRunning)
+						Button(action: {
+							viewModel.stopVM(vm.name, mode: .force)
+							selection = vm.name
+							viewModel.select(name: vm.name)
+						}) {
+							Label("Force Stop", systemImage: "stop.circle")
+						}
+						.disabled(!vm.state.isRunning)
+						Button(action: {
+							viewModel.closeConsole(vm.name)
+						}) {
+							Label("Close Window", systemImage: "macwindow.badge.minus")
+						}
+						.disabled(!vm.state.isRunning || !vm.consoleOpen)
 					}
 				}
 			}

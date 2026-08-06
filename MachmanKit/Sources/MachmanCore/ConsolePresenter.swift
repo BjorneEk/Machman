@@ -24,6 +24,8 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	// Injected by the registry: how to stop a VM, and whether it is still running.
 	var stopHandler: ((String, StopMode) -> Void)?
 	var isRunning: ((String) -> Bool)?
+	// Fired whenever a console window appears or goes away (clients track consoleOpen).
+	var onConsoleChanged: (() -> Void)?
 
 	private let softStopGraceSeconds: Double = 30
 
@@ -46,6 +48,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		window.isReleasedWhenClosed = false
 		window.delegate = self
 		windows[name] = window
+		onConsoleChanged?()
 	}
 
 	// Close and forget without prompting (the VM went away on its own).
@@ -60,8 +63,10 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	}
 
 	private func forget(_ name: String) {
-		windows[name]?.delegate = nil
+		guard let window = windows[name] else { return }
+		window.delegate = nil
 		windows[name] = nil
+		onConsoleChanged?()
 	}
 
 	// MARK: - Close prompt

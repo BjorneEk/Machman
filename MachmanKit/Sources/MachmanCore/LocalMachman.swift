@@ -158,6 +158,10 @@ public final class LocalMachman: MachmanControlling {
 		registry.openConsole(try lookup(name))
 	}
 
+	public func closeConsole(vm name: String) async throws {
+		registry.closeConsole(try lookup(name))
+	}
+
 	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
 		let vm = try lookup(name)
 		if case .macOS = vm.config.boot {
@@ -240,7 +244,8 @@ public final class LocalMachman: MachmanControlling {
 			disks: disks,
 			mounts: mounts,
 			boot: bootInfo(for: vm),
-			consoleLogPath: consoleLogPath)
+			consoleLogPath: consoleLogPath,
+			consoleOpen: registry.isConsoleOpen(vm))
 	}
 
 	private func bootInfo(for vm: VirtualMachine) -> BootInfo {

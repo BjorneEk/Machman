@@ -21,13 +21,15 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	public var mounts: [MountInfo]
 	public var boot: BootInfo
 	public var consoleLogPath: String?
+	// Whether the engine currently shows a console window for this VM.
+	public var consoleOpen: Bool
 
 	public var id: String { name }
 
 	public init(
 		name: String, state: VMState, created: Date, lastRan: Date?, cpuCount: Int,
 		memoryBytes: UInt64, macAddress: String?, disks: [DiskInfo], mounts: [MountInfo],
-		boot: BootInfo, consoleLogPath: String?
+		boot: BootInfo, consoleLogPath: String?, consoleOpen: Bool = false
 	) {
 		self.name = name
 		self.state = state
@@ -40,6 +42,25 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.mounts = mounts
 		self.boot = boot
 		self.consoleLogPath = consoleLogPath
+		self.consoleOpen = consoleOpen
+	}
+
+	// Hand-written decode so payloads predating consoleOpen (and clients that omit it)
+	// keep decoding; encode stays synthesized.
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.name = try c.decode(String.self, forKey: .name)
+		self.state = try c.decode(VMState.self, forKey: .state)
+		self.created = try c.decode(Date.self, forKey: .created)
+		self.lastRan = try c.decodeIfPresent(Date.self, forKey: .lastRan)
+		self.cpuCount = try c.decode(Int.self, forKey: .cpuCount)
+		self.memoryBytes = try c.decode(UInt64.self, forKey: .memoryBytes)
+		self.macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
+		self.disks = try c.decode([DiskInfo].self, forKey: .disks)
+		self.mounts = try c.decode([MountInfo].self, forKey: .mounts)
+		self.boot = try c.decode(BootInfo.self, forKey: .boot)
+		self.consoleLogPath = try c.decodeIfPresent(String.self, forKey: .consoleLogPath)
+		self.consoleOpen = try c.decodeIfPresent(Bool.self, forKey: .consoleOpen) ?? false
 	}
 }
 

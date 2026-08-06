@@ -71,6 +71,9 @@ public final class VMRegistry {
 		presenter.isRunning = { [weak self] name in
 			self?.vms[name]?.state.isRunning ?? false
 		}
+		presenter.onConsoleChanged = { [weak self] in
+			self?.events.emit(.listChanged)
+		}
 		scan()
 	}
 
@@ -145,6 +148,14 @@ public final class VMRegistry {
 	func openConsole(_ vm: VirtualMachine) {
 		guard let vz = vm.runtime?.vz else { return }
 		presenter.openConsole(name: vm.config.name, vz: vz)
+	}
+
+	func closeConsole(_ vm: VirtualMachine) {
+		presenter.dropConsole(name: vm.config.name)
+	}
+
+	func isConsoleOpen(_ vm: VirtualMachine) -> Bool {
+		presenter.window(for: vm.config.name) != nil
 	}
 
 	func captureImage(name: String) async -> NSImage {

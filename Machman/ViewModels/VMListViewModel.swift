@@ -202,12 +202,35 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func startVM(_ name: String) {
+	func startVM(_ name: String, headless: Bool = false) {
 		Task { [weak self] in
 			do {
-				try await self?.api.start(vm: name, options: StartOptions())
+				try await self?.api.start(
+					vm: name, options: StartOptions(openConsole: !headless))
 			} catch {
 				self?.log(error: "(\(name)) \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func openConsole(_ name: String) {
+		Task { [weak self] in
+			do {
+				try await self?.api.openConsole(vm: name)
+			} catch {
+				self?.log(error: "Failed to open console for \(name): "
+					+ error.localizedDescription)
+			}
+		}
+	}
+
+	func closeConsole(_ name: String) {
+		Task { [weak self] in
+			do {
+				try await self?.api.closeConsole(vm: name)
+			} catch {
+				self?.log(error: "Failed to close console for \(name): "
+					+ error.localizedDescription)
 			}
 		}
 	}

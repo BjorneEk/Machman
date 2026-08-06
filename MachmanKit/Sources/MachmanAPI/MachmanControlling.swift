@@ -37,6 +37,8 @@ public protocol MachmanControlling: AnyObject {
 	func start(vm name: String, options: StartOptions) async throws
 	func stop(vm name: String, mode: StopMode) async throws
 	func openConsole(vm name: String) async throws
+	// Close the console window without touching the VM (it keeps running headless).
+	func closeConsole(vm name: String) async throws
 	func consoleInfo(vm name: String) async throws -> ConsoleInfo
 	// A JPEG snapshot of the console window, downscaled to maxWidth; nil when unavailable.
 	func preview(vm name: String, maxWidth: Int?) async throws -> Data?

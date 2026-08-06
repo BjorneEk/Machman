@@ -30,13 +30,18 @@ struct WireFixtureTests {
 				minCPUCount: nil, minMemoryBytes: nil),
 			consoleLogPath: "/tmp/console.log")
 		let expected = #"{"boot":{"mode":"efi"},"consoleLogPath":"/tmp/console.log","#
-			+ #""cpuCount":4,"created":"2023-11-14T22:13:20Z","disks":[{"id":"storage:disk","#
-			+ #""name":"disk","sizeBytes":10737418240,"type":"storage"}],"#
-			+ #""lastRan":"2023-11-14T22:15:00Z","macAddress":"aa:bb:cc:dd:ee:ff","#
-			+ #""memoryBytes":4294967296,"mounts":[{"id":"m1","path":"/Users/x/share","#
-			+ #""tag":"host-share"}],"name":"Debian","state":"running"}"#
+			+ #""consoleOpen":false,"cpuCount":4,"created":"2023-11-14T22:13:20Z","#
+			+ #""disks":[{"id":"storage:disk","name":"disk","sizeBytes":10737418240,"#
+			+ #""type":"storage"}],"lastRan":"2023-11-14T22:15:00Z","#
+			+ #""macAddress":"aa:bb:cc:dd:ee:ff","memoryBytes":4294967296,"#
+			+ #""mounts":[{"id":"m1","path":"/Users/x/share","tag":"host-share"}],"#
+			+ #""name":"Debian","state":"running"}"#
 		#expect(try encode(info) == expected)
 		#expect(try decode(VMInfo.self, expected) == info)
+
+		// Payloads predating consoleOpen must keep decoding (defaults to false).
+		let legacy = expected.replacingOccurrences(of: #""consoleOpen":false,"#, with: "")
+		#expect(try decode(VMInfo.self, legacy) == info)
 	}
 
 	@Test func bootInfoMacOSFixture() throws {
