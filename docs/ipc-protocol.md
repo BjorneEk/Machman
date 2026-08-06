@@ -90,6 +90,14 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 `params.type`: `stateChanged {vm, state}`, `listChanged` (re-fetch `vm.list`),
 `installPhaseChanged {vm, phase}`, `log {vm?, level, message}`. Unknown types: skip.
 
+## Per-VM host processes (invisible on the wire)
+
+Every running VM lives in its own `MachmanVMHost` process, which serves this same protocol on
+`<dataDir>/<vm>/vm.sock`; Machmand proxies per-VM operations to it and re-emits its events.
+Clients never need to know: the public socket remains the single entry point and nothing about
+the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
+daemon) down, and vmhosts outlive daemon restarts — a new Machmand re-adopts them.
+
 ## What is deliberately NOT here
 
 The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so console windows
