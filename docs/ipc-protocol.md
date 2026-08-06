@@ -1,0 +1,106 @@
+# Machman daemon protocol
+
+Machmand serves the full VM-management API on a unix domain socket:
+
+```
+<dataDir>/machman.sock        dataDir: $MACHMAN_DATA_DIR, else the MachmanDataDir user
+                              default (per bundle id), else ~/.machman
+```
+
+Mode 0600 — filesystem permissions are the auth boundary (same user only). One daemon per
+socket: a second instance probes, finds a live listener, and refuses to start; a stale socket
+file is reclaimed.
+
+## Framing & envelope
+
+Newline-delimited JSON-RPC 2.0: one JSON object per line, UTF-8, no raw newlines inside a
+message. Requests carry an `id` (number or string); the daemon's event notifications carry
+none. Void results are `{}`; a "nothing to return" result (e.g. no preview) is `null`.
+
+```
+--> {"jsonrpc":"2.0","id":1,"method":"machman.hello","params":{"client":"my-tui"}}
+<-- {"id":1,"jsonrpc":"2.0","result":{"apiVersion":1,"daemonVersion":"1.0"}}
+```
+
+Clients should send `machman.hello` first and check `apiVersion` (currently `1`).
+
+### Errors
+
+```
+<-- {"error":{"code":-32000,"data":{"machmanCode":"notFound"},"message":"no VM named 'x'"},"id":2,"jsonrpc":"2.0"}
+```
+
+Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not found,
+-32602 invalid params) plus `-32000` for application errors. `data.machmanCode` is one of:
+`notFound`, `alreadyExists`, `invalidState`, `invalidArgument`, `ioFailure`,
+`virtualizationFailure`, `installFailure`, `internalError`.
+
+## Methods
+
+| Method | Params | Result |
+|---|---|---|
+| `machman.hello` | `{client}` | `{apiVersion, daemonVersion}` |
+| `host.capabilities` | — | `{maxCPUCount, minMemoryBytes, maxMemoryBytes, freeDiskBytes}` |
+| `vm.list` | — | `[VMInfo]` |
+| `vm.get` | `{name}` | `VMInfo` |
+| `vm.create` | — | `VMInfo` (auto-named `new-VM<n>`) |
+| `vm.delete` | `{name}` | `{}` (refused while running/installing) |
+| `vm.rename` | `{name, newName}` | `{}` (refused while running) |
+| `vm.setHardware` | `{name, cpuCount?, memoryBytes?}` | `{}` (clamped to host + boot floors) |
+| `vm.disk.add` | `{name, disk: NewDisk}` | `{}` |
+| `vm.disk.remove` | `{name, diskID}` | `{}` (storage disks: deletes the backing file) |
+| `vm.mount.add` | `{name, path, tag}` | `{}` |
+| `vm.mount.remove` | `{name, mountID}` | `{}` |
+| `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
+| `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
+| `vm.start` | `{name, options?: {openConsole: bool}}` | `{}` |
+| `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
+| `vm.console.open` | `{name}` | `{}` (window appears from the daemon) |
+| `vm.console.close` | `{name}` | `{}` (VM keeps running) |
+| `vm.console.info` | `{name}` | `{logPath}` (file-backed hvc0 log; null for macOS guests) |
+| `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
+| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` |
+| `vm.install.cancel` | `{name}` | `{}` |
+| `vm.install.phase` | `{name}` | `InstallPhase` |
+| `events.subscribe` | — | `{}`; events then arrive on this connection |
+
+## DTOs (abridged)
+
+`VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
+[{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?}], mounts: [{id, path, tag}],
+boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?, minCPUCount?,
+minMemoryBytes?}, consoleLogPath?, consoleOpen}`.
+
+`state`: `stopped|starting|running|stopping|paused|error` — treat unknown strings as a state
+you don't recognize, not an error. Dates are ISO 8601. New optional fields may appear at any
+time; absent fields you rely on mean an older daemon.
+
+`InstallPhase`: `{kind: idle|resolving|downloading|installing|installed|failed|interrupted,
+version?, build?, message?, progress?: {fraction, completedBytes?, totalBytes?},
+downloadStartedAt?}`.
+
+## Events
+
+After `events.subscribe`, the daemon pushes id-less notifications on the same connection:
+
+```
+<-- {"jsonrpc":"2.0","method":"event","params":{"state":"running","type":"stateChanged","vm":"Debian"}}
+```
+
+`params.type`: `stateChanged {vm, state}`, `listChanged` (re-fetch `vm.list`),
+`installPhaseChanged {vm, phase}`, `log {vm?, level, message}`. Unknown types: skip.
+
+## What is deliberately NOT here
+
+The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so console windows
+are presented by Machmand itself; clients only command them (`vm.console.*`) and poll
+`vm.preview` for thumbnails. Interactive text access for Linux guests is the serial console
+(`vm.console.info` → follow the log file; a PTY option is planned with the CLI).
+
+## Trying it by hand
+
+```sh
+python3 scripts/machman-smoke.py                 # hello + vm list
+python3 scripts/machman-smoke.py watch           # stream events
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"vm.list"}' | nc -U .machman/machman.sock
+```
