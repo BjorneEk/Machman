@@ -2,17 +2,18 @@ import Testing
 import Foundation
 @testable import Machman_desktop
 
-struct InstallControllerCacheTests {
+struct InstallSessionCacheTests {
 
-	@Test @MainActor func controllerIsCachedPerVM() throws {
+	@Test @MainActor func sessionIsCachedPerVM() throws {
 		try VMTestDir.withRedirectedDir {
 			let name = "cache-vm"
 			try VMConfig.createNewVMDirectory(name: name)
-			let vm = VirtualMachine(config: try VMConfig(name: name, memorySize: 2048, cpuCount: 2))
-			let viewModel = VMListViewModel()
+			_ = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+			let registry = VMRegistry()
 
-			let first = viewModel.installController(for: vm)
-			let second = viewModel.installController(for: vm)
+			let vm = try #require(registry.vm(named: name))
+			let first = registry.installSession(for: vm)
+			let second = registry.installSession(for: vm)
 			#expect(first === second)
 		}
 	}

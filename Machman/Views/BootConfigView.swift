@@ -4,30 +4,27 @@
 //
 //  Boot-mode configuration pane: a default (EFI / Linux-kernel) tab and a macOS guest tab.
 //  Once a VM has macOS installed its boot mode is locked, so the default tab is disabled.
+//  Install phases arrive as DTO snapshots through the view model's event feed.
 //
 
 import SwiftUI
+import MachmanAPI
 
 struct BootConfigView: View {
-	@State private var vm: VirtualMachine
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
 	@State private var selection: BootTab
-	// Owned by VMListViewModel's per-VM cache so a running install survives navigating away;
-	// the local fallback only serves viewModel-less contexts (previews).
-	@ObservedObject private var installController: MacInstallController
 
-	init(vm: VirtualMachine, viewModel: VMListViewModel? = nil) {
+	init(vm: VMInfo, viewModel: VMListViewModel) {
 		self.vm = vm
-		if case .macOS = vm.config.boot {
-			selection = .mac
-		} else {
-			selection = .def
-		}
-		_installController = ObservedObject(wrappedValue: viewModel?.installController(for: vm)
-			?? MacInstallController(vm: vm, listViewModel: nil))
+		self.viewModel = viewModel
+		_selection = State(initialValue: vm.boot.mode == .macOS ? .mac : .def)
 	}
 
+	private var phase: InstallPhase { viewModel.installPhase(for: vm) }
+
 	private var defaultDisabled: Bool {
-		vm.config.boot.isMacInstalled || installController.phase == .installed
+		vm.boot.macInstalled || phase.kind == .installed
 	}
 
 	var body: some View {
@@ -39,9 +36,9 @@ struct BootConfigView: View {
 					defaultDisabledHelp: "This VM has macOS installed; its boot mode is locked.")
 				switch selection {
 				case .def:
-					DefaultBootView(vm: vm)
+					DefaultBootView(vm: vm, viewModel: viewModel)
 				case .mac:
-					MacOSBootView(controller: installController)
+					MacOSBootView(vm: vm, viewModel: viewModel)
 				}
 			}
 			.padding(2)
@@ -52,8 +49,8 @@ struct BootConfigView: View {
 				selection = .mac
 			}
 		}
-		.onChange(of: installController.phase) { _, newPhase in
-			if newPhase == .installed {
+		.onChange(of: phase) { _, newPhase in
+			if newPhase.kind == .installed {
 				selection = .mac
 			}
 		}

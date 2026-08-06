@@ -27,6 +27,10 @@ final class EventBus {
 	}
 
 	func emit(_ event: VMEvent) {
+		// The console is the one guaranteed sink for log lines; print them exactly once, here.
+		if case .log(_, _, let message) = event {
+			print(message)
+		}
 		for continuation in continuations.values {
 			continuation.yield(event)
 		}

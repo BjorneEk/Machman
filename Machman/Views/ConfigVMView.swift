@@ -6,22 +6,18 @@
 //
 
 import SwiftUI
+import MachmanAPI
 
 struct ConfigVMView: View {
-	@State private var vm: VirtualMachine
-	private let viewModel: VMListViewModel?
-
-	init(vm: VirtualMachine, viewModel: VMListViewModel? = nil) {
-		self.vm = vm
-		self.viewModel = viewModel
-	}
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
 
 	var body: some View {
 		GroupBox {
 			VStack {
-				HardwareConfigView(vm: vm)
+				HardwareConfigView(vm: vm, viewModel: viewModel)
 				BootConfigView(vm: vm, viewModel: viewModel)
-					.id(vm.config.name)   // reset pane state (incl. install controller) per VM
+					.id(vm.name)   // reset pane state per VM
 				HistoryView(vm: vm)
 				Spacer()
 			}

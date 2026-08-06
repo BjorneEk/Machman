@@ -32,21 +32,18 @@ final class VirtualMachine: NSObject, Identifiable {
 		previewImage = img
 	}
 
-	// The console is still the only guaranteed sink, so log calls always print; subscribers
-	// (and later, remote clients) get the same line as an event.
+	// EventBus prints every log event once (the console is the guaranteed sink); subscribers
+	// and, later, remote clients get the same line as an event.
 	func log(error: String) {
-		print(error)
-		events?.emit(.log(vm: config.name, level: .error, message: error))
+		events?.emit(.log(vm: config.name, level: .error, message: error)) ?? print(error)
 	}
 
 	func log(message: String) {
-		print(message)
-		events?.emit(.log(vm: config.name, level: .message, message: message))
+		events?.emit(.log(vm: config.name, level: .message, message: message)) ?? print(message)
 	}
 
 	func log(warning: String) {
-		print(warning)
-		events?.emit(.log(vm: config.name, level: .warning, message: warning))
+		events?.emit(.log(vm: config.name, level: .warning, message: warning)) ?? print(warning)
 	}
 }
 
@@ -55,6 +52,9 @@ final class VMRegistry {
 	let events = EventBus()
 	let presenter = ConsolePresenter()
 	private(set) var vms: [String: VirtualMachine] = [:]
+	// Sessions live here (not in a view) so a running install keeps its phase and progress
+	// when the user navigates away, and a second install of the same VM can't start.
+	private var installSessions: [String: InstallSession] = [:]
 
 	init() {
 		presenter.closeHandler = { [weak self] name in
@@ -96,6 +96,10 @@ final class VMRegistry {
 	func start(_ vm: VirtualMachine, openConsole: Bool = true) async throws {
 		guard vm.runtime == nil else {
 			throw VirtualMachineError.critical("\(vm.config.name) is already running")
+		}
+		guard !(installSessions[vm.config.name]?.isInstalling ?? false) else {
+			throw VirtualMachineError.critical(
+				"(\(vm.config.name)) cannot start while macOS is installing")
 		}
 		let runtime = VMRuntime(config: vm.config, events: events)
 		runtime.onTeardown = { [weak self, weak vm] in
@@ -172,8 +176,12 @@ final class VMRegistry {
 		guard vm.runtime == nil else {
 			throw VirtualMachineError.critical("stop \(name) before deleting it")
 		}
+		guard !(installSessions[name]?.isInstalling ?? false) else {
+			throw VirtualMachineError.critical("wait for the macOS install to finish first")
+		}
 		presenter.dropConsole(name: name)
 		vms[name] = nil
+		installSessions[name] = nil
 		try VMConfig.deleteVMDirectory(name: name)
 		events.emit(.listChanged)
 	}
@@ -190,6 +198,26 @@ final class VMRegistry {
 		try vm.config.rename(to: newName)
 		vms[oldName] = nil
 		vms[newName] = vm
+		if let session = installSessions.removeValue(forKey: oldName) {
+			installSessions[newName] = session
+		}
 		events.emit(.listChanged)
+	}
+
+	// MARK: - macOS install sessions
+
+	func installSession(for vm: VirtualMachine) -> InstallSession {
+		if let existing = installSessions[vm.config.name] {
+			return existing
+		}
+		let session = InstallSession(
+			config: vm.config, events: events,
+			isVMRunning: { [weak vm] in vm?.state.isRunning ?? false })
+		installSessions[vm.config.name] = session
+		return session
+	}
+
+	func isInstalling(_ vm: VirtualMachine) -> Bool {
+		installSessions[vm.config.name]?.isInstalling ?? false
 	}
 }

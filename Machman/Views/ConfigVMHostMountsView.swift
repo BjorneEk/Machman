@@ -6,23 +6,20 @@
 //
 
 import SwiftUI
+import MachmanAPI
 
 struct ConfigVMHostMountsView: View {
-	@State var vm: VirtualMachine
-	@State private var refreshTrigger = 0
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
 
 	@State private var newPath: String = ""
 	@State private var newTag: String = ""
-
-	init(vm: VirtualMachine) {
-		self.vm = vm
-	}
 
 	var body: some View {
 		GroupBox {
 			VStack(alignment: .trailing, spacing: 12) {
 				GroupBox {
-					Table(vm.config.mountPoints) {
+					Table(vm.mounts) {
 						TableColumn("Host Path") { point in
 							Text(point.path)
 						}
@@ -33,12 +30,7 @@ struct ConfigVMHostMountsView: View {
 						.width(min: 60, ideal: 60, max: .infinity)
 						TableColumn("") { point in
 							Button(role: .destructive) {
-								do {
-									try vm.config.removeMountPoint(point)
-								} catch {
-									vm.log(error: "Failed to remove mount point: \(error)")
-								}
-								refreshTrigger += 1
+								viewModel.removeMount(vm.name, mountID: point.id)
 							} label: {
 								Image(systemName: "trash")
 							}
@@ -47,7 +39,6 @@ struct ConfigVMHostMountsView: View {
 						}
 						.width(min: 15, ideal: 15, max: 15)
 					}
-					.id(refreshTrigger)
 				}
 				.contentShape(Rectangle())
 				.help("mount -t virtiofs host-share /mnt/point")
@@ -62,7 +53,6 @@ struct ConfigVMHostMountsView: View {
 						panel.allowedContentTypes = [.directory]
 						panel.begin { response in
 							if response == .OK, let selectedURL = panel.url {
-								vm.log(message: "Selected file: \(selectedURL.path)")
 								newPath = selectedURL.path
 							}
 						}
@@ -77,11 +67,7 @@ struct ConfigVMHostMountsView: View {
 
 					Button(action: {
 						guard !newPath.isEmpty, !newTag.isEmpty else { return }
-						do {
-							try vm.config.addMountPoint(HostMountPoint(path: newPath, tag: newTag))
-						} catch {
-							vm.log(error: "Failed to add mount point: \(error)")
-						}
+						viewModel.addMount(vm.name, path: newPath, tag: newTag)
 						newPath = ""
 						newTag = ""
 					}) {
@@ -92,7 +78,6 @@ struct ConfigVMHostMountsView: View {
 					.help("Add new mount point")
 				}
 			}
-			//.padding()
 		}
 	}
 }

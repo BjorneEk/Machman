@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Foundation
+import MachmanAPI
 extension View {
 	func placeholder<Content: View>(
 		when shouldShow: Bool,
@@ -29,23 +30,11 @@ struct AddDiskView: View {
 	@State private var size: String = ""
 	@State private var vmDiskSize: UInt64 = 0
 	@State private var vmDiskSizeStringGB: String = ""
+	// Free space on the VM data volume, from HostCapabilities (the engine's side of the API).
+	var freeGB: Int? = nil
 	var addIso: (URL) -> Void = { _ in }
 	var addFrom: (URL) -> Void = { _ in }
 	var addNew: (_ name: String, _ size: UInt64) -> Void = { _,_  in }
-
-	static func getAvailableVMDiskSpace() -> Int? {
-		let homeURL = URL(fileURLWithPath: machmanVMDir)
-
-		do {
-			let values = try homeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-			if let available = values.volumeAvailableCapacityForImportantUsage {
-				return VMConfig.toGB(size: UInt64(available)) // in bytes
-			}
-			return nil
-		} catch {
-			return nil
-		}
-	}
 	var body: some View {
 			TabView {
 				VStack {
@@ -64,13 +53,13 @@ struct AddDiskView: View {
 							.onReceive(size.publisher.collect()) { chars in
 								DispatchQueue.main.async {
 									size = String(size.prefix(4).filter { "0123456789".contains($0) })
-									if (Int(size) ?? 0 > AddDiskView.getAvailableVMDiskSpace() ?? Int.max) {
-										size = (AddDiskView.getAvailableVMDiskSpace() ?? Int.max).formatted()
+									if (Int(size) ?? 0 > freeGB ?? Int.max) {
+										size = (freeGB ?? Int.max).formatted()
 									}
 								}
 							}
 							.placeholder(when: size.isEmpty) {
-								Text("Size GB (max \(Self.getAvailableVMDiskSpace() ?? 0) GB)")
+								Text("Size GB (max \(freeGB ?? 0) GB)")
 									.padding(.horizontal)
 											.foregroundColor(.secondary)
 						}
@@ -79,7 +68,7 @@ struct AddDiskView: View {
 					Divider()
 					HStack {
 						Button(action: {
-							addNew(name, VMConfig.fromGB(size: Int(size) ?? 0))
+							addNew(name, ByteSize.fromGB(Int(size) ?? 0))
 						}) {
 							Image(systemName: "plus")
 								.foregroundColor(.secondary)

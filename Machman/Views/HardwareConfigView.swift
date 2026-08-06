@@ -2,35 +2,37 @@
 //  HardwareConfigView.swift
 //  Machman
 //
-//  CPU / memory configuration block, extracted from ConfigVMView.
+//  CPU / memory configuration block, extracted from ConfigVMView. Bounds come from
+//  HostCapabilities (via the view model) — never from Virtualization.framework directly.
 //
 
 import SwiftUI
+import MachmanAPI
 
 struct HardwareConfigView: View {
-	@State private var vm: VirtualMachine
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
 
 	@State private var vmMemory: UInt64
 	@State private var vmCpuCount: Int
 	@State private var vmMemoryGBString: String
 
-	init(vm: VirtualMachine) {
+	init(vm: VMInfo, viewModel: VMListViewModel) {
 		self.vm = vm
-		vmMemory = vm.config.memorySize
-		vmCpuCount = vm.config.cpuCount
-		vmMemoryGBString = VMConfig.toGB(size: vm.config.memorySize).formatted()
+		self.viewModel = viewModel
+		_vmMemory = State(initialValue: vm.memoryBytes)
+		_vmCpuCount = State(initialValue: vm.cpuCount)
+		_vmMemoryGBString = State(initialValue: ByteSize.toGB(vm.memoryBytes).formatted())
 	}
 
 	// macOS guests carry install-time hardware minimums; other modes have none.
-	private var hardwareFloors: (cpu: Int, mem: UInt64)? { vm.config.boot.hardwareFloors }
+	private var cpuFloor: Int { max(1, vm.boot.minCPUCount ?? 1) }
+	private var memoryFloor: UInt64 { vm.boot.minMemoryBytes ?? 0 }
 
 	private var cpuRange: ClosedRange<Int> {
-		let lower = max(1, hardwareFloors?.cpu ?? 1)
-		let upper = max(VMConfig.computeMaxCPUCount(), lower)
-		return lower...upper
+		let upper = max(viewModel.capabilities?.maxCPUCount ?? cpuFloor, cpuFloor)
+		return cpuFloor...upper
 	}
-
-	private var memoryFloor: UInt64 { hardwareFloors?.mem ?? 0 }
 
 	var body: some View {
 		GroupBox {
@@ -44,14 +46,9 @@ struct HardwareConfigView: View {
 				Stepper("CPUs", value: $vmCpuCount, in: cpuRange)
 					.fontWeight(.bold)
 					.font(.title2)
-					.onChange(of: vmCpuCount) { oldValue, newValue in
+					.onChange(of: vmCpuCount) { _, newValue in
 						DispatchQueue.main.async {
-							do {
-								try self.vm.config.setCPUCount(vmCpuCount)
-								vm.log(message: "Set CPU count for \(self.vm.config.name) to \(vmCpuCount)")
-							} catch {
-								vm.log(error: "Failed to set CPU count for VM from \(oldValue) to \(newValue): \(error.localizedDescription)")
-							}
+							viewModel.setHardware(vm.name, cpuCount: newValue)
 						}
 					}
 				Spacer()
@@ -67,21 +64,17 @@ struct HardwareConfigView: View {
 					.font(.title2)
 					.onReceive(vmMemoryGBString.publisher.collect()) { chars in
 						DispatchQueue.main.async {
-							vmMemoryGBString = String(chars.prefix(4).filter { "0123456789".contains($0) })
-							vmMemory = VMConfig.clampMemorySize(
-								size: VMConfig.fromGB(size: Int(vmMemoryGBString) ?? 0), floor: memoryFloor)
+							vmMemoryGBString = String(
+								chars.prefix(4).filter { "0123456789".contains($0) })
+							vmMemory = viewModel.clampMemory(
+								ByteSize.fromGB(Int(vmMemoryGBString) ?? 0), floor: memoryFloor)
 						}
 					}.onSubmit {
 						DispatchQueue.main.async {
-							vmMemory = VMConfig.clampMemorySize(
-								size: VMConfig.fromGB(size: Int(vmMemoryGBString) ?? 0), floor: memoryFloor)
-							vmMemoryGBString = "\(VMConfig.toGB(size: vmMemory))"
-							do {
-								try self.vm.config.setMemorySize(vmMemory)
-								vm.log(message: "Set memory size for \(self.vm.config.name) to \(vmMemoryGBString) GB")
-							} catch {
-								vm.log(error: "Failed to set memory size for VM: \(error.localizedDescription)")
-							}
+							vmMemory = viewModel.clampMemory(
+								ByteSize.fromGB(Int(vmMemoryGBString) ?? 0), floor: memoryFloor)
+							vmMemoryGBString = "\(ByteSize.toGB(vmMemory))"
+							viewModel.setHardware(vm.name, memoryBytes: vmMemory)
 						}
 					}
 				Image(systemName: "memorychip.fill")
@@ -91,23 +84,22 @@ struct HardwareConfigView: View {
 					.fontWeight(.bold)
 					.font(.title2)
 				Spacer()
-				Text(vm.config.macAddress ?? "—")
+				Text(vm.macAddress ?? "—")
 					.font(.system(.title3, design: .monospaced))
-					.foregroundColor(vm.config.macAddress == nil ? .secondary : .primary)
+					.foregroundColor(vm.macAddress == nil ? .secondary : .primary)
 					.help("MAC address (assigned on first boot)")
 			}
 			.padding(2)
 		}
 		.padding(2)
 		.onAppear {
-			guard let floors = hardwareFloors else { return }
-			if vmCpuCount < floors.cpu {
-				vmCpuCount = floors.cpu   // Stepper onChange persists via setCPUCount
+			if vmCpuCount < cpuFloor {
+				vmCpuCount = cpuFloor   // Stepper onChange persists via setHardware
 			}
-			if vmMemory < floors.mem {
-				vmMemory = VMConfig.clampMemorySize(size: floors.mem, floor: floors.mem)
-				vmMemoryGBString = "\(VMConfig.toGB(size: vmMemory))"
-				try? vm.config.setMemorySize(vmMemory)
+			if vmMemory < memoryFloor {
+				vmMemory = viewModel.clampMemory(memoryFloor, floor: memoryFloor)
+				vmMemoryGBString = "\(ByteSize.toGB(vmMemory))"
+				viewModel.setHardware(vm.name, memoryBytes: vmMemory)
 			}
 		}
 	}

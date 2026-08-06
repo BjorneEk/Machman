@@ -2,9 +2,10 @@
 //  VMListViewModel.swift
 //  Machman
 //
-//  View-facing state over VMRegistry: selection, previews, install-controller cache, and the
-//  UI verbs the views call. Engine work (starting, stopping, windows) lives in the registry;
-//  this class reacts to its event stream.
+//  The client half of the app: view-facing state fed exclusively through MachmanControlling
+//  and its event stream. Holds no engine objects — only DTOs, selection, preview images, and
+//  install-phase snapshots. Works identically against LocalMachman (in-process) or a future
+//  RemoteMachman (daemon).
 //
 
 import Foundation
@@ -33,29 +34,33 @@ enum RunBtnState: String {
 }
 
 @MainActor
-class VMListViewModel: ObservableObject {
-	let registry: VMRegistry
-	@Published var selected: VirtualMachine? = nil
+final class VMListViewModel: ObservableObject {
+	let api: MachmanControlling
+	@Published private(set) var vms: [VMInfo] = []
+	@Published private(set) var capabilities: HostCapabilities?
+	@Published private(set) var installPhases: [String: InstallPhase] = [:]
+	@Published private(set) var previews: [String: NSImage] = [:]
+	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
-	@Published private var previewImage: NSImage?
 
 	private var isFocused = true
 	private let previewInterval: Double = 4
 	private var previewTask: Task<Void, Never>?
 	private var eventTask: Task<Void, Never>?
 
-	// Install controllers live here (not in a view) so a running install keeps its phase and
-	// live progress when the user navigates between VMs, and so a second install of the same
-	// VM can't be started from a fresh pane.
-	private var macInstallControllers: [String: MacInstallController] = [:]
+	var selected: VMInfo? {
+		selectedName.flatMap { name in vms.first { $0.name == name } }
+	}
 
-	init(registry: VMRegistry? = nil) {
-		self.registry = registry ?? VMRegistry()
+	init(api: MachmanControlling) {
+		self.api = api
 		eventTask = Task { [weak self] in
-			guard let stream = self?.registry.events.stream() else { return }
+			guard let api = self?.api else { return }
+			let stream = await api.events()
+			await self?.reload()
 			for await event in stream {
 				guard let self = self else { return }
-				self.handle(event: event)
+				await self.handle(event: event)
 			}
 		}
 	}
@@ -65,30 +70,37 @@ class VMListViewModel: ObservableObject {
 		previewTask?.cancel()
 	}
 
-	private func handle(event: VMEvent) {
-		if case .stateChanged(let vm, _) = event, vm == selected?.config.name {
-			restartPreviewLoop()
+	func reload() async {
+		if let list = try? await api.listVMs() {
+			vms = list
 		}
-		// Coarse refresh, replacing the old forceUpdate() back-pointer pokes from the engine.
-		objectWillChange.send()
-	}
-
-	func installController(for vm: VirtualMachine) -> MacInstallController {
-		if let existing = macInstallControllers[vm.config.name] {
-			return existing
+		if capabilities == nil {
+			capabilities = try? await api.hostCapabilities()
 		}
-		let controller = MacInstallController(vm: vm, listViewModel: self)
-		macInstallControllers[vm.config.name] = controller
-		return controller
+		for vm in vms where vm.boot.mode == .macOS && installPhases[vm.name] == nil {
+			if let phase = try? await api.macInstallPhase(vm: vm.name) {
+				installPhases[vm.name] = phase
+			}
+		}
 	}
 
-	func isInstalling(_ vm: VirtualMachine) -> Bool {
-		macInstallControllers[vm.config.name]?.isInstalling ?? false
-	}
-
-	private func rekeyInstallController(from old: String, to new: String) {
-		if let controller = macInstallControllers.removeValue(forKey: old) {
-			macInstallControllers[new] = controller
+	private func handle(event: VMEvent) async {
+		switch event {
+		case .stateChanged(let name, let state):
+			if let index = vms.firstIndex(where: { $0.name == name }) {
+				vms[index].state = state
+			}
+			if name == selectedName {
+				restartPreviewLoop()
+			}
+		case .listChanged:
+			await reload()
+		case .installPhaseChanged(let name, let phase):
+			installPhases[name] = phase
+		case .log:
+			break   // the engine already prints; a log UI can subscribe later
+		case .unknown:
+			break
 		}
 	}
 
@@ -101,23 +113,48 @@ class VMListViewModel: ObservableObject {
 		print(message)
 	}
 
-	func log(warning: String) {
-		print(warning)
+	// MARK: - Install phases
+
+	func installPhase(for vm: VMInfo) -> InstallPhase {
+		if let phase = installPhases[vm.name] {
+			return phase
+		}
+		guard vm.boot.mode == .macOS, let state = vm.boot.macInstallState else {
+			return InstallPhase(kind: .idle)
+		}
+		switch state.kind {
+		case .installed:
+			return InstallPhase(kind: .installed)
+		case .failed:
+			return InstallPhase(kind: .failed, message: state.message)
+		case .installing, .interrupted:
+			// No live session known client-side means a past install was cut short.
+			return InstallPhase(kind: .interrupted)
+		}
+	}
+
+	func isInstalling(_ vm: VMInfo) -> Bool {
+		switch installPhase(for: vm).kind {
+		case .resolving, .downloading, .installing:
+			return true
+		case .idle, .installed, .failed, .interrupted:
+			return false
+		}
 	}
 
 	// MARK: - Preview
 
 	func preview() -> NSImage? {
-		return (self.previewImage ?? self.selected?.previewImage)
+		selectedName.flatMap { previews[$0] }
 	}
 
 	func isLoading() -> Bool {
-		guard let vm = self.selected else { return false }
-		return vm.state.isRunning && self.previewImage == nil
+		guard let vm = selected else { return false }
+		return vm.state.isRunning && preview() == nil
 	}
 
 	func onFocusEvent(focused: Bool) {
-		self.isFocused = focused
+		isFocused = focused
 		restartPreviewLoop()
 	}
 
@@ -125,14 +162,15 @@ class VMListViewModel: ObservableObject {
 		previewTask?.cancel()
 		previewTask = nil
 		guard isFocused, let vm = selected, vm.state.isRunning else { return }
-		let name = vm.config.name
+		let name = vm.name
 		previewTask = Task { [weak self] in
 			while !Task.isCancelled {
-				guard let self = self, self.selected?.config.name == name else { return }
-				let image = await self.registry.captureImage(name: name)
+				guard let self = self, self.selectedName == name else { return }
+				let data = try? await self.api.preview(vm: name, maxWidth: 1280)
 				if Task.isCancelled { return }
-				self.previewImage = image
-				self.selected?.updatePreview(img: image)
+				if let data = data, let image = NSImage(data: data) {
+					self.previews[name] = image
+				}
 				try? await Task.sleep(for: .seconds(self.previewInterval))
 			}
 		}
@@ -140,66 +178,184 @@ class VMListViewModel: ObservableObject {
 
 	// MARK: - List / selection
 
-	func vmList() -> [VirtualMachine] {
-		registry.list()
-	}
-
-	func runBtnLbl(vm: VirtualMachine) -> RunBtnState {
+	func runBtnLbl(vm: VMInfo) -> RunBtnState {
 		return RunBtnState.fromVMState(s: vm.state)
 	}
 
-	func forceUpdate() {
-		self.objectWillChange.send()
-	}
-
 	func hasVM(_ name: String) -> Bool {
-		return registry.vm(named: name) != nil
+		vms.contains { $0.name == name }
 	}
 
-	func select(vm: VirtualMachine?) {
-		self.selected = vm
-		self.vmName = vm?.config.name ?? ""
-		self.previewImage = vm?.previewImage
+	func select(name: String?) {
+		selectedName = name
+		vmName = name ?? ""
 		restartPreviewLoop()
 	}
 
 	// MARK: - Actions
 
-	func run(c: VMConfig) {
-		guard let vm = registry.vm(named: c.name) else {
-			log(error: "no VM named \(c.name)")
-			return
-		}
+	func toggleRun(_ vm: VMInfo) {
 		if vm.state.isRunning {
-			Task { [weak self] in
-				do {
-					try await self?.registry.stop(vm, mode: .force)
-				} catch {
-					vm.log(error: "Failed to stop VM: \(vm.config.name): \(error)")
-				}
-				self?.forceUpdate()
-			}
+			stopVM(vm.name)
 		} else {
-			if isInstalling(vm) {
-				log(error: "(\(vm.config.name)) cannot start while macOS is installing")
-				return
-			}
-			Task { [weak self] in
-				do {
-					try await self?.registry.start(vm, openConsole: true)
-				} catch {
-					vm.log(error: "(\(vm.config.name)) \(error)")
-				}
-				self?.forceUpdate()
+			startVM(vm.name)
+		}
+	}
+
+	func startVM(_ name: String) {
+		Task { [weak self] in
+			do {
+				try await self?.api.start(vm: name, options: StartOptions())
+			} catch {
+				self?.log(error: "(\(name)) \(error.localizedDescription)")
 			}
 		}
 	}
 
-	func rename(vm: VirtualMachine, to newName: String) throws {
-		let oldName = vm.config.name
-		try registry.rename(vm, to: newName)
-		rekeyInstallController(from: oldName, to: newName)
-		self.vmName = vm.config.name
+	func stopVM(_ name: String, mode: StopMode = .force) {
+		Task { [weak self] in
+			do {
+				try await self?.api.stop(vm: name, mode: mode)
+			} catch {
+				self?.log(error: "Failed to stop VM: \(name): \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func createVM() async -> String? {
+		do {
+			let vm = try await api.createVM()
+			await reload()
+			return vm.name
+		} catch {
+			log(error: "Failed to create VM: \(error.localizedDescription)")
+			return nil
+		}
+	}
+
+	func deleteVM(_ vm: VMInfo) {
+		if !VMListViewModel.confirmDialog(
+			message: "Delete \(vm.name)?",
+			informativeText: "Are you sure you want to delete \(vm.name)? "
+				+ "This action cannot be undone.") {
+			return
+		}
+		Task { [weak self] in
+			do {
+				try await self?.api.deleteVM(named: vm.name)
+				self?.select(name: nil)
+			} catch {
+				self?.log(error: "Failed to delete \(vm.name): \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func rename(from oldName: String, to newName: String) async -> Bool {
+		do {
+			try await api.renameVM(named: oldName, to: newName)
+			await reload()
+			select(name: newName)
+			if let image = previews.removeValue(forKey: oldName) {
+				previews[newName] = image
+			}
+			return true
+		} catch {
+			log(error: "Failed to rename VM: \(error.localizedDescription)")
+			vmName = oldName
+			return false
+		}
+	}
+
+	func setHardware(_ name: String, cpuCount: Int? = nil, memoryBytes: UInt64? = nil) {
+		Task { [weak self] in
+			do {
+				try await self?.api.setHardware(
+					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
+			} catch {
+				self?.log(error: "Failed to update hardware for \(name): "
+					+ error.localizedDescription)
+			}
+		}
+	}
+
+	func clampMemory(_ bytes: UInt64, floor: UInt64) -> UInt64 {
+		ByteSize.clampMemory(bytes, floor: floor, capabilities: capabilities)
+	}
+
+	func addDisk(_ name: String, _ disk: NewDisk) {
+		Task { [weak self] in
+			do {
+				try await self?.api.addDisk(vm: name, disk)
+			} catch {
+				self?.log(error: "Failed to add disk: \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func removeDisk(_ name: String, diskID: String) {
+		Task { [weak self] in
+			do {
+				try await self?.api.removeDisk(vm: name, diskID: diskID)
+			} catch {
+				self?.log(error: "Failed to delete disk: \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func addMount(_ name: String, path: String, tag: String) {
+		Task { [weak self] in
+			do {
+				try await self?.api.addMount(vm: name, path: path, tag: tag)
+			} catch {
+				self?.log(error: "Failed to add mount point: \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func removeMount(_ name: String, mountID: String) {
+		Task { [weak self] in
+			do {
+				try await self?.api.removeMount(vm: name, mountID: mountID)
+			} catch {
+				self?.log(error: "Failed to remove mount point: \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
+		do {
+			try await api.setKernelBoot(vm: name, enabled: enabled)
+			return true
+		} catch {
+			log(error: "Failed to switch boot mode: \(error.localizedDescription)")
+			return false
+		}
+	}
+
+	func updateKernelSettings(_ name: String, _ settings: KernelSettings) {
+		Task { [weak self] in
+			do {
+				try await self?.api.updateKernelSettings(vm: name, settings)
+			} catch {
+				self?.log(error: "Failed to save kernel settings: \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func startInstall(_ name: String, source: InstallSource) {
+		Task { [weak self] in
+			do {
+				try await self?.api.startMacInstall(vm: name, source: source)
+			} catch {
+				self?.log(error: "macOS install refused: \(error.localizedDescription)")
+			}
+		}
+	}
+
+	func cancelInstall(_ name: String) {
+		Task { [weak self] in
+			try? await self?.api.cancelMacInstall(vm: name)
+		}
 	}
 
 	static func confirmDialog(message: String, informativeText: String) -> Bool {
@@ -212,33 +368,5 @@ class VMListViewModel: ObservableObject {
 
 		let response = alert.runModal()
 		return response == .alertFirstButtonReturn
-	}
-
-	func delete(vm: VirtualMachine) {
-		if !VMListViewModel.confirmDialog(
-			message: "Delete \(vm.config.name)?",
-			informativeText: "Are you sure you want to delete \(vm.config.name)? "
-				+ "This action cannot be undone.") {
-			return
-		}
-
-		do {
-			try registry.delete(vm)
-		} catch {
-			log(error: "Failed to delete \(vm.config.name): \(error)")
-			return
-		}
-		macInstallControllers[vm.config.name] = nil
-		self.selected = nil
-		forceUpdate()
-	}
-
-	func addNewVM() -> VirtualMachine? {
-		do {
-			return try registry.create()
-		} catch {
-			log(error: "Failed to create VM: \(error)")
-			return nil
-		}
 	}
 }

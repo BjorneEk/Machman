@@ -9,11 +9,7 @@ import SwiftUI
 import MachmanAPI
 
 struct HistoryView: View {
-	@State private var vm: VirtualMachine
-
-	init(vm: VirtualMachine) {
-		self.vm = vm
-	}
+	let vm: VMInfo
 
 	func largestTimeDifference(from date: Date) -> String {
 		let now = Date()
@@ -62,16 +58,10 @@ struct HistoryView: View {
 	var body: some View {
 		GroupBox {
 			HStack {
-				if let startTime = vm.config.lastRan {
-					if vm.state.isRunning {
-						Text(largestTimeDifference(from: startTime))
-							.fontWeight(.bold)
-							.font(.title2)
-					} else {
-						Text("stopped")
-							.fontWeight(.bold)
-							.font(.title2)
-					}
+				if let startTime = vm.lastRan, vm.state.isRunning {
+					Text(largestTimeDifference(from: startTime))
+						.fontWeight(.bold)
+						.font(.title2)
 				} else {
 					Text("stopped")
 						.fontWeight(.bold)
@@ -80,7 +70,7 @@ struct HistoryView: View {
 				Spacer()
 			}
 			.padding(2)
-			if let lastUse = vm.config.lastRan {
+			if let lastUse = vm.lastRan {
 				HStack {
 					Text("last use:")
 						.fontWeight(.bold)
@@ -92,10 +82,9 @@ struct HistoryView: View {
 			}
 			HStack {
 				Text("created:")
-					//.padding(.trailing, 2)
 					.fontWeight(.bold)
 					.font(.title2)
-				Text("\(vm.config.created)")
+				Text("\(vm.created)")
 				Spacer()
 
 			}

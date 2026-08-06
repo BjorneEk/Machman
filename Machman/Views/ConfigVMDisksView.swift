@@ -6,69 +6,68 @@
 //
 
 import SwiftUI
+import MachmanAPI
+
+// Last `n` path components, for compact disk labels ("isos/debian.iso").
+func shortPath(_ path: String, _ n: Int) -> String {
+	let components = path.split(separator: "/").map(String.init)
+	guard n > 0 else { return "" }
+	return components.suffix(n).joined(separator: "/")
+}
 
 struct ConfigVMDisksView: View {
-	@State private var incr: Int = 0
-	@State var vm: VirtualMachine
-
-	init(vm: VirtualMachine) {
-		self.vm = vm
-	}
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
 
 	var body: some View {
 		VStack {
 			GroupBox {
-				Table(vm.config.disks) {
-					TableColumn("Disks") { (entry: VMDisk) in
-						switch entry {
-						case .storage(_, _):
+				Table(vm.disks) {
+					TableColumn("Disks") { (entry: DiskInfo) in
+						switch entry.type {
+						case .storage:
 							Image(systemName: "externaldrive.fill")
 								.contentShape(Rectangle())
 								.help("storage drive")
-						case .fromUrl(_):
+						case .image:
 							Image(systemName: "externaldrive.fill.badge.icloud")
 								.contentShape(Rectangle())
 								.help("drive")
-						case .iso(_):
+						case .iso:
 							Image(systemName: "externaldrive.connected.to.line.below.fill")
 								.contentShape(Rectangle())
 								.help("iso image")
 						}
 					}
 					.width(40)
-					TableColumn("Info") { (entry: VMDisk) in
-						switch entry {
-						case .storage(let n, _):
-							Text(n)
-						case .fromUrl(let url):
-							Text(VMConfig.formatUrl(from: url, 2))
-						case .iso(let url):
-							Text(VMConfig.formatUrl(from: url, 1))
+					TableColumn("Info") { (entry: DiskInfo) in
+						switch entry.type {
+						case .storage:
+							Text(entry.name ?? "")
+						case .image:
+							Text(shortPath(entry.path ?? "", 2))
+						case .iso:
+							Text(shortPath(entry.path ?? "", 1))
 						}
 					}
-					TableColumn("size") { (entry: VMDisk) in
-						if let size = vm.config.getDiskSize(disk: entry) {
-							Text("\(VMConfig.toGB(size: size)) GB")
+					TableColumn("size") { (entry: DiskInfo) in
+						if let size = entry.sizeBytes {
+							Text("\(ByteSize.toGB(size)) GB")
 						} else {
 							Text("?")
 						}
 					}.width(40)
-					TableColumn("") { (entry: VMDisk) in
+					TableColumn("") { (entry: DiskInfo) in
 						Button(action: {
 							DispatchQueue.main.async {
-								if case .storage(let name, _) = entry {
-									let url = vm.config.localURL(file: "\(name).raw")
+								if entry.type == .storage {
 									guard VMListViewModel.confirmDialog(
-										message: "Delete disk \(VMConfig.formatUrl(from: url, 2))?",
-										informativeText: "\(name) remover do you wish to delete it?")
+										message: "Delete disk \(entry.name ?? entry.id).raw?",
+										informativeText: "\(entry.name ?? entry.id) remover "
+											+ "do you wish to delete it?")
 									else { return }
 								}
-								do {
-									try vm.config.deleteDisk(disk: entry)
-								} catch {
-									vm.log(error: "Failed to delete disk: \(error)")
-								}
-								self.incr += 1
+								viewModel.removeDisk(vm.name, diskID: entry.id)
 							}
 						}) {
 							Image(systemName: "trash")
@@ -76,31 +75,17 @@ struct ConfigVMDisksView: View {
 								.help("Delete")
 						}
 					}.width(20)
-				}.id(incr)
+				}
 				Divider()
 				AddDiskView(
+					freeGB: viewModel.capabilities.map { ByteSize.toGB($0.freeDiskBytes) },
 					addIso: {
-						self.incr += 1
-						do {
-							try vm.config.addIsoDisk(isoUrl: $0)
-						} catch {
-							vm.log(error: "Failed to add iso disk: \(error)")
-						}
+						viewModel.addDisk(vm.name, .iso(path: $0.path))
 					},
 					addFrom: {
-						self.incr += 1
-						do {
-							try vm.config.addDisk(disk: .fromUrl($0))
-						} catch {
-							vm.log(error: "Failed to add disk: \(error)")
-						}
+						viewModel.addDisk(vm.name, .image(path: $0.path))
 					}, addNew: {
-						self.incr += 1
-						do {
-							try vm.config.addNewStorageDisk(name: $0, size: $1)
-						} catch {
-							vm.log(error: "Failed to add storage disk: \(error)")
-						}
+						viewModel.addDisk(vm.name, .storage(name: $0, sizeBytes: $1))
 					})
 			}
 			.padding(.bottom, 8)

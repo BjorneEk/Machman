@@ -3,15 +3,19 @@
 //  Machman
 //
 //  macOS guest tab: install from a local .ipsw or the latest from Apple, with download/install
-//  progress, plus the installed / failed / interrupted states. Failures surface inline (the
-//  in-memory log is not rendered anywhere) and are also logged.
+//  progress, plus the installed / failed / interrupted states. Renders InstallPhase snapshots
+//  from the event feed; actions go through the API.
 //
 
 import SwiftUI
 import UniformTypeIdentifiers
+import MachmanAPI
 
 struct MacOSBootView: View {
-	@ObservedObject var controller: MacInstallController
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
+
+	private var phase: InstallPhase { viewModel.installPhase(for: vm) }
 
 	private func pickIPSW() {
 		let panel = NSOpenPanel()
@@ -23,18 +27,18 @@ struct MacOSBootView: View {
 		}
 		panel.begin { response in
 			if response == .OK, let url = panel.url {
-				controller.installLocal(url)
+				viewModel.startInstall(vm.name, source: .ipsw(url.path))
 			}
 		}
 	}
 
 	var body: some View {
 		VStack {
-			switch controller.phase {
+			switch phase.kind {
 			case .idle:
 				installPrompt(message: nil)
-			case .failed(let msg):
-				installPrompt(message: msg)
+			case .failed:
+				installPrompt(message: phase.message ?? "install failed")
 			case .interrupted:
 				installPrompt(message: "A previous install was interrupted; you can start over.")
 			case .resolving:
@@ -45,10 +49,12 @@ struct MacOSBootView: View {
 						.foregroundColor(.secondary)
 					Spacer()
 				}
-			case .downloading(let version, let build):
-				downloading(version: version, build: build)
-			case .installing(let version):
-				installing(version: version)
+			case .downloading:
+				downloading(
+					version: phase.version ?? "macOS", build: phase.build ?? "",
+					progress: phase.progress, start: phase.downloadStartedAt)
+			case .installing:
+				installing(version: phase.version ?? "macOS", progress: phase.progress)
 			case .installed:
 				HStack {
 					Image(systemName: "apple.logo")
@@ -59,7 +65,6 @@ struct MacOSBootView: View {
 			}
 		}
 		.padding(4)
-		.onAppear { controller.reconcile() }
 	}
 
 	@ViewBuilder
@@ -79,7 +84,7 @@ struct MacOSBootView: View {
 			}
 		}
 		Divider()
-		if controller.vmIsRunning {
+		if vm.state.isRunning {
 			HStack {
 				Text("Stop the VM before installing macOS")
 					.foregroundColor(.secondary)
@@ -92,35 +97,37 @@ struct MacOSBootView: View {
 					.font(.title2)
 			}
 			.help("Install from a local .ipsw restore image")
-			Button(action: { controller.installLatest() }) {
+			Button(action: { viewModel.startInstall(vm.name, source: .latest) }) {
 				Image(systemName: "icloud.and.arrow.down")
 					.font(.title2)
 			}
 			.help("Download and install the newest macOS this host can install")
 			Spacer()
 		}
-		.disabled(controller.vmIsRunning)
+		.disabled(vm.state.isRunning)
 	}
 
 	@ViewBuilder
-	private func downloading(version: String, build: String) -> some View {
+	private func downloading(
+		version: String, build: String, progress: ProgressInfo?, start: Date?
+	) -> some View {
 		HStack {
 			Text("Downloading macOS \(version) (\(build))")
 				.fontWeight(.bold)
 			Spacer()
-			Button(action: { controller.cancel() }) {
+			Button(action: { viewModel.cancelInstall(vm.name) }) {
 				Image(systemName: "xmark.circle.fill")
 			}
 			.buttonStyle(.borderless)
 			.help("Cancel the download")
 		}
-		if let progress = controller.downloadProgress, progress.totalUnitCount > 0 {
-			ProgressView(progress)
+		if let progress = progress, (progress.totalBytes ?? 0) > 0 {
+			ProgressView(value: progress.fraction)
 				.progressViewStyle(.linear)
 				.labelsHidden()
 			TimelineView(.periodic(from: .now, by: 1)) { _ in
 				HStack {
-					Text(Self.byteInfo(progress, start: controller.downloadStart))
+					Text(Self.byteInfo(progress, start: start))
 						.font(.caption)
 						.foregroundColor(.secondary)
 					Spacer()
@@ -136,32 +143,32 @@ struct MacOSBootView: View {
 	}
 
 	@ViewBuilder
-	private func installing(version: String) -> some View {
+	private func installing(version: String, progress: ProgressInfo?) -> some View {
 		HStack {
 			Text("Installing macOS \(version)…")
 				.fontWeight(.bold)
 				.help("If an install appears stuck or fails, cancel it and retry.")
 			Spacer()
-			Button(action: { controller.cancel() }) {
+			Button(action: { viewModel.cancelInstall(vm.name) }) {
 				Image(systemName: "xmark.circle.fill")
 			}
 			.buttonStyle(.borderless)
 			.help("Cancel the install")
 		}
-		if let progress = controller.installProgress {
-			ProgressView(progress)
+		if let progress = progress {
+			ProgressView(value: progress.fraction)
 				.progressViewStyle(.linear)
 				.labelsHidden()
 		}
 	}
 
-	static func byteInfo(_ progress: Progress, start: Date?) -> String {
+	static func byteInfo(_ progress: ProgressInfo, start: Date?) -> String {
 		let done = ByteCountFormatter.string(
-			fromByteCount: progress.completedUnitCount, countStyle: .file)
+			fromByteCount: progress.completedBytes ?? 0, countStyle: .file)
 		let total = ByteCountFormatter.string(
-			fromByteCount: progress.totalUnitCount, countStyle: .file)
+			fromByteCount: progress.totalBytes ?? 0, countStyle: .file)
 		var info = "\(done) of \(total)"
-		let fraction = progress.fractionCompleted
+		let fraction = progress.fraction
 		if let start = start, fraction > 0.01 {
 			let elapsed = Date().timeIntervalSince(start)
 			if elapsed > 5 {

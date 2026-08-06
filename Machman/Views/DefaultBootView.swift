@@ -3,25 +3,28 @@
 //  Machman
 //
 //  Default boot editor: EFI by default, or direct Linux-kernel boot when the checkbox is on.
-//  Field values live in VMConfig.kernelSettings (a persisted draft) so they survive toggling
+//  Field values live in the persisted kernel draft (BootInfo.kernel) so they survive toggling
 //  back to EFI and app restarts.
 //
 
 import SwiftUI
+import MachmanAPI
 
 struct DefaultBootView: View {
-	@State private var vm: VirtualMachine
+	let vm: VMInfo
+	@ObservedObject var viewModel: VMListViewModel
 	@State private var kernelEnabled: Bool
 	@State private var kernelPath: String
 	@State private var initrdPath: String
 	@State private var commandLine: String
 
-	init(vm: VirtualMachine) {
+	init(vm: VMInfo, viewModel: VMListViewModel) {
 		self.vm = vm
-		kernelEnabled = vm.config.isKernelBoot
-		kernelPath = vm.config.kernelSettings?.kernelPath ?? ""
-		initrdPath = vm.config.kernelSettings?.initialRamdiskPath ?? ""
-		commandLine = vm.config.kernelSettings?.commandLine ?? ""
+		self.viewModel = viewModel
+		_kernelEnabled = State(initialValue: vm.boot.mode == .linuxKernel)
+		_kernelPath = State(initialValue: vm.boot.kernel?.kernelPath ?? "")
+		_initrdPath = State(initialValue: vm.boot.kernel?.initrdPath ?? "")
+		_commandLine = State(initialValue: vm.boot.kernel?.commandLine ?? "")
 	}
 
 	private var kernelMissing: Bool {
@@ -30,15 +33,10 @@ struct DefaultBootView: View {
 	}
 
 	private func pushSettings() {
-		let settings = LinuxKernelBoot(
+		viewModel.updateKernelSettings(vm.name, KernelSettings(
 			kernelPath: kernelPath,
-			initialRamdiskPath: initrdPath.isEmpty ? nil : initrdPath,
-			commandLine: commandLine)
-		do {
-			try vm.config.updateKernelSettings(settings)
-		} catch {
-			vm.log(error: "Failed to save kernel settings: \(error.localizedDescription)")
-		}
+			initrdPath: initrdPath.isEmpty ? nil : initrdPath,
+			commandLine: commandLine))
 	}
 
 	private func pickFile(_ assign: @escaping (String) -> Void) {
@@ -62,11 +60,10 @@ struct DefaultBootView: View {
 					.toggleStyle(.checkbox)
 					.onChange(of: kernelEnabled) { _, newValue in
 						pushSettings()
-						do {
-							try vm.config.setKernelBoot(enabled: newValue)
-						} catch {
-							kernelEnabled = vm.config.isKernelBoot   // revert on refusal
-							vm.log(error: "Failed to switch boot mode: \(error.localizedDescription)")
+						Task {
+							if await !viewModel.setKernelBoot(vm.name, enabled: newValue) {
+								kernelEnabled = vm.boot.mode == .linuxKernel   // revert on refusal
+							}
 						}
 					}
 				Spacer()

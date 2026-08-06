@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import MachmanAPI
+
 protocol VMActionView: View {
 	var systemImageName: String { get }
 	var color: Color { get }
@@ -18,13 +20,10 @@ extension VMActionView {
 	func label(bSize: CGFloat, fSize: CGFloat) -> AnyView {
 		AnyView(
 			Image(systemName: systemImageName)
-				//.frame(width: bSize, height: bSize)
 				.imageScale(.large)
 				.foregroundColor(color)
 				.aspectRatio(1, contentMode: .fit)
 				.font(.largeTitle)
-				//.font(weight: .medium))
-				//.font(.system(size: fSize, weight: .medium))
 		)
 	}
 
@@ -77,9 +76,9 @@ struct VMActionButton: VMActionView {
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	@State private var navigate = false
-	@Binding private var selection: VirtualMachine?
+	@Binding private var selection: String?
 
-	init(viewModel: VMListViewModel, selection: Binding<VirtualMachine?>) {
+	init(viewModel: VMListViewModel, selection: Binding<String?>) {
 		_viewModel = StateObject(wrappedValue: viewModel)
 		self._selection = selection
 	}
@@ -87,25 +86,35 @@ struct VMNavigationView: View {
 	var body: some View {
 		NavigationSplitView {
 			List(selection: $selection) {
-				ForEach(viewModel.vmList(), id: \.id) { item in
+				ForEach(viewModel.vms) { item in
 					HStack {
-						Image(systemName: viewModel.runBtnLbl(vm: item).running() ? "pc" : "pause.fill")
-							.foregroundColor(viewModel.runBtnLbl(vm: item).running() ? .blue : .primary)
-						Text(item.config.name)
+						Image(systemName: item.state.isRunning ? "pc" : "pause.fill")
+							.foregroundColor(item.state.isRunning ? .blue : .primary)
+						Text(item.name)
 							.font(.callout)
 						Spacer()
 					}
-					.tag(item)
+					.tag(item.name)
 				}
 			}
 			.onChange(of: selection) {
-				print("Selected VM: \(selection?.config.name ?? "none")")
-				viewModel.select(vm: selection)
+				viewModel.select(name: selection)
 				navigate = !navigate
 			}
-			Button(action:{
-				selection = viewModel.addNewVM()
-				viewModel.select(vm: selection)
+			// Keep the sidebar highlight in sync when the selection changes elsewhere
+			// (e.g. a rename).
+			.onChange(of: viewModel.selectedName) {
+				if selection != viewModel.selectedName {
+					selection = viewModel.selectedName
+				}
+			}
+			Button(action: {
+				Task {
+					if let name = await viewModel.createVM() {
+						selection = name
+						viewModel.select(name: name)
+					}
+				}
 			}) {
 				HStack {
 					Image(systemName: "plus")
@@ -115,19 +124,10 @@ struct VMNavigationView: View {
 			.buttonStyle(.borderless)
 			.padding()
 		} detail: {
-			// Detail View
-			//if let selected = selection {
-				MainVMView(viewModel: viewModel)
-					.onAppear {print("---Selected VM: \(selection?.config.name ?? "none")")}
-					.id(navigate)
-			/*} else {
-				Text("Select a VM")
-					.font(.title)
-					.foregroundColor(.secondary)
-			}*/
+			MainVMView(viewModel: viewModel)
+				.id(navigate)
 		}
 	}
-	
 }
 
 #Preview {

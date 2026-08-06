@@ -1,27 +1,31 @@
 import Testing
 @testable import Machman_desktop
+import MachmanAPI
 
-struct MacInstallControllerTests {
+struct InstallSessionPhaseTests {
 
 	@Test func phaseMapsBootState() {
-		#expect(MacInstallController.phase(for: .efi, hasActiveInstall: false) == .idle)
+		#expect(InstallSession.phase(for: .efi, hasActiveInstall: false).kind == .idle)
 
 		let kernel = BootConfig.linuxKernel(
 			LinuxKernelBoot(kernelPath: "/k", initialRamdiskPath: nil, commandLine: ""))
-		#expect(MacInstallController.phase(for: kernel, hasActiveInstall: false) == .idle)
+		#expect(InstallSession.phase(for: kernel, hasActiveInstall: false).kind == .idle)
 
 		let installing = BootConfig.macOS(
 			MacOSBoot(installState: .installing, minimumCPUCount: 1, minimumMemorySize: 1))
-		#expect(MacInstallController.phase(for: installing, hasActiveInstall: false) == .interrupted)
-		#expect(MacInstallController.phase(for: installing, hasActiveInstall: true)
-			== .installing(version: "macOS"))
+		#expect(InstallSession.phase(for: installing, hasActiveInstall: false).kind == .interrupted)
+		let active = InstallSession.phase(for: installing, hasActiveInstall: true)
+		#expect(active.kind == .installing)
+		#expect(active.version == "macOS")
 
 		let installed = BootConfig.macOS(
 			MacOSBoot(installState: .installed, minimumCPUCount: 1, minimumMemorySize: 1))
-		#expect(MacInstallController.phase(for: installed, hasActiveInstall: false) == .installed)
+		#expect(InstallSession.phase(for: installed, hasActiveInstall: false).kind == .installed)
 
 		let failed = BootConfig.macOS(
 			MacOSBoot(installState: .failed("x"), minimumCPUCount: 1, minimumMemorySize: 1))
-		#expect(MacInstallController.phase(for: failed, hasActiveInstall: false) == .failed("x"))
+		let failedPhase = InstallSession.phase(for: failed, hasActiveInstall: false)
+		#expect(failedPhase.kind == .failed)
+		#expect(failedPhase.message == "x")
 	}
 }

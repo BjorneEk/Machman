@@ -6,15 +6,11 @@
 //
 
 import SwiftUI
-
+import MachmanAPI
 
 struct MainVMView: View {
 	@StateObject private var viewModel: VMListViewModel
-	//@StateObject var previewViewModel: PreviewViewModel
 	@State private var previewWidth: CGFloat = 0
-	//@State private var vm: VirtualMachine
-	
-	
 
 	init(viewModel: VMListViewModel) {
 		_viewModel = StateObject(wrappedValue: viewModel)
@@ -27,7 +23,7 @@ struct MainVMView: View {
 					PreviewView(viewModel: viewModel)
 						.frame(minWidth: 170)
 					Spacer()
-					ConfigVMDisksView(vm: vm)
+					ConfigVMDisksView(vm: vm, viewModel: viewModel)
 						.frame(minWidth: 200)
 						.frame(minHeight: 250)
 				}
@@ -36,7 +32,7 @@ struct MainVMView: View {
 				HStack {
 					ConfigVMView(vm: vm, viewModel: viewModel)
 						.frame(width: previewWidth)
-					ConfigVMHostMountsView(vm: vm)
+					ConfigVMHostMountsView(vm: vm, viewModel: viewModel)
 						.frame(minWidth: 200)
 				}
 			}
@@ -47,47 +43,50 @@ struct MainVMView: View {
 				ToolbarItem(placement: .principal) {
 					EditableText($viewModel.vmName)
 						.font(.largeTitle)
-					//.font(.system(size: 25, weight: .medium, design: .default))
 						.onSubmit {
-							DispatchQueue.main.async {
-								if viewModel.hasVM(viewModel.vmName) {
-									vm.log(error: "A VM named '\(viewModel.vmName)' already exists.")
-									viewModel.vmName = vm.config.name
-								}
-								if VMListViewModel.confirmDialog(
-									message: "Change VM name",
-									informativeText: "Are you shure you want to change the name of: '\(vm.config.name)' to '\(viewModel.vmName)'") {
-									do {
-										let old = vm.config.name
-										try viewModel.rename(vm: vm, to: viewModel.vmName)
-										vm.log(message: "Renamed \(old) to \(vm.config.name)")
-									} catch {
-										vm.log(error: "Failed to rename VM: \(error.localizedDescription)")
+							let newName = viewModel.vmName
+							guard newName != vm.name else { return }
+							if viewModel.hasVM(newName) {
+								viewModel.log(error: "A VM named '\(newName)' already exists.")
+								viewModel.vmName = vm.name
+								return
+							}
+							if VMListViewModel.confirmDialog(
+								message: "Change VM name",
+								informativeText: "Are you shure you want to change the name of: "
+									+ "'\(vm.name)' to '\(newName)'") {
+								Task {
+									if await viewModel.rename(from: vm.name, to: newName) {
+										viewModel.log(message: "Renamed \(vm.name) to \(newName)")
 									}
 								}
-								viewModel.vmName = vm.config.name
+							} else {
+								viewModel.vmName = vm.name
 							}
 						}
 				}
 				ToolbarItem {
 					Button(action: {
-						viewModel.run(c: vm.config)
+						viewModel.toggleRun(vm)
 					}) {
-						Label(viewModel.runBtnLbl(vm: vm).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
+						Label(
+							viewModel.runBtnLbl(vm: vm).running()
+								? "Stop \(vm.name)" : "Run \(vm.name)",
+							systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
 					}
 					.disabled(viewModel.isInstalling(vm))
 					.help(viewModel.isInstalling(vm)
 						? "macOS is installing; wait for it to finish"
-						: (viewModel.runBtnLbl(vm: vm).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)"))
+						: (viewModel.runBtnLbl(vm: vm).running()
+							? "Stop \(vm.name)" : "Run \(vm.name)"))
 				}
 				ToolbarItem {
 					Button(action: {
-						viewModel.delete(vm: vm)
-						vm.log(message: "deleted \(vm.config.name)")
+						viewModel.deleteVM(vm)
 					}) {
 						Label("Delete", systemImage: "trash")
 					}
-					.help("delete \(vm.config.name)")
+					.help("delete \(vm.name)")
 				}
 			}
 			.padding()
@@ -143,7 +142,8 @@ struct FocusAndTopmostTracker: NSViewRepresentable {
 		func checkState() {
 			guard let window = window else { return }
 			let isKey = window.isKeyWindow
-			let isFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier == NSRunningApplication.current.processIdentifier
+			let isFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+				== NSRunningApplication.current.processIdentifier
 
 			let currentState = isKey && isFrontmost
 			if currentState != lastState {
