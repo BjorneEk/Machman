@@ -53,6 +53,11 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 			alert.alertStyle = .critical
 			alert.runModal()
 			NSApp.terminate(nil)
+			return
+		}
+		// VMs from a previous daemon run live on in their vmhost processes — take them back.
+		Task {
+			await Daemon.api.adoptExistingHosts()
 		}
 	}
 
@@ -62,47 +67,37 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-		let running = Daemon.registry.list().filter { $0.state.isRunning }
-		guard !running.isEmpty else {
+		guard Daemon.api.hasHostedVMs else {
 			Daemon.server.stop()
 			return .terminateNow
 		}
 
 		let alert = NSAlert()
-		alert.messageText = running.count == 1
-			? "\(running[0].name) is still running"
-			: "\(running.count) VMs are still running"
-		alert.informativeText = "Ask the guests to shut down (anything still running after "
-			+ "30 seconds is force-stopped), force stop everything now, or cancel."
+		alert.messageText = "VMs are still running"
+		alert.informativeText = "Running VMs live in their own processes: you can quit and "
+			+ "leave them running (the next Machmand re-adopts them), ask the guests to shut "
+			+ "down (force-stopped after 30 seconds), or force stop everything now."
+		alert.addButton(withTitle: "Quit, Leave VMs Running")
 		alert.addButton(withTitle: "Shut Down All & Quit")
 		alert.addButton(withTitle: "Force Stop All & Quit")
 		alert.addButton(withTitle: "Cancel")
 		switch alert.runModal() {
 		case .alertFirstButtonReturn:
-			stopAllAndQuit(sender, running, soft: true)
+			Daemon.server.stop()
+			return .terminateNow
 		case .alertSecondButtonReturn:
-			stopAllAndQuit(sender, running, soft: false)
+			stopAllAndQuit(sender, soft: true)
+		case .alertThirdButtonReturn:
+			stopAllAndQuit(sender, soft: false)
 		default:
 			return .terminateCancel
 		}
 		return .terminateLater
 	}
 
-	private func stopAllAndQuit(_ app: NSApplication, _ running: [VirtualMachine], soft: Bool) {
+	private func stopAllAndQuit(_ app: NSApplication, soft: Bool) {
 		Task { @MainActor in
-			if soft {
-				for vm in running {
-					try? await Daemon.registry.stop(vm, mode: .soft)
-				}
-				let deadline = Date().addingTimeInterval(30)
-				while Date() < deadline,
-					Daemon.registry.list().contains(where: { $0.state.isRunning }) {
-					try? await Task.sleep(for: .milliseconds(500))
-				}
-			}
-			for vm in Daemon.registry.list() where vm.state.isRunning {
-				try? await Daemon.registry.stop(vm, mode: .force)
-			}
+			await Daemon.api.stopAllHosted(softFirst: soft, graceSeconds: 30)
 			Daemon.server.stop()
 			app.reply(toApplicationShouldTerminate: true)
 		}

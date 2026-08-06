@@ -41,6 +41,47 @@ public final class RoutingMachman: MachmanControlling {
 
 	var hostedNames: [String] { Array(hosted.keys) }
 
+	public var hasHostedVMs: Bool { !hosted.isEmpty }
+
+	// Adopt vmhosts left behind by an earlier daemon: a live host answers on its socket and
+	// keeps running (its VM never noticed the daemon restart); a stale socket is reclaimed.
+	public func adoptExistingHosts() async {
+		for vm in registry.list() {
+			let name = vm.name
+			guard hosted[name] == nil else { continue }
+			let socketPath = Self.hostSocketPath(for: name)
+			guard FileManager.default.fileExists(atPath: socketPath) else { continue }
+			do {
+				let client = try await connectHost(name: name, socketPath: socketPath)
+				adopt(name: name, client: client)
+				print("machmand: adopted running vmhost for \(name)")
+			} catch {
+				unlink(socketPath)
+			}
+		}
+	}
+
+	// Stop every hosted VM (quit path): optionally ask guests first, then force stragglers,
+	// and wait for the hosts to drain.
+	public func stopAllHosted(softFirst: Bool, graceSeconds: Double) async {
+		if softFirst {
+			for name in Array(hosted.keys) {
+				try? await stop(vm: name, mode: .soft)
+			}
+			let deadline = Date().addingTimeInterval(graceSeconds)
+			while Date() < deadline, !hosted.isEmpty {
+				try? await Task.sleep(for: .milliseconds(500))
+			}
+		}
+		for name in Array(hosted.keys) {
+			try? await stop(vm: name, mode: .force)
+		}
+		let deadline = Date().addingTimeInterval(10)
+		while Date() < deadline, !hosted.isEmpty {
+			try? await Task.sleep(for: .milliseconds(250))
+		}
+	}
+
 	// MARK: - Host plumbing
 
 	static func hostSocketPath(for name: String) -> String {
