@@ -28,3 +28,9 @@ DerivedData/
 
 # Machman test/dev VM data (MACHMAN_DATA_DIR)
 machman_data/
+
+# Git worktrees (machmand refactor lives in .worktrees/machmand-refactor)
+/.worktrees/
+
+# Dev data dir for the machmand refactor (clones of production VMs; see scripts/dev-setup.sh)
+/.machman/
