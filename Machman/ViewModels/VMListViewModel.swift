@@ -2,25 +2,22 @@
 //  VMListViewModel.swift
 //  Machman
 //
-//  Created by Gustaf Franzen on 2025-03-29.
+//  View-facing state over VMRegistry: selection, previews, install-controller cache, and the
+//  UI verbs the views call. Engine work (starting, stopping, windows) lives in the registry;
+//  this class reacts to its event stream.
 //
 
 import Foundation
 import AppKit
 import SwiftUI
+import MachmanAPI
 
 enum RunBtnState: String {
-	//case run = "play.fill"
 	case run  = "play.circle"
 	case stop = "stop.circle"
 
 	static func fromVMState(s: VMState) -> RunBtnState {
-		switch s {
-		case .running:
-			return .stop
-		default:
-			return .run
-		}
+		return s.isRunning ? .stop : .run
 	}
 	func color() -> Color {
 		switch self {
@@ -31,40 +28,51 @@ enum RunBtnState: String {
 		}
 	}
 	func running() -> Bool {
-		switch self {
-		case .run:
-			return false
-		case .stop:
-			return true
-		}
+		return self == .stop
 	}
 }
 
+@MainActor
 class VMListViewModel: ObservableObject {
-	@Published var		vmMap: [String: VirtualMachine] = [:]
-	@State var			log: [VirtualMachineLog] = []
+	let registry: VMRegistry
+	@Published var selected: VirtualMachine? = nil
+	@Published var vmName: String = ""
+	@Published private var previewImage: NSImage?
 
-	@Published private var	previewImage: NSImage?
-
-	@Published private var	isFocused = true
-	private let				hUpdatePreview: Double = 4
-	@Published var				selected: VirtualMachine? = nil
-	@Published var				vmName: String = ""
-
-	private lazy var previewUpdateManager: PeriodicTaskManager<NSImage?> = {
-		return PeriodicTaskManager(
-			interval: hUpdatePreview,
-			task: self.getUpdatedPreviewImage,
-			update: self.setUpdatedPreviewImage
-		)
-	}()
+	private var isFocused = true
+	private let previewInterval: Double = 4
+	private var previewTask: Task<Void, Never>?
+	private var eventTask: Task<Void, Never>?
 
 	// Install controllers live here (not in a view) so a running install keeps its phase and
 	// live progress when the user navigates between VMs, and so a second install of the same
 	// VM can't be started from a fresh pane.
 	private var macInstallControllers: [String: MacInstallController] = [:]
 
-	@MainActor
+	init(registry: VMRegistry? = nil) {
+		self.registry = registry ?? VMRegistry()
+		eventTask = Task { [weak self] in
+			guard let stream = self?.registry.events.stream() else { return }
+			for await event in stream {
+				guard let self = self else { return }
+				self.handle(event: event)
+			}
+		}
+	}
+
+	deinit {
+		eventTask?.cancel()
+		previewTask?.cancel()
+	}
+
+	private func handle(event: VMEvent) {
+		if case .stateChanged(let vm, _) = event, vm == selected?.config.name {
+			restartPreviewLoop()
+		}
+		// Coarse refresh, replacing the old forceUpdate() back-pointer pokes from the engine.
+		objectWillChange.send()
+	}
+
 	func installController(for vm: VirtualMachine) -> MacInstallController {
 		if let existing = macInstallControllers[vm.config.name] {
 			return existing
@@ -74,81 +82,30 @@ class VMListViewModel: ObservableObject {
 		return controller
 	}
 
-	@MainActor
 	func isInstalling(_ vm: VirtualMachine) -> Bool {
 		macInstallControllers[vm.config.name]?.isInstalling ?? false
 	}
 
-	func rekeyInstallController(from old: String, to new: String) {
+	private func rekeyInstallController(from old: String, to new: String) {
 		if let controller = macInstallControllers.removeValue(forKey: old) {
 			macInstallControllers[new] = controller
 		}
 	}
 
-	init () {
-		let folderURL = URL(fileURLWithPath: machmanVMDir)
-		let fileManager = FileManager.default
-
-
-		do {
-			let contents = try fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
-
-			let vmList: [VirtualMachine] = try contents.filter { url in
-				let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
-				return resourceValues.isDirectory ?? false
-			}
-			.map { try? VirtualMachine(config: VMConfig(name: String($0.lastPathComponent))) }
-			.compactMap { $0 }
-			for (_, contf) in vmList.enumerated() {
-				vmMap["\(contf.config.name)"] = contf
-			}
-		} catch {
-			log(error: "Error reading machines: \(error)")
-		}
-		self.previewUpdateManager.debug = true
-	}
-
-	func log(_ e: VirtualMachineLog) {
-		self.log.append(e)
-	}
-
-	// Until a log-viewer UI exists, the console is the only place errors are guaranteed visible,
-	// so every log call also prints (matching VirtualMachine's log functions).
+	// Until a log-viewer UI exists, the console is the only place errors are guaranteed visible.
 	func log(error: String) {
 		print(error)
-		self.log.append(.error(error))
 	}
 
 	func log(message: String) {
 		print(message)
-		self.log.append(.message(message))
 	}
 
 	func log(warning: String) {
 		print(warning)
-		self.log.append(.warning(warning))
 	}
 
-	private func getUpdatedPreviewImage() -> NSImage? {
-		guard let vm = self.selected else { return nil }
-		let semaphore = DispatchSemaphore(value: 0)
-		var result: NSImage? = nil
-
-		vm.captureWindowImage { image in
-			result = image
-			semaphore.signal()
-		}
-
-		semaphore.wait()
-		return result
-	}
-
-	private func setUpdatedPreviewImage(img: NSImage?) {
-		guard let vm = self.selected else { return }
-		guard let img = img else { return }
-		self.previewImage = img
-		vm.updatePreview(img: img)
-	}
+	// MARK: - Preview
 
 	func preview() -> NSImage? {
 		return (self.previewImage ?? self.selected?.previewImage)
@@ -156,30 +113,39 @@ class VMListViewModel: ObservableObject {
 
 	func isLoading() -> Bool {
 		guard let vm = self.selected else { return false }
-		return vm.config.state == .running && self.previewImage == nil
+		return vm.state.isRunning && self.previewImage == nil
 	}
 
 	func onFocusEvent(focused: Bool) {
-		print("focus envent, focused: \(focused)")
-		guard let vm = self.selected else { return }
 		self.isFocused = focused
-		guard self.isFocused && vm.config.state == .running else {
-			self.previewUpdateManager.stop()
-			return
-		}
-		self.previewUpdateManager.start()
+		restartPreviewLoop()
 	}
+
+	private func restartPreviewLoop() {
+		previewTask?.cancel()
+		previewTask = nil
+		guard isFocused, let vm = selected, vm.state.isRunning else { return }
+		let name = vm.config.name
+		previewTask = Task { [weak self] in
+			while !Task.isCancelled {
+				guard let self = self, self.selected?.config.name == name else { return }
+				let image = await self.registry.captureImage(name: name)
+				if Task.isCancelled { return }
+				self.previewImage = image
+				self.selected?.updatePreview(img: image)
+				try? await Task.sleep(for: .seconds(self.previewInterval))
+			}
+		}
+	}
+
+	// MARK: - List / selection
 
 	func vmList() -> [VirtualMachine] {
-		return vmMap.map {
-			$0.value
-		}.sorted(by: {
-			$0.config.lastRan ?? .distantPast > $1.config.lastRan ?? .distantPast
-		})
+		registry.list()
 	}
 
-	func runBtnLbl(c: VMConfig) -> RunBtnState {
-		return RunBtnState.fromVMState(s: vmMap[c.name]?.config.state ?? VMState.stopped)
+	func runBtnLbl(vm: VirtualMachine) -> RunBtnState {
+		return RunBtnState.fromVMState(s: vm.state)
 	}
 
 	func forceUpdate() {
@@ -187,51 +153,53 @@ class VMListViewModel: ObservableObject {
 	}
 
 	func hasVM(_ name: String) -> Bool {
-		return vmMap[name] != nil
+		return registry.vm(named: name) != nil
 	}
 
 	func select(vm: VirtualMachine?) {
-		self.previewUpdateManager.stop()
 		self.selected = vm
 		self.vmName = vm?.config.name ?? ""
 		self.previewImage = vm?.previewImage
+		restartPreviewLoop()
 	}
 
-	func addVM(vmConfig: VMConfig) {
-		vmMap[vmConfig.name] = VirtualMachine(config: vmConfig)
-	}
-	func onStopped() {
+	// MARK: - Actions
 
-	}
-	@MainActor
-	private func _run(c: VMConfig, iso: URL? = nil) {
-		self.previewUpdateManager.stop()
-
-		guard let vm = vmMap[c.name] else {
+	func run(c: VMConfig) {
+		guard let vm = registry.vm(named: c.name) else {
 			log(error: "no VM named \(c.name)")
 			return
 		}
-		switch vm.config.state {
-			case .stopped:
-				if macInstallControllers[vm.config.name]?.isInstalling ?? false {
-					log(error: "(\(vm.config.name)) cannot start while macOS is installing")
-					return
-				}
+		if vm.state.isRunning {
+			Task { [weak self] in
 				do {
-					try vm.startVMWindow(viewModel: self, isoPath: iso)
+					try await self?.registry.stop(vm, mode: .force)
 				} catch {
-					log(error: "(\(vm.config.name)) \(error)")
-					try? vm.config.stop()
+					vm.log(error: "Failed to stop VM: \(vm.config.name): \(error)")
 				}
-			case .running:
-				vm.stopVM()
+				self?.forceUpdate()
+			}
+		} else {
+			if isInstalling(vm) {
+				log(error: "(\(vm.config.name)) cannot start while macOS is installing")
+				return
+			}
+			Task { [weak self] in
+				do {
+					try await self?.registry.start(vm, openConsole: true)
+				} catch {
+					vm.log(error: "(\(vm.config.name)) \(error)")
+				}
+				self?.forceUpdate()
+			}
 		}
-		forceUpdate()
 	}
 
-	@MainActor
-	func run(c: VMConfig) {
-		_run(c: c)
+	func rename(vm: VirtualMachine, to newName: String) throws {
+		let oldName = vm.config.name
+		try registry.rename(vm, to: newName)
+		rekeyInstallController(from: oldName, to: newName)
+		self.vmName = vm.config.name
 	}
 
 	static func confirmDialog(message: String, informativeText: String) -> Bool {
@@ -247,38 +215,30 @@ class VMListViewModel: ObservableObject {
 	}
 
 	func delete(vm: VirtualMachine) {
-		self.previewUpdateManager.stop()
 		if !VMListViewModel.confirmDialog(
 			message: "Delete \(vm.config.name)?",
-			informativeText: "Are you sure you want to delete \(vm.config.name)? This action cannot be undone.") {
+			informativeText: "Are you sure you want to delete \(vm.config.name)? "
+				+ "This action cannot be undone.") {
 			return
 		}
 
-		vmMap[vm.config.name] = nil
-		macInstallControllers[vm.config.name] = nil
-
 		do {
-			try VMConfig.deleteVMDirectory(name: vm.config.name)
+			try registry.delete(vm)
 		} catch {
-			log(error: "Failed to delete \(vm.config.name)")
+			log(error: "Failed to delete \(vm.config.name): \(error)")
+			return
 		}
+		macInstallControllers[vm.config.name] = nil
 		self.selected = nil
 		forceUpdate()
 	}
 
-	func addNewVM() -> VirtualMachine {
-		var name = "new-VM"
-		var nbr: Int = 1
-		while vmMap["\(name)\(nbr)"] != nil {
-			nbr += 1
+	func addNewVM() -> VirtualMachine? {
+		do {
+			return try registry.create()
+		} catch {
+			log(error: "Failed to create VM: \(error)")
+			return nil
 		}
-		name = "\(name)\(nbr)"
-		try! VMConfig.createNewVMDirectory(name: name)
-		let new = VirtualMachine(config: try! VMConfig(
-			name: name,
-			memorySize: 4,
-			cpuCount: VMConfig.computeMaxCPUCount()))
-		vmMap[name] = new
-		return new
 	}
 }

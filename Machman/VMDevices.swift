@@ -19,7 +19,7 @@ extension VMConfig {
 		switch boot {
 		case .efi, .linuxKernel:
 			let platform = VZGenericPlatformConfiguration()
-			platform.machineIdentifier = getVmIdentifier()
+			platform.machineIdentifier = try getVmIdentifier()
 			return platform
 		case .macOS:
 			let platform = VZMacPlatformConfiguration()
@@ -34,7 +34,7 @@ extension VMConfig {
 		switch boot {
 		case .efi:
 			let loader = VZEFIBootLoader()
-			loader.variableStore = getEFIVariableStore()
+			loader.variableStore = try getEFIVariableStore()
 			return loader
 		case .linuxKernel(let k):
 			guard FileManager.default.fileExists(atPath: k.kernelPath) else {

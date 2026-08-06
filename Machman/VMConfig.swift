@@ -4,14 +4,17 @@
 //
 //  Created by Gustaf Franzen on 2025-03-29.
 //
+//  The persisted description of a VM (the on-disk `config` JSON) plus its file-path helpers.
+//  Runtime state is NOT part of this: whether a VM is running is derived from its live
+//  VMRuntime, never persisted. A legacy "state" key in old config files is ignored on load
+//  and dropped on the next save.
+//
 
 import Foundation
 import Virtualization
-import AppKit
 
-enum VMState: String, Codable {
-	case running
-	case stopped
+enum VirtualMachineError: Error {
+	case critical(String)
 }
 
 struct HostMountPoint: Codable, Identifiable {
@@ -53,7 +56,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var name: String
 	var memorySize: UInt64
 	var cpuCount: Int
-	var state: VMState = .stopped
 	var lastRan: Foundation.Date?
 	var created: Foundation.Date
 	var disks: [VMDisk] = []
@@ -61,7 +63,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var boot: BootConfig = .efi
 	var macAddress: String?
 	var kernelSettings: LinuxKernelBoot?
-	weak var window: NSWindow?
 
 	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
 		self.name = name
@@ -109,7 +110,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case name
 		case memorySize
 		case cpuCount
-		case state
 		case lastRan
 		case created
 		case mountPoints
@@ -128,7 +128,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.memorySize = try c.decode(UInt64.self, forKey: .memorySize)
 		self.cpuCount = try c.decode(Int.self, forKey: .cpuCount)
 		self.created = try c.decode(Foundation.Date.self, forKey: .created)
-		self.state = try c.decodeIfPresent(VMState.self, forKey: .state) ?? .stopped
 		self.lastRan = try c.decodeIfPresent(Foundation.Date.self, forKey: .lastRan)
 		self.mountPoints = try c.decodeIfPresent([HostMountPoint].self, forKey: .mountPoints) ?? []
 		self.disks = try c.decodeIfPresent([VMDisk].self, forKey: .disks) ?? []
@@ -142,7 +141,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encode(name, forKey: .name)
 		try c.encode(memorySize, forKey: .memorySize)
 		try c.encode(cpuCount, forKey: .cpuCount)
-		try c.encode(state, forKey: .state)
 		try c.encodeIfPresent(lastRan, forKey: .lastRan)
 		try c.encode(created, forKey: .created)
 		try c.encode(mountPoints, forKey: .mountPoints)
@@ -170,15 +168,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return configFilePath(file: "efi_vars.fd")
 	}
 
-	func diskImagePath() -> String {
-		return configFilePath(file: "disk.raw")
-
+	func consoleLogPath() -> String {
+		return configFilePath(file: "console.log")
 	}
 
 	func configPath() -> String {
 		return configFilePath(file: "config")
-
 	}
+
 	func getDiskSize(disk: VMDisk) -> UInt64? {
 		let url = switch disk {
 			case .fromUrl(let url):
@@ -188,7 +185,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			case .iso(let url):
 				url
 		}
-		print(url.path)
 		do {
 			let fileAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
 			if let fileSizeBytes = fileAttributes[.size] as? NSNumber {
@@ -199,21 +195,18 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		}
 		return nil
 	}
-	func deleteDisk(disk: VMDisk) {
-		self.disks.removeAll { $0 == disk }
-		switch disk {
-		case .storage(let name, _):
-			let url = localURL(file: "\(name).raw")
-			if VMListViewModel.confirmDialog(
-				message: "Delete disk \(VMConfig.formatUrl(from: url, 2))?",
-				informativeText: "\(name) remover do you wish to delete it?") {
-				try! FileManager.default.removeItem(at: url)
-			}
-		default:
-			break
-		}
-		try? saveVMConfig()
 
+	// Removes the disk from the config; for .storage also deletes the backing image file.
+	// Destructive — confirmation is the caller's job.
+	func deleteDisk(disk: VMDisk) throws {
+		self.disks.removeAll { $0 == disk }
+		if case .storage(let name, _) = disk {
+			let url = localURL(file: "\(name).raw")
+			if FileManager.default.fileExists(atPath: url.path) {
+				try FileManager.default.removeItem(at: url)
+			}
+		}
+		try saveVMConfig()
 	}
 
 	func saveVMConfig() throws {
@@ -223,47 +216,30 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try data.write(to: URL(fileURLWithPath: configPath()))
 	}
 
-	func isRunning() -> Bool {
-		return state == .running
-	}
-
-	func updateState(state: VMState) throws {
-		self.state = state
+	func markRan() throws {
+		self.lastRan = Foundation.Date()
 		try saveVMConfig()
 	}
 
-	func addMountPoint(_ mountPoint: HostMountPoint) {
+	func addMountPoint(_ mountPoint: HostMountPoint) throws {
 		mountPoints.append(mountPoint)
-		try! saveVMConfig()
+		try saveVMConfig()
 	}
-	func removeMountPoint(_ mountPoint: HostMountPoint) {
+	func removeMountPoint(_ mountPoint: HostMountPoint) throws {
 		guard let index = mountPoints.firstIndex(where: { $0.id == mountPoint.id }) else {
 			return
 		}
 		mountPoints.remove(at: index)
-		try! saveVMConfig()
+		try saveVMConfig()
 	}
 
-	func start(window: NSWindow? = nil) throws {
-		self.window = window
-		self.lastRan = Foundation.Date()
-		try updateState(state: .running)
-	}
-
-	func stop() throws {
-		window?.close()
-		self.window = nil
-		try updateState(state: .stopped)
-	}
-
-	public func addDisk(disk: VMDisk) {
+	public func addDisk(disk: VMDisk) throws {
 		disks.append(disk)
-		try! saveVMConfig()
+		try saveVMConfig()
 	}
-
 
 	public func addIsoDisk(isoUrl: URL) throws {
-		addDisk(disk: .iso(isoUrl))
+		try addDisk(disk: .iso(isoUrl))
 	}
 
 	public func addNewStorageDisk(name: String, size: UInt64) throws {
@@ -287,29 +263,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		} catch {
 			throw VirtualMachineError.critical("Failed to truncate the disk image: '\(diskPath)' (\(size))")
 		}
-		addDisk(disk: .storage(name, size))
-	}
-
-	private func createMainDiskImage(size: UInt64) {
-		let diskPath = diskImagePath()
-		let diskCreated = FileManager.default.createFile(
-			atPath: diskPath,
-			contents: nil,
-			attributes: nil
-		)
-		if !diskCreated {
-			fatalError("Failed to create the main disk image: '\(diskPath)'")
-		}
-
-		guard let mainDiskFileHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: diskPath)) else {
-			fatalError("Failed to get the file handle for the main disk image: '\(diskPath)'")
-		}
-
-		do {
-			try mainDiskFileHandle.truncate(atOffset: size)
-		} catch {
-			fatalError("Failed to truncate the main disk image: '\(diskPath)'")
-		}
+		try addDisk(disk: .storage(name, size))
 	}
 
 	static func computeMaxCPUCount() -> Int {
@@ -320,14 +274,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		virtualCPUCount = min(virtualCPUCount, VZVirtualMachineConfiguration.maximumAllowedCPUCount)
 
 		return virtualCPUCount
-	}
-
-	static func maxMemoryInGB() -> Int {
-		return Int(Double(VZVirtualMachineConfiguration.maximumAllowedMemorySize) / 1024 * 1024 * 1024)
-	}
-
-	static func minMemoryInGB() -> Int {
-		return Int(Double(VZVirtualMachineConfiguration.maximumAllowedMemorySize) / 1024 * 1024 * 1024)
 	}
 
 	static func fromGB(size: Int) -> UInt64 {
@@ -356,19 +302,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try fileManager.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
 	}
 
-	func move(from old: String, to new: String) throws {
-		let fileManager = FileManager.default
-		if fileManager.fileExists(atPath: old) {
-			try fileManager.moveItem(at: URL(fileURLWithPath: old), to: URL(fileURLWithPath: new))
-		}
-	}
-
 	func rename(to newName: String) throws {
 		let oldName = self.name
 		let fileManager = FileManager.default
 
 		self.name = newName
-		try fileManager.moveItem(at: URL(fileURLWithPath: "\(machmanVMDir)/\(oldName)"), to: URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)"))
+		try fileManager.moveItem(
+			at: URL(fileURLWithPath: "\(machmanVMDir)/\(oldName)"),
+			to: URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)"))
 		try saveVMConfig()
 	}
 
@@ -422,44 +363,50 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return min(VMConfig.computeMaxCPUCount(), self.cpuCount)
 	}
 
-	private func createVmIdentifier(_ vmIdentifierPath: String) -> VZGenericMachineIdentifier {
+	private func createVmIdentifier(_ vmIdentifierPath: String) throws -> VZGenericMachineIdentifier {
 		let machineIdentifier = VZGenericMachineIdentifier()
 
 		// Store the machine identifier to disk so you can retrieve it for subsequent boots.
-		try! machineIdentifier.dataRepresentation.write(to: URL(fileURLWithPath: vmIdentifierPath))
+		do {
+			try machineIdentifier.dataRepresentation.write(to: URL(fileURLWithPath: vmIdentifierPath))
+		} catch {
+			throw VirtualMachineError.critical(
+				"Failed to store the machine identifier '\(vmIdentifierPath)': \(error)")
+		}
 		return machineIdentifier
 	}
 
-	func getVmIdentifier() -> VZGenericMachineIdentifier {
+	func getVmIdentifier() throws -> VZGenericMachineIdentifier {
 		let vmIdentifierPath = vmIdentifierPath()
 		let fileURL = URL(fileURLWithPath: vmIdentifierPath)
 
 		guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
-			return createVmIdentifier(vmIdentifierPath)
+			return try createVmIdentifier(vmIdentifierPath)
 		}
 		guard let machineIdentifier = VZGenericMachineIdentifier(dataRepresentation: data) else {
-			fatalError("Failed to create the machine identifier: '\(vmIdentifierPath)'")
+			throw VirtualMachineError.critical(
+				"Failed to create the machine identifier: '\(vmIdentifierPath)'")
 		}
 		return machineIdentifier
 	}
 
-	private func createEFIVariableStore(_ efiVarsPath: String) -> VZEFIVariableStore {
-		guard let efiVariableStore = try? VZEFIVariableStore(creatingVariableStoreAt: URL(fileURLWithPath: efiVarsPath)) else {
-			fatalError("Failed to create the EFI variable store: '\(efiVarsPath)'")
+	private func createEFIVariableStore(_ efiVarsPath: String) throws -> VZEFIVariableStore {
+		do {
+			return try VZEFIVariableStore(creatingVariableStoreAt: URL(fileURLWithPath: efiVarsPath))
+		} catch {
+			throw VirtualMachineError.critical(
+				"Failed to create the EFI variable store '\(efiVarsPath)': \(error)")
 		}
-		return efiVariableStore
 	}
 
-	func getEFIVariableStore() -> VZEFIVariableStore {
+	func getEFIVariableStore() throws -> VZEFIVariableStore {
 		let efiVarsPath = EFIVariableStorePath()
 		if !FileManager.default.fileExists(atPath: efiVarsPath) {
-			return createEFIVariableStore(efiVarsPath)
+			return try createEFIVariableStore(efiVarsPath)
 		}
 
 		return VZEFIVariableStore(url: URL(fileURLWithPath: efiVarsPath))
 	}
-
-
 
 	func getOrCreateMACAddress() -> VZMACAddress {
 		if let s = macAddress, let mac = VZMACAddress(string: s) {
@@ -519,10 +466,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		let sharingConfiguration = VZVirtioFileSystemDeviceConfiguration(tag: mainTag)
 		sharingConfiguration.share = multipleDirectoryShare
 
-
 		return sharingConfiguration
 	}
-	
-	
-
 }

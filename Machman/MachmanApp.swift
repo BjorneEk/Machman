@@ -31,26 +31,26 @@ struct MachmanApp: App {
 			}
 			CommandMenu("Run") {
 				ForEach(viewModel.vmList(), id: \.id) { vm in
-					if !viewModel.runBtnLbl(c: vm.config).running() {
+					if !viewModel.runBtnLbl(vm: vm).running() {
 						Button(action: {
 							viewModel.run(c: vm.config)
 							selection = vm
 							viewModel.select(vm: selection)
 						}) {
-							Label("\(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
+							Label("\(vm.config.name)", systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
 						}
 					}
 				}
 			}
 			CommandMenu("Stop") {
 				ForEach(viewModel.vmList(), id: \.id) { vm in
-					if viewModel.runBtnLbl(c: vm.config).running() {
+					if viewModel.runBtnLbl(vm: vm).running() {
 						Button(action: {
 							viewModel.run(c: vm.config)
 							selection = vm
 							viewModel.select(vm: selection)
 						}) {
-							Label("\(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
+							Label("\(vm.config.name)", systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
 						}
 					}
 				}

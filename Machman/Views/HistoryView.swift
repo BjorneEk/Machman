@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MachmanAPI
 
 struct HistoryView: View {
 	@State private var vm: VirtualMachine
@@ -62,7 +63,7 @@ struct HistoryView: View {
 		GroupBox {
 			HStack {
 				if let startTime = vm.config.lastRan {
-					if vm.config.state == .running {
+					if vm.state.isRunning {
 						Text(largestTimeDifference(from: startTime))
 							.fontWeight(.bold)
 							.font(.title2)

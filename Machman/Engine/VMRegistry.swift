@@ -1,0 +1,195 @@
+//
+//  VMRegistry.swift
+//  Machman
+//
+//  The engine facade: the single authority over which VMs exist and which are running. Owns the
+//  event bus and the console presenter; enforces cross-VM invariants (unique names, no
+//  delete/rename while running). This is what LocalMachman wraps for the API.
+//
+
+import Foundation
+import AppKit
+import MachmanAPI
+
+// One managed VM: persisted config plus (when running) its live runtime. Class identity is the
+// UI selection identity; the registry guarantees one instance per VM.
+@MainActor
+final class VirtualMachine: NSObject, Identifiable {
+	let config: VMConfig
+	var runtime: VMRuntime?
+	var previewImage: NSImage?
+	private weak var events: EventBus?
+
+	init(config: VMConfig, events: EventBus? = nil) {
+		self.config = config
+		self.events = events
+		super.init()
+	}
+
+	var state: VMState { runtime?.state ?? .stopped }
+
+	func updatePreview(img: NSImage) {
+		previewImage = img
+	}
+
+	// The console is still the only guaranteed sink, so log calls always print; subscribers
+	// (and later, remote clients) get the same line as an event.
+	func log(error: String) {
+		print(error)
+		events?.emit(.log(vm: config.name, level: .error, message: error))
+	}
+
+	func log(message: String) {
+		print(message)
+		events?.emit(.log(vm: config.name, level: .message, message: message))
+	}
+
+	func log(warning: String) {
+		print(warning)
+		events?.emit(.log(vm: config.name, level: .warning, message: warning))
+	}
+}
+
+@MainActor
+final class VMRegistry {
+	let events = EventBus()
+	let presenter = ConsolePresenter()
+	private(set) var vms: [String: VirtualMachine] = [:]
+
+	init() {
+		presenter.closeHandler = { [weak self] name in
+			self?.consoleWindowClosed(name)
+		}
+		scan()
+	}
+
+	private func scan() {
+		let folderURL = URL(fileURLWithPath: machmanVMDir)
+		do {
+			let contents = try FileManager.default.contentsOfDirectory(
+				at: folderURL, includingPropertiesForKeys: [.isDirectoryKey],
+				options: [.skipsHiddenFiles])
+			for url in contents {
+				let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+				guard values?.isDirectory ?? false else { continue }
+				let name = url.lastPathComponent
+				guard let config = try? VMConfig(name: name) else { continue }
+				vms[name] = VirtualMachine(config: config, events: events)
+			}
+		} catch {
+			print("Error reading machines: \(error)")
+		}
+	}
+
+	func list() -> [VirtualMachine] {
+		vms.values.sorted {
+			$0.config.lastRan ?? .distantPast > $1.config.lastRan ?? .distantPast
+		}
+	}
+
+	func vm(named name: String) -> VirtualMachine? {
+		vms[name]
+	}
+
+	// MARK: - Run / stop
+
+	func start(_ vm: VirtualMachine, openConsole: Bool = true) async throws {
+		guard vm.runtime == nil else {
+			throw VirtualMachineError.critical("\(vm.config.name) is already running")
+		}
+		let runtime = VMRuntime(config: vm.config, events: events)
+		runtime.onTeardown = { [weak self, weak vm] in
+			guard let vm = vm else { return }
+			vm.runtime = nil
+			self?.presenter.dropConsole(name: vm.config.name)
+		}
+		vm.runtime = runtime
+		do {
+			try await runtime.start()
+		} catch {
+			vm.runtime = nil
+			throw error
+		}
+		try? vm.config.markRan()
+		if openConsole, let vz = runtime.vz {
+			presenter.openConsole(name: vm.config.name, vz: vz)
+		}
+	}
+
+	func stop(_ vm: VirtualMachine, mode: StopMode) async throws {
+		guard let runtime = vm.runtime else { return }
+		switch mode {
+		case .soft:
+			try runtime.requestSoftStop()
+		case .force:
+			try await runtime.forceStop()
+			vm.log(message: "VM: \(vm.config.name) stopped successfully.")
+		}
+	}
+
+	func openConsole(_ vm: VirtualMachine) {
+		guard let vz = vm.runtime?.vz else { return }
+		presenter.openConsole(name: vm.config.name, vz: vz)
+	}
+
+	func captureImage(name: String) async -> NSImage {
+		await presenter.captureImage(name: name)
+	}
+
+	// Today's behavior: the user closing the console window stops the VM. The close-prompt
+	// feature replaces this decision with the user's choice.
+	private func consoleWindowClosed(_ name: String) {
+		guard let vm = vms[name], vm.runtime != nil else { return }
+		Task {
+			do {
+				try await self.stop(vm, mode: .force)
+			} catch {
+				vm.log(error: "Failed to stop VM: \(name): \(error)")
+			}
+		}
+	}
+
+	// MARK: - Create / delete / rename
+
+	func create() throws -> VirtualMachine {
+		var nbr = 1
+		while vms["new-VM\(nbr)"] != nil {
+			nbr += 1
+		}
+		let name = "new-VM\(nbr)"
+		try VMConfig.createNewVMDirectory(name: name)
+		let vm = VirtualMachine(
+			config: try VMConfig(
+				name: name, memorySize: 4, cpuCount: VMConfig.computeMaxCPUCount()),
+			events: events)
+		vms[name] = vm
+		events.emit(.listChanged)
+		return vm
+	}
+
+	func delete(_ vm: VirtualMachine) throws {
+		let name = vm.config.name
+		guard vm.runtime == nil else {
+			throw VirtualMachineError.critical("stop \(name) before deleting it")
+		}
+		presenter.dropConsole(name: name)
+		vms[name] = nil
+		try VMConfig.deleteVMDirectory(name: name)
+		events.emit(.listChanged)
+	}
+
+	func rename(_ vm: VirtualMachine, to newName: String) throws {
+		let oldName = vm.config.name
+		guard oldName != newName else { return }
+		guard vms[newName] == nil else {
+			throw VirtualMachineError.critical("a VM named '\(newName)' already exists")
+		}
+		guard vm.runtime == nil else {
+			throw VirtualMachineError.critical("stop \(oldName) before renaming it")
+		}
+		try vm.config.rename(to: newName)
+		vms[oldName] = nil
+		vms[newName] = vm
+		events.emit(.listChanged)
+	}
+}

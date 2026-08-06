@@ -75,11 +75,11 @@ struct VMActionButton: VMActionView {
 }
 
 struct VMNavigationView: View {
-	@StateObject var viewModel = VMListViewModel()
+	@StateObject var viewModel: VMListViewModel
 	@State private var navigate = false
 	@Binding private var selection: VirtualMachine?
 
-	init(viewModel: VMListViewModel = VMListViewModel(), selection: Binding<VirtualMachine?>) {
+	init(viewModel: VMListViewModel, selection: Binding<VirtualMachine?>) {
 		_viewModel = StateObject(wrappedValue: viewModel)
 		self._selection = selection
 	}
@@ -89,8 +89,8 @@ struct VMNavigationView: View {
 			List(selection: $selection) {
 				ForEach(viewModel.vmList(), id: \.id) { item in
 					HStack {
-						Image(systemName: viewModel.runBtnLbl(c: item.config).running() ? "pc" : "pause.fill")
-							.foregroundColor(viewModel.runBtnLbl(c: item.config).running() ? .blue : .primary)
+						Image(systemName: viewModel.runBtnLbl(vm: item).running() ? "pc" : "pause.fill")
+							.foregroundColor(viewModel.runBtnLbl(vm: item).running() ? .blue : .primary)
 						Text(item.config.name)
 							.font(.callout)
 						Spacer()

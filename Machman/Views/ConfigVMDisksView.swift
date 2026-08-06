@@ -56,7 +56,18 @@ struct ConfigVMDisksView: View {
 					TableColumn("") { (entry: VMDisk) in
 						Button(action: {
 							DispatchQueue.main.async {
-								vm.config.deleteDisk(disk: entry)
+								if case .storage(let name, _) = entry {
+									let url = vm.config.localURL(file: "\(name).raw")
+									guard VMListViewModel.confirmDialog(
+										message: "Delete disk \(VMConfig.formatUrl(from: url, 2))?",
+										informativeText: "\(name) remover do you wish to delete it?")
+									else { return }
+								}
+								do {
+									try vm.config.deleteDisk(disk: entry)
+								} catch {
+									vm.log(error: "Failed to delete disk: \(error)")
+								}
 								self.incr += 1
 							}
 						}) {
@@ -70,14 +81,26 @@ struct ConfigVMDisksView: View {
 				AddDiskView(
 					addIso: {
 						self.incr += 1
-						try! vm.config.addIsoDisk(isoUrl: $0)
+						do {
+							try vm.config.addIsoDisk(isoUrl: $0)
+						} catch {
+							vm.log(error: "Failed to add iso disk: \(error)")
+						}
 					},
 					addFrom: {
 						self.incr += 1
-						vm.config.addDisk(disk: .fromUrl($0))
+						do {
+							try vm.config.addDisk(disk: .fromUrl($0))
+						} catch {
+							vm.log(error: "Failed to add disk: \(error)")
+						}
 					}, addNew: {
 						self.incr += 1
-						try! vm.config.addNewStorageDisk(name: $0, size: $1)
+						do {
+							try vm.config.addNewStorageDisk(name: $0, size: $1)
+						} catch {
+							vm.log(error: "Failed to add storage disk: \(error)")
+						}
 					})
 			}
 			.padding(.bottom, 8)

@@ -33,7 +33,11 @@ struct ConfigVMHostMountsView: View {
 						.width(min: 60, ideal: 60, max: .infinity)
 						TableColumn("") { point in
 							Button(role: .destructive) {
-								vm.config.removeMountPoint(point)
+								do {
+									try vm.config.removeMountPoint(point)
+								} catch {
+									vm.log(error: "Failed to remove mount point: \(error)")
+								}
 								refreshTrigger += 1
 							} label: {
 								Image(systemName: "trash")
@@ -73,7 +77,11 @@ struct ConfigVMHostMountsView: View {
 
 					Button(action: {
 						guard !newPath.isEmpty, !newTag.isEmpty else { return }
-						vm.config.addMountPoint(HostMountPoint(path: newPath, tag: newTag))
+						do {
+							try vm.config.addMountPoint(HostMountPoint(path: newPath, tag: newTag))
+						} catch {
+							vm.log(error: "Failed to add mount point: \(error)")
+						}
 						newPath = ""
 						newTag = ""
 					}) {

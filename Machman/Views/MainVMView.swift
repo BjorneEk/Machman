@@ -16,20 +16,8 @@ struct MainVMView: View {
 	
 	
 
-	init(viewModel: @autoclosure @escaping () -> VMListViewModel = VMListViewModel()) {
-		_viewModel = StateObject(wrappedValue: viewModel())
-		//vm = selectedItem
-		//vmName = selectedItem.config.name
-		//_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: selectedItem))
-
-	}
-	init() {
-		let a  = VMListViewModel()
-		_viewModel = StateObject(wrappedValue: a)
-		//let b = a.vmList().first!
-		//vm = b
-		//vmName = b.config.name
-		//_previewViewModel = StateObject(wrappedValue: PreviewViewModel(vm: b))
+	init(viewModel: VMListViewModel) {
+		_viewModel = StateObject(wrappedValue: viewModel)
 	}
 
 	var body: some View {
@@ -71,14 +59,7 @@ struct MainVMView: View {
 									informativeText: "Are you shure you want to change the name of: '\(vm.config.name)' to '\(viewModel.vmName)'") {
 									do {
 										let old = vm.config.name
-										try vm.config.rename(to: viewModel.vmName)
-										viewModel.vmName = vm.config.name
-										if let keyToRemove = viewModel.vmMap.first(where: { $0.key == old })?.key {
-											viewModel.vmMap.removeValue(forKey: keyToRemove)
-										}
-										viewModel.vmMap[old] = nil
-										viewModel.vmMap[viewModel.vmName] = vm
-										viewModel.rekeyInstallController(from: old, to: vm.config.name)
+										try viewModel.rename(vm: vm, to: viewModel.vmName)
 										vm.log(message: "Renamed \(old) to \(vm.config.name)")
 									} catch {
 										vm.log(error: "Failed to rename VM: \(error.localizedDescription)")
@@ -92,12 +73,12 @@ struct MainVMView: View {
 					Button(action: {
 						viewModel.run(c: vm.config)
 					}) {
-						Label(viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(c: vm.config).rawValue)
+						Label(viewModel.runBtnLbl(vm: vm).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)", systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
 					}
 					.disabled(viewModel.isInstalling(vm))
 					.help(viewModel.isInstalling(vm)
 						? "macOS is installing; wait for it to finish"
-						: (viewModel.runBtnLbl(c: vm.config).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)"))
+						: (viewModel.runBtnLbl(vm: vm).running() ? "Stop \(vm.config.name)" : "Run \(vm.config.name)"))
 				}
 				ToolbarItem {
 					Button(action: {
@@ -198,5 +179,4 @@ struct FocusAndTopmostTracker: NSViewRepresentable {
 
 
 #Preview {
-	MainVMView()
 }

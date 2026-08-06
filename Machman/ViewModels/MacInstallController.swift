@@ -32,7 +32,7 @@ final class MacInstallController: ObservableObject {
 	private var version = "macOS"
 
 	var isInstalling: Bool { installer != nil }
-	var vmIsRunning: Bool { vm.config.state == .running }
+	var vmIsRunning: Bool { vm.state.isRunning }
 
 	init(vm: VirtualMachine, listViewModel: VMListViewModel?) {
 		self.vm = vm
@@ -77,7 +77,7 @@ final class MacInstallController: ObservableObject {
 
 	private func startInstall(source: MacInstaller.Source) {
 		guard installer == nil else { return }
-		guard vm.config.state != .running else {
+		guard !vm.state.isRunning else {
 			// Two live VZ VMs would contend for the same disk images.
 			phase = .failed("Stop the VM before installing macOS")
 			vm.log(error: "Refused macOS install for \(vm.config.name): the VM is running")
