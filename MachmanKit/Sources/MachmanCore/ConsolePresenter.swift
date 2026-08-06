@@ -15,7 +15,6 @@ import AppKit
 import SwiftUI
 import Virtualization
 import ScreenCaptureKit
-import CoreMedia
 import MachmanAPI
 
 @MainActor
@@ -134,14 +133,18 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		return image
 	}
 
-	// One frame of the console window via ScreenCaptureKit. Always resolves (black fallback):
-	// the stream is stopped after the first frame and a timeout guards against hangs.
+	// One frame of the console window via SCScreenshotManager: a one-shot capture (no stream
+	// lifecycle churning the system's recording indicator), and onScreenWindowsOnly: false +
+	// desktopIndependentWindow so windows parked on other Spaces still resolve. Always returns
+	// an image (black fallback). Ceiling note: any ScreenCaptureKit path shows the system
+	// capture indicator and needs Screen Recording permission — the plan to escape both is the
+	// private-framebuffer PreviewSource (researched, deferred).
 	func captureImage(name: String) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
 		guard let window = windows[name] else { return fallback }
 		let windowID = CGWindowID(window.windowNumber)
 		guard let content = try? await SCShareableContent
-			.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+			.excludingDesktopWindows(false, onScreenWindowsOnly: false),
 			let target = content.windows.first(where: { $0.windowID == windowID }) else {
 			return fallback
 		}
@@ -149,87 +152,12 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		config.width = Int(target.frame.width)
 		config.height = Int(target.frame.height)
 		let filter = SCContentFilter(desktopIndependentWindow: target)
-		let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-		return await withCheckedContinuation { continuation in
-			let once = OneShotImage(continuation: continuation, fallback: fallback)
-			let grabber = FrameGrabber { image in
-				once.resume(image)
-			}
-			once.retain(stream: stream, grabber: grabber)
-			do {
-				try stream.addStreamOutput(grabber, type: .screen, sampleHandlerQueue: .main)
-				stream.startCapture { error in
-					if error != nil {
-						once.resume(nil)
-					}
-				}
-			} catch {
-				once.resume(nil)
-			}
-			Task {
-				try? await Task.sleep(for: .seconds(5))
-				once.resume(nil)
-			}
+		guard let cgImage = try? await SCScreenshotManager.captureImage(
+			contentFilter: filter, configuration: config) else {
+			return fallback
 		}
-	}
-}
-
-// Resolves a capture continuation exactly once and keeps the stream + grabber alive until then.
-private final class OneShotImage: @unchecked Sendable {
-	private let lock = NSLock()
-	private var continuation: CheckedContinuation<NSImage, Never>?
-	private let fallback: NSImage
-	private var stream: SCStream?
-	private var grabber: FrameGrabber?
-
-	init(continuation: CheckedContinuation<NSImage, Never>, fallback: NSImage) {
-		self.continuation = continuation
-		self.fallback = fallback
-	}
-
-	func retain(stream: SCStream, grabber: FrameGrabber) {
-		lock.lock()
-		defer { lock.unlock() }
-		guard continuation != nil else { return }
-		self.stream = stream
-		self.grabber = grabber
-	}
-
-	func resume(_ image: NSImage?) {
-		lock.lock()
-		let cont = continuation
-		continuation = nil
-		let stream = self.stream
-		self.stream = nil
-		self.grabber = nil
-		lock.unlock()
-		guard let cont = cont else { return }
-		stream?.stopCapture { _ in }
-		cont.resume(returning: image ?? fallback)
-	}
-}
-
-private final class FrameGrabber: NSObject, SCStreamOutput {
-	private var didCapture = false
-	private let callback: (NSImage?) -> Void
-
-	init(callback: @escaping (NSImage?) -> Void) {
-		self.callback = callback
-	}
-
-	func stream(
-		_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-		of outputType: SCStreamOutputType
-	) {
-		guard !didCapture,
-			let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-			return
-		}
-		didCapture = true
-		let ciImage = CIImage(cvImageBuffer: imageBuffer)
-		let rep = NSCIImageRep(ciImage: ciImage)
-		let nsImage = NSImage(size: rep.size)
-		nsImage.addRepresentation(rep)
-		callback(nsImage)
+		return NSImage(
+			cgImage: cgImage,
+			size: NSSize(width: cgImage.width, height: cgImage.height))
 	}
 }
