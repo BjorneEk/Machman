@@ -47,4 +47,16 @@ struct DataDirResolutionTests {
 	@Test func guardIsInertUnderTests() {
 		enforceDevDataDirGuard(resolved: NSHomeDirectory() + "/.machman")
 	}
+
+	// The scheme sets MACHMAN_DATA_DIR to $(SRCROOT)/.machman; if Xcode ever stopped
+	// expanding build-settings macros in scheme env vars, the app would silently use a
+	// literal "$(SRCROOT)" directory. Tolerates the var being absent (bare xcodebuild).
+	@Test func schemeEnvVarExpandsIfSet() {
+		guard let dir = ProcessInfo.processInfo.environment["MACHMAN_DATA_DIR"],
+			!dir.isEmpty else {
+			return
+		}
+		#expect(!dir.contains("$("))
+		#expect(dir.hasPrefix("/"))
+	}
 }
