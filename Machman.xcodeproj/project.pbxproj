@@ -12,6 +12,7 @@
 		AA10000000000000000000C2 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B2 /* MachmanAPI */; };
 		AA10000000000000000000C3 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B3 /* MachmanCore */; };
 		AA10000000000000000000C4 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B4 /* MachmanCore */; };
+		AA10000000000000000000C5 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B5 /* MachmanClient */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +74,7 @@
 			files = (
 				AA10000000000000000000C2 /* MachmanAPI in Frameworks */,
 				AA10000000000000000000C4 /* MachmanCore in Frameworks */,
+				AA10000000000000000000C5 /* MachmanClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -162,6 +164,7 @@
 			packageProductDependencies = (
 				AA10000000000000000000B2 /* MachmanAPI */,
 				AA10000000000000000000B4 /* MachmanCore */,
+				AA10000000000000000000B5 /* MachmanClient */,
 			);
 			productName = MachmanTests;
 			productReference = 4F8935E72D956D5100E2B811 /* MachmanTests.xctest */;
@@ -611,6 +614,10 @@
 		AA10000000000000000000B4 /* MachmanCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanCore;
+		};
+		AA10000000000000000000B5 /* MachmanClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanClient;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

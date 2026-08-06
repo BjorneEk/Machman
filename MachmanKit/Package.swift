@@ -14,6 +14,7 @@ let package = Package(
 	products: [
 		.library(name: "MachmanAPI", targets: ["MachmanAPI"]),
 		.library(name: "MachmanCore", targets: ["MachmanCore"]),
+		.library(name: "MachmanClient", targets: ["MachmanClient"]),
 	],
 	targets: [
 		.target(
@@ -22,6 +23,13 @@ let package = Package(
 		),
 		.target(
 			name: "MachmanCore",
+			dependencies: ["MachmanAPI"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		// The client half: RemoteMachman over the socket. Depends on the API only —
+		// anything linking this stays free of Virtualization/AppKit.
+		.target(
+			name: "MachmanClient",
 			dependencies: ["MachmanAPI"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
