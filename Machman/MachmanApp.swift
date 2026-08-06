@@ -36,6 +36,26 @@ struct MachmanApp: App {
 						viewModel.select(name: vm.name)
 					}
 					.help("show \(vm.name)")
+					// The applicable console-window action rides right under its VM.
+					if vm.state.isRunning {
+						if vm.consoleOpen {
+							Button(action: {
+								viewModel.closeConsole(vm.name)
+							}) {
+								Label("Close \(vm.name) Window",
+									systemImage: "macwindow.badge.minus")
+							}
+						} else {
+							Button(action: {
+								viewModel.openConsole(vm.name)
+								selection = vm.name
+								viewModel.select(name: vm.name)
+							}) {
+								Label("Open \(vm.name) Window",
+									systemImage: "macwindow.badge.plus")
+							}
+						}
+					}
 				}
 			}
 			CommandMenu("Run") {
@@ -57,14 +77,6 @@ struct MachmanApp: App {
 							Label("Start Headless", systemImage: "play.slash")
 						}
 						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
-						Button(action: {
-							viewModel.openConsole(vm.name)
-							selection = vm.name
-							viewModel.select(name: vm.name)
-						}) {
-							Label("Open Window", systemImage: "macwindow.badge.plus")
-						}
-						.disabled(!vm.state.isRunning || vm.consoleOpen)
 					}
 				}
 			}
@@ -87,12 +99,6 @@ struct MachmanApp: App {
 							Label("Force Stop", systemImage: "stop.circle")
 						}
 						.disabled(!vm.state.isRunning)
-						Button(action: {
-							viewModel.closeConsole(vm.name)
-						}) {
-							Label("Close Window", systemImage: "macwindow.badge.minus")
-						}
-						.disabled(!vm.state.isRunning || !vm.consoleOpen)
 					}
 				}
 			}
