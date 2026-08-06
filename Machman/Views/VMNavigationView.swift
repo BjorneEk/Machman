@@ -98,14 +98,28 @@ struct VMNavigationView: View {
 				}
 			}
 			.onChange(of: selection) {
-				viewModel.select(name: selection)
-				navigate = !navigate
+				if let name = selection {
+					viewModel.select(name: name)
+					navigate = !navigate
+				} else if viewModel.selectedName != nil {
+					// The sidebar List drops its selection on its own when focus moves to
+					// another app (the daemon's console window, on VM start). The view model
+					// owns selection — re-assert it instead of letting the detail pane reset.
+					selection = viewModel.selectedName
+				}
 			}
 			// Keep the sidebar highlight in sync when the selection changes elsewhere
-			// (e.g. a rename).
+			// (rename, delete).
 			.onChange(of: viewModel.selectedName) {
 				if selection != viewModel.selectedName {
 					selection = viewModel.selectedName
+				}
+			}
+			// After a daemon reconnect the view model is fresh but the window kept its
+			// selection — restore it.
+			.onAppear {
+				if let name = selection, viewModel.selectedName == nil {
+					viewModel.select(name: name)
 				}
 			}
 			Button(action: {

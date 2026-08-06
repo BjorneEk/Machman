@@ -84,6 +84,7 @@ final class DaemonConnection: ObservableObject {
 	}
 
 	private func disconnected() {
+		print("machman-desktop: daemon connection lost; reconnecting")
 		api = nil
 		viewModel = nil
 		viewModelForwarder = nil
