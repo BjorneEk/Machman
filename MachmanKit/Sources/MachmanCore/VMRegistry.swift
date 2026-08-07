@@ -83,6 +83,12 @@ public final class VMRegistry {
 		presenter.onConsoleChanged = { [weak self] in
 			self?.events.emit(.listChanged)
 		}
+		presenter.onScreenRecordingDenied = { [weak self] in
+			self?.events.emit(.log(
+				vm: nil, level: .warning,
+				message: "Screen Recording permission denied — console previews will be blank. "
+					+ "Grant it to MachmanVMHost in System Settings > Privacy & Security."))
+		}
 		scan()
 	}
 

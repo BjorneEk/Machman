@@ -25,8 +25,15 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	var isRunning: ((String) -> Bool)?
 	// Fired whenever a console window appears or goes away (clients track consoleOpen).
 	var onConsoleChanged: (() -> Void)?
+	// Reported once when previews are unavailable, so the black thumbnail has an explanation.
+	var onScreenRecordingDenied: (() -> Void)?
 
 	private let softStopGraceSeconds: Double = 30
+	// Screen Recording is asked for at most ONCE per process. Previews poll every few seconds,
+	// and calling ScreenCaptureKit without the grant re-prompts every time — a stack of identical
+	// dialogs every time the desktop regains focus. Note the grant is keyed to code identity, so
+	// changing the bundle identifier starts over with none.
+	private var didRequestScreenRecording = false
 
 	func openConsole(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
@@ -142,6 +149,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	func captureImage(name: String) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
 		guard let window = windows[name] else { return fallback }
+		guard hasScreenRecordingAccess() else { return fallback }
 		let windowID = CGWindowID(window.windowNumber)
 		guard let content = try? await SCShareableContent
 			.excludingDesktopWindows(false, onScreenWindowsOnly: false),
@@ -159,5 +167,20 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		return NSImage(
 			cgImage: cgImage,
 			size: NSSize(width: cgImage.width, height: cgImage.height))
+	}
+
+	// Preflight never prompts; request prompts once and is latched. Without this, every preview
+	// poll that lands while the grant is missing raises another dialog.
+	private func hasScreenRecordingAccess() -> Bool {
+		if CGPreflightScreenCaptureAccess() {
+			return true
+		}
+		guard !didRequestScreenRecording else { return false }
+		didRequestScreenRecording = true
+		if CGRequestScreenCaptureAccess() {
+			return true
+		}
+		onScreenRecordingDenied?()
+		return false
 	}
 }
