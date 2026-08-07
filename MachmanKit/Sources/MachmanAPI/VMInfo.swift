@@ -159,20 +159,8 @@ public struct KernelSettings: Codable, Sendable, Equatable {
 public struct ConsoleInfo: Codable, Sendable, Equatable {
 	// File-backed serial console output (hvc0), nil for guests without one (macOS).
 	public var logPath: String?
-	// CGWindowID of the console window, when one is open. Exposed because screen capture must
-	// happen in a process the user can actually grant Screen Recording to: the window lives in
-	// a vmhost, which is a bare executable macOS will not list in System Settings, so the daemon
-	// captures it by id instead. Nil when no window is open.
-	public var windowID: UInt32?
 
-	public init(logPath: String?, windowID: UInt32? = nil) {
+	public init(logPath: String?) {
 		self.logPath = logPath
-		self.windowID = windowID
-	}
-
-	public init(from decoder: Decoder) throws {
-		let c = try decoder.container(keyedBy: CodingKeys.self)
-		self.logPath = try c.decodeIfPresent(String.self, forKey: .logPath)
-		self.windowID = try c.decodeIfPresent(UInt32.self, forKey: .windowID)
 	}
 }

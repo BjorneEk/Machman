@@ -83,17 +83,30 @@ public final class VMRegistry {
 		presenter.onConsoleChanged = { [weak self] in
 			self?.events.emit(.listChanged)
 		}
-		presenter.onScreenRecordingDenied = { [weak self] in
-			// The prompt is attributed to the RESPONSIBLE process — Machmand, which spawned this
-			// vmhost — not to MachmanVMHost itself, so that is what appears in System Settings.
-			// And macOS caches the answer for a process's lifetime: granting it does nothing for
-			// an already-running vmhost, which is why the restart is part of the instruction.
-			self?.events.emit(.log(
-				vm: nil, level: .warning,
-				message: "Screen Recording is not granted — console previews will be blank. "
-					+ "Enable it for Machmand in System Settings > Privacy & Security > Screen "
-					+ "Recording, then quit Machmand and restart the VM: a running process "
-					+ "cannot see a grant it was launched without."))
+		presenter.onCaptureFailed = { [weak self] failure in
+			switch failure {
+			case .windowNotFound(let id):
+				self?.events.emit(.log(
+					vm: nil, level: .warning,
+					message: "Console window \(id) was not found on screen — preview is blank."))
+				return
+			case .captureReturnedNothing:
+				self?.events.emit(.log(
+					vm: nil, level: .warning,
+					message: "ScreenCaptureKit returned no image — preview is blank."))
+				return
+			case .noPermission:
+				// A vmhost is spawned by Machmand without disclaiming responsibility, so TCC
+				// attributes its request to Machmand — that is the row in System Settings, and
+				// there is no MachmanVMHost row to find. macOS also caches the answer per
+				// process, so a grant is invisible until the process is relaunched.
+				self?.events.emit(.log(
+					vm: nil, level: .warning,
+					message: "Screen Recording is not granted — console previews will be blank. "
+						+ "Enable it for Machmand in System Settings > Privacy & Security > "
+						+ "Screen Recording, then quit and relaunch Machmand: a running process "
+						+ "cannot see a grant it was launched without."))
+			}
 		}
 		scan()
 	}
@@ -187,15 +200,6 @@ public final class VMRegistry {
 
 	func captureImage(name: String) async -> NSImage {
 		await presenter.captureImage(name: name)
-	}
-
-	// Capture a window this process does not own (the daemon capturing a vmhost's console).
-	func captureImage(windowID: CGWindowID) async -> NSImage {
-		await presenter.captureImage(windowID: windowID)
-	}
-
-	func consoleWindowID(_ vm: VirtualMachine) -> CGWindowID? {
-		presenter.windowID(for: vm.config.name)
 	}
 
 	// MARK: - Create / delete / rename

@@ -25,8 +25,16 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	var isRunning: ((String) -> Bool)?
 	// Fired whenever a console window appears or goes away (clients track consoleOpen).
 	var onConsoleChanged: (() -> Void)?
-	// Reported once when previews are unavailable, so the black thumbnail has an explanation.
-	var onScreenRecordingDenied: (() -> Void)?
+	// Why a preview came back blank. A black thumbnail is the fallback for three quite different
+	// failures, and telling them apart from the outside is impossible.
+	enum CaptureFailure: Equatable {
+		case noPermission
+		case windowNotFound(CGWindowID)
+		case captureReturnedNothing
+	}
+	// Reported once per distinct reason, so a poll every few seconds can't spam.
+	var onCaptureFailed: ((CaptureFailure) -> Void)?
+	private var reportedFailures: Set<String> = []
 
 	private let softStopGraceSeconds: Double = 30
 	// Screen Recording is asked for at most ONCE per process. Previews poll every few seconds,
@@ -146,27 +154,18 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	// an image (black fallback). Ceiling note: any ScreenCaptureKit path shows the system
 	// capture indicator and needs Screen Recording permission — the plan to escape both is the
 	// private-framebuffer PreviewSource (researched, deferred).
-	func windowID(for name: String) -> CGWindowID? {
-		windows[name].map { CGWindowID($0.windowNumber) }
-	}
-
 	func captureImage(name: String) async -> NSImage {
-		guard let id = windowID(for: name) else {
-			return Self.blackImage(size: NSSize(width: 300, height: 200))
-		}
-		return await captureImage(windowID: id)
-	}
-
-	// Captures by window id, so it works for a window this process does not own — which is the
-	// whole point: the console lives in a vmhost, a bare executable macOS will not list under
-	// Screen Recording. Only the CAPTURING process needs the grant, and the daemon is a real app
-	// bundle the user can grant.
-	func captureImage(windowID: CGWindowID) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
-		guard hasScreenRecordingAccess() else { return fallback }
+		guard let window = windows[name] else { return fallback }
+		guard hasScreenRecordingAccess() else {
+			report(.noPermission)
+			return fallback
+		}
+		let windowID = CGWindowID(window.windowNumber)
 		guard let content = try? await SCShareableContent
 			.excludingDesktopWindows(false, onScreenWindowsOnly: false),
 			let target = content.windows.first(where: { $0.windowID == windowID }) else {
+			report(.windowNotFound(windowID))
 			return fallback
 		}
 		let config = SCStreamConfiguration()
@@ -175,6 +174,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		let filter = SCContentFilter(desktopIndependentWindow: target)
 		guard let cgImage = try? await SCScreenshotManager.captureImage(
 			contentFilter: filter, configuration: config) else {
+			report(.captureReturnedNothing)
 			return fallback
 		}
 		return NSImage(
@@ -190,10 +190,15 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		}
 		guard !didRequestScreenRecording else { return false }
 		didRequestScreenRecording = true
-		if CGRequestScreenCaptureAccess() {
-			return true
-		}
-		onScreenRecordingDenied?()
-		return false
+		return CGRequestScreenCaptureAccess()
+	}
+
+	// stderr as well as the event bus: stdout is block-buffered when the daemon is not attached
+	// to a terminal, which is exactly when someone is trying to work out why previews are blank.
+	private func report(_ failure: CaptureFailure) {
+		let key = "\(failure)"
+		guard reportedFailures.insert(key).inserted else { return }
+		FileHandle.standardError.write(Data("machmand: preview capture failed: \(key)\n".utf8))
+		onCaptureFailed?(failure)
 	}
 }
