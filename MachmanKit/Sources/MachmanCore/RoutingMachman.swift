@@ -85,7 +85,7 @@ public final class RoutingMachman: MachmanControlling {
 	// MARK: - Host plumbing
 
 	static func hostSocketPath(for name: String) -> String {
-		"\(machmanVMDir)/\(name)/vm.sock"
+		machmanVMSocketPath(vm: name)
 	}
 
 	private func spawnHost(for name: String) async throws -> HostedVM {
@@ -101,8 +101,12 @@ public final class RoutingMachman: MachmanControlling {
 		process.executableURL = executable
 		process.arguments = ["--data-dir", machmanVMDir, "--vm", name, "--socket", socketPath]
 		var environment = ProcessInfo.processInfo.environment
-		environment["MACHMAN_DATA_DIR"] = machmanVMDir
+		// The vmhost is a bare tool with no Info.plist, so it cannot read the suite identifier
+		// the way an app bundle does — hand it down explicitly or it would fall back to the
+		// production identifier. --data-dir and --socket are still authoritative for paths.
+		environment["MACHMAN_SUITE_ID"] = MachmanPaths.suiteIdentifier()
 		environment["MACHMAN_VERSION"] = daemonVersion
+		environment.removeValue(forKey: "MACHMAN_DATA_DIR")
 		process.environment = environment
 		process.terminationHandler = { [weak self] _ in
 			Task { @MainActor [weak self] in

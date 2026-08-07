@@ -32,6 +32,9 @@ machman_data/
 # Git worktrees (machmand refactor lives in .worktrees/machmand-refactor)
 /.worktrees/
 
-# Dev data dir for the machmand refactor (clones of production VMs; see scripts/dev-setup.sh)
+# Superseded dev data dir. The library now lives at
+# ~/Library/Application Support/com.gustaffranzen.Machman.dev/VMs (derived from the bundle id).
 /.machman/
-docks/local
+
+# Local scratch notes (was "docks/local" — the typo meant this was never actually ignored)
+docs/local/

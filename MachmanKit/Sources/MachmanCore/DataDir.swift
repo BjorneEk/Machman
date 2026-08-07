@@ -2,47 +2,55 @@
 //  DataDir.swift
 //  MachmanCore
 //
-//  The engine's view of the data dir. Resolution itself lives in MachmanAPI (MachmanPaths) so
-//  clients can find the daemon's socket without linking the engine; this file pins the resolved
-//  value into the mutable global the engine uses (tests swap it via VMTestSupport) and enforces
-//  the dev guard.
+//  The engine's view of where things live. Resolution itself lives in MachmanAPI (MachmanPaths)
+//  so clients can find the daemon's socket without linking the engine; this file pins the
+//  resolved values into the mutable globals the engine uses (tests swap them via VMTestSupport).
+//
+//  These initializers are deliberately side-effect free. A vmhost overwrites machmanVMDir from
+//  its --data-dir argument, and touching a global runs its initializer first — so creating
+//  directories here would have every dev vmhost mkdir the PRODUCTION path on the way past.
+//  Directories are created at the point of use instead.
+//
+//  There is no development-vs-production guard any more. The suite identifier differs between
+//  Debug and Release builds, so the two resolve to different libraries by construction.
 //
 
 import Foundation
-import AppKit
 import MachmanAPI
 
-var machmanVMDir: String = {
-	let dir = MachmanPaths.dataDir()
-	enforceDevDataDirGuard(resolved: dir)
-	return dir
-}()
+// The VM library: <dataDir>/VMs. Every VM is a directory directly inside it.
+var machmanVMDir: String = MachmanPaths.vmsDir()
 
-// The daemon's socket, derived from the LIVE global so redirected test dirs get their own.
+// Sockets and other per-boot state, deliberately outside the VM library — see MachmanPaths for
+// why (sun_path is 104 bytes, and the library may sit on a volume that cannot host a socket).
+var machmanRuntimeDir: String = MachmanPaths.runtimeDir()
+
 func machmanSocketPath() -> String {
-	MachmanPaths.socketPath(dataDir: machmanVMDir)
+	machmanRuntimeDir + "/machman.sock"
 }
 
-// TODO(cutover): remove this guard when Machmand takes over ~/.machman as the production
-// daemon. Until then, refactor-branch builds must never operate on the production data dir —
-// the original Machman.app is in active use on it.
-func enforceDevDataDirGuard(resolved: String) {
-	// The test host redirects the dir per-test (VMTestSupport); don't block test runs.
-	if NSClassFromString("XCTestCase") != nil {
-		return
+func machmanVMSocketPath(vm name: String) -> String {
+	MachmanPaths.vmSocketPath(vm: name, runtimeDir: machmanRuntimeDir)
+}
+
+@discardableResult
+func ensureDirectory(_ path: String) -> Bool {
+	do {
+		try FileManager.default.createDirectory(
+			atPath: path, withIntermediateDirectories: true, attributes: nil)
+		return true
+	} catch {
+		return false
 	}
-	let production = URL(fileURLWithPath: NSHomeDirectory() + "/.machman").standardizedFileURL
-	guard URL(fileURLWithPath: resolved).standardizedFileURL == production else {
-		return
-	}
-	let msg = "This development build refuses to use the production data dir "
-		+ "\(production.path). Run scripts/dev-setup.sh once, or set MACHMAN_DATA_DIR / "
-		+ "the MachmanDataDir user default to a dev directory."
-	FileHandle.standardError.write(Data(("machman: " + msg + "\n").utf8))
-	let alert = NSAlert()
-	alert.messageText = "Machman dev build blocked"
-	alert.informativeText = msg
-	alert.alertStyle = .critical
-	alert.runModal()
-	exit(1)
+}
+
+// Time Machine must not copy VM disks: they are large, rewritten constantly, and worthless in a
+// half-captured state. Applied when a disk is created AND on every registry scan, because every
+// image that exists today predates this call and would otherwise never be marked.
+func excludeFromBackup(path: String) {
+	guard FileManager.default.fileExists(atPath: path) else { return }
+	var url = URL(fileURLWithPath: path)
+	var values = URLResourceValues()
+	values.isExcludedFromBackup = true
+	try? url.setResourceValues(values)
 }

@@ -3,9 +3,17 @@
 Machmand serves the full VM-management API on a unix domain socket:
 
 ```
-<dataDir>/machman.sock        dataDir: $MACHMAN_DATA_DIR, else the MachmanDataDir user
-                              default (per bundle id), else ~/.machman
+$TMPDIR/<suite>/machman.sock       suite: $MACHMAN_SUITE_ID, else the process's bundle id with
+                                   any .agent/.vmhost/.tests suffix stripped. A release build is
+                                   com.gustaffranzen.Machman; a debug build is ...Machman.dev,
+                                   so the two never share a socket or a VM library.
 ```
+
+Sockets live in the runtime dir, deliberately **not** in the VM library: `sun_path` is 104 bytes
+and a per-VM socket under the library path would exceed it, and the library is relocatable —
+possibly onto a volume that cannot host a socket at all. The library itself defaults to
+`~/Library/Application Support/<suite>/VMs` and is overridable via the `MachmanDataDir` user
+default.
 
 Mode 0600 — filesystem permissions are the auth boundary (same user only). One daemon per
 socket: a second instance probes, finds a live listener, and refuses to start; a stale socket
@@ -93,7 +101,8 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 ## Per-VM host processes (invisible on the wire)
 
 Every running VM lives in its own `MachmanVMHost` process, which serves this same protocol on
-`<dataDir>/<vm>/vm.sock`; Machmand proxies per-VM operations to it and re-emits its events.
+`$TMPDIR/<suite>/vm-<hash>.sock` (hashed because a VM name may be any length); Machmand proxies
+per-VM operations to it and re-emits its events.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
 daemon) down, and vmhosts outlive daemon restarts — a new Machmand re-adopts them.
@@ -108,7 +117,9 @@ are presented by Machmand itself; clients only command them (`vm.console.*`) and
 ## Trying it by hand
 
 ```sh
+# a debug build serves the .dev suite; omit for a release build
+export MACHMAN_SUITE_ID=com.gustaffranzen.Machman.dev
 python3 scripts/machman-smoke.py                 # hello + vm list
 python3 scripts/machman-smoke.py watch           # stream events
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"vm.list"}' | nc -U .machman/machman.sock
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"vm.list"}' | nc -U "$TMPDIR$MACHMAN_SUITE_ID/machman.sock"
 ```

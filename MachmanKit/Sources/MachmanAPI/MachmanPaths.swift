@@ -2,25 +2,72 @@
 //  MachmanPaths.swift
 //  MachmanAPI
 //
-//  Where Machman lives on this machine. In MachmanAPI (not the engine) because clients need
-//  the same resolution to find the daemon's socket without linking MachmanCore.
+//  Where Machman lives on this machine. In MachmanAPI (not the engine) because clients need the
+//  same resolution to find the daemon's socket without linking MachmanCore.
 //
-//  Data dir resolution order:
-//    1. MACHMAN_DATA_DIR environment variable (Xcode scheme, scripts, tests)
-//    2. UserDefaults key "MachmanDataDir" (per-bundle-id, machine-local; covers Finder/
-//       Spotlight launches, where env vars don't apply)
-//    3. ~/.machman (the production default)
+//  Everything hangs off the SUITE IDENTIFIER, not the process's own bundle id: the GUI, the
+//  menu-bar agent and the vmhost are separate binaries that must agree on one library. Each app
+//  target carries `MachmanSuiteIdentifier` in its Info.plist, set from the MACHMAN_SUITE_ID build
+//  setting, which is `com.gustaffranzen.Machman` in Release and `com.gustaffranzen.Machman.dev`
+//  in Debug. That one difference is what keeps a development build off the production library —
+//  there is no runtime guard, because there is nothing left to guard against.
 //
-//  The daemon's socket lives INSIDE the data dir, so a dev daemon and a production daemon can
-//  never cross-talk.
+//  Two roots, deliberately separate:
+//
+//    data     ~/Library/Application Support/<suite>/     big, relocatable, backed up (minus disks)
+//    runtime  $TMPDIR/<suite>/                           sockets; per-user, cleared on reboot
+//
+//  Sockets must NOT live under the data dir. sun_path is 104 bytes, and a per-VM socket under a
+//  Library-rooted path blows it with a moderately long VM name; a data dir relocated to exFAT or
+//  a network mount cannot hold a socket at all.
 //
 
 import Foundation
 
 public enum MachmanPaths {
+
+	// MARK: - Identity
+
+	static let fallbackSuiteIdentifier = "com.gustaffranzen.Machman"
+
+	// Helper bundle ids are the suite id plus one of these. Xcode only honours a fixed allowlist
+	// of INFOPLIST_KEY_* settings, so a custom "suite id" plist key is silently dropped — the
+	// relationship has to be expressed in the identifiers themselves.
+	static let helperSuffixes = [".agent", ".vmhost", ".tests", ".uitests"]
+
+	// The identifier every Machman process shares, so the GUI, the menu-bar agent and the vmhost
+	// all resolve to ONE library. The env var comes first because MachmanVMHost is a bare tool
+	// with no Info.plist at all — without it a dev vmhost falls through to the production suite.
+	public static func suiteIdentifier(
+		env: [String: String] = ProcessInfo.processInfo.environment,
+		bundle: Bundle = .main
+	) -> String {
+		if let id = env["MACHMAN_SUITE_ID"], !id.isEmpty {
+			return id
+		}
+		if let id = bundle.bundleIdentifier, !id.isEmpty {
+			return suiteIdentifier(fromBundleID: id)
+		}
+		return fallbackSuiteIdentifier
+	}
+
+	public static func suiteIdentifier(fromBundleID id: String) -> String {
+		for suffix in helperSuffixes where id.hasSuffix(suffix) {
+			return String(id.dropLast(suffix.count))
+		}
+		return id
+	}
+
+	// MARK: - Data
+
+	// Resolution order:
+	//   1. MACHMAN_DATA_DIR — tests and scripts only; not used by any shipping launch path
+	//   2. UserDefaults "MachmanDataDir" — the user's chosen library location (external disk etc.)
+	//   3. ~/Library/Application Support/<suite>
 	public static func dataDir(
 		env: [String: String] = ProcessInfo.processInfo.environment,
-		defaults: UserDefaults = .standard
+		defaults: UserDefaults = .standard,
+		bundle: Bundle = .main
 	) -> String {
 		if let dir = env["MACHMAN_DATA_DIR"], !dir.isEmpty {
 			return dir
@@ -28,17 +75,73 @@ public enum MachmanPaths {
 		if let dir = defaults.string(forKey: "MachmanDataDir"), !dir.isEmpty {
 			return dir
 		}
-		return NSHomeDirectory() + "/.machman"
+		return defaultDataDir(env: env, bundle: bundle)
 	}
 
-	public static func socketPath(dataDir: String) -> String {
-		dataDir + "/machman.sock"
-	}
-
-	public static func socketPath(
+	public static func defaultDataDir(
 		env: [String: String] = ProcessInfo.processInfo.environment,
-		defaults: UserDefaults = .standard
+		bundle: Bundle = .main
 	) -> String {
-		socketPath(dataDir: dataDir(env: env, defaults: defaults))
+		let root = NSSearchPathForDirectoriesInDomains(
+			.applicationSupportDirectory, .userDomainMask, true).first
+			?? (NSHomeDirectory() + "/Library/Application Support")
+		return root + "/" + suiteIdentifier(env: env, bundle: bundle)
+	}
+
+	// The VM library. A subdirectory of the data dir so logs, caches and downloaded restore
+	// images can sit beside it without the registry scan mistaking them for VMs.
+	public static func vmsDir(dataDir: String) -> String {
+		dataDir + "/VMs"
+	}
+
+	public static func vmsDir(
+		env: [String: String] = ProcessInfo.processInfo.environment,
+		defaults: UserDefaults = .standard,
+		bundle: Bundle = .main
+	) -> String {
+		vmsDir(dataDir: dataDir(env: env, defaults: defaults, bundle: bundle))
+	}
+
+	// MARK: - Runtime
+
+	// Sockets and other transient per-boot state. NSTemporaryDirectory() is the per-user
+	// darwin temp dir (~49 chars here), which leaves room under the 104-byte sun_path limit.
+	public static func runtimeDir(
+		env: [String: String] = ProcessInfo.processInfo.environment,
+		bundle: Bundle = .main
+	) -> String {
+		var tmp = NSTemporaryDirectory()
+		if tmp.hasSuffix("/") {
+			tmp.removeLast()
+		}
+		return tmp + "/" + suiteIdentifier(env: env, bundle: bundle)
+	}
+
+	public static func daemonSocketPath(
+		env: [String: String] = ProcessInfo.processInfo.environment,
+		bundle: Bundle = .main
+	) -> String {
+		runtimeDir(env: env, bundle: bundle) + "/machman.sock"
+	}
+
+	// Named by a hash of the VM name, not the name itself: a VM may be called anything, and the
+	// path has a hard 104-byte ceiling it would otherwise be able to exceed.
+	public static func vmSocketPath(vm name: String, bundle: Bundle = .main) -> String {
+		vmSocketPath(vm: name, runtimeDir: runtimeDir(bundle: bundle))
+	}
+
+	public static func vmSocketPath(vm name: String, runtimeDir: String) -> String {
+		"\(runtimeDir)/vm-\(shortHash(name)).sock"
+	}
+
+	// FNV-1a, truncated to 32 bits. Hand-rolled to keep this module Foundation-only, and stable
+	// across processes and launches (unlike Hasher, which is seeded per process).
+	static func shortHash(_ string: String) -> String {
+		var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+		for byte in string.utf8 {
+			hash ^= UInt64(byte)
+			hash = hash &* 0x0000_0100_0000_01b3
+		}
+		return String(format: "%08x", UInt32(truncatingIfNeeded: hash ^ (hash >> 32)))
 	}
 }

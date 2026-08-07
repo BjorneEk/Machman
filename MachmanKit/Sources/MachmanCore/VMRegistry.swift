@@ -87,6 +87,8 @@ public final class VMRegistry {
 	}
 
 	private func scan() {
+		// First run against a fresh library: the directory simply doesn't exist yet.
+		ensureDirectory(machmanVMDir)
 		let folderURL = URL(fileURLWithPath: machmanVMDir)
 		do {
 			let contents = try FileManager.default.contentsOfDirectory(
@@ -98,6 +100,9 @@ public final class VMRegistry {
 				let name = url.lastPathComponent
 				if let only = restrictedName, name != only { continue }
 				guard let config = try? VMConfig(name: name) else { continue }
+				// Idempotent, and the only chance images created before this existed ever get
+				// marked — which today means all of them.
+				config.excludeDiskImagesFromBackup()
 				vms[name] = VirtualMachine(config: config, events: events)
 			}
 		} catch {

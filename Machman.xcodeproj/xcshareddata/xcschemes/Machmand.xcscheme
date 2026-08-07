@@ -50,13 +50,6 @@
             ReferencedContainer = "container:Machman.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "MACHMAN_DATA_DIR"
-            value = "$(SRCROOT)/.machman"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

@@ -7,7 +7,10 @@ Usage:
   machman-smoke.py [--socket PATH] start NAME [--headless]
   machman-smoke.py [--socket PATH] stop NAME [--force]
 
-Socket resolution: --socket, then $MACHMAN_DATA_DIR/machman.sock, then ~/.machman/machman.sock.
+Socket resolution: --socket, else $TMPDIR/<suite>/machman.sock, where <suite> is
+$MACHMAN_SUITE_ID, else com.gustaffranzen.Machman (a Debug build is ...Machman.dev).
+Sockets live in the runtime dir, NOT in the VM library: sun_path is 104 bytes and the
+library is relocatable.
 """
 
 import json
@@ -15,13 +18,16 @@ import os
 import socket
 import sys
 
+DEFAULT_SUITE = "com.gustaffranzen.Machman"
+
 
 def socket_path(argv):
     if "--socket" in argv:
         i = argv.index("--socket")
         return argv[i + 1], argv[:i] + argv[i + 2:]
-    data_dir = os.environ.get("MACHMAN_DATA_DIR") or os.path.expanduser("~/.machman")
-    return os.path.join(data_dir, "machman.sock"), argv
+    suite = os.environ.get("MACHMAN_SUITE_ID") or DEFAULT_SUITE
+    runtime = os.path.join(os.environ.get("TMPDIR", "/tmp"), suite)
+    return os.path.join(runtime, "machman.sock"), argv
 
 
 class Client:

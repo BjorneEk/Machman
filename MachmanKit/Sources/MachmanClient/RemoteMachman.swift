@@ -15,7 +15,7 @@ public final class RemoteMachman: MachmanControlling {
 
 	// Connects, performs the hello handshake, and refuses on api-version mismatch.
 	public init(
-		socketPath: String = MachmanPaths.socketPath(),
+		socketPath: String = MachmanPaths.daemonSocketPath(),
 		clientName: String,
 		onDisconnect: @escaping @Sendable () -> Void = {}
 	) async throws {

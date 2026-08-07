@@ -3,8 +3,8 @@ import Foundation
 import MachmanAPI
 @testable import MachmanCore
 
-// Resolution precedence for the VM data dir: env var > user default > ~/.machman.
-// Each test uses its own UserDefaults suite so parallel test execution can't interfere.
+// Path resolution is what keeps a development build off the production VM library — there is no
+// runtime guard any more, so these tests are the guard.
 struct DataDirResolutionTests {
 	private func makeDefaults(_ name: String, dataDir: String? = nil) -> UserDefaults {
 		let defaults = UserDefaults(suiteName: name)!
@@ -14,6 +14,13 @@ struct DataDirResolutionTests {
 		}
 		return defaults
 	}
+
+	private var appSupport: String {
+		NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true)
+			.first ?? (NSHomeDirectory() + "/Library/Application Support")
+	}
+
+	// MARK: - Precedence
 
 	@Test func envOverrideWinsOverDefaults() {
 		let defaults = makeDefaults("machman-test-datadir-env", dataDir: "/tmp/from-defaults")
@@ -33,31 +40,80 @@ struct DataDirResolutionTests {
 	@Test func emptyValuesAreTreatedAsUnset() {
 		let defaults = makeDefaults("machman-test-datadir-empty", dataDir: "")
 		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-empty") }
-		let dir = MachmanPaths.dataDir(env: ["MACHMAN_DATA_DIR": ""], defaults: defaults)
-		#expect(dir == NSHomeDirectory() + "/.machman")
+		let dir = MachmanPaths.dataDir(
+			env: ["MACHMAN_DATA_DIR": "", "MACHMAN_SUITE_ID": "com.example.suite"],
+			defaults: defaults)
+		#expect(dir == appSupport + "/com.example.suite")
 	}
 
-	@Test func fallsBackToHomeMachman() {
+	@Test func fallsBackToApplicationSupportUnderSuiteID() {
 		let defaults = makeDefaults("machman-test-datadir-fallback")
 		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-fallback") }
-		let dir = MachmanPaths.dataDir(env: [:], defaults: defaults)
-		#expect(dir == NSHomeDirectory() + "/.machman")
+		let dir = MachmanPaths.dataDir(
+			env: ["MACHMAN_SUITE_ID": "com.example.suite"], defaults: defaults)
+		#expect(dir == appSupport + "/com.example.suite")
+		#expect(MachmanPaths.vmsDir(dataDir: dir) == dir + "/VMs")
 	}
 
-	// The guard must never block test runs — the test host launches the real app first.
-	@Test func guardIsInertUnderTests() {
-		enforceDevDataDirGuard(resolved: NSHomeDirectory() + "/.machman")
+	// MARK: - Dev/production separation
+
+	// The whole point of the suffix: two builds, two libraries, no overlap. If this ever fails a
+	// development build is one launch away from writing to the production VMs.
+	@Test func debugAndReleaseSuitesNeverShareALibrary() {
+		let release = MachmanPaths.dataDir(
+			env: ["MACHMAN_SUITE_ID": "com.gustaffranzen.Machman"], defaults: makeDefaults("m1"))
+		let debug = MachmanPaths.dataDir(
+			env: ["MACHMAN_SUITE_ID": "com.gustaffranzen.Machman.dev"], defaults: makeDefaults("m2"))
+		#expect(release != debug)
+		#expect(!debug.hasPrefix(release + "/"))   // nesting would put dev VMs inside production
 	}
 
-	// The scheme sets MACHMAN_DATA_DIR to $(SRCROOT)/.machman; if Xcode ever stopped
-	// expanding build-settings macros in scheme env vars, the app would silently use a
-	// literal "$(SRCROOT)" directory. Tolerates the var being absent (bare xcodebuild).
-	@Test func schemeEnvVarExpandsIfSet() {
-		guard let dir = ProcessInfo.processInfo.environment["MACHMAN_DATA_DIR"],
-			!dir.isEmpty else {
-			return
+	@Test func suiteIdentifierPrefersEnv() {
+		#expect(MachmanPaths.suiteIdentifier(env: ["MACHMAN_SUITE_ID": "com.example.x"])
+			== "com.example.x")
+		// A bare tool (no bundle id at all) must still resolve to something.
+		#expect(!MachmanPaths.suiteIdentifier(env: [:]).isEmpty)
+	}
+
+	// Every Machman binary must land on ONE library. Helper bundle ids are the suite id plus a
+	// known suffix, and stripping it is the only thing tying them together — Xcode drops custom
+	// INFOPLIST_KEY_* settings, so a shared plist key is not available to do this job.
+	@Test func helperBundleIDsCollapseToTheSameSuite() {
+		let suite = "com.gustaffranzen.Machman.dev"
+		for id in [suite, suite + ".agent", suite + ".vmhost", suite + ".tests", suite + ".uitests"] {
+			#expect(MachmanPaths.suiteIdentifier(fromBundleID: id) == suite)
 		}
-		#expect(!dir.contains("$("))
-		#expect(dir.hasPrefix("/"))
+		// A suffix that only looks like a helper must survive intact.
+		#expect(MachmanPaths.suiteIdentifier(fromBundleID: "com.example.agentic")
+			== "com.example.agentic")
+	}
+
+	// MARK: - Sockets
+
+	// sun_path is 104 bytes. The VM name is hashed precisely so a user-chosen name can't
+	// overflow it; assert that with a name far longer than anyone would type.
+	@Test func vmSocketPathsStayWithinSunPath() {
+		let runtime = MachmanPaths.runtimeDir(env: ["MACHMAN_SUITE_ID": "com.gustaffranzen.Machman.dev"])
+		let absurd = String(repeating: "long-vm-name-", count: 20)
+		for name in ["a", "Debian", absurd] {
+			let path = MachmanPaths.vmSocketPath(vm: name, runtimeDir: runtime)
+			#expect(path.utf8.count < 104, "socket path too long for sun_path: \(path)")
+		}
+		#expect(runtime.utf8.count + "/machman.sock".utf8.count < 104)
+	}
+
+	@Test func vmSocketHashIsStableAndDistinct() {
+		let a = MachmanPaths.vmSocketPath(vm: "Debian", runtimeDir: "/tmp/r")
+		#expect(a == MachmanPaths.vmSocketPath(vm: "Debian", runtimeDir: "/tmp/r"))
+		#expect(a != MachmanPaths.vmSocketPath(vm: "Ubuntu", runtimeDir: "/tmp/r"))
+	}
+
+	// Sockets must not live in the VM library: it is relocatable, may be on a volume that can't
+	// host a socket, and its depth is what pushes paths past sun_path.
+	@Test func runtimeDirIsNotInsideTheDataDir() {
+		let env = ["MACHMAN_SUITE_ID": "com.gustaffranzen.Machman.dev"]
+		let data = MachmanPaths.dataDir(env: env, defaults: makeDefaults("machman-test-split"))
+		let runtime = MachmanPaths.runtimeDir(env: env)
+		#expect(!runtime.hasPrefix(data))
 	}
 }

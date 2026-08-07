@@ -263,7 +263,17 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		} catch {
 			throw VirtualMachineError.critical("Failed to truncate the disk image: '\(diskPath)' (\(size))")
 		}
+		excludeFromBackup(path: diskPath)
 		try addDisk(disk: .storage(name, size))
+	}
+
+	// Keep VM disks out of Time Machine. Only images the VM owns are touched: a .fromUrl or .iso
+	// disk belongs to the user, who may well want it backed up.
+	func excludeDiskImagesFromBackup() {
+		for disk in disks {
+			guard case .storage(let name, _) = disk else { continue }
+			excludeFromBackup(path: configFilePath(file: "\(name).raw"))
+		}
 	}
 
 	static func computeMaxCPUCount() -> Int {

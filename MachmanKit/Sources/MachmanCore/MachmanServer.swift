@@ -40,6 +40,8 @@ public final class MachmanServer {
 
 	public func start() throws {
 		guard listener == nil else { return }
+		// $TMPDIR/<suite>/ is created on demand; it won't survive a reboot.
+		ensureDirectory((socketPath as NSString).deletingLastPathComponent)
 		listener = try UDSListener(path: socketPath, queue: acceptQueue) { [weak self] fd in
 			Task { @MainActor [weak self] in
 				self?.accept(fd)
