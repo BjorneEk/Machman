@@ -84,10 +84,16 @@ public final class VMRegistry {
 			self?.events.emit(.listChanged)
 		}
 		presenter.onScreenRecordingDenied = { [weak self] in
+			// The prompt is attributed to the RESPONSIBLE process — Machmand, which spawned this
+			// vmhost — not to MachmanVMHost itself, so that is what appears in System Settings.
+			// And macOS caches the answer for a process's lifetime: granting it does nothing for
+			// an already-running vmhost, which is why the restart is part of the instruction.
 			self?.events.emit(.log(
 				vm: nil, level: .warning,
-				message: "Screen Recording permission denied — console previews will be blank. "
-					+ "Grant it to MachmanVMHost in System Settings > Privacy & Security."))
+				message: "Screen Recording is not granted — console previews will be blank. "
+					+ "Enable it for Machmand in System Settings > Privacy & Security > Screen "
+					+ "Recording, then quit Machmand and restart the VM: a running process "
+					+ "cannot see a grant it was launched without."))
 		}
 		scan()
 	}

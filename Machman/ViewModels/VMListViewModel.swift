@@ -97,8 +97,11 @@ final class VMListViewModel: ObservableObject {
 			await reload()
 		case .installPhaseChanged(let name, let phase):
 			installPhases[name] = phase
-		case .log:
-			break   // the engine already prints; a log UI can subscribe later
+		case .log(let vm, let level, let message):
+			// The engine prints these too, but it is a separate process that gets auto-launched,
+			// so nobody ever sees its stdout. Until there is a log UI, the client the user
+			// actually runs has to print them or engine warnings are invisible.
+			print("machmand [\(level.rawValue)] \(vm.map { "(\($0)) " } ?? "")\(message)")
 		case .unknown:
 			break
 		}
