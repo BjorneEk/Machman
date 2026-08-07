@@ -34,3 +34,4 @@ machman_data/
 
 # Dev data dir for the machmand refactor (clones of production VMs; see scripts/dev-setup.sh)
 /.machman/
+docks/local
