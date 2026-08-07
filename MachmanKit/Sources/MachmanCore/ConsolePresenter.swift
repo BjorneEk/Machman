@@ -37,11 +37,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	private var reportedFailures: Set<String> = []
 
 	private let softStopGraceSeconds: Double = 30
-	// Screen Recording is asked for at most ONCE per process. Previews poll every few seconds,
-	// and calling ScreenCaptureKit without the grant re-prompts every time — a stack of identical
-	// dialogs every time the desktop regains focus. Note the grant is keyed to code identity, so
-	// changing the bundle identifier starts over with none.
-	private var didRequestScreenRecording = false
+	private var captureInFlight = false
 
 	func openConsole(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
@@ -157,14 +153,26 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	func captureImage(name: String) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
 		guard let window = windows[name] else { return fallback }
-		guard hasScreenRecordingAccess() else {
+		// One capture at a time. Screen Recording is granted to the RESPONSIBLE process, so a
+		// vmhost cannot answer "do I have it?" for itself — the only honest test is to try. When
+		// the grant is undetermined that call blocks on the system's permission dialog, and every
+		// poll landing meanwhile would stack another copy of it. Serialising is what stops the
+		// pile-up; gating on CGPreflightScreenCaptureAccess() would instead veto a call that
+		// succeeds through the parent's grant.
+		guard !captureInFlight else { return fallback }
+		captureInFlight = true
+		defer { captureInFlight = false }
+
+		let windowID = CGWindowID(window.windowNumber)
+		let content: SCShareableContent
+		do {
+			content = try await SCShareableContent
+				.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+		} catch {
 			report(.noPermission)
 			return fallback
 		}
-		let windowID = CGWindowID(window.windowNumber)
-		guard let content = try? await SCShareableContent
-			.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-			let target = content.windows.first(where: { $0.windowID == windowID }) else {
+		guard let target = content.windows.first(where: { $0.windowID == windowID }) else {
 			report(.windowNotFound(windowID))
 			return fallback
 		}
@@ -182,23 +190,16 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 			size: NSSize(width: cgImage.width, height: cgImage.height))
 	}
 
-	// Preflight never prompts; request prompts once and is latched. Without this, every preview
-	// poll that lands while the grant is missing raises another dialog.
-	private func hasScreenRecordingAccess() -> Bool {
-		if CGPreflightScreenCaptureAccess() {
-			return true
-		}
-		guard !didRequestScreenRecording else { return false }
-		didRequestScreenRecording = true
-		return CGRequestScreenCaptureAccess()
-	}
-
 	// stderr as well as the event bus: stdout is block-buffered when the daemon is not attached
 	// to a terminal, which is exactly when someone is trying to work out why previews are blank.
 	private func report(_ failure: CaptureFailure) {
 		let key = "\(failure)"
 		guard reportedFailures.insert(key).inserted else { return }
-		FileHandle.standardError.write(Data("machmand: preview capture failed: \(key)\n".utf8))
+		// Preflight is a hint here and nothing more: it answers for the calling process, which is
+		// the wrong process when the grant belongs to the responsible parent.
+		let hint = CGPreflightScreenCaptureAccess() ? "" : " (this process preflights as denied)"
+		FileHandle.standardError.write(Data(
+			"machmand: preview capture failed: \(key)\(hint)\n".utf8))
 		onCaptureFailed?(failure)
 	}
 }
