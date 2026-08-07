@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import AppKit
 import MachmanAPI
 import MachmanClient
 
@@ -335,11 +336,20 @@ public final class RoutingMachman: MachmanControlling {
 		return try await local.consoleInfo(vm: name)
 	}
 
+	// The one operation NOT proxied to the vmhost. Screen capture needs the Screen Recording
+	// grant, and a vmhost is a bare executable macOS will not list in System Settings — there is
+	// no way for the user to grant it. Only the capturing process needs the permission, and
+	// ScreenCaptureKit can capture any on-screen window by id, so the daemon (a real, grantable
+	// app bundle) asks the host where its window is and captures it here.
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
-		if let host = hosted[name] {
-			return try await host.client.preview(vm: name, maxWidth: maxWidth)
+		guard let host = hosted[name] else {
+			return try await local.preview(vm: name, maxWidth: maxWidth)
 		}
-		return try await local.preview(vm: name, maxWidth: maxWidth)
+		guard let windowID = try? await host.client.consoleInfo(vm: name).windowID else {
+			return nil   // running headless: no window to capture
+		}
+		let image = await registry.captureImage(windowID: CGWindowID(windowID))
+		return LocalMachman.jpegData(from: image, maxWidth: maxWidth)
 	}
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {

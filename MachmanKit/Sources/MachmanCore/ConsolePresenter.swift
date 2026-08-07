@@ -146,11 +146,24 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	// an image (black fallback). Ceiling note: any ScreenCaptureKit path shows the system
 	// capture indicator and needs Screen Recording permission — the plan to escape both is the
 	// private-framebuffer PreviewSource (researched, deferred).
+	func windowID(for name: String) -> CGWindowID? {
+		windows[name].map { CGWindowID($0.windowNumber) }
+	}
+
 	func captureImage(name: String) async -> NSImage {
+		guard let id = windowID(for: name) else {
+			return Self.blackImage(size: NSSize(width: 300, height: 200))
+		}
+		return await captureImage(windowID: id)
+	}
+
+	// Captures by window id, so it works for a window this process does not own — which is the
+	// whole point: the console lives in a vmhost, a bare executable macOS will not list under
+	// Screen Recording. Only the CAPTURING process needs the grant, and the daemon is a real app
+	// bundle the user can grant.
+	func captureImage(windowID: CGWindowID) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
-		guard let window = windows[name] else { return fallback }
 		guard hasScreenRecordingAccess() else { return fallback }
-		let windowID = CGWindowID(window.windowNumber)
 		guard let content = try? await SCShareableContent
 			.excludingDesktopWindows(false, onScreenWindowsOnly: false),
 			let target = content.windows.first(where: { $0.windowID == windowID }) else {

@@ -189,6 +189,15 @@ public final class VMRegistry {
 		await presenter.captureImage(name: name)
 	}
 
+	// Capture a window this process does not own (the daemon capturing a vmhost's console).
+	func captureImage(windowID: CGWindowID) async -> NSImage {
+		await presenter.captureImage(windowID: windowID)
+	}
+
+	func consoleWindowID(_ vm: VirtualMachine) -> CGWindowID? {
+		presenter.windowID(for: vm.config.name)
+	}
+
 	// MARK: - Create / delete / rename
 
 	// Re-read one VM's config from disk (after a vmhost exits, the daemon's in-memory copy is

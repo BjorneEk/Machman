@@ -164,10 +164,11 @@ public final class LocalMachman: MachmanControlling {
 
 	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
 		let vm = try lookup(name)
+		let windowID = registry.consoleWindowID(vm)
 		if case .macOS = vm.config.boot {
-			return ConsoleInfo(logPath: nil)
+			return ConsoleInfo(logPath: nil, windowID: windowID)
 		}
-		return ConsoleInfo(logPath: vm.config.consoleLogPath())
+		return ConsoleInfo(logPath: vm.config.consoleLogPath(), windowID: windowID)
 	}
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
@@ -282,7 +283,8 @@ public final class LocalMachman: MachmanControlling {
 		}
 	}
 
-	nonisolated private static func jpegData(from image: NSImage, maxWidth: Int?) -> Data? {
+	// Shared with RoutingMachman, which encodes daemon-side captures on the preview path.
+	nonisolated static func jpegData(from image: NSImage, maxWidth: Int?) -> Data? {
 		var source = image
 		if let maxWidth = maxWidth, image.size.width > CGFloat(maxWidth), image.size.width > 0 {
 			let scale = CGFloat(maxWidth) / image.size.width
