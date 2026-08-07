@@ -8,12 +8,14 @@
 
 import Foundation
 
-enum UDSError: Error, CustomStringConvertible {
+// Public: hosts need to tell "someone else is already serving" — a benign race when a client
+// auto-launches a daemon — apart from a genuine failure to bind.
+public enum UDSError: Error, CustomStringConvertible {
 	case alreadyRunning(String)
 	case pathTooLong(String)
 	case systemError(String, Int32)
 
-	var description: String {
+	public var description: String {
 		switch self {
 		case .alreadyRunning(let path):
 			return "another daemon is already serving \(path)"
@@ -36,16 +38,10 @@ final class UDSListener {
 		var addr = try Self.makeAddr(path)
 
 		// A leftover socket file: connect-probe it. A live daemon accepts (refuse to start);
-		// a dead one refuses (stale file — remove and take over).
+		// a dead one refuses (stale file — remove and take over). Force quits and power losses
+		// skip shutdown(), so a stale file is the normal case, not an exceptional one.
 		if FileManager.default.fileExists(atPath: path) {
-			let probe = socket(AF_UNIX, SOCK_STREAM, 0)
-			let connected = withUnsafePointer(to: &addr) {
-				$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-					connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
-				}
-			}
-			close(probe)
-			if connected {
+			if Self.isLive(path: path) {
 				throw UDSError.alreadyRunning(path)
 			}
 			unlink(path)
@@ -82,6 +78,24 @@ final class UDSListener {
 		source.cancel()
 		close(fd)
 		unlink(path)
+	}
+
+	// For tests that need to simulate a kill: drop the socket without the cleanup shutdown does.
+	var fileDescriptorForTesting: Int32 { fd }
+
+	// Whether something is actually accepting on this socket. The file existing means nothing:
+	// only an orderly shutdown removes it, so anything killed leaves one behind.
+	static func isLive(path: String) -> Bool {
+		guard FileManager.default.fileExists(atPath: path) else { return false }
+		guard var addr = try? makeAddr(path) else { return false }
+		let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+		guard probe >= 0 else { return false }
+		defer { close(probe) }
+		return withUnsafePointer(to: &addr) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+			}
+		}
 	}
 
 	static func makeAddr(_ path: String) throws -> sockaddr_un {

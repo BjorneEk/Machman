@@ -124,7 +124,18 @@ public final class VMRegistry {
 				guard values?.isDirectory ?? false else { continue }
 				let name = url.lastPathComponent
 				if let only = restrictedName, name != only { continue }
-				guard let config = try? VMConfig(name: name) else { continue }
+				let config: VMConfig
+				do {
+					config = try VMConfig(name: name)
+				} catch {
+					// Never swallow this. A directory that won't parse means a VM the user owns
+					// has vanished from the app, and silence makes that look like data loss
+					// rather than a damaged config file they could restore.
+					FileHandle.standardError.write(Data(
+						"machman: skipping '\(name)': its config could not be read: \(error)\n"
+							.utf8))
+					continue
+				}
 				// Idempotent, and the only chance images created before this existed ever get
 				// marked — which today means all of them.
 				config.excludeDiskImagesFromBackup()

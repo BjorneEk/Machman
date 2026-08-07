@@ -46,13 +46,15 @@ extension VMConfig {
 	// MARK: - Create (install path)
 
 	func persistMacHardwareModel(_ model: VZMacHardwareModel) throws {
-		try model.dataRepresentation.write(to: URL(fileURLWithPath: macHardwareModelPath()))
+		try model.dataRepresentation.write(
+			to: URL(fileURLWithPath: macHardwareModelPath()), options: .atomic)
 	}
 
 	@discardableResult
 	func createMacMachineIdentifier() throws -> VZMacMachineIdentifier {
 		let id = VZMacMachineIdentifier()
-		try id.dataRepresentation.write(to: URL(fileURLWithPath: macMachineIdPath()))
+		try id.dataRepresentation.write(
+			to: URL(fileURLWithPath: macMachineIdPath()), options: .atomic)
 		return id
 	}
 

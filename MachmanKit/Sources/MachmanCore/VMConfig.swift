@@ -209,11 +209,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
+	// .atomic writes to a sibling temp file and renames. Without it a force quit or power loss
+	// mid-write leaves a truncated config, which the registry scan cannot parse — and a VM that
+	// cannot be parsed silently disappears from the app.
 	func saveVMConfig() throws {
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .prettyPrinted
 		let data = try encoder.encode(self)
-		try data.write(to: URL(fileURLWithPath: configPath()))
+		try data.write(to: URL(fileURLWithPath: configPath()), options: .atomic)
 	}
 
 	func markRan() throws {
@@ -378,7 +381,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 		// Store the machine identifier to disk so you can retrieve it for subsequent boots.
 		do {
-			try machineIdentifier.dataRepresentation.write(to: URL(fileURLWithPath: vmIdentifierPath))
+			try machineIdentifier.dataRepresentation.write(
+				to: URL(fileURLWithPath: vmIdentifierPath), options: .atomic)
 		} catch {
 			throw VirtualMachineError.critical(
 				"Failed to store the machine identifier '\(vmIdentifierPath)': \(error)")

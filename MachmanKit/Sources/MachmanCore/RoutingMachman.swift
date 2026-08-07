@@ -45,7 +45,10 @@ public final class RoutingMachman: MachmanControlling {
 
 	// Adopt vmhosts left behind by an earlier daemon: a live host answers on its socket and
 	// keeps running (its VM never noticed the daemon restart); a stale socket is reclaimed.
+	// This is the daemon's whole startup reconciliation, so it also has to cope with the
+	// ungraceful cases — force quit, crash, power loss — where nothing got to clean up.
 	public func adoptExistingHosts() async {
+		pruneDeadHostSockets()
 		for vm in registry.list() {
 			let name = vm.name
 			guard hosted[name] == nil else { continue }
@@ -86,6 +89,22 @@ public final class RoutingMachman: MachmanControlling {
 
 	static func hostSocketPath(for name: String) -> String {
 		machmanVMSocketPath(vm: name)
+	}
+
+	// Sockets are only unlinked on an orderly exit, so anything killed leaves one behind — and a
+	// leftover for a VM since renamed or deleted would never be probed by adoption, which only
+	// looks at VMs that still exist. Sweep the whole runtime dir instead.
+	private func pruneDeadHostSockets() {
+		let dir = machmanRuntimeDir
+		guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
+			return
+		}
+		for entry in entries where entry.hasPrefix("vm-") && entry.hasSuffix(".sock") {
+			let path = dir + "/" + entry
+			guard !UDSListener.isLive(path: path) else { continue }
+			unlink(path)
+			print("machmand: removed stale vmhost socket \(entry)")
+		}
 	}
 
 	private func spawnHost(for name: String) async throws -> HostedVM {
