@@ -34,6 +34,13 @@
 			remoteGlobalIDString = 4F8935D52D956D5000E2B811;
 			remoteInfo = "Machman-desktop";
 		};
+		BB2000000000000000000020 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BB2000000000000000000003;
+			remoteInfo = Machmand;
+		};
 		CC300000000000000000000E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
@@ -188,6 +195,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				BB2000000000000000000021 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4F8935D82D956D5000E2B811 /* Machman */,
@@ -433,6 +441,11 @@
 			isa = PBXTargetDependency;
 			target = 4F8935D52D956D5000E2B811 /* Machman-desktop */;
 			targetProxy = 4F8935F22D956D5100E2B811 /* PBXContainerItemProxy */;
+		};
+		BB2000000000000000000021 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BB2000000000000000000003 /* Machmand */;
+			targetProxy = BB2000000000000000000020 /* PBXContainerItemProxy */;
 		};
 		CC300000000000000000000F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;

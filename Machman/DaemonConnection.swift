@@ -21,7 +21,9 @@ final class DaemonConnection: ObservableObject {
 		case unavailable(String)
 	}
 
-	static let daemonBundleID = "Gustaf-Franzen.Machmand"
+	// Derived, never hardcoded: a Debug build must look for the .dev agent, not the production
+	// one. Same suffix rule MachmanPaths uses to collapse helper ids back to the suite.
+	static var daemonBundleID: String { MachmanPaths.suiteIdentifier() + ".agent" }
 
 	@Published private(set) var status: Status = .connecting
 	@Published private(set) var viewModel: VMListViewModel?
@@ -107,7 +109,10 @@ final class DaemonConnection: ObservableObject {
 				.appendingPathComponent(ownDir.lastPathComponent)
 				.appendingPathComponent("Machmand.app"))
 		}
-		for candidate in candidates where FileManager.default.fileExists(atPath: candidate.path) {
+		// Only launch a sibling that belongs to OUR suite. A stale build product left over from
+		// before the identifier changed will happily launch and then serve a different socket
+		// (or refuse to start at all), which reads as an unexplained connection failure here.
+		for candidate in candidates where siblingMatchesSuite(candidate) {
 			NSWorkspace.shared.openApplication(
 				at: candidate, configuration: NSWorkspace.OpenConfiguration())
 			return
@@ -116,6 +121,15 @@ final class DaemonConnection: ObservableObject {
 			withBundleIdentifier: Self.daemonBundleID) {
 			NSWorkspace.shared.openApplication(
 				at: url, configuration: NSWorkspace.OpenConfiguration())
+			return
 		}
+		print("machman-desktop: no \(Self.daemonBundleID) found next to this app "
+			+ "or in Launch Services")
+	}
+
+	private func siblingMatchesSuite(_ url: URL) -> Bool {
+		guard FileManager.default.fileExists(atPath: url.path) else { return false }
+		guard let id = Bundle(url: url)?.bundleIdentifier else { return false }
+		return id == Self.daemonBundleID
 	}
 }
