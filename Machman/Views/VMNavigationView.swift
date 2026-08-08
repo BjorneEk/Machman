@@ -76,6 +76,15 @@ struct VMNavigationView: View {
 			MainVMView(viewModel: viewModel)
 				.id(navigate)
 		}
+		.alert(
+			viewModel.presentedError?.title ?? "Error",
+			isPresented: $viewModel.isErrorPresented,
+			presenting: viewModel.presentedError
+		) { _ in
+			// Empty: SwiftUI supplies the default OK button.
+		} message: { error in
+			Text(error.message)
+		}
 	}
 }
 

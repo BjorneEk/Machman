@@ -14,6 +14,13 @@ import SwiftUI
 import MachmanUI
 import MachmanAPI
 
+// One user-facing failure: title = what the user was doing, message = why it failed.
+struct PresentedError: Identifiable {
+	let id = UUID()
+	let title: String
+	let message: String
+}
+
 enum RunBtnState {
 	case run
 	case stop
@@ -41,6 +48,12 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var previews: [String: NSImage] = [:]
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
+	@Published var presentedError: PresentedError?
+	// Binding surface for .alert(isPresented:presenting:) — clears the item on dismiss.
+	var isErrorPresented: Bool {
+		get { presentedError != nil }
+		set { if !newValue { presentedError = nil } }
+	}
 
 	private var isFocused = true
 	private let previewInterval: Double = 4
@@ -106,14 +119,28 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// Thin wrappers so call sites read as intent; alerts for user-initiated errors arrive with
-	// the error-surface work (phase 3.1).
-	func log(error: String) {
-		MachmanLogger.log(.interactionError, error)
-	}
-
 	func log(message: String) {
 		MachmanLogger.log(.log, message)
+	}
+
+	// MARK: - Error surface
+
+	// Alerts always log first: the unified log keeps the record even if the alert is
+	// dismissed unread.
+	func present(message: String, while action: String) {
+		MachmanLogger.log(.interactionError, "\(action) failed: \(message)")
+		presentedError = PresentedError(title: "\(action) failed", message: message)
+	}
+
+	func present(_ error: Error, while action: String) {
+		present(message: Self.message(for: error), while: action)
+	}
+
+	// localizedDescription on a non-LocalizedError is NSError-bridge boilerplate ("The
+	// operation couldn't be completed…"); String(describing:) picks up the connection
+	// errors' CustomStringConvertible instead.
+	private static func message(for error: Error) -> String {
+		(error as? LocalizedError)?.errorDescription ?? String(describing: error)
 	}
 
 	// MARK: - Install phases
@@ -211,7 +238,7 @@ final class VMListViewModel: ObservableObject {
 				try await self?.api.start(
 					vm: name, options: StartOptions(openConsole: !headless))
 			} catch {
-				self?.log(error: "(\(name)) \(error.localizedDescription)")
+				self?.present(error, while: "Starting \(name)")
 			}
 		}
 	}
@@ -221,8 +248,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.openConsole(vm: name)
 			} catch {
-				self?.log(error: "Failed to open console for \(name): "
-					+ error.localizedDescription)
+				self?.present(error, while: "Opening the \(name) console")
 			}
 		}
 	}
@@ -232,8 +258,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.closeConsole(vm: name)
 			} catch {
-				self?.log(error: "Failed to close console for \(name): "
-					+ error.localizedDescription)
+				self?.present(error, while: "Closing the \(name) console")
 			}
 		}
 	}
@@ -243,7 +268,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.stop(vm: name, mode: mode)
 			} catch {
-				self?.log(error: "Failed to stop VM: \(name): \(error.localizedDescription)")
+				self?.present(error, while: "Stopping \(name)")
 			}
 		}
 	}
@@ -254,7 +279,7 @@ final class VMListViewModel: ObservableObject {
 			await reload()
 			return vm.name
 		} catch {
-			log(error: "Failed to create VM: \(error.localizedDescription)")
+			present(error, while: "Creating a VM")
 			return nil
 		}
 	}
@@ -271,7 +296,7 @@ final class VMListViewModel: ObservableObject {
 				try await self?.api.deleteVM(named: vm.name)
 				self?.select(name: nil)
 			} catch {
-				self?.log(error: "Failed to delete \(vm.name): \(error.localizedDescription)")
+				self?.present(error, while: "Deleting \(vm.name)")
 			}
 		}
 	}
@@ -286,7 +311,7 @@ final class VMListViewModel: ObservableObject {
 			}
 			return true
 		} catch {
-			log(error: "Failed to rename VM: \(error.localizedDescription)")
+			present(error, while: "Renaming \(oldName)")
 			vmName = oldName
 			return false
 		}
@@ -298,8 +323,7 @@ final class VMListViewModel: ObservableObject {
 				try await self?.api.setHardware(
 					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
 			} catch {
-				self?.log(error: "Failed to update hardware for \(name): "
-					+ error.localizedDescription)
+				self?.present(error, while: "Updating hardware for \(name)")
 			}
 		}
 	}
@@ -313,7 +337,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.addDisk(vm: name, disk)
 			} catch {
-				self?.log(error: "Failed to add disk: \(error.localizedDescription)")
+				self?.present(error, while: "Adding a disk")
 			}
 		}
 	}
@@ -323,7 +347,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.removeDisk(vm: name, diskID: diskID)
 			} catch {
-				self?.log(error: "Failed to delete disk: \(error.localizedDescription)")
+				self?.present(error, while: "Removing a disk")
 			}
 		}
 	}
@@ -333,7 +357,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.addMount(vm: name, path: path, tag: tag)
 			} catch {
-				self?.log(error: "Failed to add mount point: \(error.localizedDescription)")
+				self?.present(error, while: "Adding a mount point")
 			}
 		}
 	}
@@ -343,7 +367,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.removeMount(vm: name, mountID: mountID)
 			} catch {
-				self?.log(error: "Failed to remove mount point: \(error.localizedDescription)")
+				self?.present(error, while: "Removing a mount point")
 			}
 		}
 	}
@@ -353,7 +377,7 @@ final class VMListViewModel: ObservableObject {
 			try await api.setKernelBoot(vm: name, enabled: enabled)
 			return true
 		} catch {
-			log(error: "Failed to switch boot mode: \(error.localizedDescription)")
+			present(error, while: "Switching boot mode")
 			return false
 		}
 	}
@@ -363,7 +387,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.updateKernelSettings(vm: name, settings)
 			} catch {
-				self?.log(error: "Failed to save kernel settings: \(error.localizedDescription)")
+				self?.present(error, while: "Saving kernel settings")
 			}
 		}
 	}
@@ -373,14 +397,18 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.startMacInstall(vm: name, source: source)
 			} catch {
-				self?.log(error: "macOS install refused: \(error.localizedDescription)")
+				self?.present(error, while: "Starting the macOS install")
 			}
 		}
 	}
 
 	func cancelInstall(_ name: String) {
 		Task { [weak self] in
-			try? await self?.api.cancelMacInstall(vm: name)
+			do {
+				try await self?.api.cancelMacInstall(vm: name)
+			} catch {
+				self?.present(error, while: "Canceling the macOS install")
+			}
 		}
 	}
 

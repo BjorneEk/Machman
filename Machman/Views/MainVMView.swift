@@ -51,7 +51,9 @@ struct MainVMView: View {
 							let newName = viewModel.vmName
 							guard newName != vm.name else { return }
 							if viewModel.hasVM(newName) {
-								viewModel.log(error: "A VM named '\(newName)' already exists.")
+								viewModel.present(
+									message: "A VM named '\(newName)' already exists.",
+									while: "Renaming \(vm.name)")
 								viewModel.vmName = vm.name
 								return
 							}
