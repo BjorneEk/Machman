@@ -24,6 +24,7 @@ public enum RPCMethod: String, Sendable {
 	case mountRemove = "vm.mount.remove"
 	case setKernelBoot = "vm.boot.setKernel"
 	case updateKernelSettings = "vm.boot.kernelSettings"
+	case setStartPolicy = "vm.setStartPolicy"
 	case start = "vm.start"
 	case stop = "vm.stop"
 	case consoleOpen = "vm.console.open"
@@ -136,6 +137,16 @@ public enum RPCParams {
 		public init(name: String, settings: KernelSettings) {
 			self.name = name
 			self.settings = settings
+		}
+	}
+
+	public struct SetStartPolicy: Codable, Equatable, Sendable {
+		public var name: String
+		public var policy: StartPolicy
+
+		public init(name: String, policy: StartPolicy) {
+			self.name = name
+			self.policy = policy
 		}
 	}
 

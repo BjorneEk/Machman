@@ -153,6 +153,12 @@ public final class LocalMachman: MachmanControlling {
 
 	// MARK: - Run / stop / console
 
+	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
+		let vm = try lookup(name)
+		try vm.config.setStartPolicy(policy)
+		registry.events.emit(.listChanged)
+	}
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		try await registry.start(try lookup(name), openConsole: options.openConsole)
 	}

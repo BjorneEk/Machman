@@ -155,6 +155,10 @@ public final class MachmanServer {
 				let p: RPCParams.UpdateKernelSettings = try params(line)
 				try await api.updateKernelSettings(vm: p.name, p.settings)
 				reply(client, id, RPCEmpty())
+			case .setStartPolicy:
+				let p: RPCParams.SetStartPolicy = try params(line)
+				try await api.setStartPolicy(vm: p.name, policy: p.policy)
+				reply(client, id, RPCEmpty())
 			case .start:
 				let p: RPCParams.Start = try params(line)
 				try await api.start(vm: p.name, options: p.options ?? StartOptions())

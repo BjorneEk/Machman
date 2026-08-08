@@ -384,6 +384,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
+	func setStartPolicy(_ policy: StartPolicy) throws {
+		startPolicy = policy
+		try saveVMConfig()
+	}
+
 	func setCPUCount(_ newValue: Int) throws {
 		self.cpuCount = newValue
 		try saveVMConfig()

@@ -35,6 +35,7 @@ public protocol MachmanControlling: AnyObject {
 	func removeMount(vm name: String, mountID: String) async throws
 	func setKernelBoot(vm name: String, enabled: Bool) async throws
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws
+	func setStartPolicy(vm name: String, policy: StartPolicy) async throws
 
 	// MARK: Run / stop / console
 	func start(vm name: String, options: StartOptions) async throws

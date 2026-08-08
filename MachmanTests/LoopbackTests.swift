@@ -79,6 +79,12 @@ final class StubMachman: MachmanControlling {
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		_ = try get(name)
 	}
+	func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
+		var vm = try get(name)
+		vm.startPolicy = policy
+		vms[name] = vm
+		emit(.listChanged)
+	}
 	func start(vm name: String, options: StartOptions) async throws {
 		var vm = try get(name)
 		vm.state = .running
@@ -204,6 +210,22 @@ struct LoopbackTests {
 		let updated = try await client.regenerateMAC(vm: "Debian")
 		#expect(updated.macAddress == "0a:0a:0a:0a:0a:0a")
 		#expect(try await client.vm(named: "Debian").macAddress == "0a:0a:0a:0a:0a:0a")
+		await client.disconnect()
+	}
+
+	@Test @MainActor func setStartPolicyRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-pol-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "pol")
+		let policy = StartPolicy(windowed: false, safe: true, autostart: true)
+		try await client.setStartPolicy(vm: "Debian", policy: policy)
+		#expect(try await client.vm(named: "Debian").startPolicy == policy)
 		await client.disconnect()
 	}
 
