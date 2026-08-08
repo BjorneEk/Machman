@@ -130,7 +130,7 @@ public final class VMRegistry {
 				if let only = restrictedName, name != only { continue }
 				let config: VMConfig
 				do {
-					config = try VMConfig(name: name)
+					config = try VMConfig.load(name: name)
 				} catch {
 					// Never swallow this. A directory that won't parse means a VM the user owns
 					// has vanished from the app, and silence makes that look like data loss
@@ -170,9 +170,14 @@ public final class VMRegistry {
 				"(\(vm.config.name)) cannot start while macOS is installing")
 		}
 		let runtime = VMRuntime(config: vm.config, events: events)
+		// Runtime accumulates here and only here — in the process that ran the VM, at teardown,
+		// before a vmhost's exit flush. The daemon never accumulates, so adoption cannot
+		// double-count.
+		let startedAt = Date()
 		runtime.onTeardown = { [weak self, weak vm] in
 			guard let vm = vm else { return }
 			vm.runtime = nil
+			vm.config.addRuntime(Date().timeIntervalSince(startedAt))
 			self?.presenter.dropConsole(name: vm.config.name)
 		}
 		vm.runtime = runtime
@@ -222,7 +227,7 @@ public final class VMRegistry {
 	// stale — the vmhost owned the file while the VM ran).
 	func reload(name: String) {
 		guard vms[name] != nil else { return }
-		guard let fresh = try? VMConfig(name: name) else {
+		guard let fresh = try? VMConfig.load(name: name) else {
 			vms[name] = nil
 			events.emit(.listChanged)
 			return

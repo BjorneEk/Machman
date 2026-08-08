@@ -94,7 +94,7 @@ public final class LocalMachman: MachmanControlling {
 			guard let path = disk.path, !path.isEmpty else {
 				throw MachmanError(code: .invalidArgument, message: "image disk requires a path")
 			}
-			try vm.config.addDisk(disk: .fromUrl(URL(fileURLWithPath: path)))
+			try vm.config.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: path))))
 		}
 		registry.events.emit(.listChanged)
 	}
@@ -209,7 +209,7 @@ public final class LocalMachman: MachmanControlling {
 	private func info(for vm: VirtualMachine) -> VMInfo {
 		let config = vm.config
 		let disks = config.disks.map { disk -> DiskInfo in
-			switch disk {
+			switch disk.kind {
 			case .storage(let name, _):
 				return DiskInfo(
 					id: disk.id, type: .storage, name: name, path: nil,

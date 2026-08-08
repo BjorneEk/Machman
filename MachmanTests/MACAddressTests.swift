@@ -14,7 +14,7 @@ struct MACAddressTests {
 			#expect(VZMACAddress(string: mac) != nil)
 			#expect(cfg.getOrCreateMACAddress().string == mac)  // backstop returns the same one
 
-			let reloaded = try VMConfig(name: name)             // survives a save/load cycle
+			let reloaded = try VMConfig.load(name: name)             // survives a save/load cycle
 			#expect(reloaded.macAddress == mac)
 		}
 	}
@@ -27,11 +27,11 @@ struct MACAddressTests {
 			cfg.macAddress = nil                                // simulate a legacy config
 			try cfg.saveVMConfig()
 
-			let migrated = try VMConfig(name: name)
+			let migrated = try VMConfig.load(name: name)
 			let mac = try #require(migrated.macAddress)         // migration assigned one
 			#expect(VZMACAddress(string: mac) != nil)
 
-			let again = try VMConfig(name: name)                // and persisted it
+			let again = try VMConfig.load(name: name)                // and persisted it
 			#expect(again.macAddress == mac)
 		}
 	}

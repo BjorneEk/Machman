@@ -91,6 +91,12 @@ struct WireFixtureTests {
 		#expect(try encode(StartOptions()) == #"{"openConsole":true}"#)
 	}
 
+	@Test func startPolicyDefaultsOnDecode() throws {
+		#expect(try decode(StartPolicy.self, "{}") == StartPolicy())
+		#expect(try encode(StartPolicy())
+			== #"{"autostart":false,"safe":false,"windowed":true}"#)
+	}
+
 	@Test func requestShapes() throws {
 		#expect(try encode(NewDisk.storage(name: "disk", sizeBytes: 1024))
 			== #"{"name":"disk","sizeBytes":1024,"type":"storage"}"#)

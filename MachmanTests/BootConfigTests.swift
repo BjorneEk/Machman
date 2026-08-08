@@ -38,7 +38,7 @@ struct BootConfigTests {
 		#expect(cfg.boot == .efi)
 	}
 
-	// Exercises the real saveVMConfig() -> init(name:) path (the manual-copy enumeration site).
+	// Exercises the real saveVMConfig() -> load(name:) path.
 	@Test func savedBootSurvivesReload() throws {
 		try VMTestDir.withRedirectedDir {
 			let name = "rt-vm"
@@ -48,7 +48,7 @@ struct BootConfigTests {
 				initialRamdiskPath: nil, commandLine: "console=hvc0 root=/dev/vda1 rw"))
 			try cfg.saveVMConfig()
 
-			let reloaded = try VMConfig(name: name)
+			let reloaded = try VMConfig.load(name: name)
 			#expect(reloaded.boot == cfg.boot)
 		}
 	}

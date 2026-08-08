@@ -12,6 +12,7 @@
 
 import Foundation
 import Virtualization
+import MachmanAPI
 
 enum VirtualMachineError: Error {
 	case critical(String)
@@ -21,6 +22,8 @@ struct HostMountPoint: Codable, Identifiable {
 	var id = UUID()
 	var path: String
 	var tag: String
+	// Safe-mode policy (phase 6): true = a safe run omits this mount; false = attach it anyway.
+	var safe: Bool = true
 
 	// id must persist: removeMount matches on it, so a regenerated id breaks mount removal
 	// after any daemon restart or registry reload.
@@ -29,6 +32,7 @@ struct HostMountPoint: Codable, Identifiable {
 		self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
 		self.path = try container.decode(String.self, forKey: .path)
 		self.tag = try container.decode(String.self, forKey: .tag)
+		self.safe = try container.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 	}
 
 	init (path: String, tag: String) {
@@ -40,19 +44,61 @@ struct HostMountPoint: Codable, Identifiable {
 		case id
 		case path
 		case tag
+		case safe
 	}
 }
 
-enum VMDisk: Codable, Identifiable, Equatable {
+// The old persisted disk enum, byte-identical on disk (positional {"storage":{"_0":…,"_1":…}}).
+// NEVER add associated values to it — synthesized enum coding uses positional keys, so any
+// change silently breaks every config on disk. New per-disk fields go on VMDisk.
+enum VMDiskKind: Codable, Equatable {
 	case storage(String, UInt64)
 	case fromUrl(URL)
 	case iso(URL)
+}
+
+struct VMDisk: Codable, Identifiable, Equatable {
+	var kind: VMDiskKind
+	// Safe-mode policy (phase 6): true = a safe run clones this disk; false = attach the
+	// real file.
+	var safe: Bool = true
+
+	init(kind: VMDiskKind, safe: Bool = true) {
+		self.kind = kind
+		self.safe = safe
+	}
+
 	var id: String {
-		switch self {
+		switch kind {
 		case .storage(let name, _): return "storage:\(name)"
 		case .fromUrl(let url): return "url:\(url.absoluteString)"
 		case .iso(let url): return "iso:\(url.absoluteString)"
 		}
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case kind
+		case safe
+	}
+
+	// Fallback decode: a keyed container WITH a "kind" key is the new shape; anything else is
+	// the legacy bare enum, decoded directly (the legacy payload is also a keyed container —
+	// its only key is the case name — so contains(.kind) is the discriminator). Encode is
+	// always-new: configs migrate on their next save.
+	init(from decoder: any Decoder) throws {
+		if let c = try? decoder.container(keyedBy: CodingKeys.self), c.contains(.kind) {
+			self.kind = try c.decode(VMDiskKind.self, forKey: .kind)
+			self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
+		} else {
+			self.kind = try VMDiskKind(from: decoder)
+			self.safe = true
+		}
+	}
+
+	func encode(to encoder: any Encoder) throws {
+		var c = encoder.container(keyedBy: CodingKeys.self)
+		try c.encode(kind, forKey: .kind)
+		try c.encode(safe, forKey: .safe)
 	}
 }
 
@@ -67,6 +113,13 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var boot: BootConfig = .efi
 	var macAddress: String?
 	var kernelSettings: LinuxKernelBoot?
+	// How this VM prefers to start (run-defaults UI, autostart, safe runs). The MachmanAPI DTO
+	// is persisted directly — a mirror type would be one more lockstep site carrying nothing,
+	// and StartPolicy is coder-agnostic (defaults-on-decode, no Dates).
+	var startPolicy = StartPolicy()
+	// Accumulated across sessions at teardown, in the process that ran the VM. A SIGKILLed
+	// vmhost loses that session's runtime — accepted.
+	var totalRuntimeSeconds: Double = 0
 
 	init (name: String, memorySize: UInt64, cpuCount: Int) throws {
 		self.name = name
@@ -78,26 +131,20 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
-	init (name: String) throws {
-		self.name = name
-		let fileURL = URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)/config")
+	// Load a VM from <machmanVMDir>/<name>/config: a plain decode, then two invariants. The
+	// DIRECTORY name is authoritative (renames move the directory; the file's name field is
+	// discarded), and configs predating macAddress get one minted and saved (one-time
+	// migration).
+	static func load(name: String) throws -> VMConfig {
+		let fileURL = URL(fileURLWithPath: "\(machmanVMDir)/\(name)/config")
 		let data = try Data(contentsOf: fileURL)
-		let decoder = JSONDecoder()
-		let loadedConfig = try decoder.decode(VMConfig.self, from: data)
-		self.memorySize = loadedConfig.memorySize
-		self.cpuCount = loadedConfig.cpuCount
-		self.created = loadedConfig.created
-		self.lastRan = loadedConfig.lastRan
-		self.mountPoints = loadedConfig.mountPoints
-		self.disks = loadedConfig.disks
-		self.boot = loadedConfig.boot
-		self.macAddress = loadedConfig.macAddress
-		self.kernelSettings = loadedConfig.kernelSettings
-		if self.macAddress == nil {
-			// One-time migration: configs predating the field get a stable MAC on first load.
-			self.macAddress = VZMACAddress.randomLocallyAdministered().string
-			try saveVMConfig()
+		let config = try JSONDecoder().decode(VMConfig.self, from: data)
+		config.name = name
+		if config.macAddress == nil {
+			config.macAddress = VZMACAddress.randomLocallyAdministered().string
+			try config.saveVMConfig()
 		}
+		return config
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -111,11 +158,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case boot
 		case macAddress
 		case kernelSettings
+		case startPolicy
+		case totalRuntimeSeconds
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
-	// Every persisted field is enumerated here AND in encode(to:) AND in init(name:)'s manual
-	// copy — keep all three in lockstep when adding a field.
+	// Every persisted field is enumerated in CodingKeys AND init(from:) AND encode(to:) —
+	// keep all three in lockstep when adding a field. (load(name:) is a plain decode and
+	// needs nothing.)
 	required init(from decoder: any Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.name = try c.decode(String.self, forKey: .name)
@@ -128,6 +178,10 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.boot = try c.decodeIfPresent(BootConfig.self, forKey: .boot) ?? .efi
 		self.macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
 		self.kernelSettings = try c.decodeIfPresent(LinuxKernelBoot.self, forKey: .kernelSettings)
+		self.startPolicy = try c.decodeIfPresent(StartPolicy.self, forKey: .startPolicy)
+			?? StartPolicy()
+		self.totalRuntimeSeconds =
+			try c.decodeIfPresent(Double.self, forKey: .totalRuntimeSeconds) ?? 0
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -142,6 +196,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encode(boot, forKey: .boot)
 		try c.encodeIfPresent(macAddress, forKey: .macAddress)
 		try c.encodeIfPresent(kernelSettings, forKey: .kernelSettings)
+		try c.encode(startPolicy, forKey: .startPolicy)
+		try c.encode(totalRuntimeSeconds, forKey: .totalRuntimeSeconds)
 	}
 
 	func getDisks() -> [VMDisk] {
@@ -171,7 +227,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	func getDiskSize(disk: VMDisk) -> UInt64? {
-		let url = switch disk {
+		let url = switch disk.kind {
 			case .fromUrl(let url):
 				url
 			case .storage(let name, _):
@@ -194,7 +250,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Destructive — confirmation is the caller's job.
 	func deleteDisk(disk: VMDisk) throws {
 		self.disks.removeAll { $0 == disk }
-		if case .storage(let name, _) = disk {
+		if case .storage(let name, _) = disk.kind {
 			let url = localURL(file: "\(name).raw")
 			if FileManager.default.fileExists(atPath: url.path) {
 				try FileManager.default.removeItem(at: url)
@@ -218,6 +274,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
+	// One session's runtime, added at teardown in the process that ran the VM. try? — the
+	// teardown path must never throw.
+	func addRuntime(_ seconds: TimeInterval) {
+		guard seconds > 0 else { return }
+		totalRuntimeSeconds += seconds
+		try? saveVMConfig()
+	}
+
 	func addMountPoint(_ mountPoint: HostMountPoint) throws {
 		mountPoints.append(mountPoint)
 		try saveVMConfig()
@@ -236,7 +300,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	public func addIsoDisk(isoUrl: URL) throws {
-		try addDisk(disk: .iso(isoUrl))
+		try addDisk(disk: VMDisk(kind: .iso(isoUrl)))
 	}
 
 	public func addNewStorageDisk(name: String, size: UInt64) throws {
@@ -261,14 +325,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			throw VirtualMachineError.critical("Failed to truncate the disk image: '\(diskPath)' (\(size))")
 		}
 		excludeFromBackup(path: diskPath)
-		try addDisk(disk: .storage(name, size))
+		try addDisk(disk: VMDisk(kind: .storage(name, size)))
 	}
 
 	// Keep VM disks out of Time Machine. Only images the VM owns are touched: a .fromUrl or .iso
 	// disk belongs to the user, who may well want it backed up.
 	func excludeDiskImagesFromBackup() {
 		for disk in disks {
-			guard case .storage(let name, _) = disk else { continue }
+			guard case .storage(let name, _) = disk.kind else { continue }
 			excludeFromBackup(path: configFilePath(file: "\(name).raw"))
 		}
 	}
@@ -452,7 +516,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	func diskArray() throws -> [VZStorageDeviceConfiguration] {
 		return try disks.map {
-			switch $0 {
+			switch $0.kind {
 			case .iso(let url):
 				return try self.isoImageDeviceConfig(isoPath: url)
 			case .storage(let name, _):

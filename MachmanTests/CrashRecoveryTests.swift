@@ -59,11 +59,11 @@ struct CrashRecoveryTests {
 			let path = cfg.configPath()
 			let good = try Data(contentsOf: URL(fileURLWithPath: path))
 			#expect((try? JSONDecoder().decode(VMConfig.self, from: good)) != nil)
-			#expect(try VMConfig(name: "durable").cpuCount == 4)
+			#expect(try VMConfig.load(name: "durable").cpuCount == 4)
 
 			// And the parse failure a fragment WOULD cause is surfaced, not swallowed.
 			try Data(good.prefix(good.count / 2)).write(to: URL(fileURLWithPath: path))
-			#expect(throws: (any Error).self) { _ = try VMConfig(name: "durable") }
+			#expect(throws: (any Error).self) { _ = try VMConfig.load(name: "durable") }
 		}
 	}
 

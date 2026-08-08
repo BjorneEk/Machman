@@ -45,7 +45,7 @@ struct KernelSettingsTests {
 			#expect(cfg.boot == .efi)
 			#expect(cfg.kernelSettings == settings)
 
-			let reloaded = try VMConfig(name: name)      // draft survives a reload too
+			let reloaded = try VMConfig.load(name: name)      // draft survives a reload too
 			#expect(reloaded.boot == .efi)
 			#expect(reloaded.kernelSettings == settings)
 

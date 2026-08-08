@@ -68,7 +68,9 @@ extension VMConfig {
 
 	// macOS needs a sizable system disk to restore onto; reuse an existing storage disk if present.
 	func ensureMacSystemDisk(minimumSize: UInt64 = 64 * 1024 * 1024 * 1024) throws {
-		let hasStorage = disks.contains { if case .storage = $0 { return true } else { return false } }
+		let hasStorage = disks.contains {
+			if case .storage = $0.kind { return true } else { return false }
+		}
 		if hasStorage { return }
 		try addNewStorageDisk(name: "disk", size: minimumSize)
 	}

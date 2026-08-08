@@ -33,7 +33,7 @@ struct RegistryRestrictionTests {
 			#expect(registry.vm(named: name)?.config.cpuCount == 2)
 
 			// Another process (a vmhost) edits the config file behind the registry's back.
-			let other = try VMConfig(name: name)
+			let other = try VMConfig.load(name: name)
 			try other.setCPUCount(5)
 
 			registry.reload(name: name)
