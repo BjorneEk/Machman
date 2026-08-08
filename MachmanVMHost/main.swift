@@ -2,7 +2,9 @@
 //  main.swift
 //  MachmanVMHost
 //
-//  Thin argv shell over VMHostBootstrap (MachmanCore). Spawned by Machmand, one per running VM:
+//  Thin argv shell over VMHostBootstrap (MachmanCore). Launched by Machmand as a standalone
+//  app (and, with autostart, by launchd) — one process per running VM, its own TCC
+//  responsible process:
 //    MachmanVMHost --data-dir DIR --vm NAME --socket PATH
 //
 

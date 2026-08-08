@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import AppKit
 import MachmanAPI
 import MachmanClient
 
@@ -38,13 +39,22 @@ public final class RoutingMachman: MachmanControlling {
 	final class HostedVM {
 		let identity: HostIdentity
 		let client: RemoteMachman
-		let process: Process?     // nil for adopted hosts (spawned by an earlier daemon)
+		// The spawned standalone app; nil for adopted hosts (their only death detector is the
+		// socket disconnect, same as before). deathWatch routes isTerminated to hostGone —
+		// invalidate it BEFORE forceTerminate on failure paths so a cleanup kill can't
+		// re-enter (hostGone is idempotent anyway; this keeps the sequence obviously correct).
+		let app: NSRunningApplication?
+		var deathWatch: NSKeyValueObservation?
 		var eventTask: Task<Void, Never>?
 
-		init(identity: HostIdentity, client: RemoteMachman, process: Process?) {
+		init(
+			identity: HostIdentity, client: RemoteMachman,
+			app: NSRunningApplication?, deathWatch: NSKeyValueObservation?
+		) {
 			self.identity = identity
 			self.client = client
-			self.process = process
+			self.app = app
+			self.deathWatch = deathWatch
 		}
 	}
 	private var hosted: [String: HostedVM] = [:]   // keyed by VM name
@@ -139,41 +149,53 @@ public final class RoutingMachman: MachmanControlling {
 				message: "MachmanVMHost.app not found (embedded or beside "
 					+ "\(Bundle.main.bundleURL.path))")
 		}
-		let process = Process()
-		process.executableURL = vmhost.executableURL
-		process.arguments = [
+		// Standalone, never a child: the vmhost is its own TCC responsible process by
+		// construction — the same identity story as a launchd-started host.
+		let configuration = NSWorkspace.OpenConfiguration()
+		configuration.createsNewApplicationInstance = true   // one instance per VM, shared id
+		configuration.activates = false
+		configuration.arguments = [
 			"--data-dir", machmanVMDir, "--vm", name, "--socket", identity.socketPath,
 		]
-		var environment = ProcessInfo.processInfo.environment
-		// The vmhost app resolves the suite from its own bundle id now; only the version
-		// handshake still travels by env. Never leak a test/script data-dir override.
-		environment["MACHMAN_VERSION"] = daemonVersion
-		environment.removeValue(forKey: "MACHMAN_DATA_DIR")
-		process.environment = environment
+		// OpenConfiguration.environment REPLACES the child's environment (no inheritance),
+		// which scrubs any MACHMAN_DATA_DIR override for free. The bundle id identifies the
+		// suite; only the version handshake still travels by env.
+		configuration.environment = ["MACHMAN_VERSION": daemonVersion]
+
+		let app: NSRunningApplication
+		do {
+			app = try await NSWorkspace.shared.openApplication(
+				at: vmhost.appURL, configuration: configuration)
+		} catch {
+			throw MachmanError(
+				code: .internalError,
+				message: "cannot launch vmhost for \(name): \(error.localizedDescription)")
+		}
 		let hostID = identity.id
-		process.terminationHandler = { [weak self] _ in
+		let deathWatch = app.observe(\.isTerminated, options: [.new]) { [weak self] app, _ in
+			guard app.isTerminated else { return }
 			Task { @MainActor [weak self] in
 				self?.hostGone(id: hostID)
 			}
 		}
-		try process.run()
 
 		var lastError = "vmhost never answered"
 		for _ in 0..<40 {
 			try? await Task.sleep(for: .milliseconds(250))
-			guard process.isRunning else {
+			guard !app.isTerminated else {
 				lastError = "vmhost exited during startup"
 				break
 			}
 			do {
 				let client = try await connectHost(identity: identity)
-				return HostedVM(identity: identity, client: client, process: process)
+				return HostedVM(
+					identity: identity, client: client, app: app, deathWatch: deathWatch)
 			} catch {
 				lastError = "\(error)"
 			}
 		}
-		process.terminationHandler = nil
-		process.terminate()
+		deathWatch.invalidate()
+		app.forceTerminate()
 		throw MachmanError(
 			code: .internalError, message: "vmhost for \(name) failed to start: \(lastError)")
 	}
@@ -190,7 +212,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	func adopt(identity: HostIdentity, client: RemoteMachman) {
-		let host = HostedVM(identity: identity, client: client, process: nil)
+		let host = HostedVM(identity: identity, client: client, app: nil, deathWatch: nil)
 		hosted[identity.name] = host
 		subscribeEvents(host)
 		registry.events.emit(.listChanged)
@@ -211,6 +233,8 @@ public final class RoutingMachman: MachmanControlling {
 	private func hostGone(id: UUID) {
 		guard let name = hosted.first(where: { $0.value.identity.id == id })?.key,
 			let host = hosted.removeValue(forKey: name) else { return }
+		host.deathWatch?.invalidate()
+		host.deathWatch = nil
 		host.eventTask?.cancel()
 		let client = host.client
 		Task {
@@ -356,8 +380,9 @@ public final class RoutingMachman: MachmanControlling {
 		do {
 			try await host.client.start(vm: name, options: options)
 		} catch {
-			host.process?.terminationHandler = nil
-			host.process?.terminate()
+			host.deathWatch?.invalidate()
+			host.deathWatch = nil
+			host.app?.forceTerminate()
 			await host.client.disconnect()
 			unlink(host.identity.socketPath)
 			throw error
