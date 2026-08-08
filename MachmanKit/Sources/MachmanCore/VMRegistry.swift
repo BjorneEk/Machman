@@ -249,7 +249,8 @@ public final class VMRegistry {
 		try VMConfig.createNewVMDirectory(name: name)
 		let vm = VirtualMachine(
 			config: try VMConfig(
-				name: name, memorySize: 4, cpuCount: VMConfig.computeMaxCPUCount()),
+				name: name, memorySize: ByteSize.fromGB(1),
+				cpuCount: VMConfig.computeMaxCPUCount()),
 			events: events)
 		vms[name] = vm
 		events.emit(.listChanged)

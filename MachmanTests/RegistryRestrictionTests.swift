@@ -24,6 +24,16 @@ struct RegistryRestrictionTests {
 		}
 	}
 
+	@Test @MainActor func createdVMDefaultsToAGigabyteOfMemory() throws {
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			#expect(vm.config.memorySize >= ByteSize.fromGB(1))
+			// And the persisted file agrees — the old 4-BYTE default lied on disk.
+			#expect(try VMConfig.load(name: vm.name).memorySize >= ByteSize.fromGB(1))
+		}
+	}
+
 	@Test @MainActor func reloadPicksUpOnDiskChanges() throws {
 		try VMTestDir.withRedirectedDir {
 			let name = "reload-vm"
