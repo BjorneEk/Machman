@@ -13,6 +13,8 @@
 		AA10000000000000000000C5 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B5 /* MachmanClient */; };
 		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
 		AA10000000000000000000C8 /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B8 /* MachmanUI */; };
+		DD4000000000000000000001 /* MachmanVMHost.app in Embed VMHost */ = {isa = PBXBuildFile; fileRef = CC3000000000000000000001 /* MachmanVMHost.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		DD4000000000000000000002 /* Machmand.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = BB20000000000000000000F1 /* Machmand.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		BB200000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000A /* MachmanAPI */; };
 		BB200000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000B /* MachmanCore */; };
 		BB200000000000000000000F /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000E /* MachmanUI */; };
@@ -42,6 +44,13 @@
 			remoteGlobalIDString = BB2000000000000000000003;
 			remoteInfo = Machmand;
 		};
+		DD4000000000000000000005 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CC3000000000000000000003;
+			remoteInfo = MachmanVMHost;
+		};
 		CC300000000000000000000E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
@@ -50,6 +59,31 @@
 			remoteInfo = MachmanVMHost;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		DD4000000000000000000003 /* Embed VMHost */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library";
+			dstSubfolderSpec = 1;
+			files = (
+				DD4000000000000000000001 /* MachmanVMHost.app in Embed VMHost */,
+			);
+			name = "Embed VMHost";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD4000000000000000000004 /* Embed Login Item */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library/LoginItems";
+			dstSubfolderSpec = 1;
+			files = (
+				DD4000000000000000000002 /* Machmand.app in Embed Login Item */,
+			);
+			name = "Embed Login Item";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		4F8935D62D956D5000E2B811 /* Machman-desktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Machman-desktop.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -181,11 +215,14 @@
 				4F8935D22D956D5000E2B811 /* Sources */,
 				4F8935D32D956D5000E2B811 /* Frameworks */,
 				4F8935D42D956D5000E2B811 /* Resources */,
+				DD4000000000000000000003 /* Embed VMHost */,
+				DD4000000000000000000004 /* Embed Login Item */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				BB2000000000000000000021 /* PBXTargetDependency */,
+				DD4000000000000000000006 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4F8935D82D956D5000E2B811 /* Machman */,
@@ -437,6 +474,11 @@
 			isa = PBXTargetDependency;
 			target = BB2000000000000000000003 /* Machmand */;
 			targetProxy = BB2000000000000000000020 /* PBXContainerItemProxy */;
+		};
+		DD4000000000000000000006 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CC3000000000000000000003 /* MachmanVMHost */;
+			targetProxy = DD4000000000000000000005 /* PBXContainerItemProxy */;
 		};
 		CC300000000000000000000F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
