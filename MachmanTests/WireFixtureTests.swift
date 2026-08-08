@@ -107,11 +107,15 @@ struct WireFixtureTests {
 		#expect(try decode([VMState].self, #"["hibernating"]"#) == [.unknown])
 		#expect(try decode(MachmanError.self, #"{"code":"weird","message":"m"}"#).code
 			== .internalError)
+		// macConflict's raw value is wire contract from 3.5 on.
+		#expect(try decode(MachmanError.self, #"{"code":"macConflict","message":"m"}"#).code
+			== .macConflict)
 	}
 
 	@Test func startOptionsDefaultsOnDecode() throws {
-		#expect(try decode(StartOptions.self, "{}") == StartOptions(openConsole: true))
-		#expect(try encode(StartOptions()) == #"{"openConsole":true}"#)
+		#expect(try decode(StartOptions.self, "{}")
+			== StartOptions(openConsole: true, force: false))
+		#expect(try encode(StartOptions()) == #"{"force":false,"openConsole":true}"#)
 	}
 
 	@Test func startPolicyDefaultsOnDecode() throws {

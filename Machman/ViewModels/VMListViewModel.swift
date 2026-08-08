@@ -21,6 +21,14 @@ struct PresentedError: Identifiable {
 	let message: String
 }
 
+// A start refused with macConflict, held so the alert can retry it with force.
+struct PendingForceStart: Identifiable {
+	let id = UUID()
+	let name: String
+	let headless: Bool
+	let message: String
+}
+
 enum RunBtnState {
 	case run
 	case stop
@@ -53,6 +61,11 @@ final class VMListViewModel: ObservableObject {
 	var isErrorPresented: Bool {
 		get { presentedError != nil }
 		set { if !newValue { presentedError = nil } }
+	}
+	@Published var pendingForceStart: PendingForceStart?
+	var isForceStartPresented: Bool {
+		get { pendingForceStart != nil }
+		set { if !newValue { pendingForceStart = nil } }
 	}
 
 	private var isFocused = true
@@ -232,11 +245,15 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func startVM(_ name: String, headless: Bool = false) {
+	func startVM(_ name: String, headless: Bool = false, force: Bool = false) {
 		Task { [weak self] in
 			do {
 				try await self?.api.start(
-					vm: name, options: StartOptions(openConsole: !headless))
+					vm: name, options: StartOptions(openConsole: !headless, force: force))
+			} catch let error as MachmanError where error.code == .macConflict {
+				// Not a dead end: the same start succeeds with force, so offer it.
+				self?.pendingForceStart = PendingForceStart(
+					name: name, headless: headless, message: error.message)
 			} catch {
 				self?.present(error, while: "Starting \(name)")
 			}

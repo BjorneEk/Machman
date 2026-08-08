@@ -85,6 +85,18 @@ struct VMNavigationView: View {
 		} message: { error in
 			Text(error.message)
 		}
+		.alert(
+			"MAC address conflict",
+			isPresented: $viewModel.isForceStartPresented,
+			presenting: viewModel.pendingForceStart
+		) { pending in
+			Button("Start Anyway") {
+				viewModel.startVM(pending.name, headless: pending.headless, force: true)
+			}
+			Button("Cancel", role: .cancel) {}
+		} message: { pending in
+			Text(pending.message)
+		}
 	}
 }
 

@@ -30,7 +30,9 @@ public final class RoutingMachman: MachmanControlling {
 		let socketPath: String
 		var isSafe = false           // inert until safe mode (phase 6)
 		var shadowRoot: String?      // inert until safe mode (phase 6)
-		var macInUse: String?        // inert until MAC-conflict detection (phase 3.5)
+		// The MAC the guest is actually using — captured at spawn from the config, at adopt
+		// from the host's own reply (they can differ after a safe-save promotion).
+		var macInUse: String?
 	}
 
 	final class HostedVM {
@@ -68,9 +70,12 @@ public final class RoutingMachman: MachmanControlling {
 			guard hosted[name] == nil else { continue }
 			let socketPath = Self.hostSocketPath(for: name)
 			guard FileManager.default.fileExists(atPath: socketPath) else { continue }
-			let identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
+			var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 			do {
 				let client = try await connectHost(identity: identity)
+				// The host's reply is the MAC the guest is actually using — it can differ
+				// from the daemon's stale view (safe-save promotions rewrite it mid-run).
+				identity.macInUse = (try? await client.vm(named: name))?.macAddress
 				adopt(identity: identity, client: client)
 				MachmanLogger.log(.log, "adopted running vmhost for \(name)")
 			} catch {
@@ -126,7 +131,8 @@ public final class RoutingMachman: MachmanControlling {
 		// Minted before any closure is built: termination and disconnect handlers capture the
 		// identity's id, never the (re-keyable) name.
 		let identity = HostIdentity(
-			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name))
+			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
+			macInUse: registry.vm(named: name)?.config.macAddress)
 		let executable = Bundle.main.bundleURL
 			.appendingPathComponent("Contents/MacOS/MachmanVMHost")
 		guard FileManager.default.fileExists(atPath: executable.path) else {
@@ -328,6 +334,15 @@ public final class RoutingMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidState,
 				message: "(\(name)) cannot start while macOS is installing")
+		}
+		// The router is the only place that sees every host's live MAC.
+		if !options.force, let mac = vm.config.macAddress,
+			let clash = hosted.values.first(where: { $0.identity.macInUse == mac }) {
+			throw MachmanError(
+				code: .macConflict,
+				message: "\(name) uses MAC \(mac), which running VM "
+					+ "'\(clash.identity.name)' is already using — one of them would lose "
+					+ "networking. Stop it, regenerate a MAC, or force start.")
 		}
 		let host = try await spawnHost(for: name)
 		do {

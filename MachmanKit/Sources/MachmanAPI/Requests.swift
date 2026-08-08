@@ -33,14 +33,18 @@ public struct NewDisk: Codable, Sendable, Equatable {
 
 public struct StartOptions: Codable, Sendable, Equatable {
 	public var openConsole: Bool
+	// Override the macConflict refusal (start even though a running VM uses this MAC).
+	public var force: Bool
 
-	public init(openConsole: Bool = true) {
+	public init(openConsole: Bool = true, force: Bool = false) {
 		self.openConsole = openConsole
+		self.force = force
 	}
 
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.openConsole = try c.decodeIfPresent(Bool.self, forKey: .openConsole) ?? true
+		self.force = try c.decodeIfPresent(Bool.self, forKey: .force) ?? false
 	}
 }
 

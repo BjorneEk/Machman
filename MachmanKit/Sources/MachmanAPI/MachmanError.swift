@@ -13,6 +13,7 @@ public struct MachmanError: Error, Codable, Sendable, Equatable {
 		case notFound
 		case alreadyExists
 		case invalidState        // e.g. start while installing, delete while running
+		case macConflict         // start refused: a running VM already uses this MAC (force overrides)
 		case invalidArgument
 		case ioFailure
 		case virtualizationFailure
