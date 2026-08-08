@@ -25,8 +25,7 @@ public enum VMHostBootstrap {
 
 		let registry = VMRegistry(only: vmName)
 		guard registry.vm(named: vmName) != nil else {
-			FileHandle.standardError.write(Data(
-				"machman-vmhost: no VM named '\(vmName)' in \(dataDir)\n".utf8))
+			MachmanLogger.log(.passiveError, "no VM named '\(vmName)' in \(dataDir)")
 			exit(64)
 		}
 		let api = LocalMachman(registry: registry)
@@ -35,8 +34,7 @@ public enum VMHostBootstrap {
 		do {
 			try server.start()
 		} catch {
-			FileHandle.standardError.write(Data(
-				"machman-vmhost: cannot serve \(socketPath): \(error)\n".utf8))
+			MachmanLogger.log(.passiveError, "cannot serve \(socketPath): \(error)")
 			exit(65)
 		}
 

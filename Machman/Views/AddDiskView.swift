@@ -91,7 +91,6 @@ struct AddDiskView: View {
 							panel.allowedContentTypes = [.diskImage]
 							panel.begin { response in
 								if response == .OK, let selectedURL = panel.url {
-									print(selectedURL.path)
 									iso = selectedURL.path
 								}
 							}
@@ -128,7 +127,6 @@ struct AddDiskView: View {
 							panel.allowedContentTypes = [.diskImage]
 							panel.begin { response in
 								if response == .OK, let selectedURL = panel.url {
-									print(selectedURL.path)
 									disk = selectedURL.path
 								}
 							}

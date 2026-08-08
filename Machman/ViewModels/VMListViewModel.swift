@@ -90,22 +90,23 @@ final class VMListViewModel: ObservableObject {
 		case .installPhaseChanged(let name, let phase):
 			installPhases[name] = phase
 		case .log(let vm, let level, let message):
-			// The engine prints these too, but it is a separate process that gets auto-launched,
-			// so nobody ever sees its stdout. Until there is a log UI, the client the user
-			// actually runs has to print them or engine warnings are invisible.
-			print("machmand [\(level.rawValue)] \(vm.map { "(\($0)) " } ?? "")\(message)")
+			// The engine logs these in its own process too, but that process is auto-launched —
+			// relaying through the client's logger keeps engine warnings visible from the app
+			// the user actually runs.
+			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
 		case .unknown:
 			break
 		}
 	}
 
-	// Until a log-viewer UI exists, the console is the only place errors are guaranteed visible.
+	// Thin wrappers so call sites read as intent; alerts for user-initiated errors arrive with
+	// the error-surface work (phase 3.1).
 	func log(error: String) {
-		print(error)
+		MachmanLogger.log(.interactionError, error)
 	}
 
 	func log(message: String) {
-		print(message)
+		MachmanLogger.log(.log, message)
 	}
 
 	// MARK: - Install phases

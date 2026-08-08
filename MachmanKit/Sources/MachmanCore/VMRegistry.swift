@@ -33,18 +33,22 @@ public final class VirtualMachine: NSObject, Identifiable {
 		previewImage = img
 	}
 
-	// EventBus prints every log event once (the console is the guaranteed sink); subscribers
-	// and, later, remote clients get the same line as an event.
+	// EventBus routes every log event through MachmanLogger once (the guaranteed sink);
+	// subscribers and remote clients get the same line as an event. The ?? arm covers a VM
+	// whose bus is gone (mid-teardown).
 	func log(error: String) {
-		events?.emit(.log(vm: config.name, level: .error, message: error)) ?? print(error)
+		events?.emit(.log(vm: config.name, level: .error, message: error))
+			?? MachmanLogger.log(.passiveError, error)
 	}
 
 	func log(message: String) {
-		events?.emit(.log(vm: config.name, level: .message, message: message)) ?? print(message)
+		events?.emit(.log(vm: config.name, level: .message, message: message))
+			?? MachmanLogger.log(.log, message)
 	}
 
 	func log(warning: String) {
-		events?.emit(.log(vm: config.name, level: .warning, message: warning)) ?? print(warning)
+		events?.emit(.log(vm: config.name, level: .warning, message: warning))
+			?? MachmanLogger.log(.passiveWarning, warning)
 	}
 }
 
@@ -131,9 +135,8 @@ public final class VMRegistry {
 					// Never swallow this. A directory that won't parse means a VM the user owns
 					// has vanished from the app, and silence makes that look like data loss
 					// rather than a damaged config file they could restore.
-					FileHandle.standardError.write(Data(
-						"machman: skipping '\(name)': its config could not be read: \(error)\n"
-							.utf8))
+					MachmanLogger.log(.passiveError,
+						"skipping '\(name)': its config could not be read: \(error)")
 					continue
 				}
 				// Idempotent, and the only chance images created before this existed ever get
@@ -142,7 +145,7 @@ public final class VMRegistry {
 				vms[name] = VirtualMachine(config: config, events: events)
 			}
 		} catch {
-			print("Error reading machines: \(error)")
+			MachmanLogger.log(.passiveError, "error reading machines: \(error)")
 		}
 	}
 

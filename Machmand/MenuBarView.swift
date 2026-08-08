@@ -52,7 +52,7 @@ final class MenuBarModel: ObservableObject {
 			do {
 				try await api.start(vm: name, options: StartOptions(openConsole: !headless))
 			} catch {
-				print("machmand: start \(name): \(error.localizedDescription)")
+				MachmanLogger.log(.interactionError, "start \(name): \(error.localizedDescription)")
 			}
 		}
 	}
@@ -62,7 +62,7 @@ final class MenuBarModel: ObservableObject {
 			do {
 				try await api.stop(vm: name, mode: mode)
 			} catch {
-				print("machmand: stop \(name): \(error.localizedDescription)")
+				MachmanLogger.log(.interactionError, "stop \(name): \(error.localizedDescription)")
 			}
 		}
 	}

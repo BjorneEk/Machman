@@ -190,16 +190,15 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 			size: NSSize(width: cgImage.width, height: cgImage.height))
 	}
 
-	// stderr as well as the event bus: stdout is block-buffered when the daemon is not attached
-	// to a terminal, which is exactly when someone is trying to work out why previews are blank.
+	// Logged as well as sent on the event bus, so the failure is visible even with no client
+	// connected — exactly when someone is trying to work out why previews are blank.
 	private func report(_ failure: CaptureFailure) {
 		let key = "\(failure)"
 		guard reportedFailures.insert(key).inserted else { return }
 		// Preflight is a hint here and nothing more: it answers for the calling process, which is
 		// the wrong process when the grant belongs to the responsible parent.
 		let hint = CGPreflightScreenCaptureAccess() ? "" : " (this process preflights as denied)"
-		FileHandle.standardError.write(Data(
-			"machmand: preview capture failed: \(key)\(hint)\n".utf8))
+		MachmanLogger.log(.passiveWarning, "preview capture failed: \(key)\(hint)")
 		onCaptureFailed?(failure)
 	}
 }

@@ -47,7 +47,7 @@ public final class MachmanServer {
 				self?.accept(fd)
 			}
 		}
-		print("machmand: serving \(socketPath)")
+		MachmanLogger.log(.log, "serving \(socketPath)")
 	}
 
 	public func stop() {

@@ -57,7 +57,7 @@ public final class RoutingMachman: MachmanControlling {
 			do {
 				let client = try await connectHost(name: name, socketPath: socketPath)
 				adopt(name: name, client: client)
-				print("machmand: adopted running vmhost for \(name)")
+				MachmanLogger.log(.log, "adopted running vmhost for \(name)")
 			} catch {
 				unlink(socketPath)
 			}
@@ -103,7 +103,7 @@ public final class RoutingMachman: MachmanControlling {
 			let path = dir + "/" + entry
 			guard !UDSListener.isLive(path: path) else { continue }
 			unlink(path)
-			print("machmand: removed stale vmhost socket \(entry)")
+			MachmanLogger.log(.log, "removed stale vmhost socket \(entry)")
 		}
 	}
 

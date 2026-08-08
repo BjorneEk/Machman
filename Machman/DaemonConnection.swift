@@ -86,7 +86,7 @@ final class DaemonConnection: ObservableObject {
 	}
 
 	private func disconnected() {
-		print("machman-desktop: daemon connection lost; reconnecting")
+		MachmanLogger.log(.passiveWarning, "daemon connection lost; reconnecting")
 		api = nil
 		viewModel = nil
 		viewModelForwarder = nil
@@ -123,8 +123,8 @@ final class DaemonConnection: ObservableObject {
 				at: url, configuration: NSWorkspace.OpenConfiguration())
 			return
 		}
-		print("machman-desktop: no \(Self.daemonBundleID) found next to this app "
-			+ "or in Launch Services")
+		MachmanLogger.log(.passiveError,
+			"no \(Self.daemonBundleID) found next to this app or in Launch Services")
 	}
 
 	private func siblingMatchesSuite(_ url: URL) -> Bool {

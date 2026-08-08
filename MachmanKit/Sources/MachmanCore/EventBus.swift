@@ -27,9 +27,9 @@ final class EventBus {
 	}
 
 	func emit(_ event: VMEvent) {
-		// The console is the one guaranteed sink for log lines; print them exactly once, here.
-		if case .log(_, _, let message) = event {
-			print(message)
+		// The logger is the one guaranteed sink for log lines; route them exactly once, here.
+		if case .log(let vm, let level, let message) = event {
+			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
 		}
 		for continuation in continuations.values {
 			continuation.yield(event)

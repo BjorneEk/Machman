@@ -50,15 +50,14 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 			// Benign and expected: a second daemon raced this one (the desktop auto-launches one
 			// whenever it can't connect). Step aside quietly — alarming the user about a healthy
 			// daemon already serving the socket helps nobody.
-			FileHandle.standardError.write(Data(
-				"machmand: another daemon is already serving \(path); exiting\n".utf8))
+			MachmanLogger.log(.log, "another daemon is already serving \(path); exiting")
 			NSApp.terminate(nil)
 			return
 		} catch {
-			// stderr FIRST: this app is LSUIElement, so an NSAlert can end up behind everything
+			// Log FIRST: this app is LSUIElement, so an NSAlert can end up behind everything
 			// with no Dock icon to click. That failure mode looks exactly like a hung daemon —
 			// present in Activity Monitor, no menu bar item, nothing answering the socket.
-			FileHandle.standardError.write(Data("machmand: cannot start: \(error)\n".utf8))
+			MachmanLogger.log(.interactionError, "cannot start: \(error)")
 			NSApp.setActivationPolicy(.regular)
 			NSApp.activate(ignoringOtherApps: true)
 			let alert = NSAlert()
