@@ -273,6 +273,16 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).setHardware(vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
 	}
 
+	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
+	// tracking captures macInUse at spawn — a mid-run change would desynchronize both.
+	public func regenerateMAC(vm name: String) async throws -> VMInfo {
+		guard hosted[name] == nil else {
+			throw MachmanError(
+				code: .invalidState, message: "stop \(name) before regenerating its MAC")
+		}
+		return try await local.regenerateMAC(vm: name)
+	}
+
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
 		try await target(name).addDisk(vm: name, disk)
 	}

@@ -480,6 +480,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return VZEFIVariableStore(url: URL(fileURLWithPath: efiVarsPath))
 	}
 
+	// Mint and persist a fresh locally-administered MAC. The guest sees it on its next boot;
+	// DHCP leases and MAC-keyed network rules tied to the old address stop matching.
+	@discardableResult
+	func regenerateMACAddress() throws -> String {
+		let mac = VZMACAddress.randomLocallyAdministered().string
+		macAddress = mac
+		try saveVMConfig()
+		return mac
+	}
+
 	func getOrCreateMACAddress() -> VZMACAddress {
 		if let s = macAddress, let mac = VZMACAddress(string: s) {
 			return mac

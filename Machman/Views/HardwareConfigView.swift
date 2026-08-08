@@ -98,6 +98,22 @@ struct HardwareConfigView: View {
 				if let mac = vm.macAddress {
 					CopyToClipboardButton(mac, tooltip: "Copy MAC address")
 				}
+				IconButton(
+					symbol: MachmanSymbols.regenerate,
+					tooltip: vm.state.isRunning
+						? "Stop the VM to change its MAC address"
+						: "New MAC address (guest sees it on next boot)",
+					flat: true
+				) {
+					guard VMListViewModel.confirmDialog(
+						message: "Regenerate MAC address?",
+						informativeText: "\(vm.name) gets a new random MAC. DHCP leases "
+							+ "and MAC-based network rules tied to the old address will "
+							+ "stop matching.")
+					else { return }
+					viewModel.regenerateMAC(vm.name)
+				}
+				.disabled(vm.state.isRunning)
 			}
 			.padding(2)
 		}

@@ -26,6 +26,9 @@ public protocol MachmanControlling: AnyObject {
 
 	// MARK: Configuration
 	func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws
+	// Mints a fresh persisted MAC; refused while the VM runs (the guest keeps the old one
+	// until its next boot, and conflict tracking keys on the live address).
+	func regenerateMAC(vm name: String) async throws -> VMInfo
 	func addDisk(vm name: String, _ disk: NewDisk) async throws
 	func removeDisk(vm name: String, diskID: String) async throws
 	func addMount(vm name: String, path: String, tag: String) async throws

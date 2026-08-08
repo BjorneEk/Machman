@@ -5,6 +5,20 @@ import Virtualization
 
 struct MACAddressTests {
 
+	@Test func regenerateMintsAndPersistsANewMAC() throws {
+		try VMTestDir.withRedirectedDir {
+			let name = "regen-vm"
+			try VMConfig.createNewVMDirectory(name: name)
+			let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+			let old = try #require(cfg.macAddress)
+
+			let new = try cfg.regenerateMACAddress()
+			#expect(new != old)
+			#expect(VZMACAddress(string: new) != nil)
+			#expect(try VMConfig.load(name: name).macAddress == new)
+		}
+	}
+
 	@Test func macIsGeneratedAtCreationAndStable() throws {
 		try VMTestDir.withRedirectedDir {
 			let name = "mac-vm"

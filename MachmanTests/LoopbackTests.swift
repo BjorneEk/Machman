@@ -64,6 +64,13 @@ final class StubMachman: MachmanControlling {
 		if let memoryBytes = memoryBytes { vm.memoryBytes = memoryBytes }
 		vms[name] = vm
 	}
+	func regenerateMAC(vm name: String) async throws -> VMInfo {
+		var vm = try get(name)
+		vm.macAddress = "0a:0a:0a:0a:0a:0a"
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
 	func addDisk(vm name: String, _ disk: NewDisk) async throws { _ = try get(name) }
 	func removeDisk(vm name: String, diskID: String) async throws { _ = try get(name) }
 	func addMount(vm name: String, path: String, tag: String) async throws { _ = try get(name) }
@@ -181,6 +188,22 @@ struct LoopbackTests {
 			.stateChanged(vm: "Debian", state: .stopped),
 		])
 
+		await client.disconnect()
+	}
+
+	@Test @MainActor func regenerateMACRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-mac-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "mac")
+		let updated = try await client.regenerateMAC(vm: "Debian")
+		#expect(updated.macAddress == "0a:0a:0a:0a:0a:0a")
+		#expect(try await client.vm(named: "Debian").macAddress == "0a:0a:0a:0a:0a:0a")
 		await client.disconnect()
 	}
 

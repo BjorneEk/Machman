@@ -76,6 +76,13 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
+	public func regenerateMAC(vm name: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.regenerateMACAddress()
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
 		let vm = try lookup(name)
 		switch disk.type {

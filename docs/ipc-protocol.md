@@ -55,6 +55,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.delete` | `{name}` | `{}` (refused while running/installing) |
 | `vm.rename` | `{name, newName}` | `{}` (refused while running) |
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?}` | `{}` (clamped to host + boot floors) |
+| `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
 | `vm.disk.add` | `{name, disk: NewDisk}` | `{}` |
 | `vm.disk.remove` | `{name, diskID}` | `{}` (storage disks: deletes the backing file) |
 | `vm.mount.add` | `{name, path, tag}` | `{}` |

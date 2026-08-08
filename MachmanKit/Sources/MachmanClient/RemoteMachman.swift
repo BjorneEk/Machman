@@ -66,6 +66,11 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.vmRename, RPCParams.Rename(name: name, newName: newName))
 	}
 
+	public func regenerateMAC(vm name: String) async throws -> VMInfo {
+		try await connection.call(
+			.regenerateMAC, RPCParams.Name(name: name), expecting: VMInfo.self)
+	}
+
 	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
 		try await void(.setHardware, RPCParams.SetHardware(
 			name: name, cpuCount: cpuCount, memoryBytes: memoryBytes))

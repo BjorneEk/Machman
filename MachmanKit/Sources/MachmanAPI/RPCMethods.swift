@@ -17,6 +17,7 @@ public enum RPCMethod: String, Sendable {
 	case vmDelete = "vm.delete"
 	case vmRename = "vm.rename"
 	case setHardware = "vm.setHardware"
+	case regenerateMAC = "vm.regenerateMAC"
 	case diskAdd = "vm.disk.add"
 	case diskRemove = "vm.disk.remove"
 	case mountAdd = "vm.mount.add"

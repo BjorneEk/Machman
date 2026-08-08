@@ -328,6 +328,16 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func regenerateMAC(_ name: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.regenerateMAC(vm: name)
+			} catch {
+				self?.present(error, while: "Regenerating the MAC address")
+			}
+		}
+	}
+
 	func clampMemory(_ bytes: UInt64, floor: UInt64) -> UInt64 {
 		ByteSize.clampMemory(bytes, floor: floor, capabilities: capabilities)
 	}

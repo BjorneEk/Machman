@@ -128,6 +128,9 @@ public final class MachmanServer {
 				try await api.setHardware(
 					vm: p.name, cpuCount: p.cpuCount, memoryBytes: p.memoryBytes)
 				reply(client, id, RPCEmpty())
+			case .regenerateMAC:
+				let p: RPCParams.Name = try params(line)
+				reply(client, id, try await api.regenerateMAC(vm: p.name))
 			case .diskAdd:
 				let p: RPCParams.AddDisk = try params(line)
 				try await api.addDisk(vm: p.name, p.disk)
