@@ -22,8 +22,11 @@ struct HostMountPoint: Codable, Identifiable {
 	var path: String
 	var tag: String
 
+	// id must persist: removeMount matches on it, so a regenerated id breaks mount removal
+	// after any daemon restart or registry reload.
 	init(from decoder: any Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
+		self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
 		self.path = try container.decode(String.self, forKey: .path)
 		self.tag = try container.decode(String.self, forKey: .tag)
 	}
@@ -34,6 +37,7 @@ struct HostMountPoint: Codable, Identifiable {
 	}
 
 	private enum CodingKeys: String, CodingKey {
+		case id
 		case path
 		case tag
 	}
