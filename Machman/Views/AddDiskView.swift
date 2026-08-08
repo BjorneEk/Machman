@@ -70,11 +70,12 @@ struct AddDiskView: View {
 					HStack {
 						IconButton(
 							symbol: MachmanSymbols.add,
-							tooltip: "Create the disk image and attach it",
-							text: "Add new disk"
+							tooltip: "Create the disk image and attach it"
 						) {
 							addNew(name, ByteSize.fromGB(Int(size) ?? 0))
 						}
+						.padding(.trailing)
+						Text("Add new disk")
 						Spacer()
 					}
 				}.padding()
@@ -107,11 +108,12 @@ struct AddDiskView: View {
 					HStack {
 						IconButton(
 							symbol: MachmanSymbols.add,
-							tooltip: "Attach the ISO as a boot disk",
-							text: "Add new iso boot disk"
+							tooltip: "Attach the ISO as a boot disk"
 						) {
 							addIso(URL(fileURLWithPath: iso))
 						}
+						.padding(.trailing)
+						Text("Add new iso boot disk")
 						Spacer()
 					}
 				}.padding()
@@ -147,11 +149,12 @@ struct AddDiskView: View {
 					HStack {
 						IconButton(
 							symbol: MachmanSymbols.add,
-							tooltip: "Attach the disk image",
-							text: "Add disk"
+							tooltip: "Attach the disk image"
 						) {
 							addFrom(URL(fileURLWithPath: disk))
 						}
+						.padding(.trailing)
+						Text("Add disk")
 						Spacer()
 					}
 				}.padding()

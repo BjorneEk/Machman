@@ -13,6 +13,7 @@ public struct IconButton: View {
 	private let tooltip: String
 	private let text: String?
 	private let font: Font?
+	private let flat: Bool
 	private let role: ButtonRole?
 	private let action: () -> Void
 
@@ -21,6 +22,7 @@ public struct IconButton: View {
 		tooltip: String,
 		text: String? = nil,
 		font: Font? = nil,
+		flat: Bool = false,
 		role: ButtonRole? = nil,
 		action: @escaping () -> Void
 	) {
@@ -28,6 +30,7 @@ public struct IconButton: View {
 		self.tooltip = tooltip
 		self.text = text
 		self.font = font
+		self.flat = flat
 		self.role = role
 		self.action = action
 	}
@@ -41,7 +44,7 @@ public struct IconButton: View {
 			}
 		}
 		.font(font)
-		.buttonStyle(MachmanButtonStyle())
+		.buttonStyle(MachmanButtonStyle(flat: flat))
 		.help(tooltip)
 	}
 }

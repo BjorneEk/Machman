@@ -22,7 +22,8 @@ public struct CopyToClipboardButton: View {
 	public var body: some View {
 		IconButton(
 			symbol: copied ? MachmanSymbols.copyDone : MachmanSymbols.copy,
-			tooltip: tooltip
+			tooltip: tooltip,
+			flat: true
 		) {
 			NSPasteboard.general.clearContents()
 			NSPasteboard.general.setString(value, forType: .string)

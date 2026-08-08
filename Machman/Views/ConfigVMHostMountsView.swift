@@ -34,6 +34,7 @@ struct ConfigVMHostMountsView: View {
 							IconButton(
 								symbol: MachmanSymbols.delete,
 								tooltip: "Delete this mount point",
+								flat: true,
 								role: .destructive
 							) {
 								viewModel.removeMount(vm.name, mountID: point.id)

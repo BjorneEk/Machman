@@ -60,7 +60,7 @@ struct ConfigVMDisksView: View {
 					}.width(40)
 					TableColumn("") { (entry: DiskInfo) in
 						if let path = entry.path {
-							CopyToClipboardButton(path, tooltip: "Copy path: \(path)")
+							CopyToClipboardButton(path, tooltip: "Copy disk path")
 						}
 					}.width(20)
 					TableColumn("") { (entry: DiskInfo) in
@@ -68,7 +68,8 @@ struct ConfigVMDisksView: View {
 						IconButton(
 							symbol: MachmanSymbols.delete,
 							tooltip: entry.type == .storage
-								? "Delete disk file" : "Disconnect (file is kept)"
+								? "Delete disk file" : "Disconnect (file is kept)",
+							flat: true
 						) {
 							DispatchQueue.main.async {
 								if entry.type == .storage {
