@@ -10,6 +10,7 @@
 import Foundation
 import AppKit
 import Combine
+import ServiceManagement
 import MachmanAPI
 import MachmanClient
 
@@ -27,18 +28,61 @@ final class DaemonConnection: ObservableObject {
 
 	@Published private(set) var status: Status = .connecting
 	@Published private(set) var viewModel: VMListViewModel?
+	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
+	// serves), so it is a flag beside Status, not a fourth case.
+	@Published private(set) var loginItemNeedsApproval = false
 	private var api: RemoteMachman?
 	private var connectTask: Task<Void, Never>?
 	private var viewModelForwarder: AnyCancellable?
+	private let loginItem = SMAppService.loginItem(identifier: DaemonConnection.daemonBundleID)
+
+	// XCTestConfigurationFilePath is set for the whole TEST_HOST process, so this also covers
+	// Swift Testing suites (they run inside the XCTest-launched host, not a separate runner).
+	private var isRunningTests: Bool {
+		ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+	}
 
 	init() {
+		registerLoginItem()
 		connect()
 	}
 
 	func retry() {
+		registerLoginItem()   // re-check approval on every user-driven retry
 		connectTask?.cancel()
 		connectTask = nil
 		connect()
+	}
+
+	func openLoginItemsSettings() {
+		SMAppService.openSystemSettingsLoginItems()
+	}
+
+	// Login-at-boot is an INSTALL feature: dev builds never touch Login Items, and even a
+	// Release build refuses when running out of DerivedData. Dev keeps on-demand launch via
+	// launchDaemon(). Nothing ever unregisters — quit-leave-VMs must not delist the daemon.
+	private func registerLoginItem() {
+		#if DEBUG
+		return
+		#else
+		guard !Bundle.main.bundleURL.path.contains("/DerivedData/") else { return }
+		guard !isRunningTests else { return }   // tests must not mutate Login Items
+		switch loginItem.status {
+		case .enabled:
+			loginItemNeedsApproval = false
+			return
+		default:
+			break
+		}
+		do {
+			// NOTE: registering an approvable login item LAUNCHES it — fine, it's the daemon
+			// we want running; the socket race arbitrates against a second copy.
+			try loginItem.register()
+		} catch {
+			MachmanLogger.log(.passiveWarning, "login item registration failed: \(error)")
+		}
+		loginItemNeedsApproval = (loginItem.status == .requiresApproval)
+		#endif
 	}
 
 	private func connect() {
@@ -95,26 +139,17 @@ final class DaemonConnection: ObservableObject {
 		connect()
 	}
 
-	// Dev builds: the daemon sits next to this app in the build products dir (possibly across
-	// a sanitizer-variant subdir). Otherwise ask Launch Services by bundle id.
+	// The embedded copy is guaranteed by the build — launch by explicit URL, gated by an id
+	// check against a half-built bundle. Launch Services stays as the fallback for a desktop
+	// whose embeds are missing or broken. (The old sibling hunt died with the one-bundle
+	// layout: the embedded daemon always comes from the same products dir as the desktop,
+	// sanitizer variants included.)
 	func launchDaemon() {
-		var candidates: [URL] = []
-		let ownDir = Bundle.main.bundleURL.deletingLastPathComponent()
-		candidates.append(ownDir.appendingPathComponent("Machmand.app"))
-		if ownDir.lastPathComponent.hasPrefix("Variant-") == false,
-			ownDir.deletingLastPathComponent().lastPathComponent.hasPrefix("Variant-") {
-			// .../Variant-X/Debug/Machman-desktop.app -> .../Debug/Machmand.app
-			let base = ownDir.deletingLastPathComponent().deletingLastPathComponent()
-			candidates.append(base
-				.appendingPathComponent(ownDir.lastPathComponent)
-				.appendingPathComponent("Machmand.app"))
-		}
-		// Only launch a sibling that belongs to OUR suite. A stale build product left over from
-		// before the identifier changed will happily launch and then serve a different socket
-		// (or refuse to start at all), which reads as an unexplained connection failure here.
-		for candidate in candidates where siblingMatchesSuite(candidate) {
+		let embedded = Bundle.main.bundleURL
+			.appendingPathComponent("Contents/Library/LoginItems/Machmand.app")
+		if Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID {
 			NSWorkspace.shared.openApplication(
-				at: candidate, configuration: NSWorkspace.OpenConfiguration())
+				at: embedded, configuration: NSWorkspace.OpenConfiguration())
 			return
 		}
 		if let url = NSWorkspace.shared.urlForApplication(
@@ -124,12 +159,6 @@ final class DaemonConnection: ObservableObject {
 			return
 		}
 		MachmanLogger.log(.passiveError,
-			"no \(Self.daemonBundleID) found next to this app or in Launch Services")
-	}
-
-	private func siblingMatchesSuite(_ url: URL) -> Bool {
-		guard FileManager.default.fileExists(atPath: url.path) else { return false }
-		guard let id = Bundle(url: url)?.bundleIdentifier else { return false }
-		return id == Self.daemonBundleID
+			"no \(Self.daemonBundleID) embedded in this app or known to Launch Services")
 	}
 }

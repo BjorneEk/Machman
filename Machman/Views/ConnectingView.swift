@@ -29,6 +29,15 @@ struct ConnectingView: View {
 					.font(.caption)
 					.foregroundColor(.secondary)
 					.textSelection(.enabled)
+				if connection.loginItemNeedsApproval {
+					Text("Machmand is registered as a login item but needs your approval "
+						+ "in System Settings.")
+						.font(.caption)
+						.foregroundColor(.secondary)
+					Button("Open Login Items Settings") {
+						connection.openLoginItemsSettings()
+					}
+				}
 				HStack {
 					Button("Launch Daemon") {
 						connection.launchDaemon()
