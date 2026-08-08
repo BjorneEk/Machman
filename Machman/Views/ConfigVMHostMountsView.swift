@@ -80,8 +80,12 @@ struct ConfigVMHostMountsView: View {
 					.buttonStyle(.plain)
 					.help("Add new mount point")
 				}
+				// Absorbs the stretched height from the top-aligned row in MainVMView so the
+				// table doesn't inflate.
+				Spacer()
 			}
 		}
+		.padding(2)
 	}
 }
 

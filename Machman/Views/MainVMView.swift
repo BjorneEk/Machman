@@ -30,11 +30,14 @@ struct MainVMView: View {
 				}
 				.padding(.vertical, 0)
 				Divider()
-				HStack {
+				// Top-aligned: the two columns have different vertical greed (the left ends in
+				// a Spacer, the right doesn't), so center alignment let the mounts box drift.
+				HStack(alignment: .top) {
 					ConfigVMView(vm: vm, viewModel: viewModel)
 						.frame(width: previewWidth)
 					ConfigVMHostMountsView(vm: vm, viewModel: viewModel)
 						.frame(minWidth: 200)
+						.frame(maxHeight: .infinity, alignment: .top)
 				}
 			}
 			.onPreferenceChange(PreviewWidthKey.self) { width in
