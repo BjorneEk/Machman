@@ -16,14 +16,14 @@ struct HardwareConfigView: View {
 
 	@State private var vmMemory: UInt64
 	@State private var vmCpuCount: Int
-	@State private var vmMemoryGBString: String
+	@State private var vmMemoryString: String
 
 	init(vm: VMInfo, viewModel: VMListViewModel) {
 		self.vm = vm
 		self.viewModel = viewModel
 		_vmMemory = State(initialValue: vm.memoryBytes)
 		_vmCpuCount = State(initialValue: vm.cpuCount)
-		_vmMemoryGBString = State(initialValue: ByteSize.toGB(vm.memoryBytes).formatted())
+		_vmMemoryString = State(initialValue: ByteSize.format(vm.memoryBytes))
 	}
 
 	// macOS guests carry install-time hardware minimums; other modes have none.
@@ -60,28 +60,34 @@ struct HardwareConfigView: View {
 			}
 			.padding(2)
 			HStack {
-				EditableText($vmMemoryGBString)
+				EditableText($vmMemoryString)
 					.fontWeight(.bold)
 					.font(.title2)
-					.onReceive(vmMemoryGBString.publisher.collect()) { chars in
+					.onReceive(vmMemoryString.publisher.collect()) { chars in
 						DispatchQueue.main.async {
-							vmMemoryGBString = String(
-								chars.prefix(4).filter { "0123456789".contains($0) })
-							vmMemory = viewModel.clampMemory(
-								ByteSize.fromGB(Int(vmMemoryGBString) ?? 0), floor: memoryFloor)
+							// Permissive while typing; all interpretation happens on submit.
+							vmMemoryString = String(
+								chars.prefix(12).filter { "0123456789.,kmgbKMGB ".contains($0) })
 						}
 					}.onSubmit {
 						DispatchQueue.main.async {
+							// Bare number = bytes; k/m/g[b] = binary units; decimals accepted.
+							// Unparseable reverts; out-of-range lands on min/max via the clamp.
+							guard let parsed = ByteSize.parse(vmMemoryString) else {
+								vmMemoryString = ByteSize.format(vmMemory)
+								return
+							}
 							vmMemory = viewModel.clampMemory(
-								ByteSize.fromGB(Int(vmMemoryGBString) ?? 0), floor: memoryFloor)
-							vmMemoryGBString = "\(ByteSize.toGB(vmMemory))"
+								ByteSize.roundToMiB(parsed), floor: memoryFloor)
+							vmMemoryString = ByteSize.format(vmMemory)
 							viewModel.setHardware(vm.name, memoryBytes: vmMemory)
 						}
 					}
+					.help("\(vmMemory.formatted()) bytes")
 				Image(systemName: MachmanSymbols.memory)
 					.fontWeight(.bold)
 					.font(.title2)
-				Text("GB RAM")
+				Text("RAM")
 					.fontWeight(.bold)
 					.font(.title2)
 				Spacer()
@@ -102,7 +108,7 @@ struct HardwareConfigView: View {
 			}
 			if vmMemory < memoryFloor {
 				vmMemory = viewModel.clampMemory(memoryFloor, floor: memoryFloor)
-				vmMemoryGBString = "\(ByteSize.toGB(vmMemory))"
+				vmMemoryString = ByteSize.format(vmMemory)
 				viewModel.setHardware(vm.name, memoryBytes: vmMemory)
 			}
 		}
