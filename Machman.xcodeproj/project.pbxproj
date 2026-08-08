@@ -12,8 +12,10 @@
 		AA10000000000000000000C4 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B4 /* MachmanCore */; };
 		AA10000000000000000000C5 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B5 /* MachmanClient */; };
 		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
+		AA10000000000000000000C8 /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B8 /* MachmanUI */; };
 		BB200000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000A /* MachmanAPI */; };
 		BB200000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000B /* MachmanCore */; };
+		BB200000000000000000000F /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000E /* MachmanUI */; };
 		CC300000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = CC300000000000000000000A /* MachmanAPI */; };
 		CC300000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = CC300000000000000000000B /* MachmanCore */; };
 		CC3000000000000000000011 /* MachmanVMHost in CopyFiles */ = {isa = PBXBuildFile; fileRef = CC3000000000000000000001 /* MachmanVMHost */; };
@@ -107,6 +109,7 @@
 			files = (
 				AA10000000000000000000C1 /* MachmanAPI in Frameworks */,
 				AA10000000000000000000C7 /* MachmanClient in Frameworks */,
+				AA10000000000000000000C8 /* MachmanUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +136,7 @@
 			files = (
 				BB200000000000000000000C /* MachmanAPI in Frameworks */,
 				BB200000000000000000000D /* MachmanCore in Frameworks */,
+				BB200000000000000000000F /* MachmanUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -204,6 +208,7 @@
 			packageProductDependencies = (
 				AA10000000000000000000B1 /* MachmanAPI */,
 				AA10000000000000000000B7 /* MachmanClient */,
+				AA10000000000000000000B8 /* MachmanUI */,
 			);
 			productName = "Machman-desktop";
 			productReference = 4F8935D62D956D5000E2B811 /* Machman-desktop.app */;
@@ -279,6 +284,7 @@
 			packageProductDependencies = (
 				BB200000000000000000000A /* MachmanAPI */,
 				BB200000000000000000000B /* MachmanCore */,
+				BB200000000000000000000E /* MachmanUI */,
 			);
 			productName = Machmand;
 			productReference = BB20000000000000000000F1 /* Machmand.app */;
@@ -508,7 +514,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACHMAN_ID_SUFFIX = ".dev";
+				MACHMAN_ID_SUFFIX = .dev;
 				MACHMAN_NAME_SUFFIX = " (Dev)";
 				MACHMAN_SUITE_ID = "com.gustaffranzen.Machman$(MACHMAN_ID_SUFFIX)";
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
@@ -878,6 +884,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanClient;
 		};
+		AA10000000000000000000B8 /* MachmanUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanUI;
+		};
 		BB200000000000000000000A /* MachmanAPI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanAPI;
@@ -885,6 +895,10 @@
 		BB200000000000000000000B /* MachmanCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanCore;
+		};
+		BB200000000000000000000E /* MachmanUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanUI;
 		};
 		CC300000000000000000000A /* MachmanAPI */ = {
 			isa = XCSwiftPackageProductDependency;

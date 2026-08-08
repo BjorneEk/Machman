@@ -15,6 +15,7 @@ let package = Package(
 		.library(name: "MachmanAPI", targets: ["MachmanAPI"]),
 		.library(name: "MachmanCore", targets: ["MachmanCore"]),
 		.library(name: "MachmanClient", targets: ["MachmanClient"]),
+		.library(name: "MachmanUI", targets: ["MachmanUI"]),
 	],
 	targets: [
 		.target(
@@ -32,6 +33,13 @@ let package = Package(
 		// anything linking this stays free of Virtualization/AppKit.
 		.target(
 			name: "MachmanClient",
+			dependencies: ["MachmanAPI"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		// Shared SwiftUI vocabulary + controls for the Machman UIs (desktop and daemon menu).
+		// Depends on MachmanAPI only — never MachmanCore.
+		.target(
+			name: "MachmanUI",
 			dependencies: ["MachmanAPI"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
