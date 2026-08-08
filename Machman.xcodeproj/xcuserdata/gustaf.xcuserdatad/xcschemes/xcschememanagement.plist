@@ -17,7 +17,7 @@
 		<key>MachmanVMHost.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>5</integer>
+			<integer>6</integer>
 		</dict>
 		<key>Machmand.xcscheme_^#shared#^_</key>
 		<dict>
@@ -28,6 +28,11 @@
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
 		<key>4F8935D52D956D5000E2B811</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>CC3000000000000000000003</key>
 		<dict>
 			<key>primary</key>
 			<true/>

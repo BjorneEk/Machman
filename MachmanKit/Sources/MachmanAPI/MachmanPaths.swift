@@ -6,11 +6,12 @@
 //  same resolution to find the daemon's socket without linking MachmanCore.
 //
 //  Everything hangs off the SUITE IDENTIFIER, not the process's own bundle id: the GUI, the
-//  menu-bar agent and the vmhost are separate binaries that must agree on one library. Each app
-//  target carries `MachmanSuiteIdentifier` in its Info.plist, set from the MACHMAN_SUITE_ID build
-//  setting, which is `com.gustaffranzen.Machman` in Release and `com.gustaffranzen.Machman.dev`
-//  in Debug. That one difference is what keeps a development build off the production library —
-//  there is no runtime guard, because there is nothing left to guard against.
+//  menu-bar agent and the vmhost are separate app bundles that must agree on one library.
+//  Each bundle id IS the suite id plus (for helpers) a known suffix — `PRODUCT_BUNDLE_IDENTIFIER
+//  = $(MACHMAN_SUITE_ID)[.suffix]`, where the suite is `com.gustaffranzen.Machman` in Release
+//  and `com.gustaffranzen.Machman.dev` in Debug. That one difference is what keeps a
+//  development build off the production library — there is no runtime guard, because there is
+//  nothing left to guard against.
 //
 //  Two roots, deliberately separate:
 //
@@ -35,9 +36,9 @@ public enum MachmanPaths {
 	// relationship has to be expressed in the identifiers themselves.
 	static let helperSuffixes = [".agent", ".vmhost", ".tests", ".uitests"]
 
-	// The identifier every Machman process shares, so the GUI, the menu-bar agent and the vmhost
-	// all resolve to ONE library. The env var comes first because MachmanVMHost is a bare tool
-	// with no Info.plist at all — without it a dev vmhost falls through to the production suite.
+	// The identifier every Machman process shares, so the GUI, the menu-bar agent and the
+	// vmhost all resolve to ONE library. The env var stays as a tests-and-scripts override
+	// (the smoke script exports it); every shipping process resolves from its own bundle id.
 	public static func suiteIdentifier(
 		env: [String: String] = ProcessInfo.processInfo.environment,
 		bundle: Bundle = .main

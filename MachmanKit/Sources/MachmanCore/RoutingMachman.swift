@@ -133,23 +133,20 @@ public final class RoutingMachman: MachmanControlling {
 		let identity = HostIdentity(
 			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
 			macInUse: registry.vm(named: name)?.config.macAddress)
-		let executable = Bundle.main.bundleURL
-			.appendingPathComponent("Contents/MacOS/MachmanVMHost")
-		guard FileManager.default.fileExists(atPath: executable.path) else {
+		guard let vmhost = VMHostLocator.locate() else {
 			throw MachmanError(
 				code: .internalError,
-				message: "MachmanVMHost helper missing at \(executable.path)")
+				message: "MachmanVMHost.app not found (embedded or beside "
+					+ "\(Bundle.main.bundleURL.path))")
 		}
 		let process = Process()
-		process.executableURL = executable
+		process.executableURL = vmhost.executableURL
 		process.arguments = [
 			"--data-dir", machmanVMDir, "--vm", name, "--socket", identity.socketPath,
 		]
 		var environment = ProcessInfo.processInfo.environment
-		// The vmhost is a bare tool with no Info.plist, so it cannot read the suite identifier
-		// the way an app bundle does — hand it down explicitly or it would fall back to the
-		// production identifier. --data-dir and --socket are still authoritative for paths.
-		environment["MACHMAN_SUITE_ID"] = MachmanPaths.suiteIdentifier()
+		// The vmhost app resolves the suite from its own bundle id now; only the version
+		// handshake still travels by env. Never leak a test/script data-dir override.
 		environment["MACHMAN_VERSION"] = daemonVersion
 		environment.removeValue(forKey: "MACHMAN_DATA_DIR")
 		process.environment = environment
