@@ -38,3 +38,6 @@ machman_data/
 
 # Local scratch notes (was "docks/local" — the typo meant this was never actually ignored)
 docs/local/
+
+# Coverage artifact xcodebuild drops in the CWD
+default.profraw
