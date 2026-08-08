@@ -31,13 +31,13 @@ struct ConfigVMHostMountsView: View {
 						}
 						.width(min: 60, ideal: 60, max: .infinity)
 						TableColumn("") { point in
-							Button(role: .destructive) {
+							IconButton(
+								symbol: MachmanSymbols.delete,
+								tooltip: "Delete this mount point",
+								role: .destructive
+							) {
 								viewModel.removeMount(vm.name, mountID: point.id)
-							} label: {
-								Image(systemName: MachmanSymbols.delete)
 							}
-							.buttonStyle(.borderless)
-							.help("Delete this mount point")
 						}
 						.width(min: 15, ideal: 15, max: 15)
 					}
@@ -47,7 +47,11 @@ struct ConfigVMHostMountsView: View {
 				Divider()
 
 				HStack {
-					Button(action: {
+					IconButton(
+						symbol: MachmanSymbols.browse,
+						tooltip: "Choose a folder to share",
+						font: .title2
+					) {
 						let panel = NSOpenPanel()
 						panel.canChooseFiles = true
 						panel.canChooseDirectories = true
@@ -58,9 +62,6 @@ struct ConfigVMHostMountsView: View {
 								newPath = selectedURL.path
 							}
 						}
-					}) {
-						Image(systemName: MachmanSymbols.browse)
-							.font(.title2)
 					}
 					TextField("Path", text: $newPath)
 						.textFieldStyle(.roundedBorder)
@@ -68,17 +69,16 @@ struct ConfigVMHostMountsView: View {
 						.textFieldStyle(.roundedBorder)
 						.help("Guest mount tag: mount -t virtiofs <tag> /mnt/point")
 
-					Button(action: {
+					IconButton(
+						symbol: MachmanSymbols.addFilled,
+						tooltip: "Add new mount point",
+						font: .title2
+					) {
 						guard !newPath.isEmpty, !newTag.isEmpty else { return }
 						viewModel.addMount(vm.name, path: newPath, tag: newTag)
 						newPath = ""
 						newTag = ""
-					}) {
-						Image(systemName: MachmanSymbols.addFilled)
-							.font(.title2)
 					}
-					.buttonStyle(.plain)
-					.help("Add new mount point")
 				}
 				// Absorbs the stretched height from the top-aligned row in MainVMView so the
 				// table doesn't inflate.

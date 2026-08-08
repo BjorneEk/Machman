@@ -93,16 +93,20 @@ struct MacOSBootView: View {
 			}
 		}
 		HStack {
-			Button(action: { pickIPSW() }) {
-				Image(systemName: MachmanSymbols.browse)
-					.font(.title2)
+			IconButton(
+				symbol: MachmanSymbols.browse,
+				tooltip: "Install from a local .ipsw restore image",
+				font: .title2
+			) {
+				pickIPSW()
 			}
-			.help("Install from a local .ipsw restore image")
-			Button(action: { viewModel.startInstall(vm.name, source: .latest) }) {
-				Image(systemName: MachmanSymbols.macInstallDownload)
-					.font(.title2)
+			IconButton(
+				symbol: MachmanSymbols.macInstallDownload,
+				tooltip: "Download and install the newest macOS this host can install",
+				font: .title2
+			) {
+				viewModel.startInstall(vm.name, source: .latest)
 			}
-			.help("Download and install the newest macOS this host can install")
 			Spacer()
 		}
 		.disabled(vm.state.isRunning)
@@ -116,11 +120,9 @@ struct MacOSBootView: View {
 			Text("Downloading macOS \(version) (\(build))")
 				.fontWeight(.bold)
 			Spacer()
-			Button(action: { viewModel.cancelInstall(vm.name) }) {
-				Image(systemName: MachmanSymbols.cancel)
+			IconButton(symbol: MachmanSymbols.cancel, tooltip: "Cancel the download") {
+				viewModel.cancelInstall(vm.name)
 			}
-			.buttonStyle(.borderless)
-			.help("Cancel the download")
 		}
 		if let progress = progress, (progress.totalBytes ?? 0) > 0 {
 			ProgressView(value: progress.fraction)
@@ -150,11 +152,9 @@ struct MacOSBootView: View {
 				.fontWeight(.bold)
 				.help("If an install appears stuck or fails, cancel it and retry.")
 			Spacer()
-			Button(action: { viewModel.cancelInstall(vm.name) }) {
-				Image(systemName: MachmanSymbols.cancel)
+			IconButton(symbol: MachmanSymbols.cancel, tooltip: "Cancel the install") {
+				viewModel.cancelInstall(vm.name)
 			}
-			.buttonStyle(.borderless)
-			.help("Cancel the install")
 		}
 		if let progress = progress {
 			ProgressView(value: progress.fraction)

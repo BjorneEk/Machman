@@ -77,21 +77,25 @@ struct DefaultBootView: View {
 			Divider()
 			VStack {
 				HStack {
-					Button(action: { pickFile { kernelPath = $0; pushSettings() } }) {
-						Image(systemName: MachmanSymbols.browse)
-							.font(.title2)
+					IconButton(
+						symbol: MachmanSymbols.browse,
+						tooltip: "Choose a kernel image (e.g. vmlinuz)",
+						font: .title2
+					) {
+						pickFile { kernelPath = $0; pushSettings() }
 					}
-					.help("Choose a kernel image (e.g. vmlinuz)")
 					TextField("kernel image", text: $kernelPath)
 						.textFieldStyle(.roundedBorder)
 						.onSubmit { pushSettings() }
 				}
 				HStack {
-					Button(action: { pickFile { initrdPath = $0; pushSettings() } }) {
-						Image(systemName: MachmanSymbols.browse)
-							.font(.title2)
+					IconButton(
+						symbol: MachmanSymbols.browse,
+						tooltip: "Choose an initial ramdisk (optional)",
+						font: .title2
+					) {
+						pickFile { initrdPath = $0; pushSettings() }
 					}
-					.help("Choose an initial ramdisk (optional)")
 					TextField("initramfs (optional)", text: $initrdPath)
 						.textFieldStyle(.roundedBorder)
 						.onSubmit { pushSettings() }

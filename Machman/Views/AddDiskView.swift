@@ -68,13 +68,13 @@ struct AddDiskView: View {
 					//.pickerStyle(.inline)
 					Divider()
 					HStack {
-						Button(action: {
+						IconButton(
+							symbol: MachmanSymbols.add,
+							tooltip: "Create the disk image and attach it",
+							text: "Add new disk"
+						) {
 							addNew(name, ByteSize.fromGB(Int(size) ?? 0))
-						}) {
-							Image(systemName: MachmanSymbols.add)
-								.foregroundColor(.secondary)
-						}.padding(.trailing)
-						Text("Add new disk")
+						}
 						Spacer()
 					}
 				}.padding()
@@ -84,7 +84,11 @@ struct AddDiskView: View {
 
 				VStack {
 					HStack {
-						Button(action: {
+						IconButton(
+							symbol: MachmanSymbols.browse,
+							tooltip: "Choose an ISO image",
+							font: .title2
+						) {
 							let panel = NSOpenPanel()
 							panel.canChooseFiles = true
 							panel.canChooseDirectories = true
@@ -95,22 +99,19 @@ struct AddDiskView: View {
 									iso = selectedURL.path
 								}
 							}
-						}) {
-							Image(systemName: MachmanSymbols.browse)
-								.font(.title2)
 						}
 						TextField("iso file", text: $iso)
 							.textFieldStyle(.roundedBorder)
 					}
 					Divider()
 					HStack {
-						Button(action: {
+						IconButton(
+							symbol: MachmanSymbols.add,
+							tooltip: "Attach the ISO as a boot disk",
+							text: "Add new iso boot disk"
+						) {
 							addIso(URL(fileURLWithPath: iso))
-						}) {
-							Image(systemName: MachmanSymbols.add)
-								.foregroundColor(.secondary)
-						}.padding(.trailing)
-						Text("Add new iso boot disk")
+						}
 						Spacer()
 					}
 				}.padding()
@@ -123,7 +124,11 @@ struct AddDiskView: View {
 
 				VStack {
 					HStack {
-						Button(action: {
+						IconButton(
+							symbol: MachmanSymbols.browse,
+							tooltip: "Choose a disk image",
+							font: .title2
+						) {
 							let panel = NSOpenPanel()
 							panel.canChooseFiles = true
 							panel.canChooseDirectories = true
@@ -134,22 +139,19 @@ struct AddDiskView: View {
 									disk = selectedURL.path
 								}
 							}
-						}) {
-							Image(systemName: MachmanSymbols.browse)
-								.font(.title2)
 						}
 						TextField("Path", text: $disk)
 							.textFieldStyle(.roundedBorder)
 					}
 					Divider()
 					HStack {
-						Button(action: {
+						IconButton(
+							symbol: MachmanSymbols.add,
+							tooltip: "Attach the disk image",
+							text: "Add disk"
+						) {
 							addFrom(URL(fileURLWithPath: disk))
-						}) {
-							Image(systemName: MachmanSymbols.add)
-								.foregroundColor(.secondary)
-						}.padding(.trailing)
-						Text("Add disk")
+						}
 						Spacer()
 					}
 				}.padding()

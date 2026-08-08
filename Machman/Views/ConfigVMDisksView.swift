@@ -64,7 +64,12 @@ struct ConfigVMDisksView: View {
 						}
 					}.width(20)
 					TableColumn("") { (entry: DiskInfo) in
-						Button(action: {
+						// Tooltip adapts: storage deletes the backing file, the rest disconnect.
+						IconButton(
+							symbol: MachmanSymbols.delete,
+							tooltip: entry.type == .storage
+								? "Delete disk file" : "Disconnect (file is kept)"
+						) {
 							DispatchQueue.main.async {
 								if entry.type == .storage {
 									guard VMListViewModel.confirmDialog(
@@ -75,14 +80,7 @@ struct ConfigVMDisksView: View {
 								}
 								viewModel.removeDisk(vm.name, diskID: entry.id)
 							}
-						}) {
-							Image(systemName: MachmanSymbols.delete)
-								.contentShape(Rectangle())
 						}
-						// On the Button, not the label: tooltips on bare Images inside Table
-						// cells are unreliable. Copy adapts: storage deletes the backing file.
-						.help(entry.type == .storage
-							? "Delete disk file" : "Disconnect (file is kept)")
 					}.width(20)
 				}
 				Divider()
