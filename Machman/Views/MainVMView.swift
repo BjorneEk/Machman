@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 struct MainVMView: View {
@@ -72,7 +73,7 @@ struct MainVMView: View {
 						Label(
 							viewModel.runBtnLbl(vm: vm).running()
 								? "Stop \(vm.name)" : "Run \(vm.name)",
-							systemImage: viewModel.runBtnLbl(vm: vm).rawValue)
+							systemImage: viewModel.runBtnLbl(vm: vm).symbol)
 					}
 					.disabled(viewModel.isInstalling(vm))
 					.help(viewModel.isInstalling(vm)
@@ -84,7 +85,7 @@ struct MainVMView: View {
 					Button(action: {
 						viewModel.deleteVM(vm)
 					}) {
-						Label("Delete", systemImage: "trash")
+						Label("Delete", systemImage: MachmanSymbols.delete)
 					}
 					.help("delete \(vm.name)")
 				}

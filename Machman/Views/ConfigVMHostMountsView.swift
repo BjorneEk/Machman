@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 struct ConfigVMHostMountsView: View {
@@ -32,7 +33,7 @@ struct ConfigVMHostMountsView: View {
 							Button(role: .destructive) {
 								viewModel.removeMount(vm.name, mountID: point.id)
 							} label: {
-								Image(systemName: "trash")
+								Image(systemName: MachmanSymbols.delete)
 							}
 							.buttonStyle(.borderless)
 							.help("Delete this mount point")
@@ -57,7 +58,7 @@ struct ConfigVMHostMountsView: View {
 							}
 						}
 					}) {
-						Image(systemName: "folder.fill.badge.plus")
+						Image(systemName: MachmanSymbols.browse)
 							.font(.title2)
 					}
 					TextField("Path", text: $newPath)
@@ -71,7 +72,7 @@ struct ConfigVMHostMountsView: View {
 						newPath = ""
 						newTag = ""
 					}) {
-						Image(systemName: "plus.circle.fill")
+						Image(systemName: MachmanSymbols.addFilled)
 							.font(.title2)
 					}
 					.buttonStyle(.plain)

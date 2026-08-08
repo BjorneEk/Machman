@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 struct VMNavigationView: View {
@@ -23,8 +24,7 @@ struct VMNavigationView: View {
 			List(selection: $selection) {
 				ForEach(viewModel.vms) { item in
 					HStack {
-						Image(systemName: item.state.isRunning ? "pc" : "pause.fill")
-							.foregroundColor(item.state.isRunning ? .blue : .primary)
+						StatusIcon(state: item.state, consoleOpen: item.consoleOpen)
 						Text(item.name)
 							.font(.callout)
 						Spacer()
@@ -66,7 +66,7 @@ struct VMNavigationView: View {
 				}
 			}) {
 				HStack {
-					Image(systemName: "plus")
+					Image(systemName: MachmanSymbols.add)
 					Text("New VM")
 				}
 			}

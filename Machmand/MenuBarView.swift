@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 @MainActor
@@ -118,7 +119,8 @@ struct MenuBarView: View {
 			} label: {
 				Label(
 					vm.name,
-					systemImage: vm.state.isRunning ? "circle.fill" : "circle")
+					systemImage: vm.state.isRunning
+				? MachmanSymbols.menuVMRunning : MachmanSymbols.menuVMStopped)
 			}
 		}
 		if model.vms.isEmpty {

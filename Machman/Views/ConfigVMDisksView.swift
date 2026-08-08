@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 // Last `n` path components, for compact disk labels ("isos/debian.iso").
@@ -26,15 +27,15 @@ struct ConfigVMDisksView: View {
 					TableColumn("Disks") { (entry: DiskInfo) in
 						switch entry.type {
 						case .storage:
-							Image(systemName: "externaldrive.fill")
+							Image(systemName: MachmanSymbols.diskStorage)
 								.contentShape(Rectangle())
 								.help("storage drive")
 						case .image:
-							Image(systemName: "externaldrive.fill.badge.icloud")
+							Image(systemName: MachmanSymbols.diskImage)
 								.contentShape(Rectangle())
 								.help("drive")
 						case .iso:
-							Image(systemName: "externaldrive.connected.to.line.below.fill")
+							Image(systemName: MachmanSymbols.diskISO)
 								.contentShape(Rectangle())
 								.help("iso image")
 						}
@@ -70,7 +71,7 @@ struct ConfigVMDisksView: View {
 								viewModel.removeDisk(vm.name, diskID: entry.id)
 							}
 						}) {
-							Image(systemName: "trash")
+							Image(systemName: MachmanSymbols.delete)
 								.contentShape(Rectangle())
 								.help("Delete")
 						}

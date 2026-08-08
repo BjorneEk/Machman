@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import Foundation
 import MachmanAPI
 extension View {
@@ -39,14 +40,14 @@ struct AddDiskView: View {
 			TabView {
 				VStack {
 					HStack {
-						Image(systemName: "internaldrive.fill")
+						Image(systemName: MachmanSymbols.diskName)
 							.foregroundColor(.secondary)
 						TextField("Name", text: $name)
 							.textFieldStyle(.roundedBorder)
 					}
 					Divider()
 					HStack {
-						Image(systemName: "gauge.with.needle")
+						Image(systemName: MachmanSymbols.diskSize)
 							.foregroundColor(.secondary)
 						TextField("", text: $size)
 							.textFieldStyle(.roundedBorder)
@@ -70,7 +71,7 @@ struct AddDiskView: View {
 						Button(action: {
 							addNew(name, ByteSize.fromGB(Int(size) ?? 0))
 						}) {
-							Image(systemName: "plus")
+							Image(systemName: MachmanSymbols.add)
 								.foregroundColor(.secondary)
 						}.padding(.trailing)
 						Text("Add new disk")
@@ -78,7 +79,7 @@ struct AddDiskView: View {
 					}
 				}.padding()
 				.tabItem {
-					Label("new", systemImage: "externaldrive.fill")
+					Label("new", systemImage: MachmanSymbols.diskStorage)
 				}
 
 				VStack {
@@ -95,7 +96,7 @@ struct AddDiskView: View {
 								}
 							}
 						}) {
-							Image(systemName: "folder.fill.badge.plus")
+							Image(systemName: MachmanSymbols.browse)
 								.font(.title2)
 						}
 						TextField("iso file", text: $iso)
@@ -106,7 +107,7 @@ struct AddDiskView: View {
 						Button(action: {
 							addIso(URL(fileURLWithPath: iso))
 						}) {
-							Image(systemName: "plus")
+							Image(systemName: MachmanSymbols.add)
 								.foregroundColor(.secondary)
 						}.padding(.trailing)
 						Text("Add new iso boot disk")
@@ -114,7 +115,10 @@ struct AddDiskView: View {
 					}
 				}.padding()
 					.tabItem {
-						Label("iso boot drive", systemImage: "externaldrive.fill.badge.icloud")
+						// Glyphs are semantically crossed vs the disks table (this tab is about
+						// ISOs but wears the image glyph; the "browse" tab wears the ISO one).
+						// The sweep preserves today's look — fixing is a deliberate change.
+						Label("iso boot drive", systemImage: MachmanSymbols.diskImage)
 					}
 
 				VStack {
@@ -131,7 +135,7 @@ struct AddDiskView: View {
 								}
 							}
 						}) {
-							Image(systemName: "folder.fill.badge.plus")
+							Image(systemName: MachmanSymbols.browse)
 								.font(.title2)
 						}
 						TextField("Path", text: $disk)
@@ -142,7 +146,7 @@ struct AddDiskView: View {
 						Button(action: {
 							addFrom(URL(fileURLWithPath: disk))
 						}) {
-							Image(systemName: "plus")
+							Image(systemName: MachmanSymbols.add)
 								.foregroundColor(.secondary)
 						}.padding(.trailing)
 						Text("Add disk")
@@ -150,7 +154,7 @@ struct AddDiskView: View {
 					}
 				}.padding()
 					.tabItem {
-						Label("browse", systemImage: "externaldrive.connected.to.line.below.fill")
+						Label("browse", systemImage: MachmanSymbols.diskISO)
 					}
 			}
 			.tabViewStyle(.automatic) // or .page, .segmented if you want specific look

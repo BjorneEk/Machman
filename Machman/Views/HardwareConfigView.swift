@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 struct HardwareConfigView: View {
@@ -40,7 +41,7 @@ struct HardwareConfigView: View {
 				Text("\(vmCpuCount)")
 					.fontWeight(.bold)
 					.font(.title2)
-				Image(systemName: "cpu.fill")
+				Image(systemName: MachmanSymbols.cpu)
 					.fontWeight(.bold)
 					.font(.title2)
 				Stepper("CPUs", value: $vmCpuCount, in: cpuRange)
@@ -52,7 +53,7 @@ struct HardwareConfigView: View {
 						}
 					}
 				Spacer()
-				Image(systemName: "network")
+				Image(systemName: MachmanSymbols.network)
 					.fontWeight(.bold)
 					.font(.title2)
 					.help("MAC address (assigned on first boot)")
@@ -77,7 +78,7 @@ struct HardwareConfigView: View {
 							viewModel.setHardware(vm.name, memoryBytes: vmMemory)
 						}
 					}
-				Image(systemName: "memorychip.fill")
+				Image(systemName: MachmanSymbols.memory)
 					.fontWeight(.bold)
 					.font(.title2)
 				Text("GB RAM")

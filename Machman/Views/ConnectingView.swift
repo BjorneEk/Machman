@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 
 struct ConnectingView: View {
 	@ObservedObject var connection: DaemonConnection
@@ -19,7 +20,7 @@ struct ConnectingView: View {
 				Text("Connecting to Machmand…")
 					.foregroundColor(.secondary)
 			case .unavailable(let reason):
-				Image(systemName: "bolt.horizontal.circle")
+				Image(systemName: MachmanSymbols.daemonUnreachable)
 					.font(.largeTitle)
 					.foregroundColor(.secondary)
 				Text("The Machman daemon is not reachable")

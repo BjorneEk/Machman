@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 struct DefaultBootView: View {
@@ -54,7 +55,7 @@ struct DefaultBootView: View {
 	var body: some View {
 		VStack {
 			HStack {
-				Image(systemName: "bolt.fill")
+				Image(systemName: MachmanSymbols.kernelBootToggle)
 					.foregroundColor(.secondary)
 				Toggle("Kernel boot", isOn: $kernelEnabled)
 					.toggleStyle(.checkbox)
@@ -77,7 +78,7 @@ struct DefaultBootView: View {
 			VStack {
 				HStack {
 					Button(action: { pickFile { kernelPath = $0; pushSettings() } }) {
-						Image(systemName: "folder.fill.badge.plus")
+						Image(systemName: MachmanSymbols.browse)
 							.font(.title2)
 					}
 					.help("Choose a kernel image (e.g. vmlinuz)")
@@ -87,7 +88,7 @@ struct DefaultBootView: View {
 				}
 				HStack {
 					Button(action: { pickFile { initrdPath = $0; pushSettings() } }) {
-						Image(systemName: "folder.fill.badge.plus")
+						Image(systemName: MachmanSymbols.browse)
 							.font(.title2)
 					}
 					.help("Choose an initial ramdisk (optional)")
@@ -96,7 +97,7 @@ struct DefaultBootView: View {
 						.onSubmit { pushSettings() }
 				}
 				HStack {
-					Image(systemName: "terminal.fill")
+					Image(systemName: MachmanSymbols.kernelCommandLine)
 						.font(.title2)
 						.foregroundColor(.secondary)
 					TextField("", text: $commandLine)

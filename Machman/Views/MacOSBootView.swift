@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import UniformTypeIdentifiers
 import MachmanAPI
 
@@ -57,7 +58,7 @@ struct MacOSBootView: View {
 				installing(version: phase.version ?? "macOS", progress: phase.progress)
 			case .installed:
 				HStack {
-					Image(systemName: "apple.logo")
+					Image(systemName: MachmanSymbols.macOSInstalled)
 					Text("macOS Installed")
 						.fontWeight(.bold)
 					Spacer()
@@ -93,12 +94,12 @@ struct MacOSBootView: View {
 		}
 		HStack {
 			Button(action: { pickIPSW() }) {
-				Image(systemName: "folder.fill.badge.plus")
+				Image(systemName: MachmanSymbols.browse)
 					.font(.title2)
 			}
 			.help("Install from a local .ipsw restore image")
 			Button(action: { viewModel.startInstall(vm.name, source: .latest) }) {
-				Image(systemName: "icloud.and.arrow.down")
+				Image(systemName: MachmanSymbols.macInstallDownload)
 					.font(.title2)
 			}
 			.help("Download and install the newest macOS this host can install")
@@ -116,7 +117,7 @@ struct MacOSBootView: View {
 				.fontWeight(.bold)
 			Spacer()
 			Button(action: { viewModel.cancelInstall(vm.name) }) {
-				Image(systemName: "xmark.circle.fill")
+				Image(systemName: MachmanSymbols.cancel)
 			}
 			.buttonStyle(.borderless)
 			.help("Cancel the download")
@@ -150,7 +151,7 @@ struct MacOSBootView: View {
 				.help("If an install appears stuck or fails, cancel it and retry.")
 			Spacer()
 			Button(action: { viewModel.cancelInstall(vm.name) }) {
-				Image(systemName: "xmark.circle.fill")
+				Image(systemName: MachmanSymbols.cancel)
 			}
 			.buttonStyle(.borderless)
 			.help("Cancel the install")

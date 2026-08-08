@@ -11,14 +11,21 @@
 import Foundation
 import AppKit
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
-enum RunBtnState: String {
-	case run  = "play.circle"
-	case stop = "stop.circle"
+enum RunBtnState {
+	case run
+	case stop
 
 	static func fromVMState(s: VMState) -> RunBtnState {
 		return s.isRunning ? .stop : .run
+	}
+	var symbol: String {
+		switch self {
+		case .run: return MachmanSymbols.start
+		case .stop: return MachmanSymbols.forceStop
+		}
 	}
 	func running() -> Bool {
 		return self == .stop

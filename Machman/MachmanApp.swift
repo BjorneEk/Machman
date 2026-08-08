@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import Cocoa
 import MachmanAPI
 
@@ -48,7 +49,7 @@ struct MachmanApp: App {
 									viewModel.closeConsole(vm.name)
 								}) {
 									Label("Close \(vm.name) Window",
-										systemImage: "macwindow.badge.minus")
+										systemImage: MachmanSymbols.closeWindow)
 								}
 							} else {
 								Button(action: {
@@ -57,7 +58,7 @@ struct MachmanApp: App {
 									viewModel.select(name: vm.name)
 								}) {
 									Label("Open \(vm.name) Window",
-										systemImage: "macwindow.badge.plus")
+										systemImage: MachmanSymbols.openWindow)
 								}
 							}
 						}
@@ -73,7 +74,7 @@ struct MachmanApp: App {
 								selection = vm.name
 								viewModel.select(name: vm.name)
 							}) {
-								Label("Start", systemImage: "play.circle")
+								Label("Start", systemImage: MachmanSymbols.start)
 							}
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 							Button(action: {
@@ -81,7 +82,7 @@ struct MachmanApp: App {
 								selection = vm.name
 								viewModel.select(name: vm.name)
 							}) {
-								Label("Start Headless", systemImage: "play.slash")
+								Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 							}
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 						}
@@ -97,7 +98,7 @@ struct MachmanApp: App {
 								selection = vm.name
 								viewModel.select(name: vm.name)
 							}) {
-								Label("Shut Down", systemImage: "power")
+								Label("Shut Down", systemImage: MachmanSymbols.shutDown)
 							}
 							.disabled(!vm.state.isRunning)
 							Button(action: {
@@ -105,7 +106,7 @@ struct MachmanApp: App {
 								selection = vm.name
 								viewModel.select(name: vm.name)
 							}) {
-								Label("Force Stop", systemImage: "stop.circle")
+								Label("Force Stop", systemImage: MachmanSymbols.forceStop)
 							}
 							.disabled(!vm.state.isRunning)
 						}
@@ -122,7 +123,7 @@ struct MachmanApp: App {
 							}
 						}
 					}) {
-						Label("New VM", systemImage: "plus")
+						Label("New VM", systemImage: MachmanSymbols.add)
 					}
 				}
 			}

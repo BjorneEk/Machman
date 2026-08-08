@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 
 enum BootTab {
 	case def
@@ -20,8 +21,8 @@ struct BootTabStrip: View {
 
 	var body: some View {
 		HStack(spacing: 4) {
-			tabButton(.def, title: "default", systemImage: "power")
-			tabButton(.mac, title: "macOS", systemImage: "apple.logo")
+			tabButton(.def, title: "default", systemImage: MachmanSymbols.bootDefaultTab)
+			tabButton(.mac, title: "macOS", systemImage: MachmanSymbols.bootMacTab)
 		}
 	}
 

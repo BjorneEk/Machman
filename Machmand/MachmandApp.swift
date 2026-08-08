@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import MachmanUI
 import Cocoa
 import MachmanAPI
 import MachmanCore
@@ -35,7 +36,7 @@ struct MachmandApp: App {
 	}
 
 	var body: some Scene {
-		MenuBarExtra("Machman", systemImage: "desktopcomputer") {
+		MenuBarExtra("Machman", systemImage: MachmanSymbols.menuBarExtra) {
 			MenuBarView(model: model)
 		}
 	}
