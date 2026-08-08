@@ -36,6 +36,8 @@ public protocol MachmanControlling: AnyObject {
 	func setKernelBoot(vm name: String, enabled: Bool) async throws
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws
 	func setStartPolicy(vm name: String, policy: StartPolicy) async throws
+	// Batch per-id safe flags; unknown ids refuse the WHOLE batch (nothing half-applies).
+	func setSafety(vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?) async throws
 
 	// MARK: Run / stop / console
 	func start(vm name: String, options: StartOptions) async throws

@@ -85,6 +85,25 @@ final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		emit(.listChanged)
 	}
+	func setSafety(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
+	) async throws {
+		var vm = try get(name)
+		for (id, safe) in disks ?? [:] {
+			guard let index = vm.disks.firstIndex(where: { $0.id == id }) else {
+				throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			}
+			vm.disks[index].safe = safe
+		}
+		for (id, safe) in mounts ?? [:] {
+			guard let index = vm.mounts.firstIndex(where: { $0.id == id }) else {
+				throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+			}
+			vm.mounts[index].safe = safe
+		}
+		vms[name] = vm
+		emit(.listChanged)
+	}
 	func start(vm name: String, options: StartOptions) async throws {
 		var vm = try get(name)
 		vm.state = .running
@@ -226,6 +245,31 @@ struct LoopbackTests {
 		let policy = StartPolicy(windowed: false, safe: true, autostart: true)
 		try await client.setStartPolicy(vm: "Debian", policy: policy)
 		#expect(try await client.vm(named: "Debian").startPolicy == policy)
+		await client.disconnect()
+	}
+
+	@Test @MainActor func setSafetyRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-safe-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var info = StubMachman.makeInfo("Debian")
+		info.disks = [DiskInfo(
+			id: "storage:disk", type: .storage, name: "disk", path: nil, sizeBytes: nil)]
+		stub.vms["Debian"] = info
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "safe")
+		try await client.setSafety(vm: "Debian", disks: ["storage:disk": false], mounts: nil)
+		#expect(try await client.vm(named: "Debian").disks.first?.safe == false)
+
+		do {
+			try await client.setSafety(vm: "Debian", disks: ["storage:bogus": true], mounts: nil)
+			Issue.record("expected notFound")
+		} catch let error as MachmanError {
+			#expect(error.code == .notFound)
+		}
 		await client.disconnect()
 	}
 

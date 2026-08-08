@@ -384,6 +384,25 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
+	// Applies per-id safety flags in one save. All-or-nothing: unknown ids refuse the whole
+	// batch BEFORE any write, so a stale client id can't half-apply it.
+	func setSafety(disks diskSafety: [String: Bool], mounts mountSafety: [String: Bool]) throws {
+		for id in diskSafety.keys where !disks.contains(where: { $0.id == id }) {
+			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+		}
+		for id in mountSafety.keys
+			where !mountPoints.contains(where: { $0.id.uuidString == id }) {
+			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+		}
+		for i in disks.indices {
+			if let safe = diskSafety[disks[i].id] { disks[i].safe = safe }
+		}
+		for i in mountPoints.indices {
+			if let safe = mountSafety[mountPoints[i].id.uuidString] { mountPoints[i].safe = safe }
+		}
+		try saveVMConfig()
+	}
+
 	func setStartPolicy(_ policy: StartPolicy) throws {
 		startPolicy = policy
 		try saveVMConfig()

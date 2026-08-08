@@ -159,6 +159,14 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
+	public func setSafety(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
+	) async throws {
+		let vm = try lookup(name)
+		try vm.config.setSafety(disks: disks ?? [:], mounts: mounts ?? [:])
+		registry.events.emit(.listChanged)
+	}
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		try await registry.start(try lookup(name), openConsole: options.openConsole)
 	}

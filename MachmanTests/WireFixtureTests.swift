@@ -128,5 +128,9 @@ struct WireFixtureTests {
 		#expect(try encode(InstallSource.ipsw("/tmp/a.ipsw"))
 			== #"{"kind":"ipsw","path":"/tmp/a.ipsw"}"#)
 		#expect(try encode(StopMode.soft) == #""soft""#)
+		// Dict params encode deterministically (sortedKeys); absent dicts are omitted.
+		#expect(try encode(RPCParams.SetSafety(
+			name: "Debian", disks: ["b:2": true, "a:1": false], mounts: nil))
+			== #"{"disks":{"a:1":false,"b:2":true},"name":"Debian"}"#)
 	}
 }

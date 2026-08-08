@@ -159,6 +159,10 @@ public final class MachmanServer {
 				let p: RPCParams.SetStartPolicy = try params(line)
 				try await api.setStartPolicy(vm: p.name, policy: p.policy)
 				reply(client, id, RPCEmpty())
+			case .setSafety:
+				let p: RPCParams.SetSafety = try params(line)
+				try await api.setSafety(vm: p.name, disks: p.disks, mounts: p.mounts)
+				reply(client, id, RPCEmpty())
 			case .start:
 				let p: RPCParams.Start = try params(line)
 				try await api.start(vm: p.name, options: p.options ?? StartOptions())

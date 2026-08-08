@@ -311,6 +311,12 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).setStartPolicy(vm: name, policy: policy)
 	}
 
+	public func setSafety(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
+	) async throws {
+		try await target(name).setSafety(vm: name, disks: disks, mounts: mounts)
+	}
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		guard hosted[name] == nil else {
 			throw MachmanError(code: .invalidState, message: "\(name) is already running")

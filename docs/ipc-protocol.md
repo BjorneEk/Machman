@@ -63,6 +63,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` |
+| `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
 | `vm.start` | `{name, options?: {openConsole: bool}}` | `{}` |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
 | `vm.console.open` | `{name}` | `{}` (window appears from the daemon) |

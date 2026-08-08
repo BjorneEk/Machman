@@ -100,6 +100,12 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.setStartPolicy, RPCParams.SetStartPolicy(name: name, policy: policy))
 	}
 
+	public func setSafety(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
+	) async throws {
+		try await void(.setSafety, RPCParams.SetSafety(name: name, disks: disks, mounts: mounts))
+	}
+
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		try await void(.updateKernelSettings, RPCParams.UpdateKernelSettings(
 			name: name, settings: settings))
