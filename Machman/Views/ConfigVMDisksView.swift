@@ -33,7 +33,7 @@ struct ConfigVMDisksView: View {
 						case .image:
 							Image(systemName: MachmanSymbols.diskImage)
 								.contentShape(Rectangle())
-								.help("drive")
+								.help("disk image")
 						case .iso:
 							Image(systemName: MachmanSymbols.diskISO)
 								.contentShape(Rectangle())
@@ -59,6 +59,11 @@ struct ConfigVMDisksView: View {
 						}
 					}.width(40)
 					TableColumn("") { (entry: DiskInfo) in
+						if let path = entry.path {
+							CopyToClipboardButton(path, tooltip: "Copy path: \(path)")
+						}
+					}.width(20)
+					TableColumn("") { (entry: DiskInfo) in
 						Button(action: {
 							DispatchQueue.main.async {
 								if entry.type == .storage {
@@ -73,8 +78,11 @@ struct ConfigVMDisksView: View {
 						}) {
 							Image(systemName: MachmanSymbols.delete)
 								.contentShape(Rectangle())
-								.help("Delete")
 						}
+						// On the Button, not the label: tooltips on bare Images inside Table
+						// cells are unreliable. Copy adapts: storage deletes the backing file.
+						.help(entry.type == .storage
+							? "Delete disk file" : "Disconnect (file is kept)")
 					}.width(20)
 				}
 				Divider()

@@ -27,6 +27,7 @@ struct ConfigVMHostMountsView: View {
 						.width(min: 150, ideal: 150, max: .infinity)
 						TableColumn("Tag") { point in
 							Text(point.tag)
+								.help("mount -t virtiofs \(point.tag) /mnt/point")
 						}
 						.width(min: 60, ideal: 60, max: .infinity)
 						TableColumn("") { point in
@@ -41,8 +42,8 @@ struct ConfigVMHostMountsView: View {
 						.width(min: 15, ideal: 15, max: 15)
 					}
 				}
-				.contentShape(Rectangle())
-				.help("mount -t virtiofs host-share /mnt/point")
+				// No table-wide .help here: it shadows every cell tooltip (the delete button's
+				// never showed). The virtiofs hint lives on the Tag cells and field instead.
 				Divider()
 
 				HStack {
@@ -65,6 +66,7 @@ struct ConfigVMHostMountsView: View {
 						.textFieldStyle(.roundedBorder)
 					TextField("Tag", text: $newTag)
 						.textFieldStyle(.roundedBorder)
+						.help("Guest mount tag: mount -t virtiofs <tag> /mnt/point")
 
 					Button(action: {
 						guard !newPath.isEmpty, !newTag.isEmpty else { return }
