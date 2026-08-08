@@ -23,13 +23,20 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	public var consoleLogPath: String?
 	// Whether the engine currently shows a console window for this VM.
 	public var consoleOpen: Bool
+	// Optional (not defaulted): genuinely absent from older daemons.
+	public var startPolicy: StartPolicy?
+	// Set by the daemon only, and only while a safe run impersonates this VM (phase 6).
+	public var safeRun: Bool?
+	public var totalRuntimeSeconds: Double?
 
 	public var id: String { name }
 
 	public init(
 		name: String, state: VMState, created: Date, lastRan: Date?, cpuCount: Int,
 		memoryBytes: UInt64, macAddress: String?, disks: [DiskInfo], mounts: [MountInfo],
-		boot: BootInfo, consoleLogPath: String?, consoleOpen: Bool = false
+		boot: BootInfo, consoleLogPath: String?, consoleOpen: Bool = false,
+		startPolicy: StartPolicy? = nil, safeRun: Bool? = nil,
+		totalRuntimeSeconds: Double? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -43,10 +50,13 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.boot = boot
 		self.consoleLogPath = consoleLogPath
 		self.consoleOpen = consoleOpen
+		self.startPolicy = startPolicy
+		self.safeRun = safeRun
+		self.totalRuntimeSeconds = totalRuntimeSeconds
 	}
 
-	// Hand-written decode so payloads predating consoleOpen (and clients that omit it)
-	// keep decoding; encode stays synthesized.
+	// Hand-written decode so payloads predating the optional fields (and clients that omit
+	// them) keep decoding; encode stays synthesized, so nil optionals are omitted.
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.name = try c.decode(String.self, forKey: .name)
@@ -61,6 +71,10 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.boot = try c.decode(BootInfo.self, forKey: .boot)
 		self.consoleLogPath = try c.decodeIfPresent(String.self, forKey: .consoleLogPath)
 		self.consoleOpen = try c.decodeIfPresent(Bool.self, forKey: .consoleOpen) ?? false
+		self.startPolicy = try c.decodeIfPresent(StartPolicy.self, forKey: .startPolicy)
+		self.safeRun = try c.decodeIfPresent(Bool.self, forKey: .safeRun)
+		self.totalRuntimeSeconds =
+			try c.decodeIfPresent(Double.self, forKey: .totalRuntimeSeconds)
 	}
 }
 
@@ -74,15 +88,33 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 	public var id: String
 	public var type: DiskType
 	public var name: String?        // .storage
-	public var path: String?        // .image / .iso
+	public var path: String?        // .image/.iso: the user's file; .storage: server-resolved
+	                                // absolute path (clients must not derive library paths)
 	public var sizeBytes: UInt64?
+	// Safe-mode policy: true = a safe run clones this disk. Non-optional with a default-true
+	// decode (the consoleOpen pattern) — the daemon always populates it.
+	public var safe: Bool
 
-	public init(id: String, type: DiskType, name: String?, path: String?, sizeBytes: UInt64?) {
+	public init(
+		id: String, type: DiskType, name: String?, path: String?, sizeBytes: UInt64?,
+		safe: Bool = true
+	) {
 		self.id = id
 		self.type = type
 		self.name = name
 		self.path = path
 		self.sizeBytes = sizeBytes
+		self.safe = safe
+	}
+
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.id = try c.decode(String.self, forKey: .id)
+		self.type = try c.decode(DiskType.self, forKey: .type)
+		self.name = try c.decodeIfPresent(String.self, forKey: .name)
+		self.path = try c.decodeIfPresent(String.self, forKey: .path)
+		self.sizeBytes = try c.decodeIfPresent(UInt64.self, forKey: .sizeBytes)
+		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 	}
 }
 
@@ -90,11 +122,22 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 	public var id: String
 	public var path: String
 	public var tag: String
+	// Safe-mode policy: true = a safe run omits this mount (default-true decode, see DiskInfo).
+	public var safe: Bool
 
-	public init(id: String, path: String, tag: String) {
+	public init(id: String, path: String, tag: String, safe: Bool = true) {
 		self.id = id
 		self.path = path
 		self.tag = tag
+		self.safe = safe
+	}
+
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.id = try c.decode(String.self, forKey: .id)
+		self.path = try c.decode(String.self, forKey: .path)
+		self.tag = try c.decode(String.self, forKey: .tag)
+		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 	}
 }
 

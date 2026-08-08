@@ -31,17 +31,40 @@ struct WireFixtureTests {
 			consoleLogPath: "/tmp/console.log")
 		let expected = #"{"boot":{"mode":"efi"},"consoleLogPath":"/tmp/console.log","#
 			+ #""consoleOpen":false,"cpuCount":4,"created":"2023-11-14T22:13:20Z","#
-			+ #""disks":[{"id":"storage:disk","name":"disk","sizeBytes":10737418240,"#
-			+ #""type":"storage"}],"lastRan":"2023-11-14T22:15:00Z","#
+			+ #""disks":[{"id":"storage:disk","name":"disk","safe":true,"#
+			+ #""sizeBytes":10737418240,"type":"storage"}],"lastRan":"2023-11-14T22:15:00Z","#
 			+ #""macAddress":"aa:bb:cc:dd:ee:ff","memoryBytes":4294967296,"#
-			+ #""mounts":[{"id":"m1","path":"/Users/x/share","tag":"host-share"}],"#
+			+ #""mounts":[{"id":"m1","path":"/Users/x/share","safe":true,"tag":"host-share"}],"#
 			+ #""name":"Debian","state":"running"}"#
 		#expect(try encode(info) == expected)
 		#expect(try decode(VMInfo.self, expected) == info)
 
-		// Payloads predating consoleOpen must keep decoding (defaults to false).
-		let legacy = expected.replacingOccurrences(of: #""consoleOpen":false,"#, with: "")
+		// Payloads predating consoleOpen and the safe flags must keep decoding (defaults:
+		// false / true).
+		let legacy = expected
+			.replacingOccurrences(of: #""consoleOpen":false,"#, with: "")
+			.replacingOccurrences(of: #""safe":true,"#, with: "")
 		#expect(try decode(VMInfo.self, legacy) == info)
+	}
+
+	@Test func vmInfoOptionalFieldsRoundTrip() throws {
+		var info = VMInfo(
+			name: "Debian", state: .stopped,
+			created: Date(timeIntervalSince1970: 1_700_000_000), lastRan: nil,
+			cpuCount: 2, memoryBytes: 1024, macAddress: nil, disks: [], mounts: [],
+			boot: BootInfo(
+				mode: .efi, kernel: nil, macInstallState: nil,
+				minCPUCount: nil, minMemoryBytes: nil),
+			consoleLogPath: nil)
+		info.startPolicy = StartPolicy()
+		info.safeRun = true
+		info.totalRuntimeSeconds = 12.5
+		let encoded = try encode(info)
+		#expect(encoded.contains(
+			#""startPolicy":{"autostart":false,"safe":false,"windowed":true}"#))
+		#expect(encoded.contains(#""safeRun":true"#))
+		#expect(encoded.contains(#""totalRuntimeSeconds":12.5"#))
+		#expect(try decode(VMInfo.self, encoded) == info)
 	}
 
 	@Test func bootInfoMacOSFixture() throws {

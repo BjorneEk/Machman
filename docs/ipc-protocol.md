@@ -75,9 +75,15 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 ## DTOs (abridged)
 
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
-[{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?}], mounts: [{id, path, tag}],
-boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?, minCPUCount?,
-minMemoryBytes?}, consoleLogPath?, consoleOpen}`.
+[{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe}], mounts:
+[{id, path, tag, safe}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?,
+minCPUCount?, minMemoryBytes?}, consoleLogPath?, consoleOpen, startPolicy?:
+{windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?}`.
+
+`disks[].path` is populated for every type — for `storage` it is the server-resolved absolute
+path of the backing image (clients must not derive library paths). `safe` flags are the
+safe-mode policy (clone-vs-attach for disks, omit-vs-mount for mounts); `safeRun` appears only
+while a safe run impersonates the VM.
 
 `state`: `stopped|starting|running|stopping|paused|error` — treat unknown strings as a state
 you don't recognize, not an error. Dates are ISO 8601. New optional fields may appear at any

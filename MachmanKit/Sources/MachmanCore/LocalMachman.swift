@@ -211,21 +211,23 @@ public final class LocalMachman: MachmanControlling {
 		let disks = config.disks.map { disk -> DiskInfo in
 			switch disk.kind {
 			case .storage(let name, _):
+				// Server-resolved absolute path: clients must not derive library paths.
 				return DiskInfo(
-					id: disk.id, type: .storage, name: name, path: nil,
-					sizeBytes: config.getDiskSize(disk: disk))
+					id: disk.id, type: .storage, name: name,
+					path: config.configFilePath(file: "\(name).raw"),
+					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe)
 			case .fromUrl(let url):
 				return DiskInfo(
 					id: disk.id, type: .image, name: nil, path: url.path,
-					sizeBytes: config.getDiskSize(disk: disk))
+					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe)
 			case .iso(let url):
 				return DiskInfo(
 					id: disk.id, type: .iso, name: nil, path: url.path,
-					sizeBytes: config.getDiskSize(disk: disk))
+					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe)
 			}
 		}
 		let mounts = config.mountPoints.map {
-			MountInfo(id: $0.id.uuidString, path: $0.path, tag: $0.tag)
+			MountInfo(id: $0.id.uuidString, path: $0.path, tag: $0.tag, safe: $0.safe)
 		}
 		let consoleLogPath: String?
 		if case .macOS = config.boot {
@@ -245,7 +247,10 @@ public final class LocalMachman: MachmanControlling {
 			mounts: mounts,
 			boot: bootInfo(for: vm),
 			consoleLogPath: consoleLogPath,
-			consoleOpen: registry.isConsoleOpen(vm))
+			consoleOpen: registry.isConsoleOpen(vm),
+			startPolicy: config.startPolicy,
+			safeRun: nil,   // daemon-overlay concept: only the router knows a run is safe
+			totalRuntimeSeconds: config.totalRuntimeSeconds)
 	}
 
 	private func bootInfo(for vm: VirtualMachine) -> BootInfo {
