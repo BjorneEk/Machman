@@ -89,6 +89,9 @@ struct HardwareConfigView: View {
 					.font(.system(.title3, design: .monospaced))
 					.foregroundColor(vm.macAddress == nil ? .secondary : .primary)
 					.help("MAC address (assigned on first boot)")
+				if let mac = vm.macAddress {
+					CopyToClipboardButton(mac, tooltip: "Copy MAC address")
+				}
 			}
 			.padding(2)
 		}
