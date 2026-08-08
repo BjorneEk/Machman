@@ -66,6 +66,16 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.vmRename, RPCParams.Rename(name: name, newName: newName))
 	}
 
+	public func copyVM(
+		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+	) async throws -> VMInfo {
+		try await connection.call(
+			.vmCopy,
+			RPCParams.Copy(
+				name: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC),
+			expecting: VMInfo.self)
+	}
+
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {
 		try await connection.call(
 			.regenerateMAC, RPCParams.Name(name: name), expecting: VMInfo.self)

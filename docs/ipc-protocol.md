@@ -54,6 +54,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.create` | — | `VMInfo` (auto-named `new-VM<n>`) |
 | `vm.delete` | `{name}` | `{}` (refused while running/installing) |
 | `vm.rename` | `{name, newName}` | `{}` (refused while running) |
+| `vm.copy` | `{name, newName?, diskIDs?, regenerateMAC?}` | `VMInfo` (refused while running; diskIDs = writable disks to carry, absent = all; regenerateMAC defaults true; the copy gets fresh machine identity and autostart off) |
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?}` | `{}` (clamped to host + boot floors) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
 | `vm.disk.add` | `{name, disk: NewDisk}` | `{}` |
@@ -105,7 +106,9 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 ```
 
 `params.type`: `stateChanged {vm, state}`, `listChanged` (re-fetch `vm.list`),
-`installPhaseChanged {vm, phase}`, `log {vm?, level, message}`. Unknown types: skip.
+`installPhaseChanged {vm, phase}`, `log {vm?, level, message}`,
+`copyProgress {vm, copiedBytes, totalBytes}` (vm = the copy being created; compute ETA
+client-side). Unknown types: skip.
 
 ## Per-VM host processes (invisible on the wire)
 

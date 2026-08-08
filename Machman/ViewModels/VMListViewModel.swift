@@ -67,6 +67,9 @@ final class VMListViewModel: ObservableObject {
 		get { pendingForceStart != nil }
 		set { if !newValue { pendingForceStart = nil } }
 	}
+	@Published var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
+	@Published private(set) var copyInFlight = false
+	@Published private(set) var copyProgress: (done: UInt64, total: UInt64)?
 
 	private var isFocused = true
 	private let previewInterval: Double = 4
@@ -127,6 +130,10 @@ final class VMListViewModel: ObservableObject {
 			// relaying through the client's logger keeps engine warnings visible from the app
 			// the user actually runs.
 			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
+		case .copyProgress(_, let copied, let total):
+			if copyInFlight {
+				copyProgress = (done: copied, total: total)
+			}
 		case .unknown:
 			break
 		}
@@ -343,6 +350,47 @@ final class VMListViewModel: ObservableObject {
 				self?.present(error, while: "Updating hardware for \(name)")
 			}
 		}
+	}
+
+	func requestCopy(_ vm: VMInfo) {
+		// The sheet's space hint reads capabilities.freeDiskBytes, fetched once at connect —
+		// refresh so the figure isn't sessions old.
+		Task { [weak self] in
+			if let caps = try? await self?.api.hostCapabilities() {
+				self?.capabilities = caps
+			}
+		}
+		copyRequest = vm
+	}
+
+	func copyVM(_ name: String, newName: String, diskIDs: [String]) {
+		guard !copyInFlight else { return }
+		copyInFlight = true
+		copyProgress = nil
+		Task { [weak self] in
+			do {
+				let copy = try await self?.api.copyVM(
+					vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: true)
+				self?.copyInFlight = false
+				self?.copyProgress = nil
+				self?.copyRequest = nil        // item binding dismisses the sheet
+				await self?.reload()
+				if let copy { self?.select(name: copy.name) }
+			} catch {
+				self?.copyInFlight = false
+				self?.copyProgress = nil
+				self?.copyRequest = nil        // dismiss first so the alert isn't sheet-blocked
+				self?.present(error, while: "Duplicating \(name)")
+			}
+		}
+	}
+
+	func defaultCopyName(for name: String) -> String {
+		let base = "\(name) copy"
+		guard hasVM(base) else { return base }
+		var n = 2
+		while hasVM("\(base) \(n)") { n += 1 }
+		return "\(base) \(n)"
 	}
 
 	func regenerateMAC(_ name: String) {

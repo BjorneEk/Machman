@@ -97,6 +97,9 @@ struct VMNavigationView: View {
 		} message: { pending in
 			Text(pending.message)
 		}
+		.sheet(item: $viewModel.copyRequest) { vm in
+			CopyVMSheet(vm: vm, viewModel: viewModel)
+		}
 	}
 }
 

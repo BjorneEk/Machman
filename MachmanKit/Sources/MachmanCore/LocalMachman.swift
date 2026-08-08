@@ -60,6 +60,61 @@ public final class LocalMachman: MachmanControlling {
 		try registry.rename(try lookup(name), to: newName)
 	}
 
+	public func copyVM(
+		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+	) async throws -> VMInfo {
+		let vm = try lookup(name)
+		guard !vm.state.isRunning else {
+			throw MachmanError(code: .invalidState, message: "stop \(name) before copying it")
+		}
+		guard !registry.isInstalling(vm) else {
+			throw MachmanError(
+				code: .invalidState, message: "wait for the macOS install to finish first")
+		}
+		let target: String
+		if let newName {
+			guard registry.vm(named: newName) == nil else {
+				throw MachmanError(
+					code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+			}
+			target = newName
+		} else {
+			target = registry.uniqueName(base: "\(name) copy")
+		}
+		let included = diskIDs.map(Set.init)
+		var policies: [String: VMCopyRequest.DiskPolicy] = [:]
+		for disk in vm.config.disks {
+			switch disk.kind {
+			case .storage:
+				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .clone : .omit
+			case .fromUrl:
+				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .reference : .omit
+			case .iso:
+				policies[disk.id] = .reference   // read-only references always travel
+			}
+		}
+		let guestKind: VMCopyRequest.GuestKind = {
+			if case .macOS = vm.config.boot { return .macOS }
+			return .generic
+		}()
+		let events = registry.events
+		let request = VMCopyRequest(
+			sourceDir: machmanVMDir + "/" + name, destinationParent: machmanVMDir,
+			newName: target, diskPolicies: policies, includedMountIDs: nil,
+			regenerateMAC: regenerateMAC, guestKind: guestKind,
+			progress: { copied, total in
+				Task { @MainActor in
+					events.emit(.copyProgress(vm: target, copiedBytes: copied, totalBytes: total))
+				}
+			})
+		// Synchronous file work would freeze the main actor for the whole clone — detach it.
+		// The staging rename inside the copier arbitrates any name minted while we waited.
+		try await Task.detached(priority: .userInitiated) {
+			try VMCopier.copy(request)
+		}.value
+		return info(for: try registry.adoptFromDisk(name: target))
+	}
+
 	// MARK: - Configuration
 
 	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {

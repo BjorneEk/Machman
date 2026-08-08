@@ -58,6 +58,14 @@ extension VMConfig {
 		return id
 	}
 
+	// Mint a fresh machine identifier at an explicit path — VMCopier writes into staging
+	// directories outside machmanVMDir, where the instance helpers can't point. The id is
+	// installer-created otherwise, never lazily recreated, so a copy must mint its own.
+	static func mintMacMachineIdentifier(at path: String) throws {
+		try VZMacMachineIdentifier().dataRepresentation
+			.write(to: URL(fileURLWithPath: path), options: .atomic)
+	}
+
 	@discardableResult
 	func createMacAuxiliaryStorage(hardwareModel: VZMacHardwareModel) throws -> VZMacAuxiliaryStorage {
 		return try VZMacAuxiliaryStorage(

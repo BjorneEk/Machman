@@ -32,6 +32,7 @@ public enum MachmanSymbols {
 	public static let browse = "folder.fill.badge.plus"
 	public static let copy = "doc.on.doc"
 	public static let copyDone = "checkmark"
+	public static let duplicateVM = "plus.square.on.square"
 	public static let cancel = "xmark.circle.fill"
 	// Reserved: rendered by the MAC-regenerate button (phase 3.2).
 	public static let regenerate = "arrow.clockwise"

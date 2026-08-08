@@ -125,6 +125,17 @@ struct MachmanApp: App {
 					}) {
 						Label("New VM", systemImage: MachmanSymbols.add)
 					}
+					Button(action: {
+						if let vm = viewModel.selected {
+							viewModel.requestCopy(vm)
+						}
+					}) {
+						Label("Duplicate…", systemImage: MachmanSymbols.duplicateVM)
+					}
+					.keyboardShortcut("d")
+					.disabled(viewModel.selected == nil
+						|| viewModel.selected?.state.isRunning == true
+						|| viewModel.copyInFlight)
 				}
 			}
 		}

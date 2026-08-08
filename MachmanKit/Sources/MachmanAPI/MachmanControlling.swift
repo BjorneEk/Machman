@@ -23,6 +23,11 @@ public protocol MachmanControlling: AnyObject {
 	func createVM() async throws -> VMInfo
 	func deleteVM(named name: String) async throws
 	func renameVM(named name: String, to newName: String) async throws
+	// Duplicate a stopped VM. diskIDs = writable disks to carry (nil = all); ISOs always
+	// travel by reference; the copy gets fresh machine identity and autostart off.
+	func copyVM(
+		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+	) async throws -> VMInfo
 
 	// MARK: Configuration
 	func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws

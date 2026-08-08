@@ -85,6 +85,8 @@ struct WireFixtureTests {
 			 #"{"state":"running","type":"stateChanged","vm":"Debian"}"#),
 			(.listChanged,
 			 #"{"type":"listChanged"}"#),
+			(.copyProgress(vm: "Debian copy", copiedBytes: 512, totalBytes: 1024),
+			 #"{"copiedBytes":512,"totalBytes":1024,"type":"copyProgress","vm":"Debian copy"}"#),
 			(.log(vm: "x", level: .error, message: "boom"),
 			 #"{"level":"error","message":"boom","type":"log","vm":"x"}"#),
 			(.installPhaseChanged(vm: "macOS", phase: InstallPhase(
@@ -136,5 +138,13 @@ struct WireFixtureTests {
 		#expect(try encode(RPCParams.SetSafety(
 			name: "Debian", disks: ["b:2": true, "a:1": false], mounts: nil))
 			== #"{"disks":{"a:1":false,"b:2":true},"name":"Debian"}"#)
+		// Copy: every optional omitted when nil.
+		#expect(try encode(RPCParams.Copy(
+			name: "Debian", newName: nil, diskIDs: nil, regenerateMAC: nil))
+			== #"{"name":"Debian"}"#)
+		#expect(try encode(RPCParams.Copy(
+			name: "Debian", newName: "Deb2", diskIDs: ["storage:disk"], regenerateMAC: false))
+			== #"{"diskIDs":["storage:disk"],"name":"Debian","newName":"Deb2","#
+			+ #""regenerateMAC":false}"#)
 	}
 }

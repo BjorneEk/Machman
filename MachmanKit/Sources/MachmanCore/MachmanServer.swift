@@ -123,6 +123,13 @@ public final class MachmanServer {
 				let p: RPCParams.Rename = try params(line)
 				try await api.renameVM(named: p.name, to: p.newName)
 				reply(client, id, RPCEmpty())
+			case .vmCopy:
+				let p: RPCParams.Copy = try params(line)
+				// Absent regenerateMAC means TRUE: a duplicate silently keeping its MAC would
+				// walk straight into the macConflict refusal.
+				reply(client, id, try await api.copyVM(
+					vm: p.name, newName: p.newName, diskIDs: p.diskIDs,
+					regenerateMAC: p.regenerateMAC ?? true))
 			case .setHardware:
 				let p: RPCParams.SetHardware = try params(line)
 				try await api.setHardware(

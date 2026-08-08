@@ -279,6 +279,17 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).setHardware(vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
 	}
 
+	public func copyVM(
+		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+	) async throws -> VMInfo {
+		// Cloning images under an active writer produces torn copies.
+		guard hosted[name] == nil else {
+			throw MachmanError(code: .invalidState, message: "stop \(name) before copying it")
+		}
+		return try await local.copyVM(
+			vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC)
+	}
+
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
 	// tracking captures macInUse at spawn — a mid-run change would desynchronize both.
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {

@@ -16,6 +16,7 @@ public enum RPCMethod: String, Sendable {
 	case vmCreate = "vm.create"
 	case vmDelete = "vm.delete"
 	case vmRename = "vm.rename"
+	case vmCopy = "vm.copy"
 	case setHardware = "vm.setHardware"
 	case regenerateMAC = "vm.regenerateMAC"
 	case diskAdd = "vm.disk.add"
@@ -64,6 +65,20 @@ public enum RPCParams {
 		public init(name: String, newName: String) {
 			self.name = name
 			self.newName = newName
+		}
+	}
+
+	public struct Copy: Codable, Equatable, Sendable {
+		public var name: String
+		public var newName: String?
+		public var diskIDs: [String]?
+		public var regenerateMAC: Bool?
+
+		public init(name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool?) {
+			self.name = name
+			self.newName = newName
+			self.diskIDs = diskIDs
+			self.regenerateMAC = regenerateMAC
 		}
 	}
 

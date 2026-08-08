@@ -14,6 +14,8 @@ public enum VMEvent: Sendable, Equatable {
 	case listChanged
 	case installPhaseChanged(vm: String, phase: InstallPhase)
 	case log(vm: String?, level: LogLevel, message: String)
+	// A copy of vm (the TARGET name) in flight: bytes done vs total. ETA is consumer math.
+	case copyProgress(vm: String, copiedBytes: UInt64, totalBytes: UInt64)
 	case unknown(type: String)
 }
 
@@ -25,6 +27,8 @@ extension VMEvent: Codable {
 		case phase
 		case level
 		case message
+		case copiedBytes
+		case totalBytes
 	}
 
 	private enum Kind: String {
@@ -32,6 +36,7 @@ extension VMEvent: Codable {
 		case listChanged
 		case installPhaseChanged
 		case log
+		case copyProgress
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -53,6 +58,11 @@ extension VMEvent: Codable {
 				vm: try c.decodeIfPresent(String.self, forKey: .vm),
 				level: try c.decode(LogLevel.self, forKey: .level),
 				message: try c.decode(String.self, forKey: .message))
+		case .copyProgress:
+			self = .copyProgress(
+				vm: try c.decode(String.self, forKey: .vm),
+				copiedBytes: try c.decode(UInt64.self, forKey: .copiedBytes),
+				totalBytes: try c.decode(UInt64.self, forKey: .totalBytes))
 		case nil:
 			self = .unknown(type: type)
 		}
@@ -76,6 +86,11 @@ extension VMEvent: Codable {
 			try c.encodeIfPresent(vm, forKey: .vm)
 			try c.encode(level, forKey: .level)
 			try c.encode(message, forKey: .message)
+		case .copyProgress(let vm, let copiedBytes, let totalBytes):
+			try c.encode(Kind.copyProgress.rawValue, forKey: .type)
+			try c.encode(vm, forKey: .vm)
+			try c.encode(copiedBytes, forKey: .copiedBytes)
+			try c.encode(totalBytes, forKey: .totalBytes)
 		case .unknown(let type):
 			try c.encode(type, forKey: .type)
 		}

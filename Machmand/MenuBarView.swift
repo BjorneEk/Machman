@@ -31,7 +31,7 @@ final class MenuBarModel: ObservableObject {
 					}
 				case .listChanged:
 					await self.reload()
-				case .installPhaseChanged, .log, .unknown:
+				case .installPhaseChanged, .log, .copyProgress, .unknown:
 					break
 				}
 			}

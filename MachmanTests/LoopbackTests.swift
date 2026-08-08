@@ -58,6 +58,19 @@ final class StubMachman: MachmanControlling {
 		vms[newName] = vm
 		emit(.listChanged)
 	}
+	func copyVM(
+		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+	) async throws -> VMInfo {
+		var copy = try get(name)
+		copy.name = newName ?? "\(name) copy"
+		guard vms[copy.name] == nil else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a VM named '\(copy.name)' already exists")
+		}
+		vms[copy.name] = copy
+		emit(.listChanged)
+		return copy
+	}
 	func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
 		var vm = try get(name)
 		if let cpuCount = cpuCount { vm.cpuCount = cpuCount }
@@ -245,6 +258,31 @@ struct LoopbackTests {
 		let policy = StartPolicy(windowed: false, safe: true, autostart: true)
 		try await client.setStartPolicy(vm: "Debian", policy: policy)
 		#expect(try await client.vm(named: "Debian").startPolicy == policy)
+		await client.disconnect()
+	}
+
+	@Test @MainActor func copyRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-copy-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "copy")
+		let copy = try await client.copyVM(
+			vm: "Debian", newName: nil, diskIDs: nil, regenerateMAC: true)
+		#expect(copy.name == "Debian copy")
+		#expect(try await client.listVMs().map(\.name) == ["Debian", "Debian copy"])
+
+		do {
+			_ = try await client.copyVM(
+				vm: "Debian", newName: "Debian copy", diskIDs: nil, regenerateMAC: true)
+			Issue.record("expected alreadyExists")
+		} catch let error as MachmanError {
+			#expect(error.code == .alreadyExists)
+		}
 		await client.disconnect()
 	}
 

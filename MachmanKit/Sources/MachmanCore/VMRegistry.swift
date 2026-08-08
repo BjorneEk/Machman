@@ -225,6 +225,51 @@ public final class VMRegistry {
 
 	// MARK: - Create / delete / rename
 
+	// "<base>", "<base> 2", "<base> 3", … probed against the in-memory map.
+	func uniqueName(base: String) -> String {
+		guard vms[base] != nil else { return base }
+		var n = 2
+		while vms["\(base) \(n)"] != nil { n += 1 }
+		return "\(base) \(n)"
+	}
+
+	// Register a directory that appeared after the initial scan (vm.copy now, safe-save
+	// later). reload(name:) can't do this — it only refreshes names it already knows.
+	func adoptFromDisk(name: String) throws -> VirtualMachine {
+		guard restrictedName == nil else {
+			throw MachmanError(code: .invalidState, message: "a vmhost cannot adopt VMs")
+		}
+		guard vms[name] == nil else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a VM named '\(name)' already exists")
+		}
+		let config: VMConfig
+		do {
+			config = try VMConfig.load(name: name)
+		} catch {
+			throw MachmanError(
+				code: .ioFailure, message: "cannot read the new VM '\(name)': \(error)")
+		}
+		config.excludeDiskImagesFromBackup()
+		let vm = VirtualMachine(config: config, events: events)
+		vms[name] = vm
+		events.emit(.listChanged)
+		return vm
+	}
+
+	// Interrupted copies leave hidden staging dirs. Safe to sweep whenever a daemon starts:
+	// this daemon has no copy in flight yet, vmhosts never copy, and the socket mutex rules
+	// out a second daemon. Deliberately daemon-only.
+	public func sweepCopyStaging() {
+		guard restrictedName == nil else { return }
+		guard let entries = try? FileManager.default.contentsOfDirectory(atPath: machmanVMDir)
+		else { return }
+		for entry in entries where entry.hasPrefix(VMCopier.stagingPrefix) {
+			try? FileManager.default.removeItem(atPath: machmanVMDir + "/" + entry)
+			MachmanLogger.log(.log, "removed interrupted copy staging \(entry)")
+		}
+	}
+
 	// Re-read one VM's config from disk (after a vmhost exits, the daemon's in-memory copy is
 	// stale — the vmhost owned the file while the VM ran).
 	func reload(name: String) {

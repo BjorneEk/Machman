@@ -72,6 +72,7 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 		// VMs from a previous daemon run live on in their vmhost processes — take them back.
 		Task {
 			await Daemon.api.adoptExistingHosts()
+			Daemon.registry.sweepCopyStaging()
 		}
 	}
 
