@@ -21,17 +21,31 @@ public final class RoutingMachman: MachmanControlling {
 	private let local: LocalMachman
 	private let daemonVersion: String
 
+	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
+	// recomputed: hostGone unlinks identity.socketPath and closures capture identity.id, so
+	// both survive any future re-keying of `hosted` (safe mode re-keys on save-as-new).
+	struct HostIdentity {
+		let id: UUID
+		var name: String
+		let socketPath: String
+		var isSafe = false           // inert until safe mode (phase 6)
+		var shadowRoot: String?      // inert until safe mode (phase 6)
+		var macInUse: String?        // inert until MAC-conflict detection (phase 3.5)
+	}
+
 	final class HostedVM {
+		let identity: HostIdentity
 		let client: RemoteMachman
 		let process: Process?     // nil for adopted hosts (spawned by an earlier daemon)
 		var eventTask: Task<Void, Never>?
 
-		init(client: RemoteMachman, process: Process?) {
+		init(identity: HostIdentity, client: RemoteMachman, process: Process?) {
+			self.identity = identity
 			self.client = client
 			self.process = process
 		}
 	}
-	private var hosted: [String: HostedVM] = [:]
+	private var hosted: [String: HostedVM] = [:]   // keyed by VM name
 
 	public init(registry: VMRegistry, daemonVersion: String) {
 		self.registry = registry
@@ -54,9 +68,10 @@ public final class RoutingMachman: MachmanControlling {
 			guard hosted[name] == nil else { continue }
 			let socketPath = Self.hostSocketPath(for: name)
 			guard FileManager.default.fileExists(atPath: socketPath) else { continue }
+			let identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 			do {
-				let client = try await connectHost(name: name, socketPath: socketPath)
-				adopt(name: name, client: client)
+				let client = try await connectHost(identity: identity)
+				adopt(identity: identity, client: client)
 				MachmanLogger.log(.log, "adopted running vmhost for \(name)")
 			} catch {
 				unlink(socketPath)
@@ -108,7 +123,10 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	private func spawnHost(for name: String) async throws -> HostedVM {
-		let socketPath = Self.hostSocketPath(for: name)
+		// Minted before any closure is built: termination and disconnect handlers capture the
+		// identity's id, never the (re-keyable) name.
+		let identity = HostIdentity(
+			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name))
 		let executable = Bundle.main.bundleURL
 			.appendingPathComponent("Contents/MacOS/MachmanVMHost")
 		guard FileManager.default.fileExists(atPath: executable.path) else {
@@ -118,7 +136,9 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		let process = Process()
 		process.executableURL = executable
-		process.arguments = ["--data-dir", machmanVMDir, "--vm", name, "--socket", socketPath]
+		process.arguments = [
+			"--data-dir", machmanVMDir, "--vm", name, "--socket", identity.socketPath,
+		]
 		var environment = ProcessInfo.processInfo.environment
 		// The vmhost is a bare tool with no Info.plist, so it cannot read the suite identifier
 		// the way an app bundle does — hand it down explicitly or it would fall back to the
@@ -127,9 +147,10 @@ public final class RoutingMachman: MachmanControlling {
 		environment["MACHMAN_VERSION"] = daemonVersion
 		environment.removeValue(forKey: "MACHMAN_DATA_DIR")
 		process.environment = environment
+		let hostID = identity.id
 		process.terminationHandler = { [weak self] _ in
 			Task { @MainActor [weak self] in
-				self?.hostGone(name)
+				self?.hostGone(id: hostID)
 			}
 		}
 		try process.run()
@@ -142,8 +163,8 @@ public final class RoutingMachman: MachmanControlling {
 				break
 			}
 			do {
-				let client = try await connectHost(name: name, socketPath: socketPath)
-				return HostedVM(client: client, process: process)
+				let client = try await connectHost(identity: identity)
+				return HostedVM(identity: identity, client: client, process: process)
 			} catch {
 				lastError = "\(error)"
 			}
@@ -154,19 +175,20 @@ public final class RoutingMachman: MachmanControlling {
 			code: .internalError, message: "vmhost for \(name) failed to start: \(lastError)")
 	}
 
-	func connectHost(name: String, socketPath: String) async throws -> RemoteMachman {
-		try await RemoteMachman(
-			socketPath: socketPath, clientName: "machmand-router",
+	func connectHost(identity: HostIdentity) async throws -> RemoteMachman {
+		let hostID = identity.id
+		return try await RemoteMachman(
+			socketPath: identity.socketPath, clientName: "machmand-router",
 			onDisconnect: { [weak self] in
 				Task { @MainActor [weak self] in
-					self?.hostGone(name)
+					self?.hostGone(id: hostID)
 				}
 			})
 	}
 
-	func adopt(name: String, client: RemoteMachman) {
-		let host = HostedVM(client: client, process: nil)
-		hosted[name] = host
+	func adopt(identity: HostIdentity, client: RemoteMachman) {
+		let host = HostedVM(identity: identity, client: client, process: nil)
+		hosted[identity.name] = host
 		subscribeEvents(host)
 		registry.events.emit(.listChanged)
 	}
@@ -181,18 +203,26 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
-	// A host went away — cleanly (VM stopped, host exits) or by crash. Idempotent.
-	private func hostGone(_ name: String) {
-		guard let host = hosted.removeValue(forKey: name) else { return }
+	// A host went away — cleanly (VM stopped, host exits) or by crash. Looked up by identity
+	// and unlinking the STORED socket path, so both survive re-keying. Idempotent.
+	private func hostGone(id: UUID) {
+		guard let name = hosted.first(where: { $0.value.identity.id == id })?.key,
+			let host = hosted.removeValue(forKey: name) else { return }
 		host.eventTask?.cancel()
 		let client = host.client
 		Task {
 			await client.disconnect()
 		}
 		registry.reload(name: name)
-		unlink(Self.hostSocketPath(for: name))
+		unlink(host.identity.socketPath)
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
 		registry.events.emit(.listChanged)
+	}
+
+	// Config/console-plane routing: a hosted VM's own process, else the daemon-local engine.
+	private func target(_ name: String) -> MachmanControlling {
+		if let host = hosted[name] { return host.client }
+		return local
 	}
 
 	// MARK: - MachmanControlling
@@ -240,60 +270,31 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
-		if let host = hosted[name] {
-			try await host.client.setHardware(
-				vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
-		} else {
-			try await local.setHardware(vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
-		}
+		try await target(name).setHardware(vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
 	}
 
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
-		if let host = hosted[name] {
-			try await host.client.addDisk(vm: name, disk)
-		} else {
-			try await local.addDisk(vm: name, disk)
-		}
+		try await target(name).addDisk(vm: name, disk)
 	}
 
 	public func removeDisk(vm name: String, diskID: String) async throws {
-		if let host = hosted[name] {
-			try await host.client.removeDisk(vm: name, diskID: diskID)
-		} else {
-			try await local.removeDisk(vm: name, diskID: diskID)
-		}
+		try await target(name).removeDisk(vm: name, diskID: diskID)
 	}
 
 	public func addMount(vm name: String, path: String, tag: String) async throws {
-		if let host = hosted[name] {
-			try await host.client.addMount(vm: name, path: path, tag: tag)
-		} else {
-			try await local.addMount(vm: name, path: path, tag: tag)
-		}
+		try await target(name).addMount(vm: name, path: path, tag: tag)
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
-		if let host = hosted[name] {
-			try await host.client.removeMount(vm: name, mountID: mountID)
-		} else {
-			try await local.removeMount(vm: name, mountID: mountID)
-		}
+		try await target(name).removeMount(vm: name, mountID: mountID)
 	}
 
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
-		if let host = hosted[name] {
-			try await host.client.setKernelBoot(vm: name, enabled: enabled)
-		} else {
-			try await local.setKernelBoot(vm: name, enabled: enabled)
-		}
+		try await target(name).setKernelBoot(vm: name, enabled: enabled)
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
-		if let host = hosted[name] {
-			try await host.client.updateKernelSettings(vm: name, settings)
-		} else {
-			try await local.updateKernelSettings(vm: name, settings)
-		}
+		try await target(name).updateKernelSettings(vm: name, settings)
 	}
 
 	public func start(vm name: String, options: StartOptions) async throws {
@@ -315,7 +316,7 @@ public final class RoutingMachman: MachmanControlling {
 			host.process?.terminationHandler = nil
 			host.process?.terminate()
 			await host.client.disconnect()
-			unlink(Self.hostSocketPath(for: name))
+			unlink(host.identity.socketPath)
 			throw error
 		}
 		hosted[name] = host
@@ -324,41 +325,23 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {
-		if let host = hosted[name] {
-			try await host.client.stop(vm: name, mode: mode)
-		} else {
-			try await local.stop(vm: name, mode: mode)
-		}
+		try await target(name).stop(vm: name, mode: mode)
 	}
 
 	public func openConsole(vm name: String) async throws {
-		if let host = hosted[name] {
-			try await host.client.openConsole(vm: name)
-		} else {
-			try await local.openConsole(vm: name)
-		}
+		try await target(name).openConsole(vm: name)
 	}
 
 	public func closeConsole(vm name: String) async throws {
-		if let host = hosted[name] {
-			try await host.client.closeConsole(vm: name)
-		} else {
-			try await local.closeConsole(vm: name)
-		}
+		try await target(name).closeConsole(vm: name)
 	}
 
 	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
-		if let host = hosted[name] {
-			return try await host.client.consoleInfo(vm: name)
-		}
-		return try await local.consoleInfo(vm: name)
+		try await target(name).consoleInfo(vm: name)
 	}
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
-		if let host = hosted[name] {
-			return try await host.client.preview(vm: name, maxWidth: maxWidth)
-		}
-		return try await local.preview(vm: name, maxWidth: maxWidth)
+		try await target(name).preview(vm: name, maxWidth: maxWidth)
 	}
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {
