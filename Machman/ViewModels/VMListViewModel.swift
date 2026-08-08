@@ -20,14 +20,6 @@ enum RunBtnState: String {
 	static func fromVMState(s: VMState) -> RunBtnState {
 		return s.isRunning ? .stop : .run
 	}
-	func color() -> Color {
-		switch self {
-		case .run:
-			return .green
-		case .stop:
-			return .red
-		}
-	}
 	func running() -> Bool {
 		return self == .stop
 	}

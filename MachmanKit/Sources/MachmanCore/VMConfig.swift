@@ -68,16 +68,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var macAddress: String?
 	var kernelSettings: LinuxKernelBoot?
 
-	init (name: String, memorySize: UInt64, cpuCount: Int, diskSize: UInt64) throws {
-		self.name = name
-		self.memorySize = memorySize
-		self.cpuCount = cpuCount
-		self.macAddress = VZMACAddress.randomLocallyAdministered().string
-		created = Foundation.Date()
-		try self.addNewStorageDisk(name: "disk", size: diskSize)
-		try saveVMConfig()
-	}
-
 	init (name: String, memorySize: UInt64, cpuCount: Int) throws {
 		self.name = name
 		self.memorySize = memorySize
