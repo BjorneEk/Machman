@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanAPI
 @testable import MachmanCore
 
 struct RegistryRestrictionTests {
@@ -17,7 +18,7 @@ struct RegistryRestrictionTests {
 			let restricted = VMRegistry(only: "alpha")
 			#expect(restricted.list().map(\.name) == ["alpha"])
 			#expect(restricted.vm(named: "beta") == nil)
-			#expect(throws: (any Error).self) {
+			#expect(throws: MachmanError.self) {
 				_ = try restricted.create()
 			}
 		}

@@ -86,7 +86,12 @@ final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		emit(.stateChanged(vm: name, state: .stopped))
 	}
-	func openConsole(vm name: String) async throws { _ = try get(name) }
+	// engineErrorsKeepTheirCode flips this: openConsole then throws an untyped engine error.
+	var throwCritical = false
+	func openConsole(vm name: String) async throws {
+		if throwCritical { throw VirtualMachineError.critical("boom") }
+		_ = try get(name)
+	}
 	func closeConsole(vm name: String) async throws { _ = try get(name) }
 	func consoleInfo(vm name: String) async throws -> ConsoleInfo {
 		_ = try get(name)
@@ -176,6 +181,29 @@ struct LoopbackTests {
 			.stateChanged(vm: "Debian", state: .stopped),
 		])
 
+		await client.disconnect()
+	}
+
+	@Test @MainActor func engineErrorsKeepTheirCode() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-err-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		stub.throwCritical = true
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "err")
+		do {
+			try await client.openConsole(vm: "Debian")
+			Issue.record("expected a throw")
+		} catch let error as MachmanError {
+			// The boundary catch keeps a machmanCode and a clean message — no leaked
+			// "critical(...)" Swift syntax.
+			#expect(error.code == .internalError)
+			#expect(error.message == "boom")
+		}
 		await client.disconnect()
 	}
 

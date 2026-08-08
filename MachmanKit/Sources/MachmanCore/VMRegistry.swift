@@ -163,11 +163,13 @@ public final class VMRegistry {
 
 	func start(_ vm: VirtualMachine, openConsole: Bool = true) async throws {
 		guard vm.runtime == nil else {
-			throw VirtualMachineError.critical("\(vm.config.name) is already running")
+			throw MachmanError(
+				code: .invalidState, message: "\(vm.config.name) is already running")
 		}
 		guard !(installSessions[vm.config.name]?.isInstalling ?? false) else {
-			throw VirtualMachineError.critical(
-				"(\(vm.config.name)) cannot start while macOS is installing")
+			throw MachmanError(
+				code: .invalidState,
+				message: "(\(vm.config.name)) cannot start while macOS is installing")
 		}
 		let runtime = VMRuntime(config: vm.config, events: events)
 		// Runtime accumulates here and only here — in the process that ran the VM, at teardown,
@@ -237,7 +239,7 @@ public final class VMRegistry {
 
 	func create() throws -> VirtualMachine {
 		guard restrictedName == nil else {
-			throw VirtualMachineError.critical("a vmhost cannot create VMs")
+			throw MachmanError(code: .invalidState, message: "a vmhost cannot create VMs")
 		}
 		var nbr = 1
 		while vms["new-VM\(nbr)"] != nil {
@@ -257,10 +259,11 @@ public final class VMRegistry {
 	func delete(_ vm: VirtualMachine) throws {
 		let name = vm.config.name
 		guard vm.runtime == nil else {
-			throw VirtualMachineError.critical("stop \(name) before deleting it")
+			throw MachmanError(code: .invalidState, message: "stop \(name) before deleting it")
 		}
 		guard !(installSessions[name]?.isInstalling ?? false) else {
-			throw VirtualMachineError.critical("wait for the macOS install to finish first")
+			throw MachmanError(
+				code: .invalidState, message: "wait for the macOS install to finish first")
 		}
 		presenter.dropConsole(name: name)
 		vms[name] = nil
@@ -273,10 +276,11 @@ public final class VMRegistry {
 		let oldName = vm.config.name
 		guard oldName != newName else { return }
 		guard vms[newName] == nil else {
-			throw VirtualMachineError.critical("a VM named '\(newName)' already exists")
+			throw MachmanError(
+				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
 		}
 		guard vm.runtime == nil else {
-			throw VirtualMachineError.critical("stop \(oldName) before renaming it")
+			throw MachmanError(code: .invalidState, message: "stop \(oldName) before renaming it")
 		}
 		try vm.config.rename(to: newName)
 		vms[oldName] = nil

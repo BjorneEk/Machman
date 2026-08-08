@@ -80,11 +80,12 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	// completion arrives as a normal guestDidStop.
 	func requestSoftStop() throws {
 		guard let vz = vz else {
-			throw VirtualMachineError.critical("\(config.name) is not running")
+			throw MachmanError(code: .invalidState, message: "\(config.name) is not running")
 		}
 		guard vz.canRequestStop else {
-			throw VirtualMachineError.critical(
-				"\(config.name) cannot handle a shutdown request; use force stop")
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(config.name) cannot handle a shutdown request; use force stop")
 		}
 		try vz.requestStop()
 	}

@@ -198,6 +198,11 @@ public final class MachmanServer {
 		} catch let error as ParamsError {
 			send(client, RPCErrorReply(id: id, error: RPCErrorBody(
 				code: JSONRPC.invalidParams, message: error.message)))
+		} catch let VirtualMachineError.critical(message) {
+			// Engine internals that escaped untyped: keep a machmanCode and stop leaking Swift
+			// enum syntax ("critical(...)") onto the wire.
+			send(client, RPCErrorReply(id: id, error: RPCErrorBody(
+				MachmanError(code: .internalError, message: message))))
 		} catch let error as MachmanError {
 			send(client, RPCErrorReply(id: id, error: RPCErrorBody(error)))
 		} catch {
