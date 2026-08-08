@@ -2,95 +2,81 @@
 //  HistoryView.swift
 //  Machman
 //
-//  Run-state / last-use / created block, extracted from ConfigVMView.
+//  Uptime, total runtime, last use, and creation date as a fixed icon grid: every row is
+//  always present ("—" when there is nothing to show) so the box never changes size, and the
+//  tooltips carry the meaning instead of text labels.
 //
 
 import SwiftUI
+import MachmanUI
 import MachmanAPI
 
 struct HistoryView: View {
 	let vm: VMInfo
 
-	func largestTimeDifference(from date: Date) -> String {
-		let now = Date()
-		let diff = now.timeIntervalSince(date)
-
-		// Define time interval constants
-		let second: TimeInterval = 1
-		let minute = 60 * second
-		let hour   = 60 * minute
-		let day    = 24 * hour
-		let week   = 7 * day
-		let month  = 30.44 * day  // average month length
-		let year   = 365.25 * day // average year length
-
-		if diff < minute {
-			// Less than a minute: show seconds
-			let seconds = Int(diff)
-			return "\(seconds)s"
-		} else if diff < hour {
-			// Less than an hour: show minutes
-			let minutes = Int(diff / minute)
-			return "\(minutes)m"
-		} else if diff < day {
-			// Less than a day: show hours
-			let hours = Int(diff / hour)
-			return "\(hours)h"
-		} else if diff < week {
-			// Less than a week: show days
-			let days = Int(diff / day)
-			return "\(days)day"
-		} else if diff < month {
-			// Less than a month: show weeks
-			let weeks = Int(diff / week)
-			return "\(weeks)wk"
-		} else if diff < year {
-			// Less than a year: show months
-			let months = Int(diff / month)
-			return "\(months)mo"
-		} else {
-			// One year or more: show years
-			let years = Int(diff / year)
-			return "\(years)y"
+	// Single-unit compact duration ("3h", "2wk"), shared by uptime and total runtime.
+	private func durationString(_ diff: TimeInterval) -> String {
+		let minute = 60.0
+		let hour = 60 * minute
+		let day = 24 * hour
+		let week = 7 * day
+		let month = 30.44 * day  // average month length
+		let year = 365.25 * day  // average year length
+		switch diff {
+		case ..<minute: return "\(Int(diff))s"
+		case ..<hour: return "\(Int(diff / minute))m"
+		case ..<day: return "\(Int(diff / hour))h"
+		case ..<week: return "\(Int(diff / day))day"
+		case ..<month: return "\(Int(diff / week))wk"
+		case ..<year: return "\(Int(diff / month))mo"
+		default: return "\(Int(diff / year))y"
 		}
+	}
+
+	private var uptime: String? {
+		guard vm.state.isRunning, let lastRan = vm.lastRan else { return nil }
+		return durationString(Date().timeIntervalSince(lastRan))
+	}
+
+	private var totalRuntime: String? {
+		guard let total = vm.totalRuntimeSeconds, total > 0 else { return nil }
+		return durationString(total)
 	}
 
 	var body: some View {
 		GroupBox {
-			HStack {
-				if let startTime = vm.lastRan, vm.state.isRunning {
-					Text(largestTimeDifference(from: startTime))
-						.fontWeight(.bold)
-						.font(.title2)
-				} else {
-					Text("stopped")
-						.fontWeight(.bold)
-						.font(.title2)
+			Grid(alignment: .leading, verticalSpacing: 6) {
+				GridRow {
+					cell(MachmanSymbols.uptime, "Current uptime", uptime)
+					cell(MachmanSymbols.totalRuntime, "Total runtime", totalRuntime)
 				}
-				Spacer()
-			}
-			.padding(2)
-			if let lastUse = vm.lastRan {
-				HStack {
-					Text("last use:")
-						.fontWeight(.bold)
-						.font(.title2)
-					Text("\(lastUse)")
-					Spacer()
+				GridRow {
+					cell(
+						MachmanSymbols.lastUsed, "Last used",
+						vm.lastRan?.formatted(date: .abbreviated, time: .shortened))
+						.gridCellColumns(2)
 				}
-				.padding(2)
+				GridRow {
+					cell(
+						MachmanSymbols.created, "Created",
+						vm.created.formatted(date: .abbreviated, time: .shortened))
+						.gridCellColumns(2)
+				}
 			}
-			HStack {
-				Text("created:")
-					.fontWeight(.bold)
-					.font(.title2)
-				Text("\(vm.created)")
-				Spacer()
-
-			}
+			.frame(maxWidth: .infinity, alignment: .leading)
 			.padding(2)
 		}
 		.padding(2)
+	}
+
+	private func cell(_ symbol: String, _ tooltip: String, _ value: String?) -> some View {
+		HStack(spacing: 6) {
+			Image(systemName: symbol)
+				.foregroundColor(.secondary)
+			Text(value ?? "—")
+				.monospacedDigit()
+		}
+		.help(tooltip)
 	}
 }
 
