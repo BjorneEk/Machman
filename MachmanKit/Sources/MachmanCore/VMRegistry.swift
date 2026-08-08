@@ -100,15 +100,15 @@ public final class VMRegistry {
 					message: "ScreenCaptureKit returned no image — preview is blank."))
 				return
 			case .noPermission:
-				// A vmhost is spawned by Machmand without disclaiming responsibility, so TCC
-				// attributes its request to Machmand — that is the row in System Settings, and
-				// there is no MachmanVMHost row to find. macOS also caches the answer per
-				// process, so a grant is invisible until the process is relaunched.
+				// Vmhosts launch as standalone apps, so TCC attributes capture requests to
+				// MachmanVMHost itself — that is the row in System Settings (dev builds show
+				// "MachmanVMHost (Dev)"). macOS caches the answer per process, so a fresh
+				// grant is invisible until this VM's host process is relaunched.
 				self?.events.emit(.log(
 					vm: nil, level: .warning,
 					message: "Screen Recording is not granted — console previews will be blank. "
-						+ "Enable it for Machmand in System Settings > Privacy & Security > "
-						+ "Screen Recording, then quit and relaunch Machmand: a running process "
+						+ "Enable it for MachmanVMHost in System Settings > Privacy & Security > "
+						+ "Screen Recording, then stop and start this VM: a running process "
 						+ "cannot see a grant it was launched without."))
 			}
 		}

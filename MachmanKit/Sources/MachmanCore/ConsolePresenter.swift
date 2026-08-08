@@ -153,12 +153,11 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	func captureImage(name: String) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
 		guard let window = windows[name] else { return fallback }
-		// One capture at a time. Screen Recording is granted to the RESPONSIBLE process, so a
-		// vmhost cannot answer "do I have it?" for itself — the only honest test is to try. When
-		// the grant is undetermined that call blocks on the system's permission dialog, and every
-		// poll landing meanwhile would stack another copy of it. Serialising is what stops the
-		// pile-up; gating on CGPreflightScreenCaptureAccess() would instead veto a call that
-		// succeeds through the parent's grant.
+		// One capture at a time. This process is its own TCC responsible process now, so
+		// preflight would answer honestly — but an undetermined grant still blocks the call on
+		// the system's permission dialog, and every poll landing meanwhile would stack another
+		// copy of it. Serialising stops the pile-up; we still never GATE on preflight —
+		// attempting is what raises the prompt the user needs to see.
 		guard !captureInFlight else { return fallback }
 		captureInFlight = true
 		defer { captureInFlight = false }
@@ -195,8 +194,8 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	private func report(_ failure: CaptureFailure) {
 		let key = "\(failure)"
 		guard reportedFailures.insert(key).inserted else { return }
-		// Preflight is a hint here and nothing more: it answers for the calling process, which is
-		// the wrong process when the grant belongs to the responsible parent.
+		// Preflight is a hint: it reflects the OS's cached answer for this process — the
+		// responsible process itself, now that vmhosts launch standalone.
 		let hint = CGPreflightScreenCaptureAccess() ? "" : " (this process preflights as denied)"
 		MachmanLogger.log(.passiveWarning, "preview capture failed: \(key)\(hint)")
 		onCaptureFailed?(failure)
