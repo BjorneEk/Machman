@@ -1,10 +1,10 @@
 //
-//  MachmanApp.swift
-//  Machman
+//  MachmanDesktopApp.swift
+//  MachmanDesktop
 //
 //  Created by Gustaf Franzen on 2025-03-27.
 //
-//  Machman-desktop is a pure client: it renders and commands VMs that live in the MachmanAgent
+//  MachmanDesktop is a pure client: it renders and commands VMs that live in the MachmanAgent
 //  daemon, over the socket. No Virtualization framework, no engine, no entitlements — if the
 //  daemon is away, the app shows a connect screen and can launch it.
 //
@@ -15,7 +15,7 @@ import Cocoa
 import MachmanAPI
 
 @main
-struct MachmanApp: App {
+struct MachmanDesktopApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	@StateObject var connection: DaemonConnection
 	@State var selection: String? = nil

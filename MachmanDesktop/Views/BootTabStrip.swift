@@ -1,6 +1,6 @@
 //
 //  BootTabStrip.swift
-//  Machman
+//  MachmanDesktop
 //
 //  A two-tab strip for BootConfigView. Custom because SwiftUI's TabView cannot disable an
 //  individual tab (needed once a VM has macOS installed and its boot mode is locked).

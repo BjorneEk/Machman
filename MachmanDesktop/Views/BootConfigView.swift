@@ -1,6 +1,6 @@
 //
 //  BootConfigView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Boot-mode configuration pane: a default (EFI / Linux-kernel) tab and a macOS guest tab.
 //  Once a VM has macOS installed its boot mode is locked, so the default tab is disabled.

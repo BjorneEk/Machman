@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4F8935D52D956D5000E2B811"
-               BuildableName = "Machman-desktop.app"
-               BlueprintName = "Machman-desktop"
+               BuildableName = "MachmanDesktop.app"
+               BlueprintName = "MachmanDesktop"
                ReferencedContainer = "container:Machman.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -70,8 +70,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4F8935D52D956D5000E2B811"
-            BuildableName = "Machman-desktop.app"
-            BlueprintName = "Machman-desktop"
+            BuildableName = "MachmanDesktop.app"
+            BlueprintName = "MachmanDesktop"
             ReferencedContainer = "container:Machman.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -87,8 +87,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4F8935D52D956D5000E2B811"
-            BuildableName = "Machman-desktop.app"
-            BlueprintName = "Machman-desktop"
+            BuildableName = "MachmanDesktop.app"
+            BlueprintName = "MachmanDesktop"
             ReferencedContainer = "container:Machman.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -1,6 +1,6 @@
 //
 //  ConfigVMView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Created by Gustaf Franzen on 2025-04-03.
 //

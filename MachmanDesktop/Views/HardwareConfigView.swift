@@ -1,6 +1,6 @@
 //
 //  HardwareConfigView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  CPU / memory configuration block, extracted from ConfigVMView. Bounds come from
 //  HostCapabilities (via the view model) — never from Virtualization.framework directly.

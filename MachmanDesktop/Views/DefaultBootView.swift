@@ -1,6 +1,6 @@
 //
 //  DefaultBootView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Default boot editor: EFI by default, or direct Linux-kernel boot when the checkbox is on.
 //  Field values live in the persisted kernel draft (BootInfo.kernel) so they survive toggling

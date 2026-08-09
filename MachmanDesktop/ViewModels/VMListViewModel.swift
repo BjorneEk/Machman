@@ -1,6 +1,6 @@
 //
 //  VMListViewModel.swift
-//  Machman
+//  MachmanDesktop
 //
 //  The client half of the app: view-facing state fed exclusively through MachmanControlling
 //  and its event stream. Holds no engine objects — only DTOs, selection, preview images, and

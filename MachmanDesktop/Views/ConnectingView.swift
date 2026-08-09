@@ -1,6 +1,6 @@
 //
 //  ConnectingView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Shown while the app has no daemon connection: spinner during attempts, and a clear
 //  retry/launch path when the daemon can't be reached.

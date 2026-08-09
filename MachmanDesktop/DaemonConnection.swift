@@ -1,6 +1,6 @@
 //
 //  DaemonConnection.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Owns the desktop app's link to MachmanAgent: connect, auto-launch the daemon when it isn't
 //  running, retry with backoff, and reconnect (with a fresh view model) if the daemon goes
@@ -101,7 +101,7 @@ final class DaemonConnection: ObservableObject {
 				attempt += 1
 				do {
 					let api = try await RemoteMachman(
-						clientName: "Machman-desktop", onDisconnect: onDisconnect)
+						clientName: "MachmanDesktop", onDisconnect: onDisconnect)
 					guard let self = self else { return }
 					let viewModel = VMListViewModel(api: api)
 					self.api = api

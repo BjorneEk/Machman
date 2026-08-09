@@ -1,6 +1,6 @@
 //
 //  HistoryView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Uptime, total runtime, last use, and creation date as a fixed icon grid: every row is
 //  always present ("—" when there is nothing to show) so the box never changes size, and the

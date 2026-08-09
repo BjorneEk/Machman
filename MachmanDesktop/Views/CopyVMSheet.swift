@@ -1,6 +1,6 @@
 //
 //  CopyVMSheet.swift
-//  Machman
+//  MachmanDesktop
 //
 //  Duplicate a stopped VM: pick a name and which writable disks to carry. ISOs are read-only
 //  references and always travel; image disks travel as references to the same file. The

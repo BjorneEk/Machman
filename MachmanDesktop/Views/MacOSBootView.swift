@@ -1,6 +1,6 @@
 //
 //  MacOSBootView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  macOS guest tab: install from a local .ipsw or the latest from Apple, with download/install
 //  progress, plus the installed / failed / interrupted states. Renders InstallPhase snapshots

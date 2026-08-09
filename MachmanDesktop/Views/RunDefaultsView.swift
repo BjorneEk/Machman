@@ -1,6 +1,6 @@
 //
 //  RunDefaultsView.swift
-//  Machman
+//  MachmanDesktop
 //
 //  The run-defaults strip: what a plain Run does (windowed or headless), whether runs are
 //  safe, and whether the VM autostarts at login. Reads are stateless — every control renders
