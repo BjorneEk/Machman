@@ -16,6 +16,7 @@ struct ConfigVMView: View {
 		GroupBox {
 			VStack {
 				HardwareConfigView(vm: vm, viewModel: viewModel)
+				RunDefaultsView(vm: vm, viewModel: viewModel)
 				BootConfigView(vm: vm, viewModel: viewModel)
 					.id(vm.name)   // reset pane state per VM
 				HistoryView(vm: vm)

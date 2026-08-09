@@ -393,6 +393,16 @@ final class VMListViewModel: ObservableObject {
 		return "\(base) \(n)"
 	}
 
+	func setStartPolicy(_ name: String, policy: StartPolicy) {
+		Task { [weak self] in
+			do {
+				try await self?.api.setStartPolicy(vm: name, policy: policy)
+			} catch {
+				self?.present(error, while: "Updating run defaults for \(name)")
+			}
+		}
+	}
+
 	func regenerateMAC(_ name: String) {
 		Task { [weak self] in
 			do {

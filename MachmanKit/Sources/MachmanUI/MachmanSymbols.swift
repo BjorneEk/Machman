@@ -63,10 +63,9 @@ public enum MachmanSymbols {
 	public static let lastUsed = "clock.arrow.circlepath"
 	public static let created = "calendar.badge.plus"
 
-	// MARK: - Safe mode (reserved: rendered by phase 6)
+	// MARK: - Start policy & safe mode (unsafe reserved: rendered by phase 6)
 	public static let safe = "shield.lefthalf.filled"
 	public static let unsafe = "shield.slash"
-	// Reserved: glyph confirmed when the run-defaults strip renders it (phase 5.1).
 	public static let autostart = "power.circle"
 
 	// MARK: - App chrome
