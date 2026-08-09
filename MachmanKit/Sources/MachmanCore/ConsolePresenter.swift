@@ -39,8 +39,18 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	private let softStopGraceSeconds: Double = 30
 	private var captureInFlight = false
 
+	// Only the vmhost sets this: with a console open that process is a real app (Dock icon,
+	// menus); windowless it drops back to accessory. The daemon's presenter must never flip
+	// the menu-bar agent's LSUIElement — and there it is provably inert anyway: since the
+	// vmhost split the daemon never runs a VM, so its presenter never opens a window.
+	var managesActivationPolicy = false
+
 	func openConsole(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
+			// Re-surfacing must foreground the app, not just order the window forward.
+			if managesActivationPolicy {
+				NSApp.activate(ignoringOtherApps: true)
+			}
 			existing.makeKeyAndOrderFront(nil)
 			return
 		}
@@ -58,6 +68,11 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		window.isReleasedWhenClosed = false
 		window.delegate = self
 		windows[name] = window
+		if managesActivationPolicy, windows.count == 1 {
+			NSApp.setActivationPolicy(.regular)
+			NSApp.activate(ignoringOtherApps: true)
+			window.makeKeyAndOrderFront(nil)   // re-front after the policy flip
+		}
 		onConsoleChanged?()
 	}
 
@@ -76,6 +91,9 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		guard let window = windows[name] else { return }
 		window.delegate = nil
 		windows[name] = nil
+		if managesActivationPolicy, windows.isEmpty {
+			NSApp.setActivationPolicy(.accessory)
+		}
 		onConsoleChanged?()
 	}
 
