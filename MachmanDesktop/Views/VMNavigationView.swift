@@ -111,6 +111,12 @@ struct VMNavigationView: View {
 		.sheet(item: $viewModel.safeSaveRequest) { vm in
 			SafeSaveSheet(vm: vm, viewModel: viewModel)
 		}
+		.sheet(isPresented: Binding(
+			get: { !viewModel.transfers.isEmpty },
+			set: { _ in }   // data-driven: bars complete or fail, the user never dismisses
+		)) {
+			TransferProgressView(viewModel: viewModel)
+		}
 	}
 }
 

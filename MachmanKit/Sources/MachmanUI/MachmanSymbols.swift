@@ -51,6 +51,8 @@ public enum MachmanSymbols {
 	public static let network = "network"
 
 	// MARK: - Disks & mounts
+	// Copy a referenced external disk into the VM (take ownership).
+	public static let promoteDisk = "square.and.arrow.down"
 	public static let diskStorage = "externaldrive.fill"
 	public static let diskImage = "externaldrive.fill.badge.icloud"
 	public static let diskISO = "externaldrive.connected.to.line.below.fill"

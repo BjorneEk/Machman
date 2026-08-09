@@ -72,6 +72,13 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var copyInFlight = false
 	@Published var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
 	@Published private(set) var safeSaveInFlight = false
+	// Live file transfers outside the duplicate sheet (imports, promotes, safe-run shadow
+	// builds), keyed by VM name — non-empty presents TransferProgressView.
+	struct TransferProgress: Equatable {
+		var done: UInt64
+		var total: UInt64
+	}
+	@Published private(set) var transfers: [String: TransferProgress] = [:]
 	@Published private(set) var copyProgress: (done: UInt64, total: UInt64)?
 
 	private var isFocused = true
@@ -133,9 +140,16 @@ final class VMListViewModel: ObservableObject {
 			// relaying through the client's logger keeps engine warnings visible from the app
 			// the user actually runs.
 			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
-		case .copyProgress(_, let copied, let total):
+		case .copyProgress(let vm, let copied, let total):
 			if copyInFlight {
+				// The duplicate sheet owns its own bar.
 				copyProgress = (done: copied, total: total)
+			} else if copied >= total {
+				transfers[vm] = nil
+			} else {
+				// Disk imports/promotes and safe-run shadow builds land here — the
+				// transfer popup shows them.
+				transfers[vm] = TransferProgress(done: copied, total: total)
 			}
 		case .unknown:
 			break
@@ -152,6 +166,9 @@ final class VMListViewModel: ObservableObject {
 	// dismissed unread.
 	func present(message: String, while action: String) {
 		MachmanLogger.log(.interactionError, "\(action) failed: \(message)")
+		// A failed transfer never emits its final progress event — drop any live bars so
+		// the popup can't linger behind the alert.
+		transfers.removeAll()
 		presentedError = PresentedError(title: "\(action) failed", message: message)
 	}
 
@@ -399,6 +416,26 @@ final class VMListViewModel: ObservableObject {
 		var n = 2
 		while hasVM("\(base) \(n)") { n += 1 }
 		return "\(base) \(n)"
+	}
+
+	func importDisk(_ name: String, path: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.importDisk(vm: name, path: path)
+			} catch {
+				self?.present(error, while: "Importing a disk into \(name)")
+			}
+		}
+	}
+
+	func promoteDisk(_ name: String, diskID: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.promoteDisk(vm: name, diskID: diskID)
+			} catch {
+				self?.present(error, while: "Promoting a disk on \(name)")
+			}
+		}
 	}
 
 	func setDiskSafety(_ name: String, diskID: String, safe: Bool) {

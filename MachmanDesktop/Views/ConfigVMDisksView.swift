@@ -76,19 +76,41 @@ struct ConfigVMDisksView: View {
 						}
 					}.width(20)
 					TableColumn("") { (entry: DiskInfo) in
-						// Tooltip adapts: storage deletes the backing file, the rest disconnect.
+						// Promote: copy a referenced external disk into the VM. Hidden for
+						// owned disks and when an old daemon doesn't report ownership.
+						if entry.owned == false {
+							IconButton(
+								symbol: MachmanSymbols.promoteDisk,
+								tooltip: "Copy this disk into the VM "
+									+ "(the VM gets its own independent copy)",
+								flat: true
+							) {
+								DispatchQueue.main.async {
+									guard VMListViewModel.confirmDialog(
+										message: "Copy this disk into \(vm.name)?",
+										informativeText: "The VM gets its own independent "
+											+ "copy; the original file stays untouched.")
+									else { return }
+									viewModel.promoteDisk(vm.name, diskID: entry.id)
+								}
+							}
+						}
+					}.width(20)
+					TableColumn("") { (entry: DiskInfo) in
+						// Ownership = residency: owned files die with their entry, external
+						// files only disconnect.
 						IconButton(
 							symbol: MachmanSymbols.delete,
-							tooltip: entry.type == .storage
+							tooltip: entry.owned == true
 								? "Delete disk file" : "Disconnect (file is kept)",
 							flat: true
 						) {
 							DispatchQueue.main.async {
-								if entry.type == .storage {
+								if entry.owned == true {
 									guard VMListViewModel.confirmDialog(
-										message: "Delete disk \(entry.name ?? entry.id).raw?",
-										informativeText: "\(entry.name ?? entry.id) remover "
-											+ "do you wish to delete it?")
+										message: "Delete disk \(entry.name ?? entry.id)?",
+										informativeText: "The backing file belongs to "
+											+ "\(vm.name) and will be deleted with it.")
 									else { return }
 								}
 								viewModel.removeDisk(vm.name, diskID: entry.id)
@@ -99,14 +121,29 @@ struct ConfigVMDisksView: View {
 				Divider()
 				AddDiskView(
 					freeGB: viewModel.capabilities.map { ByteSize.toGB($0.freeDiskBytes) },
-					addIso: {
-						viewModel.addDisk(vm.name, .iso(path: $0.path))
+					addReference: { url in
+						// Extension picks the reference kind; the copy path sniffs instead.
+						if url.pathExtension.lowercased() == "iso" {
+							viewModel.addDisk(vm.name, .iso(path: url.path))
+						} else {
+							viewModel.addDisk(vm.name, .image(path: url.path))
+						}
 					},
-					addFrom: {
-						viewModel.addDisk(vm.name, .image(path: $0.path))
-					}, addNew: {
+					addCopy: { url in
+						viewModel.importDisk(vm.name, path: url.path)
+					},
+					addNew: {
 						viewModel.addDisk(vm.name, .storage(name: $0, sizeBytes: $1))
 					})
+			}
+			.dropDestination(for: URL.self) { urls, _ in
+				// Drop-to-copy (user spec): dropped files are imported as owned copies;
+				// the engine's sniff rejects unsupported formats with a presented error.
+				guard !urls.isEmpty else { return false }
+				for url in urls {
+					viewModel.importDisk(vm.name, path: url.path)
+				}
+				return true
 			}
 			.padding(.bottom, 8)
 		}
