@@ -38,28 +38,43 @@ struct RunDefaultsView: View {
 				+ "when safe mode ships."
 	}
 
+	// Autostart runs in the default start mode — say which one that currently is.
 	private var autostartHelp: String {
-		autostartLocked
-			? "Safe-run VMs cannot autostart — turn off safe mode first"
-			: "Start this VM at login, without the desktop app"
+		if autostartLocked {
+			return "Safe-run VMs cannot autostart — turn off safe mode first"
+		}
+		return policy.windowed
+			? "Start this VM at login, in its console window"
+			: "Start this VM at login, headless"
+	}
+
+	private var startModeHelp: String {
+		policy.windowed
+			? "Plain Run opens a console window"
+			: "Plain Run starts headless (no window)"
 	}
 
 	var body: some View {
 		GroupBox {
 			HStack {
-				Picker("", selection: Binding(
-					get: { policy.windowed },
-					set: { windowed in update { $0.windowed = windowed } }
-				)) {
-					Image(systemName: MachmanSymbols.vmRunningWindowed).tag(true)
-					Image(systemName: MachmanSymbols.vmRunningHeadless).tag(false)
+				HStack {
+					Image(systemName: MachmanSymbols.start)
+						.foregroundColor(.secondary)
+						.help(startModeHelp)
+					Picker("", selection: Binding(
+						get: { policy.windowed },
+						set: { windowed in update { $0.windowed = windowed } }
+					)) {
+						Image(systemName: MachmanSymbols.vmRunningWindowed).tag(true)
+						Image(systemName: MachmanSymbols.vmRunningHeadless).tag(false)
+					}
+					.pickerStyle(.segmented)
+					.fixedSize()
+					.labelsHidden()
 				}
-				.pickerStyle(.segmented)
-				.fixedSize()
-				.labelsHidden()
-				.help(policy.windowed
-					? "Plain Run opens a console window"
-					: "Plain Run starts headless (no window)")
+				// On the wrapper AND the icon: the segmented control swallows its own
+				// .help, so the icon is the guaranteed hover target.
+				.help(startModeHelp)
 				Spacer()
 				HStack {
 					Image(systemName: MachmanSymbols.safe)
