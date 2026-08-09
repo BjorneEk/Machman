@@ -28,14 +28,14 @@
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 4F8935D52D956D5000E2B811;
-			remoteInfo = "MachmanDesktop";
+			remoteInfo = MachmanDesktop;
 		};
 		4F8935F22D956D5100E2B811 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 4F8935D52D956D5000E2B811;
-			remoteInfo = "MachmanDesktop";
+			remoteInfo = MachmanDesktop;
 		};
 		BB2000000000000000000020 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -86,7 +86,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		4F8935D62D956D5000E2B811 /* MachmanDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "MachmanDesktop.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F8935D62D956D5000E2B811 /* MachmanDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachmanDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935E72D956D5100E2B811 /* MachmanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8936052D956DA600E2B811 /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
@@ -227,13 +227,13 @@
 			fileSystemSynchronizedGroups = (
 				4F8935D82D956D5000E2B811 /* MachmanDesktop */,
 			);
-			name = "MachmanDesktop";
+			name = MachmanDesktop;
 			packageProductDependencies = (
 				AA10000000000000000000B1 /* MachmanAPI */,
 				AA10000000000000000000B7 /* MachmanClient */,
 				AA10000000000000000000B8 /* MachmanUI */,
 			);
-			productName = "MachmanDesktop";
+			productName = MachmanDesktop;
 			productReference = 4F8935D62D956D5000E2B811 /* MachmanDesktop.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -717,7 +717,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "MachmanDesktop";
+				TEST_TARGET_NAME = MachmanDesktop;
 			};
 			name = Debug;
 		};
@@ -732,7 +732,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "MachmanDesktop";
+				TEST_TARGET_NAME = MachmanDesktop;
 			};
 			name = Release;
 		};
