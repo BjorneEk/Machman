@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import AppKit
 import MachmanUI
 import MachmanAPI
 
@@ -146,8 +147,37 @@ struct MenuBarView: View {
 		Text(MachmanPaths.dataDir())
 			.font(.caption)
 		Divider()
+		Button {
+			openDesktop()
+		} label: {
+			Label("Open Machman", systemImage: MachmanSymbols.menuBarExtra)
+		}
 		Button("Quit Machmand") {
 			NSApp.terminate(nil)
 		}
+	}
+
+	private func openDesktop() {
+		// The daemon's own suite id minus its `.agent` suffix IS the desktop's bundle id.
+		let suite = MachmanPaths.suiteIdentifier()
+		// Embedded daemon lives at <outer>.app/Contents/Library/LoginItems/Machmand.app —
+		// walk up to the outer bundle. A standalone scheme-run Machmand.app walks to
+		// nonsense; the id gate rejects that and Launch Services answers instead.
+		let outer = Bundle.main.bundleURL
+			.deletingLastPathComponent()   // …/LoginItems
+			.deletingLastPathComponent()   // …/Library
+			.deletingLastPathComponent()   // …/Contents
+			.deletingLastPathComponent()   // <outer>.app
+		if outer.pathExtension == "app", Bundle(url: outer)?.bundleIdentifier == suite {
+			NSWorkspace.shared.openApplication(
+				at: outer, configuration: NSWorkspace.OpenConfiguration())
+			return
+		}
+		if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: suite) {
+			NSWorkspace.shared.openApplication(
+				at: url, configuration: NSWorkspace.OpenConfiguration())
+			return
+		}
+		MachmanLogger.log(.interactionError, "cannot find the Machman desktop app (\(suite))")
 	}
 }
