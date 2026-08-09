@@ -58,15 +58,18 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?}` | `{}` (clamped to host + boot floors) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
 | `vm.disk.add` | `{name, disk: NewDisk}` | `{}` |
-| `vm.disk.remove` | `{name, diskID}` | `{}` (storage disks: deletes the backing file) |
+| `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected) |
+| `vm.disk.import` | `{name, path}` | `VMInfo` (copies the file INTO the VM as an owned disk; format by magic bytes — ISO9660 → iso, qcow2 refused, else raw storage validated as a non-empty 512-multiple; emits `copyProgress`) |
+| `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`; emits `copyProgress`) |
 | `vm.mount.add` | `{name, path, tag}` | `{}` |
 | `vm.mount.remove` | `{name, mountID}` | `{}` |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
-| `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent) |
+| `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
-| `vm.start` | `{name, options?: {openConsole, force}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC; `force: true` overrides) |
+| `vm.start` | `{name, options?: {openConsole, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, `force: true` overrides; `safe: true` runs a discardable shadow copy — see Safe runs below) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
+| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; refused unless the VM is safe-hosted, or when newName is taken) |
 | `vm.console.open` | `{name}` | `{}` (window appears from the daemon) |
 | `vm.console.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.console.info` | `{name}` | `{logPath}` (file-backed hvc0 log; null for macOS guests) |
@@ -85,6 +88,8 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 minCPUCount?, minMemoryBytes?}, consoleLogPath?, consoleOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?}`.
 
+`disks[].owned?` is true when the backing file lives inside (and travels with) the VM's
+directory — imports/promotes create owned disks; absent means an older daemon.
 `disks[].path` is populated for every type — for `storage` it is the server-resolved absolute
 path of the backing image (clients must not derive library paths). `safe` flags are the
 safe-mode policy (clone-vs-attach for disks, omit-vs-mount for mounts); `safeRun` appears only
@@ -108,8 +113,22 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 
 `params.type`: `stateChanged {vm, state}`, `listChanged` (re-fetch `vm.list`),
 `installPhaseChanged {vm, phase}`, `log {vm?, level, message}`,
-`copyProgress {vm, copiedBytes, totalBytes}` (vm = the copy being created; compute ETA
-client-side). Unknown types: skip.
+`copyProgress {vm, copiedBytes, totalBytes}` (compute ETA client-side; emitted by
+`vm.copy` with vm = the copy being created, and by `vm.disk.import`, `vm.disk.promote`,
+and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
+
+## Safe runs (invisible on the wire except `safeRun`)
+
+`vm.start {safe: true}` clones the VM into a hidden shadow (safe disks → discardable
+clones, unsafe disks → the real files, ISOs referenced, safe mounts omitted) and runs the
+shadow AS the VM: name, events, socket, and window are all the real VM's, and the shadow is
+deleted on stop (a clean stop copies last-ran and total-runtime back). The ONLY wire
+evidence is `VMInfo.safeRun: true` while the run lives. `vm.setSafety` during a safe run
+edits the discardable shadow; `vm.setStartPolicy` is refused. `vm.safeSave` turns the
+running shadow into a real VM (see the method table); until the promoted VM reboots onto
+its fresh MAC, starting the ORIGINAL requires `force` (macConflict). Safe runs survive
+daemon restarts (the daemon re-attaches by matching the shadow's recorded vmhost pid
+against the socket peer) and reset on host reboot.
 
 ## Per-VM host processes (invisible on the wire)
 
