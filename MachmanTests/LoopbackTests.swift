@@ -86,6 +86,30 @@ final class StubMachman: MachmanControlling {
 	}
 	func addDisk(vm name: String, _ disk: NewDisk) async throws { _ = try get(name) }
 	func removeDisk(vm name: String, diskID: String) async throws { _ = try get(name) }
+	func importDisk(vm name: String, path: String) async throws -> VMInfo {
+		var vm = try get(name)
+		vm.disks.append(DiskInfo(
+			id: "storage:imported", type: .storage, name: "imported", path: path,
+			sizeBytes: 1024, safe: true, owned: true))
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
+		var vm = try get(name)
+		guard let index = vm.disks.firstIndex(where: { $0.id == diskID }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
+		}
+		guard vm.disks[index].owned != true else {
+			throw MachmanError(
+				code: .invalidState, message: "this disk is already owned by the VM")
+		}
+		vm.disks[index].owned = true
+		vm.disks[index].type = .storage
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
 	func addMount(vm name: String, path: String, tag: String) async throws { _ = try get(name) }
 	func removeMount(vm name: String, mountID: String) async throws { _ = try get(name) }
 	func setKernelBoot(vm name: String, enabled: Bool) async throws { _ = try get(name) }
@@ -336,6 +360,36 @@ struct LoopbackTests {
 			Issue.record("expected notFound")
 		} catch let error as MachmanError {
 			#expect(error.code == .notFound)
+		}
+		await client.disconnect()
+	}
+
+	@Test @MainActor func diskImportAndPromoteRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-imp-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var info = StubMachman.makeInfo("Debian")
+		info.disks = [DiskInfo(
+			id: "url:file:///imgs/a.img", type: .image, name: nil, path: "/imgs/a.img",
+			sizeBytes: 1024, safe: true, owned: false)]
+		stub.vms["Debian"] = info
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "imp")
+		let imported = try await client.importDisk(vm: "Debian", path: "/imgs/b.raw")
+		#expect(imported.disks.contains { $0.name == "imported" && $0.owned == true })
+
+		let promoted = try await client.promoteDisk(
+			vm: "Debian", diskID: "url:file:///imgs/a.img")
+		#expect(promoted.disks.allSatisfy { $0.owned == true })
+
+		do {
+			_ = try await client.promoteDisk(vm: "Debian", diskID: "storage:imported")
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)   // already owned
 		}
 		await client.disconnect()
 	}

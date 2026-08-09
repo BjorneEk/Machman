@@ -94,10 +94,14 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 	// Safe-mode policy: true = a safe run clones this disk. Non-optional with a default-true
 	// decode (the consoleOpen pattern) — the daemon always populates it.
 	public var safe: Bool
+	// true = the backing file lives inside (and travels with) the VM's directory; false =
+	// an external reference vm.disk.promote can copy in. Optional so old daemons (nil)
+	// simply hide the promote affordance; nil is omitted on the wire.
+	public var owned: Bool?
 
 	public init(
 		id: String, type: DiskType, name: String?, path: String?, sizeBytes: UInt64?,
-		safe: Bool = true
+		safe: Bool = true, owned: Bool? = nil
 	) {
 		self.id = id
 		self.type = type
@@ -105,6 +109,7 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 		self.path = path
 		self.sizeBytes = sizeBytes
 		self.safe = safe
+		self.owned = owned
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -115,6 +120,7 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 		self.path = try c.decodeIfPresent(String.self, forKey: .path)
 		self.sizeBytes = try c.decodeIfPresent(UInt64.self, forKey: .sizeBytes)
 		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
+		self.owned = try c.decodeIfPresent(Bool.self, forKey: .owned)
 	}
 }
 

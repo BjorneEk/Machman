@@ -247,16 +247,39 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	// Removes the disk from the config; for .storage also deletes the backing image file.
-	// Destructive — confirmation is the caller's job.
+	// Destructive — confirmation is the caller's job. Ownership = residency: storage raws
+	// and isos living INSIDE the VM dir (imported/promoted) are deleted with their entry;
+	// external files are only disconnected.
 	func deleteDisk(disk: VMDisk) throws {
 		self.disks.removeAll { $0 == disk }
-		if case .storage(let name, _) = disk.kind {
+		switch disk.kind {
+		case .storage(let name, _):
 			let url = localURL(file: "\(name).raw")
 			if FileManager.default.fileExists(atPath: url.path) {
 				try FileManager.default.removeItem(at: url)
 			}
+		case .iso(let url) where url.path.hasPrefix(vmDirPath() + "/"):
+			if FileManager.default.fileExists(atPath: url.path) {
+				try FileManager.default.removeItem(at: url)
+			}
+		default:
+			break
 		}
 		try saveVMConfig()
+	}
+
+	// Swap a disk entry in place (vm.disk.promote): position and the caller-preserved safe
+	// flag stay; only the kind changes.
+	func replaceDisk(id: String, with newDisk: VMDisk) throws {
+		guard let index = disks.firstIndex(where: { $0.id == id }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+		}
+		disks[index] = newDisk
+		try saveVMConfig()
+	}
+
+	func vmDirPath() -> String {
+		"\(machmanVMDir)/\(self.name)"
 	}
 
 	// .atomic writes to a sibling temp file and renames. Without it a force quit or power loss

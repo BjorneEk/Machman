@@ -96,6 +96,18 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.diskRemove, RPCParams.RemoveDisk(name: name, diskID: diskID))
 	}
 
+	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
+		try await connection.call(
+			.diskImport, RPCParams.ImportDisk(name: name, path: path),
+			expecting: VMInfo.self)
+	}
+
+	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
+		try await connection.call(
+			.diskPromote, RPCParams.RemoveDisk(name: name, diskID: diskID),
+			expecting: VMInfo.self)
+	}
+
 	public func addMount(vm name: String, path: String, tag: String) async throws {
 		try await void(.mountAdd, RPCParams.AddMount(name: name, path: path, tag: tag))
 	}

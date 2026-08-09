@@ -417,6 +417,14 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).removeDisk(vm: name, diskID: diskID)
 	}
 
+	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
+		try await target(name).importDisk(vm: name, path: path)
+	}
+
+	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
+		try await target(name).promoteDisk(vm: name, diskID: diskID)
+	}
+
 	public func addMount(vm name: String, path: String, tag: String) async throws {
 		try await target(name).addMount(vm: name, path: path, tag: tag)
 	}

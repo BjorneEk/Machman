@@ -36,6 +36,12 @@ public protocol MachmanControlling: AnyObject {
 	func regenerateMAC(vm name: String) async throws -> VMInfo
 	func addDisk(vm name: String, _ disk: NewDisk) async throws
 	func removeDisk(vm name: String, diskID: String) async throws
+	// Copy an external image INTO the VM dir as an owned disk (magic-sniffed: iso or raw;
+	// qcow2 refused). Progress arrives as copyProgress events for the VM.
+	func importDisk(vm name: String, path: String) async throws -> VMInfo
+	// Copy a referenced external disk into the VM dir, replacing the entry in place
+	// (safe flag and row position preserved). Owned entries refuse.
+	func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo
 	func addMount(vm name: String, path: String, tag: String) async throws
 	func removeMount(vm name: String, mountID: String) async throws
 	func setKernelBoot(vm name: String, enabled: Bool) async throws

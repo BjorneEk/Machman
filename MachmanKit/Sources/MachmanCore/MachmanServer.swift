@@ -154,6 +154,12 @@ public final class MachmanServer {
 				let p: RPCParams.RemoveMount = try params(line)
 				try await api.removeMount(vm: p.name, mountID: p.mountID)
 				reply(client, id, RPCEmpty())
+			case .diskImport:
+				let p: RPCParams.ImportDisk = try params(line)
+				reply(client, id, try await api.importDisk(vm: p.name, path: p.path))
+			case .diskPromote:
+				let p: RPCParams.RemoveDisk = try params(line)
+				reply(client, id, try await api.promoteDisk(vm: p.name, diskID: p.diskID))
 			case .setKernelBoot:
 				let p: RPCParams.SetKernelBoot = try params(line)
 				try await api.setKernelBoot(vm: p.name, enabled: p.enabled)

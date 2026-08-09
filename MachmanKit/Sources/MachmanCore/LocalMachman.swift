@@ -170,6 +170,64 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
+	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		let imported = try await copyIntoVM(vm, name: name, sourcePath: path)
+		try vm.config.addDisk(disk: imported)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
+		}
+		let vmDir = vm.config.vmDirPath()
+		let sourcePath: String
+		switch disk.kind {
+		case .storage:
+			throw MachmanError(
+				code: .invalidState, message: "this disk is already owned by the VM")
+		case .iso(let url):
+			guard !url.path.hasPrefix(vmDir + "/") else {
+				throw MachmanError(
+					code: .invalidState, message: "this disk is already owned by the VM")
+			}
+			sourcePath = url.path
+		case .fromUrl(let url):
+			sourcePath = url.path
+		}
+		var promoted = try await copyIntoVM(vm, name: name, sourcePath: sourcePath)
+		promoted.safe = disk.safe   // the entry swaps in place; the policy carries
+		try vm.config.replaceDisk(id: diskID, with: promoted)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	// The shared import mechanics: gather taken names on-actor, then detach the sniff+copy
+	// (external images can be real cross-volume byte copies). Progress reuses copyProgress.
+	private func copyIntoVM(
+		_ vm: VirtualMachine, name: String, sourcePath: String
+	) async throws -> VMDisk {
+		let vmDir = vm.config.vmDirPath()
+		let taken = Set(vm.config.disks.compactMap { disk -> String? in
+			if case .storage(let storageName, _) = disk.kind { return storageName }
+			return nil
+		})
+		let events = registry.events
+		return try await Task.detached(priority: .userInitiated) {
+			try DiskImport.importFile(
+				src: sourcePath, vmDir: vmDir, takenStorageNames: taken,
+				progress: { copied, total in
+					Task { @MainActor in
+						events.emit(.copyProgress(
+							vm: name, copiedBytes: copied, totalBytes: total))
+					}
+				})
+		}.value
+	}
+
 	public func addMount(vm name: String, path: String, tag: String) async throws {
 		let vm = try lookup(name)
 		try vm.config.addMountPoint(HostMountPoint(path: path, tag: tag))
@@ -321,15 +379,18 @@ public final class LocalMachman: MachmanControlling {
 				return DiskInfo(
 					id: disk.id, type: .storage, name: name,
 					path: config.configFilePath(file: "\(name).raw"),
-					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe)
+					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
+					owned: true)
 			case .fromUrl(let url):
 				return DiskInfo(
 					id: disk.id, type: .image, name: nil, path: url.path,
-					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe)
+					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
+					owned: false)
 			case .iso(let url):
 				return DiskInfo(
 					id: disk.id, type: .iso, name: nil, path: url.path,
-					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe)
+					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
+					owned: url.path.hasPrefix(config.vmDirPath() + "/"))
 			}
 		}
 		let mounts = config.mountPoints.map {

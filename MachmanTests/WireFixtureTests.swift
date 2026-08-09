@@ -150,5 +150,12 @@ struct WireFixtureTests {
 		// Rename params serve vm.rename AND vm.safeSave — one shape, method discriminates.
 		#expect(try encode(RPCParams.Rename(name: "Debian", newName: "Debian kept"))
 			== #"{"name":"Debian","newName":"Debian kept"}"#)
+		#expect(try encode(RPCParams.ImportDisk(name: "Debian", path: "/imgs/a.raw"))
+			== #"{"name":"Debian","path":"/imgs/a.raw"}"#)
+		// DiskInfo.owned is nil-omitted (old-daemon tolerance) and pins when set.
+		#expect(try encode(DiskInfo(
+			id: "iso:x", type: .iso, name: nil, path: "/x.iso", sizeBytes: nil,
+			safe: true, owned: false))
+			== #"{"id":"iso:x","owned":false,"path":"/x.iso","safe":true,"type":"iso"}"#)
 	}
 }

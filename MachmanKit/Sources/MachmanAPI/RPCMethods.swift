@@ -21,6 +21,8 @@ public enum RPCMethod: String, Sendable {
 	case regenerateMAC = "vm.regenerateMAC"
 	case diskAdd = "vm.disk.add"
 	case diskRemove = "vm.disk.remove"
+	case diskImport = "vm.disk.import"
+	case diskPromote = "vm.disk.promote"
 	case mountAdd = "vm.mount.add"
 	case mountRemove = "vm.mount.remove"
 	case setKernelBoot = "vm.boot.setKernel"
@@ -113,6 +115,17 @@ public enum RPCParams {
 		public init(name: String, diskID: String) {
 			self.name = name
 			self.diskID = diskID
+		}
+	}
+
+	// vm.disk.import: copy the file at `path` into the VM as an owned disk.
+	public struct ImportDisk: Codable, Equatable, Sendable {
+		public var name: String
+		public var path: String
+
+		public init(name: String, path: String) {
+			self.name = name
+			self.path = path
 		}
 	}
 

@@ -147,6 +147,15 @@ enum VMCopier {
 				takenNames.insert(name)
 				externalClones.append((url.path, "\(name).raw", size))
 				disks.append(VMDisk(kind: .storage(name, size), safe: disk.safe))
+			case (.iso(let url), _) where url.path.hasPrefix(src + "/"):
+				// An OWNED iso (imported/promoted into the dir) travels with the sidecar
+				// walk — its entry must follow the directory or the copy points back at
+				// the source. fromUrl references deliberately keep pointing at the source.
+				let relative = String(url.path.dropFirst(src.count + 1))
+				let final = request.destinationParent + "/" + request.newName
+				disks.append(VMDisk(
+					kind: .iso(URL(fileURLWithPath: final + "/" + relative)),
+					safe: disk.safe))
 			case (.fromUrl, _), (.iso, _):
 				disks.append(disk)   // referenced entries carry verbatim; the file stays put
 			}
@@ -235,7 +244,7 @@ enum VMCopier {
 
 	// clonefile(2) first — instant, and the common same-volume case. The copyfile fallback
 	// carries the per-chunk progress callback for the copies that are actually slow.
-	private static func cloneOrCopy(
+	fileprivate static func cloneOrCopy(
 		_ src: String, _ dst: String, base: UInt64, size: UInt64,
 		throttle: ProgressThrottle, isCancelled: (@Sendable () -> Bool)?
 	) throws {
@@ -265,6 +274,23 @@ enum VMCopier {
 				message: "copying \(src): \(String(cString: strerror(errno)))")
 		}
 		throttle.report(base + size)
+	}
+}
+
+// Single-file transfer with the copier's clone-first mechanics and throttled progress —
+// the engine under disk imports and promotes.
+enum FileTransfer {
+	nonisolated static func copy(
+		src: String, dst: String,
+		progress: (@Sendable (UInt64, UInt64) -> Void)? = nil,
+		isCancelled: (@Sendable () -> Bool)? = nil
+	) throws {
+		let size = (try? FileManager.default.attributesOfItem(atPath: src)[.size] as? UInt64)
+			.flatMap { $0 } ?? 0
+		let throttle = ProgressThrottle(total: size, report: progress)
+		try VMCopier.cloneOrCopy(
+			src, dst, base: 0, size: size, throttle: throttle, isCancelled: isCancelled)
+		throttle.finish(size)
 	}
 }
 

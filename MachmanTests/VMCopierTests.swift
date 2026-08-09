@@ -320,6 +320,35 @@ struct VMCopierTests {
 			== Data("rawbytes-data".utf8))
 	}
 
+	@Test func inDirIsoEntryFollowsTheCopy() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(
+			in: library,
+			disks: [],   // set below once we know the dir
+			extraFiles: ["cd.iso": Data("isodata".utf8)])
+		let ownedIso = VMDisk(kind: .iso(URL(fileURLWithPath: src + "/cd.iso")))
+		let externalIso = VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/outside.iso")))
+		let config = try loadConfig(src)
+		config.disks = [ownedIso, externalIso]
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup"))
+		let copied = try loadConfig(dst)
+		guard case .iso(let movedURL) = copied.disks[0].kind else {
+			Issue.record("expected an iso entry")
+			return
+		}
+		#expect(movedURL.path == dst + "/cd.iso")     // the entry followed the directory
+		#expect(FileManager.default.fileExists(atPath: dst + "/cd.iso"))
+		guard case .iso(let stayURL) = copied.disks[1].kind else {
+			Issue.record("expected an iso entry")
+			return
+		}
+		#expect(stayURL.path == "/isos/outside.iso")  // external references stay put
+	}
+
 	@Test func progressReportsMonotonicallyToTotal() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }
