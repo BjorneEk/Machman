@@ -84,7 +84,10 @@ struct MainVMView: View {
 					.help(viewModel.isInstalling(vm)
 						? "macOS is installing; wait for it to finish"
 						: (viewModel.runBtnLbl(vm: vm).running()
-							? "Stop \(vm.name)" : "Run \(vm.name)"))
+							? "Stop \(vm.name)"
+							: "Run \(vm.name)"
+								+ ((vm.startPolicy ?? StartPolicy()).windowed
+									? "" : " (headless)")))
 				}
 				ToolbarItem {
 					Button(action: {

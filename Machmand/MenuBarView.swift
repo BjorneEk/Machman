@@ -88,7 +88,8 @@ struct MenuBarView: View {
 		ForEach(model.vms) { vm in
 			Menu {
 				Button("Start") {
-					model.start(vm.name)
+					// Plain Start honors the VM's policy; "Start Headless" stays explicit.
+					model.start(vm.name, headless: !(vm.startPolicy ?? StartPolicy()).windowed)
 				}
 				.disabled(vm.state.isRunning)
 				Button("Start Headless") {

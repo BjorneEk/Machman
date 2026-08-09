@@ -248,7 +248,9 @@ final class VMListViewModel: ObservableObject {
 		if vm.state.isRunning {
 			stopVM(vm.name)
 		} else {
-			startVM(vm.name)
+			// The plain affordance honors the VM's start policy; explicit menu items force
+			// their mode. nil policy = old daemon → the windowed default.
+			startVM(vm.name, headless: !(vm.startPolicy ?? StartPolicy()).windowed)
 		}
 	}
 
