@@ -225,6 +225,101 @@ struct VMCopierTests {
 		#expect(config.startPolicy.windowed == false)   // the rest of the policy carries
 	}
 
+	@Test func impersonateCarriesIdentityAndHistory() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let identifier = Data("vmid".utf8)
+		let src = try makeSourceVM(in: library, extraFiles: ["vm_identifier": identifier])
+		let srcConfig = try loadConfig(src)
+		srcConfig.lastRan = Date(timeIntervalSinceReferenceDate: 5000)
+		srcConfig.totalRuntimeSeconds = 42
+		srcConfig.startPolicy.autostart = true
+		try JSONEncoder().encode(srcConfig)
+			.write(to: URL(fileURLWithPath: src + "/config"))
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, identity: .impersonate))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/vm_identifier"))
+			== identifier)
+		let config = try loadConfig(dst)
+		#expect(config.created == srcConfig.created)
+		#expect(config.lastRan == srcConfig.lastRan)
+		#expect(config.totalRuntimeSeconds == 42)
+		#expect(config.macAddress == "aa:bb:cc:dd:ee:01")
+		#expect(config.startPolicy.autostart == false)   // cleared in BOTH identity modes
+	}
+
+	@Test func impersonateMacOSKeepsMachineID() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let sourceID = VZMacMachineIdentifier().dataRepresentation
+		let src = try makeSourceVM(in: library, extraFiles: [
+			"mac_hardware_model": Data("model".utf8),
+			"mac_aux.img": Data("aux".utf8),
+			"mac_machine_id": sourceID,
+		])
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, guestKind: .macOS, identity: .impersonate))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/mac_machine_id"))
+			== sourceID)
+	}
+
+	@Test func safeFromUrlCloneRewritesToStorage() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let external = library + "/ubuntu-cloud.img"
+		try Data("imgbytes".utf8).write(to: URL(fileURLWithPath: external))
+		let disk = VMDisk(kind: .fromUrl(URL(fileURLWithPath: external)), safe: true)
+		let src = try makeSourceVM(in: library, disks: [disk])
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			diskPolicies: [disk.id: .clone], regenerateMAC: false, identity: .impersonate))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/ubuntu-cloud.raw"))
+			== Data("imgbytes".utf8))
+		let config = try loadConfig(dst)
+		guard case .storage(let name, let size) = config.disks.first?.kind else {
+			Issue.record("expected a storage rewrite")
+			return
+		}
+		#expect(name == "ubuntu-cloud")
+		#expect(size == 8)
+		#expect(config.disks.first?.safe == true)
+		// The user's external file is untouched, and the clone is VM-owned (backup-excluded).
+		#expect(try Data(contentsOf: URL(fileURLWithPath: external)) == Data("imgbytes".utf8))
+		let values = try URL(fileURLWithPath: dst + "/ubuntu-cloud.raw")
+			.resourceValues(forKeys: [.isExcludedFromBackupKey])
+		#expect(values.isExcludedFromBackup == true)
+	}
+
+	@Test func externalCloneNameCollisionUniquified() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let external = library + "/data.img"
+		try Data("ext".utf8).write(to: URL(fileURLWithPath: external))
+		let externalDisk = VMDisk(kind: .fromUrl(URL(fileURLWithPath: external)))
+		let src = try makeSourceVM(
+			in: library,
+			disks: [VMDisk(kind: .storage("data", 0)), externalDisk])
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup",
+			diskPolicies: [externalDisk.id: .clone]))
+		let config = try loadConfig(dst)
+		guard case .storage(let derived, _) = config.disks.last?.kind else {
+			Issue.record("expected a storage rewrite")
+			return
+		}
+		#expect(derived == "data-2")
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/data-2.raw"))
+			== Data("ext".utf8))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/data.raw"))
+			== Data("rawbytes-data".utf8))
+	}
+
 	@Test func progressReportsMonotonicallyToTotal() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }

@@ -26,7 +26,11 @@ struct VMCopyRequest: Sendable {
 	}
 	enum GuestKind: Sendable {
 		case generic
-		case macOS       // carry hardware model + aux storage, mint a fresh machine id
+		case macOS       // carry hardware model + aux storage; identity below decides minting
+	}
+	enum Identity: Sendable {
+		case fresh        // a new VM: fresh identity files, reset history (vm.copy)
+		case impersonate  // a safe-run shadow: the copy IS the VM — identity + history travel
 	}
 
 	var sourceDir: String          // …/VMs/<name>
@@ -37,6 +41,7 @@ struct VMCopyRequest: Sendable {
 	var includedMountIDs: Set<String>? = nil   // nil = keep every mount
 	var regenerateMAC: Bool = true
 	var guestKind: GuestKind = .generic
+	var identity: Identity = .fresh
 	// (copiedBytes, totalBytes), already throttled. Total is the sum of traveling files.
 	var progress: (@Sendable (UInt64, UInt64) -> Void)? = nil
 	// Checked between chunks; returning true aborts with ioFailure. No UI drives it yet.
@@ -46,12 +51,21 @@ struct VMCopyRequest: Sendable {
 enum VMCopier {
 	static let stagingPrefix = ".machman-copy-"
 
-	// Never travel: config is re-encoded; vm_identifier is lazily recreated on boot;
-	// mac_machine_id is minted below (the installer is its only other creator — omitting it
-	// would make a macOS copy unbootable); console.log is session output; restore.ipsw is an
+	// Never travel: config is re-encoded; console.log is session output; restore.ipsw is an
 	// install artifact that only survives crashes.
-	private static let skippedFiles: Set<String> =
-		["config", "vm_identifier", "mac_machine_id", "console.log", "restore.ipsw"]
+	private static let alwaysSkipped: Set<String> =
+		["config", "console.log", "restore.ipsw"]
+
+	// A fresh copy also drops the identity files: vm_identifier is lazily recreated on boot,
+	// mac_machine_id is minted below (the installer is its only other creator — omitting it
+	// would make a macOS copy unbootable). An impersonating shadow carries both verbatim —
+	// the copy IS the VM, and the original cannot run concurrently.
+	private static func skippedFiles(for request: VMCopyRequest) -> Set<String> {
+		switch request.identity {
+		case .fresh: return alwaysSkipped.union(["vm_identifier", "mac_machine_id"])
+		case .impersonate: return alwaysSkipped
+		}
+	}
 
 	// Returns the destination directory path.
 	@discardableResult
@@ -97,8 +111,19 @@ enum VMCopier {
 		staging: String, src: String, config: VMConfig, request: VMCopyRequest
 	) throws {
 		let fm = FileManager.default
-		// 1. Disks: transform the config entries; note which backing files travel.
+		// 1. Disks: transform the config entries; note which backing files travel. External
+		// clone names must dodge existing storage names AND every raw already in the source
+		// dir (a stray orphan raw would otherwise collide in staging).
 		var clonedRaws: Set<String> = []
+		var externalClones: [(source: String, file: String, size: UInt64)] = []
+		var takenNames: Set<String> = Set(config.disks.compactMap {
+			if case .storage(let name, _) = $0.kind { return name }
+			return nil
+		})
+		for entry in (try? fm.contentsOfDirectory(atPath: src)) ?? []
+			where entry.hasSuffix(".raw") {
+			takenNames.insert(String(entry.dropLast(4)))
+		}
 		var disks: [VMDisk] = []
 		for disk in config.disks {
 			let policy = request.diskPolicies[disk.id] ?? defaultPolicy(for: disk)
@@ -113,21 +138,32 @@ enum VMCopier {
 					safe: disk.safe))
 			case (_, .omit):
 				continue
+			case (.fromUrl(let url), .clone):
+				// A cloned external image becomes an OWNED storage disk — the only shape
+				// whose path follows the directory through shadow runs and promotion.
+				let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? UInt64)
+					.flatMap { $0 } ?? 0
+				let name = storageName(for: url, taken: takenNames)
+				takenNames.insert(name)
+				externalClones.append((url.path, "\(name).raw", size))
+				disks.append(VMDisk(kind: .storage(name, size), safe: disk.safe))
 			case (.fromUrl, _), (.iso, _):
 				disks.append(disk)   // referenced entries carry verbatim; the file stays put
 			}
 		}
 		// 2. Sidecars: everything else travels except the skip list and .raw files not chosen
 		// above (an orphaned .raw is not part of the VM).
+		let skipped = skippedFiles(for: request)
 		var travel: [(name: String, size: UInt64)] = []
 		for entry in try fm.contentsOfDirectory(atPath: src).sorted() {
-			if skippedFiles.contains(entry) { continue }
+			if skipped.contains(entry) { continue }
 			if entry.hasSuffix(".raw") && !clonedRaws.contains(entry) { continue }
 			let size = (try? fm.attributesOfItem(atPath: src + "/" + entry)[.size] as? UInt64)
 				.flatMap { $0 } ?? 0
 			travel.append((entry, size))
 		}
 		let totalBytes = travel.reduce(0) { $0 + $1.size }
+			+ externalClones.reduce(0) { $0 + $1.size }
 		let throttle = ProgressThrottle(total: totalBytes, report: request.progress)
 		var copiedBase: UInt64 = 0
 		for file in travel {
@@ -140,10 +176,19 @@ enum VMCopier {
 				excludeFromBackup(path: staging + "/" + file.name)
 			}
 		}
+		for clone in externalClones {
+			try cloneOrCopy(
+				clone.source, staging + "/" + clone.file,
+				base: copiedBase, size: clone.size, throttle: throttle,
+				isCancelled: request.isCancelled)
+			copiedBase += clone.size
+			excludeFromBackup(path: staging + "/" + clone.file)   // owned storage now
+		}
 		throttle.finish(copiedBase)
-		// 3. macOS identity: hardware model and aux storage traveled above; the machine id
-		// must be fresh (two guests sharing one confuse the framework and the host cap).
-		if case .macOS = request.guestKind {
+		// 3. macOS identity: hardware model and aux storage traveled above. A FRESH copy
+		// mints its own machine id (two guests sharing one confuse the framework and the
+		// host cap); an impersonating shadow already carried the original's.
+		if case .fresh = request.identity, case .macOS = request.guestKind {
 			try VMConfig.mintMacMachineIdentifier(at: staging + "/mac_machine_id")
 		}
 		// 4. Patch and write the config last, with the persistence coder.
@@ -155,16 +200,32 @@ enum VMCopier {
 		if request.regenerateMAC {
 			config.macAddress = VZMACAddress.randomLocallyAdministered().string
 		}
-		// A copy is a new VM: no run history, and autostart must be an explicit opt-in (an
-		// inherited flag would install a launch agent nobody asked for).
-		config.created = Date()
-		config.lastRan = nil
-		config.totalRuntimeSeconds = 0
+		// A fresh copy is a new VM: no run history. An impersonating shadow keeps the real
+		// VM's history — it presents AS that VM, and the copy-back at stop relies on the
+		// totals starting from the real values.
+		if case .fresh = request.identity {
+			config.created = Date()
+			config.lastRan = nil
+			config.totalRuntimeSeconds = 0
+		}
+		// In both modes autostart must be an explicit opt-in: an inherited flag would
+		// install a launch agent nobody asked for (a promoted shadow becomes a real VM).
 		config.startPolicy.autostart = false
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .prettyPrinted
 		try (try encoder.encode(config))
 			.write(to: URL(fileURLWithPath: staging + "/config"), options: .atomic)
+	}
+
+	// "ubuntu-cloud.img" → "ubuntu-cloud", uniquified with -2, -3… against taken names.
+	// Internal: disk imports (phase 6 disk-ownership track) reuse it.
+	static func storageName(for url: URL, taken: Set<String>) -> String {
+		var base = url.deletingPathExtension().lastPathComponent
+		if base.isEmpty { base = "disk" }
+		guard taken.contains(base) else { return base }
+		var n = 2
+		while taken.contains("\(base)-\(n)") { n += 1 }
+		return "\(base)-\(n)"
 	}
 
 	private static func defaultPolicy(for disk: VMDisk) -> VMCopyRequest.DiskPolicy {
