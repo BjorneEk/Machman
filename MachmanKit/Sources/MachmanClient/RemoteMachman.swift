@@ -162,6 +162,10 @@ public final class RemoteMachman: MachmanControlling {
 			.installPhase, RPCParams.Name(name: name), expecting: InstallPhase.self)
 	}
 
+	public func retire() async throws {
+		try await void(.daemonRetire, RPCEmpty?.none)
+	}
+
 	public func events() async -> AsyncStream<VMEvent> {
 		// Subscribe on the wire (idempotent server-side), then hand out a local fan-out stream.
 		_ = try? await connection.call(

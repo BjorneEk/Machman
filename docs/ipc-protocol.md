@@ -75,6 +75,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.install.cancel` | `{name}` | `{}` |
 | `vm.install.phase` | `{name}` | `InstallPhase` |
 | `events.subscribe` | — | `{}`; events then arrive on this connection |
+| `daemon.retire` | — | `{}`; the daemon then stops serving and exits, leaving vmhosts (and their VMs) running for a successor to re-adopt. Only the daemon honors it; a vmhost refuses with `invalidState` |
 
 ## DTOs (abridged)
 

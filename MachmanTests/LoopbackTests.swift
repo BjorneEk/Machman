@@ -156,6 +156,10 @@ final class StubMachman: MachmanControlling {
 		_ = try get(name)
 		return InstallPhase(kind: .idle)
 	}
+	var retired = false
+	func retire() async throws {
+		retired = true
+	}
 	func events() async -> AsyncStream<VMEvent> {
 		AsyncStream { continuation in
 			let id = UUID()
@@ -308,6 +312,20 @@ struct LoopbackTests {
 		} catch let error as MachmanError {
 			#expect(error.code == .notFound)
 		}
+		await client.disconnect()
+	}
+
+	@Test @MainActor func retireRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-ret-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "ret")
+		try await client.retire()
+		#expect(stub.retired)
 		await client.disconnect()
 	}
 

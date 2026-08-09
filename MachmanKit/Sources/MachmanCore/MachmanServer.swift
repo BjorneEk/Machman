@@ -210,6 +210,9 @@ public final class MachmanServer {
 			case .eventsSubscribe:
 				subscribe(client)
 				reply(client, id, RPCEmpty())
+			case .daemonRetire:
+				try await api.retire()
+				reply(client, id, RPCEmpty())
 			case .event:
 				break   // unreachable (rejected above)
 			}

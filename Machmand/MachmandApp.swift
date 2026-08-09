@@ -12,6 +12,7 @@ import MachmanUI
 import Cocoa
 import MachmanAPI
 import MachmanCore
+import MachmanClient
 
 // The one engine instance for this process; the app delegate reaches it for quit handling.
 // The router spawns one MachmanVMHost process per running VM and proxies to it.
@@ -48,11 +49,13 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 		do {
 			try Daemon.server.start()
 		} catch UDSError.alreadyRunning(let path) {
-			// Benign and expected: a second daemon raced this one (the desktop auto-launches one
-			// whenever it can't connect). Step aside quietly — alarming the user about a healthy
-			// daemon already serving the socket helps nobody.
-			MachmanLogger.log(.log, "another daemon is already serving \(path); exiting")
-			NSApp.terminate(nil)
+			// A daemon already serves this suite. Same-or-newer build: step aside quietly (the
+			// socket is the mutex, and the desktop auto-launches copies whenever it can't
+			// connect). An OLDER build still serving is the stale-daemon hazard — offer to
+			// replace it, leaving its VMs running.
+			Task { @MainActor in
+				await Self.considerReplacingOlderDaemon(at: path)
+			}
 			return
 		} catch {
 			// Log FIRST: this app is LSUIElement, so an NSAlert can end up behind everything
@@ -69,11 +72,77 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 			NSApp.terminate(nil)
 			return
 		}
+		Self.beginServing()
+	}
+
+	// Everything that follows a successful server.start(): the retire hook (exit
+	// leave-VMs-running, bypassing the quit prompt) and startup reconciliation.
+	private static func beginServing() {
+		Daemon.api.onRetire = {
+			MachmanLogger.log(.log, "retired; exiting and leaving vmhosts running")
+			Daemon.server.stop()
+			exit(0)
+		}
 		// VMs from a previous daemon run live on in their vmhost processes — take them back.
 		Task {
 			await Daemon.api.adoptExistingHosts()
 			Daemon.registry.sweepCopyStaging()
 		}
+	}
+
+	// The launch-side skew prompt: a newly launched Machmand that finds an OLDER build serving
+	// offers to retire it. Same-or-newer (or unreachable): today's silent concede.
+	private static func considerReplacingOlderDaemon(at path: String) async {
+		let mine = Daemon.version
+		guard let client = try? await RemoteMachman(
+			socketPath: path, clientName: "machmand-takeover") else {
+			MachmanLogger.log(.log, "another daemon is already serving \(path); exiting")
+			NSApp.terminate(nil)
+			return
+		}
+		let running = client.hello.daemonVersion
+		guard MachmanVersion.isOlder(running, than: mine) else {
+			await client.disconnect()
+			MachmanLogger.log(.log,
+				"another daemon (\(running)) is already serving \(path); exiting")
+			NSApp.terminate(nil)
+			return
+		}
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+		let alert = NSAlert()
+		alert.messageText = "An older Machmand is still running"
+		alert.informativeText = "The running daemon is version \(running); this one is "
+			+ "\(mine). Replace it? Its VMs keep running and are re-adopted."
+		alert.addButton(withTitle: "Replace")
+		alert.addButton(withTitle: "Cancel")
+		let replace = alert.runModal() == .alertFirstButtonReturn
+		NSApp.setActivationPolicy(.accessory)
+		guard replace else {
+			await client.disconnect()
+			MachmanLogger.log(.log, "keeping the older daemon; exiting")
+			NSApp.terminate(nil)
+			return
+		}
+		MachmanLogger.log(.log, "replacing daemon \(running) with \(mine)")
+		try? await client.retire()
+		await client.disconnect()
+		// Take the socket over as soon as the old daemon releases it.
+		for _ in 0..<25 {
+			try? await Task.sleep(for: .milliseconds(200))
+			do {
+				try Daemon.server.start()
+				beginServing()
+				return
+			} catch UDSError.alreadyRunning {
+				continue
+			} catch {
+				break
+			}
+		}
+		MachmanLogger.log(.passiveError, "takeover failed: the old daemon did not release "
+			+ "\(path); exiting")
+		NSApp.terminate(nil)
 	}
 
 	// Console windows come and go; the daemon lives in the menu bar.

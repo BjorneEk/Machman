@@ -59,6 +59,12 @@ public protocol MachmanControlling: AnyObject {
 	func cancelMacInstall(vm name: String) async throws
 	func macInstallPhase(vm name: String) async throws -> InstallPhase
 
+	// MARK: Daemon lifecycle
+	// Stop serving and exit, leaving vmhosts (and their VMs) running for the successor to
+	// re-adopt — quit-leave-VMs-running minus the prompt. Only the daemon honors it; a vmhost
+	// refuses.
+	func retire() async throws
+
 	// MARK: Events
 	// Every call returns a fresh stream carrying all events from subscription time on.
 	func events() async -> AsyncStream<VMEvent>

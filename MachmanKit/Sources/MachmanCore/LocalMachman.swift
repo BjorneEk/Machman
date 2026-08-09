@@ -267,6 +267,12 @@ public final class LocalMachman: MachmanControlling {
 		registry.installSession(for: try lookup(name)).phase
 	}
 
+	// MARK: - Daemon lifecycle
+
+	public func retire() async throws {
+		throw MachmanError(code: .invalidState, message: "a vmhost cannot retire")
+	}
+
 	// MARK: - Events
 
 	public func events() async -> AsyncStream<VMEvent> {

@@ -113,6 +113,7 @@ final class DaemonConnection: ObservableObject {
 					}
 					self.status = .connected(daemonVersion: api.hello.daemonVersion)
 					self.connectTask = nil
+					self.checkDaemonVersion(api.hello.daemonVersion)
 					return
 				} catch {
 					lastError = "\(error)"
@@ -126,6 +127,56 @@ final class DaemonConnection: ObservableObject {
 			guard let self = self, !Task.isCancelled else { return }
 			self.status = .unavailable(lastError)
 			self.connectTask = nil
+		}
+	}
+
+	// The compatibility floor: bump alongside MARKETING_VERSION whenever a change breaks the
+	// old/new daemon mix (wire shapes, config format, behavior). Complements — does not
+	// replace — the hard apiVersion gate.
+	static let oldestCompatibleDaemonVersion = "1.0.1"
+
+	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
+	// process that can tell "this daemon is older than what I ship". Below the floor → offer
+	// a user-confirmed replacement (retire, then the reconnect path launches the embedded,
+	// current-version daemon and re-adopts vmhosts).
+	private func checkDaemonVersion(_ running: String) {
+		guard MachmanVersion.isOlder(running, than: Self.oldestCompatibleDaemonVersion) else {
+			let mine = Bundle.main
+				.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+			if MachmanVersion.isOlder(mine, than: running) {
+				// Reverse skew is tolerated by the additive-wire policy — log only.
+				MachmanLogger.log(.log, "daemon \(running) is newer than this app (\(mine))")
+			}
+			return
+		}
+		let embedded = Bundle.main.bundleURL
+			.appendingPathComponent("Contents/Library/LoginItems/Machmand.app")
+		guard Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID else {
+			// Nothing newer to launch — explain instead of offering a dead end.
+			let alert = NSAlert()
+			alert.messageText = "Machmand is too old"
+			alert.informativeText = "The running daemon is version \(running); this app "
+				+ "needs \(Self.oldestCompatibleDaemonVersion) or newer, and no newer "
+				+ "Machmand is embedded in this app. Reinstall or rebuild."
+			alert.runModal()
+			return
+		}
+		let alert = NSAlert()
+		alert.messageText = "The running Machmand is too old"
+		alert.informativeText = "It is version \(running); this app needs "
+			+ "\(Self.oldestCompatibleDaemonVersion) or newer. Start the new one? Running "
+			+ "VMs keep running and are re-adopted."
+		alert.addButton(withTitle: "Replace")
+		alert.addButton(withTitle: "Not Now")
+		guard alert.runModal() == .alertFirstButtonReturn else {
+			MachmanLogger.log(.passiveWarning,
+				"daemon \(running) is below the floor "
+					+ "\(Self.oldestCompatibleDaemonVersion); newer features may fail")
+			return
+		}
+		Task { [weak self] in
+			// Retire drops the connection; the reconnect path launches the embedded daemon.
+			try? await self?.api?.retire()
 		}
 	}
 

@@ -428,6 +428,21 @@ public final class RoutingMachman: MachmanControlling {
 		try await local.macInstallPhase(vm: name)
 	}
 
+	// Wired by the daemon app: stop serving and exit leave-VMs-running. The reply flushes
+	// first — the handler only schedules the shutdown.
+	public var onRetire: (() -> Void)?
+
+	public func retire() async throws {
+		guard let onRetire else {
+			throw MachmanError(code: .invalidState, message: "this process cannot retire")
+		}
+		MachmanLogger.log(.log, "retiring on request; vmhosts keep running")
+		Task { @MainActor in
+			try? await Task.sleep(for: .milliseconds(200))   // let the reply flush
+			onRetire()
+		}
+	}
+
 	public func events() async -> AsyncStream<VMEvent> {
 		registry.events.stream()
 	}

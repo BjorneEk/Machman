@@ -37,6 +37,7 @@ public enum RPCMethod: String, Sendable {
 	case installCancel = "vm.install.cancel"
 	case installPhase = "vm.install.phase"
 	case eventsSubscribe = "events.subscribe"
+	case daemonRetire = "daemon.retire"
 	// Server -> client notification carrying a VMEvent as params.
 	case event = "event"
 }
