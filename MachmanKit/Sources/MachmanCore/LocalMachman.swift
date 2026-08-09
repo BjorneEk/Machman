@@ -4,7 +4,7 @@
 //
 //  The in-process implementation of MachmanControlling: a straight passthrough from the API
 //  seam to VMRegistry, mapping engine types to DTOs. Phase 2 puts the same protocol behind a
-//  socket (Machmand serving, RemoteMachman consuming) — clients built against the seam don't
+//  socket (MachmanAgent serving, RemoteMachman consuming) — clients built against the seam don't
 //  change.
 //
 

@@ -1,6 +1,6 @@
 //
-//  MachmandApp.swift
-//  Machmand
+//  MachmanAgentApp.swift
+//  MachmanAgent
 //
 //  The Machman daemon: a menu-bar agent (LSUIElement) that owns the VM engine, presents
 //  console windows, and serves the MachmanControlling API over <dataDir>/machman.sock.
@@ -36,8 +36,8 @@ enum Daemon {
 }
 
 @main
-struct MachmandApp: App {
-	@NSApplicationDelegateAdaptor(MachmandDelegate.self) var delegate
+struct MachmanAgentApp: App {
+	@NSApplicationDelegateAdaptor(MachmanAgentDelegate.self) var delegate
 	@StateObject private var model: MenuBarModel
 
 	init() {
@@ -52,7 +52,7 @@ struct MachmandApp: App {
 }
 
 @MainActor
-final class MachmandDelegate: NSObject, NSApplicationDelegate {
+final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		do {
 			try Daemon.server.start()
@@ -73,7 +73,7 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 			NSApp.setActivationPolicy(.regular)
 			NSApp.activate(ignoringOtherApps: true)
 			let alert = NSAlert()
-			alert.messageText = "Machmand cannot start"
+			alert.messageText = "Machman Agent cannot start"
 			alert.informativeText = "\(error)"
 			alert.alertStyle = .critical
 			alert.runModal()
@@ -100,12 +100,12 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 		}
 	}
 
-	// The launch-side skew prompt: a newly launched Machmand that finds an OLDER build serving
+	// The launch-side skew prompt: a newly launched MachmanAgent that finds an OLDER build serving
 	// offers to retire it. Same-or-newer (or unreachable): today's silent concede.
 	private static func considerReplacingOlderDaemon(at path: String) async {
 		let mine = Daemon.version
 		guard let client = try? await RemoteMachman(
-			socketPath: path, clientName: "machmand-takeover") else {
+			socketPath: path, clientName: "machman-agent-takeover") else {
 			MachmanLogger.log(.log, "another daemon is already serving \(path); exiting")
 			NSApp.terminate(nil)
 			return
@@ -121,7 +121,7 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 		NSApp.setActivationPolicy(.regular)
 		NSApp.activate(ignoringOtherApps: true)
 		let alert = NSAlert()
-		alert.messageText = "An older Machmand is still running"
+		alert.messageText = "An older Machman Agent is still running"
 		alert.informativeText = "The running daemon is version \(running); this one is "
 			+ "\(mine). Replace it? Its VMs keep running and are re-adopted."
 		alert.addButton(withTitle: "Replace")
@@ -169,7 +169,7 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 		let alert = NSAlert()
 		alert.messageText = "VMs are still running"
 		alert.informativeText = "Running VMs live in their own processes: you can quit and "
-			+ "leave them running (the next Machmand re-adopts them), ask the guests to shut "
+			+ "leave them running (the next Machman Agent re-adopts them), ask the guests to shut "
 			+ "down (force-stopped after 30 seconds), or force stop everything now."
 		alert.addButton(withTitle: "Quit, Leave VMs Running")
 		alert.addButton(withTitle: "Shut Down All & Quit")

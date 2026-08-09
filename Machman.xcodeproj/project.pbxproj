@@ -19,7 +19,7 @@
 		CC300000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = CC300000000000000000000A /* MachmanAPI */; };
 		CC300000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = CC300000000000000000000B /* MachmanCore */; };
 		DD4000000000000000000001 /* MachmanVMHost.app in Embed VMHost */ = {isa = PBXBuildFile; fileRef = CC3000000000000000000001 /* MachmanVMHost.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		DD4000000000000000000002 /* Machmand.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = BB20000000000000000000F1 /* Machmand.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		DD4000000000000000000002 /* MachmanAgent.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = BB20000000000000000000F1 /* MachmanAgent.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,7 +42,7 @@
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = BB2000000000000000000003;
-			remoteInfo = Machmand;
+			remoteInfo = MachmanAgent;
 		};
 		CC300000000000000000000E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -78,7 +78,7 @@
 			dstPath = Contents/Library/LoginItems;
 			dstSubfolderSpec = 1;
 			files = (
-				DD4000000000000000000002 /* Machmand.app in Embed Login Item */,
+				DD4000000000000000000002 /* MachmanAgent.app in Embed Login Item */,
 			);
 			name = "Embed Login Item";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -90,7 +90,7 @@
 		4F8935E72D956D5100E2B811 /* MachmanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8936052D956DA600E2B811 /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
-		BB20000000000000000000F1 /* Machmand.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Machmand.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB20000000000000000000F1 /* MachmanAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachmanAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC3000000000000000000001 /* MachmanVMHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachmanVMHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -110,9 +110,9 @@
 			path = MachmanUITests;
 			sourceTree = "<group>";
 		};
-		BB2000000000000000000002 /* Machmand */ = {
+		BB2000000000000000000002 /* MachmanAgent */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Machmand;
+			path = MachmanAgent;
 			sourceTree = "<group>";
 		};
 		CC3000000000000000000002 /* MachmanVMHost */ = {
@@ -176,7 +176,7 @@
 			isa = PBXGroup;
 			children = (
 				4F8935D82D956D5000E2B811 /* Machman */,
-				BB2000000000000000000002 /* Machmand */,
+				BB2000000000000000000002 /* MachmanAgent */,
 				CC3000000000000000000002 /* MachmanVMHost */,
 				4F8935EA2D956D5100E2B811 /* MachmanTests */,
 				4F8935F42D956D5100E2B811 /* MachmanUITests */,
@@ -189,7 +189,7 @@
 			isa = PBXGroup;
 			children = (
 				4F8935D62D956D5000E2B811 /* Machman-desktop.app */,
-				BB20000000000000000000F1 /* Machmand.app */,
+				BB20000000000000000000F1 /* MachmanAgent.app */,
 				CC3000000000000000000001 /* MachmanVMHost.app */,
 				4F8935E72D956D5100E2B811 /* MachmanTests.xctest */,
 				4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */,
@@ -286,9 +286,9 @@
 			productReference = 4F8935F12D956D5100E2B811 /* MachmanUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		BB2000000000000000000003 /* Machmand */ = {
+		BB2000000000000000000003 /* MachmanAgent */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = BB2000000000000000000009 /* Build configuration list for PBXNativeTarget "Machmand" */;
+			buildConfigurationList = BB2000000000000000000009 /* Build configuration list for PBXNativeTarget "MachmanAgent" */;
 			buildPhases = (
 				BB2000000000000000000004 /* Sources */,
 				BB2000000000000000000005 /* Frameworks */,
@@ -300,16 +300,16 @@
 				CC300000000000000000000F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				BB2000000000000000000002 /* Machmand */,
+				BB2000000000000000000002 /* MachmanAgent */,
 			);
-			name = Machmand;
+			name = MachmanAgent;
 			packageProductDependencies = (
 				BB200000000000000000000A /* MachmanAPI */,
 				BB200000000000000000000B /* MachmanCore */,
 				BB200000000000000000000E /* MachmanUI */,
 			);
-			productName = Machmand;
-			productReference = BB20000000000000000000F1 /* Machmand.app */;
+			productName = MachmanAgent;
+			productReference = BB20000000000000000000F1 /* MachmanAgent.app */;
 			productType = "com.apple.product-type.application";
 		};
 		CC3000000000000000000003 /* MachmanVMHost */ = {
@@ -382,7 +382,7 @@
 			projectRoot = "";
 			targets = (
 				4F8935D52D956D5000E2B811 /* Machman-desktop */,
-				BB2000000000000000000003 /* Machmand */,
+				BB2000000000000000000003 /* MachmanAgent */,
 				CC3000000000000000000003 /* MachmanVMHost */,
 				4F8935E62D956D5100E2B811 /* MachmanTests */,
 				4F8935F02D956D5100E2B811 /* MachmanUITests */,
@@ -472,7 +472,7 @@
 		};
 		BB2000000000000000000021 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = BB2000000000000000000003 /* Machmand */;
+			target = BB2000000000000000000003 /* MachmanAgent */;
 			targetProxy = BB2000000000000000000020 /* PBXContainerItemProxy */;
 		};
 		CC300000000000000000000F /* PBXTargetDependency */ = {
@@ -739,7 +739,7 @@
 		BB2000000000000000000007 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = Machmand/Machmand.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MachmanAgent/MachmanAgent.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -747,7 +747,7 @@
 				DEVELOPMENT_TEAM = SCVV5634LZ;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Machmand$(MACHMAN_NAME_SUFFIX)";
+				INFOPLIST_KEY_CFBundleDisplayName = "Machman Agent$(MACHMAN_NAME_SUFFIX)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -766,7 +766,7 @@
 		BB2000000000000000000008 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = Machmand/Machmand.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MachmanAgent/MachmanAgent.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -774,7 +774,7 @@
 				DEVELOPMENT_TEAM = SCVV5634LZ;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Machmand$(MACHMAN_NAME_SUFFIX)";
+				INFOPLIST_KEY_CFBundleDisplayName = "Machman Agent$(MACHMAN_NAME_SUFFIX)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -877,7 +877,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		BB2000000000000000000009 /* Build configuration list for PBXNativeTarget "Machmand" */ = {
+		BB2000000000000000000009 /* Build configuration list for PBXNativeTarget "MachmanAgent" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				BB2000000000000000000007 /* Debug */,

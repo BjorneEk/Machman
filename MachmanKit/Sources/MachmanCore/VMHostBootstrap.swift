@@ -5,7 +5,7 @@
 //  The whole vmhost program: a daemon that owns exactly one VM. Reuses the engine wholesale —
 //  single-VM registry, LocalMachman, MachmanServer on the per-VM socket — plus a manual
 //  NSApplication (the target is an LSUIElement app with no SwiftUI scene). The process exits
-//  when its VM stops; Machmand spawns a fresh one per start.
+//  when its VM stops; MachmanAgent spawns a fresh one per start.
 //
 
 import Foundation

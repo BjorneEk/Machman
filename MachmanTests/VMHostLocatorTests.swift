@@ -28,7 +28,7 @@ struct VMHostLocatorTests {
 		let root = try makeTree()
 		defer { try? FileManager.default.removeItem(at: root) }
 		let library = root.appendingPathComponent("Outer.app/Contents/Library")
-		let daemon = library.appendingPathComponent("LoginItems/Machmand.app")
+		let daemon = library.appendingPathComponent("LoginItems/MachmanAgent.app")
 		try FileManager.default.createDirectory(at: daemon, withIntermediateDirectories: true)
 		try plantVMHost(at: library)
 
@@ -39,7 +39,7 @@ struct VMHostLocatorTests {
 	@Test func siblingBuildProductResolves() throws {
 		let root = try makeTree()
 		defer { try? FileManager.default.removeItem(at: root) }
-		let daemon = root.appendingPathComponent("Machmand.app")
+		let daemon = root.appendingPathComponent("MachmanAgent.app")
 		try FileManager.default.createDirectory(at: daemon, withIntermediateDirectories: true)
 		try plantVMHost(at: root)
 
@@ -52,7 +52,7 @@ struct VMHostLocatorTests {
 		defer { try? FileManager.default.removeItem(at: root) }
 		let library = root.appendingPathComponent("Outer.app/Contents/Library")
 		let loginItems = library.appendingPathComponent("LoginItems")
-		let daemon = loginItems.appendingPathComponent("Machmand.app")
+		let daemon = loginItems.appendingPathComponent("MachmanAgent.app")
 		try FileManager.default.createDirectory(at: daemon, withIntermediateDirectories: true)
 		try plantVMHost(at: library)
 		try plantVMHost(at: loginItems)   // a sibling of the daemon, should lose
@@ -64,7 +64,7 @@ struct VMHostLocatorTests {
 	@Test func nothingFoundIsNil() throws {
 		let root = try makeTree()
 		defer { try? FileManager.default.removeItem(at: root) }
-		let daemon = root.appendingPathComponent("Machmand.app")
+		let daemon = root.appendingPathComponent("MachmanAgent.app")
 		try FileManager.default.createDirectory(at: daemon, withIntermediateDirectories: true)
 
 		#expect(VMHostLocator.locate(from: daemon) == nil)

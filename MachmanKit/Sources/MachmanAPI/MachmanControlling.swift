@@ -3,7 +3,7 @@
 //  MachmanAPI
 //
 //  The seam between interfaces and the VM engine. Phase 1: the GUI talks to an in-process
-//  LocalMachman. Phase 2: the same protocol is served over JSON-RPC by the Machmand daemon and
+//  LocalMachman. Phase 2: the same protocol is served over JSON-RPC by the MachmanAgent daemon and
 //  consumed through RemoteMachman — clients don't change.
 //
 //  Everything is DTOs; no live objects cross this boundary. The one deliberate absence is the

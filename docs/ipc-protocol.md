@@ -1,6 +1,6 @@
 # Machman daemon protocol
 
-Machmand serves the full VM-management API on a unix domain socket:
+MachmanAgent serves the full VM-management API on a unix domain socket:
 
 ```
 $TMPDIR/<suite>/machman.sock       suite: $MACHMAN_SUITE_ID, else the process's bundle id with
@@ -114,16 +114,16 @@ client-side). Unknown types: skip.
 ## Per-VM host processes (invisible on the wire)
 
 Every running VM lives in its own `MachmanVMHost` process, which serves this same protocol on
-`$TMPDIR/<suite>/vm-<hash>.sock` (hashed because a VM name may be any length); Machmand proxies
+`$TMPDIR/<suite>/vm-<hash>.sock` (hashed because a VM name may be any length); MachmanAgent proxies
 per-VM operations to it and re-emits its events.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
-daemon) down, and vmhosts outlive daemon restarts — a new Machmand re-adopts them.
+daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them.
 
 ## What is deliberately NOT here
 
 The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so console windows
-are presented by Machmand itself; clients only command them (`vm.console.*`) and poll
+are presented by MachmanAgent itself; clients only command them (`vm.console.*`) and poll
 `vm.preview` for thumbnails. Interactive text access for Linux guests is the serial console
 (`vm.console.info` → follow the log file; a PTY option is planned with the CLI).
 

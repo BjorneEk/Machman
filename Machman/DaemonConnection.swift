@@ -2,7 +2,7 @@
 //  DaemonConnection.swift
 //  Machman
 //
-//  Owns the desktop app's link to Machmand: connect, auto-launch the daemon when it isn't
+//  Owns the desktop app's link to MachmanAgent: connect, auto-launch the daemon when it isn't
 //  running, retry with backoff, and reconnect (with a fresh view model) if the daemon goes
 //  away mid-session.
 //
@@ -150,19 +150,19 @@ final class DaemonConnection: ObservableObject {
 			return
 		}
 		let embedded = Bundle.main.bundleURL
-			.appendingPathComponent("Contents/Library/LoginItems/Machmand.app")
+			.appendingPathComponent("Contents/Library/LoginItems/MachmanAgent.app")
 		guard Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID else {
 			// Nothing newer to launch — explain instead of offering a dead end.
 			let alert = NSAlert()
-			alert.messageText = "Machmand is too old"
+			alert.messageText = "Machman Agent is too old"
 			alert.informativeText = "The running daemon is version \(running); this app "
 				+ "needs \(Self.oldestCompatibleDaemonVersion) or newer, and no newer "
-				+ "Machmand is embedded in this app. Reinstall or rebuild."
+				+ "Machman Agent is embedded in this app. Reinstall or rebuild."
 			alert.runModal()
 			return
 		}
 		let alert = NSAlert()
-		alert.messageText = "The running Machmand is too old"
+		alert.messageText = "The running Machman Agent is too old"
 		alert.informativeText = "It is version \(running); this app needs "
 			+ "\(Self.oldestCompatibleDaemonVersion) or newer. Start the new one? Running "
 			+ "VMs keep running and are re-adopted."
@@ -197,7 +197,7 @@ final class DaemonConnection: ObservableObject {
 	// sanitizer variants included.)
 	func launchDaemon() {
 		let embedded = Bundle.main.bundleURL
-			.appendingPathComponent("Contents/Library/LoginItems/Machmand.app")
+			.appendingPathComponent("Contents/Library/LoginItems/MachmanAgent.app")
 		if Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID {
 			NSWorkspace.shared.openApplication(
 				at: embedded, configuration: NSWorkspace.OpenConfiguration())

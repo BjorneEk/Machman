@@ -4,7 +4,7 @@
 //
 //  Created by Gustaf Franzen on 2025-03-27.
 //
-//  Machman-desktop is a pure client: it renders and commands VMs that live in the Machmand
+//  Machman-desktop is a pure client: it renders and commands VMs that live in the MachmanAgent
 //  daemon, over the socket. No Virtualization framework, no engine, no entitlements — if the
 //  daemon is away, the app shows a connect screen and can launch it.
 //
@@ -143,7 +143,7 @@ struct MachmanApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-	// A pure manager: VMs live in Machmand and are unaffected by this app quitting.
+	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting.
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
 		true
 	}

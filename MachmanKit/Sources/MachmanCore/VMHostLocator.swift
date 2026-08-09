@@ -6,9 +6,9 @@
 //  the LaunchAgent plist writer — both must point at the same binary. Resolution order:
 //    1. embedded beside this daemon in the outer bundle:
 //       <outer>.app/Contents/Library/MachmanVMHost.app
-//       (the daemon lives at <outer>.app/Contents/Library/LoginItems/Machmand.app → ../../)
-//    2. sibling build product (Machmand scheme run from DerivedData):
-//       <dir of Machmand.app>/MachmanVMHost.app
+//       (the daemon lives at <outer>.app/Contents/Library/LoginItems/MachmanAgent.app → ../../)
+//    2. sibling build product (MachmanAgent scheme run from DerivedData):
+//       <dir of MachmanAgent.app>/MachmanVMHost.app
 //
 
 import Foundation

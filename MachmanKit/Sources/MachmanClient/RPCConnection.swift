@@ -18,7 +18,7 @@ public actor RPCConnection {
 		public var description: String {
 			switch self {
 			case .connectFailed(let path, let err):
-				return "cannot reach machmand at \(path): \(String(cString: strerror(err)))"
+				return "cannot reach MachmanAgent at \(path): \(String(cString: strerror(err)))"
 			case .disconnected:
 				return "the daemon connection was lost"
 			}

@@ -74,12 +74,12 @@ def main():
     try:
         client = Client(path)
     except (FileNotFoundError, ConnectionRefusedError):
-        print(f"no daemon at {path} — is Machmand running?", file=sys.stderr)
+        print(f"no daemon at {path} — is MachmanAgent running?", file=sys.stderr)
         return 1
 
     hello = client.call("machman.hello", {"client": "machman-smoke.py"})
     if command == "info":
-        print(f"machmand {hello['daemonVersion']} (api v{hello['apiVersion']}) at {path}")
+        print(f"machman-agent {hello['daemonVersion']} (api v{hello['apiVersion']}) at {path}")
         for vm in client.call("vm.list"):
             window = ", window open" if vm.get("consoleOpen") else ""
             print(f"  {vm['name']:20} {vm['state']:9} "

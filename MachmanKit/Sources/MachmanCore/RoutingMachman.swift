@@ -210,7 +210,7 @@ public final class RoutingMachman: MachmanControlling {
 	func connectHost(identity: HostIdentity) async throws -> RemoteMachman {
 		let hostID = identity.id
 		return try await RemoteMachman(
-			socketPath: identity.socketPath, clientName: "machmand-router",
+			socketPath: identity.socketPath, clientName: "machman-agent-router",
 			onDisconnect: { [weak self] in
 				Task { @MainActor [weak self] in
 					self?.hostGone(id: hostID)

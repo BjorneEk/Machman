@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "BB2000000000000000000003"
-               BuildableName = "Machmand.app"
-               BlueprintName = "Machmand"
+               BuildableName = "MachmanAgent.app"
+               BlueprintName = "MachmanAgent"
                ReferencedContainer = "container:Machman.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BB2000000000000000000003"
-            BuildableName = "Machmand.app"
-            BlueprintName = "Machmand"
+            BuildableName = "MachmanAgent.app"
+            BlueprintName = "MachmanAgent"
             ReferencedContainer = "container:Machman.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BB2000000000000000000003"
-            BuildableName = "Machmand.app"
-            BlueprintName = "Machmand"
+            BuildableName = "MachmanAgent.app"
+            BlueprintName = "MachmanAgent"
             ReferencedContainer = "container:Machman.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

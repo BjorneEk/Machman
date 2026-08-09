@@ -1,6 +1,6 @@
 //
 //  MenuBarView.swift
-//  Machmand
+//  MachmanAgent
 //
 //  The daemon's own control surface: every VM with its state and quick actions, driven by the
 //  same MachmanControlling seam every other client uses (in-process here).
@@ -152,7 +152,7 @@ struct MenuBarView: View {
 		} label: {
 			Label("Open Machman", systemImage: MachmanSymbols.menuBarExtra)
 		}
-		Button("Quit Machmand") {
+		Button("Quit Machman Agent") {
 			NSApp.terminate(nil)
 		}
 	}
@@ -160,8 +160,8 @@ struct MenuBarView: View {
 	private func openDesktop() {
 		// The daemon's own suite id minus its `.agent` suffix IS the desktop's bundle id.
 		let suite = MachmanPaths.suiteIdentifier()
-		// Embedded daemon lives at <outer>.app/Contents/Library/LoginItems/Machmand.app —
-		// walk up to the outer bundle. A standalone scheme-run Machmand.app walks to
+		// Embedded daemon lives at <outer>.app/Contents/Library/LoginItems/MachmanAgent.app —
+		// walk up to the outer bundle. A standalone scheme-run MachmanAgent.app walks to
 		// nonsense; the id gate rejects that and Launch Services answers instead.
 		let outer = Bundle.main.bundleURL
 			.deletingLastPathComponent()   // …/LoginItems

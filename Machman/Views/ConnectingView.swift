@@ -17,7 +17,7 @@ struct ConnectingView: View {
 			switch connection.status {
 			case .connecting:
 				ProgressView()
-				Text("Connecting to Machmand…")
+				Text("Connecting to Machman Agent…")
 					.foregroundColor(.secondary)
 			case .unavailable(let reason):
 				Image(systemName: MachmanSymbols.daemonUnreachable)
@@ -30,7 +30,7 @@ struct ConnectingView: View {
 					.foregroundColor(.secondary)
 					.textSelection(.enabled)
 				if connection.loginItemNeedsApproval {
-					Text("Machmand is registered as a login item but needs your approval "
+					Text("Machman Agent is registered as a login item but needs your approval "
 						+ "in System Settings.")
 						.font(.caption)
 						.foregroundColor(.secondary)
