@@ -21,6 +21,21 @@ struct ConfigVMHostMountsView: View {
 			VStack(alignment: .trailing, spacing: 12) {
 				GroupBox {
 					Table(vm.mounts) {
+						TableColumn("") { point in
+							// The safe-mode flip-flop: omit-vs-attach for safe runs.
+							IconButton(
+								symbol: point.safe
+									? MachmanSymbols.safe : MachmanSymbols.unsafe,
+								tooltip: point.safe
+									? "Safe: not attached during safe runs"
+									: "Unsafe: attached during safe runs",
+								flat: true
+							) {
+								viewModel.setMountSafety(
+									vm.name, mountID: point.id, safe: !point.safe)
+							}
+						}
+						.width(min: 15, ideal: 15, max: 15)
 						TableColumn("Host Path") { point in
 							Text(point.path)
 						}

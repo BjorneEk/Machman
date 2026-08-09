@@ -141,7 +141,9 @@ struct MenuBarView: View {
 				Label {
 					Text(vm.name)
 				} icon: {
-					StatusIcon(state: vm.state, consoleOpen: vm.consoleOpen)
+					StatusIcon(
+						state: vm.state, consoleOpen: vm.consoleOpen,
+						safeRun: vm.safeRun == true)
 				}
 			}
 		}

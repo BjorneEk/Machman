@@ -142,6 +142,13 @@ struct MachmanDesktopApp: App {
 					.disabled(viewModel.selected == nil
 						|| viewModel.selected?.state.isRunning == true
 						|| viewModel.copyInFlight)
+					Button(action: {
+						if let vm = viewModel.selected { viewModel.requestSafeSave(vm) }
+					}) {
+						Label("Save as New VM…", systemImage: MachmanSymbols.safe)
+					}
+					.disabled(viewModel.selected?.safeRun != true
+						|| viewModel.safeSaveInFlight)
 				}
 			}
 		}

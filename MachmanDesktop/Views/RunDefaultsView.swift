@@ -34,8 +34,8 @@ struct RunDefaultsView: View {
 	private var safeHelp: String {
 		safeLocked
 			? "Autostarted VMs cannot run safe — turn off autostart first"
-			: "Discard all disk changes when the VM stops. Stored now; takes effect "
-				+ "when safe mode ships."
+			: "Run a discardable copy: disk changes are thrown away when the VM stops "
+				+ "(per-disk and per-mount safety settings apply)"
 	}
 
 	// Autostart runs in the default start mode — say which one that currently is.

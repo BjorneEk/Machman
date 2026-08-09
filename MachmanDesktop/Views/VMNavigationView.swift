@@ -28,6 +28,12 @@ struct VMNavigationView: View {
 						Text(item.name)
 							.font(.callout)
 						Spacer()
+						// Right-aligned shield: this VM is running a discardable copy.
+						if item.safeRun == true {
+							Image(systemName: MachmanSymbols.safe)
+								.foregroundColor(.yellow)
+								.help("Running in safe mode (changes are discarded on stop)")
+						}
 					}
 					.tag(item.name)
 				}
@@ -101,6 +107,9 @@ struct VMNavigationView: View {
 		}
 		.sheet(item: $viewModel.copyRequest) { vm in
 			CopyVMSheet(vm: vm, viewModel: viewModel)
+		}
+		.sheet(item: $viewModel.safeSaveRequest) { vm in
+			SafeSaveSheet(vm: vm, viewModel: viewModel)
 		}
 	}
 }

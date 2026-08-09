@@ -47,7 +47,9 @@ struct MainVMView: View {
 				ToolbarItem(placement: .principal) {
 					HStack {
 						// Explicit size: toolbar items don't cascade the title font.
-						StatusIcon(state: vm.state, consoleOpen: vm.consoleOpen)
+						StatusIcon(
+							state: vm.state, consoleOpen: vm.consoleOpen,
+							safeRun: vm.safeRun == true)
 							.font(.title2)
 						EditableText($viewModel.vmName)
 							.font(.largeTitle)
@@ -93,7 +95,9 @@ struct MainVMView: View {
 							? "Stop \(vm.name)"
 							: "Run \(vm.name)"
 								+ ((vm.startPolicy ?? StartPolicy()).windowed
-									? "" : " (headless)")))
+									? "" : " (headless)")
+								+ ((vm.startPolicy ?? StartPolicy()).safe
+									? " (safe)" : "")))
 				}
 				ToolbarItem {
 					Button(action: {

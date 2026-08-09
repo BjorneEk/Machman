@@ -64,6 +64,18 @@ struct ConfigVMDisksView: View {
 						}
 					}.width(20)
 					TableColumn("") { (entry: DiskInfo) in
+						// The safe-mode flip-flop: clone-vs-real-file for safe runs.
+						IconButton(
+							symbol: entry.safe ? MachmanSymbols.safe : MachmanSymbols.unsafe,
+							tooltip: entry.safe
+								? "Safe: safe runs use a discardable clone of this disk"
+								: "Unsafe: safe runs write to the real file",
+							flat: true
+						) {
+							viewModel.setDiskSafety(vm.name, diskID: entry.id, safe: !entry.safe)
+						}
+					}.width(20)
+					TableColumn("") { (entry: DiskInfo) in
 						// Tooltip adapts: storage deletes the backing file, the rest disconnect.
 						IconButton(
 							symbol: MachmanSymbols.delete,

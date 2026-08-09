@@ -70,6 +70,8 @@ final class VMListViewModel: ObservableObject {
 	}
 	@Published var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
 	@Published private(set) var copyInFlight = false
+	@Published var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
+	@Published private(set) var safeSaveInFlight = false
 	@Published private(set) var copyProgress: (done: UInt64, total: UInt64)?
 
 	private var isFocused = true
@@ -397,6 +399,56 @@ final class VMListViewModel: ObservableObject {
 		var n = 2
 		while hasVM("\(base) \(n)") { n += 1 }
 		return "\(base) \(n)"
+	}
+
+	func setDiskSafety(_ name: String, diskID: String, safe: Bool) {
+		Task { [weak self] in
+			do {
+				try await self?.api.setSafety(vm: name, disks: [diskID: safe], mounts: nil)
+			} catch {
+				self?.present(error, while: "Updating disk safety")
+			}
+		}
+	}
+
+	func setMountSafety(_ name: String, mountID: String, safe: Bool) {
+		Task { [weak self] in
+			do {
+				try await self?.api.setSafety(vm: name, disks: nil, mounts: [mountID: safe])
+			} catch {
+				self?.present(error, while: "Updating mount safety")
+			}
+		}
+	}
+
+	func requestSafeSave(_ vm: VMInfo) {
+		safeSaveRequest = vm
+	}
+
+	func defaultSafeSaveName(for name: String) -> String {
+		let base = "\(name) saved"
+		guard hasVM(base) else { return base }
+		var n = 2
+		while hasVM("\(base) \(n)") { n += 1 }
+		return "\(base) \(n)"
+	}
+
+	func safeSave(_ name: String, to newName: String) {
+		guard !safeSaveInFlight else { return }
+		safeSaveInFlight = true
+		Task { [weak self] in
+			do {
+				let saved = try await self?.api.safeSave(vm: name, to: newName)
+				self?.safeSaveInFlight = false
+				self?.safeSaveRequest = nil        // item binding dismisses the sheet
+				await self?.reload()
+				if let saved { self?.select(name: saved.name) }
+			} catch {
+				self?.safeSaveInFlight = false
+				self?.safeSaveRequest = nil        // dismiss first; alert isn't sheet-blocked
+				self?.present(error, while: "Saving \(name) as a new VM")
+			}
+		}
 	}
 
 	func setStartPolicy(_ name: String, policy: StartPolicy) {
