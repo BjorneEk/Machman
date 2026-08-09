@@ -21,6 +21,9 @@ public final class RoutingMachman: MachmanControlling {
 	private let registry: VMRegistry
 	private let local: LocalMachman
 	private let daemonVersion: String
+	// Injected (not built here) so unit tests can never touch ~/Library/LaunchAgents by
+	// construction. nil = no agents are written; policy toggles still persist.
+	private let launchAgents: LaunchAgentManager?
 
 	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
 	// recomputed: hostGone unlinks identity.socketPath and closures capture identity.id, so
@@ -59,10 +62,14 @@ public final class RoutingMachman: MachmanControlling {
 	}
 	private var hosted: [String: HostedVM] = [:]   // keyed by VM name
 
-	public init(registry: VMRegistry, daemonVersion: String) {
+	public init(
+		registry: VMRegistry, daemonVersion: String,
+		launchAgents: LaunchAgentManager? = nil
+	) {
 		self.registry = registry
 		self.local = LocalMachman(registry: registry)
 		self.daemonVersion = daemonVersion
+		self.launchAgents = launchAgents
 	}
 
 	var hostedNames: [String] { Array(hosted.keys) }
@@ -287,6 +294,7 @@ public final class RoutingMachman: MachmanControlling {
 			throw MachmanError(code: .invalidState, message: "stop \(name) before deleting it")
 		}
 		try await local.deleteVM(named: name)
+		launchAgents?.remove(vm: name, canBootout: true)
 	}
 
 	public func renameVM(named name: String, to newName: String) async throws {
@@ -294,6 +302,16 @@ public final class RoutingMachman: MachmanControlling {
 			throw MachmanError(code: .invalidState, message: "stop \(name) before renaming it")
 		}
 		try await local.renameVM(named: name, to: newName)
+		guard let launchAgents else { return }
+		launchAgents.remove(vm: name, canBootout: true)
+		if registry.vm(named: newName)?.config.startPolicy.autostart == true {
+			do {
+				try launchAgents.install(vm: newName)
+			} catch {
+				MachmanLogger.log(.passiveError,
+					"cannot write launch agent for \(newName): \(error)")
+			}
+		}
 	}
 
 	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
@@ -347,6 +365,19 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		try await target(name).setStartPolicy(vm: name, policy: policy)
+		// Agent bookkeeping reads the ARGUMENT, never the registry: while the VM is hosted
+		// the daemon's config copy is stale until the host exits.
+		guard let launchAgents else { return }
+		if policy.autostart {
+			do {
+				try launchAgents.install(vm: name)
+			} catch {
+				MachmanLogger.log(.passiveError,
+					"cannot write launch agent for \(name): \(error)")
+			}
+		} else {
+			launchAgents.remove(vm: name, canBootout: hosted[name] == nil)
+		}
 	}
 
 	public func setSafety(
@@ -366,6 +397,15 @@ public final class RoutingMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidState,
 				message: "(\(name)) cannot start while macOS is installing")
+		}
+		// A live vmhost may already own this VM's socket — launchd autostart, or a spawn
+		// whose daemon died before forwarding start. Adopt it instead of racing it with a
+		// second host. Deliberately ahead of the MAC-conflict guard: an already-running VM
+		// is a fact, not a request — refusing to adopt it would strand it.
+		let socketPath = Self.hostSocketPath(for: name)
+		if FileManager.default.fileExists(atPath: socketPath),
+			try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options) {
+			return
 		}
 		// The router is the only place that sees every host's live MAC.
 		if !options.force, let mac = vm.config.macAddress,
@@ -390,6 +430,73 @@ public final class RoutingMachman: MachmanControlling {
 		hosted[name] = host
 		subscribeEvents(host)
 		registry.events.emit(.listChanged)
+	}
+
+	// Internal seam (tests inject their own socket path): probe a socket that exists, adopt
+	// whoever answers, and forward the start. Returns false when the socket was a dead
+	// leftover — reclaimed, caller falls through to a fresh spawn.
+	func probeAdoptAndStart(
+		name: String, socketPath: String, options: StartOptions
+	) async throws -> Bool {
+		var identity = HostIdentity(
+			id: UUID(), name: name, socketPath: socketPath,
+			macInUse: registry.vm(named: name)?.config.macAddress)
+		guard let client = try? await connectHost(identity: identity) else {
+			guard !UDSListener.isLive(path: socketPath) else {
+				// NEVER unlink a live socket (single-writer rule) — whoever owns it may
+				// recover; spawning over it would fork the VM's identity.
+				throw MachmanError(
+					code: .internalError,
+					message: "a vmhost owns \(name)'s socket but did not answer")
+			}
+			unlink(socketPath)
+			return false
+		}
+		// The adopt-side rule: the host's reply is the authoritative live MAC.
+		identity.macInUse = (try? await client.vm(named: name))?.macAddress ?? identity.macInUse
+		adopt(identity: identity, client: client)
+		do {
+			try await client.start(vm: name, options: options)
+		} catch let error as MachmanError where error.code == .invalidState {
+			// Already running (autostart got there first) — the caller still gets what
+			// they asked for.
+			if options.openConsole {
+				try? await client.openConsole(vm: name)
+			}
+		}
+		// Other start failures propagate with the host still adopted: it is live and owns
+		// the VM; its own lifecycle (or the user) cleans up.
+		return true
+	}
+
+	// Launch agents rot when nobody is looking: DerivedData moves change the vmhost path,
+	// deleted VMs can leave a plist behind after a crash. Rewrite what every autostart VM
+	// needs and sweep the rest. Runs at daemon startup after adoption.
+	public func healLaunchAgents() {
+		guard let launchAgents else { return }
+		var wanted: Set<String> = []
+		for vm in registry.list() where vm.config.startPolicy.autostart {
+			wanted.insert(launchAgents.plistFileName(for: vm.name))
+			do {
+				if try launchAgents.installIfChanged(vm: vm.name) {
+					MachmanLogger.log(.log, "rewrote launch agent for \(vm.name)")
+				}
+			} catch {
+				MachmanLogger.log(.passiveError,
+					"cannot heal launch agent for \(vm.name): \(error)")
+			}
+		}
+		let prefix = launchAgents.suiteID + ".vm."
+		let entries = (try? FileManager.default.contentsOfDirectory(
+			atPath: launchAgents.agentsDir)) ?? []
+		for entry in entries
+			where entry.hasPrefix(prefix) && entry.hasSuffix(".plist")
+				&& !wanted.contains(entry) {
+			// File only, no bootout: a loaded stale job dies at next login, and a VM it is
+			// still running keeps its host either way.
+			try? FileManager.default.removeItem(atPath: launchAgents.agentsDir + "/" + entry)
+			MachmanLogger.log(.log, "swept stale launch agent \(entry)")
+		}
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {

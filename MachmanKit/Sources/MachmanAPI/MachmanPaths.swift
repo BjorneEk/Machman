@@ -136,8 +136,9 @@ public enum MachmanPaths {
 	}
 
 	// FNV-1a, truncated to 32 bits. Hand-rolled to keep this module Foundation-only, and stable
-	// across processes and launches (unlike Hasher, which is seeded per process).
-	static func shortHash(_ string: String) -> String {
+	// across processes and launches (unlike Hasher, which is seeded per process). Public
+	// because launch-agent labels reuse it for names launchd cannot carry verbatim.
+	public static func shortHash(_ string: String) -> String {
 		var hash: UInt64 = 0xcbf2_9ce4_8422_2325
 		for byte in string.utf8 {
 			hash ^= UInt64(byte)

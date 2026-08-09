@@ -13,16 +13,21 @@ import MachmanCore
 
 func usage() -> Never {
 	FileHandle.standardError.write(Data(
-		"usage: MachmanVMHost --data-dir DIR --vm NAME --socket PATH\n".utf8))
+		"usage: MachmanVMHost --data-dir DIR --vm NAME --socket PATH [--autostart]\n".utf8))
 	exit(64)
 }
 
 var dataDir: String?
 var vmName: String?
 var socketPath: String?
+var autostart = false
 
 var arguments = ArraySlice(CommandLine.arguments.dropFirst())
 while let flag = arguments.popFirst() {
+	if flag == "--autostart" {   // valueless: launchd-started hosts boot their own VM
+		autostart = true
+		continue
+	}
 	guard let value = arguments.popFirst() else { usage() }
 	switch flag {
 	case "--data-dir":
@@ -43,5 +48,6 @@ guard let dataDir = dataDir, let vmName = vmName, let socketPath = socketPath el
 let version = ProcessInfo.processInfo.environment["MACHMAN_VERSION"] ?? "dev"
 MainActor.assumeIsolated {
 	VMHostBootstrap.run(
-		dataDir: dataDir, vmName: vmName, socketPath: socketPath, daemonVersion: version)
+		dataDir: dataDir, vmName: vmName, socketPath: socketPath, daemonVersion: version,
+		autostart: autostart)
 }

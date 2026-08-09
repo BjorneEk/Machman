@@ -119,6 +119,10 @@ final class StubMachman: MachmanControlling {
 	}
 	func start(vm name: String, options: StartOptions) async throws {
 		var vm = try get(name)
+		guard !vm.state.isRunning else {
+			// Mirrors the engine so probe-adopt's already-running arm is exercisable.
+			throw MachmanError(code: .invalidState, message: "\(name) is already running")
+		}
 		vm.state = .running
 		vm.consoleOpen = options.openConsole
 		vms[name] = vm
@@ -133,9 +137,11 @@ final class StubMachman: MachmanControlling {
 	}
 	// engineErrorsKeepTheirCode flips this: openConsole then throws an untyped engine error.
 	var throwCritical = false
+	var consoleOpens = 0
 	func openConsole(vm name: String) async throws {
 		if throwCritical { throw VirtualMachineError.critical("boom") }
 		_ = try get(name)
+		consoleOpens += 1
 	}
 	func closeConsole(vm name: String) async throws { _ = try get(name) }
 	func consoleInfo(vm name: String) async throws -> ConsoleInfo {

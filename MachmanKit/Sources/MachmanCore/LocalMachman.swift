@@ -209,6 +209,12 @@ public final class LocalMachman: MachmanControlling {
 	// MARK: - Run / stop / console
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
+		// The single choke point (the vmhost serves this same class): an autostarted safe
+		// run has nowhere to put its discardable state in v1.
+		guard !(policy.autostart && policy.safe) else {
+			throw MachmanError(
+				code: .invalidArgument, message: "autostart of a safe run is not supported")
+		}
 		let vm = try lookup(name)
 		try vm.config.setStartPolicy(policy)
 		registry.events.emit(.listChanged)

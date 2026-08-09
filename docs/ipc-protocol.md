@@ -63,7 +63,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.mount.remove` | `{name, mountID}` | `{}` |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
-| `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` |
+| `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
 | `vm.start` | `{name, options?: {openConsole, force}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC; `force: true` overrides) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |

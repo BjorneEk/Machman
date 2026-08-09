@@ -16,7 +16,8 @@ public enum VMHostBootstrap {
 	// Never returns: hands the thread to NSApplication.run().
 	@MainActor
 	public static func run(
-		dataDir: String, vmName: String, socketPath: String, daemonVersion: String
+		dataDir: String, vmName: String, socketPath: String, daemonVersion: String,
+		autostart: Bool = false
 	) -> Never {
 		machmanVMDir = dataDir
 
@@ -62,6 +63,34 @@ public enum VMHostBootstrap {
 			if !lifecycle.hadRunning {
 				server.stop()
 				exit(0)
+			}
+		}
+
+		if autostart {
+			// launchd (RunAtLoad) launched us; boot our own VM. Policy is read from the
+			// CONFIG here, not baked into the plist, so plists never rot on toggle edits.
+			// Woven after the watcher tasks above so no state change goes unseen.
+			Task { @MainActor in
+				let policy = registry.vm(named: vmName)?.config.startPolicy ?? StartPolicy()
+				guard !policy.safe else {
+					// A stale plist racing a config edit — never run a safe-mode VM unsafely.
+					MachmanLogger.log(.passiveError,
+						"autostart of \(vmName) refused: safe runs cannot autostart")
+					server.stop()
+					exit(70)
+				}
+				do {
+					try await api.start(
+						vm: vmName, options: StartOptions(openConsole: policy.windowed))
+					// Belt: never idle-exit a VM we just started (the watcher order above
+					// is the suspenders).
+					lifecycle.hadRunning = true
+				} catch {
+					// Exit now rather than sitting out the idle backstop with a dead start.
+					MachmanLogger.log(.passiveError, "autostart of \(vmName) failed: \(error)")
+					server.stop()
+					exit(70)
+				}
 			}
 		}
 

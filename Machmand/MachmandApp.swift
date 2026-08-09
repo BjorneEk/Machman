@@ -19,7 +19,15 @@ import MachmanClient
 @MainActor
 enum Daemon {
 	static let registry = VMRegistry()
-	static let api = RoutingMachman(registry: registry, daemonVersion: version)
+	static let api: RoutingMachman = {
+		let launchAgents = LaunchAgentManager.live()
+		if launchAgents == nil {
+			MachmanLogger.log(.passiveError,
+				"MachmanVMHost.app not found; autostart agents will not be written")
+		}
+		return RoutingMachman(
+			registry: registry, daemonVersion: version, launchAgents: launchAgents)
+	}()
 	static let server = MachmanServer(api: api, daemonVersion: version)
 
 	static var version: String {
@@ -84,8 +92,10 @@ final class MachmandDelegate: NSObject, NSApplicationDelegate {
 			exit(0)
 		}
 		// VMs from a previous daemon run live on in their vmhost processes — take them back.
+		// Agents heal after adoption so bootout gating sees every live host.
 		Task {
 			await Daemon.api.adoptExistingHosts()
+			Daemon.api.healLaunchAgents()
 			Daemon.registry.sweepCopyStaging()
 		}
 	}
