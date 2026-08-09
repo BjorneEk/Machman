@@ -45,31 +45,37 @@ struct MainVMView: View {
 			}
 			.toolbar {
 				ToolbarItem(placement: .principal) {
-					EditableText($viewModel.vmName)
-						.font(.largeTitle)
-						.onSubmit {
-							let newName = viewModel.vmName
-							guard newName != vm.name else { return }
-							if viewModel.hasVM(newName) {
-								viewModel.present(
-									message: "A VM named '\(newName)' already exists.",
-									while: "Renaming \(vm.name)")
-								viewModel.vmName = vm.name
-								return
-							}
-							if VMListViewModel.confirmDialog(
-								message: "Change VM name",
-								informativeText: "Are you shure you want to change the name of: "
-									+ "'\(vm.name)' to '\(newName)'") {
-								Task {
-									if await viewModel.rename(from: vm.name, to: newName) {
-										viewModel.log(message: "Renamed \(vm.name) to \(newName)")
-									}
+					HStack {
+						// Explicit size: toolbar items don't cascade the title font.
+						StatusIcon(state: vm.state, consoleOpen: vm.consoleOpen)
+							.font(.title2)
+						EditableText($viewModel.vmName)
+							.font(.largeTitle)
+							.onSubmit {
+								let newName = viewModel.vmName
+								guard newName != vm.name else { return }
+								if viewModel.hasVM(newName) {
+									viewModel.present(
+										message: "A VM named '\(newName)' already exists.",
+										while: "Renaming \(vm.name)")
+									viewModel.vmName = vm.name
+									return
 								}
-							} else {
-								viewModel.vmName = vm.name
+								if VMListViewModel.confirmDialog(
+									message: "Change VM name",
+									informativeText: "Are you shure you want to change the name "
+										+ "of: '\(vm.name)' to '\(newName)'") {
+									Task {
+										if await viewModel.rename(from: vm.name, to: newName) {
+											viewModel.log(
+												message: "Renamed \(vm.name) to \(newName)")
+										}
+									}
+								} else {
+									viewModel.vmName = vm.name
+								}
 							}
-						}
+					}
 				}
 				ToolbarItem {
 					Button(action: {

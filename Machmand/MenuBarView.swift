@@ -87,41 +87,56 @@ struct MenuBarView: View {
 	var body: some View {
 		ForEach(model.vms) { vm in
 			Menu {
-				Button("Start") {
+				Button {
 					// Plain Start honors the VM's policy; "Start Headless" stays explicit.
 					model.start(vm.name, headless: !(vm.startPolicy ?? StartPolicy()).windowed)
+				} label: {
+					Label("Start", systemImage: MachmanSymbols.start)
 				}
 				.disabled(vm.state.isRunning)
-				Button("Start Headless") {
+				Button {
 					model.start(vm.name, headless: true)
+				} label: {
+					Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 				}
 				.disabled(vm.state.isRunning)
 				Divider()
 				if vm.consoleOpen {
-					Button("Close Window") {
+					Button {
 						model.closeConsole(vm.name)
+					} label: {
+						Label("Close Window", systemImage: MachmanSymbols.closeWindow)
 					}
 					.disabled(!vm.state.isRunning)
 				} else {
-					Button("Open Window") {
+					Button {
 						model.openConsole(vm.name)
+					} label: {
+						Label("Open Window", systemImage: MachmanSymbols.openWindow)
 					}
 					.disabled(!vm.state.isRunning)
 				}
 				Divider()
-				Button("Shut Down") {
+				Button {
 					model.stop(vm.name, mode: .soft)
+				} label: {
+					Label("Shut Down", systemImage: MachmanSymbols.shutDown)
 				}
 				.disabled(!vm.state.isRunning)
-				Button("Force Stop") {
+				Button {
 					model.stop(vm.name, mode: .force)
+				} label: {
+					Label("Force Stop", systemImage: MachmanSymbols.forceStop)
 				}
 				.disabled(!vm.state.isRunning)
 			} label: {
-				Label(
-					vm.name,
-					systemImage: vm.state.isRunning
-				? MachmanSymbols.menuVMRunning : MachmanSymbols.menuVMStopped)
+				// Menu rendering may flatten StatusIcon's blue to a template glyph — the
+				// window/terminal/pause shapes still differentiate the states.
+				Label {
+					Text(vm.name)
+				} icon: {
+					StatusIcon(state: vm.state, consoleOpen: vm.consoleOpen)
+				}
 			}
 		}
 		if model.vms.isEmpty {

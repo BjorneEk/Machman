@@ -70,8 +70,5 @@ public enum MachmanSymbols {
 
 	// MARK: - App chrome
 	public static let menuBarExtra = "desktopcomputer"
-	// Transitional: the daemon menu's per-VM dot; phase 5.4 replaces both with StatusIcon.
-	public static let menuVMRunning = "circle.fill"
-	public static let menuVMStopped = "circle"
 	public static let daemonUnreachable = "bolt.horizontal.circle"
 }
