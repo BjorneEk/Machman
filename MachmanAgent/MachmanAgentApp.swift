@@ -4,7 +4,7 @@
 //
 //  The Machman daemon: a menu-bar agent (LSUIElement) that owns the VM engine, presents
 //  console windows, and serves the MachmanControlling API over <dataDir>/machman.sock.
-//  Machman-desktop, the CLI, and any non-Swift client are all just connections to it.
+//  MachmanDesktop, the CLI, and any non-Swift client are all just connections to it.
 //
 
 import SwiftUI
