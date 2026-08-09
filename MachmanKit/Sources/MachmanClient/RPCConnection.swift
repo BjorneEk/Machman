@@ -26,6 +26,10 @@ public actor RPCConnection {
 	}
 
 	private let fd: Int32
+	// The pid on the other end of the socket, captured once at connect. The daemon's
+	// safe-run sweep matches it against shadow markers — exact peer identity with no wire
+	// change. nil only if the getsockopt fails.
+	public nonisolated let peerPID: Int32?
 	private var nextID = 1
 	private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
 	private var eventSubscribers: [UUID: AsyncStream<VMEvent>.Continuation] = [:]
@@ -60,6 +64,15 @@ public actor RPCConnection {
 			throw ConnectionError.connectFailed(socketPath, err)
 		}
 		self.fd = fd
+		var pid: pid_t = 0
+		var len = socklen_t(MemoryLayout<pid_t>.size)
+		// LOCAL_PEERPID: hard-coded 0x002 — stable Darwin ABI, the constant does not
+		// always import from <sys/un.h>.
+		if getsockopt(fd, SOL_LOCAL, 0x002, &pid, &len) == 0 {
+			self.peerPID = pid
+		} else {
+			self.peerPID = nil
+		}
 
 		// Reader thread feeds an ordered line stream; a single task drains it into the actor,
 		// preserving on-wire order for events and responses alike.

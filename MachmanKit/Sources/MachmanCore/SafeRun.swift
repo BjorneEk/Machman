@@ -72,6 +72,40 @@ enum SafeRun {
 			progress: progress)
 	}
 
+	enum SweepVerdict: Equatable {
+		case reattach   // the adopted host IS this shadow's vmhost — restore isSafe/shadowRoot
+		case keep       // possibly alive — never delete under anything that might own it
+		case delete     // provably dead leftover
+	}
+
+	// The startup-sweep decision for one run root. hostedPeerPID is the socket peer of the
+	// adopted host for marker.vm (nil when that VM has no adopted host); isPidAlive is
+	// injected for tests. Conservative by design: the only destructive verdicts are for
+	// markers whose pid is provably dead or that never reached the pid phase with no host.
+	static func sweepVerdict(
+		marker: ShadowMarker?, hostedPeerPID: Int32?,
+		isPidAlive: (Int32) -> Bool
+	) -> SweepVerdict {
+		guard let marker else { return .delete }              // unreadable = never attachable
+		guard let pid = marker.pid else {
+			// Died between intent and spawn — unless a host exists (it MIGHT be the one
+			// whose marker rewrite was lost), in which case never delete under it.
+			return hostedPeerPID == nil ? .delete : .keep
+		}
+		if let hostedPeerPID {
+			if hostedPeerPID == pid { return .reattach }
+			// A different process owns the VM's socket (e.g. an unsafe autostart run).
+			return isPidAlive(pid) ? .keep : .delete
+		}
+		// No adopted host: a live pid is an unadopted safe vmhost — leave its disks alone.
+		return isPidAlive(pid) ? .keep : .delete
+	}
+
+	// kill(pid, 0): 0 = alive; EPERM = alive but not ours (still alive).
+	static func defaultPidAlive(_ pid: Int32) -> Bool {
+		kill(pid, 0) == 0 || errno == EPERM
+	}
+
 	// A clean safe-run stop copies the session's history back to the real VM (user
 	// decision): the shadow started FROM the real values and only added, so its lastRan and
 	// total are simply authoritative. Every failure is a silent no-op — a crash loses the

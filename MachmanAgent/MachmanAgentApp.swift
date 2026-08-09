@@ -92,9 +92,13 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			exit(0)
 		}
 		// VMs from a previous daemon run live on in their vmhost processes — take them back.
-		// Agents heal after adoption so bootout gating sees every live host.
+		// The shadow sweep runs strictly AFTER adoption: adoption is what re-hosts a
+		// surviving safe vmhost, and only then can a run root be matched to its socket peer
+		// (everything unmatched is garbage). Agents heal after adoption too, so bootout
+		// gating sees every live host.
 		Task {
 			await Daemon.api.adoptExistingHosts()
+			Daemon.api.sweepSafeRuns()
 			Daemon.api.healLaunchAgents()
 			Daemon.registry.sweepCopyStaging()
 		}

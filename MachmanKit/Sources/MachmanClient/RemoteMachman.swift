@@ -12,6 +12,8 @@ import MachmanAPI
 public final class RemoteMachman: MachmanControlling {
 	private let connection: RPCConnection
 	public let hello: RPCResults.Hello
+	// The serving process's pid (socket peer) — the daemon's shadow sweep matches it.
+	public var peerPID: Int32? { connection.peerPID }
 
 	// Connects, performs the hello handshake, and refuses on api-version mismatch.
 	public init(

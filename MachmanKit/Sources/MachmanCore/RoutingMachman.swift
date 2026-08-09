@@ -103,6 +103,56 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
+	// Runs at daemon startup, strictly AFTER adoptExistingHosts: adoption is what turns a
+	// surviving safe vmhost back into hosted[vm], and the socket peer pid is what proves a
+	// marker belongs to that exact process. Everything else follows the rule: a run dir
+	// only matters while its VM is currently running in safe mode.
+	public func sweepSafeRuns() {
+		sweepSafeRuns(isPidAlive: SafeRun.defaultPidAlive)
+	}
+
+	func sweepSafeRuns(isPidAlive: (Int32) -> Bool) {
+		let fm = FileManager.default
+		guard let entries = try? fm.contentsOfDirectory(atPath: machmanSafeDir) else { return }
+		for entry in entries.sorted() where entry.hasPrefix(SafeRun.runPrefix) {
+			let runRoot = machmanSafeDir + "/" + entry
+			let marker = SafeRun.readMarker(runRoot: runRoot)
+			let hostedPeer = marker.flatMap { hosted[$0.vm]?.client.peerPID }
+			switch SafeRun.sweepVerdict(
+				marker: marker, hostedPeerPID: hostedPeer, isPidAlive: isPidAlive) {
+			case .reattach:
+				guard let marker, let host = hosted[marker.vm] else { break }
+				host.identity.isSafe = true
+				host.identity.shadowRoot = runRoot
+				MachmanLogger.log(.log, "re-attached safe run \(entry) to \(marker.vm)")
+			case .delete:
+				try? fm.removeItem(atPath: runRoot)
+				MachmanLogger.log(.log, "swept dead safe run \(entry)")
+			case .keep:
+				MachmanLogger.log(.passiveWarning,
+					"keeping undecidable safe run \(entry) (possibly live)")
+			}
+		}
+	}
+
+	// Belt for the sweep: any start clears provably dead shadow leftovers for this VM, so a
+	// later daemon restart cannot misread them against the new run. Never touches a
+	// live-pid run root — a live pid means some vmhost owns the name's socket, and the
+	// probe/hosted guards arbitrate that.
+	func purgeDeadShadows(for name: String, isPidAlive: (Int32) -> Bool = SafeRun.defaultPidAlive) {
+		let fm = FileManager.default
+		guard let entries = try? fm.contentsOfDirectory(atPath: machmanSafeDir) else { return }
+		for entry in entries where entry.hasPrefix(SafeRun.runPrefix) {
+			let runRoot = machmanSafeDir + "/" + entry
+			guard let marker = SafeRun.readMarker(runRoot: runRoot), marker.vm == name else {
+				continue
+			}
+			if let pid = marker.pid, isPidAlive(pid) { continue }
+			try? fm.removeItem(atPath: runRoot)
+			MachmanLogger.log(.log, "purged stale safe run \(entry) for \(name)")
+		}
+	}
+
 	// Stop every hosted VM (quit path): optionally ask guests first, then force stragglers,
 	// and wait for the hosts to drain.
 	public func stopAllHosted(softFirst: Bool, graceSeconds: Double) async {
@@ -414,6 +464,7 @@ public final class RoutingMachman: MachmanControlling {
 				code: .invalidState,
 				message: "(\(name)) cannot start while macOS is installing")
 		}
+		purgeDeadShadows(for: name)
 		// A live vmhost may already own this VM's socket — launchd autostart, or a spawn
 		// whose daemon died before forwarding start. Adopt it instead of racing it with a
 		// second host. Deliberately ahead of the MAC-conflict guard: an already-running VM

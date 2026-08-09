@@ -139,6 +139,47 @@ struct SafeRunTests {
 		#expect(untouched.totalRuntimeSeconds == 100)
 	}
 
+	@Test func sweepVerdictDecisionTable() {
+		let alive: (Int32) -> Bool = { _ in true }
+		let dead: (Int32) -> Bool = { _ in false }
+		func marker(pid: Int32?) -> ShadowMarker {
+			ShadowMarker(vm: "alpha", createdAt: Date(timeIntervalSinceReferenceDate: 0), pid: pid)
+		}
+		// Unreadable marker: never attachable.
+		#expect(SafeRun.sweepVerdict(marker: nil, hostedPeerPID: 7, isPidAlive: alive) == .delete)
+		// pid nil: delete when unhosted, keep (never delete under a live host) when hosted.
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: nil), hostedPeerPID: nil, isPidAlive: alive) == .delete)
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: nil), hostedPeerPID: 7, isPidAlive: alive) == .keep)
+		// Exact peer match: re-attach.
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: 7), hostedPeerPID: 7, isPidAlive: dead) == .reattach)
+		// Peer mismatch: the misattribution case — delete only when the marker pid is dead.
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: 8), hostedPeerPID: 7, isPidAlive: alive) == .keep)
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: 8), hostedPeerPID: 7, isPidAlive: dead) == .delete)
+		// Unhosted: a live pid is an unadopted safe vmhost — leave its disks alone.
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: 9), hostedPeerPID: nil, isPidAlive: alive) == .keep)
+		#expect(SafeRun.sweepVerdict(
+			marker: marker(pid: 9), hostedPeerPID: nil, isPidAlive: dead) == .delete)
+	}
+
+	@Test @MainActor func peerPIDIsTheServingProcess() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-peer-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "peer")
+		#expect(client.peerPID == getpid())   // in-process server: the peer is us
+		await client.disconnect()
+	}
+
 	@MainActor
 	private func makeRouting() throws -> RoutingMachman {
 		var routing: RoutingMachman!
@@ -179,6 +220,74 @@ struct SafeRunTests {
 		}
 		#expect(routing.hostedNames.isEmpty)
 		#expect(!FileManager.default.fileExists(atPath: shadowRoot))
+	}
+
+	@Test @MainActor func sweepReattachesTheMatchingPeerAndDeletesTheDead() async throws {
+		let routing = try makeRouting()
+		// Adopt a live in-process host for alpha FIRST (async, outside the lock): its
+		// socket peer is this test process.
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-sweep-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath)
+		let client = try await routing.connectHost(identity: identity)
+		routing.adopt(identity: identity, client: client)
+
+		// Arrange run roots + act + assert inside ONE redirect block (sweep is synchronous
+		// and reads the safe-dir global at call time).
+		try VMTestDir.withRedirectedDir {
+			let fm = FileManager.default
+			func makeRun(_ suffix: String, _ marker: ShadowMarker?) throws -> String {
+				let runRoot = machmanSafeDir + "/" + SafeRun.runPrefix + suffix
+				try fm.createDirectory(atPath: runRoot, withIntermediateDirectories: true)
+				if let marker { try SafeRun.writeMarker(marker, runRoot: runRoot) }
+				return runRoot
+			}
+			let mine = try makeRun("mine", ShadowMarker(
+				vm: "alpha", createdAt: Date(), pid: getpid()))
+			let stale = try makeRun("stale", ShadowMarker(
+				vm: "alpha", createdAt: Date(), pid: 1))          // pid 1 ≠ our peer
+			let orphan = try makeRun("orphan", ShadowMarker(
+				vm: "beta", createdAt: Date(), pid: 424242))      // unhosted vm
+			let unreadable = try makeRun("junk", nil)
+
+			routing.sweepSafeRuns(isPidAlive: { _ in false })     // every foreign pid dead
+			#expect(fm.fileExists(atPath: mine))                  // re-attached, kept
+			#expect(!fm.fileExists(atPath: stale))
+			#expect(!fm.fileExists(atPath: orphan))
+			#expect(!fm.fileExists(atPath: unreadable))
+		}
+		#expect(routing.hostedNames == ["alpha"])
+		let info = try await routing.vm(named: "alpha")
+		#expect(info.safeRun == true)                             // the re-attach took
+		await client.disconnect()
+	}
+
+	@Test @MainActor func purgeDeadShadowsScopesToTheVM() throws {
+		let routing = try makeRouting()
+		try VMTestDir.withRedirectedDir {
+			let fm = FileManager.default
+			let alphaDead = machmanSafeDir + "/" + SafeRun.runPrefix + "a-dead"
+			let alphaLive = machmanSafeDir + "/" + SafeRun.runPrefix + "a-live"
+			let betaDead = machmanSafeDir + "/" + SafeRun.runPrefix + "b-dead"
+			for (root, vm, pid) in [
+				(alphaDead, "alpha", Int32(1)), (alphaLive, "alpha", Int32(2)),
+				(betaDead, "beta", Int32(3)),
+			] {
+				try fm.createDirectory(atPath: root, withIntermediateDirectories: true)
+				try SafeRun.writeMarker(
+					ShadowMarker(vm: vm, createdAt: Date(), pid: pid), runRoot: root)
+			}
+			routing.purgeDeadShadows(for: "alpha", isPidAlive: { $0 == 2 })
+			#expect(!fm.fileExists(atPath: alphaDead))    // alpha + dead → purged
+			#expect(fm.fileExists(atPath: alphaLive))     // alpha + live → untouched
+			#expect(fm.fileExists(atPath: betaDead))      // other VM → out of scope
+		}
 	}
 
 	@Test @MainActor func safeHostsOverlaySafeRunOnTheWire() async throws {
