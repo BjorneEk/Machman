@@ -133,7 +133,9 @@ final class DaemonConnection: ObservableObject {
 	// The compatibility floor: bump alongside MARKETING_VERSION whenever a change breaks the
 	// old/new daemon mix (wire shapes, config format, behavior). Complements — does not
 	// replace — the hard apiVersion gate.
-	static let oldestCompatibleDaemonVersion = "1.0.1"
+	// 1.0.2: StartOptions.safe — an older daemon would silently ignore the flag and run the
+	// real VM unsafely, so it must be replaced before this desktop issues any start.
+	static let oldestCompatibleDaemonVersion = "1.0.2"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer

@@ -229,6 +229,12 @@ public final class LocalMachman: MachmanControlling {
 	}
 
 	public func start(vm name: String, options: StartOptions) async throws {
+		// Permanent: only the daemon can build shadows. It strips `safe` before forwarding,
+		// so a safe flag reaching this engine means a client bypassed the router.
+		guard !options.safe else {
+			throw MachmanError(
+				code: .invalidArgument, message: "this process cannot run safe copies")
+		}
 		try await registry.start(try lookup(name), openConsole: options.openConsole)
 	}
 

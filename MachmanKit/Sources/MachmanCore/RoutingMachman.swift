@@ -390,6 +390,11 @@ public final class RoutingMachman: MachmanControlling {
 		guard hosted[name] == nil else {
 			throw MachmanError(code: .invalidState, message: "\(name) is already running")
 		}
+		// Honest refusal until the shadow-run commit lands — never silently run unsafely.
+		guard !options.safe else {
+			throw MachmanError(
+				code: .invalidArgument, message: "safe runs are not available yet")
+		}
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
 		}

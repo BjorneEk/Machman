@@ -116,8 +116,9 @@ struct WireFixtureTests {
 
 	@Test func startOptionsDefaultsOnDecode() throws {
 		#expect(try decode(StartOptions.self, "{}")
-			== StartOptions(openConsole: true, force: false))
-		#expect(try encode(StartOptions()) == #"{"force":false,"openConsole":true}"#)
+			== StartOptions(openConsole: true, force: false, safe: false))
+		#expect(try encode(StartOptions())
+			== #"{"force":false,"openConsole":true,"safe":false}"#)
 	}
 
 	@Test func startPolicyDefaultsOnDecode() throws {
