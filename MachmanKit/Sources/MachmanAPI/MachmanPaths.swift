@@ -95,6 +95,12 @@ public enum MachmanPaths {
 		dataDir + "/VMs"
 	}
 
+	// Safe-run shadows: a SIBLING of the VMs dir, so a shadow and the library share a volume
+	// under every override (promotion is one atomic rename) while staying outside the scan.
+	public static func safeRunsDir(dataDir: String) -> String {
+		dataDir + "/safe"
+	}
+
 	public static func vmsDir(
 		env: [String: String] = ProcessInfo.processInfo.environment,
 		defaults: UserDefaults = .standard,

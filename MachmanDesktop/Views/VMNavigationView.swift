@@ -91,7 +91,9 @@ struct VMNavigationView: View {
 			presenting: viewModel.pendingForceStart
 		) { pending in
 			Button("Start Anyway") {
-				viewModel.startVM(pending.name, headless: pending.headless, force: true)
+				viewModel.startVM(
+					pending.name, headless: pending.headless, force: true,
+					safe: pending.safe)
 			}
 			Button("Cancel", role: .cancel) {}
 		} message: { pending in

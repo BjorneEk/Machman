@@ -25,6 +25,10 @@ var machmanVMDir: String = MachmanPaths.vmsDir()
 // why (sun_path is 104 bytes, and the library may sit on a volume that cannot host a socket).
 var machmanRuntimeDir: String = MachmanPaths.runtimeDir()
 
+// Safe-run shadows: <dataDir>/safe, a sibling of the VMs dir (same volume by construction,
+// outside the registry scan). Only the daemon reads this; a vmhost is handed its run root.
+var machmanSafeDir: String = MachmanPaths.safeRunsDir(dataDir: MachmanPaths.dataDir())
+
 func machmanSocketPath() -> String {
 	machmanRuntimeDir + "/machman.sock"
 }

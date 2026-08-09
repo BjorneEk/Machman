@@ -69,8 +69,12 @@ struct MachmanDesktopApp: App {
 				if let viewModel = connection.viewModel {
 					ForEach(viewModel.vms) { vm in
 						Menu(vm.name) {
+							// Explicit items force the WINDOW mode only; the safe policy
+							// applies to every start affordance.
 							Button(action: {
-								viewModel.startVM(vm.name)
+								viewModel.startVM(
+									vm.name,
+									safe: (vm.startPolicy ?? StartPolicy()).safe)
 								selection = vm.name
 								viewModel.select(name: vm.name)
 							}) {
@@ -78,7 +82,9 @@ struct MachmanDesktopApp: App {
 							}
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 							Button(action: {
-								viewModel.startVM(vm.name, headless: true)
+								viewModel.startVM(
+									vm.name, headless: true,
+									safe: (vm.startPolicy ?? StartPolicy()).safe)
 								selection = vm.name
 								viewModel.select(name: vm.name)
 							}) {

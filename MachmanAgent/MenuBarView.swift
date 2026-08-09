@@ -49,10 +49,11 @@ final class MenuBarModel: ObservableObject {
 		}
 	}
 
-	func start(_ name: String, headless: Bool = false) {
+	func start(_ name: String, headless: Bool = false, safe: Bool = false) {
 		Task {
 			do {
-				try await api.start(vm: name, options: StartOptions(openConsole: !headless))
+				try await api.start(
+					vm: name, options: StartOptions(openConsole: !headless, safe: safe))
 			} catch {
 				MachmanLogger.log(.interactionError, "start \(name): \(error.localizedDescription)")
 			}
@@ -89,14 +90,18 @@ struct MenuBarView: View {
 		ForEach(model.vms) { vm in
 			Menu {
 				Button {
-					// Plain Start honors the VM's policy; "Start Headless" stays explicit.
-					model.start(vm.name, headless: !(vm.startPolicy ?? StartPolicy()).windowed)
+					// Plain Start honors the VM's policy; "Start Headless" forces only the
+					// window mode — the safe policy applies to every start affordance.
+					let policy = vm.startPolicy ?? StartPolicy()
+					model.start(vm.name, headless: !policy.windowed, safe: policy.safe)
 				} label: {
 					Label("Start", systemImage: MachmanSymbols.start)
 				}
 				.disabled(vm.state.isRunning)
 				Button {
-					model.start(vm.name, headless: true)
+					model.start(
+						vm.name, headless: true,
+						safe: (vm.startPolicy ?? StartPolicy()).safe)
 				} label: {
 					Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 				}

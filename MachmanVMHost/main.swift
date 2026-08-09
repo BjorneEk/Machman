@@ -13,13 +13,15 @@ import MachmanCore
 
 func usage() -> Never {
 	FileHandle.standardError.write(Data(
-		"usage: MachmanVMHost --data-dir DIR --vm NAME --socket PATH [--autostart]\n".utf8))
+		("usage: MachmanVMHost --data-dir DIR --vm NAME --socket PATH"
+			+ " [--library DIR] [--autostart]\n").utf8))
 	exit(64)
 }
 
 var dataDir: String?
 var vmName: String?
 var socketPath: String?
+var library: String?
 var autostart = false
 
 var arguments = ArraySlice(CommandLine.arguments.dropFirst())
@@ -36,6 +38,8 @@ while let flag = arguments.popFirst() {
 		vmName = value
 	case "--socket":
 		socketPath = value
+	case "--library":   // safe runs only: the promotion destination for vm.safeSave
+		library = value
 	default:
 		usage()
 	}
@@ -49,5 +53,5 @@ let version = ProcessInfo.processInfo.environment["MACHMAN_VERSION"] ?? "dev"
 MainActor.assumeIsolated {
 	VMHostBootstrap.run(
 		dataDir: dataDir, vmName: vmName, socketPath: socketPath, daemonVersion: version,
-		autostart: autostart)
+		autostart: autostart, library: library)
 }

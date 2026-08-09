@@ -17,14 +17,16 @@ public enum VMHostBootstrap {
 	@MainActor
 	public static func run(
 		dataDir: String, vmName: String, socketPath: String, daemonVersion: String,
-		autostart: Bool = false
+		autostart: Bool = false, library: String? = nil
 	) -> Never {
 		machmanVMDir = dataDir
 
 		let app = NSApplication.shared
 		app.setActivationPolicy(.accessory)
 
-		let registry = VMRegistry(only: vmName)
+		// library is passed only for safe runs (dataDir = the shadow run root then); it is
+		// the promotion destination for vm.safeSave, whose absence makes safeSave refuse.
+		let registry = VMRegistry(only: vmName, promotionLibrary: library)
 		// The console flips this process to a real app (Dock icon, menus) while a window is
 		// open — a per-VM app the user can ⌘-Tab to — and back to accessory when it closes.
 		registry.presenter.managesActivationPolicy = true

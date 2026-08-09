@@ -26,6 +26,7 @@ struct PendingForceStart: Identifiable {
 	let id = UUID()
 	let name: String
 	let headless: Bool
+	let safe: Bool
 	let message: String
 }
 
@@ -249,20 +250,23 @@ final class VMListViewModel: ObservableObject {
 			stopVM(vm.name)
 		} else {
 			// The plain affordance honors the VM's start policy; explicit menu items force
-			// their mode. nil policy = old daemon → the windowed default.
-			startVM(vm.name, headless: !(vm.startPolicy ?? StartPolicy()).windowed)
+			// only their WINDOW mode (safe applies everywhere — silently dropping safety
+			// would be the one surprise worse than none). nil policy = old daemon defaults.
+			let policy = vm.startPolicy ?? StartPolicy()
+			startVM(vm.name, headless: !policy.windowed, safe: policy.safe)
 		}
 	}
 
-	func startVM(_ name: String, headless: Bool = false, force: Bool = false) {
+	func startVM(_ name: String, headless: Bool = false, force: Bool = false, safe: Bool = false) {
 		Task { [weak self] in
 			do {
 				try await self?.api.start(
-					vm: name, options: StartOptions(openConsole: !headless, force: force))
+					vm: name,
+					options: StartOptions(openConsole: !headless, force: force, safe: safe))
 			} catch let error as MachmanError where error.code == .macConflict {
 				// Not a dead end: the same start succeeds with force, so offer it.
 				self?.pendingForceStart = PendingForceStart(
-					name: name, headless: headless, message: error.message)
+					name: name, headless: headless, safe: safe, message: error.message)
 			} catch {
 				self?.present(error, while: "Starting \(name)")
 			}

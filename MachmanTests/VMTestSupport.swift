@@ -10,11 +10,17 @@ enum VMTestDir {
 		lock.lock()
 		defer { lock.unlock() }
 		let original = machmanVMDir
+		let originalSafe = machmanSafeDir
 		let tmp = NSTemporaryDirectory() + "machman-test-\(UUID().uuidString)"
 		machmanVMDir = tmp
+		// Both globals swap under the ONE lock, so no test can sweep another's shadows —
+		// or worse, the real safe dir.
+		machmanSafeDir = tmp + ".safe"
 		defer {
 			machmanVMDir = original
+			machmanSafeDir = originalSafe
 			try? FileManager.default.removeItem(atPath: tmp)
+			try? FileManager.default.removeItem(atPath: tmp + ".safe")
 		}
 		return try body()
 	}

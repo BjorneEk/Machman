@@ -62,6 +62,9 @@ public final class VMRegistry {
 	private var installSessions: [String: InstallSession] = [:]
 	// Non-nil in a vmhost process: this registry manages exactly that one VM.
 	private let restrictedName: String?
+	// Safe-run vmhosts only: where vm.safeSave promotes the shadow to. nil everywhere else,
+	// which is what makes safeSave refusable outside a daemon-spawned safe run.
+	private let promotionLibrary: String?
 
 	public convenience init() {
 		self.init(only: nil)
@@ -69,8 +72,9 @@ public final class VMRegistry {
 
 	// `only`: restrict the registry to a single VM (the vmhost case) — the scan ignores every
 	// other directory and create() is refused.
-	public init(only restrictedName: String?) {
+	public init(only restrictedName: String?, promotionLibrary: String? = nil) {
 		self.restrictedName = restrictedName
+		self.promotionLibrary = promotionLibrary
 		presenter.stopHandler = { [weak self] name, mode in
 			guard let self = self, let vm = self.vms[name] else { return }
 			Task {

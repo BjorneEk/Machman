@@ -40,7 +40,9 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	final class HostedVM {
-		let identity: HostIdentity
+		// var: safe-mode re-attach (startup sweep) and safeSave re-keying mutate its fields.
+		// Safe because every closure captures identity.id (a value), never the struct.
+		var identity: HostIdentity
 		let client: RemoteMachman
 		// The spawned standalone app; nil for adopted hosts (their only death detector is the
 		// socket disconnect, same as before). deathWatch routes isTerminated to hostGone —
@@ -144,12 +146,14 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
-	private func spawnHost(for name: String) async throws -> HostedVM {
-		// Minted before any closure is built: termination and disconnect handlers capture the
-		// identity's id, never the (re-keyable) name.
-		let identity = HostIdentity(
-			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
-			macInUse: registry.vm(named: name)?.config.macAddress)
+	// The identity is minted by the CALLER (safe starts pre-set isSafe/shadowRoot) before
+	// any closure is built: termination and disconnect handlers capture the identity's id,
+	// never the (re-keyable) name. dataDir is the vmhost's scan root — the library for a
+	// normal run, the shadow run root for a safe one.
+	private func spawnHost(
+		identity: HostIdentity, dataDir: String, extraArguments: [String] = []
+	) async throws -> HostedVM {
+		let name = identity.name
 		guard let vmhost = VMHostLocator.locate() else {
 			throw MachmanError(
 				code: .internalError,
@@ -162,8 +166,8 @@ public final class RoutingMachman: MachmanControlling {
 		configuration.createsNewApplicationInstance = true   // one instance per VM, shared id
 		configuration.activates = false
 		configuration.arguments = [
-			"--data-dir", machmanVMDir, "--vm", name, "--socket", identity.socketPath,
-		]
+			"--data-dir", dataDir, "--vm", name, "--socket", identity.socketPath,
+		] + extraArguments
 		// OpenConfiguration.environment REPLACES the child's environment (no inheritance),
 		// which scrubs any MACHMAN_DATA_DIR override for free. The bundle id identifies the
 		// suite; only the version handshake still travels by env.
@@ -247,6 +251,15 @@ public final class RoutingMachman: MachmanControlling {
 		Task {
 			await client.disconnect()
 		}
+		if let shadowRoot = host.identity.shadowRoot {
+			// A clean stop of a safe run: absorb the session's history into the real config
+			// (single-writer safe — the host is gone), then discard the whole shadow. Before
+			// reload so the daemon's fresh read sees the absorbed values.
+			SafeRun.absorbShadowHistory(
+				realConfigPath: machmanVMDir + "/" + name + "/config",
+				shadowConfigPath: shadowRoot + "/" + name + "/config")
+			try? FileManager.default.removeItem(atPath: shadowRoot)
+		}
 		registry.reload(name: name)
 		unlink(host.identity.socketPath)
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
@@ -269,7 +282,9 @@ public final class RoutingMachman: MachmanControlling {
 		var infos: [VMInfo] = []
 		for vm in registry.list() {
 			if let host = hosted[vm.name],
-				let info = try? await host.client.vm(named: vm.name) {
+				var info = try? await host.client.vm(named: vm.name) {
+				// The one daemon-side overlay: only the router knows a run is safe.
+				if host.identity.isSafe { info.safeRun = true }
 				infos.append(info)
 				continue
 			}
@@ -279,7 +294,8 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func vm(named name: String) async throws -> VMInfo {
-		if let host = hosted[name], let info = try? await host.client.vm(named: name) {
+		if let host = hosted[name], var info = try? await host.client.vm(named: name) {
+			if host.identity.isSafe { info.safeRun = true }
 			return info
 		}
 		return try await local.vm(named: name)
@@ -390,11 +406,6 @@ public final class RoutingMachman: MachmanControlling {
 		guard hosted[name] == nil else {
 			throw MachmanError(code: .invalidState, message: "\(name) is already running")
 		}
-		// Honest refusal until the shadow-run commit lands — never silently run unsafely.
-		guard !options.safe else {
-			throw MachmanError(
-				code: .invalidArgument, message: "safe runs are not available yet")
-		}
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
 		}
@@ -412,7 +423,8 @@ public final class RoutingMachman: MachmanControlling {
 			try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options) {
 			return
 		}
-		// The router is the only place that sees every host's live MAC.
+		// The router is the only place that sees every host's live MAC. Applies to safe runs
+		// too — the shadow impersonates this VM's MAC.
 		if !options.force, let mac = vm.config.macAddress,
 			let clash = hosted.values.first(where: { $0.identity.macInUse == mac }) {
 			throw MachmanError(
@@ -421,7 +433,14 @@ public final class RoutingMachman: MachmanControlling {
 					+ "'\(clash.identity.name)' is already using — one of them would lose "
 					+ "networking. Stop it, regenerate a MAC, or force start.")
 		}
-		let host = try await spawnHost(for: name)
+		if options.safe {
+			try await startSafe(vm: vm, name: name, options: options)
+			return
+		}
+		let identity = HostIdentity(
+			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
+			macInUse: vm.config.macAddress)
+		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
 		do {
 			try await host.client.start(vm: name, options: options)
 		} catch {
@@ -430,6 +449,73 @@ public final class RoutingMachman: MachmanControlling {
 			host.app?.forceTerminate()
 			await host.client.disconnect()
 			unlink(host.identity.socketPath)
+			throw error
+		}
+		hosted[name] = host
+		subscribeEvents(host)
+		registry.events.emit(.listChanged)
+	}
+
+	// A safe run: clone the VM into a shadow run root (per-disk/mount safe flags decide
+	// clone-vs-reference / omit-vs-attach), run the vmhost against the shadow, and present
+	// it AS the real VM. --library is passed ONLY here: it is the promotion destination and
+	// its absence makes a vmhost refuse safeSave (the misattribution backstop).
+	private func startSafe(vm: VirtualMachine, name: String, options: StartOptions) async throws {
+		let runRoot = machmanSafeDir + "/" + SafeRun.runPrefix + UUID().uuidString
+		do {
+			try FileManager.default.createDirectory(
+				atPath: runRoot, withIntermediateDirectories: true)
+			// Phase-1 marker: intent, no pid yet — the sweep treats it as never-attachable.
+			try SafeRun.writeMarker(
+				ShadowMarker(vm: name, createdAt: Date(), pid: nil), runRoot: runRoot)
+			let events = registry.events
+			let request = SafeRun.shadowRequest(
+				config: vm.config, sourceDir: machmanVMDir + "/" + name, runRoot: runRoot,
+				progress: { copied, total in
+					Task { @MainActor in
+						events.emit(.copyProgress(
+							vm: name, copiedBytes: copied, totalBytes: total))
+					}
+				})
+			// Detached: same-volume clones are instant, but unsafe-marked-safe external
+			// images can be real byte copies.
+			try await Task.detached(priority: .userInitiated) {
+				try VMCopier.copy(request)
+			}.value
+		} catch {
+			try? FileManager.default.removeItem(atPath: runRoot)
+			throw error
+		}
+		var identity = HostIdentity(
+			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
+			macInUse: vm.config.macAddress)
+		identity.isSafe = true
+		identity.shadowRoot = runRoot
+		let host: HostedVM
+		do {
+			host = try await spawnHost(
+				identity: identity, dataDir: runRoot,
+				extraArguments: ["--library", machmanVMDir])
+			// Phase-2 marker: the pid the startup sweep matches against the socket peer.
+			try? SafeRun.writeMarker(
+				ShadowMarker(
+					vm: name, createdAt: Date(), pid: host.app?.processIdentifier),
+				runRoot: runRoot)
+		} catch {
+			try? FileManager.default.removeItem(atPath: runRoot)
+			throw error
+		}
+		var forwarded = options
+		forwarded.safe = false   // the vmhost never knows it runs a shadow
+		do {
+			try await host.client.start(vm: name, options: forwarded)
+		} catch {
+			host.deathWatch?.invalidate()
+			host.deathWatch = nil
+			host.app?.forceTerminate()
+			await host.client.disconnect()
+			unlink(host.identity.socketPath)
+			try? FileManager.default.removeItem(atPath: runRoot)
 			throw error
 		}
 		hosted[name] = host
@@ -460,8 +546,15 @@ public final class RoutingMachman: MachmanControlling {
 		// The adopt-side rule: the host's reply is the authoritative live MAC.
 		identity.macInUse = (try? await client.vm(named: name))?.macAddress ?? identity.macInUse
 		adopt(identity: identity, client: client)
+		var forwarded = options
+		if options.safe {
+			// An existing run cannot be made safe retroactively — adopt it as it is.
+			MachmanLogger.log(.passiveWarning,
+				"safe start requested for \(name), but a live vmhost already owns it")
+			forwarded.safe = false
+		}
 		do {
-			try await client.start(vm: name, options: options)
+			try await client.start(vm: name, options: forwarded)
 		} catch let error as MachmanError where error.code == .invalidState {
 			// Already running (autostart got there first) — the caller still gets what
 			// they asked for.
