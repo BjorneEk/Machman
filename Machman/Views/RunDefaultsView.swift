@@ -58,9 +58,6 @@ struct RunDefaultsView: View {
 		GroupBox {
 			HStack {
 				HStack {
-					Image(systemName: MachmanSymbols.start)
-						.foregroundColor(.secondary)
-						.help(startModeHelp)
 					Picker("", selection: Binding(
 						get: { policy.windowed },
 						set: { windowed in update { $0.windowed = windowed } }
@@ -72,8 +69,7 @@ struct RunDefaultsView: View {
 					.fixedSize()
 					.labelsHidden()
 				}
-				// On the wrapper AND the icon: the segmented control swallows its own
-				// .help, so the icon is the guaranteed hover target.
+				// On a wrapper, not the Picker: the segmented control swallows its own .help.
 				.help(startModeHelp)
 				Spacer()
 				HStack {
