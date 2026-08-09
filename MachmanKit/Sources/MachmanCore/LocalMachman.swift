@@ -279,6 +279,18 @@ public final class LocalMachman: MachmanControlling {
 		registry.installSession(for: try lookup(name)).phase
 	}
 
+	// The vmhost half of vm.safeSave: only the safe-run vmhost may move its own files
+	// (single writer). The daemon-side LocalMachman refuses via the nil restrictedName.
+	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		guard registry.restrictedName == name else {
+			throw MachmanError(
+				code: .invalidState, message: "\(name) is not running in safe mode")
+		}
+		let vm = try registry.promoteRestrictedVM(to: newName)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
 	// MARK: - Daemon lifecycle
 
 	public func retire() async throws {

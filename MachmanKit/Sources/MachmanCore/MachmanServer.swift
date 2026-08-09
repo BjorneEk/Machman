@@ -210,6 +210,9 @@ public final class MachmanServer {
 			case .eventsSubscribe:
 				subscribe(client)
 				reply(client, id, RPCEmpty())
+			case .safeSave:
+				let p: RPCParams.Rename = try params(line)
+				reply(client, id, try await api.safeSave(vm: p.name, to: p.newName))
 			case .daemonRetire:
 				try await api.retire()
 				reply(client, id, RPCEmpty())

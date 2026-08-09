@@ -290,6 +290,79 @@ struct SafeRunTests {
 		}
 	}
 
+	@Test @MainActor func safeSaveGuardsAndRekeysTheHost() async throws {
+		let routing = try makeRouting()
+
+		// Unhosted → invalidState.
+		await #expect(throws: MachmanError.self) {
+			_ = try await routing.safeSave(vm: "alpha", to: "kept")
+		}
+
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-save-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var info = StubMachman.makeInfo("alpha", state: .running)
+		info.safeRun = true
+		stub.vms["alpha"] = info
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		// Adopted but NOT safe → invalidState.
+		let plain = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath)
+		let client = try await routing.connectHost(identity: plain)
+		routing.adopt(identity: plain, client: client)
+		await #expect(throws: MachmanError.self) {
+			_ = try await routing.safeSave(vm: "alpha", to: "kept")
+		}
+
+		// Flip the host safe (what the sweep's re-attach does), then:
+		// name collision with a registry VM → alreadyExists (alpha itself is registered).
+		routing.hostForTesting("alpha")?.identity.isSafe = true
+		routing.hostForTesting("alpha")?.identity.shadowRoot = "/nonexistent"
+		do {
+			_ = try await routing.safeSave(vm: "alpha", to: "alpha")
+			Issue.record("expected alreadyExists")
+		} catch let error as MachmanError {
+			#expect(error.code == .alreadyExists)
+		}
+
+		// The real thing: proxy + re-key. adoptFromDisk will fail against the restored
+		// global dir — tolerated and logged, the re-key must still hold.
+		let saved = try await routing.safeSave(vm: "alpha", to: "kept")
+		#expect(saved.name == "kept")
+		#expect(routing.hostedNames == ["kept"])
+		let after = try await routing.vm(named: "kept")
+		#expect(after.safeRun == nil)   // no longer a safe run
+		await client.disconnect()
+	}
+
+	@Test @MainActor func setStartPolicyRefusedWhileSafeHosted() async throws {
+		let routing = try makeRouting()
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-pol-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath,
+			isSafe: true, shadowRoot: "/nonexistent")
+		let client = try await routing.connectHost(identity: identity)
+		routing.adopt(identity: identity, client: client)
+
+		do {
+			try await routing.setStartPolicy(vm: "alpha", policy: StartPolicy())
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+		}
+		await client.disconnect()
+	}
+
 	@Test @MainActor func safeHostsOverlaySafeRunOnTheWire() async throws {
 		let routing = try makeRouting()
 		let socketPath = NSTemporaryDirectory()

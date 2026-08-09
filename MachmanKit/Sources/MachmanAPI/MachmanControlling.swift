@@ -59,6 +59,11 @@ public protocol MachmanControlling: AnyObject {
 	func cancelMacInstall(vm name: String) async throws
 	func macInstallPhase(vm name: String) async throws -> InstallPhase
 
+	// Promote a running safe-run shadow to a real VM named newName: the original flips to
+	// stopped, the new VM is running (not safe), and its MAC/machine identity regenerate
+	// (effective next boot). Refused unless the VM is currently safe-hosted.
+	func safeSave(vm name: String, to newName: String) async throws -> VMInfo
+
 	// MARK: Daemon lifecycle
 	// Stop serving and exit, leaving vmhosts (and their VMs) running for the successor to
 	// re-adopt — quit-leave-VMs-running minus the prompt. Only the daemon honors it; a vmhost

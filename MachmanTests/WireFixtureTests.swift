@@ -147,5 +147,8 @@ struct WireFixtureTests {
 			name: "Debian", newName: "Deb2", diskIDs: ["storage:disk"], regenerateMAC: false))
 			== #"{"diskIDs":["storage:disk"],"name":"Debian","newName":"Deb2","#
 			+ #""regenerateMAC":false}"#)
+		// Rename params serve vm.rename AND vm.safeSave — one shape, method discriminates.
+		#expect(try encode(RPCParams.Rename(name: "Debian", newName: "Debian kept"))
+			== #"{"name":"Debian","newName":"Debian kept"}"#)
 	}
 }

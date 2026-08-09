@@ -29,6 +29,7 @@ public enum RPCMethod: String, Sendable {
 	case setSafety = "vm.setSafety"
 	case start = "vm.start"
 	case stop = "vm.stop"
+	case safeSave = "vm.safeSave"
 	case consoleOpen = "vm.console.open"
 	case consoleClose = "vm.console.close"
 	case consoleInfo = "vm.console.info"

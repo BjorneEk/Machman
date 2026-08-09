@@ -87,6 +87,14 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		windows[name]
 	}
 
+	// safeSave promotion: the vmhost's VM changes name mid-run — the window map and title
+	// must follow, or close/stop lookups dead-end on the old key.
+	func rekey(from oldName: String, to newName: String) {
+		guard let window = windows.removeValue(forKey: oldName) else { return }
+		windows[newName] = window
+		window.title = newName
+	}
+
 	private func forget(_ name: String) {
 		guard let window = windows[name] else { return }
 		window.delegate = nil

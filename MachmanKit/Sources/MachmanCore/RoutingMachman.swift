@@ -76,6 +76,10 @@ public final class RoutingMachman: MachmanControlling {
 
 	var hostedNames: [String] { Array(hosted.keys) }
 
+	// Test seam: lets tests mutate an adopted host's identity (what the sweep's re-attach
+	// path does) without fabricating run roots.
+	func hostForTesting(_ name: String) -> HostedVM? { hosted[name] }
+
 	public var hasHostedVMs: Bool { !hosted.isEmpty }
 
 	// Adopt vmhosts left behind by an earlier daemon: a live host answers on its socket and
@@ -430,6 +434,14 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
+		// Policy has a daemon-side launchd side effect that must never reconcile against a
+		// discardable shadow write — refuse rather than half-apply.
+		if let host = hosted[name], host.identity.isSafe {
+			throw MachmanError(
+				code: .invalidState,
+				message: "run defaults cannot change during a safe run — stop \(name) "
+					+ "or save it first")
+		}
 		try await target(name).setStartPolicy(vm: name, policy: policy)
 		// Agent bookkeeping reads the ARGUMENT, never the registry: while the VM is hosted
 		// the daemon's config copy is stale until the host exits.
@@ -682,6 +694,38 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func macInstallPhase(vm name: String) async throws -> InstallPhase {
 		try await local.macInstallPhase(vm: name)
+	}
+
+	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		guard let host = hosted[name], host.identity.isSafe else {
+			throw MachmanError(
+				code: .invalidState, message: "\(name) is not running in safe mode")
+		}
+		guard registry.vm(named: newName) == nil, hosted[newName] == nil else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+		}
+		// The vmhost moves the files (single writer); the daemon re-keys its view after.
+		let info = try await host.client.safeSave(vm: name, to: newName)
+		// ONE synchronous block: the host keeps its socket (stored path — the 1.2 rule) and
+		// its live MAC. Keeping macInUse is deliberate: starting the ORIGINAL now trips
+		// macConflict until the promoted VM reboots onto its fresh MAC.
+		host.identity.name = newName
+		host.identity.isSafe = false
+		host.identity.shadowRoot = nil   // the vmhost moved + deleted the run root itself
+		hosted[name] = nil
+		hosted[newName] = host
+		do {
+			_ = try registry.adoptFromDisk(name: newName)
+		} catch {
+			// The host is live and keyed either way; the next listChanged/reload catches up.
+			MachmanLogger.log(.passiveError,
+				"promoted \(newName) is live but not yet adoptable: \(error)")
+		}
+		registry.events.emit(.stateChanged(vm: name, state: .stopped))
+		registry.events.emit(.stateChanged(vm: newName, state: .running))
+		registry.events.emit(.listChanged)
+		return info
 	}
 
 	// Wired by the daemon app: stop serving and exit leave-VMs-running. The reply flushes

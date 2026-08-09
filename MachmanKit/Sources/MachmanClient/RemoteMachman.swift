@@ -164,6 +164,12 @@ public final class RemoteMachman: MachmanControlling {
 			.installPhase, RPCParams.Name(name: name), expecting: InstallPhase.self)
 	}
 
+	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		try await connection.call(
+			.safeSave, RPCParams.Rename(name: name, newName: newName),
+			expecting: VMInfo.self)
+	}
+
 	public func retire() async throws {
 		try await void(.daemonRetire, RPCEmpty?.none)
 	}

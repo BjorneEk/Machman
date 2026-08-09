@@ -44,19 +44,25 @@ public enum VMHostBootstrap {
 			exit(65)
 		}
 
+		// The delegate follows the registry's CURRENT name — safeSave promotion renames the
+		// VM mid-run, and quit/stop must act on the live name, not the launch capture.
 		let delegate = VMHostAppDelegate(
-			vmName: vmName, presenter: registry.presenter, server: server)
+			vmName: { [weak registry] in registry?.restrictedName ?? vmName },
+			presenter: registry.presenter, server: server)
 		Self.appDelegate = delegate   // app.delegate is unowned — something must own it
 		app.delegate = delegate
 		app.mainMenu = buildMainMenu(vmName: vmName, delegate: delegate)
 
 		let lifecycle = Lifecycle()
 		// Exit when the VM stops (after having run). The idle backstop covers a spawn whose
-		// start never happened — e.g. the daemon died between spawn and forward.
+		// start never happened — e.g. the daemon died between spawn and forward. Matches the
+		// registry's CURRENT name, not the launch capture: safeSave promotion renames the VM
+		// mid-run and the stop that ends the run arrives under the NEW name.
 		Task { @MainActor in
 			let stream = registry.events.stream()
 			for await event in stream {
-				guard case .stateChanged(let vm, let state) = event, vm == vmName else {
+				guard case .stateChanged(let vm, let state) = event,
+					vm == registry.restrictedName else {
 					continue
 				}
 				if state.isRunning {
@@ -167,11 +173,13 @@ public enum VMHostBootstrap {
 // stopped→exit(0) watcher stay the single teardown path.
 @MainActor
 final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
-	private let vmName: String
+	// A provider, not a value: safeSave promotion renames the VM mid-run, and every action
+	// here must target the live name. Only the (rebuilt-never) menu TITLES stay stale.
+	private let vmName: () -> String
 	private let presenter: ConsolePresenter
 	private let server: MachmanServer
 
-	init(vmName: String, presenter: ConsolePresenter, server: MachmanServer) {
+	init(vmName: @escaping () -> String, presenter: ConsolePresenter, server: MachmanServer) {
 		self.vmName = vmName
 		self.presenter = presenter
 		self.server = server
@@ -182,12 +190,13 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-		guard presenter.isRunning?(vmName) ?? false else {
+		let name = vmName()
+		guard presenter.isRunning?(name) ?? false else {
 			server.stop()
 			return .terminateNow
 		}
 		let alert = NSAlert()
-		alert.messageText = "\(vmName) is running"
+		alert.messageText = "\(name) is running"
 		alert.informativeText = "Quitting stops the VM. Ask the guest to shut down, "
 			+ "stop it immediately, or cancel?"
 		alert.addButton(withTitle: "Shut Down")
@@ -195,9 +204,9 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 		alert.addButton(withTitle: "Cancel")
 		switch alert.runModal() {
 		case .alertFirstButtonReturn:
-			presenter.stopHandler?(vmName, .soft)
+			presenter.stopHandler?(name, .soft)
 		case .alertSecondButtonReturn:
-			presenter.stopHandler?(vmName, .force)
+			presenter.stopHandler?(name, .force)
 		default:
 			break
 		}
@@ -205,10 +214,10 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	@objc func shutDown(_ sender: Any?) {
-		presenter.stopHandler?(vmName, .soft)
+		presenter.stopHandler?(vmName(), .soft)
 	}
 
 	@objc func forceStop(_ sender: Any?) {
-		presenter.stopHandler?(vmName, .force)
+		presenter.stopHandler?(vmName(), .force)
 	}
 }

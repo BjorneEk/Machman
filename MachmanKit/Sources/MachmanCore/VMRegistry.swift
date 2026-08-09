@@ -61,10 +61,14 @@ public final class VMRegistry {
 	// when the user navigates away, and a second install of the same VM can't start.
 	private var installSessions: [String: InstallSession] = [:]
 	// Non-nil in a vmhost process: this registry manages exactly that one VM.
-	private let restrictedName: String?
+	// var: safeSave promotion re-keys the vmhost to the saved VM's name. Internal read —
+	// the bootstrap's lifecycle watcher and quit delegate follow it instead of a stale
+	// captured launch name.
+	private(set) var restrictedName: String?
 	// Safe-run vmhosts only: where vm.safeSave promotes the shadow to. nil everywhere else,
-	// which is what makes safeSave refusable outside a daemon-spawned safe run.
-	private let promotionLibrary: String?
+	// which is what makes safeSave refusable outside a daemon-spawned safe run; cleared
+	// after use so a run promotes at most once.
+	private var promotionLibrary: String?
 
 	public convenience init() {
 		self.init(only: nil)
@@ -235,6 +239,64 @@ public final class VMRegistry {
 		var n = 2
 		while vms["\(base) \(n)"] != nil { n += 1 }
 		return "\(base) \(n)"
+	}
+
+	// vm.safeSave's engine half — vmhost-side ONLY (single-writer: the vmhost moves files it
+	// owns). Renames the shadow dir into the library atomically (same volume by
+	// construction) and re-keys this restricted registry to the new name; the running VZ
+	// instance never notices — open fds follow the moved inodes. The promoted VM gets FRESH
+	// identity like vm.copy (user decision): new MAC now, new machine ids effective next
+	// boot, created = now, runtime restarts (the in-flight session re-adds at teardown
+	// through the re-pointed config).
+	func promoteRestrictedVM(to newName: String) throws -> VirtualMachine {
+		guard let oldName = restrictedName, let library = promotionLibrary else {
+			throw MachmanError(
+				code: .invalidState, message: "only a safe-run vmhost can save as a new VM")
+		}
+		guard let vm = vms[oldName], vm.runtime != nil else {
+			throw MachmanError(code: .invalidState, message: "the safe run already ended")
+		}
+		guard !newName.isEmpty, !newName.contains("/") else {
+			throw MachmanError(
+				code: .invalidArgument, message: "invalid VM name '\(newName)'")
+		}
+		let destination = library + "/" + newName
+		guard !FileManager.default.fileExists(atPath: destination) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+		}
+		let runRoot = machmanVMDir
+		do {
+			try FileManager.default.moveItem(
+				atPath: runRoot + "/" + oldName, toPath: destination)
+		} catch {
+			if FileManager.default.fileExists(atPath: destination) {
+				// The name appeared while we checked; the rename lost the race.
+				throw MachmanError(
+					code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+			}
+			throw MachmanError(
+				code: .ioFailure,
+				message: "saving \(newName): \(error.localizedDescription)")
+		}
+		// From here the VM lives in the library: every config path resolves through the
+		// re-pointed global + the new name.
+		machmanVMDir = library
+		restrictedName = newName
+		vms[oldName] = nil
+		vms[newName] = vm
+		vm.config.name = newName
+		presenter.rekey(from: oldName, to: newName)
+		vm.config.created = Date()
+		vm.config.totalRuntimeSeconds = 0
+		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
+		if case .macOS = vm.config.boot {
+			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")
+		}
+		try vm.config.regenerateMACAddress()   // the one save, at the new path
+		try? FileManager.default.removeItem(atPath: runRoot)   // now-empty run root + marker
+		promotionLibrary = nil
+		return vm
 	}
 
 	// Register a directory that appeared after the initial scan (vm.copy now, safe-save

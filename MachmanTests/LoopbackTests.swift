@@ -162,6 +162,25 @@ final class StubMachman: MachmanControlling {
 		_ = try get(name)
 		return InstallPhase(kind: .idle)
 	}
+	func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		var vm = try get(name)
+		guard vm.safeRun == true else {
+			throw MachmanError(
+				code: .invalidState, message: "\(name) is not running in safe mode")
+		}
+		guard vms[newName] == nil else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+		}
+		vm.name = newName
+		vm.safeRun = nil
+		vms[name] = nil
+		vms[newName] = vm
+		emit(.stateChanged(vm: name, state: .stopped))
+		emit(.stateChanged(vm: newName, state: .running))
+		emit(.listChanged)
+		return vm
+	}
 	var retired = false
 	func retire() async throws {
 		retired = true
@@ -317,6 +336,33 @@ struct LoopbackTests {
 			Issue.record("expected notFound")
 		} catch let error as MachmanError {
 			#expect(error.code == .notFound)
+		}
+		await client.disconnect()
+	}
+
+	@Test @MainActor func safeSaveRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-save-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var running = StubMachman.makeInfo("Debian", state: .running)
+		running.safeRun = true
+		stub.vms["Debian"] = running
+		stub.vms["Other"] = StubMachman.makeInfo("Other")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "save")
+		let saved = try await client.safeSave(vm: "Debian", to: "Debian kept")
+		#expect(saved.name == "Debian kept")
+		#expect(saved.safeRun == nil)
+		#expect(try await client.listVMs().map(\.name) == ["Debian kept", "Other"])
+
+		do {
+			_ = try await client.safeSave(vm: "Other", to: "x")
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)   // not a safe run
 		}
 		await client.disconnect()
 	}
