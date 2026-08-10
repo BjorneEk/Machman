@@ -90,20 +90,29 @@ struct MenuBarView: View {
 		ForEach(model.vms) { vm in
 			Menu {
 				Button {
-					// Plain Start honors the VM's policy; "Start Headless" forces only the
-					// window mode — the safe policy applies to every start affordance.
-					let policy = vm.startPolicy ?? StartPolicy()
-					model.start(vm.name, headless: !policy.windowed, safe: policy.safe)
+					// Start follows the WINDOW policy but is explicitly unsafe — safety in
+					// this menu is chosen by item, never by the checkbox.
+					model.start(
+						vm.name,
+						headless: !(vm.startPolicy ?? StartPolicy()).windowed,
+						safe: false)
 				} label: {
 					Label("Start", systemImage: MachmanSymbols.start)
 				}
 				.disabled(vm.state.isRunning)
 				Button {
-					model.start(
-						vm.name, headless: true,
-						safe: (vm.startPolicy ?? StartPolicy()).safe)
+					model.start(vm.name, headless: true, safe: false)
 				} label: {
 					Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
+				}
+				.disabled(vm.state.isRunning)
+				Button {
+					model.start(
+						vm.name,
+						headless: !(vm.startPolicy ?? StartPolicy()).windowed,
+						safe: true)
+				} label: {
+					Label("Start Safe", systemImage: MachmanSymbols.safe)
 				}
 				.disabled(vm.state.isRunning)
 				Divider()

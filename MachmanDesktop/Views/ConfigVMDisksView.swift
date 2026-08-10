@@ -25,22 +25,37 @@ struct ConfigVMDisksView: View {
 			GroupBox {
 				Table(vm.disks) {
 					TableColumn("Disks") { (entry: DiskInfo) in
-						switch entry.type {
-						case .storage:
-							Image(systemName: MachmanSymbols.diskStorage)
-								.contentShape(Rectangle())
-								.help("storage drive")
-						case .image:
-							Image(systemName: MachmanSymbols.diskImage)
-								.contentShape(Rectangle())
-								.help("disk image")
-						case .iso:
-							Image(systemName: MachmanSymbols.diskISO)
-								.contentShape(Rectangle())
-								.help("iso image")
+						HStack(spacing: 4) {
+							switch entry.type {
+							case .storage:
+								Image(systemName: MachmanSymbols.diskStorage)
+									.contentShape(Rectangle())
+									.help("storage drive")
+							case .image:
+								Image(systemName: MachmanSymbols.diskImage)
+									.contentShape(Rectangle())
+									.help("disk image")
+							case .iso:
+								Image(systemName: MachmanSymbols.diskISO)
+									.contentShape(Rectangle())
+									.help("iso image")
+							}
+							// The safe-mode flip-flop rides beside the type glyph:
+							// clone-vs-real-file for safe runs.
+							IconButton(
+								symbol: entry.safe
+									? MachmanSymbols.safe : MachmanSymbols.unsafe,
+								tooltip: entry.safe
+									? "Safe: safe runs use a discardable clone of this disk"
+									: "Unsafe: safe runs write to the real file",
+								flat: true
+							) {
+								viewModel.setDiskSafety(
+									vm.name, diskID: entry.id, safe: !entry.safe)
+							}
 						}
 					}
-					.width(40)
+					.width(64)
 					TableColumn("Info") { (entry: DiskInfo) in
 						switch entry.type {
 						case .storage:
@@ -61,18 +76,6 @@ struct ConfigVMDisksView: View {
 					TableColumn("") { (entry: DiskInfo) in
 						if let path = entry.path {
 							CopyToClipboardButton(path, tooltip: "Copy disk path")
-						}
-					}.width(20)
-					TableColumn("") { (entry: DiskInfo) in
-						// The safe-mode flip-flop: clone-vs-real-file for safe runs.
-						IconButton(
-							symbol: entry.safe ? MachmanSymbols.safe : MachmanSymbols.unsafe,
-							tooltip: entry.safe
-								? "Safe: safe runs use a discardable clone of this disk"
-								: "Unsafe: safe runs write to the real file",
-							flat: true
-						) {
-							viewModel.setDiskSafety(vm.name, diskID: entry.id, safe: !entry.safe)
 						}
 					}.width(20)
 					TableColumn("") { (entry: DiskInfo) in
