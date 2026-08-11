@@ -13,23 +13,74 @@
 //
 
 import SwiftUI
+import AppKit
 import SwiftTerm
+import MachmanUI
 
 final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDelegate {
 	let terminalView: TerminalView
 	private var connection: SerialTerminalConnection?
 	@Published var connected = false
 
-	override init() {
-		// convertEol: a bare-metal UART emits bare LF with no CR (QEMU's stdio adds it via
-		// ONLCR; our raw socket does not), so each line would staircase down the screen —
-		// convertEol makes the terminal treat LF as CR+LF. scrollback: the default 500 lines is
-		// swamped by a chatty kernel, so keep a deep history.
-		let options = TerminalOptions(convertEol: true, scrollback: 500_000)
+	// The startup-only settings baked into terminalView at creation. The info panel compares this
+	// against the current profile to decide whether a Reload is needed (font/colours apply live;
+	// scrollback/convertEol/termName/cursor/tabWidth cannot change on a live terminal).
+	let startupSignature: TerminalStartupSignature
+
+	init(profile: TerminalProfile) {
+		startupSignature = profile.startupSignature
+		// convertEol: a bare-metal UART emits bare LF with no CR (QEMU's stdio adds it via ONLCR;
+		// our raw socket does not), so without it each line staircases. scrollback: a chatty
+		// kernel swamps the 500-line default, so profiles default to a deep history.
+		let options = TerminalOptions(
+			convertEol: profile.convertEol,
+			termName: profile.termName,
+			cursorStyle: Self.cursorStyle(profile.cursor),
+			scrollback: profile.scrollback,
+			tabStopWidth: profile.tabStopWidth)
 		terminalView = TerminalView(
 			frame: CGRect(x: 0, y: 0, width: 800, height: 480), options: options)
 		super.init()
 		terminalView.terminalDelegate = self
+		applyLive(profile)
+	}
+
+	// Kept for the legacy per-port detail view until the tabbed pane replaces it; defaults to the
+	// built-in OneDark profile.
+	convenience override init() {
+		self.init(profile: .oneDarkDefault)
+	}
+
+	// Re-apply the LIVE settings (font, colours, key/mouse behaviour) to the existing terminal.
+	// Safe to call any time; the startup-only settings are ignored here (they need a Reload).
+	func applyLive(_ profile: TerminalProfile) {
+		let size = CGFloat(profile.fontSize)
+		terminalView.font = NSFont(name: profile.fontName, size: size)
+			?? NSFont(name: "Menlo", size: size)
+			?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+		let c = profile.colors
+		if let fg = NSColor(hexColor: c.foreground) { terminalView.nativeForegroundColor = fg }
+		if let bg = NSColor(hexColor: c.background) { terminalView.nativeBackgroundColor = bg }
+		if let caret = NSColor(hexColor: c.cursor) { terminalView.caretColor = caret }
+		terminalView.caretTextColor = c.cursorText.flatMap { NSColor(hexColor: $0) }
+		if let sel = NSColor(hexColor: c.selectionBackground) {
+			terminalView.selectedTextBackgroundColor = sel
+		}
+		let palette = c.ansi.compactMap { SwiftTerm.Color.from(hexColor: $0) }
+		if palette.count == 16 { terminalView.installColors(palette) }
+		terminalView.optionAsMetaKey = profile.optionAsMeta
+		terminalView.allowMouseReporting = profile.mouseReporting
+	}
+
+	private static func cursorStyle(_ cursor: TerminalCursor) -> CursorStyle {
+		switch cursor {
+		case .blinkBlock: return .blinkBlock
+		case .block: return .steadyBlock
+		case .blinkUnderline: return .blinkUnderline
+		case .underline: return .steadyUnderline
+		case .blinkBar: return .blinkBar
+		case .bar: return .steadyBar
+		}
 	}
 
 	// Idempotent: connect once per socket. A different socket (VM restart) is a new controller.
