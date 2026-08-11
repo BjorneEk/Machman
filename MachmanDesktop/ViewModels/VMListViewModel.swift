@@ -552,6 +552,47 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func addConsolePort(_ name: String) {
+		Task { [weak self] in
+			do { try await self?.api.addConsolePort(vm: name) }
+			catch { self?.present(error, while: "Adding a console port") }
+		}
+	}
+
+	func removeConsolePort(_ name: String) {
+		Task { [weak self] in
+			do { try await self?.api.removeConsolePort(vm: name) }
+			catch { self?.present(error, while: "Removing a console port") }
+		}
+	}
+
+	func addUartPort(_ name: String) {
+		Task { [weak self] in
+			do { try await self?.api.addUartPort(vm: name) }
+			catch { self?.present(error, while: "Adding a UART port") }
+		}
+	}
+
+	func removeUartPort(_ name: String) {
+		Task { [weak self] in
+			do { try await self?.api.removeUartPort(vm: name) }
+			catch { self?.present(error, while: "Removing a UART port") }
+		}
+	}
+
+	func setSerialLogging(
+		_ name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) {
+		Task { [weak self] in
+			do {
+				try await self?.api.setSerialLogging(
+					vm: name, kind: kind, index: index, config: config)
+			} catch {
+				self?.present(error, while: "Updating serial logging")
+			}
+		}
+	}
+
 	func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
 		do {
 			try await api.setKernelBoot(vm: name, enabled: enabled)

@@ -59,6 +59,12 @@ public enum MachmanSymbols {
 	public static let diskName = "internaldrive.fill"
 	public static let diskSize = "gauge.with.needle"
 
+	// MARK: - Serial ports
+	public static let serialConsole = "terminal"
+	public static let serialUart = "cable.connector"
+	public static let serialPort = "rectangle.connected.to.line.below"
+	public static let saveToFile = "arrow.down.doc"
+
 	// MARK: - History
 	public static let uptime = "clock"
 	public static let totalRuntime = "hourglass"
