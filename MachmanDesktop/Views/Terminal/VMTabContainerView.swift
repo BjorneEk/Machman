@@ -81,8 +81,14 @@ struct VMTabContainerView: View {
 				.id(ObjectIdentifier(controller))   // swap the NSView when reloadTab replaces it
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				.padding(6)
+				// Reconnect when the socket appears (VM start) — either while viewing this tab
+				// (onChange) or when switching back to it after the VM already started (onAppear).
 				.onChange(of: socketPath(vm: vm, ref: ref)) { _, path in
 					sessions.reconnectIfPossible(vm: vm.name, ref: ref, socketPath: path)
+				}
+				.onAppear {
+					sessions.reconnectIfPossible(
+						vm: vm.name, ref: ref, socketPath: socketPath(vm: vm, ref: ref))
 				}
 		} else {
 			VStack(spacing: 8) {
