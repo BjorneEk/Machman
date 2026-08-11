@@ -7,6 +7,9 @@
 //  it (which disconnects the terminal — a connection lives exactly as long as its tab). Ports are
 //  opened as tabs from the sidebar, not here.
 //
+//  Tabs are plain Buttons (select and close are SEPARATE buttons, never nested and never mixed
+//  with onTapGesture) so every hit target is reliable; the active tab gets a square fill.
+//
 
 import SwiftUI
 import MachmanUI
@@ -19,14 +22,15 @@ struct VMTabStrip: View {
 	var body: some View {
 		let state = sessions.state(vm.name)
 		ScrollView(.horizontal, showsIndicators: false) {
-			HStack(spacing: 4) {
+			HStack(spacing: 1) {
 				configTab(active: state.active == .config)
 				ForEach(state.openPorts, id: \.self) { ref in
 					terminalTab(ref: ref, active: state.active == .terminal(ref))
 				}
+				Spacer(minLength: 0)
 			}
-			.padding(.horizontal, 8)
-			.padding(.vertical, 4)
+			.padding(.horizontal, 6)
+			.padding(.vertical, 3)
 		}
 	}
 
@@ -35,40 +39,42 @@ struct VMTabStrip: View {
 			sessions.setActive(.config, for: vm.name)
 		} label: {
 			Image(systemName: MachmanSymbols.tabConfig)
-				.frame(width: 40, height: 26)
-				.background(tabBackground(active))
+				.frame(width: 44, height: 26)
 				.contentShape(Rectangle())
+				.background(active ? Color.primary.opacity(0.12) : Color.clear)
 		}
 		.buttonStyle(.plain)
 		.help("Configuration")
 	}
 
 	private func terminalTab(ref: SerialPortRef, active: Bool) -> some View {
-		HStack(spacing: 5) {
-			Image(systemName: ref.kind == .console
-				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-				.font(.caption)
-			Text(displayName(ref)).font(.callout).lineLimit(1)
+		HStack(spacing: 4) {
+			Button {
+				sessions.setActive(.terminal(ref), for: vm.name)
+			} label: {
+				HStack(spacing: 5) {
+					Image(systemName: ref.kind == .console
+						? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
+						.font(.caption)
+					Text(displayName(ref)).font(.callout).lineLimit(1)
+				}
+				.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
 			Button {
 				sessions.closeTab(vm: vm.name, ref: ref)
 			} label: {
-				Image(systemName: MachmanSymbols.closeTab).font(.caption2)
+				Image(systemName: MachmanSymbols.closeTab)
+					.font(.caption2)
+					.frame(width: 16, height: 16)
+					.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
 			.help("Close tab")
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 26)
-		.background(tabBackground(active))
-		.contentShape(Rectangle())
-		.onTapGesture {
-			sessions.setActive(.terminal(ref), for: vm.name)
-		}
-	}
-
-	private func tabBackground(_ active: Bool) -> some View {
-		RoundedRectangle(cornerRadius: 6)
-			.fill(active ? Color.primary.opacity(0.1) : Color.clear)
+		.background(active ? Color.primary.opacity(0.12) : Color.clear)
 	}
 
 	// Prefer the server's guest device name; fall back to a derived one if the port list lags.
