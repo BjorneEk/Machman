@@ -76,34 +76,41 @@ struct VMTabContainerView: View {
 
 	@ViewBuilder
 	private func terminalContent(vm: VMInfo, ref: SerialPortRef) -> some View {
-		if let controller = sessions.controller(vm: vm.name, ref: ref) {
+		// The socket exists only while the VM serves this port, so gate on it: a stopped VM shows
+		// a placeholder, and the terminal mounts (and reconnects, via onAppear) once it starts.
+		// The controller — and its scrollback — persists across the stop in TerminalSessions.
+		if let socket = socketPath(vm: vm, ref: ref),
+			let controller = sessions.controller(vm: vm.name, ref: ref) {
 			SerialTerminalHost(controller: controller)
 				.id(ObjectIdentifier(controller))   // swap the NSView when reloadTab replaces it
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				.padding(6)
-				// Reconnect when the socket appears (VM start) — either while viewing this tab
-				// (onChange) or when switching back to it after the VM already started (onAppear).
-				.onChange(of: socketPath(vm: vm, ref: ref)) { _, path in
-					sessions.reconnectIfPossible(vm: vm.name, ref: ref, socketPath: path)
-				}
 				.onAppear {
-					sessions.reconnectIfPossible(
-						vm: vm.name, ref: ref, socketPath: socketPath(vm: vm, ref: ref))
+					sessions.reconnectIfPossible(vm: vm.name, ref: ref, socketPath: socket)
 				}
 		} else {
 			VStack(spacing: 8) {
 				Image(systemName: ref.kind == .console
 					? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
 					.font(.largeTitle).foregroundColor(.secondary)
-				Text("Terminal not connected.").foregroundColor(.secondary)
+				Text("Start the VM to open \(guestName(vm: vm, ref: ref)).")
+					.foregroundColor(.secondary)
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 		}
 	}
 
 	private func socketPath(vm: VMInfo, ref: SerialPortRef) -> String? {
+		port(vm: vm, ref: ref)?.socketPath
+	}
+
+	private func port(vm: VMInfo, ref: SerialPortRef) -> SerialPortInfo? {
 		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-		return ports?.first(where: { $0.index == ref.index })?.socketPath
+		return ports?.first(where: { $0.index == ref.index })
+	}
+
+	private func guestName(vm: VMInfo, ref: SerialPortRef) -> String {
+		port(vm: vm, ref: ref)?.guestDevice ?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
 	}
 
 	// MARK: - Toolbar (always-active VM header)
