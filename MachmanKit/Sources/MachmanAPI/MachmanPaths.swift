@@ -141,6 +141,14 @@ public enum MachmanPaths {
 		"\(runtimeDir)/vm-\(shortHash(name)).sock"
 	}
 
+	// A running VM's per-port serial data-plane socket, a sibling of its control socket. Hashed
+	// over name+kind+index so it stays well under the 104-byte sun_path ceiling.
+	public static func serialSocketPath(
+		vm name: String, kind: String, index: Int, runtimeDir: String
+	) -> String {
+		"\(runtimeDir)/tty-\(shortHash("\(name)|\(kind)|\(index)")).sock"
+	}
+
 	// FNV-1a, truncated to 32 bits. Hand-rolled to keep this module Foundation-only, and stable
 	// across processes and launches (unlike Hasher, which is seeded per process). Public
 	// because launch-agent labels reuse it for names launchd cannot carry verbatim.

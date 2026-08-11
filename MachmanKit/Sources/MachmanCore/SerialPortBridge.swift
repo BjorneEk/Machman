@@ -64,14 +64,23 @@ final class SerialPortBridge {
 
 	// MARK: - Lifecycle
 
-	func start() throws {
+	// Non-throwing on purpose: the drain is installed FIRST, so even if the socket can't be bound
+	// (leaving the port unattachable) the guest's output is still drained and never stalls.
+	func start() {
 		_ = Self.ignoreSIGPIPE
-		try bindSocket()
+		installDrain()
 		queue.async { [weak self] in
 			self?.openLog()
 		}
-		installDrain()
-		installAccept()
+		do {
+			try bindSocket()
+			installAccept()
+		} catch {
+			MachmanLogger.log(
+				.passiveWarning,
+				"serial \(kind.rawValue)\(index): \(error.localizedDescription) — remote attach "
+					+ "disabled, logging still active")
+		}
 	}
 
 	func stop() {

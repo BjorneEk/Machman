@@ -10,6 +10,23 @@
 import Foundation
 import Virtualization
 import AppKit
+import MachmanAPI
+
+// The host ends of one serial port's pipes, handed to a SerialPortBridge. The VZ attachment holds
+// the other ends. The bridge writes guest input to `toGuest` and reads guest output from
+// `fromGuest`.
+struct SerialWiring {
+	let kind: SerialPortKind
+	let index: Int
+	let toGuest: FileHandle
+	let fromGuest: FileHandle
+}
+
+// A built VZ configuration plus the serial pipe wiring its ports need bridged.
+struct BuiltVM {
+	let configuration: VZVirtualMachineConfiguration
+	let serialWiring: [SerialWiring]
+}
 
 extension VMConfig {
 
@@ -94,14 +111,65 @@ extension VMConfig {
 		}
 	}
 
-	// No serial ports by default yet; the serial-ports feature adds configurable ones.
-	func serialPorts() -> [VZSerialPortConfiguration] {
-		return []
+	// Build the configured serial ports over fresh pipe pairs, returning the host-end wiring for
+	// the bridges. Console (virtio) ports come first so a Linux guest numbers them hvc0.. and the
+	// PL011 uart ports ttyAMA0.. by their own order. Each pipe MUST be drained by a bridge or the
+	// guest stalls writing to it.
+	func serialPorts() -> (ports: [VZSerialPortConfiguration], wiring: [SerialWiring]) {
+		var ports: [VZSerialPortConfiguration] = []
+		var wiring: [SerialWiring] = []
+		for index in consolePorts.indices {
+			let (attachment, wire) = makeSerialPipe(kind: .console, index: index)
+			let port = VZVirtioConsoleDeviceSerialPortConfiguration()
+			port.attachment = attachment
+			ports.append(port)
+			wiring.append(wire)
+		}
+		for index in uartPorts.indices {
+			guard let port = makePL011SerialPort() else {
+				MachmanLogger.log(
+					.passiveWarning,
+					"the private PL011 UART is unavailable; skipping uart\(index) on \(name)")
+				continue
+			}
+			let (attachment, wire) = makeSerialPipe(kind: .uart, index: index)
+			port.attachment = attachment
+			ports.append(port)
+			wiring.append(wire)
+		}
+		return (ports, wiring)
+	}
+
+	private func makeSerialPipe(
+		kind: SerialPortKind, index: Int
+	) -> (VZFileHandleSerialPortAttachment, SerialWiring) {
+		let toGuest = Pipe()
+		let fromGuest = Pipe()
+		let attachment = VZFileHandleSerialPortAttachment(
+			fileHandleForReading: toGuest.fileHandleForReading,
+			fileHandleForWriting: fromGuest.fileHandleForWriting)
+		let wire = SerialWiring(
+			kind: kind, index: index,
+			toGuest: toGuest.fileHandleForWriting, fromGuest: fromGuest.fileHandleForReading)
+		return (attachment, wire)
+	}
+
+	// The private PL011 UART class (a real /dev/ttyAMA* in the guest, drivable by bare-metal
+	// kernels). Present in every SDK since macOS 11 and usable with only the public virtualization
+	// entitlement, but private — guard it and skip cleanly if it ever disappears.
+	private func makePL011SerialPort() -> VZSerialPortConfiguration? {
+		guard let cls = NSClassFromString("_VZPL011SerialPortConfiguration") as? NSObject.Type,
+			let port = cls.perform(NSSelectorFromString("new"))?.takeRetainedValue()
+				as? VZSerialPortConfiguration else {
+			return nil
+		}
+		return port
 	}
 
 	// Assembles the full VZ configuration. Shared by the normal boot path (VirtualMachine) and the
-	// macOS installer so the device list lives in exactly one place.
-	func makeVZVirtualMachineConfiguration() throws -> VZVirtualMachineConfiguration {
+	// macOS installer so the device list lives in exactly one place. attachSerial is false for the
+	// installer: it does not run bridges, and an undrained serial pipe would stall the guest.
+	func makeVZVirtualMachineConfiguration(attachSerial: Bool = true) throws -> BuiltVM {
 		let vmConfig = VZVirtualMachineConfiguration()
 		vmConfig.cpuCount = getCPUCounte()
 		vmConfig.memorySize = getMemorySize()
@@ -114,10 +182,15 @@ extension VMConfig {
 		vmConfig.keyboards = keyboards()
 		vmConfig.pointingDevices = pointingDevices()
 		vmConfig.consoleDevices = consoleDevices()
-		vmConfig.serialPorts = serialPorts()
+		var wiring: [SerialWiring] = []
+		if attachSerial {
+			let serial = serialPorts()
+			vmConfig.serialPorts = serial.ports
+			wiring = serial.wiring
+		}
 		vmConfig.directorySharingDevices = [directoryShareDeviceConfig(mainTag: "host-share")]
 		try vmConfig.validate()
-		return vmConfig
+		return BuiltVM(configuration: vmConfig, serialWiring: wiring)
 	}
 
 	// MARK: - Device factories

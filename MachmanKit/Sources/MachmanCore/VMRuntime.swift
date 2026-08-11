@@ -19,6 +19,8 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	private(set) var vz: VZVirtualMachine?
 	private var stateObservation: NSKeyValueObservation?
 	private var lastEmitted: VMState = .stopped
+	// One data-plane bridge per serial port, live while the VM runs.
+	private var serialBridges: [SerialPortBridge] = []
 	// Called exactly once, after the VZ machine is gone (guest stop, forced stop, or crash).
 	var onTeardown: (() -> Void)?
 
@@ -53,10 +55,11 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		guard vz == nil else {
 			throw VirtualMachineError.critical("\(config.name) is already running")
 		}
-		let vmConfig = try config.makeVZVirtualMachineConfiguration()
-		let machine = VZVirtualMachine(configuration: vmConfig)
+		let built = try config.makeVZVirtualMachineConfiguration()
+		let machine = VZVirtualMachine(configuration: built.configuration)
 		machine.delegate = self
 		vz = machine
+		startSerialBridges(built.serialWiring)
 		stateObservation = machine.observe(\.state, options: [.new]) { [weak self] machine, _ in
 			let mapped = VMRuntime.map(machine.state)
 			Task { @MainActor [weak self] in
@@ -129,8 +132,39 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		guard vz != nil else { return }
 		stateObservation?.invalidate()
 		stateObservation = nil
+		for bridge in serialBridges { bridge.stop() }
+		serialBridges.removeAll()
 		vz = nil
 		emitState(.stopped)
 		onTeardown?()
+	}
+
+	// MARK: - Serial data plane
+
+	private func startSerialBridges(_ wiring: [SerialWiring]) {
+		let runtimeDir = MachmanPaths.runtimeDir()
+		for wire in wiring {
+			let ports = wire.kind == .console ? config.consolePorts : config.uartPorts
+			let logging = ports.indices.contains(wire.index)
+				? ports[wire.index].logging : SerialLogConfig()
+			let bridge = SerialPortBridge(
+				kind: wire.kind, index: wire.index,
+				socketPath: MachmanPaths.serialSocketPath(
+					vm: config.name, kind: wire.kind.rawValue, index: wire.index,
+					runtimeDir: runtimeDir),
+				logURL: config.localURL(file: "serial-\(wire.kind.rawValue)\(wire.index).log"),
+				logConfig: logging, toGuest: wire.toGuest, fromGuest: wire.fromGuest)
+			bridge.start()
+			serialBridges.append(bridge)
+		}
+	}
+
+	// The actual bound socket path (stored, not recomputed — robust to a safe-run rename).
+	func serialSocketPath(kind: SerialPortKind, index: Int) -> String? {
+		serialBridges.first { $0.kind == kind && $0.index == index }?.socketPath
+	}
+
+	func retuneSerialLogging(kind: SerialPortKind, index: Int, config: SerialLogConfig) {
+		serialBridges.first { $0.kind == kind && $0.index == index }?.retune(config)
 	}
 }

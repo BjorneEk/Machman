@@ -64,8 +64,9 @@ final class MacInstaller {
 		try config.saveVMConfig()
 
 		do {
-			let vmConfig = try config.makeVZVirtualMachineConfiguration()
-			let vm = VZVirtualMachine(configuration: vmConfig)
+			// No serial bridges during install (nothing would drain the pipes).
+			let built = try config.makeVZVirtualMachineConfiguration(attachSerial: false)
+			let vm = VZVirtualMachine(configuration: built.configuration)
 			let installer = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: image.url)
 			self.progress = installer.progress
 			onInstallProgress?(installer.progress)

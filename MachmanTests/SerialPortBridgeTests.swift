@@ -70,7 +70,7 @@ struct SerialPortBridgeTests {
 
 	@Test func teesToLogAndBroadcastsToClient() throws {
 		let env = makeBridge("tee", log: SerialLogConfig(mode: .resetOnBoot))
-		try env.bridge.start()
+		env.bridge.start()
 		defer { env.bridge.stop() }
 		let client = connect(env.bridge.socketPath)
 		defer { close(client) }
@@ -85,7 +85,7 @@ struct SerialPortBridgeTests {
 
 	@Test func lateClientReplaysRecentOutput() throws {
 		let env = makeBridge("replay")
-		try env.bridge.start()
+		env.bridge.start()
 		defer { env.bridge.stop() }
 		env.guestOut.write(Data("EARLY_OUTPUT\n".utf8))   // before any client attaches
 		Thread.sleep(forTimeInterval: 0.3)
@@ -97,7 +97,7 @@ struct SerialPortBridgeTests {
 
 	@Test func clientInputReachesGuest() throws {
 		let env = makeBridge("input")
-		try env.bridge.start()
+		env.bridge.start()
 		defer { env.bridge.stop() }
 		let client = connect(env.bridge.socketPath)
 		defer { close(client) }
@@ -110,7 +110,7 @@ struct SerialPortBridgeTests {
 
 	@Test func deadClientDoesNotStopTheDrain() throws {
 		let env = makeBridge("dead")
-		try env.bridge.start()
+		env.bridge.start()
 		defer { env.bridge.stop() }
 		let dead = connect(env.bridge.socketPath)
 		let live = connect(env.bridge.socketPath)
@@ -126,7 +126,7 @@ struct SerialPortBridgeTests {
 
 	@Test func disabledLoggingWritesNoFile() throws {
 		let env = makeBridge("nolog", log: SerialLogConfig(mode: .disabled))
-		try env.bridge.start()
+		env.bridge.start()
 		defer { env.bridge.stop() }
 		let client = connect(env.bridge.socketPath)
 		defer { close(client) }
@@ -140,7 +140,7 @@ struct SerialPortBridgeTests {
 
 	@Test func retuneEnablesLogging() throws {
 		let env = makeBridge("retune", log: SerialLogConfig(mode: .disabled))
-		try env.bridge.start()
+		env.bridge.start()
 		defer { env.bridge.stop() }
 		#expect(env.bridge.currentLogPath() == nil)
 		env.bridge.retune(SerialLogConfig(mode: .resetOnBoot))
