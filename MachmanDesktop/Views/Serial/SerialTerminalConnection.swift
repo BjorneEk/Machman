@@ -16,7 +16,7 @@ final class SerialTerminalConnection {
 	private var readSource: DispatchSourceRead?
 	private let transcriptLock = NSLock()
 	private var transcript = Data()
-	private static let transcriptCap = 1 << 20   // 1 MiB of scrollback for "save to file"
+	private static let transcriptCap = 8 << 20   // 8 MiB of scrollback for "save to file"
 
 	// Called on the main queue with each chunk of guest output.
 	var onData: ((Data) -> Void)?

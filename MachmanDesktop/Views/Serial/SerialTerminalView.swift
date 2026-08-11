@@ -21,7 +21,13 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	@Published var connected = false
 
 	override init() {
-		terminalView = TerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 480))
+		// convertEol: a bare-metal UART emits bare LF with no CR (QEMU's stdio adds it via
+		// ONLCR; our raw socket does not), so each line would staircase down the screen —
+		// convertEol makes the terminal treat LF as CR+LF. scrollback: the default 500 lines is
+		// swamped by a chatty kernel, so keep a deep history.
+		let options = TerminalOptions(convertEol: true, scrollback: 20000)
+		terminalView = TerminalView(
+			frame: CGRect(x: 0, y: 0, width: 800, height: 480), options: options)
 		super.init()
 		terminalView.terminalDelegate = self
 	}

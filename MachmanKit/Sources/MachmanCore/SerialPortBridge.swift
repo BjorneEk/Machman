@@ -38,7 +38,7 @@ final class SerialPortBridge {
 	private var drainSource: DispatchSourceRead?
 	private var stopped = false
 
-	private static let replayCap = 64 * 1024
+	private static let replayCap = 256 * 1024
 
 	private static let ignoreSIGPIPE: Void = {
 		signal(SIGPIPE, SIG_IGN)
