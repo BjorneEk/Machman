@@ -41,13 +41,28 @@ struct VMTabContainerView: View {
 		VStack(spacing: 0) {
 			VMTabStrip(vm: vm, sessions: sessions)
 			Divider()
-			activeContent(vm)
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
+			HStack(spacing: 0) {
+				activeContent(vm)
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
+				if viewModel.showInfoPanel,
+					case let .terminal(ref) = sessions.state(vm.name).active {
+					Divider()
+					TerminalInfoPanel(
+						vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
+						profiles: profiles)
+						.frame(width: 320)
+				}
+			}
 		}
 		.background(FocusAndTopmostTracker { focused in
 			viewModel.onFocusEvent(focused: focused)
 		})
 		.toolbar { toolbar(vm) }
+	}
+
+	private func isTerminalActive(_ vm: VMInfo) -> Bool {
+		if case .terminal = sessions.state(vm.name).active { return true }
+		return false
 	}
 
 	@ViewBuilder
@@ -118,6 +133,15 @@ struct VMTabContainerView: View {
 				Label("Delete", systemImage: MachmanSymbols.delete)
 			}
 			.help("delete \(vm.name)")
+		}
+		ToolbarItem {
+			Button {
+				viewModel.showInfoPanel.toggle()
+			} label: {
+				Label("Info", systemImage: MachmanSymbols.infoPanel)
+			}
+			.disabled(!isTerminalActive(vm))
+			.help(viewModel.showInfoPanel ? "Hide terminal info" : "Show terminal info")
 		}
 	}
 

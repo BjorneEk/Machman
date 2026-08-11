@@ -64,6 +64,9 @@ final class VMListViewModel: ObservableObject {
 	// Per-VM terminal tabs + their live connections. Persists across VM navigation; a tab's
 	// connection lives exactly as long as the tab is open. Observed directly by the tab views.
 	let terminals = TerminalSessions()
+	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
+	// toggle and by the sidebar's "Properties" action.
+	@Published var showInfoPanel = false
 	@Published var presentedError: PresentedError?
 	// Binding surface for .alert(isPresented:presenting:) — clears the item on dismiss.
 	var isErrorPresented: Bool {

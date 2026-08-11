@@ -74,6 +74,9 @@ public enum MachmanSymbols {
 	// Per-VM tabbed pane
 	public static let tabConfig = "gearshape"
 	public static let closeTab = "xmark"
+	public static let infoPanel = "sidebar.right"
+	public static let terminalProfile = "paintpalette"
+	public static let reloadTerminal = "arrow.clockwise.circle"
 	// Sidebar disclosure chevrons
 	public static let disclosureCollapsed = "chevron.right"
 	public static let disclosureExpanded = "chevron.down"
