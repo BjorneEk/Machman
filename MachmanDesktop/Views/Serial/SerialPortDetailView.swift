@@ -115,10 +115,11 @@ struct SerialPortDetailView: View {
 					tab = t
 				} label: {
 					Image(systemName: t.icon)
-						.frame(width: 46, height: 26)
+						.font(.title3)
+						.frame(width: 56, height: 32)
 						.background(tab == t ? Color.accentColor.opacity(0.18) : Color.clear)
-						.foregroundColor(tab == t ? .primary : .secondary)
-						.clipShape(RoundedRectangle(cornerRadius: 5))
+						.foregroundColor(tab == t ? .accentColor : .secondary)
+						.clipShape(RoundedRectangle(cornerRadius: 6))
 						.contentShape(Rectangle())
 				}
 				.buttonStyle(.plain)
