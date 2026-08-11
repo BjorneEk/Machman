@@ -18,6 +18,8 @@ import MachmanAPI
 struct MachmanDesktopApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	@StateObject var connection: DaemonConnection
+	// App-scoped (survives daemon reconnects): terminal profiles + per-socket associations.
+	@StateObject var profiles = TerminalProfileStore()
 	@State var selection: SidebarSelection? = nil
 
 	init() {
@@ -27,7 +29,7 @@ struct MachmanDesktopApp: App {
 	var body: some Scene {
 		WindowGroup {
 			if let viewModel = connection.viewModel {
-				VMNavigationView(viewModel: viewModel, selection: $selection)
+				VMNavigationView(viewModel: viewModel, selection: $selection, profiles: profiles)
 					.id(ObjectIdentifier(viewModel))   // remount per (re)connection
 			} else {
 				ConnectingView(connection: connection)

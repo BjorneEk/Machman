@@ -11,15 +11,19 @@ import MachmanAPI
 
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
-	@State private var navigate = false
+	let profiles: TerminalProfileStore
 	@State private var lastSelection: SidebarSelection?
 	@State private var expandedVMs: Set<String> = []
 	@State private var expandedCategories: Set<String> = []   // "<vm>|console" / "<vm>|uart"
 	@Binding private var selection: SidebarSelection?
 
-	init(viewModel: VMListViewModel, selection: Binding<SidebarSelection?>) {
+	init(
+		viewModel: VMListViewModel, selection: Binding<SidebarSelection?>,
+		profiles: TerminalProfileStore
+	) {
 		_viewModel = StateObject(wrappedValue: viewModel)
 		self._selection = selection
+		self.profiles = profiles
 	}
 
 	var body: some View {
@@ -55,7 +59,6 @@ struct VMNavigationView: View {
 				if let sel = selection {
 					lastSelection = sel
 					viewModel.select(name: sel.vmName)
-					navigate = !navigate
 				} else if let last = lastSelection {
 					// The sidebar List drops its selection on its own when focus moves to
 					// another app (the daemon's VM window). Re-assert the last selection
@@ -95,16 +98,8 @@ struct VMNavigationView: View {
 			.buttonStyle(.borderless)
 			.padding()
 		} detail: {
-			Group {
-				switch selection {
-				case .serial(let vm, let kind, let index):
-					SerialPortDetailView(
-						vmName: vm, kind: kind, index: index, viewModel: viewModel)
-				default:
-					MainVMView(viewModel: viewModel)
-				}
-			}
-			.id(navigate)
+			VMTabContainerView(
+				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
 		}
 		.alert(
 			viewModel.presentedError?.title ?? "Error",

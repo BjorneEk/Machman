@@ -71,6 +71,9 @@ public enum MachmanSymbols {
 	public static let tabInfo = "info.circle"
 	public static let tabTerminal = "terminal"
 	public static let tabAdvanced = "wrench.and.screwdriver"
+	// Per-VM tabbed pane
+	public static let tabConfig = "gearshape"
+	public static let closeTab = "xmark"
 	// Sidebar disclosure chevrons
 	public static let disclosureCollapsed = "chevron.right"
 	public static let disclosureExpanded = "chevron.down"
