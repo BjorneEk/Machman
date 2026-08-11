@@ -54,4 +54,51 @@ struct KernelStoreTests {
 			}
 		}
 	}
+
+	// Files copied in by an older build live at <kernels>/<storeName>/<file> (no role level).
+	// They must still surface, with role from the config's references, else inferred by name.
+	@Test func legacyFlatLayoutFilesAreSurfaced() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "j")
+			let cfg = try VMConfig(name: "j", memorySize: 1 << 30, cpuCount: 2)
+			let fm = FileManager.default
+			let legacyDir = cfg.kernelsDirPath() + "/janusrt"
+			try fm.createDirectory(atPath: legacyDir, withIntermediateDirectories: true)
+			let kpath = legacyDir + "/Image"
+			try Data("K".utf8).write(to: URL(fileURLWithPath: kpath))
+			try Data("I".utf8).write(to: URL(fileURLWithPath: legacyDir + "/initramfs.cpio"))
+			try Data("X".utf8).write(to: URL(fileURLWithPath: legacyDir + "/vmlinuz-extra"))
+
+			// Config points at Image as the kernel; the other two are unreferenced.
+			try cfg.updateKernelSettings(LinuxKernelBoot(
+				kernelPath: kpath, initialRamdiskPath: nil, commandLine: ""))
+
+			let owned = cfg.ownedKernelFiles()
+			#expect(owned.count == 3)
+			let byName = Dictionary(uniqueKeysWithValues: owned.map { ($0.fileName, $0) })
+			#expect(byName["Image"]?.role == .kernel)              // from the config reference
+			#expect(byName["initramfs.cpio"]?.role == .initramfs)  // name-inferred
+			#expect(byName["vmlinuz-extra"]?.role == .kernel)      // name-inferred default
+			#expect(owned.allSatisfy { $0.tag == "janusrt" })
+		}
+	}
+
+	// A current-layout owned file and a legacy flat file are both listed.
+	@Test func legacyAndCurrentLayoutsCoexist() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "j2")
+			let cfg = try VMConfig(name: "j2", memorySize: 1 << 30, cpuCount: 2)
+			let fm = FileManager.default
+			let src = NSTemporaryDirectory() + "k-\(UUID().uuidString).bin"
+			try Data("K".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? fm.removeItem(atPath: src) }
+			_ = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: "new")
+			let legacyDir = cfg.kernelsDirPath() + "/old"
+			try fm.createDirectory(atPath: legacyDir, withIntermediateDirectories: true)
+			try Data("L".utf8).write(to: URL(fileURLWithPath: legacyDir + "/vmlinuz"))
+
+			#expect(Set(cfg.ownedKernelFiles().map(\.tag)) == ["new", "old"])
+		}
+	}
 }

@@ -569,7 +569,10 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Owned kernel/initramfs files (copies living under <vm>/kernels).
 	func kernelsDirPath() -> String { configFilePath(file: "kernels") }
 	func ownedKernelFiles() -> [OwnedKernelFile] {
-		KernelStore.ownedFiles(kernelsDir: kernelsDirPath())
+		KernelStore.ownedFiles(
+			kernelsDir: kernelsDirPath(),
+			kernelPath: kernelSettings?.kernelPath,
+			initrdPath: kernelSettings?.initialRamdiskPath)
 	}
 
 	// After deleting an owned kernel file, clear any kernel field that pointed at it.

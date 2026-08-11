@@ -18,10 +18,16 @@ enum KernelStore {
 		path.hasPrefix(kernelsDir + "/")
 	}
 
-	// Every owned file, parsed into role/tag/fileName, sorted by path.
-	static func ownedFiles(kernelsDir: String) -> [OwnedKernelFile] {
+	// Every owned file, parsed into role/tag/fileName, sorted by path. The optional kernel/initrd
+	// paths (the config's current references) let legacy files be assigned the right role.
+	static func ownedFiles(
+		kernelsDir: String, kernelPath: String? = nil, initrdPath: String? = nil
+	) -> [OwnedKernelFile] {
 		let fm = FileManager.default
 		var result: [OwnedKernelFile] = []
+		let roleDirNames = Set([KernelRole.kernel.rawValue, KernelRole.initramfs.rawValue])
+
+		// Current layout: <kernelsDir>/<role>/<tag>/<file>.
 		for role in [KernelRole.kernel, .initramfs] {
 			let roleDir = kernelsDir + "/" + role.rawValue
 			guard let tags = try? fm.contentsOfDirectory(atPath: roleDir) else { continue }
@@ -37,7 +43,37 @@ enum KernelStore {
 				}
 			}
 		}
+
+		// Legacy layout (before the role level existed): <kernelsDir>/<storeName>/<file>. Files
+		// copied in by an older build are stranded from the scan above, so surface them where they
+		// lie (no move) — role from the config's live references, else inferred from the file name.
+		for store in (try? fm.contentsOfDirectory(atPath: kernelsDir)) ?? []
+			where !roleDirNames.contains(store) {
+			let storeDir = kernelsDir + "/" + store
+			var storeIsDir: ObjCBool = false
+			guard fm.fileExists(atPath: storeDir, isDirectory: &storeIsDir), storeIsDir.boolValue
+			else { continue }
+			for file in (try? fm.contentsOfDirectory(atPath: storeDir)) ?? [] {
+				let path = storeDir + "/" + file
+				var fileIsDir: ObjCBool = false
+				guard fm.fileExists(atPath: path, isDirectory: &fileIsDir), !fileIsDir.boolValue
+				else { continue }
+				let role: KernelRole
+				if path == kernelPath { role = .kernel }
+				else if path == initrdPath { role = .initramfs }
+				else { role = inferRole(fileName: file) }
+				result.append(OwnedKernelFile(role: role, tag: store, fileName: file, path: path))
+			}
+		}
+
 		return result.sorted { $0.path < $1.path }
+	}
+
+	// Best-effort role for a legacy file the config doesn't reference, by name.
+	private static func inferRole(fileName: String) -> KernelRole {
+		let name = fileName.lowercased()
+		let initramfsHints = ["initramfs", "initrd", "ramdisk", "rootfs", "cpio"]
+		return initramfsHints.contains(where: name.contains) ? .initramfs : .kernel
 	}
 
 	// Copy sourcePath into <kernelsDir>/<role>/<tag>/<basename> and return the new owned path.
