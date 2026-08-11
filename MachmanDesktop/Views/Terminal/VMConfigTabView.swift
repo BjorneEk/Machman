@@ -20,7 +20,7 @@ struct VMConfigTabView: View {
 	var body: some View {
 		VStack {
 			HStack {
-				PreviewView(viewModel: viewModel)
+				PreviewView(viewModel: viewModel, previews: viewModel.previewImages)
 					.frame(minWidth: 170)
 				Spacer()
 				ConfigVMDisksView(vm: vm, viewModel: viewModel)

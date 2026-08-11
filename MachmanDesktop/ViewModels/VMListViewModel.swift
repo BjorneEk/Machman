@@ -55,7 +55,9 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var vms: [VMInfo] = []
 	@Published private(set) var capabilities: HostCapabilities?
 	@Published private(set) var installPhases: [String: InstallPhase] = [:]
-	@Published private(set) var previews: [String: NSImage] = [:]
+	// Live preview thumbnails live in their own store so the ~4s refresh loop re-renders only the
+	// small PreviewView, not the whole VM pane (tab strip, terminal, toolbar). See PreviewStore.
+	let previewImages = PreviewStore()
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
 	// Per-VM terminal tabs + their live connections. Persists across VM navigation; a tab's
@@ -224,7 +226,7 @@ final class VMListViewModel: ObservableObject {
 	// MARK: - Preview
 
 	func preview() -> NSImage? {
-		selectedName.flatMap { previews[$0] }
+		selectedName.flatMap { previewImages.images[$0] }
 	}
 
 	func isLoading() -> Bool {
@@ -248,7 +250,7 @@ final class VMListViewModel: ObservableObject {
 				let data = try? await self.api.preview(vm: name, maxWidth: 1280)
 				if Task.isCancelled { return }
 				if let data = data, let image = NSImage(data: data) {
-					self.previews[name] = image
+					self.previewImages.images[name] = image
 				}
 				try? await Task.sleep(for: .seconds(self.previewInterval))
 			}
@@ -367,8 +369,8 @@ final class VMListViewModel: ObservableObject {
 			terminals.renameVM(from: oldName, to: newName)
 			await reload()
 			select(name: newName)
-			if let image = previews.removeValue(forKey: oldName) {
-				previews[newName] = image
+			if let image = previewImages.images.removeValue(forKey: oldName) {
+				previewImages.images[newName] = image
 			}
 			return true
 		} catch {

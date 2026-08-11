@@ -15,11 +15,14 @@ struct PreviewWidthKey: PreferenceKey {
 }
 
 struct PreviewView: View {
-
 	@ObservedObject private var viewModel: VMListViewModel
+	// Observed so a new preview frame re-renders THIS view only; the image itself is read back
+	// through viewModel.preview(), which now reads from the same store.
+	@ObservedObject private var previews: PreviewStore
 
-	init(viewModel: VMListViewModel) {
+	init(viewModel: VMListViewModel, previews: PreviewStore) {
 		self.viewModel = viewModel
+		self.previews = previews
 	}
 
 	var body: some View {
@@ -29,9 +32,6 @@ struct PreviewView: View {
 					.resizable()
 					.aspectRatio(16/9, contentMode: .fit)
 					.cornerRadius(5)
-					//.onTapGesture {
-					// viewModel.updatePreview()
-					//	}
 			} else if self.viewModel.isLoading() {
 					Rectangle()
 						.fill(Color.black)
