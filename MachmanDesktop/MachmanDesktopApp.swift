@@ -154,6 +154,9 @@ struct MachmanDesktopApp: App {
 				}
 			}
 		}
+		Settings {
+			SettingsRootView(profiles: profiles)
+		}
 	}
 }
 

@@ -97,6 +97,18 @@ public final class TerminalProfileStore: ObservableObject {
 		save()
 	}
 
+	// Copy an existing profile into a new one (a fresh id + unique name). Falls back to a plain
+	// add if the source is gone.
+	@discardableResult
+	public func duplicate(id: UUID) -> TerminalProfile {
+		guard var p = profiles.first(where: { $0.id == id }) else { return addProfile() }
+		p.id = UUID()
+		p.name = uniqueName(basedOn: p.name + " copy")
+		profiles.append(p)
+		save()
+		return p
+	}
+
 	// Delete a profile; refuses the default and the last remaining one. Associations that pointed
 	// at it are pruned, so those ports fall back to the default.
 	public func delete(id: UUID) {

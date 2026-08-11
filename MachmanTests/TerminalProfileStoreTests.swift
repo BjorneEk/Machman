@@ -53,6 +53,19 @@ struct TerminalProfileStoreTests {
 			vm: "vm1", ref: SerialPortRef(kind: .console, index: 0)).id == id)
 	}
 
+	@Test func duplicateCreatesIndependentCopy() {
+		let store = TerminalProfileStore(fileURL: tempURL())
+		var p = store.addProfile()
+		p.name = "Base"
+		p.fontSize = 18
+		store.update(p)
+		let copy = store.duplicate(id: p.id)
+		#expect(copy.id != p.id)
+		#expect(copy.fontSize == 18)          // carried the source's settings
+		#expect(copy.name != p.name)          // uniquified
+		#expect(store.profiles.contains { $0.id == copy.id })
+	}
+
 	@Test func deleteRefusesDefaultAndPrunesAssociations() {
 		let store = TerminalProfileStore(fileURL: tempURL())
 		store.delete(id: store.defaultProfile.id)
