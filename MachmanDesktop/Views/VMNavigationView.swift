@@ -12,13 +12,12 @@ import MachmanAPI
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	let profiles: TerminalProfileStore
-	@State private var lastSelection: SidebarSelection?
+	@State private var lastSelection: String?
 	@State private var expandedVMs: Set<String> = []
-	@State private var expandedCategories: Set<String> = []   // "<vm>|console" / "<vm>|uart"
-	@Binding private var selection: SidebarSelection?
+	@Binding private var selection: String?
 
 	init(
-		viewModel: VMListViewModel, selection: Binding<SidebarSelection?>,
+		viewModel: VMListViewModel, selection: Binding<String?>,
 		profiles: TerminalProfileStore
 	) {
 		_viewModel = StateObject(wrappedValue: viewModel)
@@ -29,36 +28,26 @@ struct VMNavigationView: View {
 	var body: some View {
 		NavigationSplitView {
 			List(selection: $selection) {
-				// A flat list with manual expansion: a VM's chevron sits on the RIGHT and only
-				// toggles its subtree (the row itself stays selectable); the Console/UART
-				// category rows are wholly clickable to expand and are never selected; only the
-				// device leaves navigate.
+				// A flat list with manual expansion: only VM rows are selectable, and a VM's
+				// chevron toggles its subtree. Serial ports hang directly under the VM as
+				// non-selectable rows — clicking one opens (or focuses) its terminal tab.
 				ForEach(viewModel.vms) { item in
-					let consoles = item.consolePorts ?? []
-					let uarts = item.uartPorts ?? []
-					let hasPorts = !consoles.isEmpty || !uarts.isEmpty
-					vmRow(item, hasPorts: hasPorts).tag(SidebarSelection.vm(item.name))
-					if hasPorts && expandedVMs.contains(item.name) {
-						if !consoles.isEmpty {
-							categoryRow(item.name, "Console", MachmanSymbols.serialConsole, .console)
-							if expandedCategories.contains("\(item.name)|console") {
-								ForEach(consoles) { deviceRow(item.name, .console, $0) }
-							}
-						}
-						if !uarts.isEmpty {
-							categoryRow(item.name, "UART", MachmanSymbols.serialUart, .uart)
-							if expandedCategories.contains("\(item.name)|uart") {
-								ForEach(uarts) { deviceRow(item.name, .uart, $0) }
-							}
+					let ports = (item.consolePorts ?? []) + (item.uartPorts ?? [])
+					vmRow(item, hasPorts: !ports.isEmpty).tag(item.name)
+					if !ports.isEmpty && expandedVMs.contains(item.name) {
+						ForEach(ports) { port in
+							PortRowView(
+								vm: item.name, port: port, sessions: viewModel.terminals,
+								onOpen: { openPort(item.name, port) },
+								onProperties: { openPort(item.name, port, revealInfo: true) })
 						}
 					}
 				}
 			}
 			.onChange(of: selection) {
-				revealSelection()
 				if let sel = selection {
 					lastSelection = sel
-					viewModel.select(name: sel.vmName)
+					viewModel.select(name: sel)
 				} else if let last = lastSelection {
 					// The sidebar List drops its selection on its own when focus moves to
 					// another app (the daemon's VM window). Re-assert the last selection
@@ -66,26 +55,24 @@ struct VMNavigationView: View {
 					selection = last
 				}
 			}
-			// Keep the sidebar in sync when the SELECTED VM changes elsewhere (rename, delete);
-			// leave an in-VM serial selection alone.
+			// Keep the sidebar in sync when the SELECTED VM changes elsewhere (rename, delete).
 			.onChange(of: viewModel.selectedName) {
 				guard let name = viewModel.selectedName else { return }
-				if selection?.vmName != name {
-					selection = .vm(name)
+				if selection != name {
+					selection = name
 				}
 			}
 			// After a daemon reconnect the view model is fresh but the window kept its
 			// selection — restore it.
 			.onAppear {
-				revealSelection()
 				if let sel = selection, viewModel.selectedName == nil {
-					viewModel.select(name: sel.vmName)
+					viewModel.select(name: sel)
 				}
 			}
 			Button(action: {
 				Task {
 					if let name = await viewModel.createVM() {
-						selection = .vm(name)
+						selection = name
 						viewModel.select(name: name)
 					}
 				}
@@ -168,50 +155,49 @@ struct VMNavigationView: View {
 		}
 	}
 
-	// Category row: whole row expands/collapses; never selected.
-	@ViewBuilder
-	private func categoryRow(
-		_ vm: String, _ label: String, _ symbol: String, _ kind: SerialPortKind
-	) -> some View {
-		let key = "\(vm)|\(kind.rawValue)"
-		HStack {
-			Image(systemName: symbol).foregroundColor(.secondary)
-			Text(label).font(.caption).foregroundColor(.secondary)
-			Spacer()
-			Image(systemName: expandedCategories.contains(key)
-				? MachmanSymbols.disclosureExpanded : MachmanSymbols.disclosureCollapsed)
-				.font(.caption2).foregroundColor(.secondary)
-		}
-		.padding(.leading, 14)
-		.contentShape(Rectangle())
-		.onTapGesture {
-			if expandedCategories.contains(key) {
-				expandedCategories.remove(key)
-			} else {
-				expandedCategories.insert(key)
-			}
-		}
+	// Open (or focus) a serial port's terminal tab, selecting its VM first so the pane shows.
+	private func openPort(_ vm: String, _ port: SerialPortInfo, revealInfo: Bool = false) {
+		selection = vm
+		viewModel.select(name: vm)
+		let ref = SerialPortRef(port)
+		viewModel.terminals.openTab(
+			vm: vm, ref: ref, socketPath: port.socketPath,
+			profile: profiles.profile(vm: vm, ref: ref))
+		if revealInfo { viewModel.showInfoPanel = true }
 	}
+}
 
-	@ViewBuilder
-	private func deviceRow(
-		_ vm: String, _ kind: SerialPortKind, _ port: SerialPortInfo
-	) -> some View {
+// A non-selectable serial-port row: click opens/focuses its tab; the context menu offers
+// Open / Close / Properties. Observes the sessions store so the open indicator stays live.
+private struct PortRowView: View {
+	let vm: String
+	let port: SerialPortInfo
+	@ObservedObject var sessions: TerminalSessions
+	let onOpen: () -> Void
+	let onProperties: () -> Void
+
+	var body: some View {
+		let ref = SerialPortRef(port)
+		let open = sessions.isOpen(vm: vm, ref: ref)
 		HStack {
-			Image(systemName: kind == .console
+			Image(systemName: port.kind == .console
 				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
 				.foregroundColor(.secondary).font(.caption)
 			Text(port.guestDevice).font(.callout)
+			Spacer()
+			if open {
+				Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+					.help("Open in a tab")
+			}
 		}
-		.padding(.leading, 30)
-		.tag(SidebarSelection.serial(vm: vm, kind: kind, index: port.index))
-	}
-
-	// Expand the tree down to the current selection so a selected leaf stays visible.
-	private func revealSelection() {
-		if case let .serial(vm, kind, _) = selection {
-			expandedVMs.insert(vm)
-			expandedCategories.insert("\(vm)|\(kind.rawValue)")
+		.padding(.leading, 24)
+		.contentShape(Rectangle())
+		.onTapGesture { onOpen() }
+		.contextMenu {
+			Button("Open") { onOpen() }
+			Button("Close") { sessions.closeTab(vm: vm, ref: ref) }
+				.disabled(!open)
+			Button("Properties") { onProperties() }
 		}
 	}
 }

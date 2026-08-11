@@ -20,7 +20,8 @@ struct MachmanDesktopApp: App {
 	@StateObject var connection: DaemonConnection
 	// App-scoped (survives daemon reconnects): terminal profiles + per-socket associations.
 	@StateObject var profiles = TerminalProfileStore()
-	@State var selection: SidebarSelection? = nil
+	// The selected VM (the sidebar's selection). Serial ports open as tabs, they are not selected.
+	@State var selection: String? = nil
 
 	init() {
 		_connection = StateObject(wrappedValue: DaemonConnection())
@@ -40,7 +41,7 @@ struct MachmanDesktopApp: App {
 				if let viewModel = connection.viewModel {
 					ForEach(viewModel.vms) { vm in
 						Button(vm.name) {
-							selection = .vm(vm.name)
+							selection = vm.name
 							viewModel.select(name: vm.name)
 						}
 						.help("show \(vm.name)")
@@ -56,7 +57,7 @@ struct MachmanDesktopApp: App {
 							} else {
 								Button(action: {
 									viewModel.openWindow(vm.name)
-									selection = .vm(vm.name)
+									selection = vm.name
 									viewModel.select(name: vm.name)
 								}) {
 									Label("Open \(vm.name) Window",
@@ -120,7 +121,7 @@ struct MachmanDesktopApp: App {
 					Button(action: {
 						Task {
 							if let name = await viewModel.createVM() {
-								selection = .vm(name)
+								selection = name
 								viewModel.select(name: name)
 							}
 						}
