@@ -4,11 +4,11 @@
 //
 //  The browser-like tab bar atop a VM's pane: a fixed config tab (gear, never closable) followed
 //  by one closable tab per open serial terminal. Selecting switches the active tab; the X closes
-//  it (which disconnects the terminal — a connection lives exactly as long as its tab). Ports are
-//  opened as tabs from the sidebar, not here.
+//  it (which disconnects the terminal — a connection lives exactly as long as its tab).
 //
-//  Tabs are plain Buttons (select and close are SEPARATE buttons, never nested and never mixed
-//  with onTapGesture) so every hit target is reliable; the active tab gets a square fill.
+//  A plain HStack with a fixed height (NOT a ScrollView, which is greedy vertically and delays
+//  clicks) and plain Buttons — select and close are separate buttons, never nested — so every hit
+//  target is reliable. The active tab gets a square fill.
 //
 
 import SwiftUI
@@ -21,17 +21,15 @@ struct VMTabStrip: View {
 
 	var body: some View {
 		let state = sessions.state(vm.name)
-		ScrollView(.horizontal, showsIndicators: false) {
-			HStack(spacing: 1) {
-				configTab(active: state.active == .config)
-				ForEach(state.openPorts, id: \.self) { ref in
-					terminalTab(ref: ref, active: state.active == .terminal(ref))
-				}
-				Spacer(minLength: 0)
+		HStack(spacing: 2) {
+			configTab(active: state.active == .config)
+			ForEach(state.openPorts, id: \.self) { ref in
+				terminalTab(ref: ref, active: state.active == .terminal(ref))
 			}
-			.padding(.horizontal, 6)
-			.padding(.vertical, 3)
+			Spacer(minLength: 0)
 		}
+		.padding(.horizontal, 6)
+		.frame(height: 32)
 	}
 
 	private func configTab(active: Bool) -> some View {
@@ -39,7 +37,7 @@ struct VMTabStrip: View {
 			sessions.setActive(.config, for: vm.name)
 		} label: {
 			Image(systemName: MachmanSymbols.tabConfig)
-				.frame(width: 44, height: 26)
+				.frame(width: 44, height: 24)
 				.contentShape(Rectangle())
 				.background(active ? Color.primary.opacity(0.12) : Color.clear)
 		}
@@ -73,7 +71,7 @@ struct VMTabStrip: View {
 			.help("Close tab")
 		}
 		.padding(.horizontal, 8)
-		.frame(height: 26)
+		.frame(height: 24)
 		.background(active ? Color.primary.opacity(0.12) : Color.clear)
 	}
 

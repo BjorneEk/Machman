@@ -72,7 +72,7 @@ struct FocusAndTopmostTracker: NSViewRepresentable {
 	}
 
 	func makeNSView(context: Context) -> NSView {
-		let view = NSView()
+		let view = PassthroughNSView()
 		DispatchQueue.main.async {
 			if let window = view.window ?? NSApp.windows.first {
 				context.coordinator.attach(to: window)
@@ -83,4 +83,10 @@ struct FocusAndTopmostTracker: NSViewRepresentable {
 	}
 
 	func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+// A pure focus observer sitting in the SwiftUI background — it must never intercept a mouse
+// event meant for the content in front of it.
+private final class PassthroughNSView: NSView {
+	override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -179,20 +179,25 @@ private struct PortRowView: View {
 	var body: some View {
 		let ref = SerialPortRef(port)
 		let open = sessions.isOpen(vm: vm, ref: ref)
-		HStack {
-			Image(systemName: port.kind == .console
-				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-				.foregroundColor(.secondary).font(.caption)
-			Text(port.guestDevice).font(.callout)
-			Spacer()
-			if open {
-				Circle().fill(Color.accentColor).frame(width: 6, height: 6)
-					.help("Open in a tab")
+		// A Button, NOT onTapGesture: an onTapGesture inside a List(selection:) row fights the
+		// List's own row-selection gesture, which made a click select the row (or need a second
+		// click) instead of opening the tab. A plain Button fires cleanly and never selects.
+		Button(action: onOpen) {
+			HStack {
+				Image(systemName: port.kind == .console
+					? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
+					.foregroundColor(.secondary).font(.caption)
+				Text(port.guestDevice).font(.callout)
+				Spacer()
+				if open {
+					Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+				}
 			}
+			.contentShape(Rectangle())
 		}
+		.buttonStyle(.plain)
 		.padding(.leading, 24)
-		.contentShape(Rectangle())
-		.onTapGesture { onOpen() }
+		.help(open ? "Show the \(port.guestDevice) tab" : "Open \(port.guestDevice) in a tab")
 		.contextMenu {
 			Button("Open") { onOpen() }
 			Button("Close") { sessions.closeTab(vm: vm, ref: ref) }
