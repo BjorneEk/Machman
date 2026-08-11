@@ -18,7 +18,7 @@ import MachmanAPI
 struct MachmanDesktopApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	@StateObject var connection: DaemonConnection
-	@State var selection: String? = nil
+	@State var selection: SidebarSelection? = nil
 
 	init() {
 		_connection = StateObject(wrappedValue: DaemonConnection())
@@ -38,7 +38,7 @@ struct MachmanDesktopApp: App {
 				if let viewModel = connection.viewModel {
 					ForEach(viewModel.vms) { vm in
 						Button(vm.name) {
-							selection = vm.name
+							selection = .vm(vm.name)
 							viewModel.select(name: vm.name)
 						}
 						.help("show \(vm.name)")
@@ -54,7 +54,7 @@ struct MachmanDesktopApp: App {
 							} else {
 								Button(action: {
 									viewModel.openWindow(vm.name)
-									selection = vm.name
+									selection = .vm(vm.name)
 									viewModel.select(name: vm.name)
 								}) {
 									Label("Open \(vm.name) Window",
@@ -73,7 +73,7 @@ struct MachmanDesktopApp: App {
 							// only the plain toolbar Run follows the policy checkboxes.
 							Button(action: {
 								viewModel.startVM(vm.name, safe: false)
-								selection = vm.name
+								selection = .vm(vm.name)
 								viewModel.select(name: vm.name)
 							}) {
 								Label("Start", systemImage: MachmanSymbols.start)
@@ -81,7 +81,7 @@ struct MachmanDesktopApp: App {
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 							Button(action: {
 								viewModel.startVM(vm.name, headless: true, safe: false)
-								selection = vm.name
+								selection = .vm(vm.name)
 								viewModel.select(name: vm.name)
 							}) {
 								Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
@@ -89,7 +89,7 @@ struct MachmanDesktopApp: App {
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 							Button(action: {
 								viewModel.startVM(vm.name, safe: true)
-								selection = vm.name
+								selection = .vm(vm.name)
 								viewModel.select(name: vm.name)
 							}) {
 								Label("Start Safe", systemImage: MachmanSymbols.safe)
@@ -105,7 +105,7 @@ struct MachmanDesktopApp: App {
 						Menu(vm.name) {
 							Button(action: {
 								viewModel.stopVM(vm.name, mode: .soft)
-								selection = vm.name
+								selection = .vm(vm.name)
 								viewModel.select(name: vm.name)
 							}) {
 								Label("Shut Down", systemImage: MachmanSymbols.shutDown)
@@ -113,7 +113,7 @@ struct MachmanDesktopApp: App {
 							.disabled(!vm.state.isRunning)
 							Button(action: {
 								viewModel.stopVM(vm.name, mode: .force)
-								selection = vm.name
+								selection = .vm(vm.name)
 								viewModel.select(name: vm.name)
 							}) {
 								Label("Force Stop", systemImage: MachmanSymbols.forceStop)
@@ -128,7 +128,7 @@ struct MachmanDesktopApp: App {
 					Button(action: {
 						Task {
 							if let name = await viewModel.createVM() {
-								selection = name
+								selection = .vm(name)
 								viewModel.select(name: name)
 							}
 						}

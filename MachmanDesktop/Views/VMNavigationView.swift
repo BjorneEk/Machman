@@ -12,9 +12,10 @@ import MachmanAPI
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	@State private var navigate = false
-	@Binding private var selection: String?
+	@State private var lastSelection: SidebarSelection?
+	@Binding private var selection: SidebarSelection?
 
-	init(viewModel: VMListViewModel, selection: Binding<String?>) {
+	init(viewModel: VMListViewModel, selection: Binding<SidebarSelection?>) {
 		_viewModel = StateObject(wrappedValue: viewModel)
 		self._selection = selection
 	}
@@ -23,50 +24,60 @@ struct VMNavigationView: View {
 		NavigationSplitView {
 			List(selection: $selection) {
 				ForEach(viewModel.vms) { item in
-					HStack {
-						StatusIcon(state: item.state, windowOpen: item.windowOpen)
-						Text(item.name)
-							.font(.callout)
-						Spacer()
-						// Right-aligned shield: this VM is running a discardable copy.
-						if item.safeRun == true {
-							Image(systemName: MachmanSymbols.safe)
-								.foregroundColor(.yellow)
-								.help("Running in safe mode (changes are discarded on stop)")
+					let consoles = item.consolePorts ?? []
+					let uarts = item.uartPorts ?? []
+					if consoles.isEmpty && uarts.isEmpty {
+						vmLabel(item).tag(SidebarSelection.vm(item.name))
+					} else {
+						// A VM with serial ports becomes an Xcode-style disclosure tree; the
+						// Console/UART category rows only expand, the device leaves navigate.
+						DisclosureGroup {
+							if !consoles.isEmpty {
+								serialCategory(
+									"Console", MachmanSymbols.serialConsole, consoles,
+									item.name, .console)
+							}
+							if !uarts.isEmpty {
+								serialCategory(
+									"UART", MachmanSymbols.serialUart, uarts, item.name, .uart)
+							}
+						} label: {
+							vmLabel(item).tag(SidebarSelection.vm(item.name))
 						}
 					}
-					.tag(item.name)
 				}
 			}
 			.onChange(of: selection) {
-				if let name = selection {
-					viewModel.select(name: name)
+				if let sel = selection {
+					lastSelection = sel
+					viewModel.select(name: sel.vmName)
 					navigate = !navigate
-				} else if viewModel.selectedName != nil {
+				} else if let last = lastSelection {
 					// The sidebar List drops its selection on its own when focus moves to
-					// another app (the daemon's VM window, on VM start). The view model
-					// owns selection — re-assert it instead of letting the detail pane reset.
-					selection = viewModel.selectedName
+					// another app (the daemon's VM window). Re-assert the last selection
+					// instead of letting the detail pane reset.
+					selection = last
 				}
 			}
-			// Keep the sidebar highlight in sync when the selection changes elsewhere
-			// (rename, delete).
+			// Keep the sidebar in sync when the SELECTED VM changes elsewhere (rename, delete);
+			// leave an in-VM serial selection alone.
 			.onChange(of: viewModel.selectedName) {
-				if selection != viewModel.selectedName {
-					selection = viewModel.selectedName
+				guard let name = viewModel.selectedName else { return }
+				if selection?.vmName != name {
+					selection = .vm(name)
 				}
 			}
 			// After a daemon reconnect the view model is fresh but the window kept its
 			// selection — restore it.
 			.onAppear {
-				if let name = selection, viewModel.selectedName == nil {
-					viewModel.select(name: name)
+				if let sel = selection, viewModel.selectedName == nil {
+					viewModel.select(name: sel.vmName)
 				}
 			}
 			Button(action: {
 				Task {
 					if let name = await viewModel.createVM() {
-						selection = name
+						selection = .vm(name)
 						viewModel.select(name: name)
 					}
 				}
@@ -79,8 +90,16 @@ struct VMNavigationView: View {
 			.buttonStyle(.borderless)
 			.padding()
 		} detail: {
-			MainVMView(viewModel: viewModel)
-				.id(navigate)
+			Group {
+				switch selection {
+				case .serial(let vm, let kind, let index):
+					SerialPortDetailView(
+						vmName: vm, kind: kind, index: index, viewModel: viewModel)
+				default:
+					MainVMView(viewModel: viewModel)
+				}
+			}
+			.id(navigate)
 		}
 		.alert(
 			viewModel.presentedError?.title ?? "Error",
@@ -116,6 +135,42 @@ struct VMNavigationView: View {
 			set: { _ in }   // data-driven: bars complete or fail, the user never dismisses
 		)) {
 			TransferProgressView(viewModel: viewModel)
+		}
+	}
+
+	@ViewBuilder
+	private func vmLabel(_ item: VMInfo) -> some View {
+		HStack {
+			StatusIcon(state: item.state, windowOpen: item.windowOpen)
+			Text(item.name).font(.callout)
+			Spacer()
+			// Right-aligned shield: this VM is running a discardable copy.
+			if item.safeRun == true {
+				Image(systemName: MachmanSymbols.safe)
+					.foregroundColor(.yellow)
+					.help("Running in safe mode (changes are discarded on stop)")
+			}
+		}
+	}
+
+	@ViewBuilder
+	private func serialCategory(
+		_ label: String, _ symbol: String, _ ports: [SerialPortInfo], _ vm: String,
+		_ kind: SerialPortKind
+	) -> some View {
+		DisclosureGroup {
+			ForEach(ports) { port in
+				HStack {
+					Image(systemName: symbol).foregroundColor(.secondary)
+					Text(port.guestDevice).font(.callout)
+				}
+				.tag(SidebarSelection.serial(vm: vm, kind: kind, index: port.index))
+			}
+		} label: {
+			HStack {
+				Image(systemName: symbol).foregroundColor(.secondary)
+				Text(label).font(.caption).foregroundColor(.secondary)
+			}
 		}
 	}
 }
