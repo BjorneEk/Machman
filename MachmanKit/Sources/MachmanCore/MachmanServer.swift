@@ -168,6 +168,13 @@ public final class MachmanServer {
 				let p: RPCParams.UpdateKernelSettings = try params(line)
 				try await api.updateKernelSettings(vm: p.name, p.settings)
 				reply(client, id, RPCEmpty())
+			case .kernelPromote:
+				let p: RPCParams.PromoteKernel = try params(line)
+				reply(client, id, try await api.promoteKernelFile(
+					vm: p.name, role: p.role, sourcePath: p.sourcePath, storeName: p.storeName))
+			case .kernelDelete:
+				let p: RPCParams.DeleteKernel = try params(line)
+				reply(client, id, try await api.deleteKernelFile(vm: p.name, path: p.path))
 			case .setStartPolicy:
 				let p: RPCParams.SetStartPolicy = try params(line)
 				try await api.setStartPolicy(vm: p.name, policy: p.policy)

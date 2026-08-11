@@ -167,16 +167,20 @@ public struct BootInfo: Codable, Sendable, Equatable {
 	// Hardware floors imposed by the boot mode (macOS guests carry install-time minimums).
 	public var minCPUCount: Int?
 	public var minMemoryBytes: UInt64?
+	// Kernel/initramfs files copied into the VM (owned); absolute paths under <vm>/kernels.
+	// nil = older daemon; the boot editor offers these in its kernel/initramfs pickers.
+	public var ownedKernels: [String]?
 
 	public init(
 		mode: Mode, kernel: KernelSettings?, macInstallState: MacInstallState?,
-		minCPUCount: Int?, minMemoryBytes: UInt64?
+		minCPUCount: Int?, minMemoryBytes: UInt64?, ownedKernels: [String]? = nil
 	) {
 		self.mode = mode
 		self.kernel = kernel
 		self.macInstallState = macInstallState
 		self.minCPUCount = minCPUCount
 		self.minMemoryBytes = minMemoryBytes
+		self.ownedKernels = ownedKernels
 	}
 
 	public var macInstalled: Bool { macInstallState?.kind == .installed }
@@ -197,6 +201,12 @@ public struct MacInstallState: Codable, Sendable, Equatable {
 		self.kind = kind
 		self.message = message
 	}
+}
+
+// Which kernel-boot file a promote/delete targets.
+public enum KernelRole: String, Codable, Sendable, Equatable {
+	case kernel
+	case initramfs
 }
 
 public struct KernelSettings: Codable, Sendable, Equatable {

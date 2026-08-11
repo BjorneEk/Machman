@@ -27,6 +27,8 @@ public enum RPCMethod: String, Sendable {
 	case mountRemove = "vm.mount.remove"
 	case setKernelBoot = "vm.boot.setKernel"
 	case updateKernelSettings = "vm.boot.kernelSettings"
+	case kernelPromote = "vm.kernel.promote"
+	case kernelDelete = "vm.kernel.delete"
 	case setStartPolicy = "vm.setStartPolicy"
 	case setSafety = "vm.setSafety"
 	case start = "vm.start"
@@ -152,6 +154,33 @@ public enum RPCParams {
 		public init(name: String, mountID: String) {
 			self.name = name
 			self.mountID = mountID
+		}
+	}
+
+	// vm.kernel.promote: copy sourcePath into <vm>/kernels/<storeName>/ as an owned file and
+	// point the given role's field at it.
+	public struct PromoteKernel: Codable, Equatable, Sendable {
+		public var name: String
+		public var role: KernelRole
+		public var sourcePath: String
+		public var storeName: String
+
+		public init(name: String, role: KernelRole, sourcePath: String, storeName: String) {
+			self.name = name
+			self.role = role
+			self.sourcePath = sourcePath
+			self.storeName = storeName
+		}
+	}
+
+	// vm.kernel.delete: remove an owned kernel/initramfs file by its absolute path.
+	public struct DeleteKernel: Codable, Equatable, Sendable {
+		public var name: String
+		public var path: String
+
+		public init(name: String, path: String) {
+			self.name = name
+			self.path = path
 		}
 	}
 

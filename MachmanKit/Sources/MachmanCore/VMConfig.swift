@@ -566,6 +566,25 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
+	// Owned kernel/initramfs files (copies living under <vm>/kernels).
+	func kernelsDirPath() -> String { configFilePath(file: "kernels") }
+	func ownedKernelFiles() -> [String] {
+		KernelStore.ownedFiles(kernelsDir: kernelsDirPath())
+	}
+
+	// After deleting an owned kernel file, clear any kernel field that pointed at it.
+	func clearKernelReference(to path: String) throws {
+		guard var settings = kernelSettings else { return }
+		var changed = false
+		if settings.kernelPath == path { settings.kernelPath = ""; changed = true }
+		if settings.initialRamdiskPath == path { settings.initialRamdiskPath = nil; changed = true }
+		if changed {
+			kernelSettings = settings
+			if isKernelBoot { boot = .linuxKernel(settings) }
+			try saveVMConfig()
+		}
+	}
+
 	static func deleteVMDirectory(name: String) throws {
 		try FileManager.default.removeItem(at: URL(fileURLWithPath: "\(machmanVMDir)/\(name)"))
 	}

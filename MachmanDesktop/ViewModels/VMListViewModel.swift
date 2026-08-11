@@ -584,6 +584,24 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, storeName: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.promoteKernelFile(
+					vm: name, role: role, sourcePath: sourcePath, storeName: storeName)
+			} catch {
+				self?.present(error, while: "Promoting a kernel file")
+			}
+		}
+	}
+
+	func deleteKernel(_ name: String, path: String) {
+		Task { [weak self] in
+			do { _ = try await self?.api.deleteKernelFile(vm: name, path: path) }
+			catch { self?.present(error, while: "Deleting a kernel file") }
+		}
+	}
+
 	// Save the on-screen console transcript. Shared by the port toolbar and File → Save Console.
 	func saveActiveConsoleTranscript() {
 		guard let terminal = activeSerialTerminal else { return }

@@ -46,6 +46,11 @@ public protocol MachmanControlling: AnyObject {
 	func removeMount(vm name: String, mountID: String) async throws
 	func setKernelBoot(vm name: String, enabled: Bool) async throws
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws
+	// Copy a kernel/initramfs file INTO the VM (owned) and select it; delete removes an owned one.
+	func promoteKernelFile(
+		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+	) async throws -> VMInfo
+	func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo
 	func setStartPolicy(vm name: String, policy: StartPolicy) async throws
 	// Batch per-id safe flags; unknown ids refuse the WHOLE batch (nothing half-applies).
 	func setSafety(vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?) async throws

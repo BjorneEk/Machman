@@ -158,6 +158,21 @@ public final class RemoteMachman: MachmanControlling {
 			name: name, settings: settings))
 	}
 
+	public func promoteKernelFile(
+		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+	) async throws -> VMInfo {
+		try await connection.call(
+			.kernelPromote,
+			RPCParams.PromoteKernel(
+				name: name, role: role, sourcePath: sourcePath, storeName: storeName),
+			expecting: VMInfo.self)
+	}
+
+	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
+		try await connection.call(
+			.kernelDelete, RPCParams.DeleteKernel(name: name, path: path), expecting: VMInfo.self)
+	}
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		try await void(.start, RPCParams.Start(name: name, options: options))
 	}

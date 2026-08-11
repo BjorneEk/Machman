@@ -476,6 +476,17 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).updateKernelSettings(vm: name, settings)
 	}
 
+	public func promoteKernelFile(
+		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+	) async throws -> VMInfo {
+		try await target(name).promoteKernelFile(
+			vm: name, role: role, sourcePath: sourcePath, storeName: storeName)
+	}
+
+	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
+		try await target(name).deleteKernelFile(vm: name, path: path)
+	}
+
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		// Policy has a daemon-side launchd side effect that must never reconcile against a
 		// discardable shadow write — refuse rather than half-apply.

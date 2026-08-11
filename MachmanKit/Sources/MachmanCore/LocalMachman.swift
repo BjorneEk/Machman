@@ -264,6 +264,38 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
+	public func promoteKernelFile(
+		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+	) async throws -> VMInfo {
+		let vm = try lookup(name)
+		let kernelsDir = vm.config.kernelsDirPath()
+		// Copies can be tens of MiB — detach so the main actor doesn't freeze.
+		let dest = try await Task.detached(priority: .userInitiated) {
+			try KernelStore.promote(
+				sourcePath: sourcePath, kernelsDir: kernelsDir, storeName: storeName)
+		}.value
+		var updated = vm.config.kernelSettings
+			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
+		switch role {
+		case .kernel: updated.kernelPath = dest
+		case .initramfs: updated.initialRamdiskPath = dest
+		}
+		try vm.config.updateKernelSettings(updated)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		let kernelsDir = vm.config.kernelsDirPath()
+		try await Task.detached(priority: .userInitiated) {
+			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
+		}.value
+		try vm.config.clearKernelReference(to: path)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
 	// MARK: - Run / stop / window
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
@@ -457,15 +489,17 @@ public final class LocalMachman: MachmanControlling {
 				kernelPath: $0.kernelPath, initrdPath: $0.initialRamdiskPath,
 				commandLine: $0.commandLine)
 		}
+		let owned = config.ownedKernelFiles()
+		let ownedKernels = owned.isEmpty ? nil : owned   // nil-omitted keeps the wire fixture stable
 		switch config.boot {
 		case .efi:
 			return BootInfo(
 				mode: .efi, kernel: kernel, macInstallState: nil,
-				minCPUCount: nil, minMemoryBytes: nil)
+				minCPUCount: nil, minMemoryBytes: nil, ownedKernels: ownedKernels)
 		case .linuxKernel:
 			return BootInfo(
 				mode: .linuxKernel, kernel: kernel, macInstallState: nil,
-				minCPUCount: nil, minMemoryBytes: nil)
+				minCPUCount: nil, minMemoryBytes: nil, ownedKernels: ownedKernels)
 		case .macOS(let m):
 			// MachmanAPI.MacInstallState is the DTO; the unqualified name is the persisted enum.
 			let state: MachmanAPI.MacInstallState

@@ -115,6 +115,31 @@ final class StubMachman: MachmanControlling {
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		_ = try get(name)
 	}
+	func promoteKernelFile(
+		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+	) async throws -> VMInfo {
+		var vm = try get(name)
+		let base = (sourcePath as NSString).lastPathComponent
+		let dest = "/vm/\(name)/kernels/\(storeName)/\(base)"
+		vm.boot.ownedKernels = (vm.boot.ownedKernels ?? []) + [dest]
+		let existing = vm.boot.kernel
+			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		vm.boot.kernel = role == .kernel
+			? KernelSettings(
+				kernelPath: dest, initrdPath: existing.initrdPath, commandLine: existing.commandLine)
+			: KernelSettings(
+				kernelPath: existing.kernelPath, initrdPath: dest, commandLine: existing.commandLine)
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
+		var vm = try get(name)
+		vm.boot.ownedKernels?.removeAll { $0 == path }
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
 	func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		var vm = try get(name)
 		vm.startPolicy = policy
@@ -390,6 +415,27 @@ struct LoopbackTests {
 		} catch let error as MachmanError {
 			#expect(error.code == .notFound)
 		}
+		await client.disconnect()
+	}
+
+	@Test @MainActor func kernelPromoteRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-krn-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "krn")
+		let promoted = try await client.promoteKernelFile(
+			vm: "Debian", role: .kernel, sourcePath: "/tmp/vmlinuz", storeName: "janus")
+		#expect(promoted.boot.kernel?.kernelPath.hasSuffix("/janus/vmlinuz") == true)
+		#expect(promoted.boot.ownedKernels?.contains { $0.hasSuffix("/janus/vmlinuz") } == true)
+
+		let owned = try #require(promoted.boot.ownedKernels?.first)
+		let after = try await client.deleteKernelFile(vm: "Debian", path: owned)
+		#expect(after.boot.ownedKernels?.isEmpty == true)
 		await client.disconnect()
 	}
 
