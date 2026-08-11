@@ -2,47 +2,73 @@
 //  SerialTerminalView.swift
 //  MachmanDesktop
 //
-//  A SwiftTerm terminal wired to a serial port's data-plane socket. Guest output is fed to the
-//  terminal for display; keystrokes go back down the socket. No termios anywhere — the socket
-//  has no line discipline. Resize does not propagate to the guest (the serial console has no
-//  window-size channel); use `stty` in the guest for full-screen apps.
+//  A SwiftTerm terminal wired to a serial port's data-plane socket. The controller owns ONE
+//  persistent TerminalView and connection for the port's lifetime, so switching tabs never
+//  reconnects (a reconnect replays the socket's ring buffer, which re-answers the guest's
+//  cursor-position queries and leaves stray "…R" escape echoes in the display).
+//
+//  Guest output is fed to the terminal; keystrokes go back down the socket. No termios anywhere.
+//  Resize does not reach the guest (a serial console has no window-size channel) — use `stty` in
+//  the guest for full-screen apps.
 //
 
 import SwiftUI
 import SwiftTerm
 
-struct SerialTerminalView: NSViewRepresentable {
-	let connection: SerialTerminalConnection
+final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDelegate {
+	let terminalView: TerminalView
+	private var connection: SerialTerminalConnection?
+	@Published var disconnected = false
 
-	func makeCoordinator() -> Coordinator { Coordinator(connection: connection) }
-
-	func makeNSView(context: Context) -> TerminalView {
-		let terminal = TerminalView(frame: CGRect(x: 0, y: 0, width: 640, height: 400))
-		terminal.terminalDelegate = context.coordinator
-		connection.onData = { [weak terminal] data in
-			terminal?.feed(byteArray: [UInt8](data)[...])
-		}
-		return terminal
+	override init() {
+		terminalView = TerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 480))
+		super.init()
+		terminalView.terminalDelegate = self
 	}
 
+	// Idempotent: connect once per socket. A different socket (VM restart) is a new controller.
+	func connect(path: String) {
+		guard connection == nil else { return }
+		disconnected = false
+		let c = SerialTerminalConnection(path: path)
+		c.onData = { [weak self] data in
+			self?.terminalView.feed(byteArray: [UInt8](data)[...])
+		}
+		// Clear the connection on close so a VM restart (same socket path) can reconnect.
+		c.onClose = { [weak self] in
+			self?.disconnected = true
+			self?.connection = nil
+		}
+		if c.connect() { connection = c } else { disconnected = true }
+	}
+
+	func disconnect() {
+		connection?.stop()
+		connection = nil
+	}
+
+	func transcript() -> Data { connection?.transcriptData() ?? Data() }
+
+	// MARK: TerminalViewDelegate (called on the main thread by SwiftTerm)
+	func send(source: TerminalView, data: ArraySlice<UInt8>) {
+		connection?.send(Data(data))
+	}
+	func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
+	func setTerminalTitle(source: TerminalView, title: String) {}
+	func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+	func scrolled(source: TerminalView, position: Double) {}
+	func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}
+	func bell(source: TerminalView) {}
+	func clipboardCopy(source: TerminalView, content: Data) {}
+	func clipboardRead(source: TerminalView) -> Data? { nil }
+	func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
+	func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+}
+
+// Re-parents the controller's single persistent TerminalView; never recreates it.
+struct SerialTerminalHost: NSViewRepresentable {
+	let controller: SerialTerminalController
+
+	func makeNSView(context: Context) -> TerminalView { controller.terminalView }
 	func updateNSView(_ nsView: TerminalView, context: Context) {}
-
-	final class Coordinator: NSObject, TerminalViewDelegate {
-		let connection: SerialTerminalConnection
-		init(connection: SerialTerminalConnection) { self.connection = connection }
-
-		func send(source: TerminalView, data: ArraySlice<UInt8>) {
-			connection.send(Data(data))
-		}
-		func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
-		func setTerminalTitle(source: TerminalView, title: String) {}
-		func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-		func scrolled(source: TerminalView, position: Double) {}
-		func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}
-		func bell(source: TerminalView) {}
-		func clipboardCopy(source: TerminalView, content: Data) {}
-		func clipboardRead(source: TerminalView) -> Data? { nil }
-		func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
-		func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
-	}
 }

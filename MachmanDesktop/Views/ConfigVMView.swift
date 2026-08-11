@@ -14,14 +14,18 @@ struct ConfigVMView: View {
 
 	var body: some View {
 		GroupBox {
-			VStack {
-				HardwareConfigView(vm: vm, viewModel: viewModel)
-				ConfigVMSerialPortsView(vm: vm, viewModel: viewModel)
-				RunDefaultsView(vm: vm, viewModel: viewModel)
-				BootConfigView(vm: vm, viewModel: viewModel)
-					.id(vm.name)   // reset pane state per VM
-				HistoryView(vm: vm)
-				Spacer()
+			// Scrolls when the window is too short instead of overflowing — so this column and
+			// the mounts column (whose Table already scrolls) shrink together and their bottom
+			// edges stay aligned.
+			ScrollView {
+				VStack {
+					HardwareConfigView(vm: vm, viewModel: viewModel)
+					ConfigVMSerialPortsView(vm: vm, viewModel: viewModel)
+					RunDefaultsView(vm: vm, viewModel: viewModel)
+					BootConfigView(vm: vm, viewModel: viewModel)
+						.id(vm.name)   // reset pane state per VM
+					HistoryView(vm: vm)
+				}
 			}
 		}
 	}

@@ -35,6 +35,7 @@ struct MainVMView: View {
 				HStack(alignment: .top) {
 					ConfigVMView(vm: vm, viewModel: viewModel)
 						.frame(width: previewWidth)
+						.frame(maxHeight: .infinity, alignment: .top)
 					ConfigVMHostMountsView(vm: vm, viewModel: viewModel)
 						.frame(minWidth: 200)
 						.frame(maxHeight: .infinity, alignment: .top)
