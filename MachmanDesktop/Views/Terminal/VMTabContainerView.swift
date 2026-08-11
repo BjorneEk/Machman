@@ -29,7 +29,6 @@ struct VMTabContainerView: View {
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.onChange(of: viewModel.vms) { sessions.reconcile(vms: viewModel.vms) }
 		.onReceive(profiles.objectWillChange) {
 			// A profile edit pushes its live settings to every open terminal. objectWillChange
 			// fires before the mutation lands, so defer a tick to read the new values.
@@ -161,6 +160,7 @@ struct VMTabContainerView: View {
 				+ "'\(newName)'") {
 			Task {
 				if await viewModel.rename(from: vm.name, to: newName) {
+					profiles.renameVM(from: vm.name, to: newName)
 					viewModel.log(message: "Renamed \(vm.name) to \(newName)")
 				}
 			}

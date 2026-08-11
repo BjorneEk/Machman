@@ -58,9 +58,6 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var previews: [String: NSImage] = [:]
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
-	// The serial terminal on screen (set by the port detail view) so the File menu and the
-	// port's toolbar can save its transcript.
-	@Published var activeSerialTerminal: SerialTerminalController?
 	// Per-VM terminal tabs + their live connections. Persists across VM navigation; a tab's
 	// connection lives exactly as long as the tab is open. Observed directly by the tab views.
 	let terminals = TerminalSessions()
@@ -130,6 +127,8 @@ final class VMListViewModel: ObservableObject {
 				installPhases[vm.name] = phase
 			}
 		}
+		// Close terminal tabs for ports/VMs that no longer exist.
+		terminals.reconcile(vms: vms)
 	}
 
 	private func handle(event: VMEvent) async {
@@ -363,6 +362,9 @@ final class VMListViewModel: ObservableObject {
 	func rename(from oldName: String, to newName: String) async -> Bool {
 		do {
 			try await api.renameVM(named: oldName, to: newName)
+			// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
+			// old-keyed session would look like a vanished VM and its terminals get closed).
+			terminals.renameVM(from: oldName, to: newName)
 			await reload()
 			select(name: newName)
 			if let image = previews.removeValue(forKey: oldName) {
@@ -608,17 +610,23 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// Save the on-screen console transcript. Shared by the port toolbar and File → Save Console.
-	func saveActiveConsoleTranscript() {
-		guard let terminal = activeSerialTerminal else { return }
+	// The terminal on the active tab of the currently-selected VM (nil on the config tab or with
+	// no selection) — drives File → Save Terminal.
+	var activeTerminalController: SerialTerminalController? {
+		selectedName.flatMap { terminals.activeController(vm: $0) }
+	}
+
+	// Save the on-screen terminal transcript. Used by File → Save Terminal.
+	func saveActiveTerminalTranscript() {
+		guard let terminal = activeTerminalController else { return }
 		let panel = NSSavePanel()
-		panel.nameFieldStringValue = "console.log"
+		panel.nameFieldStringValue = "terminal.log"
 		panel.allowedContentTypes = [.plainText]
 		if panel.runModal() == .OK, let url = panel.url {
 			do {
 				try terminal.transcript().write(to: url)
 			} catch {
-				present(error, while: "Saving the console log")
+				present(error, while: "Saving the terminal log")
 			}
 		}
 	}

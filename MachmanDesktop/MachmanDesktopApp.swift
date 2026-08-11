@@ -147,11 +147,11 @@ struct MachmanDesktopApp: App {
 					.disabled(viewModel.selected?.safeRun != true
 						|| viewModel.safeSaveInFlight)
 					Button(action: {
-						viewModel.saveActiveConsoleTranscript()
+						viewModel.saveActiveTerminalTranscript()
 					}) {
-						Label("Save Console…", systemImage: MachmanSymbols.saveToFile)
+						Label("Save Terminal…", systemImage: MachmanSymbols.saveToFile)
 					}
-					.disabled(viewModel.activeSerialTerminal == nil)
+					.disabled(viewModel.activeTerminalController == nil)
 				}
 			}
 		}
