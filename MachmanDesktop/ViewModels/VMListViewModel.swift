@@ -61,6 +61,9 @@ final class VMListViewModel: ObservableObject {
 	// The serial terminal on screen (set by the port detail view) so the File menu and the
 	// port's toolbar can save its transcript.
 	@Published var activeSerialTerminal: SerialTerminalController?
+	// Per-VM terminal tabs + their live connections. Persists across VM navigation; a tab's
+	// connection lives exactly as long as the tab is open. Observed directly by the tab views.
+	let terminals = TerminalSessions()
 	@Published var presentedError: PresentedError?
 	// Binding surface for .alert(isPresented:presenting:) — clears the item on dismiss.
 	var isErrorPresented: Bool {
