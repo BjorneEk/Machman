@@ -3,7 +3,7 @@
 //  Machman
 //
 //  The engine facade: the single authority over which VMs exist and which are running. Owns the
-//  event bus and the console presenter; enforces cross-VM invariants (unique names, no
+//  event bus and the window presenter; enforces cross-VM invariants (unique names, no
 //  delete/rename while running). This is what LocalMachman wraps for the API.
 //
 
@@ -55,7 +55,7 @@ public final class VirtualMachine: NSObject, Identifiable {
 @MainActor
 public final class VMRegistry {
 	let events = EventBus()
-	let presenter = ConsolePresenter()
+	let presenter = WindowPresenter()
 	private(set) var vms: [String: VirtualMachine] = [:]
 	// Sessions live here (not in a view) so a running install keeps its phase and progress
 	// when the user navigates away, and a second install of the same VM can't start.
@@ -92,7 +92,7 @@ public final class VMRegistry {
 		presenter.isRunning = { [weak self] name in
 			self?.vms[name]?.state.isRunning ?? false
 		}
-		presenter.onConsoleChanged = { [weak self] in
+		presenter.onWindowChanged = { [weak self] in
 			self?.events.emit(.listChanged)
 		}
 		presenter.onCaptureFailed = { [weak self] failure in
@@ -100,7 +100,7 @@ public final class VMRegistry {
 			case .windowNotFound(let id):
 				self?.events.emit(.log(
 					vm: nil, level: .warning,
-					message: "Console window \(id) was not found on screen — preview is blank."))
+					message: "VM window \(id) was not found on screen — preview is blank."))
 				return
 			case .captureReturnedNothing:
 				self?.events.emit(.log(
@@ -114,7 +114,7 @@ public final class VMRegistry {
 				// grant is invisible until this VM's host process is relaunched.
 				self?.events.emit(.log(
 					vm: nil, level: .warning,
-					message: "Screen Recording is not granted — console previews will be blank. "
+					message: "Screen Recording is not granted — VM previews will be blank. "
 						+ "Enable it for MachmanVMHost in System Settings > Privacy & Security > "
 						+ "Screen Recording, then stop and start this VM: a running process "
 						+ "cannot see a grant it was launched without."))
@@ -169,7 +169,7 @@ public final class VMRegistry {
 
 	// MARK: - Run / stop
 
-	func start(_ vm: VirtualMachine, openConsole: Bool = true) async throws {
+	func start(_ vm: VirtualMachine, openWindow: Bool = true) async throws {
 		guard vm.runtime == nil else {
 			throw MachmanError(
 				code: .invalidState, message: "\(vm.config.name) is already running")
@@ -188,7 +188,7 @@ public final class VMRegistry {
 			guard let vm = vm else { return }
 			vm.runtime = nil
 			vm.config.addRuntime(Date().timeIntervalSince(startedAt))
-			self?.presenter.dropConsole(name: vm.config.name)
+			self?.presenter.dropWindow(name: vm.config.name)
 		}
 		vm.runtime = runtime
 		do {
@@ -198,8 +198,8 @@ public final class VMRegistry {
 			throw error
 		}
 		try? vm.config.markRan()
-		if openConsole, let vz = runtime.vz {
-			presenter.openConsole(name: vm.config.name, vz: vz)
+		if openWindow, let vz = runtime.vz {
+			presenter.openWindow(name: vm.config.name, vz: vz)
 		}
 	}
 
@@ -214,16 +214,16 @@ public final class VMRegistry {
 		}
 	}
 
-	func openConsole(_ vm: VirtualMachine) {
+	func openWindow(_ vm: VirtualMachine) {
 		guard let vz = vm.runtime?.vz else { return }
-		presenter.openConsole(name: vm.config.name, vz: vz)
+		presenter.openWindow(name: vm.config.name, vz: vz)
 	}
 
-	func closeConsole(_ vm: VirtualMachine) {
-		presenter.dropConsole(name: vm.config.name)
+	func closeWindow(_ vm: VirtualMachine) {
+		presenter.dropWindow(name: vm.config.name)
 	}
 
-	func isConsoleOpen(_ vm: VirtualMachine) -> Bool {
+	func isWindowOpen(_ vm: VirtualMachine) -> Bool {
 		presenter.window(for: vm.config.name) != nil
 	}
 
@@ -377,7 +377,7 @@ public final class VMRegistry {
 			throw MachmanError(
 				code: .invalidState, message: "wait for the macOS install to finish first")
 		}
-		presenter.dropConsole(name: name)
+		presenter.dropWindow(name: name)
 		vms[name] = nil
 		installSessions[name] = nil
 		try VMConfig.deleteVMDirectory(name: name)

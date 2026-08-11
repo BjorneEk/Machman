@@ -2,7 +2,7 @@
 //  StatusIcon.swift
 //  MachmanUI
 //
-//  One VM's state as a glyph: blue macwindow (running, console open), blue terminal (running
+//  One VM's state as a glyph: blue macwindow (running, window open), blue terminal (running
 //  headless), pause otherwise. safeRun is the reserved yellow-shield slot (phase 6).
 //
 
@@ -11,12 +11,12 @@ import MachmanAPI
 
 public struct StatusIcon: View {
 	private let state: VMState
-	private let consoleOpen: Bool
+	private let windowOpen: Bool
 	private let safeRun: Bool
 
-	public init(state: VMState, consoleOpen: Bool, safeRun: Bool = false) {
+	public init(state: VMState, windowOpen: Bool, safeRun: Bool = false) {
 		self.state = state
-		self.consoleOpen = consoleOpen
+		self.windowOpen = windowOpen
 		self.safeRun = safeRun
 	}
 
@@ -37,6 +37,6 @@ public struct StatusIcon: View {
 
 	private var symbol: String {
 		guard state.isRunning else { return MachmanSymbols.vmStopped }
-		return consoleOpen ? MachmanSymbols.vmRunningWindowed : MachmanSymbols.vmRunningHeadless
+		return windowOpen ? MachmanSymbols.vmRunningWindowed : MachmanSymbols.vmRunningHeadless
 	}
 }

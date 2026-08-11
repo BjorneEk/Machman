@@ -67,12 +67,11 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
-| `vm.start` | `{name, options?: {openConsole, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, `force: true` overrides; `safe: true` runs a discardable shadow copy — see Safe runs below) |
+| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, `force: true` overrides; `safe: true` runs a discardable shadow copy — see Safe runs below) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
 | `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; refused unless the VM is safe-hosted, or when newName is taken) |
-| `vm.console.open` | `{name}` | `{}` (window appears from the daemon) |
-| `vm.console.close` | `{name}` | `{}` (VM keeps running) |
-| `vm.console.info` | `{name}` | `{logPath}` (file-backed hvc0 log; null for macOS guests) |
+| `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
+| `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
 | `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` |
 | `vm.install.cancel` | `{name}` | `{}` |
@@ -85,7 +84,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
 [{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe}], mounts:
 [{id, path, tag, safe}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?,
-minCPUCount?, minMemoryBytes?}, consoleLogPath?, consoleOpen, startPolicy?:
+minCPUCount?, minMemoryBytes?}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?}`.
 
 `disks[].owned?` is true when the backing file lives inside (and travels with) the VM's
@@ -141,10 +140,10 @@ daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adop
 
 ## What is deliberately NOT here
 
-The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so console windows
-are presented by MachmanAgent itself; clients only command them (`vm.console.*`) and poll
-`vm.preview` for thumbnails. Interactive text access for Linux guests is the serial console
-(`vm.console.info` → follow the log file; a PTY option is planned with the CLI).
+The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so VM windows
+are presented by MachmanAgent itself; clients only command them (`vm.window.*`) and poll
+`vm.preview` for thumbnails. Interactive text access for Linux guests is a future serial-port
+feature.
 
 ## Trying it by hand
 

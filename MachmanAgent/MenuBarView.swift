@@ -53,7 +53,7 @@ final class MenuBarModel: ObservableObject {
 		Task {
 			do {
 				try await api.start(
-					vm: name, options: StartOptions(openConsole: !headless, safe: safe))
+					vm: name, options: StartOptions(openWindow: !headless, safe: safe))
 			} catch {
 				MachmanLogger.log(.interactionError, "start \(name): \(error.localizedDescription)")
 			}
@@ -70,15 +70,15 @@ final class MenuBarModel: ObservableObject {
 		}
 	}
 
-	func openConsole(_ name: String) {
+	func openWindow(_ name: String) {
 		Task {
-			try? await api.openConsole(vm: name)
+			try? await api.openWindow(vm: name)
 		}
 	}
 
-	func closeConsole(_ name: String) {
+	func closeWindow(_ name: String) {
 		Task {
-			try? await api.closeConsole(vm: name)
+			try? await api.closeWindow(vm: name)
 		}
 	}
 }
@@ -116,16 +116,16 @@ struct MenuBarView: View {
 				}
 				.disabled(vm.state.isRunning)
 				Divider()
-				if vm.consoleOpen {
+				if vm.windowOpen {
 					Button {
-						model.closeConsole(vm.name)
+						model.closeWindow(vm.name)
 					} label: {
 						Label("Close Window", systemImage: MachmanSymbols.closeWindow)
 					}
 					.disabled(!vm.state.isRunning)
 				} else {
 					Button {
-						model.openConsole(vm.name)
+						model.openWindow(vm.name)
 					} label: {
 						Label("Open Window", systemImage: MachmanSymbols.openWindow)
 					}
@@ -151,7 +151,7 @@ struct MenuBarView: View {
 					Text(vm.name)
 				} icon: {
 					StatusIcon(
-						state: vm.state, consoleOpen: vm.consoleOpen,
+						state: vm.state, windowOpen: vm.windowOpen,
 						safeRun: vm.safeRun == true)
 				}
 			}

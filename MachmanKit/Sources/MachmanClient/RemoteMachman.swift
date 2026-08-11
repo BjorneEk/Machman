@@ -143,17 +143,12 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.stop, RPCParams.Stop(name: name, mode: mode))
 	}
 
-	public func openConsole(vm name: String) async throws {
-		try await void(.consoleOpen, RPCParams.Name(name: name))
+	public func openWindow(vm name: String) async throws {
+		try await void(.windowOpen, RPCParams.Name(name: name))
 	}
 
-	public func closeConsole(vm name: String) async throws {
-		try await void(.consoleClose, RPCParams.Name(name: name))
-	}
-
-	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
-		try await connection.call(
-			.consoleInfo, RPCParams.Name(name: name), expecting: ConsoleInfo.self)
+	public func closeWindow(vm name: String) async throws {
+		try await void(.windowClose, RPCParams.Name(name: name))
 	}
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {

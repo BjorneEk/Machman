@@ -281,7 +281,7 @@ final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.start(
 					vm: name,
-					options: StartOptions(openConsole: !headless, force: force, safe: safe))
+					options: StartOptions(openWindow: !headless, force: force, safe: safe))
 			} catch let error as MachmanError where error.code == .macConflict {
 				// Not a dead end: the same start succeeds with force, so offer it.
 				self?.pendingForceStart = PendingForceStart(
@@ -292,22 +292,22 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func openConsole(_ name: String) {
+	func openWindow(_ name: String) {
 		Task { [weak self] in
 			do {
-				try await self?.api.openConsole(vm: name)
+				try await self?.api.openWindow(vm: name)
 			} catch {
-				self?.present(error, while: "Opening the \(name) console")
+				self?.present(error, while: "Opening the \(name) window")
 			}
 		}
 	}
 
-	func closeConsole(_ name: String) {
+	func closeWindow(_ name: String) {
 		Task { [weak self] in
 			do {
-				try await self?.api.closeConsole(vm: name)
+				try await self?.api.closeWindow(vm: name)
 			} catch {
-				self?.present(error, while: "Closing the \(name) console")
+				self?.present(error, while: "Closing the \(name) window")
 			}
 		}
 	}

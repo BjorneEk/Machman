@@ -19,8 +19,7 @@ final class StubMachman: MachmanControlling {
 			disks: [], mounts: [],
 			boot: BootInfo(
 				mode: .efi, kernel: nil, macInstallState: nil,
-				minCPUCount: nil, minMemoryBytes: nil),
-			consoleLogPath: nil)
+				minCPUCount: nil, minMemoryBytes: nil))
 	}
 
 	func emit(_ event: VMEvent) {
@@ -148,30 +147,26 @@ final class StubMachman: MachmanControlling {
 			throw MachmanError(code: .invalidState, message: "\(name) is already running")
 		}
 		vm.state = .running
-		vm.consoleOpen = options.openConsole
+		vm.windowOpen = options.openWindow
 		vms[name] = vm
 		emit(.stateChanged(vm: name, state: .running))
 	}
 	func stop(vm name: String, mode: StopMode) async throws {
 		var vm = try get(name)
 		vm.state = .stopped
-		vm.consoleOpen = false
+		vm.windowOpen = false
 		vms[name] = vm
 		emit(.stateChanged(vm: name, state: .stopped))
 	}
-	// engineErrorsKeepTheirCode flips this: openConsole then throws an untyped engine error.
+	// engineErrorsKeepTheirCode flips this: openWindow then throws an untyped engine error.
 	var throwCritical = false
-	var consoleOpens = 0
-	func openConsole(vm name: String) async throws {
+	var windowOpens = 0
+	func openWindow(vm name: String) async throws {
 		if throwCritical { throw VirtualMachineError.critical("boom") }
 		_ = try get(name)
-		consoleOpens += 1
+		windowOpens += 1
 	}
-	func closeConsole(vm name: String) async throws { _ = try get(name) }
-	func consoleInfo(vm name: String) async throws -> ConsoleInfo {
-		_ = try get(name)
-		return ConsoleInfo(logPath: "/tmp/console.log")
-	}
+	func closeWindow(vm name: String) async throws { _ = try get(name) }
 	// Large enough that its base64 response overflows a socket send buffer — regression
 	// guard for partial/EAGAIN writes on the server side.
 	var previewPayload = Data([0xFF, 0xD8, 0xFF])
@@ -252,10 +247,10 @@ struct LoopbackTests {
 		let list = try await client.listVMs()
 		#expect(list.map(\.name) == ["Debian"])
 
-		try await client.start(vm: "Debian", options: StartOptions(openConsole: false))
+		try await client.start(vm: "Debian", options: StartOptions(openWindow: false))
 		let started = try await client.vm(named: "Debian")
 		#expect(started.state == .running)
-		#expect(!started.consoleOpen)
+		#expect(!started.windowOpen)
 
 		let preview = try await client.preview(vm: "Debian", maxWidth: nil)
 		#expect(preview == Data([0xFF, 0xD8, 0xFF]))
@@ -447,7 +442,7 @@ struct LoopbackTests {
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "err")
 		do {
-			try await client.openConsole(vm: "Debian")
+			try await client.openWindow(vm: "Debian")
 			Issue.record("expected a throw")
 		} catch let error as MachmanError {
 			// The boundary catch keeps a machmanCode and a clean message — no leaked
@@ -462,7 +457,7 @@ struct LoopbackTests {
 		let socketPath = NSTemporaryDirectory() + "mm-big-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian", state: .running)
-		// 2 MiB of noise ≈ a real console-window JPEG after base64 — far beyond the socket
+		// 2 MiB of noise ≈ a real VM-window JPEG after base64 — far beyond the socket
 		// buffer, so the server must handle partial writes.
 		stub.previewPayload = Data((0..<(2 * 1024 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")

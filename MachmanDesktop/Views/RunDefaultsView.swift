@@ -44,13 +44,13 @@ struct RunDefaultsView: View {
 			return "Safe-run VMs cannot autostart — turn off safe mode first"
 		}
 		return policy.windowed
-			? "Start this VM at login, in its console window"
+			? "Start this VM at login, in its window"
 			: "Start this VM at login, headless"
 	}
 
 	private var startModeHelp: String {
 		policy.windowed
-			? "Plain Run opens a console window"
+			? "Plain Run opens a window"
 			: "Plain Run starts headless (no window)"
 	}
 

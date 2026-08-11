@@ -42,18 +42,18 @@ struct MachmanDesktopApp: App {
 							viewModel.select(name: vm.name)
 						}
 						.help("show \(vm.name)")
-						// The applicable console-window action rides right under its VM.
+						// The applicable window action rides right under its VM.
 						if vm.state.isRunning {
-							if vm.consoleOpen {
+							if vm.windowOpen {
 								Button(action: {
-									viewModel.closeConsole(vm.name)
+									viewModel.closeWindow(vm.name)
 								}) {
 									Label("Close \(vm.name) Window",
 										systemImage: MachmanSymbols.closeWindow)
 								}
 							} else {
 								Button(action: {
-									viewModel.openConsole(vm.name)
+									viewModel.openWindow(vm.name)
 									selection = vm.name
 									viewModel.select(name: vm.name)
 								}) {

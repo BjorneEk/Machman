@@ -3,7 +3,7 @@
 //  MachmanAgent
 //
 //  The Machman daemon: a menu-bar agent (LSUIElement) that owns the VM engine, presents
-//  console windows, and serves the MachmanControlling API over <dataDir>/machman.sock.
+//  VM windows, and serves the MachmanControlling API over <dataDir>/machman.sock.
 //  MachmanDesktop, the CLI, and any non-Swift client are all just connections to it.
 //
 
@@ -159,7 +159,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		NSApp.terminate(nil)
 	}
 
-	// Console windows come and go; the daemon lives in the menu bar.
+	// VM windows come and go; the daemon lives in the menu bar.
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
 		false
 	}

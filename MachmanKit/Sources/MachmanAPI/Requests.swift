@@ -32,21 +32,22 @@ public struct NewDisk: Codable, Sendable, Equatable {
 }
 
 public struct StartOptions: Codable, Sendable, Equatable {
-	public var openConsole: Bool
+	// Present the VM's graphical window on start; false starts it headless.
+	public var openWindow: Bool
 	// Override the macConflict refusal (start even though a running VM uses this MAC).
 	public var force: Bool
 	// Run a discardable shadow copy instead of the real VM (per-disk/mount safe flags apply).
 	public var safe: Bool
 
-	public init(openConsole: Bool = true, force: Bool = false, safe: Bool = false) {
-		self.openConsole = openConsole
+	public init(openWindow: Bool = true, force: Bool = false, safe: Bool = false) {
+		self.openWindow = openWindow
 		self.force = force
 		self.safe = safe
 	}
 
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
-		self.openConsole = try c.decodeIfPresent(Bool.self, forKey: .openConsole) ?? true
+		self.openWindow = try c.decodeIfPresent(Bool.self, forKey: .openWindow) ?? true
 		self.force = try c.decodeIfPresent(Bool.self, forKey: .force) ?? false
 		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? false
 	}

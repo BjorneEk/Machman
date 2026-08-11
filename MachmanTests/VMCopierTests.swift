@@ -129,7 +129,6 @@ struct VMCopierTests {
 		defer { try? FileManager.default.removeItem(atPath: library) }
 		let src = try makeSourceVM(in: library, extraFiles: [
 			"vm_identifier": Data("id".utf8),
-			"console.log": Data("boot".utf8),
 			"restore.ipsw": Data("ipsw".utf8),
 			"efi_vars.fd": Data("efi".utf8),
 			"notes.txt": Data("notes".utf8),
@@ -139,7 +138,6 @@ struct VMCopierTests {
 			sourceDir: src, destinationParent: library, newName: "dup"))
 		let fm = FileManager.default
 		#expect(!fm.fileExists(atPath: dst + "/vm_identifier"))
-		#expect(!fm.fileExists(atPath: dst + "/console.log"))
 		#expect(!fm.fileExists(atPath: dst + "/restore.ipsw"))
 		#expect(fm.fileExists(atPath: dst + "/efi_vars.fd"))
 		#expect(fm.fileExists(atPath: dst + "/notes.txt"))

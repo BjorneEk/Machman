@@ -7,8 +7,8 @@
 //  consumed through RemoteMachman — clients don't change.
 //
 //  Everything is DTOs; no live objects cross this boundary. The one deliberate absence is the
-//  VM display: VZVirtualMachineView cannot leave the process that owns the VM, so console
-//  windows are presented engine-side and only *commands* about them appear here.
+//  VM display: VZVirtualMachineView cannot leave the process that owns the VM, so VM windows
+//  are presented engine-side and only *commands* about them appear here.
 //
 
 import Foundation
@@ -50,14 +50,13 @@ public protocol MachmanControlling: AnyObject {
 	// Batch per-id safe flags; unknown ids refuse the WHOLE batch (nothing half-applies).
 	func setSafety(vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?) async throws
 
-	// MARK: Run / stop / console
+	// MARK: Run / stop / window
 	func start(vm name: String, options: StartOptions) async throws
 	func stop(vm name: String, mode: StopMode) async throws
-	func openConsole(vm name: String) async throws
-	// Close the console window without touching the VM (it keeps running headless).
-	func closeConsole(vm name: String) async throws
-	func consoleInfo(vm name: String) async throws -> ConsoleInfo
-	// A JPEG snapshot of the console window, downscaled to maxWidth; nil when unavailable.
+	func openWindow(vm name: String) async throws
+	// Close the window without touching the VM (it keeps running headless).
+	func closeWindow(vm name: String) async throws
+	// A JPEG snapshot of the VM window, downscaled to maxWidth; nil when unavailable.
 	func preview(vm name: String, maxWidth: Int?) async throws -> Data?
 
 	// MARK: macOS install

@@ -20,9 +20,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	public var disks: [DiskInfo]
 	public var mounts: [MountInfo]
 	public var boot: BootInfo
-	public var consoleLogPath: String?
-	// Whether the engine currently shows a console window for this VM.
-	public var consoleOpen: Bool
+	// Whether the engine currently shows a window for this VM.
+	public var windowOpen: Bool
 	// Optional (not defaulted): genuinely absent from older daemons.
 	public var startPolicy: StartPolicy?
 	// Set by the daemon only, and only while a safe run impersonates this VM (phase 6).
@@ -34,7 +33,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	public init(
 		name: String, state: VMState, created: Date, lastRan: Date?, cpuCount: Int,
 		memoryBytes: UInt64, macAddress: String?, disks: [DiskInfo], mounts: [MountInfo],
-		boot: BootInfo, consoleLogPath: String?, consoleOpen: Bool = false,
+		boot: BootInfo, windowOpen: Bool = false,
 		startPolicy: StartPolicy? = nil, safeRun: Bool? = nil,
 		totalRuntimeSeconds: Double? = nil
 	) {
@@ -48,8 +47,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.disks = disks
 		self.mounts = mounts
 		self.boot = boot
-		self.consoleLogPath = consoleLogPath
-		self.consoleOpen = consoleOpen
+		self.windowOpen = windowOpen
 		self.startPolicy = startPolicy
 		self.safeRun = safeRun
 		self.totalRuntimeSeconds = totalRuntimeSeconds
@@ -69,8 +67,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.disks = try c.decode([DiskInfo].self, forKey: .disks)
 		self.mounts = try c.decode([MountInfo].self, forKey: .mounts)
 		self.boot = try c.decode(BootInfo.self, forKey: .boot)
-		self.consoleLogPath = try c.decodeIfPresent(String.self, forKey: .consoleLogPath)
-		self.consoleOpen = try c.decodeIfPresent(Bool.self, forKey: .consoleOpen) ?? false
+		self.windowOpen = try c.decodeIfPresent(Bool.self, forKey: .windowOpen) ?? false
 		self.startPolicy = try c.decodeIfPresent(StartPolicy.self, forKey: .startPolicy)
 		self.safeRun = try c.decodeIfPresent(Bool.self, forKey: .safeRun)
 		self.totalRuntimeSeconds =
@@ -92,7 +89,7 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 	                                // absolute path (clients must not derive library paths)
 	public var sizeBytes: UInt64?
 	// Safe-mode policy: true = a safe run clones this disk. Non-optional with a default-true
-	// decode (the consoleOpen pattern) — the daemon always populates it.
+	// decode (the windowOpen pattern) — the daemon always populates it.
 	public var safe: Bool
 	// true = the backing file lives inside (and travels with) the VM's directory; false =
 	// an external reference vm.disk.promote can copy in. Optional so old daemons (nil)
@@ -202,14 +199,5 @@ public struct KernelSettings: Codable, Sendable, Equatable {
 		self.kernelPath = kernelPath
 		self.initrdPath = initrdPath
 		self.commandLine = commandLine
-	}
-}
-
-public struct ConsoleInfo: Codable, Sendable, Equatable {
-	// File-backed serial console output (hvc0), nil for guests without one (macOS).
-	public var logPath: String?
-
-	public init(logPath: String?) {
-		self.logPath = logPath
 	}
 }

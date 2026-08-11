@@ -27,22 +27,21 @@ struct WireFixtureTests {
 			mounts: [MountInfo(id: "m1", path: "/Users/x/share", tag: "host-share")],
 			boot: BootInfo(
 				mode: .efi, kernel: nil, macInstallState: nil,
-				minCPUCount: nil, minMemoryBytes: nil),
-			consoleLogPath: "/tmp/console.log")
-		let expected = #"{"boot":{"mode":"efi"},"consoleLogPath":"/tmp/console.log","#
-			+ #""consoleOpen":false,"cpuCount":4,"created":"2023-11-14T22:13:20Z","#
+				minCPUCount: nil, minMemoryBytes: nil))
+		let expected = #"{"boot":{"mode":"efi"},"cpuCount":4,"#
+			+ #""created":"2023-11-14T22:13:20Z","#
 			+ #""disks":[{"id":"storage:disk","name":"disk","safe":true,"#
 			+ #""sizeBytes":10737418240,"type":"storage"}],"lastRan":"2023-11-14T22:15:00Z","#
 			+ #""macAddress":"aa:bb:cc:dd:ee:ff","memoryBytes":4294967296,"#
 			+ #""mounts":[{"id":"m1","path":"/Users/x/share","safe":true,"tag":"host-share"}],"#
-			+ #""name":"Debian","state":"running"}"#
+			+ #""name":"Debian","state":"running","windowOpen":false}"#
 		#expect(try encode(info) == expected)
 		#expect(try decode(VMInfo.self, expected) == info)
 
-		// Payloads predating consoleOpen and the safe flags must keep decoding (defaults:
+		// Payloads predating windowOpen and the safe flags must keep decoding (defaults:
 		// false / true).
 		let legacy = expected
-			.replacingOccurrences(of: #""consoleOpen":false,"#, with: "")
+			.replacingOccurrences(of: #","windowOpen":false"#, with: "")
 			.replacingOccurrences(of: #""safe":true,"#, with: "")
 		#expect(try decode(VMInfo.self, legacy) == info)
 	}
@@ -54,8 +53,7 @@ struct WireFixtureTests {
 			cpuCount: 2, memoryBytes: 1024, macAddress: nil, disks: [], mounts: [],
 			boot: BootInfo(
 				mode: .efi, kernel: nil, macInstallState: nil,
-				minCPUCount: nil, minMemoryBytes: nil),
-			consoleLogPath: nil)
+				minCPUCount: nil, minMemoryBytes: nil))
 		info.startPolicy = StartPolicy()
 		info.safeRun = true
 		info.totalRuntimeSeconds = 12.5
@@ -116,9 +114,9 @@ struct WireFixtureTests {
 
 	@Test func startOptionsDefaultsOnDecode() throws {
 		#expect(try decode(StartOptions.self, "{}")
-			== StartOptions(openConsole: true, force: false, safe: false))
+			== StartOptions(openWindow: true, force: false, safe: false))
 		#expect(try encode(StartOptions())
-			== #"{"force":false,"openConsole":true,"safe":false}"#)
+			== #"{"force":false,"openWindow":true,"safe":false}"#)
 	}
 
 	@Test func startPolicyDefaultsOnDecode() throws {

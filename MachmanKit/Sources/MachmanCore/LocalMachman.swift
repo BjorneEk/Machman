@@ -264,7 +264,7 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	// MARK: - Run / stop / console
+	// MARK: - Run / stop / window
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		// The single choke point (the vmhost serves this same class): an autostarted safe
@@ -293,27 +293,19 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidArgument, message: "this process cannot run safe copies")
 		}
-		try await registry.start(try lookup(name), openConsole: options.openConsole)
+		try await registry.start(try lookup(name), openWindow: options.openWindow)
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {
 		try await registry.stop(try lookup(name), mode: mode)
 	}
 
-	public func openConsole(vm name: String) async throws {
-		registry.openConsole(try lookup(name))
+	public func openWindow(vm name: String) async throws {
+		registry.openWindow(try lookup(name))
 	}
 
-	public func closeConsole(vm name: String) async throws {
-		registry.closeConsole(try lookup(name))
-	}
-
-	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
-		let vm = try lookup(name)
-		if case .macOS = vm.config.boot {
-			return ConsoleInfo(logPath: nil)
-		}
-		return ConsoleInfo(logPath: vm.config.consoleLogPath())
+	public func closeWindow(vm name: String) async throws {
+		registry.closeWindow(try lookup(name))
 	}
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
@@ -396,12 +388,6 @@ public final class LocalMachman: MachmanControlling {
 		let mounts = config.mountPoints.map {
 			MountInfo(id: $0.id.uuidString, path: $0.path, tag: $0.tag, safe: $0.safe)
 		}
-		let consoleLogPath: String?
-		if case .macOS = config.boot {
-			consoleLogPath = nil
-		} else {
-			consoleLogPath = config.consoleLogPath()
-		}
 		return VMInfo(
 			name: config.name,
 			state: vm.state,
@@ -413,8 +399,7 @@ public final class LocalMachman: MachmanControlling {
 			disks: disks,
 			mounts: mounts,
 			boot: bootInfo(for: vm),
-			consoleLogPath: consoleLogPath,
-			consoleOpen: registry.isConsoleOpen(vm),
+			windowOpen: registry.isWindowOpen(vm),
 			startPolicy: config.startPolicy,
 			safeRun: nil,   // daemon-overlay concept: only the router knows a run is safe
 			totalRuntimeSeconds: config.totalRuntimeSeconds)

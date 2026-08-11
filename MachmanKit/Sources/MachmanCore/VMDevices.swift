@@ -94,22 +94,9 @@ extension VMConfig {
 		}
 	}
 
-	// A file-backed virtio console: Linux guests see it as hvc0 (boot with console=hvc0) and
-	// everything written lands in <vm>/console.log, overwritten on each boot. The bootstrap
-	// tier of the console story — readable via `tail -f`, no GUI needed.
+	// No serial ports by default yet; the serial-ports feature adds configurable ones.
 	func serialPorts() -> [VZSerialPortConfiguration] {
-		switch boot {
-		case .efi, .linuxKernel:
-			guard let attachment = try? VZFileSerialPortAttachment(
-				url: localURL(file: "console.log"), append: false) else {
-				return []
-			}
-			let port = VZVirtioConsoleDeviceSerialPortConfiguration()
-			port.attachment = attachment
-			return [port]
-		case .macOS:
-			return []
-		}
+		return []
 	}
 
 	// Assembles the full VZ configuration. Shared by the normal boot path (VirtualMachine) and the

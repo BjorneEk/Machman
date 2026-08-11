@@ -1,13 +1,13 @@
 //
-//  ConsolePresenter.swift
+//  WindowPresenter.swift
 //  Machman
 //
-//  Owns console windows and their capture. This is the one component that can never move to a
+//  Owns VM windows and their capture. This is the one component that can never move to a
 //  client process: VZVirtualMachineView must live in the process that owns the VZVirtualMachine,
 //  so windows are presented here, engine-side, and clients only send commands about them.
 //
 //  Closing a window prompts: Close Window (VM keeps running) / Shut Down (ask the guest, with a
-//  force-stop offer if it doesn't comply) / Force Stop / Cancel. dropConsole closes
+//  force-stop offer if it doesn't comply) / Force Stop / Cancel. dropWindow closes
 //  programmatically and never prompts (the VM already went away).
 //
 
@@ -18,13 +18,13 @@ import ScreenCaptureKit
 import MachmanAPI
 
 @MainActor
-final class ConsolePresenter: NSObject, NSWindowDelegate {
+final class WindowPresenter: NSObject, NSWindowDelegate {
 	private var windows: [String: NSWindow] = [:]
 	// Injected by the registry: how to stop a VM, and whether it is still running.
 	var stopHandler: ((String, StopMode) -> Void)?
 	var isRunning: ((String) -> Bool)?
-	// Fired whenever a console window appears or goes away (clients track consoleOpen).
-	var onConsoleChanged: (() -> Void)?
+	// Fired whenever a VM window appears or goes away (clients track windowOpen).
+	var onWindowChanged: (() -> Void)?
 	// Why a preview came back blank. A black thumbnail is the fallback for three quite different
 	// failures, and telling them apart from the outside is impossible.
 	enum CaptureFailure: Equatable {
@@ -39,13 +39,13 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 	private let softStopGraceSeconds: Double = 30
 	private var captureInFlight = false
 
-	// Only the vmhost sets this: with a console open that process is a real app (Dock icon,
+	// Only the vmhost sets this: with a window open that process is a real app (Dock icon,
 	// menus); windowless it drops back to accessory. The daemon's presenter must never flip
 	// the menu-bar agent's LSUIElement — and there it is provably inert anyway: since the
 	// vmhost split the daemon never runs a VM, so its presenter never opens a window.
 	var managesActivationPolicy = false
 
-	func openConsole(name: String, vz: VZVirtualMachine) {
+	func openWindow(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
 			// Re-surfacing must foreground the app, not just order the window forward.
 			if managesActivationPolicy {
@@ -73,11 +73,11 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 			NSApp.activate(ignoringOtherApps: true)
 			window.makeKeyAndOrderFront(nil)   // re-front after the policy flip
 		}
-		onConsoleChanged?()
+		onWindowChanged?()
 	}
 
 	// Close and forget without prompting (the VM went away on its own).
-	func dropConsole(name: String) {
+	func dropWindow(name: String) {
 		guard let window = windows[name] else { return }
 		forget(name)
 		window.close()
@@ -102,7 +102,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		if managesActivationPolicy, windows.isEmpty {
 			NSApp.setActivationPolicy(.accessory)
 		}
-		onConsoleChanged?()
+		onWindowChanged?()
 	}
 
 	// MARK: - Close prompt
@@ -117,7 +117,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		}
 		let alert = NSAlert()
 		alert.messageText = "\(name) is running"
-		alert.informativeText = "Close the console window and leave the VM running, "
+		alert.informativeText = "Close the window and leave the VM running, "
 			+ "ask the guest to shut down, or stop it immediately?"
 		alert.addButton(withTitle: "Close Window")
 		alert.addButton(withTitle: "Shut Down")
@@ -170,7 +170,7 @@ final class ConsolePresenter: NSObject, NSWindowDelegate {
 		return image
 	}
 
-	// One frame of the console window via SCScreenshotManager: a one-shot capture (no stream
+	// One frame of the VM window via SCScreenshotManager: a one-shot capture (no stream
 	// lifecycle churning the system's recording indicator), and onScreenWindowsOnly: false +
 	// desktopIndependentWindow so windows parked on other Spaces still resolve. Always returns
 	// an image (black fallback). Ceiling note: any ScreenCaptureKit path shows the system

@@ -27,7 +27,7 @@ public enum VMHostBootstrap {
 		// library is passed only for safe runs (dataDir = the shadow run root then); it is
 		// the promotion destination for vm.safeSave, whose absence makes safeSave refuse.
 		let registry = VMRegistry(only: vmName, promotionLibrary: library)
-		// The console flips this process to a real app (Dock icon, menus) while a window is
+		// The VM window flips this process to a real app (Dock icon, menus) while a window is
 		// open — a per-VM app the user can ⌘-Tab to — and back to accessory when it closes.
 		registry.presenter.managesActivationPolicy = true
 		guard registry.vm(named: vmName) != nil else {
@@ -98,7 +98,7 @@ public enum VMHostBootstrap {
 				}
 				do {
 					try await api.start(
-						vm: vmName, options: StartOptions(openConsole: policy.windowed))
+						vm: vmName, options: StartOptions(openWindow: policy.windowed))
 					// Belt: never idle-exit a VM we just started (the watcher order above
 					// is the suspenders).
 					lifecycle.hadRunning = true
@@ -176,17 +176,17 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	// A provider, not a value: safeSave promotion renames the VM mid-run, and every action
 	// here must target the live name. Only the (rebuilt-never) menu TITLES stay stale.
 	private let vmName: () -> String
-	private let presenter: ConsolePresenter
+	private let presenter: WindowPresenter
 	private let server: MachmanServer
 
-	init(vmName: @escaping () -> String, presenter: ConsolePresenter, server: MachmanServer) {
+	init(vmName: @escaping () -> String, presenter: WindowPresenter, server: MachmanServer) {
 		self.vmName = vmName
 		self.presenter = presenter
 		self.server = server
 	}
 
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-		false   // closing the console leaves the VM running; the host stays
+		false   // closing the window leaves the VM running; the host stays
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

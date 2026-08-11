@@ -81,7 +81,7 @@ def main():
     if command == "info":
         print(f"machman-agent {hello['daemonVersion']} (api v{hello['apiVersion']}) at {path}")
         for vm in client.call("vm.list"):
-            window = ", window open" if vm.get("consoleOpen") else ""
+            window = ", window open" if vm.get("windowOpen") else ""
             print(f"  {vm['name']:20} {vm['state']:9} "
                   f"{vm['cpuCount']} cpu, {vm['memoryBytes'] // 2**30} GiB"
                   f" [{vm['boot']['mode']}]{window}")
@@ -95,7 +95,7 @@ def main():
     elif command == "start":
         client.call("vm.start", {
             "name": argv[1],
-            "options": {"openConsole": "--headless" not in argv}})
+            "options": {"openWindow": "--headless" not in argv}})
         print(f"started {argv[1]}")
     elif command == "stop":
         mode = "force" if "--force" in argv else "soft"

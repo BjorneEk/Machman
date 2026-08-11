@@ -21,7 +21,7 @@ public enum MachmanSymbols {
 	public static let shutDown = "power"
 	public static let forceStop = "stop.circle"
 
-	// MARK: - Console windows
+	// MARK: - VM windows
 	public static let openWindow = "macwindow.badge.plus"
 	public static let closeWindow = "macwindow.badge.minus"
 

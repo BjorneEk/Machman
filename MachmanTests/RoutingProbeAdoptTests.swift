@@ -38,7 +38,7 @@ struct RoutingProbeAdoptTests {
 		defer { server.stop() }
 
 		let handled = try await routing.probeAdoptAndStart(
-			name: "alpha", socketPath: socketPath, options: StartOptions(openConsole: false))
+			name: "alpha", socketPath: socketPath, options: StartOptions(openWindow: false))
 		#expect(handled)
 		#expect(routing.hostedNames == ["alpha"])
 		#expect(stub.vms["alpha"]?.state == .running)   // the start reached the host
@@ -55,12 +55,12 @@ struct RoutingProbeAdoptTests {
 		defer { server.stop() }
 
 		// The host refuses the forwarded start (already running); the probe still adopts
-		// and honors openConsole so the caller gets what they asked for.
+		// and honors openWindow so the caller gets what they asked for.
 		let handled = try await routing.probeAdoptAndStart(
-			name: "alpha", socketPath: socketPath, options: StartOptions(openConsole: true))
+			name: "alpha", socketPath: socketPath, options: StartOptions(openWindow: true))
 		#expect(handled)
 		#expect(routing.hostedNames == ["alpha"])
-		#expect(stub.consoleOpens == 1)
+		#expect(stub.windowOpens == 1)
 	}
 
 	@Test @MainActor func deadSocketIsReclaimedAndNotAdopted() async throws {

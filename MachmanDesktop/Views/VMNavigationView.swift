@@ -24,7 +24,7 @@ struct VMNavigationView: View {
 			List(selection: $selection) {
 				ForEach(viewModel.vms) { item in
 					HStack {
-						StatusIcon(state: item.state, consoleOpen: item.consoleOpen)
+						StatusIcon(state: item.state, windowOpen: item.windowOpen)
 						Text(item.name)
 							.font(.callout)
 						Spacer()
@@ -44,7 +44,7 @@ struct VMNavigationView: View {
 					navigate = !navigate
 				} else if viewModel.selectedName != nil {
 					// The sidebar List drops its selection on its own when focus moves to
-					// another app (the daemon's console window, on VM start). The view model
+					// another app (the daemon's VM window, on VM start). The view model
 					// owns selection — re-assert it instead of letting the detail pane reset.
 					selection = viewModel.selectedName
 				}

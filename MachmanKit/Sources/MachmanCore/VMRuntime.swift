@@ -3,7 +3,7 @@
 //  Machman
 //
 //  The live half of one VM: owns the VZVirtualMachine, is its delegate, derives the API-level
-//  state and broadcasts changes. Knows nothing about windows (ConsolePresenter) or the VM list
+//  state and broadcasts changes. Knows nothing about windows (WindowPresenter) or the VM list
 //  (VMRegistry). Main-actor because VZVirtualMachine created on the main queue must be driven
 //  from it.
 //

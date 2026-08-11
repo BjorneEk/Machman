@@ -184,17 +184,14 @@ public final class MachmanServer {
 				let p: RPCParams.Stop = try params(line)
 				try await api.stop(vm: p.name, mode: p.mode)
 				reply(client, id, RPCEmpty())
-			case .consoleOpen:
+			case .windowOpen:
 				let p: RPCParams.Name = try params(line)
-				try await api.openConsole(vm: p.name)
+				try await api.openWindow(vm: p.name)
 				reply(client, id, RPCEmpty())
-			case .consoleClose:
+			case .windowClose:
 				let p: RPCParams.Name = try params(line)
-				try await api.closeConsole(vm: p.name)
+				try await api.closeWindow(vm: p.name)
 				reply(client, id, RPCEmpty())
-			case .consoleInfo:
-				let p: RPCParams.Name = try params(line)
-				reply(client, id, try await api.consoleInfo(vm: p.name))
 			case .preview:
 				let p: RPCParams.Preview = try params(line)
 				if let data = try await api.preview(vm: p.name, maxWidth: p.maxWidth) {

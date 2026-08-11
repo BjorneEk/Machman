@@ -48,7 +48,7 @@ struct MainVMView: View {
 					HStack {
 						// Explicit size: toolbar items don't cascade the title font.
 						StatusIcon(
-							state: vm.state, consoleOpen: vm.consoleOpen,
+							state: vm.state, windowOpen: vm.windowOpen,
 							safeRun: vm.safeRun == true)
 							.font(.title2)
 						EditableText($viewModel.vmName)

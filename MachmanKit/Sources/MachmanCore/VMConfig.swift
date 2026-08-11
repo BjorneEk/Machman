@@ -218,10 +218,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return configFilePath(file: "efi_vars.fd")
 	}
 
-	func consoleLogPath() -> String {
-		return configFilePath(file: "console.log")
-	}
-
 	func configPath() -> String {
 		return configFilePath(file: "config")
 	}

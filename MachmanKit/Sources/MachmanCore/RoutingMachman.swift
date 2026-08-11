@@ -320,7 +320,7 @@ public final class RoutingMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	// Config/console-plane routing: a hosted VM's own process, else the daemon-local engine.
+	// Config/window-plane routing: a hosted VM's own process, else the daemon-local engine.
 	private func target(_ name: String) -> MachmanControlling {
 		if let host = hosted[name] { return host.client }
 		return local
@@ -629,8 +629,8 @@ public final class RoutingMachman: MachmanControlling {
 		} catch let error as MachmanError where error.code == .invalidState {
 			// Already running (autostart got there first) — the caller still gets what
 			// they asked for.
-			if options.openConsole {
-				try? await client.openConsole(vm: name)
+			if options.openWindow {
+				try? await client.openWindow(vm: name)
 			}
 		}
 		// Other start failures propagate with the host still adopted: it is live and owns
@@ -672,16 +672,12 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).stop(vm: name, mode: mode)
 	}
 
-	public func openConsole(vm name: String) async throws {
-		try await target(name).openConsole(vm: name)
+	public func openWindow(vm name: String) async throws {
+		try await target(name).openWindow(vm: name)
 	}
 
-	public func closeConsole(vm name: String) async throws {
-		try await target(name).closeConsole(vm: name)
-	}
-
-	public func consoleInfo(vm name: String) async throws -> ConsoleInfo {
-		try await target(name).consoleInfo(vm: name)
+	public func closeWindow(vm name: String) async throws {
+		try await target(name).closeWindow(vm: name)
 	}
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
