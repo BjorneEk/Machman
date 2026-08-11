@@ -159,10 +159,8 @@ struct VMNavigationView: View {
 	private func openPort(_ vm: String, _ port: SerialPortInfo, revealInfo: Bool = false) {
 		selection = vm
 		viewModel.select(name: vm)
-		let ref = SerialPortRef(port)
-		viewModel.terminals.openTab(
-			vm: vm, ref: ref, socketPath: port.socketPath,
-			profile: profiles.profile(vm: vm, ref: ref))
+		// Instant: just record the tab. The container builds + connects the terminal lazily.
+		viewModel.terminals.openTab(vm: vm, ref: SerialPortRef(port))
 		if revealInfo { viewModel.showInfoPanel = true }
 	}
 }

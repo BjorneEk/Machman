@@ -20,6 +20,9 @@ final class TerminalSessions: ObservableObject {
 	// Per-VM live controllers, keyed by port ref. Not published: views observe `states` for
 	// structure and each controller's own @Published `connected` for status.
 	private var controllers: [String: [SerialPortRef: SerialTerminalController]] = [:]
+	// Tabs whose controller is being created on a deferred runloop turn (so the spinner shows and
+	// we don't schedule creation twice).
+	private var creating: Set<String> = []
 
 	// MARK: - Reads
 
@@ -41,18 +44,38 @@ final class TerminalSessions: ObservableObject {
 
 	// MARK: - Tab lifecycle
 
-	// Open (or focus) a port's tab. Creates + connects a controller the first time; re-opening an
-	// already-open port just re-focuses it (and reconnects if its socket has come back).
-	func openTab(
-		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile
-	) {
-		if controllers[vm]?[ref] == nil {
-			controllers[vm, default: [:]][ref] = SerialTerminalController(profile: profile)
-		}
-		if let path = socketPath { controllers[vm]?[ref]?.connect(path: path) }
+	// Open (or focus) a port's tab. Cheap by design: it only records the tab so it appears
+	// instantly; the terminal is created lazily by ensureController when the pane shows it (a
+	// spinner covers the gap), keeping the heavy TerminalView init off the click.
+	func openTab(vm: String, ref: SerialPortRef) {
 		var s = state(vm)
 		s.open(ref)
 		states[vm] = s
+	}
+
+	// Make sure the tab's controller exists and is connected, ready to render. The TerminalView is
+	// built on a later runloop turn so the tab + spinner paint first (AppKit view creation is
+	// main-thread-bound, so this is deferral, not backgrounding — but the click stays instant).
+	// Idempotent per tab; also (re)connects an existing controller whose socket reappeared.
+	func ensureController(
+		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile
+	) {
+		if let c = controllers[vm]?[ref] {
+			if let path = socketPath, !c.connected { c.connect(path: path) }
+			return
+		}
+		let key = ref.assocKey(vm: vm)
+		guard !creating.contains(key) else { return }
+		creating.insert(key)
+		DispatchQueue.main.async { [weak self] in
+			guard let self else { return }
+			self.creating.remove(key)
+			guard self.state(vm).openPorts.contains(ref) else { return }   // closed meanwhile
+			let c = SerialTerminalController(profile: profile)
+			self.controllers[vm, default: [:]][ref] = c
+			if let path = socketPath { c.connect(path: path) }
+			self.objectWillChange.send()   // swap the spinner for the terminal
+		}
 	}
 
 	func setActive(_ tab: VMPaneTab, for vm: String) {
@@ -81,13 +104,6 @@ final class TerminalSessions: ObservableObject {
 		let c = SerialTerminalController(profile: profile)
 		controllers[vm, default: [:]][ref] = c
 		if let path = socketPath { c.connect(path: path) }
-	}
-
-	// Re-attach an open-but-disconnected tab when its socket reappears (VM restart; the socket
-	// path hash is stable across restarts, so connect() is idempotent per path).
-	func reconnectIfPossible(vm: String, ref: SerialPortRef, socketPath: String?) {
-		guard let path = socketPath, let c = controllers[vm]?[ref], !c.connected else { return }
-		c.connect(path: path)
 	}
 
 	// MARK: - Cross-cutting updates

@@ -76,18 +76,29 @@ struct VMTabContainerView: View {
 
 	@ViewBuilder
 	private func terminalContent(vm: VMInfo, ref: SerialPortRef) -> some View {
-		// The socket exists only while the VM serves this port, so gate on it: a stopped VM shows
-		// a placeholder, and the terminal mounts (and reconnects, via onAppear) once it starts.
-		// The controller — and its scrollback — persists across the stop in TerminalSessions.
-		if let socket = socketPath(vm: vm, ref: ref),
-			let controller = sessions.controller(vm: vm.name, ref: ref) {
-			SerialTerminalHost(controller: controller)
-				.id(ObjectIdentifier(controller))   // swap the NSView when reloadTab replaces it
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
-				.padding(6)
-				.onAppear {
-					sessions.reconnectIfPossible(vm: vm.name, ref: ref, socketPath: socket)
+		// The socket exists only while the VM serves this port. Stopped → placeholder. Running →
+		// ensure the controller (built off the click, so a spinner shows briefly) then render.
+		if let socket = socketPath(vm: vm, ref: ref) {
+			Group {
+				if let controller = sessions.controller(vm: vm.name, ref: ref) {
+					SerialTerminalHost(controller: controller)
+						.id(ObjectIdentifier(controller))   // swap the view on reloadTab
+						.frame(maxWidth: .infinity, maxHeight: .infinity)
+						.padding(6)
+				} else {
+					VStack(spacing: 10) {
+						ProgressView()
+						Text("Connecting to \(guestName(vm: vm, ref: ref))…")
+							.foregroundColor(.secondary)
+					}
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
 				}
+			}
+			.onAppear {
+				sessions.ensureController(
+					vm: vm.name, ref: ref, socketPath: socket,
+					profile: profiles.profile(vm: vm.name, ref: ref))
+			}
 		} else {
 			VStack(spacing: 8) {
 				Image(systemName: ref.kind == .console
