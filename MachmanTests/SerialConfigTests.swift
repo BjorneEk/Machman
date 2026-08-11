@@ -1,0 +1,122 @@
+import Testing
+import Foundation
+import MachmanAPI
+@testable import MachmanCore
+
+// Persisted serial-port config: counts, per-port logging, the legacy→one-console migration,
+// and the 10-port cap. Pure VMConfig (no VZ), under a redirected data dir.
+struct SerialConfigTests {
+
+	private func makeVM(_ name: String) throws -> VMConfig {
+		try VMConfig.createNewVMDirectory(name: name)
+		return try VMConfig(name: name, memorySize: 1 << 30, cpuCount: 2)
+	}
+
+	// Strip the serial keys from an on-disk config to simulate one written before the feature.
+	private func stripSerialKeys(_ name: String) throws {
+		let path = "\(machmanVMDir)/\(name)/config"
+		var obj = try JSONSerialization.jsonObject(
+			with: Data(contentsOf: URL(fileURLWithPath: path))) as! [String: Any]
+		obj.removeValue(forKey: "consolePorts")
+		obj.removeValue(forKey: "uartPorts")
+		try JSONSerialization.data(withJSONObject: obj)
+			.write(to: URL(fileURLWithPath: path))
+	}
+
+	@Test func newVMHasOneConsoleNoUart() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("alpha")
+			#expect(vm.consolePorts.count == 1)
+			#expect(vm.uartPorts.isEmpty)
+			#expect(vm.consolePorts[0].logging == SerialLogConfig())
+			#expect(SerialLogConfig().mode == .resetOnBoot)
+			#expect(SerialLogConfig().maxBytes == nil)
+		}
+	}
+
+	@Test func addAndRemovePersist() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("beta")
+			try vm.addConsolePort()
+			try vm.addUartPort()
+			try vm.addUartPort()
+			let a = try VMConfig.load(name: "beta")
+			#expect(a.consolePorts.count == 2)
+			#expect(a.uartPorts.count == 2)
+			try a.removeLastConsolePort()
+			try a.removeLastUartPort()
+			let b = try VMConfig.load(name: "beta")
+			#expect(b.consolePorts.count == 1)
+			#expect(b.uartPorts.count == 1)
+		}
+	}
+
+	@Test func intentionalZeroStaysZero() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("gamma")
+			try vm.removeLastConsolePort()          // now 0 consoles, keys present
+			let reloaded = try VMConfig.load(name: "gamma")
+			#expect(reloaded.consolePorts.isEmpty)  // NOT re-seeded
+			#expect(reloaded.uartPorts.isEmpty)
+		}
+	}
+
+	@Test func legacyEfiConfigGainsOneConsole() throws {
+		try VMTestDir.withRedirectedDir {
+			_ = try makeVM("legacy")
+			try stripSerialKeys("legacy")
+			let reloaded = try VMConfig.load(name: "legacy")
+			#expect(reloaded.consolePorts.count == 1)
+			#expect(reloaded.uartPorts.isEmpty)
+		}
+	}
+
+	@Test func legacyMacOSConfigGainsNoConsole() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("legacymac")
+			vm.boot = .macOS(MacOSBoot(
+				installState: .installed, minimumCPUCount: 4, minimumMemorySize: 4 << 30))
+			try vm.saveVMConfig()
+			try stripSerialKeys("legacymac")
+			let reloaded = try VMConfig.load(name: "legacymac")
+			#expect(reloaded.consolePorts.isEmpty)
+			#expect(reloaded.uartPorts.isEmpty)
+		}
+	}
+
+	@Test func serialPortsAreCappedAtTen() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("capped")   // starts with 1 console
+			for _ in 0..<9 { try vm.addUartPort() }   // 1 + 9 = 10
+			#expect(vm.consolePorts.count + vm.uartPorts.count == 10)
+			#expect(throws: MachmanError.self) { try vm.addUartPort() }
+			#expect(throws: MachmanError.self) { try vm.addConsolePort() }
+		}
+	}
+
+	@Test func removingFromEmptyThrows() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("empty")
+			try vm.removeLastConsolePort()
+			#expect(throws: MachmanError.self) { try vm.removeLastConsolePort() }
+			#expect(throws: MachmanError.self) { try vm.removeLastUartPort() }
+		}
+	}
+
+	@Test func setLoggingPersistsAndValidatesIndex() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("logvm")
+			try vm.addUartPort()
+			try vm.setSerialLogging(
+				kind: .console, index: 0,
+				config: SerialLogConfig(mode: .continuous, maxBytes: 1024))
+			try vm.setSerialLogging(kind: .uart, index: 0, config: SerialLogConfig(mode: .disabled))
+			let reloaded = try VMConfig.load(name: "logvm")
+			#expect(reloaded.consolePorts[0].logging == SerialLogConfig(mode: .continuous, maxBytes: 1024))
+			#expect(reloaded.uartPorts[0].logging.mode == .disabled)
+			#expect(throws: MachmanError.self) {
+				try reloaded.setSerialLogging(kind: .console, index: 5, config: SerialLogConfig())
+			}
+		}
+	}
+}

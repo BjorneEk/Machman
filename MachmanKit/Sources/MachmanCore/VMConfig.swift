@@ -102,6 +102,28 @@ struct VMDisk: Codable, Identifiable, Equatable {
 	}
 }
 
+// A configured serial port. The only structural config is how many console/uart ports a VM has;
+// each port additionally carries a logging config. The API's SerialLogConfig is persisted
+// directly (like StartPolicy) so there is no mirror type to keep in lockstep.
+struct SerialPort: Codable, Equatable {
+	var logging: SerialLogConfig = SerialLogConfig()
+
+	init(logging: SerialLogConfig = SerialLogConfig()) {
+		self.logging = logging
+	}
+
+	// Tolerant decode so a hand-written or future-shaped entry still loads with defaults.
+	init(from decoder: any Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.logging = try c.decodeIfPresent(SerialLogConfig.self, forKey: .logging)
+			?? SerialLogConfig()
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case logging
+	}
+}
+
 class VMConfig: Codable, Identifiable, ObservableObject {
 	var name: String
 	var memorySize: UInt64
@@ -120,6 +142,13 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Accumulated across sessions at teardown, in the process that ran the VM. A SIGKILLed
 	// vmhost loses that session's runtime — accepted.
 	var totalRuntimeSeconds: Double = 0
+	// Serial ports, by family. Count = array length; each element carries its logging config.
+	// Fixed at VM start by the framework, so add/remove is refused while the VM runs.
+	var consolePorts: [SerialPort] = []
+	var uartPorts: [SerialPort] = []
+
+	// The framework caps a VM at 10 virtio serial-port devices; console + uart share that budget.
+	static let maxSerialPorts = 10
 
 	init (name: String, memorySize: UInt64, cpuCount: Int) throws {
 		self.name = name
@@ -128,6 +157,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.macAddress = VZMACAddress.randomLocallyAdministered().string
 		self.created = Foundation.Date()
 		self.lastRan = nil
+		// A new VM boots EFI, so give it the one console every VM used to have by default.
+		self.consolePorts = [SerialPort()]
 		try saveVMConfig()
 	}
 
@@ -160,6 +191,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case kernelSettings
 		case startPolicy
 		case totalRuntimeSeconds
+		case consolePorts
+		case uartPorts
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
@@ -182,6 +215,18 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			?? StartPolicy()
 		self.totalRuntimeSeconds =
 			try c.decodeIfPresent(Double.self, forKey: .totalRuntimeSeconds) ?? 0
+		let hadSerialKeys = c.contains(.consolePorts) || c.contains(.uartPorts)
+		self.consolePorts = try c.decodeIfPresent([SerialPort].self, forKey: .consolePorts) ?? []
+		self.uartPorts = try c.decodeIfPresent([SerialPort].self, forKey: .uartPorts) ?? []
+		// Migration: a config predating serial ports keeps the one console it always had, for
+		// efi/linux guests (macOS never had a serial console). A config already written by this
+		// code has the keys present — even when empty — so an intentional zero stays zero.
+		if !hadSerialKeys {
+			switch boot {
+			case .efi, .linuxKernel: self.consolePorts = [SerialPort()]
+			case .macOS: break
+			}
+		}
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -198,6 +243,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encodeIfPresent(kernelSettings, forKey: .kernelSettings)
 		try c.encode(startPolicy, forKey: .startPolicy)
 		try c.encode(totalRuntimeSeconds, forKey: .totalRuntimeSeconds)
+		try c.encode(consolePorts, forKey: .consolePorts)
+		try c.encode(uartPorts, forKey: .uartPorts)
 	}
 
 	func getDisks() -> [VMDisk] {
@@ -424,6 +471,60 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	func setStartPolicy(_ policy: StartPolicy) throws {
 		startPolicy = policy
+		try saveVMConfig()
+	}
+
+	// MARK: - Serial ports (console + uart)
+
+	private func ensureSerialCapacity() throws {
+		guard consolePorts.count + uartPorts.count < Self.maxSerialPorts else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "a VM can have at most \(Self.maxSerialPorts) serial ports")
+		}
+	}
+
+	func addConsolePort() throws {
+		try ensureSerialCapacity()
+		consolePorts.append(SerialPort())
+		try saveVMConfig()
+	}
+
+	func removeLastConsolePort() throws {
+		guard !consolePorts.isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "\(name) has no console ports")
+		}
+		consolePorts.removeLast()
+		try saveVMConfig()
+	}
+
+	func addUartPort() throws {
+		try ensureSerialCapacity()
+		uartPorts.append(SerialPort())
+		try saveVMConfig()
+	}
+
+	func removeLastUartPort() throws {
+		guard !uartPorts.isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "\(name) has no UART ports")
+		}
+		uartPorts.removeLast()
+		try saveVMConfig()
+	}
+
+	func setSerialLogging(kind: SerialPortKind, index: Int, config: SerialLogConfig) throws {
+		switch kind {
+		case .console:
+			guard consolePorts.indices.contains(index) else {
+				throw MachmanError(code: .notFound, message: "no console port \(index) on \(name)")
+			}
+			consolePorts[index].logging = config
+		case .uart:
+			guard uartPorts.indices.contains(index) else {
+				throw MachmanError(code: .notFound, message: "no UART port \(index) on \(name)")
+			}
+			uartPorts[index].logging = config
+		}
 		try saveVMConfig()
 	}
 
