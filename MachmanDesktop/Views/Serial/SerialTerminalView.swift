@@ -18,7 +18,7 @@ import SwiftTerm
 final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDelegate {
 	let terminalView: TerminalView
 	private var connection: SerialTerminalConnection?
-	@Published var disconnected = false
+	@Published var connected = false
 
 	override init() {
 		terminalView = TerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 480))
@@ -29,22 +29,22 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// Idempotent: connect once per socket. A different socket (VM restart) is a new controller.
 	func connect(path: String) {
 		guard connection == nil else { return }
-		disconnected = false
 		let c = SerialTerminalConnection(path: path)
 		c.onData = { [weak self] data in
 			self?.terminalView.feed(byteArray: [UInt8](data)[...])
 		}
 		// Clear the connection on close so a VM restart (same socket path) can reconnect.
 		c.onClose = { [weak self] in
-			self?.disconnected = true
 			self?.connection = nil
+			self?.connected = false
 		}
-		if c.connect() { connection = c } else { disconnected = true }
+		if c.connect() { connection = c; connected = true }
 	}
 
 	func disconnect() {
 		connection?.stop()
 		connection = nil
+		connected = false
 	}
 
 	func transcript() -> Data { connection?.transcriptData() ?? Data() }

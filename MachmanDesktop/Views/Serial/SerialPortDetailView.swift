@@ -2,10 +2,10 @@
 //  SerialPortDetailView.swift
 //  MachmanDesktop
 //
-//  The detail pane for one serial port, reached from the sidebar tree. The device name sits in
-//  the window toolbar; a flat tab bar spans the top with Info / Terminal / Advanced. Info is a
-//  bounded two-column layout (so it can't force the window taller than the screen); Terminal is a
-//  SwiftTerm attached to the port's socket via a persistent controller; Advanced is disabled
+//  The detail pane for one serial port, reached from the sidebar tree. The device name, a
+//  connect/disconnect toggle and a save button sit in the window toolbar; a small icon tab bar
+//  (Info / Terminal / Advanced) spans the top-left. Info is a bounded two-column layout; Terminal
+//  is a SwiftTerm attached to the port's socket via a persistent controller; Advanced is disabled
 //  until the platform probe lands.
 //
 
@@ -22,7 +22,16 @@ struct SerialPortDetailView: View {
 	@State private var tab: Tab = .info
 	@StateObject private var terminal = SerialTerminalController()
 
-	enum Tab: String, CaseIterable { case info = "Info", terminal = "Terminal", advanced = "Advanced" }
+	enum Tab: String, CaseIterable {
+		case info = "Info", terminal = "Terminal", advanced = "Advanced"
+		var icon: String {
+			switch self {
+			case .info: return MachmanSymbols.tabInfo
+			case .terminal: return MachmanSymbols.tabTerminal
+			case .advanced: return MachmanSymbols.tabAdvanced
+			}
+		}
+	}
 
 	private var vm: VMInfo? { viewModel.vms.first { $0.name == vmName } }
 	private var port: SerialPortInfo? {
@@ -57,36 +66,69 @@ struct SerialPortDetailView: View {
 					Text("· \(vmName)").font(.title3).foregroundColor(.secondary)
 				}
 			}
+			ToolbarItem {
+				Button {
+					if terminal.connected { terminal.disconnect() } else { connectIfPossible() }
+				} label: {
+					Label(
+						terminal.connected ? "Disconnect" : "Connect",
+						systemImage: terminal.connected
+							? MachmanSymbols.serialDisconnect : MachmanSymbols.serialConnect)
+				}
+				.disabled(!running || port?.socketPath == nil)
+				.help(terminal.connected ? "Disconnect the terminal" : "Connect the terminal")
+			}
+			ToolbarItem {
+				Button {
+					viewModel.saveActiveConsoleTranscript()
+				} label: {
+					Label("Save Console", systemImage: MachmanSymbols.saveToFile)
+				}
+				.disabled(!terminal.connected)
+				.help("Save the console transcript to a file")
+			}
 		}
-		.onAppear { connectIfPossible() }
+		.onAppear {
+			connectIfPossible()
+			viewModel.activeSerialTerminal = terminal
+		}
 		.onChange(of: port?.socketPath) { connectIfPossible() }
 		.onChange(of: running) { connectIfPossible() }
-		.onDisappear { terminal.disconnect() }
+		.onDisappear {
+			terminal.disconnect()
+			if viewModel.activeSerialTerminal === terminal {
+				viewModel.activeSerialTerminal = nil
+			}
+		}
 	}
 
 	private func connectIfPossible() {
 		if running, let sock = port?.socketPath { terminal.connect(path: sock) }
 	}
 
-	// MARK: - Flat tab bar
+	// MARK: - Icon tab bar (small, left, whole cell clickable)
 
 	private var tabBar: some View {
-		HStack(spacing: 0) {
+		HStack(spacing: 2) {
 			ForEach(Tab.allCases, id: \.self) { t in
 				Button {
 					tab = t
 				} label: {
-					Text(t.rawValue)
-						.font(.callout)
-						.frame(maxWidth: .infinity)
-						.padding(.vertical, 6)
+					Image(systemName: t.icon)
+						.frame(width: 46, height: 26)
 						.background(tab == t ? Color.accentColor.opacity(0.18) : Color.clear)
 						.foregroundColor(tab == t ? .primary : .secondary)
+						.clipShape(RoundedRectangle(cornerRadius: 5))
+						.contentShape(Rectangle())
 				}
 				.buttonStyle(.plain)
 				.disabled(t == .advanced)
+				.help(t.rawValue)
 			}
+			Spacer()
 		}
+		.padding(.horizontal, 6)
+		.padding(.vertical, 3)
 	}
 
 	// MARK: - Info
@@ -141,25 +183,35 @@ struct SerialPortDetailView: View {
 
 	private var loggingBox: some View {
 		GroupBox("Logging") {
-			VStack(alignment: .leading, spacing: 6) {
-				Picker("Mode", selection: modeBinding) {
-					Text("Disabled").tag(SerialLogMode.disabled)
-					Text("Reset on boot").tag(SerialLogMode.resetOnBoot)
-					Text("Continuous").tag(SerialLogMode.continuous)
+			// A Grid aligns the label column and the picker column, so both selectors are the
+			// same width despite the different label lengths.
+			Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+				GridRow {
+					Text("Mode")
+					Picker("", selection: modeBinding) {
+						Text("Disabled").tag(SerialLogMode.disabled)
+						Text("Reset on boot").tag(SerialLogMode.resetOnBoot)
+						Text("Continuous").tag(SerialLogMode.continuous)
+					}
+					.labelsHidden()
 				}
-				Picker("Size", selection: sizeBinding) {
-					Text("Unlimited").tag(UInt64(0))
-					Text("1 MB").tag(UInt64(1 << 20))
-					Text("10 MB").tag(UInt64(10 << 20))
-					Text("100 MB").tag(UInt64(100 << 20))
-				}
-				.disabled(port?.logging.mode == .disabled)
-				if let logPath = port?.logPath {
-					Text("Logging to \(logPath)").font(.caption).foregroundColor(.secondary)
-						.lineLimit(1).truncationMode(.middle)
+				GridRow {
+					Text("Size")
+					Picker("", selection: sizeBinding) {
+						Text("Unlimited").tag(UInt64(0))
+						Text("1 MB").tag(UInt64(1 << 20))
+						Text("10 MB").tag(UInt64(10 << 20))
+						Text("100 MB").tag(UInt64(100 << 20))
+					}
+					.labelsHidden()
+					.disabled(port?.logging.mode == .disabled)
 				}
 			}
-			.frame(maxWidth: .infinity, alignment: .leading)
+			if let logPath = port?.logPath {
+				Text("Logging to \(logPath)").font(.caption).foregroundColor(.secondary)
+					.lineLimit(1).truncationMode(.middle)
+					.frame(maxWidth: .infinity, alignment: .leading)
+			}
 		}
 	}
 
@@ -208,21 +260,9 @@ struct SerialPortDetailView: View {
 	@ViewBuilder
 	private var terminalTab: some View {
 		if running, port?.socketPath != nil {
-			VStack(spacing: 4) {
-				HStack {
-					if terminal.disconnected {
-						Label("Disconnected", systemImage: "bolt.horizontal.circle")
-							.foregroundColor(.secondary).font(.caption)
-					}
-					Spacer()
-					Button { saveTranscript() } label: {
-						Label("Save…", systemImage: MachmanSymbols.saveToFile)
-					}
-				}
-				.padding(.horizontal, 8).padding(.top, 6)
-				SerialTerminalHost(controller: terminal)
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-			}
+			SerialTerminalHost(controller: terminal)
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
+				.padding(6)
 		} else {
 			VStack(spacing: 8) {
 				Image(systemName: kind == .console
@@ -232,15 +272,6 @@ struct SerialPortDetailView: View {
 					.foregroundColor(.secondary)
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
-		}
-	}
-
-	private func saveTranscript() {
-		let panel = NSSavePanel()
-		panel.nameFieldStringValue = "\(title).log"
-		panel.allowedContentTypes = [.plainText]
-		if panel.runModal() == .OK, let url = panel.url {
-			try? terminal.transcript().write(to: url)
 		}
 	}
 

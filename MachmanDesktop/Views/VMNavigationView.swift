@@ -13,6 +13,8 @@ struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	@State private var navigate = false
 	@State private var lastSelection: SidebarSelection?
+	@State private var expandedVMs: Set<String> = []
+	@State private var expandedCategories: Set<String> = []   // "<vm>|console" / "<vm>|uart"
 	@Binding private var selection: SidebarSelection?
 
 	init(viewModel: VMListViewModel, selection: Binding<SidebarSelection?>) {
@@ -23,31 +25,33 @@ struct VMNavigationView: View {
 	var body: some View {
 		NavigationSplitView {
 			List(selection: $selection) {
+				// A flat list with manual expansion: a VM's chevron sits on the RIGHT and only
+				// toggles its subtree (the row itself stays selectable); the Console/UART
+				// category rows are wholly clickable to expand and are never selected; only the
+				// device leaves navigate.
 				ForEach(viewModel.vms) { item in
 					let consoles = item.consolePorts ?? []
 					let uarts = item.uartPorts ?? []
-					if consoles.isEmpty && uarts.isEmpty {
-						vmLabel(item).tag(SidebarSelection.vm(item.name))
-					} else {
-						// A VM with serial ports becomes an Xcode-style disclosure tree; the
-						// Console/UART category rows only expand, the device leaves navigate.
-						DisclosureGroup {
-							if !consoles.isEmpty {
-								serialCategory(
-									"Console", MachmanSymbols.serialConsole, consoles,
-									item.name, .console)
+					let hasPorts = !consoles.isEmpty || !uarts.isEmpty
+					vmRow(item, hasPorts: hasPorts).tag(SidebarSelection.vm(item.name))
+					if hasPorts && expandedVMs.contains(item.name) {
+						if !consoles.isEmpty {
+							categoryRow(item.name, "Console", MachmanSymbols.serialConsole, .console)
+							if expandedCategories.contains("\(item.name)|console") {
+								ForEach(consoles) { deviceRow(item.name, .console, $0) }
 							}
-							if !uarts.isEmpty {
-								serialCategory(
-									"UART", MachmanSymbols.serialUart, uarts, item.name, .uart)
+						}
+						if !uarts.isEmpty {
+							categoryRow(item.name, "UART", MachmanSymbols.serialUart, .uart)
+							if expandedCategories.contains("\(item.name)|uart") {
+								ForEach(uarts) { deviceRow(item.name, .uart, $0) }
 							}
-						} label: {
-							vmLabel(item).tag(SidebarSelection.vm(item.name))
 						}
 					}
 				}
 			}
 			.onChange(of: selection) {
+				revealSelection()
 				if let sel = selection {
 					lastSelection = sel
 					viewModel.select(name: sel.vmName)
@@ -70,6 +74,7 @@ struct VMNavigationView: View {
 			// After a daemon reconnect the view model is fresh but the window kept its
 			// selection — restore it.
 			.onAppear {
+				revealSelection()
 				if let sel = selection, viewModel.selectedName == nil {
 					viewModel.select(name: sel.vmName)
 				}
@@ -138,39 +143,80 @@ struct VMNavigationView: View {
 		}
 	}
 
+	// VM row: selectable; the chevron on the RIGHT toggles the subtree without selecting.
 	@ViewBuilder
-	private func vmLabel(_ item: VMInfo) -> some View {
+	private func vmRow(_ item: VMInfo, hasPorts: Bool) -> some View {
 		HStack {
 			StatusIcon(state: item.state, windowOpen: item.windowOpen)
 			Text(item.name).font(.callout)
 			Spacer()
-			// Right-aligned shield: this VM is running a discardable copy.
 			if item.safeRun == true {
 				Image(systemName: MachmanSymbols.safe)
 					.foregroundColor(.yellow)
 					.help("Running in safe mode (changes are discarded on stop)")
 			}
+			if hasPorts {
+				Button {
+					if expandedVMs.contains(item.name) {
+						expandedVMs.remove(item.name)
+					} else {
+						expandedVMs.insert(item.name)
+					}
+				} label: {
+					Image(systemName: expandedVMs.contains(item.name)
+						? MachmanSymbols.disclosureExpanded : MachmanSymbols.disclosureCollapsed)
+						.font(.caption).foregroundColor(.secondary)
+				}
+				.buttonStyle(.plain)
+				.help(expandedVMs.contains(item.name) ? "Collapse" : "Expand serial ports")
+			}
+		}
+	}
+
+	// Category row: whole row expands/collapses; never selected.
+	@ViewBuilder
+	private func categoryRow(
+		_ vm: String, _ label: String, _ symbol: String, _ kind: SerialPortKind
+	) -> some View {
+		let key = "\(vm)|\(kind.rawValue)"
+		HStack {
+			Image(systemName: symbol).foregroundColor(.secondary)
+			Text(label).font(.caption).foregroundColor(.secondary)
+			Spacer()
+			Image(systemName: expandedCategories.contains(key)
+				? MachmanSymbols.disclosureExpanded : MachmanSymbols.disclosureCollapsed)
+				.font(.caption2).foregroundColor(.secondary)
+		}
+		.padding(.leading, 14)
+		.contentShape(Rectangle())
+		.onTapGesture {
+			if expandedCategories.contains(key) {
+				expandedCategories.remove(key)
+			} else {
+				expandedCategories.insert(key)
+			}
 		}
 	}
 
 	@ViewBuilder
-	private func serialCategory(
-		_ label: String, _ symbol: String, _ ports: [SerialPortInfo], _ vm: String,
-		_ kind: SerialPortKind
+	private func deviceRow(
+		_ vm: String, _ kind: SerialPortKind, _ port: SerialPortInfo
 	) -> some View {
-		DisclosureGroup {
-			ForEach(ports) { port in
-				HStack {
-					Image(systemName: symbol).foregroundColor(.secondary)
-					Text(port.guestDevice).font(.callout)
-				}
-				.tag(SidebarSelection.serial(vm: vm, kind: kind, index: port.index))
-			}
-		} label: {
-			HStack {
-				Image(systemName: symbol).foregroundColor(.secondary)
-				Text(label).font(.caption).foregroundColor(.secondary)
-			}
+		HStack {
+			Image(systemName: kind == .console
+				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
+				.foregroundColor(.secondary).font(.caption)
+			Text(port.guestDevice).font(.callout)
+		}
+		.padding(.leading, 30)
+		.tag(SidebarSelection.serial(vm: vm, kind: kind, index: port.index))
+	}
+
+	// Expand the tree down to the current selection so a selected leaf stays visible.
+	private func revealSelection() {
+		if case let .serial(vm, kind, _) = selection {
+			expandedVMs.insert(vm)
+			expandedCategories.insert("\(vm)|\(kind.rawValue)")
 		}
 	}
 }

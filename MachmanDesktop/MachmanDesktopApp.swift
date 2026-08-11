@@ -73,24 +73,18 @@ struct MachmanDesktopApp: App {
 							// only the plain toolbar Run follows the policy checkboxes.
 							Button(action: {
 								viewModel.startVM(vm.name, safe: false)
-								selection = .vm(vm.name)
-								viewModel.select(name: vm.name)
 							}) {
 								Label("Start", systemImage: MachmanSymbols.start)
 							}
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 							Button(action: {
 								viewModel.startVM(vm.name, headless: true, safe: false)
-								selection = .vm(vm.name)
-								viewModel.select(name: vm.name)
 							}) {
 								Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 							}
 							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
 							Button(action: {
 								viewModel.startVM(vm.name, safe: true)
-								selection = .vm(vm.name)
-								viewModel.select(name: vm.name)
 							}) {
 								Label("Start Safe", systemImage: MachmanSymbols.safe)
 							}
@@ -105,16 +99,12 @@ struct MachmanDesktopApp: App {
 						Menu(vm.name) {
 							Button(action: {
 								viewModel.stopVM(vm.name, mode: .soft)
-								selection = .vm(vm.name)
-								viewModel.select(name: vm.name)
 							}) {
 								Label("Shut Down", systemImage: MachmanSymbols.shutDown)
 							}
 							.disabled(!vm.state.isRunning)
 							Button(action: {
 								viewModel.stopVM(vm.name, mode: .force)
-								selection = .vm(vm.name)
-								viewModel.select(name: vm.name)
 							}) {
 								Label("Force Stop", systemImage: MachmanSymbols.forceStop)
 							}
@@ -153,6 +143,12 @@ struct MachmanDesktopApp: App {
 					}
 					.disabled(viewModel.selected?.safeRun != true
 						|| viewModel.safeSaveInFlight)
+					Button(action: {
+						viewModel.saveActiveConsoleTranscript()
+					}) {
+						Label("Save Console…", systemImage: MachmanSymbols.saveToFile)
+					}
+					.disabled(viewModel.activeSerialTerminal == nil)
 				}
 			}
 		}

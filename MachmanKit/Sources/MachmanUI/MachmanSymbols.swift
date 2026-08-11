@@ -64,6 +64,15 @@ public enum MachmanSymbols {
 	public static let serialUart = "cable.connector"
 	public static let serialPort = "rectangle.connected.to.line.below"
 	public static let saveToFile = "arrow.down.doc"
+	public static let serialConnect = "bolt.horizontal.circle"
+	public static let serialDisconnect = "bolt.horizontal.circle.fill"
+	// Serial detail tabs
+	public static let tabInfo = "info.circle"
+	public static let tabTerminal = "terminal"
+	public static let tabAdvanced = "wrench.and.screwdriver"
+	// Sidebar disclosure chevrons
+	public static let disclosureCollapsed = "chevron.right"
+	public static let disclosureExpanded = "chevron.down"
 
 	// MARK: - History
 	public static let uptime = "clock"

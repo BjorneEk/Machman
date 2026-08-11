@@ -11,6 +11,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import MachmanUI
 import MachmanAPI
 
@@ -57,6 +58,9 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var previews: [String: NSImage] = [:]
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
+	// The serial terminal on screen (set by the port detail view) so the File menu and the
+	// port's toolbar can save its transcript.
+	@Published var activeSerialTerminal: SerialTerminalController?
 	@Published var presentedError: PresentedError?
 	// Binding surface for .alert(isPresented:presenting:) — clears the item on dismiss.
 	var isErrorPresented: Bool {
@@ -577,6 +581,21 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do { try await self?.api.removeUartPort(vm: name) }
 			catch { self?.present(error, while: "Removing a UART port") }
+		}
+	}
+
+	// Save the on-screen console transcript. Shared by the port toolbar and File → Save Console.
+	func saveActiveConsoleTranscript() {
+		guard let terminal = activeSerialTerminal else { return }
+		let panel = NSSavePanel()
+		panel.nameFieldStringValue = "console.log"
+		panel.allowedContentTypes = [.plainText]
+		if panel.runModal() == .OK, let url = panel.url {
+			do {
+				try terminal.transcript().write(to: url)
+			} catch {
+				present(error, while: "Saving the console log")
+			}
 		}
 	}
 
