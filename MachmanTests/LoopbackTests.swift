@@ -116,12 +116,13 @@ final class StubMachman: MachmanControlling {
 		_ = try get(name)
 	}
 	func promoteKernelFile(
-		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
 		var vm = try get(name)
 		let base = (sourcePath as NSString).lastPathComponent
-		let dest = "/vm/\(name)/kernels/\(storeName)/\(base)"
-		vm.boot.ownedKernels = (vm.boot.ownedKernels ?? []) + [dest]
+		let dest = "/vm/\(name)/kernels/\(role.rawValue)/\(tag)/\(base)"
+		vm.boot.ownedKernels = (vm.boot.ownedKernels ?? [])
+			+ [OwnedKernelFile(role: role, tag: tag, fileName: base, path: dest)]
 		let existing = vm.boot.kernel
 			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 		vm.boot.kernel = role == .kernel
@@ -135,7 +136,7 @@ final class StubMachman: MachmanControlling {
 	}
 	func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
 		var vm = try get(name)
-		vm.boot.ownedKernels?.removeAll { $0 == path }
+		vm.boot.ownedKernels?.removeAll { $0.path == path }
 		vms[name] = vm
 		emit(.listChanged)
 		return vm
@@ -429,12 +430,12 @@ struct LoopbackTests {
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "krn")
 		let promoted = try await client.promoteKernelFile(
-			vm: "Debian", role: .kernel, sourcePath: "/tmp/vmlinuz", storeName: "janus")
+			vm: "Debian", role: .kernel, sourcePath: "/tmp/vmlinuz", tag: "janus")
 		#expect(promoted.boot.kernel?.kernelPath.hasSuffix("/janus/vmlinuz") == true)
-		#expect(promoted.boot.ownedKernels?.contains { $0.hasSuffix("/janus/vmlinuz") } == true)
-
 		let owned = try #require(promoted.boot.ownedKernels?.first)
-		let after = try await client.deleteKernelFile(vm: "Debian", path: owned)
+		#expect(owned.role == .kernel && owned.tag == "janus" && owned.fileName == "vmlinuz")
+
+		let after = try await client.deleteKernelFile(vm: "Debian", path: owned.path)
 		#expect(after.boot.ownedKernels?.isEmpty == true)
 		await client.disconnect()
 	}

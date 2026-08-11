@@ -159,12 +159,12 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func promoteKernelFile(
-		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
 		try await connection.call(
 			.kernelPromote,
 			RPCParams.PromoteKernel(
-				name: name, role: role, sourcePath: sourcePath, storeName: storeName),
+				name: name, role: role, sourcePath: sourcePath, tag: tag),
 			expecting: VMInfo.self)
 	}
 

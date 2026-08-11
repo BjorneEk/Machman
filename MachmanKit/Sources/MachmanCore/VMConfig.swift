@@ -568,7 +568,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	// Owned kernel/initramfs files (copies living under <vm>/kernels).
 	func kernelsDirPath() -> String { configFilePath(file: "kernels") }
-	func ownedKernelFiles() -> [String] {
+	func ownedKernelFiles() -> [OwnedKernelFile] {
 		KernelStore.ownedFiles(kernelsDir: kernelsDirPath())
 	}
 

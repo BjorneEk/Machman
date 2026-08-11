@@ -157,19 +157,19 @@ public enum RPCParams {
 		}
 	}
 
-	// vm.kernel.promote: copy sourcePath into <vm>/kernels/<storeName>/ as an owned file and
+	// vm.kernel.promote: copy sourcePath into <vm>/kernels/<tag>/ as an owned file and
 	// point the given role's field at it.
 	public struct PromoteKernel: Codable, Equatable, Sendable {
 		public var name: String
 		public var role: KernelRole
 		public var sourcePath: String
-		public var storeName: String
+		public var tag: String
 
-		public init(name: String, role: KernelRole, sourcePath: String, storeName: String) {
+		public init(name: String, role: KernelRole, sourcePath: String, tag: String) {
 			self.name = name
 			self.role = role
 			self.sourcePath = sourcePath
-			self.storeName = storeName
+			self.tag = tag
 		}
 	}
 

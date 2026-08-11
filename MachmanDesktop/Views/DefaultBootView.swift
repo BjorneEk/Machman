@@ -30,8 +30,9 @@ struct DefaultBootView: View {
 	// DTO — a promote/delete updates them via events without local state going stale.
 	private var kernelPath: String { vm.boot.kernel?.kernelPath ?? "" }
 	private var initrdPath: String { vm.boot.kernel?.initrdPath ?? "" }
-	private var ownedKernels: [String] { vm.boot.ownedKernels ?? [] }
-	private func isOwned(_ path: String) -> Bool { ownedKernels.contains(path) }
+	private var ownedKernels: [OwnedKernelFile] { vm.boot.ownedKernels ?? [] }
+	private func owned(_ path: String) -> OwnedKernelFile? { ownedKernels.first { $0.path == path } }
+	private func isOwned(_ path: String) -> Bool { owned(path) != nil }
 
 	private var kernelMissing: Bool {
 		kernelEnabled &&
@@ -69,28 +70,34 @@ struct DefaultBootView: View {
 		}
 	}
 
-	// A store-name prompt (a subfolder under <vm>/kernels to avoid filename clashes).
-	private func promptForName(suggestion: String) -> String? {
+	// Ask for a tag to label the copied file (a short name; grouped under it internally).
+	private func promptForTag(role: KernelRole) -> String? {
+		let noun = role == .kernel ? "kernel" : "initramfs"
 		let alert = NSAlert()
 		alert.messageText = "Copy into the VM"
-		alert.informativeText = "Name a subfolder under the VM's kernels directory."
+		alert.informativeText = "A short tag to label this \(noun)."
 		let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-		field.stringValue = suggestion
+		field.placeholderString = nextTag(role: role)
 		alert.accessoryView = field
 		alert.addButton(withTitle: "Copy")
 		alert.addButton(withTitle: "Cancel")
 		guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-		let name = field.stringValue.trimmingCharacters(in: .whitespaces)
-		return name.isEmpty ? nil : name
+		let tag = field.stringValue.trimmingCharacters(in: .whitespaces)
+		return tag.isEmpty ? nextTag(role: role) : tag
 	}
 
+	private func nextTag(role: KernelRole) -> String {
+		let prefix = role == .kernel ? "kernel" : "initramfs"
+		let used = Set(ownedKernels.filter { $0.role == role }.map(\.tag))
+		var n = 1
+		while used.contains("\(prefix)-\(n)") { n += 1 }
+		return "\(prefix)-\(n)"
+	}
+
+	// Owned files show "<tag> - <file>"; external files show their filename.
 	private func displayName(_ path: String) -> String {
-		let base = (path as NSString).lastPathComponent
-		if isOwned(path) {
-			let store = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
-			return "\(store)/\(base)"
-		}
-		return base
+		if let file = owned(path) { return "\(file.tag) - \(file.fileName)" }
+		return (path as NSString).lastPathComponent
 	}
 
 	var body: some View {
@@ -143,18 +150,18 @@ struct DefaultBootView: View {
 		.padding(4)
 	}
 
-	@ViewBuilder
 	private func fileRow(
 		role: KernelRole, current: String, placeholder: String, browseTooltip: String,
 		set: @escaping (String) -> Void
 	) -> some View {
 		let noun = role == .kernel ? "kernel" : "initramfs"
-		HStack {
+		let roleOwned = ownedKernels.filter { $0.role == role }
+		return HStack {
 			Menu {
-				ForEach(ownedKernels, id: \.self) { path in
-					Button(displayName(path)) { set(path) }
+				ForEach(roleOwned) { file in
+					Button("\(file.tag) - \(file.fileName)") { set(file.path) }
 				}
-				if !ownedKernels.isEmpty { Divider() }
+				if !roleOwned.isEmpty { Divider() }
 				Button("Browse…") { pickFile { set($0) } }
 				if !current.isEmpty {
 					Divider()
@@ -167,7 +174,13 @@ struct DefaultBootView: View {
 			}
 			.help(current.isEmpty ? browseTooltip : current)
 
-			if isOwned(current) {
+			if current.isEmpty {
+				// Nothing to promote/delete yet — an info hint on what to pick.
+				Image(systemName: MachmanSymbols.info)
+					.foregroundColor(.secondary)
+					.help("Pick an owned \(noun) from the menu, or Browse to a file and then "
+						+ "copy it into the VM.")
+			} else if isOwned(current) {
 				IconButton(
 					symbol: MachmanSymbols.delete,
 					tooltip: "Delete this owned \(noun) (removes the copied file)",
@@ -179,16 +192,14 @@ struct DefaultBootView: View {
 					else { return }
 					viewModel.deleteKernel(vm.name, path: current)
 				}
-			} else if !current.isEmpty {
+			} else {
 				IconButton(
 					symbol: MachmanSymbols.promoteDisk,
 					tooltip: "Copy this \(noun) into the VM (take ownership)",
 					flat: true
 				) {
-					if let name = promptForName(
-						suggestion: (current as NSString).lastPathComponent) {
-						viewModel.promoteKernel(
-							vm.name, role: role, sourcePath: current, storeName: name)
+					if let tag = promptForTag(role: role) {
+						viewModel.promoteKernel(vm.name, role: role, sourcePath: current, tag: tag)
 					}
 				}
 			}

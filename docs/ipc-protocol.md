@@ -70,7 +70,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs) |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
-| `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, storeName}` | `VMInfo` (copies the file into `<vm>/kernels/<storeName>/` as owned and points the role's field at it) |
+| `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, tag}` | `VMInfo` (copies the file into `<vm>/kernels/<role>/<tag>/` as owned and points the role's field at it) |
 | `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — a path under `<vm>/kernels` — and clears any field referencing it) |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
@@ -91,7 +91,8 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
 [{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe}], mounts:
 [{id, path, tag, safe}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?,
-minCPUCount?, minMemoryBytes?, ownedKernels?}, windowOpen, startPolicy?:
+minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path}]}, windowOpen,
+startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?}`.
 
 `consolePorts`/`uartPorts` are arrays of `SerialPortInfo`

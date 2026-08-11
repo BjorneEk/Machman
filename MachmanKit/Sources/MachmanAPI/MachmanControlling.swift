@@ -48,7 +48,7 @@ public protocol MachmanControlling: AnyObject {
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws
 	// Copy a kernel/initramfs file INTO the VM (owned) and select it; delete removes an owned one.
 	func promoteKernelFile(
-		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo
 	func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo
 	func setStartPolicy(vm name: String, policy: StartPolicy) async throws

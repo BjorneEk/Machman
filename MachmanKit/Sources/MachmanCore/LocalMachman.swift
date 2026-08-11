@@ -265,14 +265,14 @@ public final class LocalMachman: MachmanControlling {
 	}
 
 	public func promoteKernelFile(
-		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
 		let vm = try lookup(name)
 		let kernelsDir = vm.config.kernelsDirPath()
 		// Copies can be tens of MiB — detach so the main actor doesn't freeze.
 		let dest = try await Task.detached(priority: .userInitiated) {
 			try KernelStore.promote(
-				sourcePath: sourcePath, kernelsDir: kernelsDir, storeName: storeName)
+				role: role, sourcePath: sourcePath, kernelsDir: kernelsDir, tag: tag)
 		}.value
 		var updated = vm.config.kernelSettings
 			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")

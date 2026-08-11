@@ -167,13 +167,13 @@ public struct BootInfo: Codable, Sendable, Equatable {
 	// Hardware floors imposed by the boot mode (macOS guests carry install-time minimums).
 	public var minCPUCount: Int?
 	public var minMemoryBytes: UInt64?
-	// Kernel/initramfs files copied into the VM (owned); absolute paths under <vm>/kernels.
-	// nil = older daemon; the boot editor offers these in its kernel/initramfs pickers.
-	public var ownedKernels: [String]?
+	// Kernel/initramfs files copied into the VM (owned). nil = older daemon; the boot editor
+	// offers these in its kernel/initramfs pickers (filtered by role).
+	public var ownedKernels: [OwnedKernelFile]?
 
 	public init(
 		mode: Mode, kernel: KernelSettings?, macInstallState: MacInstallState?,
-		minCPUCount: Int?, minMemoryBytes: UInt64?, ownedKernels: [String]? = nil
+		minCPUCount: Int?, minMemoryBytes: UInt64?, ownedKernels: [OwnedKernelFile]? = nil
 	) {
 		self.mode = mode
 		self.kernel = kernel
@@ -207,6 +207,25 @@ public struct MacInstallState: Codable, Sendable, Equatable {
 public enum KernelRole: String, Codable, Sendable, Equatable {
 	case kernel
 	case initramfs
+}
+
+// An owned kernel/initramfs file: a copy living at <vm>/kernels/<role>/<tag>/<fileName>. The tag
+// is a user-facing label (the boot editor shows "<tag> - <fileName>"); role separates the kernel
+// and initramfs pickers.
+public struct OwnedKernelFile: Codable, Sendable, Equatable, Identifiable {
+	public var role: KernelRole
+	public var tag: String
+	public var fileName: String
+	public var path: String
+
+	public var id: String { path }
+
+	public init(role: KernelRole, tag: String, fileName: String, path: String) {
+		self.role = role
+		self.tag = tag
+		self.fileName = fileName
+		self.path = path
+	}
 }
 
 public struct KernelSettings: Codable, Sendable, Equatable {

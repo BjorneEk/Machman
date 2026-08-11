@@ -105,15 +105,16 @@ struct WireFixtureTests {
 	}
 
 	@Test func bootInfoOwnedKernelsRoundTrip() throws {
+		let path = "/vm/k/kernels/kernel/janus/vmlinuz"
 		let boot = BootInfo(
 			mode: .linuxKernel,
-			kernel: KernelSettings(
-				kernelPath: "/vm/k/kernels/janus/vmlinuz", initrdPath: nil,
-				commandLine: "console=hvc0"),
+			kernel: KernelSettings(kernelPath: path, initrdPath: nil, commandLine: "console=hvc0"),
 			macInstallState: nil, minCPUCount: nil, minMemoryBytes: nil,
-			ownedKernels: ["/vm/k/kernels/janus/vmlinuz"])
+			ownedKernels: [OwnedKernelFile(
+				role: .kernel, tag: "janus", fileName: "vmlinuz", path: path)])
 		let encoded = try encode(boot)
-		#expect(encoded.contains(#""ownedKernels":["/vm/k/kernels/janus/vmlinuz"]"#))
+		#expect(encoded.contains(
+			#""ownedKernels":[{"fileName":"vmlinuz","path":"\#(path)","role":"kernel","tag":"janus"}]"#))
 		#expect(try decode(BootInfo.self, encoded) == boot)
 	}
 
@@ -191,8 +192,8 @@ struct WireFixtureTests {
 		#expect(try encode(RPCParams.ImportDisk(name: "Debian", path: "/imgs/a.raw"))
 			== #"{"name":"Debian","path":"/imgs/a.raw"}"#)
 		#expect(try encode(RPCParams.PromoteKernel(
-			name: "Debian", role: .kernel, sourcePath: "/tmp/vmlinuz", storeName: "janus"))
-			== #"{"name":"Debian","role":"kernel","sourcePath":"/tmp/vmlinuz","storeName":"janus"}"#)
+			name: "Debian", role: .kernel, sourcePath: "/tmp/vmlinuz", tag: "janus"))
+			== #"{"name":"Debian","role":"kernel","sourcePath":"/tmp/vmlinuz","tag":"janus"}"#)
 		#expect(try encode(RPCParams.DeleteKernel(name: "Debian", path: "/k/janus/vmlinuz"))
 			== #"{"name":"Debian","path":"/k/janus/vmlinuz"}"#)
 		// DiskInfo.owned is nil-omitted (old-daemon tolerance) and pins when set.

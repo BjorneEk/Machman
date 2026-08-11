@@ -584,11 +584,11 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, storeName: String) {
+	func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, tag: String) {
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.promoteKernelFile(
-					vm: name, role: role, sourcePath: sourcePath, storeName: storeName)
+					vm: name, role: role, sourcePath: sourcePath, tag: tag)
 			} catch {
 				self?.present(error, while: "Promoting a kernel file")
 			}

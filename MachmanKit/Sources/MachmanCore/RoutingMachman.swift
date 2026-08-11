@@ -477,10 +477,10 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func promoteKernelFile(
-		vm name: String, role: KernelRole, sourcePath: String, storeName: String
+		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
 		try await target(name).promoteKernelFile(
-			vm: name, role: role, sourcePath: sourcePath, storeName: storeName)
+			vm: name, role: role, sourcePath: sourcePath, tag: tag)
 	}
 
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {

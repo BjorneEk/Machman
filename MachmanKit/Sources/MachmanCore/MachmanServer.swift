@@ -171,7 +171,7 @@ public final class MachmanServer {
 			case .kernelPromote:
 				let p: RPCParams.PromoteKernel = try params(line)
 				reply(client, id, try await api.promoteKernelFile(
-					vm: p.name, role: p.role, sourcePath: p.sourcePath, storeName: p.storeName))
+					vm: p.name, role: p.role, sourcePath: p.sourcePath, tag: p.tag))
 			case .kernelDelete:
 				let p: RPCParams.DeleteKernel = try params(line)
 				reply(client, id, try await api.deleteKernelFile(vm: p.name, path: p.path))
