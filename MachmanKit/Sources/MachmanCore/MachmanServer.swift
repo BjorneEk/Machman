@@ -184,6 +184,27 @@ public final class MachmanServer {
 				let p: RPCParams.Stop = try params(line)
 				try await api.stop(vm: p.name, mode: p.mode)
 				reply(client, id, RPCEmpty())
+			case .consoleAdd:
+				let p: RPCParams.Name = try params(line)
+				try await api.addConsolePort(vm: p.name)
+				reply(client, id, RPCEmpty())
+			case .consoleRemove:
+				let p: RPCParams.Name = try params(line)
+				try await api.removeConsolePort(vm: p.name)
+				reply(client, id, RPCEmpty())
+			case .uartAdd:
+				let p: RPCParams.Name = try params(line)
+				try await api.addUartPort(vm: p.name)
+				reply(client, id, RPCEmpty())
+			case .uartRemove:
+				let p: RPCParams.Name = try params(line)
+				try await api.removeUartPort(vm: p.name)
+				reply(client, id, RPCEmpty())
+			case .serialSetLogging:
+				let p: RPCParams.SetSerialLogging = try params(line)
+				try await api.setSerialLogging(
+					vm: p.name, kind: p.kind, index: p.index, config: p.config)
+				reply(client, id, RPCEmpty())
 			case .windowOpen:
 				let p: RPCParams.Name = try params(line)
 				try await api.openWindow(vm: p.name)

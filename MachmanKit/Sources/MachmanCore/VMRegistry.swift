@@ -231,6 +231,24 @@ public final class VMRegistry {
 		await presenter.captureImage(name: name)
 	}
 
+	// MARK: - Serial data plane
+
+	// Live per-port endpoints. A serial port's socket and log file exist only while the VM runs
+	// in this process (a vmhost), served by its VMRuntime's bridges. Empty bodies until the
+	// bridge wiring lands; the daemon (VM stopped here) always reports nil.
+	func serialSocketPath(vm: VirtualMachine, kind: SerialPortKind, index: Int) -> String? {
+		nil
+	}
+
+	func serialLogPath(vm: VirtualMachine, kind: SerialPortKind, index: Int) -> String? {
+		nil
+	}
+
+	func retuneSerialLogging(
+		vm: VirtualMachine, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) {
+	}
+
 	// MARK: - Create / delete / rename
 
 	// "<base>", "<base> 2", "<base> 3", … probed against the in-memory map.

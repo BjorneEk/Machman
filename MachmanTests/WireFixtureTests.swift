@@ -57,12 +57,39 @@ struct WireFixtureTests {
 		info.startPolicy = StartPolicy()
 		info.safeRun = true
 		info.totalRuntimeSeconds = 12.5
+		info.consolePorts = [SerialPortInfo(
+			kind: .console, index: 0, guestDevice: "hvc0", logging: SerialLogConfig())]
+		info.uartPorts = [SerialPortInfo(
+			kind: .uart, index: 0, guestDevice: "ttyAMA0", logging: SerialLogConfig())]
 		let encoded = try encode(info)
 		#expect(encoded.contains(
 			#""startPolicy":{"autostart":false,"safe":false,"windowed":true}"#))
 		#expect(encoded.contains(#""safeRun":true"#))
 		#expect(encoded.contains(#""totalRuntimeSeconds":12.5"#))
+		#expect(encoded.contains(#""consolePorts":[{"guestDevice":"hvc0","#))
+		#expect(encoded.contains(#""uartPorts":[{"guestDevice":"ttyAMA0","#))
 		#expect(try decode(VMInfo.self, encoded) == info)
+	}
+
+	@Test func serialPortInfoFixture() throws {
+		let port = SerialPortInfo(
+			kind: .uart, index: 1, guestDevice: "ttyAMA1",
+			logging: SerialLogConfig(mode: .continuous, maxBytes: 4096),
+			socketPath: "/tmp/tty.sock", logPath: "/vm/serial-uart1.log",
+			mmioBase: "0x20020000", irq: 33)
+		let expected = #"{"guestDevice":"ttyAMA1","index":1,"irq":33,"kind":"uart","#
+			+ #""logPath":"/vm/serial-uart1.log","logging":{"maxBytes":4096,"mode":"continuous"},"#
+			+ #""mmioBase":"0x20020000","socketPath":"/tmp/tty.sock"}"#
+		#expect(try encode(port) == expected)
+		#expect(try decode(SerialPortInfo.self, expected) == port)
+
+		// A minimal port omits every nil and carries default logging.
+		let minimal = SerialPortInfo(
+			kind: .console, index: 0, guestDevice: "hvc0", logging: SerialLogConfig())
+		let minExpected =
+			#"{"guestDevice":"hvc0","index":0,"kind":"console","logging":{"mode":"resetOnBoot"}}"#
+		#expect(try encode(minimal) == minExpected)
+		#expect(try decode(SerialPortInfo.self, minExpected) == minimal)
 	}
 
 	@Test func bootInfoMacOSFixture() throws {

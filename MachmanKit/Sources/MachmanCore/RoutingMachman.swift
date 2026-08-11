@@ -326,6 +326,13 @@ public final class RoutingMachman: MachmanControlling {
 		return local
 	}
 
+	// Whole-VM edits the framework fixes at start refuse rather than proxy while hosted.
+	private func refuseWhileHosted(_ name: String, _ action: String) throws {
+		guard hosted[name] == nil else {
+			throw MachmanError(code: .invalidState, message: "stop \(name) before \(action)")
+		}
+	}
+
 	// MARK: - MachmanControlling
 
 	public func hostCapabilities() async throws -> HostCapabilities {
@@ -431,6 +438,34 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func removeMount(vm name: String, mountID: String) async throws {
 		try await target(name).removeMount(vm: name, mountID: mountID)
+	}
+
+	// Serial ports are fixed at VM start, so add/remove is refused while hosted (like MAC), but
+	// setSerialLogging proxies to the live bridge.
+	public func addConsolePort(vm name: String) async throws {
+		try refuseWhileHosted(name, "changing its serial ports")
+		try await local.addConsolePort(vm: name)
+	}
+
+	public func removeConsolePort(vm name: String) async throws {
+		try refuseWhileHosted(name, "changing its serial ports")
+		try await local.removeConsolePort(vm: name)
+	}
+
+	public func addUartPort(vm name: String) async throws {
+		try refuseWhileHosted(name, "changing its serial ports")
+		try await local.addUartPort(vm: name)
+	}
+
+	public func removeUartPort(vm name: String) async throws {
+		try refuseWhileHosted(name, "changing its serial ports")
+		try await local.removeUartPort(vm: name)
+	}
+
+	public func setSerialLogging(
+		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) async throws {
+		try await target(name).setSerialLogging(vm: name, kind: kind, index: index, config: config)
 	}
 
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {

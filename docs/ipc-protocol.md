@@ -63,6 +63,11 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`; emits `copyProgress`) |
 | `vm.mount.add` | `{name, path, tag}` | `{}` |
 | `vm.mount.remove` | `{name, mountID}` | `{}` |
+| `vm.console.add` | `{name}` | `{}` (appends a virtio console port, guest `/dev/hvcN`; refused while running) |
+| `vm.console.remove` | `{name}` | `{}` (pops the last console port; refused while running) |
+| `vm.uart.add` | `{name}` | `{}` (appends a PL011 uart port, guest `/dev/ttyAMAN`; refused while running) |
+| `vm.uart.remove` | `{name}` | `{}` (pops the last uart port; refused while running) |
+| `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs) |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
@@ -85,7 +90,14 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 [{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe}], mounts:
 [{id, path, tag, safe}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?,
 minCPUCount?, minMemoryBytes?}, windowOpen, startPolicy?:
-{windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?}`.
+{windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?}`.
+
+`consolePorts`/`uartPorts` are arrays of `SerialPortInfo`
+`{kind: "console"|"uart", index, guestDevice, logging: SerialLogConfig, socketPath?, logPath?,
+mmioBase?, irq?}` (absent = an older daemon; count is the array length). `socketPath` is the
+raw-byte data-plane unix socket, present only while the VM runs; `mmioBase`/`irq` are populated
+for uart ports once platform info has been generated. `SerialLogConfig` is
+`{mode: "disabled"|"resetOnBoot"|"continuous", maxBytes?}` (default resetOnBoot, unlimited).
 
 `disks[].owned?` is true when the backing file lives inside (and travels with) the VM's
 directory — imports/promotes create owned disks; absent means an older daemon.
@@ -142,8 +154,13 @@ daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adop
 
 The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so VM windows
 are presented by MachmanAgent itself; clients only command them (`vm.window.*`) and poll
-`vm.preview` for thumbnails. Interactive text access for Linux guests is a future serial-port
-feature.
+`vm.preview` for thumbnails.
+
+Interactive serial text runs on a separate **data plane**, not the JSON-RPC control socket.
+Each configured console/uart port is served by the VM's vmhost as a raw-byte
+`AF_UNIX SOCK_STREAM` socket; the control plane only reports its `socketPath` (in
+`SerialPortInfo`), and clients connect to it directly (e.g.
+`socat -,raw,echo=0 unix-connect:<socketPath>`). The daemon never proxies the byte stream.
 
 ## Trying it by hand
 

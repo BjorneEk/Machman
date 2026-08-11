@@ -286,6 +286,37 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
+	// MARK: - Serial ports
+
+	public func addConsolePort(vm name: String) async throws {
+		try lookup(name).config.addConsolePort()
+		registry.events.emit(.listChanged)
+	}
+
+	public func removeConsolePort(vm name: String) async throws {
+		try lookup(name).config.removeLastConsolePort()
+		registry.events.emit(.listChanged)
+	}
+
+	public func addUartPort(vm name: String) async throws {
+		try lookup(name).config.addUartPort()
+		registry.events.emit(.listChanged)
+	}
+
+	public func removeUartPort(vm name: String) async throws {
+		try lookup(name).config.removeLastUartPort()
+		registry.events.emit(.listChanged)
+	}
+
+	public func setSerialLogging(
+		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) async throws {
+		let vm = try lookup(name)
+		try vm.config.setSerialLogging(kind: kind, index: index, config: config)
+		registry.retuneSerialLogging(vm: vm, kind: kind, index: index, config: config)
+		registry.events.emit(.listChanged)
+	}
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		// Permanent: only the daemon can build shadows. It strips `safe` before forwarding,
 		// so a safe flag reaching this engine means a client bypassed the router.
@@ -388,6 +419,18 @@ public final class LocalMachman: MachmanControlling {
 		let mounts = config.mountPoints.map {
 			MountInfo(id: $0.id.uuidString, path: $0.path, tag: $0.tag, safe: $0.safe)
 		}
+		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
+		func serialPorts(_ kind: SerialPortKind, _ ports: [SerialPort]) -> [SerialPortInfo] {
+			ports.enumerated().map { index, port in
+				SerialPortInfo(
+					kind: kind, index: index,
+					guestDevice: kind.guestDevice(index: index, macGuest: macGuest),
+					logging: port.logging,
+					socketPath: registry.serialSocketPath(vm: vm, kind: kind, index: index),
+					logPath: registry.serialLogPath(vm: vm, kind: kind, index: index),
+					mmioBase: nil, irq: nil)   // uart mmio/irq: filled once platform info exists
+			}
+		}
 		return VMInfo(
 			name: config.name,
 			state: vm.state,
@@ -402,7 +445,9 @@ public final class LocalMachman: MachmanControlling {
 			windowOpen: registry.isWindowOpen(vm),
 			startPolicy: config.startPolicy,
 			safeRun: nil,   // daemon-overlay concept: only the router knows a run is safe
-			totalRuntimeSeconds: config.totalRuntimeSeconds)
+			totalRuntimeSeconds: config.totalRuntimeSeconds,
+			consolePorts: serialPorts(.console, config.consolePorts),
+			uartPorts: serialPorts(.uart, config.uartPorts))
 	}
 
 	private func bootInfo(for vm: VirtualMachine) -> BootInfo {

@@ -27,6 +27,10 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	// Set by the daemon only, and only while a safe run impersonates this VM (phase 6).
 	public var safeRun: Bool?
 	public var totalRuntimeSeconds: Double?
+	// Serial ports by family (nil = older daemon). Counts are the array lengths; each port's
+	// socketPath is present only while the VM runs.
+	public var consolePorts: [SerialPortInfo]?
+	public var uartPorts: [SerialPortInfo]?
 
 	public var id: String { name }
 
@@ -35,7 +39,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		memoryBytes: UInt64, macAddress: String?, disks: [DiskInfo], mounts: [MountInfo],
 		boot: BootInfo, windowOpen: Bool = false,
 		startPolicy: StartPolicy? = nil, safeRun: Bool? = nil,
-		totalRuntimeSeconds: Double? = nil
+		totalRuntimeSeconds: Double? = nil,
+		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -51,6 +56,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.startPolicy = startPolicy
 		self.safeRun = safeRun
 		self.totalRuntimeSeconds = totalRuntimeSeconds
+		self.consolePorts = consolePorts
+		self.uartPorts = uartPorts
 	}
 
 	// Hand-written decode so payloads predating the optional fields (and clients that omit
@@ -72,6 +79,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.safeRun = try c.decodeIfPresent(Bool.self, forKey: .safeRun)
 		self.totalRuntimeSeconds =
 			try c.decodeIfPresent(Double.self, forKey: .totalRuntimeSeconds)
+		self.consolePorts = try c.decodeIfPresent([SerialPortInfo].self, forKey: .consolePorts)
+		self.uartPorts = try c.decodeIfPresent([SerialPortInfo].self, forKey: .uartPorts)
 	}
 }
 

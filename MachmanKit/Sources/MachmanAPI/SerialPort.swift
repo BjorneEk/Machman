@@ -16,6 +16,20 @@ import Foundation
 public enum SerialPortKind: String, Codable, Sendable, Equatable {
 	case console
 	case uart
+
+	// The guest device name for the index-th port of this kind. Linux console ports enumerate
+	// hvc0, hvc1…; UARTs ttyAMA0, ttyAMA1…. A macOS guest surfaces virtio consoles as
+	// /dev/cu.virtio[N]; its UART path is not a userland tty (kernel debug channel), reported
+	// with the Linux name for reference.
+	public func guestDevice(index: Int, macGuest: Bool) -> String {
+		switch self {
+		case .console:
+			if macGuest { return index == 0 ? "cu.virtio" : "cu.virtio\(index)" }
+			return "hvc\(index)"
+		case .uart:
+			return "ttyAMA\(index)"
+		}
+	}
 }
 
 // How the vmhost records a serial port's output to a file, alongside the always-served socket.

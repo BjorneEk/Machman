@@ -116,6 +116,29 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.mountRemove, RPCParams.RemoveMount(name: name, mountID: mountID))
 	}
 
+	public func addConsolePort(vm name: String) async throws {
+		try await void(.consoleAdd, RPCParams.Name(name: name))
+	}
+
+	public func removeConsolePort(vm name: String) async throws {
+		try await void(.consoleRemove, RPCParams.Name(name: name))
+	}
+
+	public func addUartPort(vm name: String) async throws {
+		try await void(.uartAdd, RPCParams.Name(name: name))
+	}
+
+	public func removeUartPort(vm name: String) async throws {
+		try await void(.uartRemove, RPCParams.Name(name: name))
+	}
+
+	public func setSerialLogging(
+		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) async throws {
+		try await void(.serialSetLogging, RPCParams.SetSerialLogging(
+			name: name, kind: kind, index: index, config: config))
+	}
+
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
 		try await void(.setKernelBoot, RPCParams.SetKernelBoot(name: name, enabled: enabled))
 	}

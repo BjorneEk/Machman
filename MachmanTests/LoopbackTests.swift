@@ -140,6 +140,61 @@ final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		emit(.listChanged)
 	}
+	func addConsolePort(vm name: String) async throws {
+		var vm = try get(name)
+		let i = vm.consolePorts?.count ?? 0
+		vm.consolePorts = (vm.consolePorts ?? []) + [SerialPortInfo(
+			kind: .console, index: i, guestDevice: "hvc\(i)", logging: SerialLogConfig())]
+		vms[name] = vm
+		emit(.listChanged)
+	}
+	func removeConsolePort(vm name: String) async throws {
+		var vm = try get(name)
+		guard !(vm.consolePorts ?? []).isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "\(name) has no console ports")
+		}
+		vm.consolePorts?.removeLast()
+		vms[name] = vm
+		emit(.listChanged)
+	}
+	func addUartPort(vm name: String) async throws {
+		var vm = try get(name)
+		let i = vm.uartPorts?.count ?? 0
+		vm.uartPorts = (vm.uartPorts ?? []) + [SerialPortInfo(
+			kind: .uart, index: i, guestDevice: "ttyAMA\(i)", logging: SerialLogConfig())]
+		vms[name] = vm
+		emit(.listChanged)
+	}
+	func removeUartPort(vm name: String) async throws {
+		var vm = try get(name)
+		guard !(vm.uartPorts ?? []).isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "\(name) has no UART ports")
+		}
+		vm.uartPorts?.removeLast()
+		vms[name] = vm
+		emit(.listChanged)
+	}
+	func setSerialLogging(
+		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) async throws {
+		var vm = try get(name)
+		switch kind {
+		case .console:
+			guard var ports = vm.consolePorts, ports.indices.contains(index) else {
+				throw MachmanError(code: .notFound, message: "no console port \(index)")
+			}
+			ports[index].logging = config
+			vm.consolePorts = ports
+		case .uart:
+			guard var ports = vm.uartPorts, ports.indices.contains(index) else {
+				throw MachmanError(code: .notFound, message: "no UART port \(index)")
+			}
+			ports[index].logging = config
+			vm.uartPorts = ports
+		}
+		vms[name] = vm
+		emit(.listChanged)
+	}
 	func start(vm name: String, options: StartOptions) async throws {
 		var vm = try get(name)
 		guard !vm.state.isRunning else {
@@ -290,6 +345,51 @@ struct LoopbackTests {
 		let updated = try await client.regenerateMAC(vm: "Debian")
 		#expect(updated.macAddress == "0a:0a:0a:0a:0a:0a")
 		#expect(try await client.vm(named: "Debian").macAddress == "0a:0a:0a:0a:0a:0a")
+		await client.disconnect()
+	}
+
+	@Test @MainActor func serialPortsRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-ser-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "serial")
+		try await client.addConsolePort(vm: "Debian")
+		try await client.addUartPort(vm: "Debian")
+		try await client.addUartPort(vm: "Debian")
+		let info = try await client.vm(named: "Debian")
+		#expect(info.consolePorts?.count == 1)
+		#expect(info.uartPorts?.count == 2)
+		#expect(info.uartPorts?[1].guestDevice == "ttyAMA1")
+
+		try await client.setSerialLogging(
+			vm: "Debian", kind: .uart, index: 0,
+			config: SerialLogConfig(mode: .continuous, maxBytes: 4096))
+		let after = try await client.vm(named: "Debian")
+		#expect(after.uartPorts?[0].logging == SerialLogConfig(mode: .continuous, maxBytes: 4096))
+
+		try await client.removeUartPort(vm: "Debian")
+		#expect(try await client.vm(named: "Debian").uartPorts?.count == 1)
+
+		// Removing past empty, and an unknown index, carry their codes over the wire.
+		try await client.removeUartPort(vm: "Debian")
+		do {
+			try await client.removeUartPort(vm: "Debian")
+			Issue.record("expected invalidArgument")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidArgument)
+		}
+		do {
+			try await client.setSerialLogging(
+				vm: "Debian", kind: .console, index: 9, config: SerialLogConfig())
+			Issue.record("expected notFound")
+		} catch let error as MachmanError {
+			#expect(error.code == .notFound)
+		}
 		await client.disconnect()
 	}
 

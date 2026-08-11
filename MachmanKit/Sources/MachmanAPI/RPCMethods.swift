@@ -34,6 +34,11 @@ public enum RPCMethod: String, Sendable {
 	case safeSave = "vm.safeSave"
 	case windowOpen = "vm.window.open"
 	case windowClose = "vm.window.close"
+	case consoleAdd = "vm.console.add"
+	case consoleRemove = "vm.console.remove"
+	case uartAdd = "vm.uart.add"
+	case uartRemove = "vm.uart.remove"
+	case serialSetLogging = "vm.serial.setLogging"
 	case preview = "vm.preview"
 	case installStart = "vm.install.start"
 	case installCancel = "vm.install.cancel"
@@ -147,6 +152,20 @@ public enum RPCParams {
 		public init(name: String, mountID: String) {
 			self.name = name
 			self.mountID = mountID
+		}
+	}
+
+	public struct SetSerialLogging: Codable, Equatable, Sendable {
+		public var name: String
+		public var kind: SerialPortKind
+		public var index: Int
+		public var config: SerialLogConfig
+
+		public init(name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig) {
+			self.name = name
+			self.kind = kind
+			self.index = index
+			self.config = config
 		}
 	}
 

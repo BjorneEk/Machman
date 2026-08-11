@@ -50,6 +50,18 @@ public protocol MachmanControlling: AnyObject {
 	// Batch per-id safe flags; unknown ids refuse the WHOLE batch (nothing half-applies).
 	func setSafety(vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?) async throws
 
+	// MARK: Serial ports
+	// Append/remove a console (virtio) or uart (PL011) port. Ports are fixed at VM start, so
+	// these are refused while the VM runs; removal pops the last port of that family.
+	func addConsolePort(vm name: String) async throws
+	func removeConsolePort(vm name: String) async throws
+	func addUartPort(vm name: String) async throws
+	func removeUartPort(vm name: String) async throws
+	// Retune a port's file logging; applied live when the VM is running.
+	func setSerialLogging(
+		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
+	) async throws
+
 	// MARK: Run / stop / window
 	func start(vm name: String, options: StartOptions) async throws
 	func stop(vm name: String, mode: StopMode) async throws
