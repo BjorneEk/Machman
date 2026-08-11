@@ -22,6 +22,10 @@ public final class TerminalProfileStore: ObservableObject {
 	@Published public var editingProfileID: UUID?
 
 	private let fileURL: URL
+	// Persist off the main thread (serial), so a rapid edit stream (colour-picker drags, typing)
+	// never blocks the UI on disk I/O. flush() waits for it (tests, termination).
+	private let saveQueue = DispatchQueue(
+		label: "com.gustaffranzen.Machman.terminalProfiles.save", qos: .utility)
 
 	// Default location: <app-support>/<suite>/TerminalProfiles.json. Injectable for tests.
 	// nonisolated so it can be used as a default argument (evaluated off the main actor).
@@ -150,17 +154,26 @@ public final class TerminalProfileStore: ObservableObject {
 	}
 
 	private func save() {
-		let state = PersistedState(profiles: profiles, associations: associations)
-		do {
-			let encoder = JSONEncoder()
-			encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-			let data = try encoder.encode(state)
-			try FileManager.default.createDirectory(
-				at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-			try data.write(to: fileURL, options: .atomic)
-		} catch {
-			MachmanLogger.log(.passiveError, "TerminalProfileStore save failed: \(error)")
+		// Snapshot on the main actor (cheap value copy), then encode + write off it.
+		let snapshot = PersistedState(profiles: profiles, associations: associations)
+		let url = fileURL
+		saveQueue.async {
+			do {
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+				let data = try encoder.encode(snapshot)
+				try FileManager.default.createDirectory(
+					at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+				try data.write(to: url, options: .atomic)
+			} catch {
+				MachmanLogger.log(.passiveError, "TerminalProfileStore save failed: \(error)")
+			}
 		}
+	}
+
+	// Block until pending writes have landed on disk (app termination and tests).
+	public func flush() {
+		saveQueue.sync {}
 	}
 
 	private struct PersistedState: Codable {

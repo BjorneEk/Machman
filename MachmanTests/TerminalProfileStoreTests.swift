@@ -44,6 +44,7 @@ struct TerminalProfileStoreTests {
 			p.name = "Big"
 			store.update(p)
 			store.associate(vm: "vm1", ref: SerialPortRef(kind: .console, index: 0), to: id)
+			store.flush()   // writes are off-main now; wait for them before reloading
 		}
 		let reloaded = TerminalProfileStore(fileURL: url)
 		#expect(reloaded.profiles.contains {
