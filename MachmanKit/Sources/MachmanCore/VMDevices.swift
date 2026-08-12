@@ -125,13 +125,11 @@ extension VMConfig {
 			ports.append(port)
 			wiring.append(wire)
 		}
+		let uartIssue = uartPorts.isEmpty ? nil : VMConfig.uartUnavailability()
 		for index in uartPorts.indices {
 			guard let port = makePL011SerialPort() else {
-				let why = VMConfig.privateSerialRejected()
-					? "macOS \(ProcessInfo.processInfo.operatingSystemVersionString) rejects "
-						+ "the private PL011 device at VM start"
-					: "the private PL011 class is unavailable"
-				MachmanLogger.log(.passiveWarning, "skipping uart\(index) on \(name): \(why)")
+				MachmanLogger.log(.passiveWarning, "skipping uart\(index) on \(name): "
+					+ (uartIssue?.message ?? "the private PL011 class is unavailable"))
 				continue
 			}
 			let (attachment, wire) = makeSerialPipe(kind: .uart, index: index)
@@ -182,7 +180,34 @@ extension VMConfig {
 	static func privateSerialRejected(
 		by v: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
 	) -> Bool {
-		(v.majorVersion, v.minorVersion, v.patchVersion) >= (26, 6, 1)
+		let g = SerialPortSupport.privateUARTGatedSince
+		return (v.majorVersion, v.minorVersion, v.patchVersion)
+			>= (g.majorVersion, g.minorVersion, g.patchVersion)
+	}
+
+	// The reason a uart (private PL011) port cannot be attached on this host, or nil if uarts work
+	// here. The single source for the VZ-builder skip log, the start-time warning event, and the
+	// wire's SerialPortInfo.unavailable — so a client that queries a VM learns exactly why a
+	// configured uart is inert. Checks the macOS version gate first, then the class's presence.
+	static func uartUnavailability() -> SerialPortUnavailability? {
+		if privateSerialRejected() {
+			let v = ProcessInfo.processInfo.operatingSystemVersion
+			let host = "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+			return SerialPortUnavailability(
+				reason: .privateUARTGated,
+				message: "UART unavailable: macOS \(host) gates the private PL011 device "
+					+ "(com.apple.private.virtualization required, since macOS "
+					+ "\(SerialPortSupport.privateUARTGatedSinceDisplay)); configured uart ports "
+					+ "are left unattached.",
+				sinceOSVersion: SerialPortSupport.privateUARTGatedSinceDisplay)
+		}
+		if NSClassFromString("_VZPL011SerialPortConfiguration") == nil {
+			return SerialPortUnavailability(
+				reason: .classUnavailable,
+				message: "UART unavailable: the private PL011 device class is not present in this "
+					+ "macOS build; configured uart ports are left unattached.")
+		}
+		return nil
 	}
 
 	// Assembles the full VZ configuration. Shared by the normal boot path (VirtualMachine) and the

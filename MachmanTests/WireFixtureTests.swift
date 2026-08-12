@@ -90,6 +90,23 @@ struct WireFixtureTests {
 			#"{"guestDevice":"hvc0","index":0,"kind":"console","logging":{"mode":"resetOnBoot"}}"#
 		#expect(try encode(minimal) == minExpected)
 		#expect(try decode(SerialPortInfo.self, minExpected) == minimal)
+
+		// A uart the host can't attach carries its reason; nil socket/mmio stay omitted.
+		let gated = SerialPortInfo(
+			kind: .uart, index: 0, guestDevice: "ttyAMA0", logging: SerialLogConfig(),
+			unavailable: SerialPortUnavailability(
+				reason: .privateUARTGated, message: "UART unavailable on this host.",
+				sinceOSVersion: "26.6.1"))
+		let gatedExpected =
+			#"{"guestDevice":"ttyAMA0","index":0,"kind":"uart","logging":{"mode":"resetOnBoot"},"#
+			+ #""unavailable":{"message":"UART unavailable on this host.","#
+			+ #""reason":"privateUARTGated","sinceOSVersion":"26.6.1"}}"#
+		#expect(try encode(gated) == gatedExpected)
+		#expect(try decode(SerialPortInfo.self, gatedExpected) == gated)
+
+		// An unknown future reason degrades to .unknown rather than failing the decode.
+		let future = #"{"message":"m","reason":"newKind"}"#
+		#expect(try decode(SerialPortUnavailability.self, future).reason == .unknown)
 	}
 
 	@Test func bootInfoMacOSFixture() throws {

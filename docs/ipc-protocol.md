@@ -97,9 +97,14 @@ startPolicy?:
 
 `consolePorts`/`uartPorts` are arrays of `SerialPortInfo`
 `{kind: "console"|"uart", index, guestDevice, logging: SerialLogConfig, socketPath?, logPath?,
-mmioBase?, irq?}` (absent = an older daemon; count is the array length). `socketPath` is the
-raw-byte data-plane unix socket, present only while the VM runs; `mmioBase`/`irq` are populated
-for uart ports once platform info has been generated. `SerialLogConfig` is
+mmioBase?, irq?, unavailable?}` (absent = an older daemon; count is the array length).
+`socketPath` is the raw-byte data-plane unix socket, present only while the VM runs; `mmioBase`/
+`irq` are populated for uart ports once platform info has been generated. `unavailable`
+`{reason: "privateUARTGated"|"classUnavailable"|<unknown>, message, sinceOSVersion?}` is present
+when a configured port cannot be attached on the daemon's host and is therefore left off the
+running VM — currently only uart ports, which macOS gates behind the
+`com.apple.private.virtualization` entitlement from `sinceOSVersion` (26.6.1) on; `message` is a
+ready-to-display explanation. `SerialLogConfig` is
 `{mode: "disabled"|"resetOnBoot"|"continuous", maxBytes?}` (default resetOnBoot, unlimited).
 
 `disks[].owned?` is true when the backing file lives inside (and travels with) the VM's

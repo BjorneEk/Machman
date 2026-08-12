@@ -120,9 +120,10 @@ struct SerialConfigTests {
 		}
 	}
 
-	// macOS 26.6.1 removed the VZ backend for the private PL011/16550 serial devices (the helper
-	// traps decoding them at start). The gate must reject exactly [26.6.1, ∞) — a wrong boundary
-	// either crashes every uart VM start or silently disables uarts on working systems.
+	// macOS 26.6.1 gated the private PL011/16550 serial devices behind the
+	// com.apple.private.virtualization entitlement (the helper traps decoding them at start for an
+	// unentitled host). The gate must reject exactly [26.6.1, ∞) — a wrong boundary either crashes
+	// every uart VM start or silently disables uarts on working systems.
 	@Test func privateSerialRejectionBoundary() {
 		func v(_ a: Int, _ b: Int, _ c: Int) -> OperatingSystemVersion {
 			OperatingSystemVersion(majorVersion: a, minorVersion: b, patchVersion: c)
@@ -134,5 +135,23 @@ struct SerialConfigTests {
 		#expect(VMConfig.privateSerialRejected(by: v(26, 6, 2)))
 		#expect(VMConfig.privateSerialRejected(by: v(26, 7, 0)))
 		#expect(VMConfig.privateSerialRejected(by: v(27, 0, 0)))
+	}
+
+	// The wire constant and the runtime gate must agree: SerialPortInfo.unavailable.sinceOSVersion
+	// and privateSerialRejected() both derive from SerialPortSupport.privateUARTGatedSince.
+	@Test func gateConstantMatchesBoundaryAndReason() {
+		#expect(SerialPortSupport.privateUARTGatedSinceDisplay == "26.6.1")
+		let g = SerialPortSupport.privateUARTGatedSince
+		#expect(VMConfig.privateSerialRejected(by: g))
+		#expect(!VMConfig.privateSerialRejected(by: OperatingSystemVersion(
+			majorVersion: g.majorVersion, minorVersion: g.minorVersion,
+			patchVersion: g.patchVersion - 1)))
+		// On any host that rejects uarts, the API reason is the version gate carrying that version.
+		if VMConfig.privateSerialRejected() {
+			let issue = VMConfig.uartUnavailability()
+			#expect(issue?.reason == .privateUARTGated)
+			#expect(issue?.sinceOSVersion == SerialPortSupport.privateUARTGatedSinceDisplay)
+			#expect(issue?.message.contains("com.apple.private.virtualization") == true)
+		}
 	}
 }

@@ -59,11 +59,8 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		// Configured uarts the builder could not attach (macOS ≥ 26.6.1 rejects the private
 		// PL011): tell the user rather than silently serving a VM with fewer devices.
 		let wiredUARTs = built.serialWiring.filter { $0.kind == .uart }.count
-		if wiredUARTs < config.uartPorts.count {
-			events.emit(.log(
-				vm: config.name, level: .warning,
-				message: "uart ports are unavailable on this macOS (the private PL011 device "
-					+ "is rejected since 26.6.1); starting without them"))
+		if wiredUARTs < config.uartPorts.count, let issue = VMConfig.uartUnavailability() {
+			events.emit(.log(vm: config.name, level: .warning, message: issue.message))
 		}
 		let machine = VZVirtualMachine(configuration: built.configuration)
 		machine.delegate = self

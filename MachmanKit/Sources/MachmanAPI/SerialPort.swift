@@ -59,9 +59,55 @@ public struct SerialLogConfig: Codable, Sendable, Equatable {
 	}
 }
 
+// The macOS release at which Virtualization.framework began gating the private PL011/16550 serial
+// devices behind the com.apple.private.virtualization entitlement. At or above this version an
+// unentitled host (Machman) can no longer attach them, so configured uart ports are inert and are
+// reported with a SerialPortInfo.unavailable reason. See
+// docs/local/socket-research/research-findings.md §3.
+public enum SerialPortSupport {
+	public static let privateUARTGatedSince = OperatingSystemVersion(
+		majorVersion: 26, minorVersion: 6, patchVersion: 1)
+
+	// The gate version as a plain "major.minor.patch" string, for messages and the wire.
+	public static var privateUARTGatedSinceDisplay: String {
+		let v = privateUARTGatedSince
+		return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+	}
+}
+
+// Why a configured serial port is present in the VM's config but cannot actually be attached on
+// this host — currently only uart ports, where the private PL011 device is gated (see
+// SerialPortSupport). nil means the port works here.
+public struct SerialPortUnavailability: Codable, Sendable, Equatable {
+	public enum Reason: String, Codable, Sendable, Equatable {
+		case privateUARTGated   // macOS >= SerialPortSupport.privateUARTGatedSince: entitlement gate
+		case classUnavailable   // the private serial class is absent from this runtime
+		case unknown            // forward-compat: an unrecognized future reason decodes to this
+	}
+
+	public var reason: Reason
+	public var message: String          // human-readable, ready to surface to a user
+	public var sinceOSVersion: String?  // the gate's macOS version, when the reason is version-based
+
+	public init(reason: Reason, message: String, sinceOSVersion: String? = nil) {
+		self.reason = reason
+		self.message = message
+		self.sinceOSVersion = sinceOSVersion
+	}
+
+	// Tolerant decode: an unrecognized future reason degrades to .unknown rather than failing.
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.reason = Reason(rawValue: try c.decode(String.self, forKey: .reason)) ?? .unknown
+		self.message = try c.decode(String.self, forKey: .message)
+		self.sinceOSVersion = try c.decodeIfPresent(String.self, forKey: .sinceOSVersion)
+	}
+}
+
 // A serial port as served over the API. Counts come from the array lengths in VMInfo. socketPath
 // is present only while the VM runs (the vmhost serves it); mmioBase/irq are present only for
-// uart ports once platform info has been generated. guestDevice/logPath are informational.
+// uart ports once platform info has been generated; unavailable is set when a configured port
+// cannot be attached on this host (a gated uart). guestDevice/logPath are informational.
 public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 	public var kind: SerialPortKind
 	public var index: Int
@@ -71,13 +117,14 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 	public var logPath: String?           // on-disk log file when logging is enabled
 	public var mmioBase: String?          // uart only, from generated platform info
 	public var irq: Int?                  // uart only, from generated platform info
+	public var unavailable: SerialPortUnavailability?  // set when a configured port can't attach here
 
 	public var id: String { "\(kind.rawValue)\(index)" }
 
 	public init(
 		kind: SerialPortKind, index: Int, guestDevice: String, logging: SerialLogConfig,
 		socketPath: String? = nil, logPath: String? = nil, mmioBase: String? = nil,
-		irq: Int? = nil
+		irq: Int? = nil, unavailable: SerialPortUnavailability? = nil
 	) {
 		self.kind = kind
 		self.index = index
@@ -87,6 +134,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.logPath = logPath
 		self.mmioBase = mmioBase
 		self.irq = irq
+		self.unavailable = unavailable
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -100,5 +148,6 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.logPath = try c.decodeIfPresent(String.self, forKey: .logPath)
 		self.mmioBase = try c.decodeIfPresent(String.self, forKey: .mmioBase)
 		self.irq = try c.decodeIfPresent(Int.self, forKey: .irq)
+		self.unavailable = try c.decodeIfPresent(SerialPortUnavailability.self, forKey: .unavailable)
 	}
 }

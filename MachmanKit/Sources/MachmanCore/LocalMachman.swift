@@ -453,14 +453,16 @@ public final class LocalMachman: MachmanControlling {
 		}
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		func serialPorts(_ kind: SerialPortKind, _ ports: [SerialPort]) -> [SerialPortInfo] {
-			ports.enumerated().map { index, port in
+			let uartIssue = kind == .uart ? VMConfig.uartUnavailability() : nil
+			return ports.enumerated().map { index, port in
 				SerialPortInfo(
 					kind: kind, index: index,
 					guestDevice: kind.guestDevice(index: index, macGuest: macGuest),
 					logging: port.logging,
 					socketPath: registry.serialSocketPath(vm: vm, kind: kind, index: index),
 					logPath: registry.serialLogPath(vm: vm, kind: kind, index: index),
-					mmioBase: nil, irq: nil)   // uart mmio/irq: filled once platform info exists
+					mmioBase: nil, irq: nil,   // uart mmio/irq: filled once platform info exists
+					unavailable: uartIssue)
 			}
 		}
 		return VMInfo(
