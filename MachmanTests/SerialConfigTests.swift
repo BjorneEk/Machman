@@ -119,4 +119,20 @@ struct SerialConfigTests {
 			}
 		}
 	}
+
+	// macOS 26.6.1 removed the VZ backend for the private PL011/16550 serial devices (the helper
+	// traps decoding them at start). The gate must reject exactly [26.6.1, ∞) — a wrong boundary
+	// either crashes every uart VM start or silently disables uarts on working systems.
+	@Test func privateSerialRejectionBoundary() {
+		func v(_ a: Int, _ b: Int, _ c: Int) -> OperatingSystemVersion {
+			OperatingSystemVersion(majorVersion: a, minorVersion: b, patchVersion: c)
+		}
+		#expect(!VMConfig.privateSerialRejected(by: v(15, 7, 2)))
+		#expect(!VMConfig.privateSerialRejected(by: v(26, 5, 9)))
+		#expect(!VMConfig.privateSerialRejected(by: v(26, 6, 0)))
+		#expect(VMConfig.privateSerialRejected(by: v(26, 6, 1)))
+		#expect(VMConfig.privateSerialRejected(by: v(26, 6, 2)))
+		#expect(VMConfig.privateSerialRejected(by: v(26, 7, 0)))
+		#expect(VMConfig.privateSerialRejected(by: v(27, 0, 0)))
+	}
 }

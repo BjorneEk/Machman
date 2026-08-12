@@ -127,9 +127,11 @@ extension VMConfig {
 		}
 		for index in uartPorts.indices {
 			guard let port = makePL011SerialPort() else {
-				MachmanLogger.log(
-					.passiveWarning,
-					"the private PL011 UART is unavailable; skipping uart\(index) on \(name)")
+				let why = VMConfig.privateSerialRejected()
+					? "macOS \(ProcessInfo.processInfo.operatingSystemVersionString) rejects "
+						+ "the private PL011 device at VM start"
+					: "the private PL011 class is unavailable"
+				MachmanLogger.log(.passiveWarning, "skipping uart\(index) on \(name): \(why)")
 				continue
 			}
 			let (attachment, wire) = makeSerialPipe(kind: .uart, index: index)
@@ -158,12 +160,26 @@ extension VMConfig {
 	// kernels). Present in every SDK since macOS 11 and usable with only the public virtualization
 	// entitlement, but private — guard it and skip cleanly if it ever disappears.
 	private func makePL011SerialPort() -> VZSerialPortConfiguration? {
+		guard !VMConfig.privateSerialRejected() else { return nil }
 		guard let cls = NSClassFromString("_VZPL011SerialPortConfiguration") as? NSObject.Type,
 			let port = cls.perform(NSSelectorFromString("new"))?.takeRetainedValue()
 				as? VZSerialPortConfiguration else {
 			return nil
 		}
 		return port
+	}
+
+	// macOS 26.6.1's security update removed the backend for the private serial devices: the
+	// _VZPL011SerialPortConfiguration and _VZ16550SerialPortConfiguration classes still exist and
+	// still validate, but the com.apple.Virtualization.VirtualMachine helper traps
+	// (EXC_BREAKPOINT) decoding either of them, so EVERY start of a VM carrying one fails with an
+	// opaque VZErrorInternal. Measured 2026-08-13 on 26.6.1 (25G76) with a minimal reproducer
+	// (docs/local/socket-research/05-uart-availability.swift); 26.6.0 worked. Treat the private
+	// serial devices as gone from that build on — a VM must start even if its uarts cannot.
+	static func privateSerialRejected(
+		by v: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
+	) -> Bool {
+		(v.majorVersion, v.minorVersion, v.patchVersion) >= (26, 6, 1)
 	}
 
 	// Assembles the full VZ configuration. Shared by the normal boot path (VirtualMachine) and the
