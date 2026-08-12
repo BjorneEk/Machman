@@ -169,13 +169,16 @@ extension VMConfig {
 		return port
 	}
 
-	// macOS 26.6.1's security update removed the backend for the private serial devices: the
-	// _VZPL011SerialPortConfiguration and _VZ16550SerialPortConfiguration classes still exist and
-	// still validate, but the com.apple.Virtualization.VirtualMachine helper traps
-	// (EXC_BREAKPOINT) decoding either of them, so EVERY start of a VM carrying one fails with an
-	// opaque VZErrorInternal. Measured 2026-08-13 on 26.6.1 (25G76) with a minimal reproducer
-	// (docs/local/socket-research/05-uart-availability.swift); 26.6.0 worked. Treat the private
-	// serial devices as gone from that build on — a VM must start even if its uarts cannot.
+	// macOS 26.6.1's security update reclassified the private serial devices (PL011 AND 16550) as
+	// "restricted devices" gated behind the com.apple.private.virtualization entitlement: the
+	// classes still exist and validate, but the com.apple.Virtualization.VirtualMachine helper
+	// traps ("Restricted devices require the com.apple.private.virtualization entitlement.") for an
+	// unentitled caller, so EVERY start of a VM carrying one fails with an opaque VZErrorInternal.
+	// That entitlement is com.apple.private.* — honoured only for Apple-signed binaries or with SIP
+	// disabled + amfi_get_out_of_my_way=1; carrying it on a SIP-on machine SIGKILLs EVERY VZ start
+	// (measured), so we must never add it by default. Machman stays unentitled, so on ≥ 26.6.1 a
+	// VM must start even if its uarts cannot. Measured 2026-08-13 on 26.6.1 (25G76); 26.6.0 worked.
+	// Reproducer: docs/local/socket-research/05-uart-availability.swift.
 	static func privateSerialRejected(
 		by v: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
 	) -> Bool {
