@@ -39,6 +39,8 @@ struct VMTabContainerView: View {
 		// The toolbar outlives the selection: with no VM the indicator still shows the
 		// picker (the only VM switcher), while the per-VM actions disappear.
 		.toolbar { toolbar(viewModel.selected) }
+		// The VM indicator IS the title (1.0.4 design) — hide the app-name window title.
+		.toolbar(removing: .title)
 	}
 
 	private func pane(_ vm: VMInfo) -> some View {
