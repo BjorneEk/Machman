@@ -171,8 +171,21 @@ final class VMListViewModel: ObservableObject {
 
 	private func handle(event: VMEvent) {
 		switch event {
-		case .stateChanged:
-			break   // VMStore patches the row; PreviewService restarts its loop
+		case .stateChanged(let name, let state):
+			// VMStore patches the row and PreviewService restarts its loop; here the
+			// outcome pops as a toast (transitions stay quiet).
+			switch state {
+			case .running:
+				pushToast(symbol: MachmanSymbols.start, message: "\(name) started")
+			case .stopped:
+				pushToast(symbol: MachmanSymbols.shutDown, message: "\(name) stopped")
+			case .error:
+				pushToast(
+					symbol: MachmanSymbols.warning, message: "\(name) hit an error",
+					tint: MachmanColors.warning)
+			default:
+				break
+			}
 		case .listChanged:
 			break   // the store reloads; listRefreshed() reacts once the list lands
 		case .installPhaseChanged:
@@ -448,6 +461,9 @@ final class VMListViewModel: ObservableObject {
 			if await self.rename(from: old, to: newName) {
 				profiles.renameVM(from: old, to: newName)
 				self.log(message: "Renamed \(old) to \(newName)")
+				self.pushToast(
+					symbol: MachmanSymbols.rename,
+					message: "Renamed to \u{201C}\(newName)\u{201D}")
 			}
 		}
 	}
@@ -522,6 +538,9 @@ final class VMListViewModel: ObservableObject {
 					let newID = updated.disks.first(where: { $0.name == newName })?.id {
 					self?.treeSelection = [.disk(newID)]
 				}
+				self?.pushToast(
+					symbol: MachmanSymbols.rename,
+					message: "Disk renamed to \u{201C}\(newName)\u{201D}")
 			} catch {
 				self?.present(error, while: "Renaming a disk")
 			}
@@ -530,8 +549,14 @@ final class VMListViewModel: ObservableObject {
 
 	func setMountTag(_ name: String, mountID: String, tag: String) {
 		Task { [weak self] in
-			do { _ = try await self?.api.setMountTag(vm: name, mountID: mountID, tag: tag) }
-			catch { self?.present(error, while: "Changing a mount tag") }
+			do {
+				_ = try await self?.api.setMountTag(vm: name, mountID: mountID, tag: tag)
+				self?.pushToast(
+					symbol: MachmanSymbols.rename,
+					message: "Mount tag changed to \u{201C}\(tag)\u{201D}")
+			} catch {
+				self?.present(error, while: "Changing a mount tag")
+			}
 		}
 	}
 
@@ -550,6 +575,9 @@ final class VMListViewModel: ObservableObject {
 					self?.treeSelection = [file.role == .kernel
 						? .kernel(file.path) : .initramfs(file.path)]
 				}
+				self?.pushToast(
+					symbol: MachmanSymbols.rename,
+					message: "Re-tagged \u{201C}\(tag)\u{201D}")
 			} catch {
 				self?.present(error, while: "Renaming a kernel file")
 			}
@@ -631,6 +659,8 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.regenerateMAC(vm: name)
+				self?.pushToast(
+					symbol: MachmanSymbols.regenerate, message: "MAC address regenerated")
 			} catch {
 				self?.present(error, while: "Regenerating the MAC address")
 			}
@@ -658,6 +688,7 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				try await self?.api.addDisk(vm: name, disk)
+				self?.pushToast(symbol: MachmanSymbols.diskStorage, message: "Added disk")
 			} catch {
 				self?.present(error, while: "Adding a disk")
 			}
@@ -668,6 +699,7 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				try await self?.api.removeDisk(vm: name, diskID: diskID)
+				self?.pushToast(symbol: MachmanSymbols.diskStorage, message: "Removed disk")
 			} catch {
 				self?.present(error, while: "Removing a disk")
 			}
@@ -678,6 +710,8 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				try await self?.api.addMount(vm: name, path: path, tag: tag)
+				self?.pushToast(
+					symbol: MachmanSymbols.mount, message: "Added mount \u{201C}\(tag)\u{201D}")
 			} catch {
 				self?.present(error, while: "Adding a mount point")
 			}
@@ -688,6 +722,7 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				try await self?.api.removeMount(vm: name, mountID: mountID)
+				self?.pushToast(symbol: MachmanSymbols.mount, message: "Removed mount")
 			} catch {
 				self?.present(error, while: "Removing a mount point")
 			}
@@ -696,14 +731,22 @@ final class VMListViewModel: ObservableObject {
 
 	func addDevice(_ name: String, kind: DeviceKind) {
 		Task { [weak self] in
-			do { _ = try await self?.api.addDevice(vm: name, kind: kind) }
+			do {
+				_ = try await self?.api.addDevice(vm: name, kind: kind)
+				self?.pushToast(
+					symbol: kind.displaySymbol, message: "Added \(kind.displayLabel)")
+			}
 			catch { self?.present(error, while: "Adding a device") }
 		}
 	}
 
 	func removeDevice(_ name: String, kind: DeviceKind) {
 		Task { [weak self] in
-			do { _ = try await self?.api.removeDevice(vm: name, kind: kind) }
+			do {
+				_ = try await self?.api.removeDevice(vm: name, kind: kind)
+				self?.pushToast(
+					symbol: kind.displaySymbol, message: "Removed \(kind.displayLabel)")
+			}
 			catch { self?.present(error, while: "Removing a device") }
 		}
 	}
@@ -732,28 +775,43 @@ final class VMListViewModel: ObservableObject {
 
 	func addConsolePort(_ name: String) {
 		Task { [weak self] in
-			do { try await self?.api.addConsolePort(vm: name) }
+			do {
+				try await self?.api.addConsolePort(vm: name)
+				self?.pushToast(
+					symbol: MachmanSymbols.serialConsole, message: "Added console port")
+			}
 			catch { self?.present(error, while: "Adding a console port") }
 		}
 	}
 
 	func removeConsolePort(_ name: String) {
 		Task { [weak self] in
-			do { try await self?.api.removeConsolePort(vm: name) }
+			do {
+				try await self?.api.removeConsolePort(vm: name)
+				self?.pushToast(
+					symbol: MachmanSymbols.serialConsole, message: "Removed console port")
+			}
 			catch { self?.present(error, while: "Removing a console port") }
 		}
 	}
 
 	func addUartPort(_ name: String) {
 		Task { [weak self] in
-			do { try await self?.api.addUartPort(vm: name) }
+			do {
+				try await self?.api.addUartPort(vm: name)
+				self?.pushToast(symbol: MachmanSymbols.serialUart, message: "Added UART port")
+			}
 			catch { self?.present(error, while: "Adding a UART port") }
 		}
 	}
 
 	func removeUartPort(_ name: String) {
 		Task { [weak self] in
-			do { try await self?.api.removeUartPort(vm: name) }
+			do {
+				try await self?.api.removeUartPort(vm: name)
+				self?.pushToast(
+					symbol: MachmanSymbols.serialUart, message: "Removed UART port")
+			}
 			catch { self?.present(error, while: "Removing a UART port") }
 		}
 	}
