@@ -136,16 +136,13 @@ struct VMTabContainerView: View {
 				SafeModeChip()
 			}
 		}
-		ToolbarItem {
-			Button {
-				viewModel.toggleRun(vm)
-			} label: {
-				Label(
-					viewModel.runBtnLbl(vm: vm).running() ? "Stop \(vm.name)" : "Run \(vm.name)",
-					systemImage: viewModel.runBtnLbl(vm: vm).symbol)
+		if vm.hasEnabledGraphics {
+			ToolbarItem(placement: .principal) {
+				WindowToggleItem(viewModel: viewModel, vm: vm)
 			}
-			.disabled(viewModel.isInstalling(vm))
-			.help(runHelp(vm))
+		}
+		ToolbarItem(placement: .principal) {
+			StartStopGroup(viewModel: viewModel, vm: vm)
 		}
 		ToolbarItem {
 			Button {
@@ -166,11 +163,4 @@ struct VMTabContainerView: View {
 		}
 	}
 
-	private func runHelp(_ vm: VMInfo) -> String {
-		if viewModel.isInstalling(vm) { return "macOS is installing; wait for it to finish" }
-		if viewModel.runBtnLbl(vm: vm).running() { return "Stop \(vm.name)" }
-		let policy = vm.startPolicy ?? StartPolicy()
-		return "Run \(vm.name)" + (policy.windowed ? "" : " (headless)")
-			+ (policy.safe ? " (safe)" : "")
-	}
 }

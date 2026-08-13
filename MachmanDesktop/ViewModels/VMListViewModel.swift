@@ -32,24 +32,6 @@ struct PendingForceStart: Identifiable {
 	let message: String
 }
 
-enum RunBtnState {
-	case run
-	case stop
-
-	static func fromVMState(s: VMState) -> RunBtnState {
-		return s.isRunning ? .stop : .run
-	}
-	var symbol: String {
-		switch self {
-		case .run: return MachmanSymbols.start
-		case .stop: return MachmanSymbols.forceStop
-		}
-	}
-	func running() -> Bool {
-		return self == .stop
-	}
-}
-
 @MainActor
 final class VMListViewModel: ObservableObject {
 	let api: MachmanControlling
@@ -260,10 +242,6 @@ final class VMListViewModel: ObservableObject {
 
 	// MARK: - List / selection
 
-	func runBtnLbl(vm: VMInfo) -> RunBtnState {
-		return RunBtnState.fromVMState(s: vm.state)
-	}
-
 	func hasVM(_ name: String) -> Bool {
 		vms.contains { $0.name == name }
 	}
@@ -280,12 +258,17 @@ final class VMListViewModel: ObservableObject {
 		if vm.state.isRunning {
 			stopVM(vm.name)
 		} else {
-			// The plain affordance honors the VM's start policy; explicit menu items force
-			// only their WINDOW mode (safe applies everywhere — silently dropping safety
-			// would be the one surprise worse than none). nil policy = old daemon defaults.
-			let policy = vm.startPolicy ?? StartPolicy()
-			startVM(vm.name, headless: !policy.windowed, safe: policy.safe)
+			startPolicyDriven(vm)
 		}
+	}
+
+	// The plain Start affordance honors the VM's start policy; explicit menu items force
+	// only their WINDOW mode (safe applies everywhere — silently dropping safety would be
+	// the one surprise worse than none). nil policy = old daemon defaults. safeOverride
+	// forces safety on top of the policy's window mode (the toolbar's Start Safe).
+	func startPolicyDriven(_ vm: VMInfo, safeOverride: Bool? = nil) {
+		let policy = vm.startPolicy ?? StartPolicy()
+		startVM(vm.name, headless: !policy.windowed, safe: safeOverride ?? policy.safe)
 	}
 
 	func startVM(_ name: String, headless: Bool = false, force: Bool = false, safe: Bool = false) {
