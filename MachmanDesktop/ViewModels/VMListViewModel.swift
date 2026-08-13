@@ -11,6 +11,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import Combine
 import UniformTypeIdentifiers
 import MachmanUI
 import MachmanAPI
@@ -52,8 +53,11 @@ enum RunBtnState {
 @MainActor
 final class VMListViewModel: ObservableObject {
 	let api: MachmanControlling
-	@Published private(set) var vms: [VMInfo] = []
-	@Published private(set) var capabilities: HostCapabilities?
+	// The app-scoped source of truth for the list + capabilities (it survives reconnects);
+	// this per-connection view model is a facade over it so views keep a single observable.
+	let store: VMStore
+	var vms: [VMInfo] { store.vms }
+	var capabilities: HostCapabilities? { store.capabilities }
 	@Published private(set) var installPhases: [String: InstallPhase] = [:]
 	// Live preview thumbnails live in their own store so the ~4s refresh loop re-renders only the
 	// small PreviewView, not the whole VM pane (tab strip, terminal, toolbar). See PreviewStore.
@@ -94,20 +98,35 @@ final class VMListViewModel: ObservableObject {
 	private let previewInterval: Double = 4
 	private var previewTask: Task<Void, Never>?
 	private var eventTask: Task<Void, Never>?
+	private var storeForwarder: AnyCancellable?
+	private var listReactor: AnyCancellable?
+	// macOS VMs whose install phase is being fetched (dedupes the primes $vms retriggers).
+	private var phasePrimesInFlight: Set<String> = []
 
 	var selected: VMInfo? {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
 	}
 
-	init(api: MachmanControlling) {
+	init(api: MachmanControlling, store: VMStore) {
 		self.api = api
+		self.store = store
+		// Views observe this object, not the store — forward its changes.
+		storeForwarder = store.objectWillChange.sink { [weak self] in
+			self?.objectWillChange.send()
+		}
+		// React AFTER every list refresh (reconcile tabs, prime phases). $vms emits the
+		// incoming value on willSet — use it, never store.vms (still the old list here).
+		listReactor = store.$vms.sink { [weak self] list in
+			self?.listRefreshed(list)
+		}
+		// The view model keeps its own event stream for UI-side reactions (the transport
+		// fans events out per subscriber; the store patches the list on its own stream).
 		eventTask = Task { [weak self] in
 			guard let api = self?.api else { return }
 			let stream = await api.events()
-			await self?.reload()
 			for await event in stream {
 				guard let self = self else { return }
-				await self.handle(event: event)
+				self.handle(event: event)
 			}
 		}
 	}
@@ -118,32 +137,38 @@ final class VMListViewModel: ObservableObject {
 	}
 
 	func reload() async {
-		if let list = try? await api.listVMs() {
-			vms = list
-		}
-		if capabilities == nil {
-			capabilities = try? await api.hostCapabilities()
-		}
-		for vm in vms where vm.boot.mode == .macOS && installPhases[vm.name] == nil {
-			if let phase = try? await api.macInstallPhase(vm: vm.name) {
-				installPhases[vm.name] = phase
-			}
-		}
-		// Close terminal tabs for ports/VMs that no longer exist.
-		terminals.reconcile(vms: vms)
+		await store.reload()
 	}
 
-	private func handle(event: VMEvent) async {
+	private func listRefreshed(_ list: [VMInfo]) {
+		// Close terminal tabs for ports/VMs that no longer exist.
+		terminals.reconcile(vms: list)
+		for vm in list where vm.boot.mode == .macOS && installPhases[vm.name] == nil
+			&& !phasePrimesInFlight.contains(vm.name) {
+			phasePrimesInFlight.insert(vm.name)
+			let name = vm.name
+			Task { [weak self] in
+				guard let self = self else { return }
+				// Never clobber a phase an event delivered while the fetch was in flight.
+				if let phase = try? await self.api.macInstallPhase(vm: name),
+					self.installPhases[name] == nil {
+					self.installPhases[name] = phase
+				}
+				self.phasePrimesInFlight.remove(name)
+			}
+		}
+	}
+
+	private func handle(event: VMEvent) {
 		switch event {
 		case .stateChanged(let name, let state):
-			if let index = vms.firstIndex(where: { $0.name == name }) {
-				vms[index].state = state
-			}
+			// The store patches the row on its own stream; key the preview off the event's
+			// state so a not-yet-patched row can't stall the restart.
 			if name == selectedName {
-				restartPreviewLoop()
+				restartPreviewLoop(latestState: state)
 			}
 		case .listChanged:
-			await reload()
+			break   // the store reloads; listRefreshed() reacts once the list lands
 		case .installPhaseChanged(let name, let phase):
 			installPhases[name] = phase
 		case .log(let vm, let level, let message):
@@ -243,10 +268,10 @@ final class VMListViewModel: ObservableObject {
 		restartPreviewLoop()
 	}
 
-	private func restartPreviewLoop() {
+	private func restartPreviewLoop(latestState: VMState? = nil) {
 		previewTask?.cancel()
 		previewTask = nil
-		guard isFocused, let vm = selected, vm.state.isRunning else { return }
+		guard isFocused, let vm = selected, (latestState ?? vm.state).isRunning else { return }
 		let name = vm.name
 		previewTask = Task { [weak self] in
 			while !Task.isCancelled {
@@ -400,9 +425,7 @@ final class VMListViewModel: ObservableObject {
 		// The sheet's space hint reads capabilities.freeDiskBytes, fetched once at connect —
 		// refresh so the figure isn't sessions old.
 		Task { [weak self] in
-			if let caps = try? await self?.api.hostCapabilities() {
-				self?.capabilities = caps
-			}
+			await self?.store.refreshCapabilities()
 		}
 		copyRequest = vm
 	}

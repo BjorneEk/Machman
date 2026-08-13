@@ -28,6 +28,10 @@ final class DaemonConnection: ObservableObject {
 
 	@Published private(set) var status: Status = .connecting
 	@Published private(set) var viewModel: VMListViewModel?
+	// App-scoped stores that survive reconnects: each new connection re-attaches them, each
+	// new view model is a facade over them. DaemonConnection is their composition root
+	// because it is the one object that sees every (re)connection.
+	let vmStore = VMStore()
 	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
 	// serves), so it is a flag beside Status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
@@ -103,7 +107,8 @@ final class DaemonConnection: ObservableObject {
 					let api = try await RemoteMachman(
 						clientName: "MachmanDesktop", onDisconnect: onDisconnect)
 					guard let self = self else { return }
-					let viewModel = VMListViewModel(api: api)
+					self.vmStore.attach(api: api)
+					let viewModel = VMListViewModel(api: api, store: self.vmStore)
 					self.api = api
 					self.viewModel = viewModel
 					// The menu bar commands observe this object; forward list changes so
@@ -187,6 +192,7 @@ final class DaemonConnection: ObservableObject {
 
 	private func disconnected() {
 		MachmanLogger.log(.passiveWarning, "daemon connection lost; reconnecting")
+		vmStore.detach()
 		api = nil
 		viewModel = nil
 		viewModelForwarder = nil
