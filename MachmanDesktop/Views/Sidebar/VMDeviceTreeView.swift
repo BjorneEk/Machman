@@ -37,6 +37,10 @@ struct VMDeviceTreeView: View {
 	@State private var renamingNode: SidebarNode?
 	// A drag hovering a section: drives the would-be preview row + copy/forbidden cursor.
 	@State private var dragPreview: TreeDragPreview?
+	// Expiry watchdog: dropExited is not guaranteed on session cancel, so every delegate
+	// touch bumps the generation and the preview clears after two quiet seconds.
+	@State private var dragGeneration = 0
+	@State private var dragWatchdog: Task<Void, Never>?
 	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
 		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
@@ -103,6 +107,15 @@ struct VMDeviceTreeView: View {
 		// The tree shows ONE VM; stale nodes must not survive into another VM's tree.
 		.onChange(of: vm.name) {
 			viewModel.treeSelection = []
+			dragPreview = nil
+		}
+		.onChange(of: dragGeneration) {
+			dragWatchdog?.cancel()
+			dragWatchdog = Task {
+				try? await Task.sleep(for: .seconds(2))
+				guard !Task.isCancelled else { return }
+				dragPreview = nil
+			}
 		}
 		// Finder drop anywhere on the tree: folders become mounts, files ask
 		// copy-or-reference (same funnel as the picker and paste).
@@ -204,7 +217,8 @@ struct VMDeviceTreeView: View {
 			}
 		}
 		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
-			section: .disks, preview: $dragPreview, perform: performDiskDrop))
+			section: .disks, preview: $dragPreview,
+			touched: { dragGeneration &+= 1 }, perform: performDiskDrop))
 	}
 
 	// Batch actions lead a row's menu when it sits inside a multi-selection.
@@ -299,7 +313,8 @@ struct VMDeviceTreeView: View {
 			}
 		}
 		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
-			section: .mounts, preview: $dragPreview, perform: performMountDrop))
+			section: .mounts, preview: $dragPreview,
+			touched: { dragGeneration &+= 1 }, perform: performMountDrop))
 	}
 
 	@ViewBuilder
@@ -572,6 +587,7 @@ struct VMDeviceTreeView: View {
 		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
 		let droppable = dg.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
 			section: .kernel(role), preview: $dragPreview,
+			touched: { dragGeneration &+= 1 },
 			perform: { performKernelDrop($0, role: role) }))
 		if role == .kernel {
 			droppable

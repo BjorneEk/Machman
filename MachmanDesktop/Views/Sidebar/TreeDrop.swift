@@ -97,10 +97,13 @@ enum TreeDropValidator {
 	}
 }
 
-// One drop target per group section.
+// One drop target per group section. `touched` fires on every enter/update so the owner
+// can run an expiry watchdog — AppKit does not reliably deliver dropExited when a drag
+// session cancels, which used to strand the preview row in the tree.
 struct GroupDropDelegate: DropDelegate {
 	let section: TreeDragPreview.Section
 	@Binding var preview: TreeDragPreview?
+	let touched: () -> Void
 	let perform: ([URL]) -> Void
 
 	func validateDrop(info: DropInfo) -> Bool {
@@ -108,6 +111,7 @@ struct GroupDropDelegate: DropDelegate {
 	}
 
 	func dropEntered(info: DropInfo) {
+		touched()
 		preview = TreeDragPreview(section: section)
 		Self.loadURLs(info) { urls in
 			// Still hovering this section? (The drag may have moved on meanwhile.)
@@ -119,6 +123,7 @@ struct GroupDropDelegate: DropDelegate {
 	}
 
 	func dropUpdated(info: DropInfo) -> DropProposal? {
+		touched()
 		if let preview, preview.section == section, preview.isInvalid {
 			return DropProposal(operation: .forbidden)
 		}

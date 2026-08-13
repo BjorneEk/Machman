@@ -60,9 +60,12 @@ struct VMNavigationView: View {
 				}
 			}
 			// After a daemon reconnect the view model is fresh but the window kept its
-			// selection — restore it.
+			// selection — restore it. Deferred: select() publishes mid-view-update
+			// otherwise.
 			.onAppear {
-				if let sel = selection, viewModel.selectedName == nil {
+				guard let sel = selection, viewModel.selectedName == nil else { return }
+				DispatchQueue.main.async { [weak viewModel] in
+					guard let viewModel, viewModel.selectedName == nil else { return }
 					viewModel.select(name: sel)
 				}
 			}

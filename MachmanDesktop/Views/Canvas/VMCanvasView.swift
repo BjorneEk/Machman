@@ -90,11 +90,17 @@ struct VMCanvasView: View {
 	}
 
 	// A canvas with nothing open shows the config tab (fresh VM; reopenable if closed) —
-	// unless a torn-off window already holds it (single mount).
+	// unless a torn-off window already holds it (single mount). Deferred: this runs from
+	// onAppear, and publishing store changes mid-view-update is undefined behavior.
 	private func ensureConfigTab() {
-		if canvases.canvas(for: vm.name).allOpenTabs.isEmpty,
-			!TornTabRegistry.shared.isOpen(vm: vm.name, tab: .config) {
-			mutate { $0.open(.config) }
+		let name = vm.name
+		DispatchQueue.main.async { [weak canvases] in
+			guard let canvases,
+				canvases.canvas(for: name).allOpenTabs.isEmpty,
+				!TornTabRegistry.shared.isOpen(vm: name, tab: .config) else { return }
+			var canvas = canvases.canvas(for: name)
+			canvas.open(.config)
+			canvases.setCanvas(canvas, for: name)
 		}
 	}
 
@@ -155,13 +161,11 @@ struct VMCanvasView: View {
 			paneContent(pane)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 		}
-		.background(GeometryReader { geo in
-			Color.clear
-				.onAppear { paneFrames[pane.id] = geo.frame(in: .named("machman-canvas")) }
-				.onChange(of: geo.frame(in: .named("machman-canvas"))) {
-					paneFrames[pane.id] = geo.frame(in: .named("machman-canvas"))
-				}
-		})
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .named("machman-canvas"))
+		} action: { frame in
+			paneFrames[pane.id] = frame
+		}
 	}
 
 	private func paneStrip(_ pane: CanvasPane, canvas: CanvasState) -> some View {
@@ -198,13 +202,11 @@ struct VMCanvasView: View {
 		}
 		.frame(height: theme.metrics.tabStripHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.background(GeometryReader { geo in
-			Color.clear
-				.onAppear { stripFrames[pane.id] = geo.frame(in: .named("machman-canvas")) }
-				.onChange(of: geo.frame(in: .named("machman-canvas"))) {
-					stripFrames[pane.id] = geo.frame(in: .named("machman-canvas"))
-				}
-		})
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .named("machman-canvas"))
+		} action: { frame in
+			stripFrames[pane.id] = frame
+		}
 		.background {
 			if theme.tabStyle == .rectangular {
 				Rectangle().fill(.thinMaterial)
@@ -553,13 +555,11 @@ private struct CanvasTabItem: View {
 		.offset(dragOffset)
 		.zIndex(dragging ? 5 : 0)
 		.onHover { hovering = $0 }
-		.background(GeometryReader { geo in
-			Color.clear
-				.onAppear { reportFrame(geo.frame(in: .named("machman-canvas"))) }
-				.onChange(of: geo.frame(in: .named("machman-canvas"))) {
-					reportFrame(geo.frame(in: .named("machman-canvas")))
-				}
-		})
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .named("machman-canvas"))
+		} action: { frame in
+			reportFrame(frame)
+		}
 		.onTapGesture { onSelect() }
 		.gesture(
 			DragGesture(minimumDistance: 5, coordinateSpace: .named("machman-canvas"))

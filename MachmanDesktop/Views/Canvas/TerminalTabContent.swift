@@ -38,10 +38,15 @@ struct TerminalTabContent: View {
 				}
 			}
 			.onAppear {
-				sessions.ensureController(
-					vm: vm.name, ref: ref, socketPath: socket,
-					profile: profiles.profile(vm: vm.name, ref: ref),
-					stillWanted: stillWanted)
+				// Deferred: reconnecting an existing controller flips its @Published
+				// `connected` — publishing mid-view-update warns.
+				let vmName = vm.name
+				let profile = profiles.profile(vm: vmName, ref: ref)
+				DispatchQueue.main.async { [weak sessions] in
+					sessions?.ensureController(
+						vm: vmName, ref: ref, socketPath: socket,
+						profile: profile, stillWanted: stillWanted)
+				}
 			}
 		} else {
 			VStack(spacing: 8) {

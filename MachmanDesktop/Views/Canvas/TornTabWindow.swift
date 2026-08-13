@@ -71,7 +71,10 @@ struct TornTabWindowView: View {
 			}
 		}
 		.onAppear {
-			TornTabRegistry.shared.open.insert(payload)
+			// Deferred: the registry is @Published; inserting mid-view-update warns.
+			DispatchQueue.main.async {
+				TornTabRegistry.shared.open.insert(payload)
+			}
 		}
 		// The OUTER view disappears only when the window closes (branch flips inside keep
 		// it mounted) — closing the window closes the tab, tearing down its terminal.
