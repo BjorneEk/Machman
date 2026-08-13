@@ -202,6 +202,30 @@ public final class RemoteMachman: MachmanControlling {
 			expecting: VMInfo.self)
 	}
 
+	public func renameDisk(vm name: String, diskID: String, newName: String) async throws
+		-> VMInfo {
+		try await connection.call(
+			.diskRename,
+			RPCParams.RenameDisk(name: name, diskID: diskID, newName: newName),
+			expecting: VMInfo.self)
+	}
+
+	public func setMountTag(vm name: String, mountID: String, tag: String) async throws
+		-> VMInfo {
+		try await connection.call(
+			.mountSetTag,
+			RPCParams.SetMountTag(name: name, mountID: mountID, tag: tag),
+			expecting: VMInfo.self)
+	}
+
+	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
+		-> VMInfo {
+		try await connection.call(
+			.kernelRename,
+			RPCParams.RenameKernel(name: name, path: path, tag: tag),
+			expecting: VMInfo.self)
+	}
+
 	public func operations() async throws -> [OperationInfo] {
 		try await connection.call(
 			.hostOperations, RPCEmpty?.none, expecting: [OperationInfo].self)

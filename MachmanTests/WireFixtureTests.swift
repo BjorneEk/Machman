@@ -399,6 +399,15 @@ struct WireFixtureTests {
 		#expect(try encode(RPCParams.ResizeDisk(
 			name: "Debian", diskID: "d", sizeBytes: 2048))
 			== #"{"diskID":"d","name":"Debian","sizeBytes":2048}"#)
+		#expect(try encode(RPCParams.RenameDisk(
+			name: "Debian", diskID: "storage:disk", newName: "root"))
+			== #"{"diskID":"storage:disk","name":"Debian","newName":"root"}"#)
+		#expect(try encode(RPCParams.SetMountTag(
+			name: "Debian", mountID: "m1", tag: "shared"))
+			== #"{"mountID":"m1","name":"Debian","tag":"shared"}"#)
+		#expect(try encode(RPCParams.RenameKernel(
+			name: "Debian", path: "/k/kernel/old/Image", tag: "new"))
+			== #"{"name":"Debian","path":"/k/kernel/old/Image","tag":"new"}"#)
 		#expect(try encode(RPCParams.CancelOperation(id: "op-1")) == #"{"id":"op-1"}"#)
 	}
 }

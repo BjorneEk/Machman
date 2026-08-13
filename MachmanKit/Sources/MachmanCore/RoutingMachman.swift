@@ -558,6 +558,23 @@ public final class RoutingMachman: MachmanControlling {
 		try refuseWhileHosted(name, "resizing its disks")
 		return try await local.resizeDisk(vm: name, diskID: diskID, sizeBytes: sizeBytes)
 	}
+	public func renameDisk(vm name: String, diskID: String, newName: String) async throws
+		-> VMInfo {
+		// Moving the raw file under a live VZ attachment is unsafe — stop first.
+		try refuseWhileHosted(name, "renaming its disks")
+		return try await local.renameDisk(vm: name, diskID: diskID, newName: newName)
+	}
+	public func setMountTag(vm name: String, mountID: String, tag: String) async throws
+		-> VMInfo {
+		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
+		try await target(name).setMountTag(vm: name, mountID: mountID, tag: tag)
+	}
+	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
+		-> VMInfo {
+		// The hosted VM's config references the old path — stop first.
+		try refuseWhileHosted(name, "renaming its kernel files")
+		return try await local.renameKernelFile(vm: name, path: path, tag: tag)
+	}
 
 	// MARK: - Operations (1.0.4)
 

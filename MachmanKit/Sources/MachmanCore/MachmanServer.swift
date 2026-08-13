@@ -265,6 +265,18 @@ public final class MachmanServer {
 				let p: RPCParams.ResizeDisk = try params(line)
 				reply(client, id, try await api.resizeDisk(
 					vm: p.name, diskID: p.diskID, sizeBytes: p.sizeBytes))
+			case .diskRename:
+				let p: RPCParams.RenameDisk = try params(line)
+				reply(client, id, try await api.renameDisk(
+					vm: p.name, diskID: p.diskID, newName: p.newName))
+			case .mountSetTag:
+				let p: RPCParams.SetMountTag = try params(line)
+				reply(client, id, try await api.setMountTag(
+					vm: p.name, mountID: p.mountID, tag: p.tag))
+			case .kernelRename:
+				let p: RPCParams.RenameKernel = try params(line)
+				reply(client, id, try await api.renameKernelFile(
+					vm: p.name, path: p.path, tag: p.tag))
 			case .hostOperations:
 				reply(client, id, try await api.operations())
 			case .operationCancel:

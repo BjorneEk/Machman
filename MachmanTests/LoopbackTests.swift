@@ -141,6 +141,30 @@ final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		return vm
 	}
+	func renameDisk(vm name: String, diskID: String, newName: String) async throws -> VMInfo {
+		var vm = try get(name)
+		guard let index = vm.disks.firstIndex(where: { $0.id == diskID }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
+		}
+		vm.disks[index].name = newName
+		vm.disks[index].id = "storage:\(newName)"
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func setMountTag(vm name: String, mountID: String, tag: String) async throws -> VMInfo {
+		var vm = try get(name)
+		guard let index = vm.mounts.firstIndex(where: { $0.id == mountID }) else {
+			throw MachmanError(code: .notFound, message: "no mount '\(mountID)' on \(name)")
+		}
+		vm.mounts[index].tag = tag
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func renameKernelFile(vm name: String, path: String, tag: String) async throws -> VMInfo {
+		try get(name)
+	}
 	var ops: [OperationInfo] = []
 	func operations() async throws -> [OperationInfo] { ops }
 	func cancelOperation(id: String) async throws {

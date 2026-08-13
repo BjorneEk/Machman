@@ -52,6 +52,10 @@ public enum RPCMethod: String, Sendable {
 	case setEnabled = "vm.setEnabled"
 	case kernelSetOverride = "vm.kernel.setOverride"
 	case diskResize = "vm.disk.resize"
+	// 1.0.4 additive: entity renames (owned storage disks, mount tags, kernel tags).
+	case diskRename = "vm.disk.rename"
+	case mountSetTag = "vm.mount.setTag"
+	case kernelRename = "vm.kernel.rename"
 	case hostOperations = "host.operations"
 	case operationCancel = "op.cancel"
 	case installRosetta = "host.installRosetta"
@@ -377,6 +381,47 @@ public enum RPCParams {
 			self.name = name
 			self.diskID = diskID
 			self.sizeBytes = sizeBytes
+		}
+	}
+
+	// vm.disk.rename: rename an owned storage disk (its backing file moves; the disk id is
+	// name-derived, so it changes).
+	public struct RenameDisk: Codable, Equatable, Sendable {
+		public var name: String
+		public var diskID: String
+		public var newName: String
+
+		public init(name: String, diskID: String, newName: String) {
+			self.name = name
+			self.diskID = diskID
+			self.newName = newName
+		}
+	}
+
+	// vm.mount.setTag: change a mount's guest tag (next-boot effect, like other mount edits).
+	public struct SetMountTag: Codable, Equatable, Sendable {
+		public var name: String
+		public var mountID: String
+		public var tag: String
+
+		public init(name: String, mountID: String, tag: String) {
+			self.name = name
+			self.mountID = mountID
+			self.tag = tag
+		}
+	}
+
+	// vm.kernel.rename: re-tag an owned kernel/initramfs file (its path and override key
+	// migrate with it).
+	public struct RenameKernel: Codable, Equatable, Sendable {
+		public var name: String
+		public var path: String
+		public var tag: String
+
+		public init(name: String, path: String, tag: String) {
+			self.name = name
+			self.path = path
+			self.tag = tag
 		}
 	}
 

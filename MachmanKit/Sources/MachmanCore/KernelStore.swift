@@ -101,6 +101,43 @@ enum KernelStore {
 		return dest
 	}
 
+	// Move an owned file to a new tag: <role>/<oldTag>/<file> → <role>/<newTag>/<file>,
+	// dropping the old tag dir if it emptied. Returns the new path. Legacy-layout files
+	// (no role level) refuse — re-import gives them the current layout.
+	static func rename(path: String, kernelsDir: String, newTag: String) throws -> String {
+		let fm = FileManager.default
+		guard isOwned(path, kernelsDir: kernelsDir) else {
+			throw MachmanError(
+				code: .invalidArgument, message: "'\(path)' is not an owned kernel file")
+		}
+		let rel = path.dropFirst(kernelsDir.count + 1).split(separator: "/").map(String.init)
+		guard rel.count == 3,
+			rel[0] == KernelRole.kernel.rawValue || rel[0] == KernelRole.initramfs.rawValue
+		else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "legacy-layout kernel file — re-import it to rename")
+		}
+		let trimmed = newTag.trimmingCharacters(in: .whitespaces)
+		guard !trimmed.isEmpty, !trimmed.contains("/") else {
+			throw MachmanError(code: .invalidArgument, message: "invalid tag '\(newTag)'")
+		}
+		guard trimmed != rel[1] else { return path }
+		let newDir = kernelsDir + "/" + rel[0] + "/" + trimmed
+		let newPath = newDir + "/" + rel[2]
+		guard !fm.fileExists(atPath: newPath) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "'\(trimmed)/\(rel[2])' already exists")
+		}
+		try fm.createDirectory(atPath: newDir, withIntermediateDirectories: true)
+		try fm.moveItem(atPath: path, toPath: newPath)
+		let oldDir = kernelsDir + "/" + rel[0] + "/" + rel[1]
+		if let leftovers = try? fm.contentsOfDirectory(atPath: oldDir), leftovers.isEmpty {
+			try? fm.removeItem(atPath: oldDir)
+		}
+		return newPath
+	}
+
 	// Remove an owned file (and its now-empty tag dir). Refuses paths outside the kernels dir.
 	static func delete(path: String, kernelsDir: String) throws {
 		guard isOwned(path, kernelsDir: kernelsDir) else {

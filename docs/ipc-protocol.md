@@ -89,6 +89,9 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.setEnabled` | `{name, disks?: {id: bool}, mounts?: {id: bool}, console?: {"<index>": bool}, uart?: {"<index>": bool}}` | `{}` (1.0.4+; `vm.setSafety` twin — unknown ids/indices refuse the whole batch; disabling a serial port renumbers later guest names, same as removing it) |
 | `vm.kernel.setOverride` | `{name, path, commandLine?, overrideEnabled?}` | `VMInfo` (1.0.4+; per-owned-kernel-file cmdline override — replaces the VM command line while that file is active and the override is enabled; nil fields unchanged; dropped when the file is deleted) |
 | `vm.disk.resize` | `{name, diskID, sizeBytes}` | `VMInfo` (1.0.4+; grow-only, owned storage disks, refused while running) |
+| `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; refused while running) |
+| `vm.mount.setTag` | `{name, mountID, tag}` | `VMInfo` (1.0.4+; next-boot effect, tag must be unique on the VM) |
+| `vm.kernel.rename` | `{name, path, tag}` | `VMInfo` (1.0.4+; owned kernel/initramfs files — the file moves to the new tag dir, kernel-boot references and the command-line override migrate; refused while running) |
 | `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |

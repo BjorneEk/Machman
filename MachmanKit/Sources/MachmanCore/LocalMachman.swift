@@ -392,6 +392,38 @@ public final class LocalMachman: MachmanControlling {
 		return info(for: vm)
 	}
 
+	public func renameDisk(vm name: String, diskID: String, newName: String)
+		async throws -> VMInfo {
+		let vm = try lookup(name)
+		guard !vm.state.isRunning else {
+			throw MachmanError(
+				code: .invalidState, message: "stop \(name) before renaming its disks")
+		}
+		try vm.config.renameStorageDisk(id: diskID, to: newName)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func setMountTag(vm name: String, mountID: String, tag: String)
+		async throws -> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.setMountTag(id: mountID, tag: tag)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func renameKernelFile(vm name: String, path: String, tag: String)
+		async throws -> VMInfo {
+		let vm = try lookup(name)
+		guard !vm.state.isRunning else {
+			throw MachmanError(
+				code: .invalidState, message: "stop \(name) before renaming its kernel files")
+		}
+		try vm.config.renameKernelFile(path: path, to: tag)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
 		let vm = try lookup(name)
 		let kernelsDir = vm.config.kernelsDirPath()

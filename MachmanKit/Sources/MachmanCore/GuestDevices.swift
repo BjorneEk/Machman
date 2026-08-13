@@ -174,6 +174,86 @@ extension VMConfig {
 
 	// MARK: - Disk resize (vm.disk.resize) — grow-only, owned storage only.
 
+	// Rename an owned storage disk: moves the backing file and rewrites the disk entry
+	// (the disk's id is derived from the name, so callers re-resolve after this).
+	func renameStorageDisk(id: String, to newName: String) throws {
+		guard let index = disks.firstIndex(where: { $0.id == id }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+		}
+		guard case .storage(let oldName, let size) = disks[index].kind else {
+			throw MachmanError(
+				code: .invalidArgument, message: "only owned storage disks can be renamed")
+		}
+		let trimmed = newName.trimmingCharacters(in: .whitespaces)
+		guard !trimmed.isEmpty, !trimmed.contains("/") else {
+			throw MachmanError(code: .invalidArgument, message: "invalid disk name '\(newName)'")
+		}
+		guard trimmed != oldName else { return }
+		guard !disks.contains(where: { $0.id == "storage:\(trimmed)" }) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a disk named '\(trimmed)' already exists")
+		}
+		let oldPath = configFilePath(file: "\(oldName).raw")
+		let newPath = configFilePath(file: "\(trimmed).raw")
+		guard !FileManager.default.fileExists(atPath: newPath) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a file named '\(trimmed).raw' already exists")
+		}
+		try FileManager.default.moveItem(atPath: oldPath, toPath: newPath)
+		disks[index].kind = .storage(trimmed, size)
+		try saveVMConfig()
+	}
+
+	// Change a mount's guest tag (what the guest passes to mount -t virtiofs).
+	func setMountTag(id: String, tag: String) throws {
+		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
+			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+		}
+		let trimmed = tag.trimmingCharacters(in: .whitespaces)
+		guard !trimmed.isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
+		}
+		guard mountPoints[index].tag != trimmed else { return }
+		guard !mountPoints.contains(where: { $0.tag == trimmed }) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a mount tagged '\(trimmed)' already exists")
+		}
+		mountPoints[index].tag = trimmed
+		try saveVMConfig()
+	}
+
+	// Re-tag an owned kernel/initramfs file: moves it on disk and migrates the kernel-boot
+	// references and the per-file override to the new path/key. Returns the new path.
+	@discardableResult
+	func renameKernelFile(path: String, to newTag: String) throws -> String {
+		let kernelsDir = kernelsDirPath()
+		let rel = path.dropFirst(kernelsDir.count + 1).split(separator: "/").map(String.init)
+		let newPath = try KernelStore.rename(path: path, kernelsDir: kernelsDir, newTag: newTag)
+		guard newPath != path else { return path }
+		if var settings = kernelSettings {
+			var changed = false
+			if settings.kernelPath == path {
+				settings.kernelPath = newPath
+				changed = true
+			}
+			if settings.initialRamdiskPath == path {
+				settings.initialRamdiskPath = newPath
+				changed = true
+			}
+			if changed { kernelSettings = settings }
+		}
+		// Migrate the override under its new identity (key = role/tag/fileName).
+		if rel.count == 3 {
+			let oldKey = "\(rel[0])/\(rel[1])/\(rel[2])"
+			let newKey = "\(rel[0])/\(newTag.trimmingCharacters(in: .whitespaces))/\(rel[2])"
+			if let value = kernelOverrides.removeValue(forKey: oldKey) {
+				kernelOverrides[newKey] = value
+			}
+		}
+		try saveVMConfig()
+		return newPath
+	}
+
 	func growStorageDisk(id: String, to newSize: UInt64) throws {
 		guard let index = disks.firstIndex(where: { $0.id == id }) else {
 			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")

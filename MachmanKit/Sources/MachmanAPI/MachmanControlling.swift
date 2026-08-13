@@ -78,6 +78,14 @@ public protocol MachmanControlling: AnyObject {
 	) async throws -> VMInfo
 	// Grow an owned storage disk (shrink refuses); refused while the VM runs.
 	func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws -> VMInfo
+	// Rename an owned storage disk (backing file moves, so the name-derived id changes);
+	// refused while the VM runs.
+	func renameDisk(vm name: String, diskID: String, newName: String) async throws -> VMInfo
+	// Change a mount's guest tag (next-boot effect, like other mount edits).
+	func setMountTag(vm name: String, mountID: String, tag: String) async throws -> VMInfo
+	// Re-tag an owned kernel/initramfs file (path + override key migrate); refused while
+	// the VM runs.
+	func renameKernelFile(vm name: String, path: String, tag: String) async throws -> VMInfo
 
 	// MARK: Operations (1.0.4)
 	// Live long-running operations, for progress-card resync after reconnect (events have no
