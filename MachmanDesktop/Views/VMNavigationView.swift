@@ -72,6 +72,8 @@ struct VMNavigationView: View {
 			.safeAreaInset(edge: .bottom, spacing: 0) {
 				daemonFooter
 			}
+			// The tree needs room for entry names + badges; the system minimum is too tight.
+			.navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 420)
 		} detail: {
 			VMTabContainerView(
 				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
