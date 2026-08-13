@@ -180,6 +180,12 @@ struct VMInspector: View {
 						Text("macOS…").tag(BootInfo.Mode.macOS)
 					}
 					.disabled(viewModel.isInstalling(vm))
+					// Already in macOS mode but not installed (mac template, failed
+					// install): re-selecting macOS can't fire the picker, so the install
+					// needs its own way in.
+					if vm.boot.mode == .macOS && !viewModel.isInstalling(vm) {
+						Button("Install macOS…") { macSwitchSheet = true }
+					}
 				}
 				if vm.boot.mode != .macOS {
 					Toggle("Allow nested virtualization", isOn: nestedBinding)
