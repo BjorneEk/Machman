@@ -116,20 +116,29 @@ final class InstallSession {
 					vm: self.config.name, level: .message,
 					message: "macOS install finished for \(self.config.name)"))
 			} catch {
+				// A user cancel is a clean never-mind, not a failure — no error log/toast.
+				let ns = error as NSError
+				let cancelled = (error as? URLError)?.code == .cancelled
+					|| (ns.domain == NSCocoaErrorDomain && ns.code == NSUserCancelledError)
 				if case .macOS(let m) = self.config.boot,
 					case .failed(let msg) = m.installState {
 					self.phase = InstallPhase(kind: .failed, message: msg)
-				} else if (error as? URLError)?.code == .cancelled {
-					// download cancelled before any state change: clean never-mind
+				} else if cancelled {
 					self.phase = Self.phase(for: self.config.boot, hasActiveInstall: false)
 				} else {
 					self.phase = InstallPhase(
 						kind: .failed, message: error.localizedDescription)
 				}
-				// Log the full error: NSError domain/code (e.g. VZErrorDomain 10006) matter.
-				self.events.emit(.log(
-					vm: self.config.name, level: .error,
-					message: "macOS install failed: \(error)"))
+				if cancelled {
+					self.events.emit(.log(
+						vm: self.config.name, level: .message,
+						message: "macOS install cancelled"))
+				} else {
+					// Log the full error: NSError domain/code (VZErrorDomain 10006) matter.
+					self.events.emit(.log(
+						vm: self.config.name, level: .error,
+						message: "macOS install failed: \(error)"))
+				}
 			}
 			self.finishSession()
 		}
