@@ -6,6 +6,9 @@ import MachmanAPI
 // The serial data-plane bridge over bare pipes (no VZ): guest output tees to the log and
 // broadcasts to socket clients, a late client replays recent context, client input reaches the
 // guest, and a dead client can't stall the shared drain.
+// .serialized: these tests assert real socket/pipe timing with fixed sleeps — run in
+// parallel under host load they starve each other (deadClientDoesNotStopTheDrain flakes).
+@Suite(.serialized)
 struct SerialPortBridgeTests {
 
 	private func tempPath(_ tag: String, _ ext: String) -> String {
@@ -118,8 +121,12 @@ struct SerialPortBridgeTests {
 		Thread.sleep(forTimeInterval: 0.2)
 		close(dead)   // vanish; a broadcast write to it would raise SIGPIPE (ignored)
 
-		// A burst large enough that the drain writes to the dead fd before noticing EOF.
-		for _ in 0..<50 { env.guestOut.write(Data(String(repeating: "x", count: 512).utf8)) }
+		// A burst so the drain writes to the dead fd before noticing EOF — but SMALL enough
+		// to fit the live socket's send+receive buffers (~16 KB on macOS AF_UNIX): the
+		// broadcast is deliberately best-effort, so a burst bigger than the buffers gets its
+		// tail (the marker!) dropped whenever the drain outruns this test's reader. That made
+		// the old 25 KB burst fail on an idle machine and pass on a loaded one.
+		for _ in 0..<8 { env.guestOut.write(Data(String(repeating: "x", count: 512).utf8)) }
 		env.guestOut.write(Data("STILL_ALIVE\n".utf8))
 		#expect(recv(live, until: "STILL_ALIVE").contains("STILL_ALIVE"))
 	}
