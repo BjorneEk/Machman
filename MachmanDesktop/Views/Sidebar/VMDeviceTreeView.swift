@@ -296,6 +296,7 @@ struct VMDeviceTreeView: View {
 			}
 			Button("Properties") {
 				openTerminal(ref)
+				viewModel.treeSelection = [.serial(ref)]   // the inspector follows selection
 				viewModel.showInfoPanel = true
 			}
 			if let socket = port.socketPath {

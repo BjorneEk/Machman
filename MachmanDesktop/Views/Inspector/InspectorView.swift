@@ -3,10 +3,8 @@
 //  MachmanDesktop
 //
 //  The right-hand inspector (1.0.4 UI): per-selection grouped forms driven by the sidebar
-//  tree's selection. This file holds the router + the VM inspector; entity inspectors
-//  (disk, mount, serial, kernel, devices) land one by one — unrouted selections fall back
-//  to a quiet placeholder, and serial keeps the existing TerminalInfoPanel until its
-//  inspector absorbs it.
+//  tree's selection. This file holds the router + the VM inspector; entity inspectors live
+//  in their own files, and unrouted selections fall back to a quiet placeholder.
 //
 
 import SwiftUI
@@ -33,8 +31,7 @@ struct InspectorView: View {
 				case .mount(let id):
 					MountInspector(viewModel: viewModel, vm: vm, mountID: id)
 				case .serial(let ref):
-					// Interim: the real per-port panel until SerialInspector absorbs it.
-					TerminalInfoPanel(
+					SerialInspector(
 						vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
 						profiles: profiles)
 				default:
