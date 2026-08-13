@@ -2,10 +2,11 @@
 //  VMPreviewTabView.swift
 //  MachmanDesktop
 //
-//  The VM tab's content (1.0.4 UI): the live preview with a status caption — configuration
-//  moved wholly into the inspectors, so this tab is the machine's face, not a settings
-//  page. Headless VMs get the add-a-display hint; a running macOS install shows its phase
-//  banner here (the corner progress cards arrive with S7).
+//  The VM tab's content (1.0.4 UI, demo design): a centered rounded display block — live
+//  preview frames while running, spinner during transitions, a big start button while
+//  stopped — with the safe-run stroke + badge, and the status caption underneath.
+//  Configuration lives wholly in the inspectors. Headless VMs get the add-a-display hint;
+//  a running macOS install shows its phase banner here (corner cards arrive with S7).
 //
 
 import SwiftUI
@@ -15,21 +16,108 @@ import MachmanAPI
 struct VMPreviewTabView: View {
 	let vm: VMInfo
 	@ObservedObject var viewModel: VMListViewModel
+	// Re-render on each preview frame without churning the whole canvas.
+	@ObservedObject private var previews: PreviewStore
+	@Environment(\.machmanTheme) private var theme
+
+	init(vm: VMInfo, viewModel: VMListViewModel) {
+		self.vm = vm
+		self.viewModel = viewModel
+		self.previews = viewModel.previewImages
+	}
 
 	var body: some View {
-		VStack(spacing: 10) {
-			installBanner
+		Group {
 			if vm.hasEnabledGraphics {
-				PreviewView(viewModel: viewModel, previews: viewModel.previewImages)
-					.frame(maxWidth: 720)
-					.padding(.horizontal, 24)
-				caption
+				VStack(spacing: 10) {
+					installBanner
+					displayBlock
+						.aspectRatio(16.0 / 10.0, contentMode: .fit)
+						.frame(maxWidth: 720)
+						.padding(.horizontal, 24)
+					caption
+				}
 			} else {
-				noDisplayPlaceholder
+				VStack(spacing: 10) {
+					installBanner
+					noDisplayPlaceholder
+				}
 			}
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.padding(.vertical, 16)
+	}
+
+	// MARK: - Display block (demo design)
+
+	private var displayBlock: some View {
+		let shape = RoundedRectangle(cornerRadius: theme.metrics.radiusL, style: .continuous)
+		return ZStack {
+			Color.black
+			switch vm.state {
+			case .running, .paused:
+				if let image = previews.images[vm.name] {
+					Image(nsImage: image)
+						.resizable()
+						.scaledToFit()
+				} else {
+					VStack(spacing: 10) {
+						ProgressView().controlSize(.regular).tint(.white)
+						Text("Waiting for the first frame…")
+							.font(.callout).foregroundStyle(.gray)
+					}
+				}
+			case .starting:
+				VStack(spacing: 10) {
+					ProgressView().controlSize(.regular).tint(.white)
+					Text("Starting…").font(.callout).foregroundStyle(.gray)
+				}
+			case .stopping:
+				VStack(spacing: 10) {
+					ProgressView().controlSize(.regular).tint(.white)
+					Text("Shutting down…").font(.callout).foregroundStyle(.gray)
+				}
+			case .stopped, .error, .unknown:
+				VStack(spacing: 12) {
+					Button {
+						viewModel.startPolicyDriven(vm)
+					} label: {
+						Image(systemName: MachmanSymbols.start)
+							.font(.system(size: 34, weight: .bold))
+							.foregroundStyle(.white)
+							.padding(22)
+							.background(Circle().fill(.white.opacity(0.14)))
+					}
+					.buttonStyle(.plain)
+					.machmanHoverable(radius: 40, scales: true)
+					.disabled(viewModel.isInstalling(vm))
+					.help("Start \(vm.name)")
+					Text("VM is stopped").font(.callout).foregroundStyle(.gray)
+				}
+			}
+		}
+		.clipShape(shape)
+		.overlay {
+			shape.strokeBorder(
+				vm.safeRun == true
+					? MachmanColors.safeMode.opacity(0.8) : Color.white.opacity(0.12),
+				lineWidth: vm.safeRun == true ? 2 : 1)
+		}
+		.overlay(alignment: .bottomTrailing) {
+			if vm.safeRun == true {
+				HStack(spacing: 4) {
+					SafeBadge(compact: true)
+					Text("Safe run")
+						.font(.system(size: 10, weight: .semibold))
+						.foregroundStyle(MachmanColors.safeMode)
+				}
+				.padding(.horizontal, 8)
+				.padding(.vertical, 4)
+				.background(Capsule().fill(.black.opacity(0.5)))
+				.padding(10)
+			}
+		}
+		.shadow(color: .black.opacity(0.35), radius: 16, y: 8)
 	}
 
 	private var caption: some View {
@@ -38,7 +126,6 @@ struct VMPreviewTabView: View {
 			Text(String(describing: vm.state))
 				.font(.callout)
 				.foregroundStyle(.secondary)
-			if vm.safeRun == true { SafeBadge(compact: true) }
 			Text("·").foregroundStyle(.tertiary)
 			BootBadge(mode: vm.boot.mode, size: 10)
 		}
@@ -63,7 +150,6 @@ struct VMPreviewTabView: View {
 			.buttonStyle(MachmanButtonStyle())
 			.padding(.top, 4)
 		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity)
 	}
 
 	// The macOS install's live phase, shown by the machine it concerns. Failure and
