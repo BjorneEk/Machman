@@ -747,6 +747,32 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Select/deselect an active kernel or initramfs file by rewiring the kernel-boot draft
+	// (the settings survive as a draft even while the mode is EFI — never toggles the mode).
+	func setActiveKernelFile(_ vm: VMInfo, role: KernelRole, path: String?) {
+		var settings = vm.boot.kernel
+			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		switch role {
+		case .kernel: settings.kernelPath = path ?? ""
+		case .initramfs: settings.initrdPath = path
+		}
+		updateKernelSettings(vm.name, settings)
+	}
+
+	func setKernelOverride(
+		_ name: String, path: String, commandLine: String? = nil, overrideEnabled: Bool? = nil
+	) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.setKernelOverride(
+					vm: name, path: path, commandLine: commandLine,
+					overrideEnabled: overrideEnabled)
+			} catch {
+				self?.present(error, while: "Updating the kernel override")
+			}
+		}
+	}
+
 	func updateKernelSettings(_ name: String, _ settings: KernelSettings) {
 		Task { [weak self] in
 			do {

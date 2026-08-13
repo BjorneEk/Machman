@@ -24,6 +24,12 @@ struct InspectorView: View {
 				MultiSelectionInspector(viewModel: viewModel, vm: vm)
 			} else {
 				switch viewModel.treeSelection.first {
+				case .group("Kernel"):
+					KernelParentInspector(viewModel: viewModel, vm: vm)
+				case .kernel(let path):
+					KernelEntryInspector(viewModel: viewModel, vm: vm, path: path)
+				case .initramfs(let path):
+					InitramfsEntryInspector(viewModel: viewModel, vm: vm, path: path)
 				case .vmRoot, nil, .group:
 					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
 				case .disk(let id):

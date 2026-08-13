@@ -519,16 +519,8 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
-	// Select/deselect rewires the kernel-boot draft: the settings survive as a draft even
-	// while the mode is EFI, so this never toggles the boot mode itself.
 	private func setActiveKernelPath(_ path: String?, role: KernelRole) {
-		var settings = vm.boot.kernel
-			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
-		switch role {
-		case .kernel: settings.kernelPath = path ?? ""
-		case .initramfs: settings.initrdPath = path
-		}
-		viewModel.updateKernelSettings(vm.name, settings)
+		viewModel.setActiveKernelFile(vm, role: role, path: path)
 	}
 
 	// MARK: - Group scaffold
