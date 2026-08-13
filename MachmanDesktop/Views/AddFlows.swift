@@ -21,27 +21,56 @@ enum AddFlows {
 		panel.begin { response in
 			guard response == .OK, let url = panel.url else { return }
 			DispatchQueue.main.async {
-				let alert = NSAlert()
-				alert.messageText = "Add \(url.lastPathComponent)"
-				alert.informativeText = "Copy it into the VM (the VM owns an independent "
-					+ "copy that travels with it), or reference the original file in place?"
-				alert.addButton(withTitle: "Copy into VM")
-				alert.addButton(withTitle: "Reference")
-				alert.addButton(withTitle: "Cancel")
-				switch alert.runModal() {
-				case .alertFirstButtonReturn:
-					viewModel.importDisk(vm, path: url.path)
-				case .alertSecondButtonReturn:
-					if url.pathExtension.lowercased() == "iso" {
-						viewModel.addDisk(vm, .iso(path: url.path))
-					} else {
-						viewModel.addDisk(vm, .image(path: url.path))
-					}
-				default:
-					break
-				}
+				askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, url: url)
 			}
 		}
+	}
+
+	// The copy-or-reference question every disk-file entry point funnels through (picker,
+	// tree drop, paste).
+	static func askDiskReferenceOrCopy(viewModel: VMListViewModel, vm: String, url: URL) {
+		let alert = NSAlert()
+		alert.messageText = "Add \(url.lastPathComponent)"
+		alert.informativeText = "Copy it into the VM (the VM owns an independent "
+			+ "copy that travels with it), or reference the original file in place?"
+		alert.addButton(withTitle: "Copy into VM")
+		alert.addButton(withTitle: "Reference")
+		alert.addButton(withTitle: "Cancel")
+		switch alert.runModal() {
+		case .alertFirstButtonReturn:
+			viewModel.importDisk(vm, path: url.path)
+		case .alertSecondButtonReturn:
+			if url.pathExtension.lowercased() == "iso" {
+				viewModel.addDisk(vm, .iso(path: url.path))
+			} else {
+				viewModel.addDisk(vm, .image(path: url.path))
+			}
+		default:
+			break
+		}
+	}
+
+	// Shared Finder-drop / paste routing: folders become virtiofs mounts, files go through
+	// the copy-or-reference question.
+	static func handleFileURLs(_ urls: [URL], viewModel: VMListViewModel, vm: String) -> Bool {
+		guard !urls.isEmpty else { return false }
+		for url in urls {
+			var isDir: ObjCBool = false
+			FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+			if isDir.boolValue {
+				viewModel.addMount(vm, path: url.path, tag: url.lastPathComponent)
+			} else {
+				askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, url: url)
+			}
+		}
+		return true
+	}
+
+	// Paste = the same routing, fed from the general pasteboard's file URLs.
+	static func pasteboardFileURLs() -> [URL] {
+		NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: [
+			.urlReadingFileURLsOnly: true,
+		]) as? [URL] ?? []
 	}
 
 	// The guest mount tag defaults to the folder's name (editable in the mounts table).

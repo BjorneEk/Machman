@@ -62,6 +62,11 @@ struct VMDeviceTreeView: View {
 		.onChange(of: vm.name) {
 			treeSelection = []
 		}
+		// Finder drop anywhere on the tree: folders become mounts, files ask
+		// copy-or-reference (same funnel as the picker and paste).
+		.dropDestination(for: URL.self) { urls, _ in
+			AddFlows.handleFileURLs(urls, viewModel: viewModel, vm: vm.name)
+		}
 	}
 
 	// MARK: - Rows
@@ -87,6 +92,11 @@ struct VMDeviceTreeView: View {
 		.tag(SidebarNode.vmRoot)
 		.contextMenu {
 			Button("Rename") { renamingRoot = true }
+			Button("Paste") {
+				_ = AddFlows.handleFileURLs(
+					AddFlows.pasteboardFileURLs(), viewModel: viewModel, vm: vm.name)
+			}
+			.disabled(AddFlows.pasteboardFileURLs().isEmpty)
 			Divider()
 			Button("Delete VM…", role: .destructive) { viewModel.deleteVM(vm) }
 		}
