@@ -279,6 +279,99 @@ public enum RPCParams {
 			self.source = source
 		}
 	}
+
+	// vm.create: template picks the starting device set ("blank" | "default" | "mac");
+	// absent/nil keeps today's behavior (= "default"). Sent as params where the method
+	// previously took none — old daemons ignore params they never read.
+	public struct Create: Codable, Equatable, Sendable {
+		public var template: String?
+
+		public init(template: String?) {
+			self.template = template
+		}
+	}
+
+	// vm.device.add / vm.device.remove: one device per kind, addressed by kind.
+	public struct DeviceMutation: Codable, Equatable, Sendable {
+		public var name: String
+		public var kind: DeviceKind
+
+		public init(name: String, kind: DeviceKind) {
+			self.name = name
+			self.kind = kind
+		}
+	}
+
+	// vm.device.update: settings + enabled for an existing device (unavailable is ignored).
+	public struct DeviceUpdate: Codable, Equatable, Sendable {
+		public var name: String
+		public var device: DeviceInfo
+
+		public init(name: String, device: DeviceInfo) {
+			self.name = name
+			self.device = device
+		}
+	}
+
+	// vm.setEnabled: batch per-entity enabled flags (vm.setSafety twin — unknown ids/indices
+	// refuse the WHOLE batch). Serial ports are addressed by their index within the family,
+	// as STRING keys ("0", "1", …) — Codable would encode [Int: Bool] as a JSON array,
+	// which is not obvious JSON.
+	public struct SetEnabled: Codable, Equatable, Sendable {
+		public var name: String
+		public var disks: [String: Bool]?
+		public var mounts: [String: Bool]?
+		public var console: [String: Bool]?
+		public var uart: [String: Bool]?
+
+		public init(
+			name: String, disks: [String: Bool]? = nil, mounts: [String: Bool]? = nil,
+			console: [String: Bool]? = nil, uart: [String: Bool]? = nil
+		) {
+			self.name = name
+			self.disks = disks
+			self.mounts = mounts
+			self.console = console
+			self.uart = uart
+		}
+	}
+
+	// vm.kernel.setOverride: per-file command-line override for an owned kernel file.
+	public struct KernelOverride: Codable, Equatable, Sendable {
+		public var name: String
+		public var path: String
+		public var commandLine: String?
+		public var overrideEnabled: Bool?
+
+		public init(name: String, path: String, commandLine: String?, overrideEnabled: Bool?) {
+			self.name = name
+			self.path = path
+			self.commandLine = commandLine
+			self.overrideEnabled = overrideEnabled
+		}
+	}
+
+	// vm.disk.resize: grow an owned storage disk to sizeBytes (shrink refuses).
+	public struct ResizeDisk: Codable, Equatable, Sendable {
+		public var name: String
+		public var diskID: String
+		public var sizeBytes: UInt64
+
+		public init(name: String, diskID: String, sizeBytes: UInt64) {
+			self.name = name
+			self.diskID = diskID
+			self.sizeBytes = sizeBytes
+		}
+	}
+
+	// op.cancel: cancel a running operation by id.
+	public struct CancelOperation: Codable, Equatable, Sendable {
+		public var id: String
+
+		public init(id: String) {
+			self.id = id
+		}
+	}
 }
 
 public enum RPCResults {

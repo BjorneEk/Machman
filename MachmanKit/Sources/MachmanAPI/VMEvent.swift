@@ -16,6 +16,9 @@ public enum VMEvent: Sendable, Equatable {
 	case log(vm: String?, level: LogLevel, message: String)
 	// A copy of vm (the TARGET name) in flight: bytes done vs total. ETA is consumer math.
 	case copyProgress(vm: String, copiedBytes: UInt64, totalBytes: UInt64)
+	// A long-running operation changed (started, progressed, or reached a terminal state).
+	// Resync after reconnect via host.operations — events have no replay.
+	case operationChanged(op: OperationInfo)
 	case unknown(type: String)
 }
 
@@ -29,6 +32,7 @@ extension VMEvent: Codable {
 		case message
 		case copiedBytes
 		case totalBytes
+		case op
 	}
 
 	private enum Kind: String {
@@ -37,6 +41,7 @@ extension VMEvent: Codable {
 		case installPhaseChanged
 		case log
 		case copyProgress
+		case operationChanged
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -63,6 +68,8 @@ extension VMEvent: Codable {
 				vm: try c.decode(String.self, forKey: .vm),
 				copiedBytes: try c.decode(UInt64.self, forKey: .copiedBytes),
 				totalBytes: try c.decode(UInt64.self, forKey: .totalBytes))
+		case .operationChanged:
+			self = .operationChanged(op: try c.decode(OperationInfo.self, forKey: .op))
 		case nil:
 			self = .unknown(type: type)
 		}
@@ -91,6 +98,9 @@ extension VMEvent: Codable {
 			try c.encode(vm, forKey: .vm)
 			try c.encode(copiedBytes, forKey: .copiedBytes)
 			try c.encode(totalBytes, forKey: .totalBytes)
+		case .operationChanged(let op):
+			try c.encode(Kind.operationChanged.rawValue, forKey: .type)
+			try c.encode(op, forKey: .op)
 		case .unknown(let type):
 			try c.encode(type, forKey: .type)
 		}

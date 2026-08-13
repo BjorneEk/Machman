@@ -162,6 +162,10 @@ final class VMListViewModel: ObservableObject {
 				// transfer popup shows them.
 				transfers[vm] = TransferProgress(done: copied, total: total)
 			}
+		case .operationChanged:
+			// The operations UI (progress cards) lands with the desktop overhaul; until
+			// then the legacy copyProgress events above cover the same transfers.
+			break
 		case .unknown:
 			break
 		}

@@ -31,6 +31,11 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	// socketPath is present only while the VM runs.
 	public var consolePorts: [SerialPortInfo]?
 	public var uartPorts: [SerialPortInfo]?
+	// Guest devices (nil = older daemon; clients derive ImpliedDevices.kinds instead).
+	public var devices: [DeviceInfo]?
+	// Nested virtualization flag (EFI/kernel boots on supporting hardware; nil = older
+	// daemon / off).
+	public var nestedVirtualization: Bool?
 
 	public var id: String { name }
 
@@ -40,7 +45,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		boot: BootInfo, windowOpen: Bool = false,
 		startPolicy: StartPolicy? = nil, safeRun: Bool? = nil,
 		totalRuntimeSeconds: Double? = nil,
-		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil
+		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil,
+		devices: [DeviceInfo]? = nil, nestedVirtualization: Bool? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -58,6 +64,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.totalRuntimeSeconds = totalRuntimeSeconds
 		self.consolePorts = consolePorts
 		self.uartPorts = uartPorts
+		self.devices = devices
+		self.nestedVirtualization = nestedVirtualization
 	}
 
 	// Hand-written decode so payloads predating the optional fields (and clients that omit
@@ -81,6 +89,9 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 			try c.decodeIfPresent(Double.self, forKey: .totalRuntimeSeconds)
 		self.consolePorts = try c.decodeIfPresent([SerialPortInfo].self, forKey: .consolePorts)
 		self.uartPorts = try c.decodeIfPresent([SerialPortInfo].self, forKey: .uartPorts)
+		self.devices = try c.decodeIfPresent([DeviceInfo].self, forKey: .devices)
+		self.nestedVirtualization =
+			try c.decodeIfPresent(Bool.self, forKey: .nestedVirtualization)
 	}
 }
 
@@ -104,10 +115,13 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 	// an external reference vm.disk.promote can copy in. Optional so old daemons (nil)
 	// simply hide the promote affordance; nil is omitted on the wire.
 	public var owned: Bool?
+	// Disabled disks stay configured but are not attached at the next start. Tri-state:
+	// nil = enabled (and what older daemons report); nil is omitted on the wire.
+	public var enabled: Bool?
 
 	public init(
 		id: String, type: DiskType, name: String?, path: String?, sizeBytes: UInt64?,
-		safe: Bool = true, owned: Bool? = nil
+		safe: Bool = true, owned: Bool? = nil, enabled: Bool? = nil
 	) {
 		self.id = id
 		self.type = type
@@ -116,6 +130,7 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 		self.sizeBytes = sizeBytes
 		self.safe = safe
 		self.owned = owned
+		self.enabled = enabled
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -127,7 +142,11 @@ public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
 		self.sizeBytes = try c.decodeIfPresent(UInt64.self, forKey: .sizeBytes)
 		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 		self.owned = try c.decodeIfPresent(Bool.self, forKey: .owned)
+		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
 	}
+
+	// Effective attachment state: nil means enabled.
+	public var isEnabled: Bool { enabled ?? true }
 }
 
 public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
@@ -136,12 +155,16 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 	public var tag: String
 	// Safe-mode policy: true = a safe run omits this mount (default-true decode, see DiskInfo).
 	public var safe: Bool
+	// Disabled mounts are not shared at the next start. Tri-state, nil = enabled (DiskInfo
+	// pattern).
+	public var enabled: Bool?
 
-	public init(id: String, path: String, tag: String, safe: Bool = true) {
+	public init(id: String, path: String, tag: String, safe: Bool = true, enabled: Bool? = nil) {
 		self.id = id
 		self.path = path
 		self.tag = tag
 		self.safe = safe
+		self.enabled = enabled
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -150,7 +173,10 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 		self.path = try c.decode(String.self, forKey: .path)
 		self.tag = try c.decode(String.self, forKey: .tag)
 		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
+		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
 	}
+
+	public var isEnabled: Bool { enabled ?? true }
 }
 
 public struct BootInfo: Codable, Sendable, Equatable {
@@ -217,14 +243,25 @@ public struct OwnedKernelFile: Codable, Sendable, Equatable, Identifiable {
 	public var tag: String
 	public var fileName: String
 	public var path: String
+	// Per-file command-line override: when overrideEnabled == true and this kernel is the
+	// active one, overrideCommandLine replaces KernelSettings.commandLine at boot. Tri-state
+	// optionals (nil = none/off = what older daemons report); synthesized decode tolerates
+	// their absence.
+	public var overrideCommandLine: String?
+	public var overrideEnabled: Bool?
 
 	public var id: String { path }
 
-	public init(role: KernelRole, tag: String, fileName: String, path: String) {
+	public init(
+		role: KernelRole, tag: String, fileName: String, path: String,
+		overrideCommandLine: String? = nil, overrideEnabled: Bool? = nil
+	) {
 		self.role = role
 		self.tag = tag
 		self.fileName = fileName
 		self.path = path
+		self.overrideCommandLine = overrideCommandLine
+		self.overrideEnabled = overrideEnabled
 	}
 }
 

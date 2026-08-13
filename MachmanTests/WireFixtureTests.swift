@@ -219,4 +219,186 @@ struct WireFixtureTests {
 			safe: true, owned: false))
 			== #"{"id":"iso:x","owned":false,"path":"/x.iso","safe":true,"type":"iso"}"#)
 	}
+
+	// MARK: - 1.0.4: guest devices, enabled flags, operations
+
+	@Test func deviceInfoFixture() throws {
+		let graphics = DeviceInfo(
+			kind: .graphics, displayWidthPixels: 2560, displayHeightPixels: 1440,
+			displayPixelsPerInch: 80)
+		let expected = #"{"displayHeightPixels":1440,"displayPixelsPerInch":80,"#
+			+ #""displayWidthPixels":2560,"enabled":true,"kind":"graphics"}"#
+		#expect(try encode(graphics) == expected)
+		#expect(try decode(DeviceInfo.self, expected) == graphics)
+
+		// A minimal device omits every nil setting.
+		#expect(try encode(DeviceInfo(kind: .network))
+			== #"{"enabled":true,"kind":"network"}"#)
+		#expect(try encode(DeviceInfo(kind: .clipboard, sharesClipboard: false))
+			== #"{"enabled":true,"kind":"clipboard","sharesClipboard":false}"#)
+
+		// A host-gated device carries its reason (the serial-port shape, generalized).
+		let rosetta = DeviceInfo(
+			kind: .rosetta,
+			unavailable: UnavailabilityInfo(
+				reason: .notInstalled, message: "Rosetta is not installed."))
+		#expect(try encode(rosetta)
+			== #"{"enabled":true,"kind":"rosetta","unavailable":"#
+			+ #"{"message":"Rosetta is not installed.","reason":"notInstalled"}}"#)
+
+		// Unknown future kinds degrade to .unknown; absent enabled defaults to true.
+		#expect(try decode(DeviceInfo.self, #"{"enabled":true,"kind":"quantum"}"#).kind
+			== .unknown)
+		let legacy = try decode(DeviceInfo.self, #"{"kind":"entropy"}"#)
+		#expect(legacy.kind == .entropy)
+		#expect(legacy.enabled)
+	}
+
+	@Test func vmInfoDevicesRoundTrip() throws {
+		var info = VMInfo(
+			name: "Debian", state: .stopped,
+			created: Date(timeIntervalSince1970: 1_700_000_000), lastRan: nil,
+			cpuCount: 2, memoryBytes: 1024, macAddress: nil, disks: [], mounts: [],
+			boot: BootInfo(
+				mode: .efi, kernel: nil, macInstallState: nil,
+				minCPUCount: nil, minMemoryBytes: nil))
+		info.devices = [DeviceInfo(kind: .keyboard), DeviceInfo(kind: .graphics)]
+		info.nestedVirtualization = true
+		let encoded = try encode(info)
+		#expect(encoded.contains(
+			#""devices":[{"enabled":true,"kind":"keyboard"},{"enabled":true,"kind":"graphics"}]"#))
+		#expect(encoded.contains(#""nestedVirtualization":true"#))
+		#expect(try decode(VMInfo.self, encoded) == info)
+
+		// Payloads from daemons predating devices still decode; the fields read nil.
+		let legacy = encoded
+			.replacingOccurrences(
+				of: #""devices":[{"enabled":true,"kind":"keyboard"},"#
+					+ #"{"enabled":true,"kind":"graphics"}],"#,
+				with: "")
+			.replacingOccurrences(of: #","nestedVirtualization":true"#, with: "")
+		let decoded = try decode(VMInfo.self, legacy)
+		#expect(decoded.devices == nil)
+		#expect(decoded.nestedVirtualization == nil)
+	}
+
+	@Test func enabledFlagsTriState() throws {
+		// enabled pins when set and is omitted when nil (all three entity kinds).
+		#expect(try encode(DiskInfo(
+			id: "d", type: .storage, name: "disk", path: nil, sizeBytes: nil,
+			enabled: false))
+			== #"{"enabled":false,"id":"d","name":"disk","safe":true,"type":"storage"}"#)
+		#expect(try encode(MountInfo(id: "m", path: "/x", tag: "t", enabled: false))
+			== #"{"enabled":false,"id":"m","path":"/x","safe":true,"tag":"t"}"#)
+		#expect(try encode(SerialPortInfo(
+			kind: .console, index: 0, guestDevice: "hvc0", logging: SerialLogConfig(),
+			enabled: false))
+			== #"{"enabled":false,"guestDevice":"hvc0","index":0,"kind":"console","#
+			+ #""logging":{"mode":"resetOnBoot"}}"#)
+		// Absent = enabled (old daemons): nil on the field, true through isEnabled.
+		let legacyDisk = try decode(DiskInfo.self,
+			#"{"id":"d","safe":true,"type":"storage"}"#)
+		#expect(legacyDisk.enabled == nil)
+		#expect(legacyDisk.isEnabled)
+	}
+
+	@Test func kernelOverrideRoundTrip() throws {
+		let file = OwnedKernelFile(
+			role: .kernel, tag: "janus", fileName: "vmlinuz", path: "/k/janus/vmlinuz",
+			overrideCommandLine: "console=hvc0 quiet", overrideEnabled: true)
+		let encoded = try encode(file)
+		#expect(encoded.contains(#""overrideCommandLine":"console=hvc0 quiet""#))
+		#expect(encoded.contains(#""overrideEnabled":true"#))
+		#expect(try decode(OwnedKernelFile.self, encoded) == file)
+		// Legacy payloads without the override fields keep decoding (nil).
+		let legacy = try decode(OwnedKernelFile.self,
+			#"{"fileName":"vmlinuz","path":"/k/janus/vmlinuz","role":"kernel","tag":"janus"}"#)
+		#expect(legacy.overrideCommandLine == nil)
+		#expect(legacy.overrideEnabled == nil)
+	}
+
+	@Test func operationFixtures() throws {
+		let op = OperationInfo(
+			id: "op-1", kind: OperationInfo.Kind.copyVM, vm: "Debian",
+			label: "Copying system.img", fraction: 0.25, completedBytes: 256,
+			totalBytes: 1024, startedAt: Date(timeIntervalSince1970: 1_700_000_000))
+		let expected = #"{"completedBytes":256,"fraction":0.25,"id":"op-1","kind":"copyVM","#
+			+ #""label":"Copying system.img","startedAt":"2023-11-14T22:13:20Z","#
+			+ #""state":"running","totalBytes":1024,"vm":"Debian"}"#
+		#expect(try encode(op) == expected)
+		#expect(try decode(OperationInfo.self, expected) == op)
+		#expect(!op.isFinished)
+
+		// The event wraps the operation under "op"; old clients see .unknown and ignore it.
+		let minimal = OperationInfo(
+			id: "op-2", kind: OperationInfo.Kind.rosettaInstall, label: "Installing Rosetta",
+			startedAt: Date(timeIntervalSince1970: 1_700_000_000))
+		let event = VMEvent.operationChanged(op: minimal)
+		let eventExpected = #"{"op":{"id":"op-2","kind":"rosettaInstall","#
+			+ #""label":"Installing Rosetta","startedAt":"2023-11-14T22:13:20Z","#
+			+ #""state":"running"},"type":"operationChanged"}"#
+		#expect(try encode(event) == eventExpected)
+		#expect(try decode(VMEvent.self, eventExpected) == event)
+
+		// Unknown kinds/states are open-set strings: they survive untouched.
+		let future = try decode(OperationInfo.self, expected
+			.replacingOccurrences(of: #""kind":"copyVM""#, with: #""kind":"teleport""#))
+		#expect(future.kind == "teleport")
+	}
+
+	@Test func hostCapabilitiesCompat() throws {
+		// Old-daemon payloads (base fields only) keep decoding; additions read nil.
+		let legacy = try decode(HostCapabilities.self,
+			#"{"freeDiskBytes":1,"maxCPUCount":8,"maxMemoryBytes":100,"minMemoryBytes":10}"#)
+		#expect(legacy.rosettaAvailability == nil)
+		#expect(legacy.uartUnavailable == nil)
+		#expect(legacy.nestedVirtualizationSupported == nil)
+
+		var caps = HostCapabilities(
+			maxCPUCount: 8, minMemoryBytes: 10, maxMemoryBytes: 100, freeDiskBytes: 1)
+		caps.nestedVirtualizationSupported = true
+		caps.rosettaAvailability = RosettaAvailability.installed
+		caps.hostDisplayWidthPixels = 3024
+		caps.hostDisplayHeightPixels = 1964
+		caps.maxSerialPorts = 10
+		caps.uartUnavailable = UnavailabilityInfo(
+			reason: .privateUARTGated, message: "UART unavailable.", sinceOSVersion: "26.6.1")
+		let encoded = try encode(caps)
+		#expect(encoded.contains(#""nestedVirtualizationSupported":true"#))
+		#expect(encoded.contains(#""rosettaAvailability":"installed""#))
+		#expect(encoded.contains(#""hostDisplayWidthPixels":3024"#))
+		#expect(encoded.contains(#""maxSerialPorts":10"#))
+		#expect(encoded.contains(#""uartUnavailable":{"message":"UART unavailable.","#))
+		#expect(try decode(HostCapabilities.self, encoded) == caps)
+	}
+
+	@Test func impliedDevices() throws {
+		let mac = ImpliedDevices.kinds(macGuest: true)
+		#expect(mac.contains(.trackpad))
+		#expect(!mac.contains(.clipboard))
+		let linux = ImpliedDevices.kinds(macGuest: false)
+		#expect(linux.contains(.clipboard))
+		#expect(!linux.contains(.trackpad))
+		#expect(!DeviceKind.allKinds.contains(.unknown))
+	}
+
+	@Test func newRequestShapes() throws {
+		#expect(try encode(RPCParams.Create(template: nil)) == "{}")
+		#expect(try encode(RPCParams.Create(template: "mac")) == #"{"template":"mac"}"#)
+		#expect(try encode(RPCParams.DeviceMutation(name: "Debian", kind: .entropy))
+			== #"{"kind":"entropy","name":"Debian"}"#)
+		#expect(try encode(RPCParams.DeviceUpdate(
+			name: "Debian", device: DeviceInfo(kind: .graphics, enabled: false)))
+			== #"{"device":{"enabled":false,"kind":"graphics"},"name":"Debian"}"#)
+		#expect(try encode(RPCParams.SetEnabled(
+			name: "Debian", disks: ["a": false], console: ["0": true]))
+			== #"{"console":{"0":true},"disks":{"a":false},"name":"Debian"}"#)
+		#expect(try encode(RPCParams.KernelOverride(
+			name: "Debian", path: "/k", commandLine: "quiet", overrideEnabled: true))
+			== #"{"commandLine":"quiet","name":"Debian","overrideEnabled":true,"path":"/k"}"#)
+		#expect(try encode(RPCParams.ResizeDisk(
+			name: "Debian", diskID: "d", sizeBytes: 2048))
+			== #"{"diskID":"d","name":"Debian","sizeBytes":2048}"#)
+		#expect(try encode(RPCParams.CancelOperation(id: "op-1")) == #"{"id":"op-1"}"#)
+	}
 }

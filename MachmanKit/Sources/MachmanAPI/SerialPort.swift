@@ -75,34 +75,10 @@ public enum SerialPortSupport {
 	}
 }
 
-// Why a configured serial port is present in the VM's config but cannot actually be attached on
-// this host — currently only uart ports, where the private PL011 device is gated (see
-// SerialPortSupport). nil means the port works here.
-public struct SerialPortUnavailability: Codable, Sendable, Equatable {
-	public enum Reason: String, Codable, Sendable, Equatable {
-		case privateUARTGated   // macOS >= SerialPortSupport.privateUARTGatedSince: entitlement gate
-		case classUnavailable   // the private serial class is absent from this runtime
-		case unknown            // forward-compat: an unrecognized future reason decodes to this
-	}
-
-	public var reason: Reason
-	public var message: String          // human-readable, ready to surface to a user
-	public var sinceOSVersion: String?  // the gate's macOS version, when the reason is version-based
-
-	public init(reason: Reason, message: String, sinceOSVersion: String? = nil) {
-		self.reason = reason
-		self.message = message
-		self.sinceOSVersion = sinceOSVersion
-	}
-
-	// Tolerant decode: an unrecognized future reason degrades to .unknown rather than failing.
-	public init(from decoder: Decoder) throws {
-		let c = try decoder.container(keyedBy: CodingKeys.self)
-		self.reason = Reason(rawValue: try c.decode(String.self, forKey: .reason)) ?? .unknown
-		self.message = try c.decode(String.self, forKey: .message)
-		self.sinceOSVersion = try c.decodeIfPresent(String.self, forKey: .sinceOSVersion)
-	}
-}
+// Why a configured serial port cannot actually be attached on this host. The struct was
+// generalized to UnavailabilityInfo (Devices.swift) for device-level gating too — same wire
+// shape, this name kept for source compatibility.
+public typealias SerialPortUnavailability = UnavailabilityInfo
 
 // A serial port as served over the API. Counts come from the array lengths in VMInfo. socketPath
 // is present only while the VM runs (the vmhost serves it); mmioBase/irq are present only for
@@ -118,13 +94,16 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 	public var mmioBase: String?          // uart only, from generated platform info
 	public var irq: Int?                  // uart only, from generated platform info
 	public var unavailable: SerialPortUnavailability?  // set when a configured port can't attach here
+	// Disabled ports stay configured but are not attached at the next start (guest names
+	// renumber, same as removal). Tri-state, nil = enabled (DiskInfo pattern).
+	public var enabled: Bool?
 
 	public var id: String { "\(kind.rawValue)\(index)" }
 
 	public init(
 		kind: SerialPortKind, index: Int, guestDevice: String, logging: SerialLogConfig,
 		socketPath: String? = nil, logPath: String? = nil, mmioBase: String? = nil,
-		irq: Int? = nil, unavailable: SerialPortUnavailability? = nil
+		irq: Int? = nil, unavailable: SerialPortUnavailability? = nil, enabled: Bool? = nil
 	) {
 		self.kind = kind
 		self.index = index
@@ -135,6 +114,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.mmioBase = mmioBase
 		self.irq = irq
 		self.unavailable = unavailable
+		self.enabled = enabled
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -149,5 +129,8 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.mmioBase = try c.decodeIfPresent(String.self, forKey: .mmioBase)
 		self.irq = try c.decodeIfPresent(Int.self, forKey: .irq)
 		self.unavailable = try c.decodeIfPresent(SerialPortUnavailability.self, forKey: .unavailable)
+		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
 	}
+
+	public var isEnabled: Bool { enabled ?? true }
 }
