@@ -1,0 +1,77 @@
+import Testing
+import Foundation
+import MachmanAPI
+import MachmanUI
+
+// Persistence of per-VM canvas layouts: round-trip through a fresh store, rename/remove
+// migration, and reconcile writing back the pruned layout.
+@MainActor
+struct CanvasStateStoreTests {
+
+	private let hvc0 = SerialPortRef(kind: .console, index: 0)
+	private let tty0 = SerialPortRef(kind: .uart, index: 0)
+
+	private func tempURL() -> URL {
+		FileManager.default.temporaryDirectory
+			.appendingPathComponent("canvas-store-\(UUID().uuidString).json")
+	}
+
+	@Test func roundTripThroughAFreshStore() throws {
+		let url = tempURL()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		canvas.split(.terminal(hvc0))
+		canvas.setFraction(0.3, at: 0)
+
+		let store = CanvasStateStore(fileURL: url)
+		// Unsaved VM: no entry, and the fallback is a fresh single-pane layout. (No equality
+		// against CanvasState() — every init mints new pane ids.)
+		#expect(store.canvases["debian"] == nil)
+		#expect(store.canvas(for: "debian").allOpenTabs.isEmpty)
+		store.setCanvas(canvas, for: "debian")
+		store.flush()
+
+		let reloaded = CanvasStateStore(fileURL: url)
+		#expect(reloaded.canvas(for: "debian") == canvas)
+	}
+
+	@Test func renameMigratesAndRemoveForgets() throws {
+		let url = tempURL()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var canvas = CanvasState()
+		canvas.open(.terminal(tty0))
+
+		let store = CanvasStateStore(fileURL: url)
+		store.setCanvas(canvas, for: "old")
+		store.renameVM(from: "old", to: "new")
+		#expect(store.canvases["old"] == nil)
+		#expect(store.canvas(for: "new") == canvas)
+		store.removeVM("new")
+		store.flush()
+
+		let reloaded = CanvasStateStore(fileURL: url)
+		#expect(reloaded.canvases.isEmpty)
+	}
+
+	@Test func reconcilePrunesAndPersists() throws {
+		let url = tempURL()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		canvas.open(.terminal(tty0))
+
+		let store = CanvasStateStore(fileURL: url)
+		store.setCanvas(canvas, for: "vm")
+		#expect(store.reconcile(vm: "missing", existing: []) == [])
+		let removed = store.reconcile(vm: "vm", existing: [hvc0])
+		#expect(removed == [tty0])
+		store.flush()
+
+		let reloaded = CanvasStateStore(fileURL: url)
+		let tabs = reloaded.canvas(for: "vm").allOpenTabs
+		#expect(tabs == [.config, .terminal(hvc0)])
+	}
+}
