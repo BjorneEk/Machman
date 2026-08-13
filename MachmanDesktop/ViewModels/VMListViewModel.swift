@@ -323,15 +323,6 @@ final class VMListViewModel: ObservableObject {
 
 	// MARK: - Preview
 
-	func preview() -> NSImage? {
-		selectedName.flatMap { previewImages.images[$0] }
-	}
-
-	func isLoading() -> Bool {
-		guard let vm = selected else { return false }
-		return vm.state.isRunning && preview() == nil
-	}
-
 	func onFocusEvent(focused: Bool) {
 		previews.setFocused(focused)
 	}

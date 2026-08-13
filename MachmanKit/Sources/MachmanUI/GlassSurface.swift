@@ -12,6 +12,7 @@ import SwiftUI
 
 public struct MachmanGlassSurface<S: InsettableShape>: ViewModifier {
 	@Environment(\.machmanTheme) private var theme
+	@Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 	private let shape: S
 	private let prominent: Bool
 	// Optional wash: real Liquid Glass tinting on macOS 26, a fill overlay on the fallback.
@@ -24,12 +25,21 @@ public struct MachmanGlassSurface<S: InsettableShape>: ViewModifier {
 	}
 
 	public func body(content: Content) -> some View {
-		if #available(macOS 26.0, *) {
+		if reduceTransparency {
+			solid(content: content)
+		} else if #available(macOS 26.0, *) {
 			let glass: Glass = prominent ? .regular.interactive() : .regular
 			content.glassEffect(tint.map { glass.tint($0) } ?? glass, in: shape)
 		} else {
 			legacy(content: content)
 		}
+	}
+
+	// Reduce Transparency: an opaque surface with a hairline instead of any blur.
+	private func solid(content: Content) -> some View {
+		content
+			.background(shape.fill(Color(nsColor: .windowBackgroundColor)))
+			.overlay(shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
 	}
 
 	private func legacy(content: Content) -> some View {
