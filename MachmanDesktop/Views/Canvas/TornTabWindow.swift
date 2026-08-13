@@ -22,6 +22,7 @@ struct TornTabWindowView: View {
 	@ObservedObject var connection: DaemonConnection
 	@ObservedObject var profiles: TerminalProfileStore
 	let payload: TornTab
+	@State private var showInspector = false
 
 	var body: some View {
 		Group {
@@ -39,12 +40,48 @@ struct TornTabWindowView: View {
 			}
 		}
 		.navigationTitle(title)
+		// The tab's own inspector rides along: the serial inspector for terminals, the VM
+		// inspector for the config/preview tab.
+		.inspector(isPresented: $showInspector) {
+			inspector
+				.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
+		}
+		.toolbar {
+			ToolbarItem(placement: .primaryAction) {
+				Button {
+					showInspector.toggle()
+				} label: {
+					Image(systemName: MachmanSymbols.inspectorToggle)
+				}
+				.help(showInspector ? "Hide Inspector" : "Show Inspector")
+			}
+		}
 		// The OUTER view disappears only when the window closes (branch flips inside keep
 		// it mounted) — closing the window closes the tab, tearing down its terminal.
 		.onDisappear {
 			if case .terminal(let ref) = payload.tab {
 				connection.terminals.dropController(vm: payload.vm, ref: ref)
 			}
+		}
+	}
+
+	@ViewBuilder
+	private var inspector: some View {
+		if let viewModel = connection.viewModel,
+			let vm = viewModel.vms.first(where: { $0.name == payload.vm }) {
+			Group {
+				switch payload.tab {
+				case .config:
+					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
+				case .terminal(let ref):
+					SerialInspector(
+						vm: vm, ref: ref, viewModel: viewModel,
+						sessions: connection.terminals, profiles: profiles)
+				}
+			}
+			.formStyle(.grouped)
+		} else {
+			NoSelectionInspector()
 		}
 	}
 
