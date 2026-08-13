@@ -14,8 +14,12 @@ struct SettingsRootView: View {
 
 	var body: some View {
 		TabView {
+			AppearanceSettingsView()
+				.tabItem { Label("Appearance", systemImage: MachmanSymbols.deviceGraphics) }
 			TerminalSettingsView(store: profiles)
 				.tabItem { Label("Terminal", systemImage: MachmanSymbols.tabTerminal) }
+			BehaviourSettingsView()
+				.tabItem { Label("Behaviour", systemImage: MachmanSymbols.tabConfig) }
 		}
 		.frame(width: 760, height: 560)
 	}
