@@ -96,9 +96,9 @@ struct AddPopover: View {
 					sectionHeader("Devices")
 					LazyVGrid(columns: columns, alignment: .leading, spacing: 2) {
 						ForEach(missing, id: \.self) { kind in
-							AddTile(symbol: Self.symbol(for: kind),
-								caption: Self.caption(for: kind),
-								tooltip: "Add \(Self.caption(for: kind))") {
+							AddTile(symbol: kind.displaySymbol,
+								caption: kind.displayLabel,
+								tooltip: "Add \(kind.displayLabel)") {
 								viewModel.addDevice(vm.name, kind: kind)
 								dismiss()
 							}
@@ -205,38 +205,6 @@ struct AddPopover: View {
 		Text(title)
 			.font(.system(size: 10, weight: .semibold))
 			.foregroundStyle(.secondary)
-	}
-
-	private static func symbol(for kind: DeviceKind) -> String {
-		switch kind {
-		case .graphics: return MachmanSymbols.deviceGraphics
-		case .keyboard: return MachmanSymbols.deviceKeyboard
-		case .trackpad: return MachmanSymbols.deviceTrackpad
-		case .pointer: return MachmanSymbols.devicePointer
-		case .audioInput: return MachmanSymbols.deviceAudioIn
-		case .audioOutput: return MachmanSymbols.deviceAudioOut
-		case .network: return MachmanSymbols.network
-		case .clipboard: return MachmanSymbols.deviceClipboard
-		case .entropy: return MachmanSymbols.deviceEntropy
-		case .rosetta: return MachmanSymbols.deviceRosetta
-		case .unknown: return MachmanSymbols.warning
-		}
-	}
-
-	private static func caption(for kind: DeviceKind) -> String {
-		switch kind {
-		case .graphics: return "Display"
-		case .keyboard: return "Keyboard"
-		case .trackpad: return "Trackpad"
-		case .pointer: return "Pointer"
-		case .audioInput: return "Mic"
-		case .audioOutput: return "Audio"
-		case .network: return "Network"
-		case .clipboard: return "Clipboard"
-		case .entropy: return "Entropy"
-		case .rosetta: return "Rosetta"
-		case .unknown: return "Unknown"
-		}
 	}
 }
 

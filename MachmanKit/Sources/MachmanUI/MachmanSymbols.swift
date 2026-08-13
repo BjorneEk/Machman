@@ -124,6 +124,7 @@ public enum MachmanSymbols {
 
 	// Guest devices (mirrors MachmanCore/VMDevices assembly; SF has no trackpad/penguin —
 	// trackpad approximates, the kernel penguin is the custom TuxIcon view).
+	public static let deviceGroup = "puzzlepiece.extension"   // the tree's Devices parent
 	public static let deviceGraphics = "display"
 	public static let deviceKeyboard = "keyboard"
 	public static let deviceTrackpad = "rectangle.and.hand.point.up.left"

@@ -31,7 +31,7 @@ struct VMDeviceTreeView: View {
 	let vm: VMInfo
 	@State private var treeSelection: Set<SidebarNode> = []
 	@State private var expanded: Set<SidebarNode> = [
-		.group("Disks"), .group("Mounts"), .group("Serial"),
+		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
 	]
 	@Environment(\.machmanTheme) private var theme
 
@@ -41,6 +41,7 @@ struct VMDeviceTreeView: View {
 			diskGroup
 			mountGroup
 			serialGroup
+			deviceGroup
 		}
 		.listStyle(.sidebar)
 		.environment(\.defaultMinListRowHeight, theme.metrics.treeRowHeight)
@@ -168,6 +169,49 @@ struct VMDeviceTreeView: View {
 				viewModel.showInfoPanel = true
 			}
 		}
+	}
+
+	// Guest devices from the engine's assembly. Configurable kinds (inspector-backed) are
+	// selectable; the rest are dimmed with a Remove-only menu. A host-gated device
+	// (Rosetta not installed, nested unsupported) carries the warning + reason.
+	@ViewBuilder
+	private var deviceGroup: some View {
+		let devices = vm.devices ?? []
+		group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
+			count: devices.count) {
+			ForEach(devices) { device in
+				if device.kind.isConfigurable {
+					deviceRow(device)
+						.tag(SidebarNode.device(device.kind))
+				} else {
+					deviceRow(device)
+						.opacity(MachmanColors.dimmedRowOpacity)
+						.contextMenu {
+							Button("Remove", role: .destructive) {
+								viewModel.removeDevice(vm.name, kind: device.kind)
+							}
+						}
+				}
+			}
+		}
+	}
+
+	private func deviceRow(_ device: DeviceInfo) -> some View {
+		HStack(spacing: 6) {
+			Image(systemName: device.kind.displaySymbol)
+				.font(.system(size: theme.metrics.iconSize))
+			Text(device.kind.displayLabel)
+				.lineLimit(1)
+			Spacer()
+			if let gate = device.unavailable {
+				Image(systemName: MachmanSymbols.warning)
+					.font(.system(size: 10))
+					.foregroundStyle(MachmanColors.warning)
+					.help(gate.message)
+			}
+		}
+		.opacity(device.enabled ? 1 : MachmanColors.inactiveEntryOpacity)
+		.frame(height: theme.metrics.treeRowHeight)
 	}
 
 	// MARK: - Group scaffold
