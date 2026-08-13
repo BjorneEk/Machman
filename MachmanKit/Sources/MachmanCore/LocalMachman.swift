@@ -658,7 +658,19 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is not running in safe mode")
 		}
-		let vm = try registry.promoteRestrictedVM(to: newName)
+		// Usually an instant move, but shadow promotion can copy across volumes — an
+		// (indeterminate) card covers the gap. Merged into host.operations by the daemon.
+		let opID = operationCenter.begin(
+			kind: OperationInfo.Kind.safeSave, vm: name, label: "Saving as \(newName)")
+		let vm: VirtualMachine
+		do {
+			vm = try registry.promoteRestrictedVM(to: newName)
+		} catch {
+			operationCenter.finish(
+				opID, state: OperationInfo.State.failed, message: "\(error)")
+			throw error
+		}
+		operationCenter.finish(opID, state: OperationInfo.State.succeeded)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}

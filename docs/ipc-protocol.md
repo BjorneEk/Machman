@@ -162,7 +162,7 @@ and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
 `operationChanged {op: OperationInfo}` (1.0.4+): a long-running operation started,
 progressed, or reached a terminal state. `OperationInfo` = `{id, kind, vm?, label,
 fraction?, completedBytes?, totalBytes?, startedAt, state, message?}` with open string sets
-for `kind` (`copyVM, importDisk, promoteDisk, shadowBuild, kernelImport, rosettaInstall`, …)
+for `kind` (`copyVM, importDisk, promoteDisk, shadowBuild, safeSave, kernelImport, rosettaInstall`, …)
 and `state` (`running, succeeded, failed, cancelled`). Terminal states are emitted once;
 resync after reconnect with `host.operations`. `copyProgress` keeps being emitted in
 parallel for older clients. ETA stays consumer math.

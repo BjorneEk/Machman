@@ -73,7 +73,8 @@ struct NotificationOverlay: View {
 		case OperationInfo.Kind.copyVM: return MachmanSymbols.duplicateVM
 		case OperationInfo.Kind.importDisk, OperationInfo.Kind.promoteDisk:
 			return MachmanSymbols.diskStorage
-		case OperationInfo.Kind.shadowBuild: return MachmanSymbols.safe
+		case OperationInfo.Kind.shadowBuild, OperationInfo.Kind.safeSave:
+			return MachmanSymbols.safe
 		case OperationInfo.Kind.kernelImport: return MachmanSymbols.initramfs
 		case OperationInfo.Kind.rosettaInstall: return MachmanSymbols.deviceRosetta
 		default: return MachmanSymbols.more

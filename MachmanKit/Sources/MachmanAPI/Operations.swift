@@ -20,6 +20,7 @@ public struct OperationInfo: Codable, Sendable, Equatable, Identifiable {
 		public static let importDisk = "importDisk"
 		public static let promoteDisk = "promoteDisk"
 		public static let shadowBuild = "shadowBuild"
+		public static let safeSave = "safeSave"
 		public static let kernelImport = "kernelImport"
 		public static let rosettaInstall = "rosettaInstall"
 	}
