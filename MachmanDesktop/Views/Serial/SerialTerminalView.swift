@@ -21,6 +21,9 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	let terminalView: TerminalView
 	private var connection: SerialTerminalConnection?
 	@Published var connected = false
+	// The last connection's transcript, retained when it closes (VM stop, daemon bounce) so
+	// File → Save Terminal can still save what is on screen. A reconnect starts fresh.
+	private var lastTranscript = Data()
 
 	// The startup-only settings baked into terminalView at creation. The info panel compares this
 	// against the current profile to decide whether a Reload is needed (font/colours apply live;
@@ -91,20 +94,25 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 			self?.terminalView.feed(byteArray: [UInt8](data)[...])
 		}
 		// Clear the connection on close so a VM restart (same socket path) can reconnect.
-		c.onClose = { [weak self] in
-			self?.connection = nil
-			self?.connected = false
+		// `weak c` (not captured strongly — that would cycle through onClose) is alive here:
+		// the closing connection is the one invoking us.
+		c.onClose = { [weak self, weak c] in
+			guard let self else { return }
+			if let c { self.lastTranscript = c.transcriptData() }
+			self.connection = nil
+			self.connected = false
 		}
 		if c.connect() { connection = c; connected = true }
 	}
 
 	func disconnect() {
+		if let c = connection { lastTranscript = c.transcriptData() }
 		connection?.stop()
 		connection = nil
 		connected = false
 	}
 
-	func transcript() -> Data { connection?.transcriptData() ?? Data() }
+	func transcript() -> Data { connection?.transcriptData() ?? lastTranscript }
 
 	// MARK: TerminalViewDelegate (called on the main thread by SwiftTerm)
 	func send(source: TerminalView, data: ArraySlice<UInt8>) {

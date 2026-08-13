@@ -66,9 +66,10 @@ final class VMListViewModel: ObservableObject {
 	let previewImages = PreviewStore()
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
-	// Per-VM terminal tabs + their live connections. Persists across VM navigation; a tab's
+	// Per-VM terminal tabs + their live connections. App-scoped (injected): terminals and
+	// their transcripts persist across VM navigation AND daemon reconnects; a tab's
 	// connection lives exactly as long as the tab is open. Observed directly by the tab views.
-	let terminals = TerminalSessions()
+	let terminals: TerminalSessions
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published var showInfoPanel = false
@@ -108,10 +109,14 @@ final class VMListViewModel: ObservableObject {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
 	}
 
-	init(api: MachmanControlling, store: VMStore, operations: OperationsStore) {
+	init(
+		api: MachmanControlling, store: VMStore, operations: OperationsStore,
+		terminals: TerminalSessions
+	) {
 		self.api = api
 		self.store = store
 		self.operationsStore = operations
+		self.terminals = terminals
 		// Views observe this object, not the stores — forward their changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()

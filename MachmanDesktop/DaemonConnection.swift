@@ -33,6 +33,9 @@ final class DaemonConnection: ObservableObject {
 	// because it is the one object that sees every (re)connection.
 	let vmStore = VMStore()
 	let operationsStore = OperationsStore()
+	// Not api-bound (nothing to re-attach): open terminal tabs + their live SwiftTerm
+	// controllers, kept out of the per-connection teardown so transcripts survive it.
+	let terminals = TerminalSessions()
 	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
 	// serves), so it is a flag beside Status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
@@ -111,7 +114,8 @@ final class DaemonConnection: ObservableObject {
 					self.vmStore.attach(api: api)
 					self.operationsStore.attach(api: api)
 					let viewModel = VMListViewModel(
-						api: api, store: self.vmStore, operations: self.operationsStore)
+						api: api, store: self.vmStore, operations: self.operationsStore,
+						terminals: self.terminals)
 					self.api = api
 					self.viewModel = viewModel
 					// The menu bar commands observe this object; forward list changes so
