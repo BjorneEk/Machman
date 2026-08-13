@@ -10,21 +10,6 @@
 //
 
 import Foundation
-import CoreTransferable
-import UniformTypeIdentifiers
-
-// In-app drag payload for tab reordering / cross-pane moves (runtime-declared type; tabs
-// never leave the process as files).
-extension UTType {
-	public static let machmanCanvasTab = UTType(
-		exportedAs: "com.gustaffranzen.machman.canvas-tab")
-}
-
-extension VMPaneTab: Transferable {
-	public static var transferRepresentation: some TransferRepresentation {
-		CodableRepresentation(contentType: .machmanCanvasTab)
-	}
-}
 
 // Stable coding for persistence: {"kind":"config"} / {"kind":"terminal","port":{…}} —
 // never the synthesized positional shape.
@@ -97,6 +82,12 @@ public struct CanvasPane: Equatable, Sendable, Codable, Identifiable {
 		if let current = active, predicate(current) {
 			active = tabs.last
 		}
+	}
+
+	// Reposition without touching activation (live drag reorder).
+	mutating func move(from: Int, to: Int) {
+		guard tabs.indices.contains(from), tabs.indices.contains(to) else { return }
+		tabs.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
 	}
 }
 
@@ -177,6 +168,16 @@ public struct CanvasState: Equatable, Sendable, Codable {
 		panes[targetIdx].open(tab, at: index)
 		activePaneID = target
 		collapseEmptyPanes()
+	}
+
+	// Live-reorder a tab within its pane WITHOUT changing activation (drag semantics: the
+	// index is the tab's final position among the pane's tabs).
+	public mutating func reorder(_ tab: VMPaneTab, to index: Int) {
+		guard let holder = pane(holding: tab), let pi = self.index(of: holder),
+			let from = panes[pi].tabs.firstIndex(of: tab) else { return }
+		let clamped = min(max(0, index), panes[pi].tabs.count - 1)
+		guard clamped != from else { return }
+		panes[pi].move(from: from, to: clamped)
 	}
 
 	// Split: the tab moves into a NEW pane at the leading/trailing edge (≤ maxPanes).

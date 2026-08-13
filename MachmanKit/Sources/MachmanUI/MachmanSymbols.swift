@@ -114,6 +114,7 @@ public enum MachmanSymbols {
 	public static let activeEntry = "checkmark.circle.fill"   // active kernel/initramfs
 	public static let externalReference = "link"        // referenced (not owned) file badge
 	public static let splitRight = "rectangle.split.2x1"
+	public static let moveHere = "arrow.down.square"    // drop-zone "Move Here" label
 	public static let newWindow = "macwindow.on.rectangle"
 	public static let sidebarToggle = "sidebar.left"
 	public static let inspectorToggle = "sidebar.right" // successor name for infoPanel

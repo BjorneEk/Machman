@@ -59,6 +59,20 @@ struct CanvasStateTests {
 		#expect(canvas.activePaneID == canvas.panes.first?.id)
 	}
 
+	@Test func reorderRepositionsWithoutActivating() {
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		canvas.open(.terminal(hvc1))
+		canvas.activate(.config)
+		canvas.reorder(.config, to: 2)
+		#expect(canvas.panes[0].tabs == [.terminal(hvc0), .terminal(hvc1), .config])
+		#expect(canvas.activeTab == .config)
+		canvas.reorder(.terminal(hvc1), to: 0)
+		#expect(canvas.panes[0].tabs == [.terminal(hvc1), .terminal(hvc0), .config])
+		#expect(canvas.activeTab == .config)
+	}
+
 	@Test func moveUsesDragStyleIndices() {
 		var canvas = CanvasState()
 		canvas.open(.config)
