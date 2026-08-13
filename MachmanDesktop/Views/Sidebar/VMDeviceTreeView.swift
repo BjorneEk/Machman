@@ -228,14 +228,7 @@ struct VMDeviceTreeView: View {
 		}
 		Divider()
 		Button(disk.owned == true ? "Delete…" : "Remove…", role: .destructive) {
-			if disk.owned == true {
-				guard VMListViewModel.confirmDialog(
-					message: "Delete disk \(disk.name ?? disk.id)?",
-					informativeText: "The backing file belongs to \(vm.name) and will be "
-						+ "deleted with it.")
-				else { return }
-			}
-			viewModel.removeDisk(vm.name, diskID: disk.id)
+			viewModel.requestRemoveDisk(vm.name, disk: disk)
 		}
 	}
 

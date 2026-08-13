@@ -132,6 +132,9 @@ struct VMNavigationView: View {
 		.overlay {
 			NotificationOverlay(viewModel: viewModel, operations: viewModel.operationsStore)
 		}
+		// Destructive/choice confirmations (the HIG successors to the old NSAlerts),
+		// isolated in a modifier so this chain stays type-checkable.
+		.modifier(ConfirmationDialogs(viewModel: viewModel))
 	}
 
 	@ToolbarContentBuilder
@@ -182,6 +185,76 @@ struct VMNavigationView: View {
 		.foregroundStyle(.secondary)
 		.padding(.horizontal, 12)
 		.padding(.vertical, 6)
+	}
+}
+
+// The window's confirmation dialogs, driven by the view model's pending items.
+private struct ConfirmationDialogs: ViewModifier {
+	@ObservedObject var viewModel: VMListViewModel
+
+	func body(content: Content) -> some View {
+		content
+			.confirmationDialog(
+				"Delete \u{201C}\(viewModel.pendingVMDelete?.name ?? "")\u{201D}?",
+				isPresented: presenting($viewModel.pendingVMDelete),
+				presenting: viewModel.pendingVMDelete
+			) { vm in
+				Button("Delete VM", role: .destructive) { viewModel.performDeleteVM(vm) }
+				Button("Cancel", role: .cancel) {}
+			} message: { vm in
+				Text("\(vm.name) and its owned files are deleted. This cannot be undone.")
+			}
+			.confirmationDialog(
+				"Add \(viewModel.pendingDiskAdd?.url.lastPathComponent ?? "")?",
+				isPresented: presenting($viewModel.pendingDiskAdd),
+				presenting: viewModel.pendingDiskAdd
+			) { pending in
+				Button("Copy into VM") {
+					AddFlows.addDiskCopy(
+						viewModel: viewModel, vm: pending.vm, url: pending.url)
+				}
+				Button("Reference") {
+					AddFlows.addDiskReference(
+						viewModel: viewModel, vm: pending.vm, url: pending.url)
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: { pending in
+				Text("Copy \(pending.url.lastPathComponent) into \(pending.vm) (an "
+					+ "independent copy that travels with the VM), or reference the "
+					+ "original in place?")
+			}
+			.confirmationDialog(
+				"Delete disk "
+					+ "\u{201C}\(viewModel.pendingDiskDelete?.disk.name ?? "")\u{201D}?",
+				isPresented: presenting($viewModel.pendingDiskDelete),
+				presenting: viewModel.pendingDiskDelete
+			) { pending in
+				Button("Delete Disk", role: .destructive) {
+					viewModel.removeDisk(pending.vm, diskID: pending.disk.id)
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: { pending in
+				Text("The backing file belongs to \(pending.vm) and is deleted with it.")
+			}
+			.confirmationDialog(
+				"Delete \u{201C}\(viewModel.pendingKernelDelete?.fileName ?? "")\u{201D}?",
+				isPresented: presenting($viewModel.pendingKernelDelete),
+				presenting: viewModel.pendingKernelDelete
+			) { pending in
+				Button("Delete File", role: .destructive) {
+					viewModel.deleteKernel(pending.vm, path: pending.path)
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: { pending in
+				Text("The file belongs to \(pending.vm) and is removed from its directory.")
+			}
+	}
+
+	// isPresented bridge for item-backed confirmationDialogs (dismiss clears the item).
+	private func presenting<T>(_ item: Binding<T?>) -> Binding<Bool> {
+		Binding(
+			get: { item.wrappedValue != nil },
+			set: { if !$0 { item.wrappedValue = nil } })
 	}
 }
 

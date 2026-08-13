@@ -70,6 +70,28 @@ final class VMListViewModel: ObservableObject {
 		get { pendingForceStart != nil }
 		set { if !newValue { pendingForceStart = nil } }
 	}
+	// Pending destructive/choice confirmations, presented as confirmationDialogs by
+	// VMNavigationView (the HIG successor to the old modal NSAlerts).
+	struct PendingDiskAdd: Identifiable {
+		let id = UUID()
+		let vm: String
+		let url: URL
+	}
+	struct PendingDiskDelete: Identifiable {
+		let id = UUID()
+		let vm: String
+		let disk: DiskInfo
+	}
+	struct PendingKernelDelete: Identifiable {
+		let id = UUID()
+		let vm: String
+		let path: String
+		let fileName: String
+	}
+	@Published var pendingVMDelete: VMInfo?
+	@Published var pendingDiskAdd: PendingDiskAdd?
+	@Published var pendingDiskDelete: PendingDiskDelete?
+	@Published var pendingKernelDelete: PendingKernelDelete?
 	@Published var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
 	@Published private(set) var copyInFlight = false
 	@Published var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
@@ -402,13 +424,12 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Request → confirmationDialog → perform (all deletes follow this shape).
 	func deleteVM(_ vm: VMInfo) {
-		if !VMListViewModel.confirmDialog(
-			message: "Delete \(vm.name)?",
-			informativeText: "Are you sure you want to delete \(vm.name)? "
-				+ "This action cannot be undone.") {
-			return
-		}
+		pendingVMDelete = vm
+	}
+
+	func performDeleteVM(_ vm: VMInfo) {
 		Task { [weak self] in
 			do {
 				try await self?.api.deleteVM(named: vm.name)
@@ -421,6 +442,19 @@ final class VMListViewModel: ObservableObject {
 				self?.present(error, while: "Deleting \(vm.name)")
 			}
 		}
+	}
+
+	// Owned disks confirm (the backing file dies with the entry); references detach silently.
+	func requestRemoveDisk(_ name: String, disk: DiskInfo) {
+		if disk.owned == true {
+			pendingDiskDelete = PendingDiskDelete(vm: name, disk: disk)
+		} else {
+			removeDisk(name, diskID: disk.id)
+		}
+	}
+
+	func requestDeleteKernel(_ name: String, path: String, fileName: String) {
+		pendingKernelDelete = PendingKernelDelete(vm: name, path: path, fileName: fileName)
 	}
 
 	func rename(from oldName: String, to newName: String) async -> Bool {
@@ -987,15 +1021,4 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	static func confirmDialog(message: String, informativeText: String) -> Bool {
-		let alert = NSAlert()
-		alert.messageText = message
-		alert.informativeText = informativeText
-		alert.alertStyle = .warning
-		alert.addButton(withTitle: "OK")
-		alert.addButton(withTitle: "Cancel")
-
-		let response = alert.runModal()
-		return response == .alertFirstButtonReturn
-	}
 }

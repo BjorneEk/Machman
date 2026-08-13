@@ -233,12 +233,8 @@ private struct KernelFileActionsSection: View {
 					}
 				} else {
 					IconButton(symbol: MachmanSymbols.delete, tooltip: "Delete…") {
-						guard VMListViewModel.confirmDialog(
-							message: "Delete \(entry.fileName)?",
-							informativeText: "The file belongs to \(vm.name) and is removed "
-								+ "from its directory.")
-						else { return }
-						viewModel.deleteKernel(vm.name, path: entry.path)
+						viewModel.requestDeleteKernel(
+							vm.name, path: entry.path, fileName: entry.fileName)
 					}
 				}
 			}

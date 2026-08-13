@@ -27,26 +27,21 @@ enum AddFlows {
 	}
 
 	// The copy-or-reference question every disk-file entry point funnels through (picker,
-	// tree drop, paste).
+	// tree drop, paste): queued on the view model, presented as a confirmationDialog.
 	static func askDiskReferenceOrCopy(viewModel: VMListViewModel, vm: String, url: URL) {
-		let alert = NSAlert()
-		alert.messageText = "Add \(url.lastPathComponent)"
-		alert.informativeText = "Copy it into the VM (the VM owns an independent "
-			+ "copy that travels with it), or reference the original file in place?"
-		alert.addButton(withTitle: "Copy into VM")
-		alert.addButton(withTitle: "Reference")
-		alert.addButton(withTitle: "Cancel")
-		switch alert.runModal() {
-		case .alertFirstButtonReturn:
-			viewModel.importDisk(vm, path: url.path)
-		case .alertSecondButtonReturn:
-			if url.pathExtension.lowercased() == "iso" {
-				viewModel.addDisk(vm, .iso(path: url.path))
-			} else {
-				viewModel.addDisk(vm, .image(path: url.path))
-			}
-		default:
-			break
+		viewModel.pendingDiskAdd = VMListViewModel.PendingDiskAdd(vm: vm, url: url)
+	}
+
+	// The dialog's Copy / Reference resolutions.
+	static func addDiskCopy(viewModel: VMListViewModel, vm: String, url: URL) {
+		viewModel.importDisk(vm, path: url.path)
+	}
+
+	static func addDiskReference(viewModel: VMListViewModel, vm: String, url: URL) {
+		if url.pathExtension.lowercased() == "iso" {
+			viewModel.addDisk(vm, .iso(path: url.path))
+		} else {
+			viewModel.addDisk(vm, .image(path: url.path))
 		}
 	}
 
