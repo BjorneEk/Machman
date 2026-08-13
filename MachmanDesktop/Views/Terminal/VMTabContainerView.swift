@@ -43,22 +43,16 @@ struct VMTabContainerView: View {
 		.toolbar(removing: .title)
 	}
 
+	// The inspector is the window-level native column (VMNavigationView.inspector), so the
+	// pane is just the canvas.
 	private func pane(_ vm: VMInfo) -> some View {
-		HStack(spacing: 0) {
-			VMCanvasView(
-				viewModel: viewModel, sessions: sessions, canvases: viewModel.canvases,
-				profiles: profiles, vm: vm)
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
-			if viewModel.showInfoPanel {
-				Divider()
-				InspectorView(
-					viewModel: viewModel, sessions: sessions, profiles: profiles, vm: vm)
-					.frame(width: 320)
-			}
-		}
-		.background(FocusAndTopmostTracker { focused in
-			viewModel.onFocusEvent(focused: focused)
-		})
+		VMCanvasView(
+			viewModel: viewModel, sessions: sessions, canvases: viewModel.canvases,
+			profiles: profiles, vm: vm)
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.background(FocusAndTopmostTracker { focused in
+				viewModel.onFocusEvent(focused: focused)
+			})
 	}
 
 	// MARK: - Toolbar (always-active VM header)

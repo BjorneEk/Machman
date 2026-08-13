@@ -73,6 +73,20 @@ struct VMNavigationView: View {
 			VMTabContainerView(
 				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
 		}
+		// The NATIVE inspector column (demo design): full height beside the toolbar with
+		// the system's glass treatment, not a panel embedded in the detail pane.
+		.inspector(isPresented: $viewModel.showInfoPanel) {
+			Group {
+				if let vm = viewModel.selected {
+					InspectorView(
+						viewModel: viewModel, sessions: viewModel.terminals,
+						profiles: profiles, vm: vm)
+				} else {
+					NoSelectionInspector()
+				}
+			}
+			.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
+		}
 		.alert(
 			viewModel.presentedError?.title ?? "Error",
 			isPresented: $viewModel.isErrorPresented,
