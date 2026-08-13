@@ -40,8 +40,8 @@ struct InspectorView: View {
 					SerialInspector(
 						vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
 						profiles: profiles)
-				default:
-					NoSelectionInspector()
+				case .device(let kind):
+					DeviceInspector(viewModel: viewModel, vm: vm, kind: kind)
 				}
 			}
 		}
