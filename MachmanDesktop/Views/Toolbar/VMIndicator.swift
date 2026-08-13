@@ -54,9 +54,10 @@ struct VMIndicatorCluster: View {
 					.foregroundStyle(.secondary)
 					.opacity(hovering || pickerShown ? 1 : 0)
 			}
-			.padding(.horizontal, 2)
-			.padding(.vertical, 2)
-			.contentShape(Rectangle())
+			.padding(.horizontal, 10)
+			.padding(.vertical, 4)
+			.machmanGlassCapsule()
+			.contentShape(Capsule())
 			.animation(.easeOut(duration: 0.12), value: hovering)
 		}
 		.buttonStyle(.plain)
@@ -78,7 +79,7 @@ struct SafeModeChip: View {
 			.foregroundStyle(MachmanColors.safeMode)
 			.padding(.horizontal, 8)
 			.padding(.vertical, 5)
-			.background(Capsule().fill(Color.primary.opacity(0.07)))
+			.machmanGlassCapsule()
 			.help("Safe mode — changes are discarded on stop")
 	}
 }
