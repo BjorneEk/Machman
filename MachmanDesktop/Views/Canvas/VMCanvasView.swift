@@ -98,6 +98,16 @@ struct VMCanvasView: View {
 			Divider()
 			paneContent(pane)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
+				// Drop into a pane's content moves the tab into that pane (appended).
+				.dropDestination(for: VMPaneTab.self) { dropped, _ in
+					guard let moved = dropped.first else { return false }
+					mutate { c in
+						let count = c.panes.first { $0.id == pane.id }?.tabs
+							.filter { $0 != moved }.count ?? 0
+						c.move(moved, toPane: pane.id, at: count)
+					}
+					return true
+				}
 		}
 	}
 
@@ -106,8 +116,34 @@ struct VMCanvasView: View {
 			ForEach(pane.tabs, id: \.self) { tab in
 				tabItem(tab, active: pane.active == tab && activePane,
 					current: pane.active == tab)
+					.draggable(tab)
+					// Drop ON a tab inserts at its position (index computed without the
+					// moved tab — CanvasState.move's drag semantics).
+					.dropDestination(for: VMPaneTab.self) { dropped, _ in
+						guard let moved = dropped.first, moved != tab else { return false }
+						mutate { c in
+							guard let paneID = c.pane(holding: tab),
+								let target = c.panes.first(where: { $0.id == paneID }),
+								var index = target.tabs.firstIndex(of: tab) else { return }
+							if let mIdx = target.tabs.firstIndex(of: moved), mIdx < index {
+								index -= 1
+							}
+							c.move(moved, toPane: paneID, at: index)
+						}
+						return true
+					}
 			}
 			Spacer(minLength: 0)
+				// Drop on the empty strip area appends to this pane.
+				.dropDestination(for: VMPaneTab.self) { dropped, _ in
+					guard let moved = dropped.first else { return false }
+					mutate { c in
+						let count = c.panes.first { $0.id == pane.id }?.tabs
+							.filter { $0 != moved }.count ?? 0
+						c.move(moved, toPane: pane.id, at: count)
+					}
+					return true
+				}
 			IconButton(
 				symbol: MachmanSymbols.splitRight, tooltip: "Split right",
 				font: .caption, flat: true

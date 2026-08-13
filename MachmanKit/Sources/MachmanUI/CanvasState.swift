@@ -10,6 +10,21 @@
 //
 
 import Foundation
+import CoreTransferable
+import UniformTypeIdentifiers
+
+// In-app drag payload for tab reordering / cross-pane moves (runtime-declared type; tabs
+// never leave the process as files).
+extension UTType {
+	public static let machmanCanvasTab = UTType(
+		exportedAs: "com.gustaffranzen.machman.canvas-tab")
+}
+
+extension VMPaneTab: Transferable {
+	public static var transferRepresentation: some TransferRepresentation {
+		CodableRepresentation(contentType: .machmanCanvasTab)
+	}
+}
 
 // Stable coding for persistence: {"kind":"config"} / {"kind":"terminal","port":{…}} —
 // never the synthesized positional shape.
