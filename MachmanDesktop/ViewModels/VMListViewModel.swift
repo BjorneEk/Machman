@@ -916,15 +916,18 @@ final class VMListViewModel: ObservableObject {
 		canvases.setCanvas(canvas, for: name)
 	}
 
-	func closeActiveTab() {
-		guard let name = selectedName else { return }
+	// True when a tab was closed (⌘W falls back to closing the window otherwise).
+	@discardableResult
+	func closeActiveTab() -> Bool {
+		guard let name = selectedName else { return false }
 		var canvas = canvases.canvas(for: name)
-		guard let tab = canvas.activeTab else { return }
+		guard let tab = canvas.activeTab else { return false }
 		if case .terminal(let ref) = tab {
 			terminals.dropController(vm: name, ref: ref)
 		}
 		canvas.close(tab)
 		canvases.setCanvas(canvas, for: name)
+		return true
 	}
 
 	// Save the on-screen terminal transcript. Used by File → Save Terminal.

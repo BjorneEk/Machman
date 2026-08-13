@@ -59,8 +59,19 @@ struct MachmanDesktopApp: App {
 						.keyboardShortcut("]", modifiers: [.shift, .command])
 					Button("Previous Tab") { viewModel.cycleTab(forward: false) }
 						.keyboardShortcut("[", modifiers: [.shift, .command])
-					Button("Close Tab") { viewModel.closeActiveTab() }
-						.keyboardShortcut("w", modifiers: [.shift, .command])
+					// ⌘W closes the active canvas tab; auxiliary windows (torn tabs,
+					// Settings) and tab-less states fall through to closing the window.
+					// The system Close item is remapped to ⇧⌘W by the AppKit pass.
+					Button("Close Tab") {
+						let key = NSApp.keyWindow
+						let auxiliary = key?.identifier?.rawValue
+							.hasPrefix("torn-tab") == true
+							|| key?.identifier?.rawValue.contains("Settings") == true
+						if auxiliary || !viewModel.closeActiveTab() {
+							key?.performClose(nil)
+						}
+					}
+					.keyboardShortcut("w")
 					Divider()
 					ForEach(viewModel.vms) { vm in
 						Button(vm.name) {
@@ -304,6 +315,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 		_ sender: NSApplication
 	) -> Bool {
 		true
+	}
+
+	// ⌘W belongs to Close Tab (1.0.4 design); the system Close moves to ⇧⌘W. SwiftUI
+	// rebuilds menus, so the remap re-runs on every activation (idempotent).
+	func applicationDidFinishLaunching(_ notification: Notification) {
+		DispatchQueue.main.async { Self.remapCloseShortcut() }
+	}
+
+	func applicationDidBecomeActive(_ notification: Notification) {
+		Self.remapCloseShortcut()
+	}
+
+	private static func remapCloseShortcut() {
+		guard let main = NSApp.mainMenu else { return }
+		for top in main.items {
+			guard let submenu = top.submenu else { continue }
+			for item in submenu.items
+				where item.action == #selector(NSWindow.performClose(_:))
+					&& item.keyEquivalent == "w"
+					&& item.keyEquivalentModifierMask == [.command] {
+				item.keyEquivalentModifierMask = [.command, .shift]
+				item.title = "Close Window"
+			}
+		}
 	}
 
 	// Dock menu: one start/stop toggle per VM, states at a glance.
