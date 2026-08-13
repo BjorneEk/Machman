@@ -135,7 +135,10 @@ final class DaemonConnection: ObservableObject {
 	// replace — the hard apiVersion gate.
 	// 1.0.2: StartOptions.safe — an older daemon would silently ignore the flag and run the
 	// real VM unsafely, so it must be replaced before this desktop issues any start.
-	static let oldestCompatibleDaemonVersion = "1.0.3"
+	// 1.0.4: configs gained devices/enabled/kernelOverrides — an older daemon's rewrite
+	// silently DROPS those keys (VMConfig encodes only enumerated keys), so it must be
+	// replaced before it can save configs the new desktop depends on.
+	static let oldestCompatibleDaemonVersion = "1.0.4"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer

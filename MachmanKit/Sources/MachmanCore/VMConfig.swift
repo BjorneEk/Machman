@@ -24,6 +24,8 @@ struct HostMountPoint: Codable, Identifiable {
 	var tag: String
 	// Safe-mode policy (phase 6): true = a safe run omits this mount; false = attach it anyway.
 	var safe: Bool = true
+	// 1.0.4: disabled mounts stay configured but are not shared at the next start.
+	var enabled: Bool = true
 
 	// id must persist: removeMount matches on it, so a regenerated id breaks mount removal
 	// after any daemon restart or registry reload.
@@ -33,6 +35,7 @@ struct HostMountPoint: Codable, Identifiable {
 		self.path = try container.decode(String.self, forKey: .path)
 		self.tag = try container.decode(String.self, forKey: .tag)
 		self.safe = try container.decodeIfPresent(Bool.self, forKey: .safe) ?? true
+		self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
 	}
 
 	init (path: String, tag: String) {
@@ -45,6 +48,7 @@ struct HostMountPoint: Codable, Identifiable {
 		case path
 		case tag
 		case safe
+		case enabled
 	}
 }
 
@@ -62,6 +66,8 @@ struct VMDisk: Codable, Identifiable, Equatable {
 	// Safe-mode policy (phase 6): true = a safe run clones this disk; false = attach the
 	// real file.
 	var safe: Bool = true
+	// 1.0.4: disabled disks stay configured but are not attached at the next start.
+	var enabled: Bool = true
 
 	init(kind: VMDiskKind, safe: Bool = true) {
 		self.kind = kind
@@ -79,6 +85,7 @@ struct VMDisk: Codable, Identifiable, Equatable {
 	private enum CodingKeys: String, CodingKey {
 		case kind
 		case safe
+		case enabled
 	}
 
 	// Fallback decode: a keyed container WITH a "kind" key is the new shape; anything else is
@@ -89,9 +96,11 @@ struct VMDisk: Codable, Identifiable, Equatable {
 		if let c = try? decoder.container(keyedBy: CodingKeys.self), c.contains(.kind) {
 			self.kind = try c.decode(VMDiskKind.self, forKey: .kind)
 			self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
+			self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
 		} else {
 			self.kind = try VMDiskKind(from: decoder)
 			self.safe = true
+			self.enabled = true
 		}
 	}
 
@@ -99,6 +108,7 @@ struct VMDisk: Codable, Identifiable, Equatable {
 		var c = encoder.container(keyedBy: CodingKeys.self)
 		try c.encode(kind, forKey: .kind)
 		try c.encode(safe, forKey: .safe)
+		try c.encode(enabled, forKey: .enabled)
 	}
 }
 
@@ -107,6 +117,9 @@ struct VMDisk: Codable, Identifiable, Equatable {
 // directly (like StartPolicy) so there is no mirror type to keep in lockstep.
 struct SerialPort: Codable, Equatable {
 	var logging: SerialLogConfig = SerialLogConfig()
+	// 1.0.4: disabled ports stay configured but are not attached at the next start (guest
+	// names renumber, same as removing the port).
+	var enabled: Bool = true
 
 	init(logging: SerialLogConfig = SerialLogConfig()) {
 		self.logging = logging
@@ -117,10 +130,12 @@ struct SerialPort: Codable, Equatable {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.logging = try c.decodeIfPresent(SerialLogConfig.self, forKey: .logging)
 			?? SerialLogConfig()
+		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
 	}
 
 	private enum CodingKeys: String, CodingKey {
 		case logging
+		case enabled
 	}
 }
 
@@ -146,6 +161,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Fixed at VM start by the framework, so add/remove is refused while the VM runs.
 	var consolePorts: [SerialPort] = []
 	var uartPorts: [SerialPort] = []
+	// Guest devices (1.0.4). Configs predating the key get the implied per-boot set at load
+	// (presence sentinel, like the serial ports); present-but-empty stays empty.
+	var devices: [GuestDevice] = []
+	// Nested virtualization (EFI/kernel boots on supporting hardware only).
+	var nestedVirtualization: Bool = false
+	// Per-kernel-file command-line overrides, keyed by "role/tag/fileName"
+	// (VMConfig.kernelOverrideKey). Encoded only when non-empty.
+	var kernelOverrides: [String: KernelOverrideConfig] = [:]
 
 	// The framework caps a VM at 10 virtio serial-port devices; console + uart share that budget.
 	static let maxSerialPorts = 10
@@ -159,6 +182,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.lastRan = nil
 		// A new VM boots EFI, so give it the one console every VM used to have by default.
 		self.consolePorts = [SerialPort()]
+		self.devices = VMConfig.impliedDevices(for: .efi)
 		try saveVMConfig()
 	}
 
@@ -193,6 +217,9 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case totalRuntimeSeconds
 		case consolePorts
 		case uartPorts
+		case devices
+		case nestedVirtualization
+		case kernelOverrides
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
@@ -227,6 +254,18 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			case .macOS: break
 			}
 		}
+		// Migration (1.0.4): a config predating devices gets the implied per-boot set — what
+		// the engine attached unconditionally before. Present-but-empty stays empty (a
+		// deliberately device-less VM).
+		if c.contains(.devices) {
+			self.devices = try c.decode([GuestDevice].self, forKey: .devices)
+		} else {
+			self.devices = VMConfig.impliedDevices(for: boot)
+		}
+		self.nestedVirtualization =
+			try c.decodeIfPresent(Bool.self, forKey: .nestedVirtualization) ?? false
+		self.kernelOverrides = try c.decodeIfPresent(
+			[String: KernelOverrideConfig].self, forKey: .kernelOverrides) ?? [:]
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -245,6 +284,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encode(totalRuntimeSeconds, forKey: .totalRuntimeSeconds)
 		try c.encode(consolePorts, forKey: .consolePorts)
 		try c.encode(uartPorts, forKey: .uartPorts)
+		try c.encode(devices, forKey: .devices)
+		try c.encode(nestedVirtualization, forKey: .nestedVirtualization)
+		if !kernelOverrides.isEmpty {
+			try c.encode(kernelOverrides, forKey: .kernelOverrides)
+		}
 	}
 
 	func getDisks() -> [VMDisk] {
