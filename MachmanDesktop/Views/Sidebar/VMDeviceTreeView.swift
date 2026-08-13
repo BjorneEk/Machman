@@ -109,6 +109,13 @@ struct VMDeviceTreeView: View {
 		.dropDestination(for: URL.self) { urls, _ in
 			AddFlows.handleFileURLs(urls, viewModel: viewModel, vm: vm.name)
 		}
+		// Right-click anywhere in the tree (rows keep their own menus): paste the
+		// clipboard's entities/files into this VM.
+		.contextMenu {
+			Button("Paste") { pasteAnything() }
+				.disabled(EntityClipboard.read().isEmpty
+					&& AddFlows.pasteboardFileURLs().isEmpty)
+		}
 	}
 
 	// MARK: - Rows
@@ -137,16 +144,9 @@ struct VMDeviceTreeView: View {
 			Button("Rename") { renamingRoot = true }
 			// A copied entity (disk/kernel/mount from any VM) pastes first; plain file
 			// URLs keep the Finder routing.
-			Button("Paste") {
-				if let entity = EntityClipboard.read() {
-					entity.paste(into: vm.name, viewModel: viewModel)
-				} else {
-					_ = AddFlows.handleFileURLs(
-						AddFlows.pasteboardFileURLs(), viewModel: viewModel, vm: vm.name)
-				}
-			}
-			.disabled(EntityClipboard.read() == nil
-				&& AddFlows.pasteboardFileURLs().isEmpty)
+			Button("Paste") { pasteAnything() }
+				.disabled(EntityClipboard.read().isEmpty
+					&& AddFlows.pasteboardFileURLs().isEmpty)
 			Divider()
 			Button("Delete VM…", role: .destructive) { viewModel.deleteVM(vm) }
 		}
@@ -211,6 +211,12 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private func batchMenuItems(for node: SidebarNode) -> some View {
 		if viewModel.treeSelection.count > 1, viewModel.treeSelection.contains(node) {
+			let copyable = viewModel.copyableSelectionItems
+			if !copyable.isEmpty {
+				Button("Copy \(copyable.count) Items") {
+					EntityClipboard.write(copyable)
+				}
+			}
 			Button("Enable \(viewModel.treeSelection.count) Items") {
 				viewModel.setSelectionEnabled(true, vm: vm)
 			}
@@ -228,7 +234,6 @@ struct VMDeviceTreeView: View {
 			Button("Copy") {
 				EntityClipboard.write(EntityClipboard(kind: .disk, path: path))
 			}
-			Button("Copy Path") { Self.copyToPasteboard(path) }
 			Button("Show in Finder") { Self.revealInFinder(path) }
 			Divider()
 		}
@@ -278,7 +283,6 @@ struct VMDeviceTreeView: View {
 						EntityClipboard.write(EntityClipboard(
 							kind: .mount, path: mount.path, tag: mount.tag))
 					}
-					Button("Copy Path") { Self.copyToPasteboard(mount.path) }
 					Button("Show in Finder") { Self.revealInFinder(mount.path) }
 					Divider()
 					Button(mount.isEnabled ? "Disable" : "Enable") {
@@ -589,7 +593,6 @@ struct VMDeviceTreeView: View {
 			EntityClipboard.write(EntityClipboard(
 				kind: role == .kernel ? .kernel : .initramfs, path: file.id))
 		}
-		Button("Copy Path") { Self.copyToPasteboard(file.id) }
 		Button("Show in Finder") { Self.revealInFinder(file.id) }
 		if file.owned && !vm.state.isRunning {
 			Button("Rename") {
@@ -703,14 +706,32 @@ struct VMDeviceTreeView: View {
 		TreeDropValidator.isDirectory(url)
 	}
 
+	// Everything on the clipboard pastes into this VM: entities by their own kinds,
+	// plain file URLs by the Finder routing.
+	private func pasteAnything() {
+		let entities = EntityClipboard.read()
+		if !entities.isEmpty {
+			for entity in entities {
+				entity.paste(into: vm.name, viewModel: viewModel)
+			}
+			return
+		}
+		_ = AddFlows.handleFileURLs(
+			AddFlows.pasteboardFileURLs(), viewModel: viewModel, vm: vm.name)
+	}
+
 	private var canPasteIntoDisks: Bool {
-		if let entity = EntityClipboard.read() { return entity.kind == .disk }
+		let entities = EntityClipboard.read()
+		if !entities.isEmpty { return entities.contains { $0.kind == .disk } }
 		return AddFlows.pasteboardFileURLs().contains { !Self.isDirectory($0) }
 	}
 
 	private func pasteIntoDisks() {
-		if let entity = EntityClipboard.read(), entity.kind == .disk {
-			entity.paste(into: vm.name, viewModel: viewModel)
+		let matching = EntityClipboard.read().filter { $0.kind == .disk }
+		if !matching.isEmpty {
+			for entity in matching {
+				entity.paste(into: vm.name, viewModel: viewModel)
+			}
 			return
 		}
 		for url in AddFlows.pasteboardFileURLs() where !Self.isDirectory(url) {
@@ -719,13 +740,17 @@ struct VMDeviceTreeView: View {
 	}
 
 	private var canPasteIntoMounts: Bool {
-		if let entity = EntityClipboard.read() { return entity.kind == .mount }
+		let entities = EntityClipboard.read()
+		if !entities.isEmpty { return entities.contains { $0.kind == .mount } }
 		return AddFlows.pasteboardFileURLs().contains { Self.isDirectory($0) }
 	}
 
 	private func pasteIntoMounts() {
-		if let entity = EntityClipboard.read(), entity.kind == .mount {
-			entity.paste(into: vm.name, viewModel: viewModel)
+		let matching = EntityClipboard.read().filter { $0.kind == .mount }
+		if !matching.isEmpty {
+			for entity in matching {
+				entity.paste(into: vm.name, viewModel: viewModel)
+			}
 			return
 		}
 		for url in AddFlows.pasteboardFileURLs() where Self.isDirectory(url) {
@@ -734,16 +759,19 @@ struct VMDeviceTreeView: View {
 	}
 
 	private func canPasteIntoKernels(role: KernelRole) -> Bool {
-		if let entity = EntityClipboard.read() {
-			return entity.kind == (role == .kernel ? .kernel : .initramfs)
-		}
+		let entities = EntityClipboard.read()
+		let kind: EntityClipboard.Kind = role == .kernel ? .kernel : .initramfs
+		if !entities.isEmpty { return entities.contains { $0.kind == kind } }
 		return AddFlows.pasteboardFileURLs().contains { !Self.isDirectory($0) }
 	}
 
 	private func pasteIntoKernels(role: KernelRole) {
-		if let entity = EntityClipboard.read(),
-			entity.kind == (role == .kernel ? .kernel : .initramfs) {
-			entity.paste(into: vm.name, viewModel: viewModel)
+		let kind: EntityClipboard.Kind = role == .kernel ? .kernel : .initramfs
+		let matching = EntityClipboard.read().filter { $0.kind == kind }
+		if !matching.isEmpty {
+			for entity in matching {
+				entity.paste(into: vm.name, viewModel: viewModel)
+			}
 			return
 		}
 		for url in AddFlows.pasteboardFileURLs() where !Self.isDirectory(url) {

@@ -910,25 +910,28 @@ final class VMListViewModel: ObservableObject {
 		return terminals.controller(vm: name, ref: ref)
 	}
 
-	// The single selected tree entity as a clipboard payload (nil when not copyable) —
-	// drives Edit → Copy Item.
-	var copyableSelection: EntityClipboard? {
-		guard treeSelection.count == 1, let node = treeSelection.first,
-			let vm = selected else { return nil }
-		switch node {
-		case .disk(let id):
-			guard let path = vm.disks.first(where: { $0.id == id })?.path else { return nil }
-			return EntityClipboard(kind: .disk, path: path)
-		case .mount(let id):
-			guard let mount = vm.mounts.first(where: { $0.id == id }) else { return nil }
-			return EntityClipboard(kind: .mount, path: mount.path, tag: mount.tag)
-		case .kernel(let path):
-			return EntityClipboard(kind: .kernel, path: path)
-		case .initramfs(let path):
-			return EntityClipboard(kind: .initramfs, path: path)
-		default:
-			return nil
-		}
+	// Every copyable entity in the tree selection (kernel + initramfs + disks together) —
+	// drives Edit → Copy Item and the multi-selection Copy.
+	var copyableSelectionItems: [EntityClipboard] {
+		guard let vm = selected else { return [] }
+		return treeSelection.compactMap { node in
+			switch node {
+			case .disk(let id):
+				guard let path = vm.disks.first(where: { $0.id == id })?.path else {
+					return nil
+				}
+				return EntityClipboard(kind: .disk, path: path)
+			case .mount(let id):
+				guard let mount = vm.mounts.first(where: { $0.id == id }) else { return nil }
+				return EntityClipboard(kind: .mount, path: mount.path, tag: mount.tag)
+			case .kernel(let path):
+				return EntityClipboard(kind: .kernel, path: path)
+			case .initramfs(let path):
+				return EntityClipboard(kind: .initramfs, path: path)
+			default:
+				return nil
+			}
+		}.sorted { $0.path < $1.path }   // Set order is unstable; keep copies deterministic
 	}
 
 	// MARK: - Canvas commands (menu shortcuts)

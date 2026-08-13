@@ -182,17 +182,18 @@ struct MachmanDesktopApp: App {
 			CommandGroup(after: .pasteboard) {
 				if let viewModel = connection.viewModel {
 					Divider()
-					Button("Copy Item") {
-						if let entity = viewModel.copyableSelection {
-							EntityClipboard.write(entity)
-						}
+					Button("Copy Items") {
+						EntityClipboard.write(viewModel.copyableSelectionItems)
 					}
 					.keyboardShortcut("c", modifiers: [.option, .command])
-					.disabled(viewModel.copyableSelection == nil)
-					Button("Paste Item") {
+					.disabled(viewModel.copyableSelectionItems.isEmpty)
+					Button("Paste Items") {
 						guard let vm = viewModel.selected else { return }
-						if let entity = EntityClipboard.read() {
-							entity.paste(into: vm.name, viewModel: viewModel)
+						let entities = EntityClipboard.read()
+						if !entities.isEmpty {
+							for entity in entities {
+								entity.paste(into: vm.name, viewModel: viewModel)
+							}
 						} else {
 							_ = AddFlows.handleFileURLs(
 								AddFlows.pasteboardFileURLs(), viewModel: viewModel,
@@ -201,7 +202,7 @@ struct MachmanDesktopApp: App {
 					}
 					.keyboardShortcut("v", modifiers: [.option, .command])
 					.disabled(viewModel.selected == nil
-						|| (EntityClipboard.read() == nil
+						|| (EntityClipboard.read().isEmpty
 							&& AddFlows.pasteboardFileURLs().isEmpty))
 				}
 			}
