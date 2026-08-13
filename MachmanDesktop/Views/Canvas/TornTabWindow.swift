@@ -18,6 +18,20 @@ struct TornTab: Codable, Hashable {
 	var tab: VMPaneTab
 }
 
+// Which torn tabs currently have a window — the double-mount guard: opening a torn tab
+// from the tree/canvas FOCUSES its window (openWindow dedups by value) instead of
+// mounting the same TerminalView a second time. Pure window bookkeeping, so a shared
+// registry beats threading one more store through every init.
+@MainActor
+final class TornTabRegistry: ObservableObject {
+	static let shared = TornTabRegistry()
+	@Published var open: Set<TornTab> = []
+
+	func isOpen(vm: String, tab: VMPaneTab) -> Bool {
+		open.contains(TornTab(vm: vm, tab: tab))
+	}
+}
+
 struct TornTabWindowView: View {
 	@ObservedObject var connection: DaemonConnection
 	@ObservedObject var profiles: TerminalProfileStore
@@ -56,9 +70,13 @@ struct TornTabWindowView: View {
 				.help(showInspector ? "Hide Inspector" : "Show Inspector")
 			}
 		}
+		.onAppear {
+			TornTabRegistry.shared.open.insert(payload)
+		}
 		// The OUTER view disappears only when the window closes (branch flips inside keep
 		// it mounted) — closing the window closes the tab, tearing down its terminal.
 		.onDisappear {
+			TornTabRegistry.shared.open.remove(payload)
 			if case .terminal(let ref) = payload.tab {
 				connection.terminals.dropController(vm: payload.vm, ref: ref)
 			}

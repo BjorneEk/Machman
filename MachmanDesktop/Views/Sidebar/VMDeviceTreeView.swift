@@ -43,6 +43,7 @@ struct VMDeviceTreeView: View {
 		.group("Kernel"), .group("Initramfs"),
 	]
 	@Environment(\.machmanTheme) private var theme
+	@Environment(\.openWindow) private var openWindow
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -647,6 +648,11 @@ struct VMDeviceTreeView: View {
 	private func openNode(_ node: SidebarNode) {
 		switch node {
 		case .vmRoot:
+			// A torn-off tab keeps its single mount: focus its window instead.
+			if TornTabRegistry.shared.isOpen(vm: vm.name, tab: .config) {
+				openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .config))
+				return
+			}
 			mutateCanvas { $0.open(.config) }
 		case .serial(let ref):
 			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
@@ -743,6 +749,11 @@ struct VMDeviceTreeView: View {
 	}
 
 	private func openTerminal(_ ref: SerialPortRef) {
+		// A torn-off tab keeps its single mount: focus its window instead.
+		if TornTabRegistry.shared.isOpen(vm: vm.name, tab: .terminal(ref)) {
+			openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .terminal(ref)))
+			return
+		}
 		// Instant: just record the tab. The canvas builds + connects the terminal lazily.
 		mutateCanvas { $0.open(.terminal(ref)) }
 	}

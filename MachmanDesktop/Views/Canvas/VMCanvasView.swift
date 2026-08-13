@@ -89,9 +89,11 @@ struct VMCanvasView: View {
 		}
 	}
 
-	// A canvas with nothing open shows the config tab (fresh VM; reopenable if closed).
+	// A canvas with nothing open shows the config tab (fresh VM; reopenable if closed) —
+	// unless a torn-off window already holds it (single mount).
 	private func ensureConfigTab() {
-		if canvases.canvas(for: vm.name).allOpenTabs.isEmpty {
+		if canvases.canvas(for: vm.name).allOpenTabs.isEmpty,
+			!TornTabRegistry.shared.isOpen(vm: vm.name, tab: .config) {
 			mutate { $0.open(.config) }
 		}
 	}
