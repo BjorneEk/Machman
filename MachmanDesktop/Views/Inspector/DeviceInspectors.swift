@@ -23,6 +23,8 @@ struct DeviceInspector: View {
 			switch device.kind {
 			case .graphics:
 				GraphicsInspector(viewModel: viewModel, vm: vm, device: device)
+			case .network:
+				NetworkInspector(viewModel: viewModel, vm: vm)
 			default:
 				NoSelectionInspector()
 			}
@@ -135,5 +137,51 @@ struct GraphicsInspector: View {
 				updated.displayPixelsPerInch = value.map { max(40, min(300, $0)) }
 				viewModel.updateDevice(vm.name, device: updated)
 			})
+	}
+}
+
+// MARK: - Network -----------------------------------------------------------------------------
+
+// The MAC address's ONLY home (per the design): shown, copyable, regenerable while stopped.
+struct NetworkInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	@State private var regenConfirm = false
+
+	var body: some View {
+		Form {
+			Section("Network") {
+				LabeledContent("Attachment", value: "NAT")
+					.help("Bridged networking is a future attachment kind")
+				LabeledContent("MAC") {
+					HStack(spacing: 4) {
+						Text(vm.macAddress ?? "— (assigned on first boot)")
+							.font(.system(.callout, design: .monospaced))
+							.foregroundStyle(vm.macAddress == nil ? .secondary : .primary)
+						if let mac = vm.macAddress {
+							CopyToClipboardButton(mac, tooltip: "Copy MAC address")
+							IconButton(
+								symbol: MachmanSymbols.regenerate,
+								tooltip: vm.state.isRunning
+									? "Stop the VM to change its MAC address"
+									: "New MAC address (guest sees it on next boot)",
+								font: .callout, flat: true
+							) {
+								regenConfirm = true
+							}
+							.disabled(vm.state.isRunning)
+						}
+					}
+				}
+			}
+			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .network)
+		}
+		.confirmationDialog("Regenerate MAC address?", isPresented: $regenConfirm) {
+			Button("Regenerate") { viewModel.regenerateMAC(vm.name) }
+			Button("Cancel", role: .cancel) {}
+		} message: {
+			Text("\(vm.name) gets a new random MAC. DHCP leases and MAC-based network "
+				+ "rules tied to the old address will stop matching.")
+		}
 	}
 }
