@@ -122,6 +122,7 @@ public enum MachmanSymbols {
 	public static let bootEFI = "gearshape.2"           // EFI boot-kind badge
 	public static let mount = "folder.fill"
 	public static let initramfs = "archivebox.fill"
+	public static let kernelFile = "doc.text"           // kernel-file drop preview row
 	public static let logging = "doc.text.below.ecg"
 
 	// Guest devices (mirrors MachmanCore/VMDevices assembly; SF has no trackpad/penguin —

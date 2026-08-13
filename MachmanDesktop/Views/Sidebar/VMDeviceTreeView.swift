@@ -35,6 +35,8 @@ struct VMDeviceTreeView: View {
 	@State private var renamingRoot = false
 	// Entry being renamed in place (owned storage disks + owned kernel files).
 	@State private var renamingNode: SidebarNode?
+	// A drag hovering a section: drives the would-be preview row + copy/forbidden cursor.
+	@State private var dragPreview: TreeDragPreview?
 	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
 		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
@@ -196,7 +198,12 @@ struct VMDeviceTreeView: View {
 				.tag(SidebarNode.disk(disk.id))
 				.contextMenu { diskMenu(disk) }
 			}
+			if let preview = dragPreview, preview.section == .disks {
+				TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.diskStorage)
+			}
 		}
+		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
+			section: .disks, preview: $dragPreview, perform: performDiskDrop))
 	}
 
 	@ViewBuilder
@@ -273,7 +280,12 @@ struct VMDeviceTreeView: View {
 					}
 				}
 			}
+			if let preview = dragPreview, preview.section == .mounts {
+				TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.mount)
+			}
 		}
+		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
+			section: .mounts, preview: $dragPreview, perform: performMountDrop))
 	}
 
 	@ViewBuilder
@@ -507,6 +519,12 @@ struct VMDeviceTreeView: View {
 					? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id))
 				.contextMenu { kernelEntryMenu(file, role: role) }
 			}
+			if let preview = dragPreview, preview.section == .kernel(role) {
+				TreeDropPreviewRow(
+					preview: preview,
+					icon: role == .kernel
+						? MachmanSymbols.kernelFile : MachmanSymbols.initramfs)
+			}
 		} label: {
 			HStack(spacing: 6) {
 				if role == .kernel {
@@ -536,12 +554,15 @@ struct VMDeviceTreeView: View {
 		}
 		// Kernel parent is selectable (it has an inspector); the initramfs parent is a dim
 		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
+		let droppable = dg.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
+			section: .kernel(role), preview: $dragPreview,
+			perform: { performKernelDrop($0, role: role) }))
 		if role == .kernel {
-			dg
+			droppable
 				.tag(SidebarNode.group("Kernel"))
 				.opacity(kernelSectionParked ? 0.45 : 1)
 		} else {
-			dg.opacity(kernelSectionParked ? 0.45 : MachmanColors.dimmedRowOpacity)
+			droppable.opacity(kernelSectionParked ? 0.45 : MachmanColors.dimmedRowOpacity)
 		}
 	}
 
@@ -637,12 +658,32 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
+	// MARK: - Section drops (validated by the hovering preview; routed here on release)
+
+	private func performDiskDrop(_ urls: [URL]) {
+		for url in urls where !TreeDropValidator.isDirectory(url) {
+			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, url: url)
+		}
+	}
+
+	private func performMountDrop(_ urls: [URL]) {
+		for url in urls where TreeDropValidator.isDirectory(url) {
+			viewModel.addMount(vm.name, path: url.path, tag: url.lastPathComponent)
+		}
+	}
+
+	private func performKernelDrop(_ urls: [URL], role: KernelRole) {
+		for url in urls where !TreeDropValidator.isDirectory(url) {
+			viewModel.promoteKernel(
+				vm.name, role: role, sourcePath: url.path,
+				tag: url.deletingPathExtension().lastPathComponent)
+		}
+	}
+
 	// MARK: - Section paste (each group takes only what fits it)
 
 	private static func isDirectory(_ url: URL) -> Bool {
-		var isDir: ObjCBool = false
-		FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-		return isDir.boolValue
+		TreeDropValidator.isDirectory(url)
 	}
 
 	private var canPasteIntoDisks: Bool {
