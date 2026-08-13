@@ -334,9 +334,9 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func createVM() async -> String? {
+	func createVM(template: String? = nil) async -> String? {
 		do {
-			let vm = try await api.createVM(template: nil)
+			let vm = try await api.createVM(template: template)
 			await reload()
 			return vm.name
 		} catch {
@@ -355,7 +355,11 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				try await self?.api.deleteVM(named: vm.name)
-				self?.select(name: nil)
+				// The picker can delete a VM that isn't the shown one — keep the selection
+				// unless it was the one deleted.
+				if self?.selectedName == vm.name {
+					self?.select(name: nil)
+				}
 			} catch {
 				self?.present(error, while: "Deleting \(vm.name)")
 			}

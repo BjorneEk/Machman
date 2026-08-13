@@ -128,14 +128,12 @@ struct VMTabContainerView: View {
 
 	@ToolbarContentBuilder
 	private func toolbar(_ vm: VMInfo) -> some ToolbarContent {
-		ToolbarItem(placement: .principal) {
-			HStack {
-				StatusIcon(
-					state: vm.state, windowOpen: vm.windowOpen, safeRun: vm.safeRun == true)
-					.font(.title2)
-				EditableText($viewModel.vmName)
-					.font(.largeTitle)
-					.onSubmit { submitRename(vm) }
+		ToolbarItem(placement: .navigation) {
+			VMIndicatorCluster(viewModel: viewModel, vm: vm)
+		}
+		if vm.safeRun == true {
+			ToolbarItem(placement: .navigation) {
+				SafeModeChip()
 			}
 		}
 		ToolbarItem {
@@ -165,31 +163,6 @@ struct VMTabContainerView: View {
 			}
 			.disabled(!isTerminalActive(vm))
 			.help(viewModel.showInfoPanel ? "Hide terminal info" : "Show terminal info")
-		}
-	}
-
-	private func submitRename(_ vm: VMInfo) {
-		let newName = viewModel.vmName
-		guard newName != vm.name else { return }
-		if viewModel.hasVM(newName) {
-			viewModel.present(
-				message: "A VM named '\(newName)' already exists.",
-				while: "Renaming \(vm.name)")
-			viewModel.vmName = vm.name
-			return
-		}
-		if VMListViewModel.confirmDialog(
-			message: "Change VM name",
-			informativeText: "Are you shure you want to change the name of: '\(vm.name)' to "
-				+ "'\(newName)'") {
-			Task {
-				if await viewModel.rename(from: vm.name, to: newName) {
-					profiles.renameVM(from: vm.name, to: newName)
-					viewModel.log(message: "Renamed \(vm.name) to \(newName)")
-				}
-			}
-		} else {
-			viewModel.vmName = vm.name
 		}
 	}
 
