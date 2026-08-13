@@ -23,6 +23,7 @@ struct VMCanvasView: View {
 	// Divider drags apply fractions absolutely from the drag-start snapshot.
 	@State private var dragBaseFractions: [Double]?
 	@Environment(\.machmanTheme) private var theme
+	@Environment(\.openWindow) private var openWindow
 
 	private static let dividerWidth: CGFloat = 5
 
@@ -197,6 +198,10 @@ struct VMCanvasView: View {
 		.frame(height: 24)
 		.background(RoundedRectangle(cornerRadius: 5, style: .continuous)
 			.fill(Color.primary.opacity(active ? 0.12 : (current ? 0.05 : 0))))
+		.contextMenu {
+			Button("Open in New Window") { tearOff(tab) }
+			Button("Close Tab") { close(tab) }
+		}
 	}
 
 	private func close(_ tab: VMPaneTab) {
@@ -204,6 +209,13 @@ struct VMCanvasView: View {
 			sessions.dropController(vm: vm.name, ref: ref)
 		}
 		mutate { $0.close(tab) }
+	}
+
+	// Tear a tab off into its own window: the canvas tab closes but the controller stays —
+	// the new window adopts the same terminal (one mount at a time).
+	private func tearOff(_ tab: VMPaneTab) {
+		mutate { $0.close(tab) }
+		openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
 	}
 
 	// MARK: - Content
@@ -217,69 +229,19 @@ struct VMCanvasView: View {
 		case .config:
 			VMConfigTabView(vm: vm, viewModel: viewModel)
 		case .terminal(let ref):
-			terminalContent(ref: ref)
+			TerminalTabContent(
+				sessions: sessions, profiles: profiles, vm: vm, ref: ref,
+				stillWanted: { [weak canvases] in
+					canvases?.canvas(for: vm.name).allOpenTabs
+						.contains(.terminal(ref)) == true
+				})
 		}
-	}
-
-	// The socket exists only while the VM serves this port. Stopped → placeholder.
-	// Running → ensure the controller (built off the click, spinner covers) then render.
-	@ViewBuilder
-	private func terminalContent(ref: SerialPortRef) -> some View {
-		if let socket = socketPath(ref: ref) {
-			Group {
-				if let controller = sessions.controller(vm: vm.name, ref: ref) {
-					SerialTerminalHost(controller: controller)
-						.id(ObjectIdentifier(controller))   // swap the view on reloadTab
-						.frame(maxWidth: .infinity, maxHeight: .infinity)
-						.padding(6)
-				} else {
-					VStack(spacing: 10) {
-						ProgressView()
-						Text("Connecting to \(guestName(ref: ref))…")
-							.foregroundColor(.secondary)
-					}
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-				}
-			}
-			.onAppear {
-				let vmName = vm.name
-				let canvases = canvases
-				sessions.ensureController(
-					vm: vmName, ref: ref, socketPath: socket,
-					profile: profiles.profile(vm: vmName, ref: ref),
-					stillWanted: {
-						canvases.canvas(for: vmName).allOpenTabs.contains(.terminal(ref))
-					})
-			}
-		} else {
-			VStack(spacing: 8) {
-				Image(systemName: ref.kind == .console
-					? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-					.font(.largeTitle).foregroundColor(.secondary)
-				Text("Start the VM to open \(guestName(ref: ref)).")
-					.foregroundColor(.secondary)
-			}
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
-		}
-	}
-
-	// MARK: - Port helpers
-
-	private func port(ref: SerialPortRef) -> SerialPortInfo? {
-		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-		return ports?.first(where: { $0.index == ref.index })
-	}
-
-	private func socketPath(ref: SerialPortRef) -> String? {
-		port(ref: ref)?.socketPath
-	}
-
-	private func guestName(ref: SerialPortRef) -> String {
-		port(ref: ref)?.guestDevice ?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
 	}
 
 	// Prefer the server's guest device name; fall back to a derived one if the list lags.
 	private func displayName(_ ref: SerialPortRef) -> String {
-		guestName(ref: ref)
+		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
+		return ports?.first(where: { $0.index == ref.index })?.guestDevice
+			?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
 	}
 }

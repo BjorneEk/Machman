@@ -162,6 +162,15 @@ struct MachmanDesktopApp: App {
 				}
 			}
 		}
+		// Torn-off canvas tabs: one window per (vm, tab) value; Codable payload restores
+		// them across relaunches. The terminal reparents from the app-scoped sessions.
+		WindowGroup(id: "torn-tab", for: TornTab.self) { $payload in
+			if let payload {
+				TornTabWindowView(
+					connection: connection, profiles: profiles, payload: payload)
+			}
+		}
+		.defaultSize(width: 800, height: 520)
 		Settings {
 			SettingsRootView(profiles: profiles)
 		}
