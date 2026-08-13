@@ -127,6 +127,7 @@ struct VMDeviceTreeView: View {
 			Spacer()
 			BootBadge(mode: vm.boot.mode, size: 9)
 		}
+		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
 		.tag(SidebarNode.vmRoot)
 		.contextMenu {
@@ -181,6 +182,7 @@ struct VMDeviceTreeView: View {
 					}
 				}
 				.opacity(disk.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
+				.font(.system(size: theme.metrics.rowFontSize))
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(SidebarNode.disk(disk.id))
 				.contextMenu { diskMenu(disk) }
@@ -237,6 +239,7 @@ struct VMDeviceTreeView: View {
 					Spacer()
 				}
 				.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
+				.font(.system(size: theme.metrics.rowFontSize))
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(SidebarNode.mount(mount.id))
 				.contextMenu {
@@ -291,6 +294,7 @@ struct VMDeviceTreeView: View {
 		}
 		.opacity(!enabled ? MachmanColors.inactiveEntryOpacity
 			: (gated ? MachmanColors.dimmedRowOpacity : 1))
+		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
 		.tag(SidebarNode.serial(ref))
 		.contextMenu { serialMenu(port, ref: ref, open: open, gated: gated, enabled: enabled) }
@@ -380,6 +384,7 @@ struct VMDeviceTreeView: View {
 			}
 		}
 		.opacity(device.enabled ? 1 : MachmanColors.inactiveEntryOpacity)
+		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
 	}
 
@@ -478,6 +483,7 @@ struct VMDeviceTreeView: View {
 					}
 				}
 				.opacity(file.active ? 1 : MachmanColors.inactiveEntryOpacity)
+				.font(.system(size: theme.metrics.rowFontSize))
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(role == .kernel
 					? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id))
@@ -500,6 +506,7 @@ struct VMDeviceTreeView: View {
 						.help("No kernel selected — the VM cannot start")
 				}
 			}
+			.font(.system(size: theme.metrics.rowFontSize))
 			.frame(height: theme.metrics.treeRowHeight)
 			.contextMenu {
 				Button("Add From Disk…") {
@@ -575,6 +582,7 @@ struct VMDeviceTreeView: View {
 					.foregroundStyle(.tertiary)
 					.monospacedDigit()
 			}
+			.font(.system(size: theme.metrics.rowFontSize))
 			.frame(height: theme.metrics.treeRowHeight)
 			.contextMenu { menu() }
 		}

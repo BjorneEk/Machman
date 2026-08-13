@@ -94,6 +94,10 @@ struct VMNavigationView: View {
 		.toolbar { toolbar(viewModel.selected) }
 		.toolbar(removing: .title)   // the VM indicator IS the title
 		.toolbarBackground(.visible, for: .windowToolbar)
+		// Both spellings on purpose: the visibility API is what actually pins the bar
+		// through column open/close animations (the capsule strip's clear ScrollView at the
+		// top edge otherwise re-triggers the scroll-edge effect).
+		.toolbarBackgroundVisibility(.visible, for: .windowToolbar)
 		.alert(
 			viewModel.presentedError?.title ?? "Error",
 			isPresented: $viewModel.isErrorPresented,

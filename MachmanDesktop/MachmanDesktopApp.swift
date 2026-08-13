@@ -264,50 +264,51 @@ private struct ThemedRoot<Content: View>: View {
 	}
 }
 
+// Whole-class @MainActor: AppKit calls the delegate on the main thread, and the isolation
+// keeps non-Sendable AppKit types (NSMenu) inside the actor instead of crossing an
+// assumeIsolated boundary.
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 	static weak var connection: DaemonConnection?
 
 	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting.
-	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+	nonisolated func applicationShouldTerminateAfterLastWindowClosed(
+		_ sender: NSApplication
+	) -> Bool {
 		true
 	}
 
-	// Dock menu: one start/stop toggle per VM, states at a glance. AppKit calls these on
-	// the main thread; assumeIsolated bridges to the main-actor stores.
+	// Dock menu: one start/stop toggle per VM, states at a glance.
 	func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-		MainActor.assumeIsolated {
-			guard let vms = Self.connection?.vmStore.vms, !vms.isEmpty else { return nil }
-			let menu = NSMenu()
-			for vm in vms {
-				let running = vm.state.isRunning
-				let item = NSMenuItem(
-					title: running ? "Shut Down \(vm.name)" : "Start \(vm.name)",
-					action: #selector(toggleVM(_:)), keyEquivalent: "")
-				item.target = self
-				item.representedObject = vm.name
-				item.state = running ? .on : .off
-				menu.addItem(item)
-			}
-			return menu
+		guard let vms = Self.connection?.vmStore.vms, !vms.isEmpty else { return nil }
+		let menu = NSMenu()
+		for vm in vms {
+			let running = vm.state.isRunning
+			let item = NSMenuItem(
+				title: running ? "Shut Down \(vm.name)" : "Start \(vm.name)",
+				action: #selector(toggleVM(_:)), keyEquivalent: "")
+			item.target = self
+			item.representedObject = vm.name
+			item.state = running ? .on : .off
+			menu.addItem(item)
 		}
+		return menu
 	}
 
 	@objc private func toggleVM(_ sender: NSMenuItem) {
-		MainActor.assumeIsolated {
-			guard let name = sender.representedObject as? String,
-				let store = Self.connection?.vmStore,
-				let api = store.api else { return }
-			let running = store.vms.first { $0.name == name }?.state.isRunning == true
-			Task {
-				do {
-					if running {
-						try await api.stop(vm: name, mode: .soft)
-					} else {
-						try await api.start(vm: name, options: StartOptions())
-					}
-				} catch {
-					MachmanLogger.log(.interactionError, "dock action failed: \(error)")
+		guard let name = sender.representedObject as? String,
+			let store = Self.connection?.vmStore,
+			let api = store.api else { return }
+		let running = store.vms.first { $0.name == name }?.state.isRunning == true
+		Task {
+			do {
+				if running {
+					try await api.stop(vm: name, mode: .soft)
+				} else {
+					try await api.start(vm: name, options: StartOptions())
 				}
+			} catch {
+				MachmanLogger.log(.interactionError, "dock action failed: \(error)")
 			}
 		}
 	}
