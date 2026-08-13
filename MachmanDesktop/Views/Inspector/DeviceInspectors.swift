@@ -27,6 +27,8 @@ struct DeviceInspector: View {
 				NetworkInspector(viewModel: viewModel, vm: vm)
 			case .clipboard:
 				ClipboardInspector(viewModel: viewModel, vm: vm, device: device)
+			case .rosetta:
+				RosettaInspector(viewModel: viewModel, vm: vm, device: device)
 			default:
 				NoSelectionInspector()
 			}
@@ -215,4 +217,78 @@ struct ClipboardInspector: View {
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .clipboard)
 		}
 	}
+}
+
+// MARK: - Rosetta -----------------------------------------------------------------------------
+
+// Host availability from capabilities (host.installRosetta flips it), the fixed mount tag,
+// and the guest binfmt setup.
+struct RosettaInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	let device: DeviceInfo
+
+	private var availability: String? { viewModel.capabilities?.rosettaAvailability }
+
+	var body: some View {
+		Form {
+			Section("Rosetta x86-64") {
+				LabeledContent("Status") {
+					switch availability {
+					case RosettaAvailability.installed:
+						Label("Installed", systemImage: MachmanSymbols.activeEntry)
+							.foregroundStyle(MachmanColors.stateRunning)
+					case RosettaAvailability.notInstalled:
+						Label("Not installed", systemImage: MachmanSymbols.warning)
+							.foregroundStyle(MachmanColors.warning)
+					case RosettaAvailability.notSupported:
+						Label("Not supported on this host",
+							systemImage: MachmanSymbols.warning)
+							.foregroundStyle(MachmanColors.warning)
+					default:
+						Text("Unknown").foregroundStyle(.secondary)
+					}
+				}
+				if availability == RosettaAvailability.notInstalled {
+					Button("Install Rosetta Support…") {
+						viewModel.installRosetta()
+					}
+					.help("macOS prompts for the download; the VM's share attaches on "
+						+ "the next boot once installed")
+				}
+				if let gate = device.unavailable {
+					Text(gate.message)
+						.font(.caption)
+						.foregroundStyle(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
+				}
+				LabeledContent("Mount tag", value: "rosetta")
+			}
+			Section("Guest Setup") {
+				VStack(alignment: .leading, spacing: 6) {
+					Text("Mount the share, then register the binfmt handler:")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					HStack {
+						Text(Self.setupCommand)
+							.font(.system(.caption, design: .monospaced))
+							.textSelection(.enabled)
+						Spacer()
+						CopyToClipboardButton(Self.setupCommand, tooltip: "Copy commands")
+					}
+					.padding(6)
+					.background(RoundedRectangle(cornerRadius: 5)
+						.fill(Color.primary.opacity(0.05)))
+					Text("Lets Linux guests run x86-64 binaries through Rosetta.")
+						.font(.caption)
+						.foregroundStyle(.tertiary)
+				}
+			}
+			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .rosetta)
+		}
+	}
+
+	private static let setupCommand = "mount -t virtiofs rosetta /media/rosetta\n"
+		+ "/media/rosetta/rosetta must be registered with binfmt_misc "
+		+ "(see Apple's VZLinuxRosettaDirectoryShare docs)"
 }

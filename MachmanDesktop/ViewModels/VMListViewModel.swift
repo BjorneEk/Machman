@@ -575,6 +575,19 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// System-prompted host install; capabilities refresh afterwards so the availability
+	// row flips without a reconnect.
+	func installRosetta() {
+		Task { [weak self] in
+			do {
+				try await self?.api.installRosetta()
+				await self?.store.refreshCapabilities()
+			} catch {
+				self?.present(error, while: "Installing Rosetta")
+			}
+		}
+	}
+
 	func clampMemory(_ bytes: UInt64, floor: UInt64) -> UInt64 {
 		ByteSize.clampMemory(bytes, floor: floor, capabilities: capabilities)
 	}
