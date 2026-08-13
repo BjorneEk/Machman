@@ -33,6 +33,7 @@ struct VMDeviceTreeView: View {
 	let vm: VMInfo
 	@State private var treeSelection: Set<SidebarNode> = []
 	@State private var renamingRoot = false
+	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
 		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
 		.group("Kernel"), .group("Initramfs"),
@@ -40,6 +41,41 @@ struct VMDeviceTreeView: View {
 	@Environment(\.machmanTheme) private var theme
 
 	var body: some View {
+		VStack(spacing: 0) {
+			filterField
+			treeList
+		}
+	}
+
+	private var filterField: some View {
+		HStack(spacing: 5) {
+			Image(systemName: MachmanSymbols.search)
+				.font(.system(size: 11))
+				.foregroundStyle(.secondary)
+			TextField("Filter devices", text: $filter)
+				.textFieldStyle(.plain)
+				.font(.callout)
+			if !filter.isEmpty {
+				IconButton(symbol: MachmanSymbols.closeTab, tooltip: "Clear",
+					font: .caption, flat: true) { filter = "" }
+			}
+		}
+		.padding(.horizontal, 7)
+		.padding(.vertical, 4)
+		.background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+			.fill(Color.primary.opacity(0.05)))
+		.padding(.horizontal, 10)
+		.padding(.top, 8)
+	}
+
+	// Rows filter on what they show; group counts keep the real totals.
+	private func matches(_ candidates: String?...) -> Bool {
+		filter.isEmpty || candidates.contains {
+			$0?.localizedCaseInsensitiveContains(filter) == true
+		}
+	}
+
+	private var treeList: some View {
 		List(selection: $treeSelection) {
 			vmRootRow
 			diskGroup
@@ -129,7 +165,7 @@ struct VMDeviceTreeView: View {
 					AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
 				}
 			}) {
-			ForEach(disks) { disk in
+			ForEach(disks.filter { matches($0.name, $0.path) }) { disk in
 				HStack(spacing: 6) {
 					Image(systemName: Self.symbol(for: disk.type))
 						.font(.system(size: theme.metrics.iconSize))
@@ -188,7 +224,7 @@ struct VMDeviceTreeView: View {
 					AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
 				}
 			}) {
-			ForEach(mounts) { mount in
+			ForEach(mounts.filter { matches($0.path, $0.tag) }) { mount in
 				HStack(spacing: 6) {
 					Image(systemName: MachmanSymbols.mount)
 						.font(.system(size: theme.metrics.iconSize))
@@ -222,7 +258,7 @@ struct VMDeviceTreeView: View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
 			count: ports.count) {
-			ForEach(ports) { port in
+			ForEach(ports.filter { matches($0.guestDevice) }) { port in
 				serialRow(port)
 			}
 		}
@@ -314,7 +350,7 @@ struct VMDeviceTreeView: View {
 		let devices = vm.devices ?? []
 		group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
 			count: devices.count) {
-			ForEach(devices) { device in
+			ForEach(devices.filter { matches($0.kind.displayLabel) }) { device in
 				if device.kind.isConfigurable {
 					deviceRow(device)
 						.tag(SidebarNode.device(device.kind))
@@ -403,7 +439,7 @@ struct VMDeviceTreeView: View {
 	private func kernelGroup(role: KernelRole, title: String) -> some View {
 		let entries = kernelEntries(role: role)
 		let dg = DisclosureGroup(isExpanded: groupBinding(.group(title))) {
-			ForEach(entries) { file in
+			ForEach(entries.filter { matches($0.label) }) { file in
 				HStack(spacing: 6) {
 					if role == .kernel {
 						TuxIcon(size: theme.metrics.iconSize + 1)

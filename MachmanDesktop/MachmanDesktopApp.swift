@@ -27,10 +27,17 @@ struct MachmanDesktopApp: App {
 		_connection = StateObject(wrappedValue: DaemonConnection())
 	}
 
+	private var connectedDaemonVersion: String? {
+		if case .connected(let version) = connection.status { return version }
+		return nil
+	}
+
 	var body: some Scene {
 		WindowGroup {
 			if let viewModel = connection.viewModel {
-				VMNavigationView(viewModel: viewModel, selection: $selection, profiles: profiles)
+				VMNavigationView(
+					viewModel: viewModel, selection: $selection, profiles: profiles,
+					daemonVersion: connectedDaemonVersion)
 					.id(ObjectIdentifier(viewModel))   // remount per (re)connection
 			} else {
 				ConnectingView(connection: connection)

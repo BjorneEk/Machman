@@ -12,15 +12,17 @@ import MachmanAPI
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	let profiles: TerminalProfileStore
+	let daemonVersion: String?
 	@Binding private var selection: String?
 
 	init(
 		viewModel: VMListViewModel, selection: Binding<String?>,
-		profiles: TerminalProfileStore
+		profiles: TerminalProfileStore, daemonVersion: String? = nil
 	) {
 		_viewModel = StateObject(wrappedValue: viewModel)
 		self._selection = selection
 		self.profiles = profiles
+		self.daemonVersion = daemonVersion
 	}
 
 	var body: some View {
@@ -64,6 +66,9 @@ struct VMNavigationView: View {
 					viewModel.select(name: sel)
 				}
 			}
+			.safeAreaInset(edge: .bottom, spacing: 0) {
+				daemonFooter
+			}
 		} detail: {
 			VMTabContainerView(
 				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
@@ -105,6 +110,23 @@ struct VMNavigationView: View {
 		}
 	}
 
+	// Quiet status line under the tree: daemon version + how much is running.
+	private var daemonFooter: some View {
+		let running = viewModel.vms.filter { $0.state.isRunning }.count
+		return HStack(spacing: 6) {
+			Circle()
+				.fill(MachmanColors.stateRunning)
+				.frame(width: 6, height: 6)
+			Text(daemonVersion.map { "Daemon \($0)" } ?? "Daemon")
+			Text("·").foregroundStyle(.tertiary)
+			Text("\(running) running")
+			Spacer()
+		}
+		.font(.caption)
+		.foregroundStyle(.secondary)
+		.padding(.horizontal, 12)
+		.padding(.vertical, 6)
+	}
 }
 
 #Preview {
