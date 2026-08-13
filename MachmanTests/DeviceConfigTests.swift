@@ -158,6 +158,26 @@ struct DeviceConfigTests {
 		}
 	}
 
+	@Test func resolvedDevicesFilterAndWarn() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("resolve")   // implied EFI set incl. clipboard
+			// Disable one device (silently honored), add misfits (warned).
+			vm.devices[vm.devices.firstIndex { $0.deviceKind == .audioInput }!].enabled = false
+			vm.devices.append(GuestDevice(kind: .trackpad))          // needs macOS guest
+			var future = GuestDevice(kind: .entropy)
+			future.kind = "quantumLink"                              // unknown kind
+			vm.devices.append(future)
+			let resolved = vm.resolvedDevices()
+			#expect(resolved.attach[.audioInput] == nil)             // disabled: no warning
+			#expect(resolved.attach[.trackpad] == nil)
+			#expect(resolved.attach[.keyboard] != nil)
+			#expect(resolved.attach[.clipboard] != nil)
+			#expect(resolved.warnings.contains { $0.contains("trackpad") })
+			#expect(resolved.warnings.contains { $0.contains("quantumLink") })
+			#expect(!resolved.warnings.contains { $0.contains("audioInput") })
+		}
+	}
+
 	@Test func kernelOverrideKeyIsVMRelative() throws {
 		let file = OwnedKernelFile(
 			role: .kernel, tag: "janus", fileName: "vmlinuz",

@@ -22,10 +22,12 @@ struct SerialWiring {
 	let fromGuest: FileHandle
 }
 
-// A built VZ configuration plus the serial pipe wiring its ports need bridged.
+// A built VZ configuration plus the serial pipe wiring its ports need bridged, plus human
+// warnings for configured devices the builder had to skip (host gates, boot-mode misfits).
 struct BuiltVM {
 	let configuration: VZVirtualMachineConfiguration
 	let serialWiring: [SerialWiring]
+	let warnings: [String]
 }
 
 extension VMConfig {
@@ -68,23 +70,67 @@ extension VMConfig {
 		}
 	}
 
-	// Generic (virtio / USB) graphics + input for EFI/Linux; Mac graphics / keyboard / trackpad
-	// for a macOS guest. The Mac trackpad is only recognized by macOS 13+ guests, so a USB pointer
-	// rides alongside it as a fallback (per Apple guidance).
-	func graphicsDevices() -> [VZGraphicsDeviceConfiguration] {
+	// MARK: - Config-driven device resolution (1.0.4)
+
+	// The devices that actually attach at this start: the configured list minus disabled
+	// entries (silently honored — that's what disabling means) minus entries this host or
+	// boot mode cannot carry (warned, so the user learns the VM started with fewer devices).
+	func resolvedDevices() -> (attach: [DeviceKind: GuestDevice], warnings: [String]) {
+		var attach: [DeviceKind: GuestDevice] = [:]
+		var warnings: [String] = []
+		let macGuest: Bool = { if case .macOS = boot { return true }; return false }()
+		for device in devices {
+			guard device.enabled else { continue }
+			switch device.deviceKind {
+			case .unknown:
+				warnings.append(
+					"skipping unknown device '\(device.kind)' on \(name) "
+						+ "(written by a newer Machman)")
+			case .trackpad where !macGuest:
+				warnings.append("skipping trackpad on \(name): it needs a macOS guest")
+			case .clipboard where macGuest:
+				warnings.append(
+					"skipping clipboard sharing on \(name): not supported for macOS guests")
+			case .rosetta where macGuest:
+				warnings.append("skipping rosetta on \(name): not supported for macOS guests")
+			case .rosetta where VZLinuxRosettaDirectoryShare.availability != .installed:
+				warnings.append(
+					"skipping rosetta on \(name): Rosetta is not installed on this host")
+			case let kind:
+				attach[kind] = device
+			}
+		}
+		return (attach, warnings)
+	}
+
+	// Generic (virtio / USB) graphics for EFI/Linux; Mac graphics for a macOS guest.
+	// Resolution comes from the device's settings, falling back to the host screen size
+	// (and 80 ppi for Mac guests) — exactly the pre-1.0.4 hard-coded behavior.
+	func graphicsDevices(for device: GuestDevice?) -> [VZGraphicsDeviceConfiguration] {
+		guard let device else { return [] }
+		let fallback = VMConfig.mainScreenSize(2560, 1440)
+		let width = device.displayWidthPixels ?? fallback.width
+		let height = device.displayHeightPixels ?? fallback.height
 		switch boot {
 		case .efi, .linuxKernel:
-			return [VMConfig.graphicsDeviceConfig()]
+			let graphics = VZVirtioGraphicsDeviceConfiguration()
+			graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(
+				widthInPixels: width, heightInPixels: height)]
+			return [graphics]
 		case .macOS:
 			let graphics = VZMacGraphicsDeviceConfiguration()
-			let size = VMConfig.mainScreenSize(2560, 1440)
 			graphics.displays = [VZMacGraphicsDisplayConfiguration(
-				widthInPixels: size.width, heightInPixels: size.height, pixelsPerInch: 80)]
+				widthInPixels: width, heightInPixels: height,
+				pixelsPerInch: device.displayPixelsPerInch ?? 80)]
 			return [graphics]
 		}
 	}
 
-	func keyboards() -> [VZKeyboardConfiguration] {
+	// The Mac keyboard/trackpad classes need a macOS guest; EFI/Linux get USB variants.
+	// The kind resolves to the boot-appropriate class here, so device lists survive
+	// boot-mode changes unedited.
+	func keyboards(present: Bool) -> [VZKeyboardConfiguration] {
+		guard present else { return [] }
 		switch boot {
 		case .efi, .linuxKernel:
 			return [VZUSBKeyboardConfiguration()]
@@ -93,22 +139,29 @@ extension VMConfig {
 		}
 	}
 
-	func pointingDevices() -> [VZPointingDeviceConfiguration] {
-		switch boot {
-		case .efi, .linuxKernel:
-			return [VZUSBScreenCoordinatePointingDeviceConfiguration()]
-		case .macOS:
-			return [VZMacTrackpadConfiguration(), VZUSBScreenCoordinatePointingDeviceConfiguration()]
-		}
+	// trackpad and pointer are separate devices since 1.0.4 (the engine used to always pair
+	// them for mac guests — the implied set still does; users can now drop either).
+	func pointingDevices(trackpad: Bool, pointer: Bool) -> [VZPointingDeviceConfiguration] {
+		var out: [VZPointingDeviceConfiguration] = []
+		if trackpad { out.append(VZMacTrackpadConfiguration()) }
+		if pointer { out.append(VZUSBScreenCoordinatePointingDeviceConfiguration()) }
+		return out
 	}
 
-	func consoleDevices() -> [VZConsoleDeviceConfiguration] {
-		switch boot {
-		case .efi, .linuxKernel:
-			return [VMConfig.spiceAgentConsoleDeviceConfig()]
-		case .macOS:
-			return []
-		}
+	func consoleDevices(clipboard device: GuestDevice?) -> [VZConsoleDeviceConfiguration] {
+		guard let device else { return [] }
+		return [VMConfig.spiceAgentConsoleDeviceConfig(
+			sharesClipboard: device.sharesClipboard ?? true)]
+	}
+
+	// Rosetta rides as an EXTRA directory-sharing device with the well-known "rosetta" tag,
+	// separate from the "host-share" multi-share. Availability is pre-checked in
+	// resolvedDevices(); a throw here still degrades to a warning at the call site.
+	func rosettaShareDeviceConfig() throws -> VZVirtioFileSystemDeviceConfiguration {
+		let share = try VZLinuxRosettaDirectoryShare()
+		let device = VZVirtioFileSystemDeviceConfiguration(tag: "rosetta")
+		device.share = share
+		return device
 	}
 
 	// Build the configured serial ports over fresh pipe pairs, returning the host-end wiring for
@@ -210,31 +263,61 @@ extension VMConfig {
 		return nil
 	}
 
-	// Assembles the full VZ configuration. Shared by the normal boot path (VirtualMachine) and the
-	// macOS installer so the device list lives in exactly one place. attachSerial is false for the
-	// installer: it does not run bridges, and an undrained serial pipe would stall the guest.
+	// Assembles the full VZ configuration from the persisted device list (1.0.4). Shared by
+	// the normal boot path (VirtualMachine) and the macOS installer so the device list lives
+	// in exactly one place. attachSerial is false for the installer: it does not run bridges,
+	// and an undrained serial pipe would stall the guest.
 	func makeVZVirtualMachineConfiguration(attachSerial: Bool = true) throws -> BuiltVM {
+		let resolved = resolvedDevices()
+		let byKind = resolved.attach
+		var warnings = resolved.warnings
 		let vmConfig = VZVirtualMachineConfiguration()
 		vmConfig.cpuCount = getCPUCounte()
 		vmConfig.memorySize = getMemorySize()
 		vmConfig.platform = try makePlatform()
 		vmConfig.bootLoader = try makeBootLoader()
 		vmConfig.storageDevices = try diskArray()
-		vmConfig.networkDevices = [networkDeviceConfig()]
-		vmConfig.graphicsDevices = graphicsDevices()
-		vmConfig.audioDevices = [VMConfig.inputAudioDeviceConfig(), VMConfig.outputAudioDeviceConfig()]
-		vmConfig.keyboards = keyboards()
-		vmConfig.pointingDevices = pointingDevices()
-		vmConfig.consoleDevices = consoleDevices()
+		vmConfig.networkDevices = byKind[.network] != nil ? [networkDeviceConfig()] : []
+		vmConfig.graphicsDevices = graphicsDevices(for: byKind[.graphics])
+		var audio: [VZAudioDeviceConfiguration] = []
+		if byKind[.audioInput] != nil { audio.append(VMConfig.inputAudioDeviceConfig()) }
+		if byKind[.audioOutput] != nil { audio.append(VMConfig.outputAudioDeviceConfig()) }
+		vmConfig.audioDevices = audio
+		vmConfig.keyboards = keyboards(present: byKind[.keyboard] != nil)
+		vmConfig.pointingDevices = pointingDevices(
+			trackpad: byKind[.trackpad] != nil, pointer: byKind[.pointer] != nil)
+		vmConfig.consoleDevices = consoleDevices(clipboard: byKind[.clipboard])
+		if byKind[.entropy] != nil {
+			vmConfig.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+		}
 		var wiring: [SerialWiring] = []
 		if attachSerial {
 			let serial = serialPorts()
 			vmConfig.serialPorts = serial.ports
 			wiring = serial.wiring
 		}
-		vmConfig.directorySharingDevices = [directoryShareDeviceConfig(mainTag: "host-share")]
+		var shares: [VZDirectorySharingDeviceConfiguration] =
+			[directoryShareDeviceConfig(mainTag: "host-share")]
+		if byKind[.rosetta] != nil {
+			do {
+				shares.append(try rosettaShareDeviceConfig())
+			} catch {
+				warnings.append("skipping rosetta on \(name): \(error.localizedDescription)")
+			}
+		}
+		vmConfig.directorySharingDevices = shares
+		if nestedVirtualization {
+			if let generic = vmConfig.platform as? VZGenericPlatformConfiguration,
+				VZGenericPlatformConfiguration.isNestedVirtualizationSupported {
+				generic.isNestedVirtualizationEnabled = true
+			} else {
+				warnings.append(
+					"skipping nested virtualization on \(name): "
+						+ "not supported for this host or boot mode")
+			}
+		}
 		try vmConfig.validate()
-		return BuiltVM(configuration: vmConfig, serialWiring: wiring)
+		return BuiltVM(configuration: vmConfig, serialWiring: wiring, warnings: warnings)
 	}
 
 	// MARK: - Device factories
@@ -256,13 +339,6 @@ extension VMConfig {
 		return (width: width, height: height)
 	}
 
-	static func graphicsDeviceConfig() -> VZVirtioGraphicsDeviceConfiguration {
-		let graphicsDevice = VZVirtioGraphicsDeviceConfiguration()
-		let size = mainScreenSize(2560, 1440)
-		graphicsDevice.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: size.width, heightInPixels: size.height)]
-		return graphicsDevice
-	}
-
 	static func inputAudioDeviceConfig() -> VZVirtioSoundDeviceConfiguration {
 		let inputAudioDevice = VZVirtioSoundDeviceConfiguration()
 		let inputStream = VZVirtioSoundDeviceInputStreamConfiguration()
@@ -279,12 +355,17 @@ extension VMConfig {
 		return outputAudioDevice
 	}
 
-	static func spiceAgentConsoleDeviceConfig() -> VZVirtioConsoleDeviceConfiguration {
+	static func spiceAgentConsoleDeviceConfig(
+		sharesClipboard: Bool = true
+	) -> VZVirtioConsoleDeviceConfiguration {
 		let consoleDevice = VZVirtioConsoleDeviceConfiguration()
 
 		let spiceAgentPort = VZVirtioConsolePortConfiguration()
 		spiceAgentPort.name = VZSpiceAgentPortAttachment.spiceAgentPortName
-		spiceAgentPort.attachment = VZSpiceAgentPortAttachment()
+		let attachment = VZSpiceAgentPortAttachment()
+		// Explicit now (1.0.4): the framework default is true, but the setting is user-facing.
+		attachment.sharesClipboard = sharesClipboard
+		spiceAgentPort.attachment = attachment
 		consoleDevice.ports[0] = spiceAgentPort
 
 		return consoleDevice

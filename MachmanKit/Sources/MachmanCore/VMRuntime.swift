@@ -62,6 +62,10 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		if wiredUARTs < config.uartPorts.count, let issue = VMConfig.uartUnavailability() {
 			events.emit(.log(vm: config.name, level: .warning, message: issue.message))
 		}
+		// Same contract for guest devices the builder had to skip (1.0.4).
+		for warning in built.warnings {
+			events.emit(.log(vm: config.name, level: .warning, message: warning))
+		}
 		let machine = VZVirtualMachine(configuration: built.configuration)
 		machine.delegate = self
 		vz = machine
