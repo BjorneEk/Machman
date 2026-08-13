@@ -87,6 +87,9 @@ final class VMListViewModel: ObservableObject {
 	private var operationsForwarder: AnyCancellable?
 	private var canvasForwarder: AnyCancellable?
 	private var listReactor: AnyCancellable?
+	// Last state seen per VM, for outcome toasts: diffing the store's list catches changes
+	// that arrive via reload (no discrete event) and dedupes doubled events.
+	private var knownStates: [String: VMState] = [:]
 
 	var selected: VMInfo? {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
@@ -156,6 +159,7 @@ final class VMListViewModel: ObservableObject {
 			}
 		}
 		operationsStore.primeInstallPhases(for: list)
+		diffStatesAndToast(list)
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
 		// falls over to the first. (Renames pass through here with the old name still
@@ -169,23 +173,35 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	private func handle(event: VMEvent) {
-		switch event {
-		case .stateChanged(let name, let state):
-			// VMStore patches the row and PreviewService restarts its loop; here the
-			// outcome pops as a toast (transitions stay quiet).
-			switch state {
+	// Outcome toasts off the list itself (every patch and reload lands here): a VM newly
+	// running/stopped/errored toasts exactly once, transitions stay quiet, and a first
+	// sighting (launch, reconnect, creation) never toasts.
+	private func diffStatesAndToast(_ list: [VMInfo]) {
+		for vm in list {
+			let previous = knownStates[vm.name]
+			knownStates[vm.name] = vm.state
+			guard let previous, previous != vm.state else { continue }
+			switch vm.state {
 			case .running:
-				pushToast(symbol: MachmanSymbols.start, message: "\(name) started")
-			case .stopped:
-				pushToast(symbol: MachmanSymbols.shutDown, message: "\(name) stopped")
+				pushToast(symbol: MachmanSymbols.start, message: "\(vm.name) started")
+			case .stopped where previous == .running || previous == .stopping:
+				pushToast(symbol: MachmanSymbols.shutDown, message: "\(vm.name) stopped")
 			case .error:
 				pushToast(
-					symbol: MachmanSymbols.warning, message: "\(name) hit an error",
+					symbol: MachmanSymbols.warning, message: "\(vm.name) hit an error",
 					tint: MachmanColors.warning)
 			default:
 				break
 			}
+		}
+		let names = Set(list.map(\.name))
+		knownStates = knownStates.filter { names.contains($0.key) }
+	}
+
+	private func handle(event: VMEvent) {
+		switch event {
+		case .stateChanged:
+			break   // VMStore patches the row; outcome toasts diff the list itself
 		case .listChanged:
 			break   // the store reloads; listRefreshed() reacts once the list lands
 		case .installPhaseChanged:
