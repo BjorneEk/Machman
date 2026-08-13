@@ -1,0 +1,145 @@
+//
+//  MachmanTheme.swift
+//  MachmanUI
+//
+//  The look-and-feel tokens (1.0.4 UI overhaul): one meaning = one color, sizes derived
+//  from user-steppable density and font scales, and the per-window theme carried through
+//  the environment. Same rule as MachmanSymbols: views reference these, never literals.
+//
+
+import SwiftUI
+
+// MARK: - Colors ------------------------------------------------------------------------------
+
+public enum MachmanColors {
+	public static let stateRunning = Color.green
+	public static let stateTransition = Color.orange       // starting / stopping
+	public static let stateStopped = Color.secondary
+	public static let stateError = Color.red
+	public static let safeMode = Color.yellow              // kept from StatusIcon's shield
+	public static let warning = Color.orange
+	public static let destructiveConfirm = Color.red       // dialogs only; buttons stay mono
+	public static let connected = Color.accentColor        // live serial dot
+	public static let selection = Color.accentColor        // must track the user's accent
+	public static let activeEntry = Color.accentColor      // active kernel / initramfs
+
+	// Interaction overlay strengths (MachmanButtonStyle's long-standing values).
+	public static let hoverOverlay = 0.06
+	public static let activeOverlay = 0.12
+	public static let pressedOverlay = 0.16
+	public static let disabledOpacity = 0.4
+	public static let inactiveEntryOpacity = 0.55          // non-active kernels, disabled rows
+	public static let dimmedRowOpacity = 0.7               // group parents, config-less devices
+}
+
+// MARK: - Metrics -----------------------------------------------------------------------------
+
+// Sizes derived from two independent user knobs: density scales ONLY padding/spacing/row
+// heights; the font scale drives type and the inline icons that sit next to it. Floors keep
+// the compact end usable. 1.0/1.0 reproduces today's literals (radius 5, strip ~32…).
+public struct MachmanMetrics {
+	public let scale: CGFloat
+	public let fontScale: CGFloat
+
+	public static let scaleRange: ClosedRange<Double> = 0.7...1.4
+	public static let scaleStep = 0.05
+	public static let fontScaleRange: ClosedRange<Double> = 0.8...1.3
+	public static let fontScaleStep = 0.05
+
+	public init(scale: CGFloat = 1.0, fontScale: CGFloat = 1.0) {
+		self.scale = scale
+		self.fontScale = fontScale
+	}
+
+	public var radiusS: CGFloat { 5 }
+	public var radiusM: CGFloat { 8 }
+	public var radiusL: CGFloat { 12 }
+	public var treeRowHeight: CGFloat { max(16, (24 * scale).rounded()) }
+	public var tabHeight: CGFloat { max(18, (25 * scale).rounded()) }
+	public var tabStripHeight: CGFloat { max(24, (33 * scale).rounded()) }
+	public var padS: CGFloat { max(2, (4 * scale).rounded()) }
+	public var padM: CGFloat { max(4, (8 * scale).rounded()) }
+	public var padL: CGFloat { max(8, (12 * scale).rounded()) }
+	public var rowFontSize: CGFloat { max(10, (12.5 * fontScale).rounded()) }
+	public var tabFontSize: CGFloat { max(10, (11.5 * fontScale).rounded()) }
+	public var iconSize: CGFloat { max(10, (13 * fontScale).rounded()) }
+}
+
+// MARK: - Theme knobs -------------------------------------------------------------------------
+
+public enum MachmanTabStyle: String, CaseIterable, Identifiable, Codable {
+	case rectangular, capsule
+	public var id: String { rawValue }
+	public var label: String { self == .rectangular ? "Rectangular" : "Capsule" }
+}
+
+public enum MachmanGlassLevel: String, CaseIterable, Identifiable, Codable {
+	case standard, extra
+	public var id: String { rawValue }
+	public var label: String { self == .standard ? "Standard chrome" : "Extra glass" }
+}
+
+public enum MachmanScheme: String, CaseIterable, Identifiable, Codable {
+	case system, light, dark
+	public var id: String { rawValue }
+	public var label: String { rawValue.capitalized }
+	public var colorScheme: ColorScheme? {
+		switch self {
+		case .system: return nil
+		case .light: return .light
+		case .dark: return .dark
+		}
+	}
+}
+
+public enum MachmanAccent: String, CaseIterable, Identifiable, Codable {
+	case system, blue, purple, orange, graphite
+	public var id: String { rawValue }
+	public var label: String { rawValue.capitalized }
+	public var color: Color? {
+		switch self {
+		case .system: return nil
+		case .blue: return .blue
+		case .purple: return .purple
+		case .orange: return .orange
+		case .graphite: return Color(nsColor: .systemGray)
+		}
+	}
+}
+
+// The per-window resolved style. Settings feeds it; views read it from the environment.
+public struct MachmanTheme {
+	public var tabStyle: MachmanTabStyle
+	public var density: Double
+	public var fontScale: Double
+	public var glass: MachmanGlassLevel
+	public var scheme: MachmanScheme
+	public var accent: MachmanAccent
+
+	public init(
+		tabStyle: MachmanTabStyle = .rectangular, density: Double = 1.0,
+		fontScale: Double = 1.0, glass: MachmanGlassLevel = .standard,
+		scheme: MachmanScheme = .system, accent: MachmanAccent = .system
+	) {
+		self.tabStyle = tabStyle
+		self.density = density
+		self.fontScale = fontScale
+		self.glass = glass
+		self.scheme = scheme
+		self.accent = accent
+	}
+
+	public var metrics: MachmanMetrics { MachmanMetrics(scale: density, fontScale: fontScale) }
+	public var accentColor: Color { accent.color ?? .accentColor }
+}
+
+private struct MachmanThemeKey: EnvironmentKey {
+	static let defaultValue = MachmanTheme()
+}
+
+extension EnvironmentValues {
+	public var machmanTheme: MachmanTheme {
+		get { self[MachmanThemeKey.self] }
+		set { self[MachmanThemeKey.self] = newValue }
+	}
+}
