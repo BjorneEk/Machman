@@ -132,11 +132,18 @@ struct VMDeviceTreeView: View {
 		.tag(SidebarNode.vmRoot)
 		.contextMenu {
 			Button("Rename") { renamingRoot = true }
+			// A copied entity (disk/kernel/mount from any VM) pastes first; plain file
+			// URLs keep the Finder routing.
 			Button("Paste") {
-				_ = AddFlows.handleFileURLs(
-					AddFlows.pasteboardFileURLs(), viewModel: viewModel, vm: vm.name)
+				if let entity = EntityClipboard.read() {
+					entity.paste(into: vm.name, viewModel: viewModel)
+				} else {
+					_ = AddFlows.handleFileURLs(
+						AddFlows.pasteboardFileURLs(), viewModel: viewModel, vm: vm.name)
+				}
 			}
-			.disabled(AddFlows.pasteboardFileURLs().isEmpty)
+			.disabled(EntityClipboard.read() == nil
+				&& AddFlows.pasteboardFileURLs().isEmpty)
 			Divider()
 			Button("Delete VM…", role: .destructive) { viewModel.deleteVM(vm) }
 		}
@@ -155,6 +162,8 @@ struct VMDeviceTreeView: View {
 				Button("Add Existing Disk…") {
 					AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
 				}
+				Button("Paste") { pasteIntoDisks() }
+					.disabled(!canPasteIntoDisks)
 			}) {
 			ForEach(disks.filter { matches($0.name, $0.path) }) { disk in
 				HStack(spacing: 6) {
@@ -193,6 +202,9 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private func diskMenu(_ disk: DiskInfo) -> some View {
 		if let path = disk.path {
+			Button("Copy") {
+				EntityClipboard.write(EntityClipboard(kind: .disk, path: path))
+			}
 			Button("Copy Path") { Self.copyToPasteboard(path) }
 			Button("Show in Finder") { Self.revealInFinder(path) }
 			Divider()
@@ -227,6 +239,8 @@ struct VMDeviceTreeView: View {
 				Button("Add Mount Folder…") {
 					AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
 				}
+				Button("Paste") { pasteIntoMounts() }
+					.disabled(!canPasteIntoMounts)
 			}) {
 			ForEach(mounts.filter { matches($0.path, $0.tag) }) { mount in
 				HStack(spacing: 6) {
@@ -243,6 +257,10 @@ struct VMDeviceTreeView: View {
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(SidebarNode.mount(mount.id))
 				.contextMenu {
+					Button("Copy") {
+						EntityClipboard.write(EntityClipboard(
+							kind: .mount, path: mount.path, tag: mount.tag))
+					}
 					Button("Copy Path") { Self.copyToPasteboard(mount.path) }
 					Button("Show in Finder") { Self.revealInFinder(mount.path) }
 					Divider()
@@ -512,6 +530,8 @@ struct VMDeviceTreeView: View {
 				Button("Add From Disk…") {
 					AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
 				}
+				Button("Paste") { pasteIntoKernels(role: role) }
+					.disabled(!canPasteIntoKernels(role: role))
 			}
 		}
 		// Kernel parent is selectable (it has an inspector); the initramfs parent is a dim
@@ -531,6 +551,10 @@ struct VMDeviceTreeView: View {
 			Button("Deselect") { setActiveKernelPath(nil, role: role) }
 		} else {
 			Button("Select") { setActiveKernelPath(file.id, role: role) }
+		}
+		Button("Copy") {
+			EntityClipboard.write(EntityClipboard(
+				kind: role == .kernel ? .kernel : .initramfs, path: file.id))
 		}
 		Button("Copy Path") { Self.copyToPasteboard(file.id) }
 		Button("Show in Finder") { Self.revealInFinder(file.id) }
@@ -610,6 +634,64 @@ struct VMDeviceTreeView: View {
 			openTerminal(ref)
 		default:
 			break
+		}
+	}
+
+	// MARK: - Section paste (each group takes only what fits it)
+
+	private static func isDirectory(_ url: URL) -> Bool {
+		var isDir: ObjCBool = false
+		FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+		return isDir.boolValue
+	}
+
+	private var canPasteIntoDisks: Bool {
+		if let entity = EntityClipboard.read() { return entity.kind == .disk }
+		return AddFlows.pasteboardFileURLs().contains { !Self.isDirectory($0) }
+	}
+
+	private func pasteIntoDisks() {
+		if let entity = EntityClipboard.read(), entity.kind == .disk {
+			entity.paste(into: vm.name, viewModel: viewModel)
+			return
+		}
+		for url in AddFlows.pasteboardFileURLs() where !Self.isDirectory(url) {
+			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, url: url)
+		}
+	}
+
+	private var canPasteIntoMounts: Bool {
+		if let entity = EntityClipboard.read() { return entity.kind == .mount }
+		return AddFlows.pasteboardFileURLs().contains { Self.isDirectory($0) }
+	}
+
+	private func pasteIntoMounts() {
+		if let entity = EntityClipboard.read(), entity.kind == .mount {
+			entity.paste(into: vm.name, viewModel: viewModel)
+			return
+		}
+		for url in AddFlows.pasteboardFileURLs() where Self.isDirectory(url) {
+			viewModel.addMount(vm.name, path: url.path, tag: url.lastPathComponent)
+		}
+	}
+
+	private func canPasteIntoKernels(role: KernelRole) -> Bool {
+		if let entity = EntityClipboard.read() {
+			return entity.kind == (role == .kernel ? .kernel : .initramfs)
+		}
+		return AddFlows.pasteboardFileURLs().contains { !Self.isDirectory($0) }
+	}
+
+	private func pasteIntoKernels(role: KernelRole) {
+		if let entity = EntityClipboard.read(),
+			entity.kind == (role == .kernel ? .kernel : .initramfs) {
+			entity.paste(into: vm.name, viewModel: viewModel)
+			return
+		}
+		for url in AddFlows.pasteboardFileURLs() where !Self.isDirectory(url) {
+			viewModel.promoteKernel(
+				vm.name, role: role, sourcePath: url.path,
+				tag: url.deletingPathExtension().lastPathComponent)
 		}
 	}
 
