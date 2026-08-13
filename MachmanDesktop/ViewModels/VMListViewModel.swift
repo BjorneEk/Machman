@@ -578,6 +578,28 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func updateDevice(_ name: String, device: DeviceInfo) {
+		Task { [weak self] in
+			do { _ = try await self?.api.updateDevice(vm: name, device: device) }
+			catch { self?.present(error, while: "Updating a device") }
+		}
+	}
+
+	// Batch per-entity enabled flags; serial ports are keyed by their string index.
+	func setEnabled(
+		_ name: String, disks: [String: Bool]? = nil, mounts: [String: Bool]? = nil,
+		console: [String: Bool]? = nil, uart: [String: Bool]? = nil
+	) {
+		Task { [weak self] in
+			do {
+				try await self?.api.setEnabled(
+					vm: name, disks: disks, mounts: mounts, console: console, uart: uart)
+			} catch {
+				self?.present(error, while: "Updating enabled state")
+			}
+		}
+	}
+
 	func addConsolePort(_ name: String) {
 		Task { [weak self] in
 			do { try await self?.api.addConsolePort(vm: name) }

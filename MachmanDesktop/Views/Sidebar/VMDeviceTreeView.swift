@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import AppKit
 import MachmanUI
 import MachmanAPI
 
@@ -28,8 +29,10 @@ enum SidebarNode: Hashable {
 struct VMDeviceTreeView: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var sessions: TerminalSessions
+	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var treeSelection: Set<SidebarNode> = []
+	@State private var renamingRoot = false
 	@State private var expanded: Set<SidebarNode> = [
 		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
 		.group("Kernel"), .group("Initramfs"),
@@ -66,20 +69,56 @@ struct VMDeviceTreeView: View {
 	private var vmRootRow: some View {
 		HStack(spacing: 6) {
 			StatusDot(state: vm.state, size: 8)
-			Text(vm.name).fontWeight(.semibold)
+			if renamingRoot {
+				RenameField(initial: vm.name) { newName in
+					renamingRoot = false
+					commitRename(to: newName)
+				} cancel: {
+					renamingRoot = false
+				}
+			} else {
+				Text(vm.name).fontWeight(.semibold)
+			}
 			if vm.safeRun == true { SafeBadge(compact: true) }
 			Spacer()
 			BootBadge(mode: vm.boot.mode, size: 9)
 		}
 		.frame(height: theme.metrics.treeRowHeight)
 		.tag(SidebarNode.vmRoot)
+		.contextMenu {
+			Button("Rename") { renamingRoot = true }
+			Divider()
+			Button("Delete VM…", role: .destructive) { viewModel.deleteVM(vm) }
+		}
+	}
+
+	// In-place rename: Return commits (Esc cancels), so no extra confirmation dialog.
+	private func commitRename(to newName: String) {
+		let old = vm.name
+		guard !newName.isEmpty, newName != old else { return }
+		guard !viewModel.hasVM(newName) else {
+			viewModel.present(
+				message: "A VM named '\(newName)' already exists.",
+				while: "Renaming \(old)")
+			return
+		}
+		Task {
+			if await viewModel.rename(from: old, to: newName) {
+				profiles.renameVM(from: old, to: newName)
+				viewModel.log(message: "Renamed \(old) to \(newName)")
+			}
+		}
 	}
 
 	@ViewBuilder
 	private var diskGroup: some View {
 		let disks = vm.disks
 		group(.group("Disks"), symbol: MachmanSymbols.diskName, title: "Disks",
-			count: disks.count) {
+			count: disks.count, menu: {
+				Button("Add Existing Disk…") {
+					AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
+				}
+			}) {
 			ForEach(disks) { disk in
 				HStack(spacing: 6) {
 					Image(systemName: Self.symbol(for: disk.type))
@@ -99,7 +138,34 @@ struct VMDeviceTreeView: View {
 				.opacity(disk.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(SidebarNode.disk(disk.id))
+				.contextMenu { diskMenu(disk) }
 			}
+		}
+	}
+
+	@ViewBuilder
+	private func diskMenu(_ disk: DiskInfo) -> some View {
+		if let path = disk.path {
+			Button("Copy Path") { Self.copyToPasteboard(path) }
+			Button("Show in Finder") { Self.revealInFinder(path) }
+			Divider()
+		}
+		Button(disk.isEnabled ? "Disable" : "Enable") {
+			viewModel.setEnabled(vm.name, disks: [disk.id: !disk.isEnabled])
+		}
+		if disk.owned == false {
+			Button("Promote to Owned…") { viewModel.promoteDisk(vm.name, diskID: disk.id) }
+		}
+		Divider()
+		Button(disk.owned == true ? "Delete…" : "Remove…", role: .destructive) {
+			if disk.owned == true {
+				guard VMListViewModel.confirmDialog(
+					message: "Delete disk \(disk.name ?? disk.id)?",
+					informativeText: "The backing file belongs to \(vm.name) and will be "
+						+ "deleted with it.")
+				else { return }
+			}
+			viewModel.removeDisk(vm.name, diskID: disk.id)
 		}
 	}
 
@@ -107,7 +173,11 @@ struct VMDeviceTreeView: View {
 	private var mountGroup: some View {
 		let mounts = vm.mounts
 		group(.group("Mounts"), symbol: MachmanSymbols.mount, title: "Mounts",
-			count: mounts.count) {
+			count: mounts.count, menu: {
+				Button("Add Mount Folder…") {
+					AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
+				}
+			}) {
 			ForEach(mounts) { mount in
 				HStack(spacing: 6) {
 					Image(systemName: MachmanSymbols.mount)
@@ -121,6 +191,18 @@ struct VMDeviceTreeView: View {
 				.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(SidebarNode.mount(mount.id))
+				.contextMenu {
+					Button("Copy Path") { Self.copyToPasteboard(mount.path) }
+					Button("Show in Finder") { Self.revealInFinder(mount.path) }
+					Divider()
+					Button(mount.isEnabled ? "Disable" : "Enable") {
+						viewModel.setEnabled(vm.name, mounts: [mount.id: !mount.isEnabled])
+					}
+					Divider()
+					Button("Remove…", role: .destructive) {
+						viewModel.removeMount(vm.name, mountID: mount.id)
+					}
+				}
 			}
 		}
 	}
@@ -163,17 +245,55 @@ struct VMDeviceTreeView: View {
 			: (gated ? MachmanColors.dimmedRowOpacity : 1))
 		.frame(height: theme.metrics.treeRowHeight)
 		.tag(SidebarNode.serial(ref))
-		// Interim menu (full spec menus come with the context-menu slice): the old port
-		// row's actions survive the list swap.
-		.contextMenu {
-			Button("Open") { openTerminal(ref) }
-			Button("Close") { sessions.closeTab(vm: vm.name, ref: ref) }
-				.disabled(!open)
+		.contextMenu { serialMenu(port, ref: ref, open: open, gated: gated, enabled: enabled) }
+	}
+
+	// HIG: hide (don't dim) unavailable actions — a host-gated or disabled port has no
+	// terminal and no socket.
+	@ViewBuilder
+	private func serialMenu(
+		_ port: SerialPortInfo, ref: SerialPortRef, open: Bool, gated: Bool, enabled: Bool
+	) -> some View {
+		if !gated && enabled {
+			if open {
+				Button("Close Terminal (disconnect)") {
+					sessions.closeTab(vm: vm.name, ref: ref)
+				}
+			} else {
+				Button("Open Terminal (connect)") { openTerminal(ref) }
+			}
 			Button("Properties") {
 				openTerminal(ref)
 				viewModel.showInfoPanel = true
 			}
+			if let socket = port.socketPath {
+				Button("Copy Socket Path") { Self.copyToPasteboard(socket) }
+			}
+			Divider()
 		}
+		Button(enabled ? "Disable" : "Enable") {
+			let change = [String(port.index): !enabled]
+			if port.kind == .console {
+				viewModel.setEnabled(vm.name, console: change)
+			} else {
+				viewModel.setEnabled(vm.name, uart: change)
+			}
+		}
+		// The remove APIs pop the highest index of a kind, so only that port offers Remove.
+		if isLastOfKind(port) {
+			Button("Remove…", role: .destructive) {
+				if port.kind == .console {
+					viewModel.removeConsolePort(vm.name)
+				} else {
+					viewModel.removeUartPort(vm.name)
+				}
+			}
+		}
+	}
+
+	private func isLastOfKind(_ port: SerialPortInfo) -> Bool {
+		let peers = port.kind == .console ? (vm.consolePorts ?? []) : (vm.uartPorts ?? [])
+		return port.index == peers.map(\.index).max()
 	}
 
 	// Guest devices from the engine's assembly. Configurable kinds (inspector-backed) are
@@ -188,14 +308,11 @@ struct VMDeviceTreeView: View {
 				if device.kind.isConfigurable {
 					deviceRow(device)
 						.tag(SidebarNode.device(device.kind))
+						.contextMenu { deviceMenu(device) }
 				} else {
 					deviceRow(device)
 						.opacity(MachmanColors.dimmedRowOpacity)
-						.contextMenu {
-							Button("Remove", role: .destructive) {
-								viewModel.removeDevice(vm.name, kind: device.kind)
-							}
-						}
+						.contextMenu { deviceMenu(device) }
 				}
 			}
 		}
@@ -217,6 +334,18 @@ struct VMDeviceTreeView: View {
 		}
 		.opacity(device.enabled ? 1 : MachmanColors.inactiveEntryOpacity)
 		.frame(height: theme.metrics.treeRowHeight)
+	}
+
+	@ViewBuilder
+	private func deviceMenu(_ device: DeviceInfo) -> some View {
+		Button(device.enabled ? "Disable" : "Enable") {
+			var updated = device
+			updated.enabled = !device.enabled
+			viewModel.updateDevice(vm.name, device: updated)
+		}
+		Button("Remove", role: .destructive) {
+			viewModel.removeDevice(vm.name, kind: device.kind)
+		}
 	}
 
 	// MARK: - Kernel / Initramfs
@@ -295,6 +424,7 @@ struct VMDeviceTreeView: View {
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(role == .kernel
 					? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id))
+				.contextMenu { kernelEntryMenu(file, role: role) }
 			}
 		} label: {
 			HStack(spacing: 6) {
@@ -314,6 +444,11 @@ struct VMDeviceTreeView: View {
 				}
 			}
 			.frame(height: theme.metrics.treeRowHeight)
+			.contextMenu {
+				Button("Add From Disk…") {
+					AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
+				}
+			}
 		}
 		// Kernel parent is selectable (it has an inspector); the initramfs parent is a dim
 		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
@@ -326,12 +461,50 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
+	@ViewBuilder
+	private func kernelEntryMenu(_ file: KernelEntry, role: KernelRole) -> some View {
+		if file.active {
+			Button("Deselect") { setActiveKernelPath(nil, role: role) }
+		} else {
+			Button("Select") { setActiveKernelPath(file.id, role: role) }
+		}
+		Button("Copy Path") { Self.copyToPasteboard(file.id) }
+		Button("Show in Finder") { Self.revealInFinder(file.id) }
+		if !file.owned {
+			Button("Promote to Owned…") {
+				viewModel.promoteKernel(
+					vm.name, role: role, sourcePath: file.id,
+					tag: URL(fileURLWithPath: file.id)
+						.deletingPathExtension().lastPathComponent)
+			}
+		}
+		if file.owned {
+			Divider()
+			Button("Delete…", role: .destructive) {
+				viewModel.deleteKernel(vm.name, path: file.id)
+			}
+		}
+	}
+
+	// Select/deselect rewires the kernel-boot draft: the settings survive as a draft even
+	// while the mode is EFI, so this never toggles the boot mode itself.
+	private func setActiveKernelPath(_ path: String?, role: KernelRole) {
+		var settings = vm.boot.kernel
+			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		switch role {
+		case .kernel: settings.kernelPath = path ?? ""
+		case .initramfs: settings.initrdPath = path
+		}
+		viewModel.updateKernelSettings(vm.name, settings)
+	}
+
 	// MARK: - Group scaffold
 
 	// Group parents are dimmed and NOT selectable (no tag — selection skips them); their
-	// add/paste actions arrive with the context-menu slice.
-	private func group<Content: View>(
+	// add actions live in a row-level context menu on the label.
+	private func group<Content: View, MenuItems: View>(
 		_ node: SidebarNode, symbol: String, title: String, count: Int,
+		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
 		@ViewBuilder content: @escaping () -> Content
 	) -> some View {
 		DisclosureGroup(isExpanded: groupBinding(node)) {
@@ -349,6 +522,7 @@ struct VMDeviceTreeView: View {
 					.monospacedDigit()
 			}
 			.frame(height: theme.metrics.treeRowHeight)
+			.contextMenu { menu() }
 		}
 		.opacity(MachmanColors.dimmedRowOpacity)
 	}
@@ -398,5 +572,14 @@ struct VMDeviceTreeView: View {
 
 	private static func abbreviate(_ path: String) -> String {
 		(path as NSString).abbreviatingWithTildeInPath
+	}
+
+	private static func copyToPasteboard(_ value: String) {
+		NSPasteboard.general.clearContents()
+		NSPasteboard.general.setString(value, forType: .string)
+	}
+
+	private static func revealInFinder(_ path: String) {
+		NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
 	}
 }

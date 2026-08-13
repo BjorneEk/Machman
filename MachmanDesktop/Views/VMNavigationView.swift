@@ -31,7 +31,8 @@ struct VMNavigationView: View {
 			Group {
 				if let vm = viewModel.selected {
 					VMDeviceTreeView(
-						viewModel: viewModel, sessions: viewModel.terminals, vm: vm)
+						viewModel: viewModel, sessions: viewModel.terminals,
+						profiles: profiles, vm: vm)
 				} else {
 					VStack(spacing: 12) {
 						Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VM selected")

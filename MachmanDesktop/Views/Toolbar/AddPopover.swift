@@ -70,7 +70,7 @@ struct AddPopover: View {
 				AddTile(symbol: MachmanSymbols.addDiskExisting, caption: "Existing",
 					tooltip: "Add Existing Disk… (copy in or reference an image)") {
 					dismiss()
-					chooseExistingDisk()
+					AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
 				}
 			}
 			Divider()
@@ -78,7 +78,7 @@ struct AddPopover: View {
 				AddTile(symbol: MachmanSymbols.addMount, caption: "Folder",
 					tooltip: "Add Mount Folder… (shared via virtiofs)") {
 					dismiss()
-					chooseMountFolder()
+					AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
 				}
 			}
 			Divider()
@@ -131,61 +131,6 @@ struct AddPopover: View {
 			case .trackpad: return macGuest
 			case .clipboard, .rosetta: return !macGuest
 			default: return true
-			}
-		}
-	}
-
-	// MARK: - Flows
-
-	// Same permissive picker + copy-or-reference question as the disks table (the engine's
-	// magic sniff is the real format gate).
-	private func chooseExistingDisk() {
-		let panel = NSOpenPanel()
-		panel.canChooseFiles = true
-		panel.canChooseDirectories = false
-		panel.allowsMultipleSelection = false
-		panel.allowedContentTypes = [.diskImage, .data]
-		let viewModel = viewModel
-		let name = vm.name
-		panel.begin { response in
-			guard response == .OK, let url = panel.url else { return }
-			DispatchQueue.main.async {
-				let alert = NSAlert()
-				alert.messageText = "Add \(url.lastPathComponent)"
-				alert.informativeText = "Copy it into the VM (the VM owns an independent "
-					+ "copy that travels with it), or reference the original file in place?"
-				alert.addButton(withTitle: "Copy into VM")
-				alert.addButton(withTitle: "Reference")
-				alert.addButton(withTitle: "Cancel")
-				switch alert.runModal() {
-				case .alertFirstButtonReturn:
-					viewModel.importDisk(name, path: url.path)
-				case .alertSecondButtonReturn:
-					if url.pathExtension.lowercased() == "iso" {
-						viewModel.addDisk(name, .iso(path: url.path))
-					} else {
-						viewModel.addDisk(name, .image(path: url.path))
-					}
-				default:
-					break
-				}
-			}
-		}
-	}
-
-	// Folder picker; the guest mount tag defaults to the folder's name (editable later in
-	// the mounts table).
-	private func chooseMountFolder() {
-		let panel = NSOpenPanel()
-		panel.canChooseFiles = false
-		panel.canChooseDirectories = true
-		panel.allowsMultipleSelection = false
-		let viewModel = viewModel
-		let name = vm.name
-		panel.begin { response in
-			guard response == .OK, let url = panel.url else { return }
-			DispatchQueue.main.async {
-				viewModel.addMount(name, path: url.path, tag: url.lastPathComponent)
 			}
 		}
 	}
