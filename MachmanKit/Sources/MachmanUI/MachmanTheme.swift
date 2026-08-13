@@ -123,7 +123,7 @@ public enum MachmanAccent: String, CaseIterable, Identifiable, Codable {
 }
 
 // The per-window resolved style. Settings feeds it; views read it from the environment.
-public struct MachmanTheme {
+public struct MachmanTheme: Equatable {
 	public var tabStyle: MachmanTabStyle
 	public var density: Double
 	public var fontScale: Double
