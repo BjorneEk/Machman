@@ -319,7 +319,19 @@ extension VMConfig {
 						+ "not supported for this host or boot mode")
 			}
 		}
-		try vmConfig.validate()
+		do {
+			try vmConfig.validate()
+		} catch {
+			// User-editable devices make validate() the primary failure path — surface a
+			// readable machmanCode'd message instead of leaking "Error Domain=VZErrorDomain…".
+			let ns = error as NSError
+			if ns.domain == VZError.errorDomain {
+				throw MachmanError(
+					code: .virtualizationFailure,
+					message: "configuration invalid: \(ns.localizedDescription)")
+			}
+			throw error
+		}
 		return BuiltVM(configuration: vmConfig, serialWiring: wiring, warnings: warnings)
 	}
 

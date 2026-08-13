@@ -31,11 +31,28 @@ public final class LocalMachman: MachmanControlling {
 			let available = values.volumeAvailableCapacityForImportantUsage {
 			freeDiskBytes = UInt64(available)
 		}
+		let screen = VMConfig.mainScreenSize(2560, 1440)
 		return HostCapabilities(
 			maxCPUCount: VMConfig.computeMaxCPUCount(),
 			minMemoryBytes: VZVirtualMachineConfiguration.minimumAllowedMemorySize,
 			maxMemoryBytes: VZVirtualMachineConfiguration.maximumAllowedMemorySize,
-			freeDiskBytes: freeDiskBytes)
+			freeDiskBytes: freeDiskBytes,
+			uartUnavailable: VMConfig.uartUnavailability(),
+			nestedVirtualizationSupported:
+				VZGenericPlatformConfiguration.isNestedVirtualizationSupported,
+			rosettaAvailability: Self.rosettaAvailabilityString(),
+			hostDisplayWidthPixels: screen.width,
+			hostDisplayHeightPixels: screen.height,
+			maxSerialPorts: VMConfig.maxSerialPorts)
+	}
+
+	private static func rosettaAvailabilityString() -> String {
+		switch VZLinuxRosettaDirectoryShare.availability {
+		case .notSupported: return RosettaAvailability.notSupported
+		case .notInstalled: return RosettaAvailability.notInstalled
+		case .installed: return RosettaAvailability.installed
+		@unknown default: return RosettaAvailability.notSupported
+		}
 	}
 
 	// MARK: - VM lifecycle
@@ -643,7 +660,7 @@ public final class LocalMachman: MachmanControlling {
 				displayHeightPixels: device.displayHeightPixels,
 				displayPixelsPerInch: device.displayPixelsPerInch,
 				sharesClipboard: device.sharesClipboard,
-				unavailable: nil)   // host-gating (rosetta/nested) computed with S1's assembly
+				unavailable: Self.deviceUnavailability(device.deviceKind, macGuest: macGuest))
 		}
 		return VMInfo(
 			name: config.name,
@@ -664,6 +681,35 @@ public final class LocalMachman: MachmanControlling {
 			uartPorts: serialPorts(.uart, config.uartPorts),
 			devices: devices,
 			nestedVirtualization: config.nestedVirtualization)
+	}
+
+	// Why a configured device cannot attach here — the serial-unavailability pattern for
+	// devices. Single source with resolvedDevices()' skip logic.
+	private static func deviceUnavailability(
+		_ kind: DeviceKind, macGuest: Bool
+	) -> UnavailabilityInfo? {
+		switch kind {
+		case .trackpad where !macGuest:
+			return UnavailabilityInfo(
+				reason: .unsupportedHost,
+				message: "The Mac trackpad needs a macOS guest — it is skipped until "
+					+ "macOS is installed.")
+		case .clipboard where macGuest:
+			return UnavailabilityInfo(
+				reason: .unsupportedHost,
+				message: "Clipboard sharing (spice agent) is not supported for macOS guests.")
+		case .rosetta where macGuest:
+			return UnavailabilityInfo(
+				reason: .unsupportedHost,
+				message: "Rosetta is not supported for macOS guests.")
+		case .rosetta where VZLinuxRosettaDirectoryShare.availability != .installed:
+			return UnavailabilityInfo(
+				reason: .notInstalled,
+				message: "Rosetta is not installed on this host — install it to run "
+					+ "x86-64 binaries in Linux guests.")
+		default:
+			return nil
+		}
 	}
 
 	private func bootInfo(for vm: VirtualMachine) -> BootInfo {
