@@ -2,10 +2,12 @@
 //  VMTabContainerView.swift
 //  MachmanDesktop
 //
-//  The detail pane: a per-VM tabbed workspace. The VM's name/run/delete header is always present
-//  (the window toolbar); below it a tab strip switches between the fixed config tab and any open
-//  serial terminals. Mounted once and following viewModel.selected, so open terminals — held in
-//  TerminalSessions — survive switching between VMs and hidden tabs.
+//  The detail pane: a per-VM tabbed workspace. The window toolbar carries the 1.0.4 header —
+//  VM indicator + picker, safe chip, window toggle, start/stop group, add popover, inspector
+//  toggle (no delete: the picker's row menu owns it). Below it a tab strip switches between
+//  the fixed config tab and any open serial terminals. Mounted once and following
+//  viewModel.selected, so open terminals — held in TerminalSessions — survive switching
+//  between VMs and hidden tabs.
 //
 
 import SwiftUI
@@ -144,14 +146,8 @@ struct VMTabContainerView: View {
 		ToolbarItem(placement: .principal) {
 			StartStopGroup(viewModel: viewModel, vm: vm)
 		}
-		ToolbarItem {
-			Button {
-				viewModel.deleteVM(vm)
-			} label: {
-				Label("Delete", systemImage: MachmanSymbols.delete)
-			}
-			.help("delete \(vm.name)")
-		}
+		// No delete in the toolbar (1.0.4 design): it lives in the picker's row menu, and
+		// the sidebar tree + VM menu grow their own entries in later stints.
 		ToolbarItemGroup(placement: .primaryAction) {
 			AddButton(viewModel: viewModel, vm: vm)
 			Button {
