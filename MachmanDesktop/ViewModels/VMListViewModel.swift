@@ -56,9 +56,11 @@ final class VMListViewModel: ObservableObject {
 	// The app-scoped source of truth for the list + capabilities (it survives reconnects);
 	// this per-connection view model is a facade over it so views keep a single observable.
 	let store: VMStore
+	// App-scoped mirror of long-running work (operations + macOS install phases).
+	let operationsStore: OperationsStore
 	var vms: [VMInfo] { store.vms }
 	var capabilities: HostCapabilities? { store.capabilities }
-	@Published private(set) var installPhases: [String: InstallPhase] = [:]
+	var installPhases: [String: InstallPhase] { operationsStore.installPhases }
 	// Live preview thumbnails live in their own store so the ~4s refresh loop re-renders only the
 	// small PreviewView, not the whole VM pane (tab strip, terminal, toolbar). See PreviewStore.
 	let previewImages = PreviewStore()
@@ -99,19 +101,22 @@ final class VMListViewModel: ObservableObject {
 	private var previewTask: Task<Void, Never>?
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
+	private var operationsForwarder: AnyCancellable?
 	private var listReactor: AnyCancellable?
-	// macOS VMs whose install phase is being fetched (dedupes the primes $vms retriggers).
-	private var phasePrimesInFlight: Set<String> = []
 
 	var selected: VMInfo? {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
 	}
 
-	init(api: MachmanControlling, store: VMStore) {
+	init(api: MachmanControlling, store: VMStore, operations: OperationsStore) {
 		self.api = api
 		self.store = store
-		// Views observe this object, not the store — forward its changes.
+		self.operationsStore = operations
+		// Views observe this object, not the stores — forward their changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
+			self?.objectWillChange.send()
+		}
+		operationsForwarder = operations.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
 		}
 		// React AFTER every list refresh (reconcile tabs, prime phases). $vms emits the
@@ -143,20 +148,7 @@ final class VMListViewModel: ObservableObject {
 	private func listRefreshed(_ list: [VMInfo]) {
 		// Close terminal tabs for ports/VMs that no longer exist.
 		terminals.reconcile(vms: list)
-		for vm in list where vm.boot.mode == .macOS && installPhases[vm.name] == nil
-			&& !phasePrimesInFlight.contains(vm.name) {
-			phasePrimesInFlight.insert(vm.name)
-			let name = vm.name
-			Task { [weak self] in
-				guard let self = self else { return }
-				// Never clobber a phase an event delivered while the fetch was in flight.
-				if let phase = try? await self.api.macInstallPhase(vm: name),
-					self.installPhases[name] == nil {
-					self.installPhases[name] = phase
-				}
-				self.phasePrimesInFlight.remove(name)
-			}
-		}
+		operationsStore.primeInstallPhases(for: list)
 	}
 
 	private func handle(event: VMEvent) {
@@ -169,8 +161,8 @@ final class VMListViewModel: ObservableObject {
 			}
 		case .listChanged:
 			break   // the store reloads; listRefreshed() reacts once the list lands
-		case .installPhaseChanged(let name, let phase):
-			installPhases[name] = phase
+		case .installPhaseChanged:
+			break   // OperationsStore owns phases on its own stream
 		case .log(let vm, let level, let message):
 			// The engine logs these in its own process too, but that process is auto-launched —
 			// relaying through the client's logger keeps engine warnings visible from the app
