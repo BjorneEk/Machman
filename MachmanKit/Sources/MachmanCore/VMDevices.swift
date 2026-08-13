@@ -171,15 +171,18 @@ extension VMConfig {
 	func serialPorts() -> (ports: [VZSerialPortConfiguration], wiring: [SerialWiring]) {
 		var ports: [VZSerialPortConfiguration] = []
 		var wiring: [SerialWiring] = []
-		for index in consolePorts.indices {
+		// Disabled ports (1.0.4) are skipped like removed ones — the guest numbers the rest
+		// compactly; wiring keeps the CONFIG index so sockets/logs stay stably keyed.
+		for index in consolePorts.indices where consolePorts[index].enabled {
 			let (attachment, wire) = makeSerialPipe(kind: .console, index: index)
 			let port = VZVirtioConsoleDeviceSerialPortConfiguration()
 			port.attachment = attachment
 			ports.append(port)
 			wiring.append(wire)
 		}
-		let uartIssue = uartPorts.isEmpty ? nil : VMConfig.uartUnavailability()
-		for index in uartPorts.indices {
+		let enabledUarts = uartPorts.indices.filter { uartPorts[$0].enabled }
+		let uartIssue = enabledUarts.isEmpty ? nil : VMConfig.uartUnavailability()
+		for index in enabledUarts {
 			guard let port = makePL011SerialPort() else {
 				MachmanLogger.log(.passiveWarning, "skipping uart\(index) on \(name): "
 					+ (uartIssue?.message ?? "the private PL011 class is unavailable"))

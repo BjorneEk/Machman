@@ -178,6 +178,29 @@ struct DeviceConfigTests {
 		}
 	}
 
+	@Test func enabledFilteringInAssembly() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("filter")
+			// A single DISABLED referenced disk: diskArray must skip it without touching
+			// the (nonexistent) file — attaching it would throw.
+			try vm.addDisk(disk: VMDisk(kind: .fromUrl(URL(
+				fileURLWithPath: "/nonexistent/ghost.raw"))))
+			vm.disks[0].enabled = false
+			let storage = try vm.diskArray()
+			#expect(storage.isEmpty)
+			// Disabled mounts drop out of the share.
+			try vm.addMountPoint(HostMountPoint(path: "/tmp", tag: "t"))
+			vm.mountPoints[0].enabled = false
+			_ = vm.directoryShareDeviceConfig(mainTag: "host-share")
+			// Disabled serial ports are not built; the remaining enabled ones renumber.
+			try vm.addConsolePort()               // now console0, console1
+			vm.consolePorts[0].enabled = false
+			let serial = vm.serialPorts()
+			#expect(serial.wiring.filter { $0.kind == .console }.count == 1)
+			#expect(serial.wiring.first { $0.kind == .console }?.index == 1)
+		}
+	}
+
 	@Test func kernelOverrideKeyIsVMRelative() throws {
 		let file = OwnedKernelFile(
 			role: .kernel, tag: "janus", fileName: "vmlinuz",

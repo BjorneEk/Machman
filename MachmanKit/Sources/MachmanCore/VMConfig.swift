@@ -734,8 +734,9 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return lastComponents.joined(separator: "/")
 	}
 
+	// Disabled entries (1.0.4) stay configured but are not attached.
 	func diskArray() throws -> [VZStorageDeviceConfiguration] {
-		return try disks.map {
+		return try disks.filter(\.enabled).map {
 			switch $0.kind {
 			case .iso(let url):
 				return try self.isoImageDeviceConfig(isoPath: url)
@@ -749,7 +750,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	func directoryShareDeviceConfig(mainTag: String) -> VZVirtioFileSystemDeviceConfiguration {
 		let sharedDirectories: [String: VZSharedDirectory] = Dictionary(
-			uniqueKeysWithValues: mountPoints.map { mount in
+			uniqueKeysWithValues: mountPoints.filter(\.enabled).map { mount in
 				(mount.tag,
 				VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
 			}

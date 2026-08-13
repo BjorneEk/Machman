@@ -56,10 +56,11 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 			throw VirtualMachineError.critical("\(config.name) is already running")
 		}
 		let built = try config.makeVZVirtualMachineConfiguration()
-		// Configured uarts the builder could not attach (macOS ≥ 26.6.1 rejects the private
-		// PL011): tell the user rather than silently serving a VM with fewer devices.
+		// Configured (enabled) uarts the builder could not attach (macOS ≥ 26.6.1 rejects the
+		// private PL011): tell the user rather than silently serving a VM with fewer devices.
 		let wiredUARTs = built.serialWiring.filter { $0.kind == .uart }.count
-		if wiredUARTs < config.uartPorts.count, let issue = VMConfig.uartUnavailability() {
+		let enabledUARTs = config.uartPorts.filter(\.enabled).count
+		if wiredUARTs < enabledUARTs, let issue = VMConfig.uartUnavailability() {
 			events.emit(.log(vm: config.name, level: .warning, message: issue.message))
 		}
 		// Same contract for guest devices the builder had to skip (1.0.4).

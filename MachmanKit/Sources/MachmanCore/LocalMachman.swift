@@ -611,10 +611,20 @@ public final class LocalMachman: MachmanControlling {
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		func serialPorts(_ kind: SerialPortKind, _ ports: [SerialPort]) -> [SerialPortInfo] {
 			let uartIssue = kind == .uart ? VMConfig.uartUnavailability() : nil
+			// Guest names number the ENABLED ports compactly (that's what the guest sees at
+			// the next boot); a disabled port keeps its config-position name for identity.
+			var enabledSeen = 0
 			return ports.enumerated().map { index, port in
-				SerialPortInfo(
+				let guestIndex: Int
+				if port.enabled {
+					guestIndex = enabledSeen
+					enabledSeen += 1
+				} else {
+					guestIndex = index
+				}
+				return SerialPortInfo(
 					kind: kind, index: index,
-					guestDevice: kind.guestDevice(index: index, macGuest: macGuest),
+					guestDevice: kind.guestDevice(index: guestIndex, macGuest: macGuest),
 					logging: port.logging,
 					socketPath: registry.serialSocketPath(vm: vm, kind: kind, index: index),
 					logPath: registry.serialLogPath(vm: vm, kind: kind, index: index),
