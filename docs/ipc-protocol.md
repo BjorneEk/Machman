@@ -48,14 +48,14 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | Method | Params | Result |
 |---|---|---|
 | `machman.hello` | `{client}` | `{apiVersion, daemonVersion}` |
-| `host.capabilities` | — | `{maxCPUCount, minMemoryBytes, maxMemoryBytes, freeDiskBytes}` |
+| `host.capabilities` | — | `{maxCPUCount, minMemoryBytes, maxMemoryBytes, freeDiskBytes, uartUnavailable?, nestedVirtualizationSupported?, rosettaAvailability?, hostDisplayWidthPixels?, hostDisplayHeightPixels?, maxSerialPorts?}` (the optional tail is 1.0.4+) |
 | `vm.list` | — | `[VMInfo]` |
 | `vm.get` | `{name}` | `VMInfo` |
-| `vm.create` | — | `VMInfo` (auto-named `new-VM<n>`) |
+| `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set + a 32 GiB root disk, `"mac"` = mac-guest device set minus trackpad; absent = implied EFI set, no disk) |
 | `vm.delete` | `{name}` | `{}` (refused while running/installing) |
 | `vm.rename` | `{name, newName}` | `{}` (refused while running) |
 | `vm.copy` | `{name, newName?, diskIDs?, regenerateMAC?}` | `VMInfo` (refused while running; diskIDs = writable disks to carry, absent = all; regenerateMAC defaults true; the copy gets fresh machine identity and autostart off) |
-| `vm.setHardware` | `{name, cpuCount?, memoryBytes?}` | `{}` (clamped to host + boot floors) |
+| `vm.setHardware` | `{name, cpuCount?, memoryBytes?, nestedVirtualization?}` | `{}` (clamped to host + boot floors; nested virt is 1.0.4+, EFI/kernel boots on supporting hardware — skipped with a warning event otherwise) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
 | `vm.disk.add` | `{name, disk: NewDisk}` | `{}` |
 | `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected) |
@@ -83,17 +83,37 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` |
 | `vm.install.cancel` | `{name}` | `{}` |
 | `vm.install.phase` | `{name}` | `InstallPhase` |
+| `vm.device.add` | `{name, kind}` | `VMInfo` (1.0.4+; one device per kind; kind validity depends on boot mode — trackpad needs macOS, clipboard/rosetta refuse macOS; takes effect next boot) |
+| `vm.device.remove` | `{name, kind}` | `VMInfo` (1.0.4+) |
+| `vm.device.update` | `{name, device: DeviceInfo}` | `VMInfo` (1.0.4+; settings + enabled; `unavailable` ignored on input) |
+| `vm.setEnabled` | `{name, disks?: {id: bool}, mounts?: {id: bool}, console?: {"<index>": bool}, uart?: {"<index>": bool}}` | `{}` (1.0.4+; `vm.setSafety` twin — unknown ids/indices refuse the whole batch; disabling a serial port renumbers later guest names, same as removing it) |
+| `vm.kernel.setOverride` | `{name, path, commandLine?, overrideEnabled?}` | `VMInfo` (1.0.4+; per-owned-kernel-file cmdline override — replaces the VM command line while that file is active and the override is enabled; nil fields unchanged; dropped when the file is deleted) |
+| `vm.disk.resize` | `{name, diskID, sizeBytes}` | `VMInfo` (1.0.4+; grow-only, owned storage disks, refused while running) |
+| `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
+| `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
+| `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
 | `events.subscribe` | — | `{}`; events then arrive on this connection |
 | `daemon.retire` | — | `{}`; the daemon then stops serving and exits, leaving vmhosts (and their VMs) running for a successor to re-adopt. Only the daemon honors it; a vmhost refuses with `invalidState` |
 
 ## DTOs (abridged)
 
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
-[{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe}], mounts:
-[{id, path, tag, safe}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?, macInstallState?,
-minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path}]}, windowOpen,
-startPolicy?:
-{windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?}`.
+[{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe, owned?, enabled?}],
+mounts: [{id, path, tag, safe, enabled?}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
+macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
+overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
+{windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
+devices?, nestedVirtualization?}`.
+
+`devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
+displayHeightPixels?, displayPixelsPerInch?, sharesClipboard?, unavailable?}`; kinds:
+`keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network, clipboard,
+entropy, rosetta` (treat unknown kinds as a device you don't recognize). One device per kind.
+Absent `devices` = an older daemon: the effective set is the implied per-boot default
+(mac guests: keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network;
+EFI/kernel guests: keyboard, pointer, graphics, audioInput, audioOutput, network, clipboard).
+`enabled` on disks/mounts/serial ports and devices: absent = enabled (older daemons never
+emit it); disabled entries stay configured but are not attached at the next start.
 
 `consolePorts`/`uartPorts` are arrays of `SerialPortInfo`
 `{kind: "console"|"uart", index, guestDevice, logging: SerialLogConfig, socketPath?, logPath?,
@@ -135,6 +155,19 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 `copyProgress {vm, copiedBytes, totalBytes}` (compute ETA client-side; emitted by
 `vm.copy` with vm = the copy being created, and by `vm.disk.import`, `vm.disk.promote`,
 and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
+
+`operationChanged {op: OperationInfo}` (1.0.4+): a long-running operation started,
+progressed, or reached a terminal state. `OperationInfo` = `{id, kind, vm?, label,
+fraction?, completedBytes?, totalBytes?, startedAt, state, message?}` with open string sets
+for `kind` (`copyVM, importDisk, promoteDisk, shadowBuild, kernelImport, rosettaInstall`, …)
+and `state` (`running, succeeded, failed, cancelled`). Terminal states are emitted once;
+resync after reconnect with `host.operations`. `copyProgress` keeps being emitted in
+parallel for older clients. ETA stays consumer math.
+
+**1.0.4 compatibility note**: the persisted config format gained `devices`/`enabled`/
+`kernelOverrides` keys. Older daemons decode configs fine but their next config save DROPS
+those keys — which is why 1.0.4 bumps the desktop's daemon-version floor and triggers the
+replace-older prompt. Wire-wise everything above is additive under `apiVersion` 1.
 
 ## Safe runs (invisible on the wire except `safeRun`)
 
