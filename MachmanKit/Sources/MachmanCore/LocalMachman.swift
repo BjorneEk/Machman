@@ -81,8 +81,7 @@ public final class LocalMachman: MachmanControlling {
 			vm.config.devices = []
 			try vm.config.saveVMConfig()
 		case "default":
-			// The implied EFI set is already seeded; add the root disk the template promises.
-			try vm.config.addNewStorageDisk(name: "disk", size: 32 << 30)
+			break   // the implied EFI device set is already seeded; no disk — add your own
 		case "mac":
 			// Trackpad needs macOS boot — addable once macOS is installed; keyboard/pointer
 			// resolve to the boot-appropriate VZ class at assembly.

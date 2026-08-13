@@ -196,7 +196,7 @@ private struct NewVMTemplateView: View {
 					Image(systemName: MachmanSymbols.templateBlank).font(.system(size: 15))
 				}
 				row(title: "Default", caption: "Keyboard, pointer, display, audio, network, "
-					+ "clipboard + a 32 GB disk", template: "default") {
+					+ "clipboard — add disks yourself", template: "default") {
 					TuxIcon(size: 16)
 				}
 				row(title: "macOS", caption: "Mac device set — install macOS afterwards",

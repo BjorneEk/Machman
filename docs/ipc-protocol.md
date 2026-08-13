@@ -51,7 +51,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `host.capabilities` | — | `{maxCPUCount, minMemoryBytes, maxMemoryBytes, freeDiskBytes, uartUnavailable?, nestedVirtualizationSupported?, rosettaAvailability?, hostDisplayWidthPixels?, hostDisplayHeightPixels?, maxSerialPorts?}` (the optional tail is 1.0.4+) |
 | `vm.list` | — | `[VMInfo]` |
 | `vm.get` | `{name}` | `VMInfo` |
-| `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set + a 32 GiB root disk, `"mac"` = mac-guest device set minus trackpad; absent = implied EFI set, no disk) |
+| `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set (no disk), `"mac"` = mac-guest device set minus trackpad; absent = same as `"default"`) |
 | `vm.delete` | `{name}` | `{}` (refused while running/installing) |
 | `vm.rename` | `{name, newName}` | `{}` (refused while running) |
 | `vm.copy` | `{name, newName?, diskIDs?, regenerateMAC?}` | `VMInfo` (refused while running; diskIDs = writable disks to carry, absent = all; regenerateMAC defaults true; the copy gets fresh machine identity and autostart off) |
