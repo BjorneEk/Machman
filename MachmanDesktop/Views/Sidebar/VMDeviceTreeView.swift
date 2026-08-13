@@ -207,8 +207,23 @@ struct VMDeviceTreeView: View {
 			section: .disks, preview: $dragPreview, perform: performDiskDrop))
 	}
 
+	// Batch actions lead a row's menu when it sits inside a multi-selection.
+	@ViewBuilder
+	private func batchMenuItems(for node: SidebarNode) -> some View {
+		if viewModel.treeSelection.count > 1, viewModel.treeSelection.contains(node) {
+			Button("Enable \(viewModel.treeSelection.count) Items") {
+				viewModel.setSelectionEnabled(true, vm: vm)
+			}
+			Button("Disable \(viewModel.treeSelection.count) Items") {
+				viewModel.setSelectionEnabled(false, vm: vm)
+			}
+			Divider()
+		}
+	}
+
 	@ViewBuilder
 	private func diskMenu(_ disk: DiskInfo) -> some View {
+		batchMenuItems(for: .disk(disk.id))
 		if let path = disk.path {
 			Button("Copy") {
 				EntityClipboard.write(EntityClipboard(kind: .disk, path: path))
@@ -258,6 +273,7 @@ struct VMDeviceTreeView: View {
 				.frame(height: theme.metrics.treeRowHeight)
 				.tag(SidebarNode.mount(mount.id))
 				.contextMenu {
+					batchMenuItems(for: .mount(mount.id))
 					Button("Copy") {
 						EntityClipboard.write(EntityClipboard(
 							kind: .mount, path: mount.path, tag: mount.tag))
@@ -330,6 +346,7 @@ struct VMDeviceTreeView: View {
 	private func serialMenu(
 		_ port: SerialPortInfo, ref: SerialPortRef, open: Bool, gated: Bool, enabled: Bool
 	) -> some View {
+		batchMenuItems(for: .serial(ref))
 		if !gated && enabled {
 			if open {
 				Button("Close Terminal (disconnect)") { closeTerminal(ref) }
@@ -414,6 +431,7 @@ struct VMDeviceTreeView: View {
 
 	@ViewBuilder
 	private func deviceMenu(_ device: DeviceInfo) -> some View {
+		batchMenuItems(for: .device(device.kind))
 		Button(device.enabled ? "Disable" : "Enable") {
 			var updated = device
 			updated.enabled = !device.enabled

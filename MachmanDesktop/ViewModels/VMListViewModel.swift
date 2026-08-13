@@ -798,6 +798,43 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Batch enable/disable everything in the tree selection that carries the flag
+	// (multi-select context menus + the multi-selection inspector).
+	func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
+		var disks: [String: Bool] = [:]
+		var mounts: [String: Bool] = [:]
+		var console: [String: Bool] = [:]
+		var uart: [String: Bool] = [:]
+		for node in treeSelection {
+			switch node {
+			case .disk(let id):
+				disks[id] = enabled
+			case .mount(let id):
+				mounts[id] = enabled
+			case .serial(let ref):
+				if ref.kind == .console {
+					console[String(ref.index)] = enabled
+				} else {
+					uart[String(ref.index)] = enabled
+				}
+			case .device(let kind):
+				if var device = vm.devices?.first(where: { $0.kind == kind }) {
+					device.enabled = enabled
+					updateDevice(vm.name, device: device)
+				}
+			default:
+				break
+			}
+		}
+		if !disks.isEmpty || !mounts.isEmpty || !console.isEmpty || !uart.isEmpty {
+			setEnabled(
+				vm.name, disks: disks.isEmpty ? nil : disks,
+				mounts: mounts.isEmpty ? nil : mounts,
+				console: console.isEmpty ? nil : console,
+				uart: uart.isEmpty ? nil : uart)
+		}
+	}
+
 	// Batch per-entity enabled flags; serial ports are keyed by their string index.
 	func setEnabled(
 		_ name: String, disks: [String: Bool]? = nil, mounts: [String: Bool]? = nil,

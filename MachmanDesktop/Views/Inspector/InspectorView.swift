@@ -78,36 +78,7 @@ struct MultiSelectionInspector: View {
 	}
 
 	private func setAll(_ enabled: Bool) {
-		var disks: [String: Bool] = [:]
-		var mounts: [String: Bool] = [:]
-		var console: [String: Bool] = [:]
-		var uart: [String: Bool] = [:]
-		for node in viewModel.treeSelection {
-			switch node {
-			case .disk(let id): disks[id] = enabled
-			case .mount(let id): mounts[id] = enabled
-			case .serial(let ref):
-				if ref.kind == .console {
-					console[String(ref.index)] = enabled
-				} else {
-					uart[String(ref.index)] = enabled
-				}
-			case .device(let kind):
-				if var device = vm.devices?.first(where: { $0.kind == kind }) {
-					device.enabled = enabled
-					viewModel.updateDevice(vm.name, device: device)
-				}
-			default:
-				break
-			}
-		}
-		if !disks.isEmpty || !mounts.isEmpty || !console.isEmpty || !uart.isEmpty {
-			viewModel.setEnabled(
-				vm.name, disks: disks.isEmpty ? nil : disks,
-				mounts: mounts.isEmpty ? nil : mounts,
-				console: console.isEmpty ? nil : console,
-				uart: uart.isEmpty ? nil : uart)
-		}
+		viewModel.setSelectionEnabled(enabled, vm: vm)
 	}
 }
 
