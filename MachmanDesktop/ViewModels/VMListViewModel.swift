@@ -61,9 +61,10 @@ final class VMListViewModel: ObservableObject {
 	var vms: [VMInfo] { store.vms }
 	var capabilities: HostCapabilities? { store.capabilities }
 	var installPhases: [String: InstallPhase] { operationsStore.installPhases }
-	// Live preview thumbnails live in their own store so the ~4s refresh loop re-renders only the
-	// small PreviewView, not the whole VM pane (tab strip, terminal, toolbar). See PreviewStore.
-	let previewImages = PreviewStore()
+	// App-scoped preview polling; its PreviewStore isolates the ~4s frame churn so only the
+	// small PreviewView re-renders. This view model just tells it what is visible/focused.
+	let previews: PreviewService
+	var previewImages: PreviewStore { previews.images }
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
 	// Per-VM terminal tabs + their live connections. App-scoped (injected): terminals and
@@ -97,9 +98,6 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var transfers: [String: TransferProgress] = [:]
 	@Published private(set) var copyProgress: (done: UInt64, total: UInt64)?
 
-	private var isFocused = true
-	private let previewInterval: Double = 4
-	private var previewTask: Task<Void, Never>?
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
 	private var operationsForwarder: AnyCancellable?
@@ -111,12 +109,13 @@ final class VMListViewModel: ObservableObject {
 
 	init(
 		api: MachmanControlling, store: VMStore, operations: OperationsStore,
-		terminals: TerminalSessions
+		terminals: TerminalSessions, previews: PreviewService
 	) {
 		self.api = api
 		self.store = store
 		self.operationsStore = operations
 		self.terminals = terminals
+		self.previews = previews
 		// Views observe this object, not the stores — forward their changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
@@ -143,7 +142,6 @@ final class VMListViewModel: ObservableObject {
 
 	deinit {
 		eventTask?.cancel()
-		previewTask?.cancel()
 	}
 
 	func reload() async {
@@ -158,12 +156,8 @@ final class VMListViewModel: ObservableObject {
 
 	private func handle(event: VMEvent) {
 		switch event {
-		case .stateChanged(let name, let state):
-			// The store patches the row on its own stream; key the preview off the event's
-			// state so a not-yet-patched row can't stall the restart.
-			if name == selectedName {
-				restartPreviewLoop(latestState: state)
-			}
+		case .stateChanged:
+			break   // VMStore patches the row; PreviewService restarts its loop
 		case .listChanged:
 			break   // the store reloads; listRefreshed() reacts once the list lands
 		case .installPhaseChanged:
@@ -261,26 +255,7 @@ final class VMListViewModel: ObservableObject {
 	}
 
 	func onFocusEvent(focused: Bool) {
-		isFocused = focused
-		restartPreviewLoop()
-	}
-
-	private func restartPreviewLoop(latestState: VMState? = nil) {
-		previewTask?.cancel()
-		previewTask = nil
-		guard isFocused, let vm = selected, (latestState ?? vm.state).isRunning else { return }
-		let name = vm.name
-		previewTask = Task { [weak self] in
-			while !Task.isCancelled {
-				guard let self = self, self.selectedName == name else { return }
-				let data = try? await self.api.preview(vm: name, maxWidth: 1280)
-				if Task.isCancelled { return }
-				if let data = data, let image = NSImage(data: data) {
-					self.previewImages.images[name] = image
-				}
-				try? await Task.sleep(for: .seconds(self.previewInterval))
-			}
-		}
+		previews.setFocused(focused)
 	}
 
 	// MARK: - List / selection
@@ -296,7 +271,7 @@ final class VMListViewModel: ObservableObject {
 	func select(name: String?) {
 		selectedName = name
 		vmName = name ?? ""
-		restartPreviewLoop()
+		previews.setVisible(name.map { [$0] } ?? [])
 	}
 
 	// MARK: - Actions
@@ -393,11 +368,9 @@ final class VMListViewModel: ObservableObject {
 			// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
 			// old-keyed session would look like a vanished VM and its terminals get closed).
 			terminals.renameVM(from: oldName, to: newName)
+			previews.renameVM(from: oldName, to: newName)
 			await reload()
 			select(name: newName)
-			if let image = previewImages.images.removeValue(forKey: oldName) {
-				previewImages.images[newName] = image
-			}
 			return true
 		} catch {
 			present(error, while: "Renaming \(oldName)")

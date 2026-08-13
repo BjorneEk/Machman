@@ -36,6 +36,7 @@ final class DaemonConnection: ObservableObject {
 	// Not api-bound (nothing to re-attach): open terminal tabs + their live SwiftTerm
 	// controllers, kept out of the per-connection teardown so transcripts survive it.
 	let terminals = TerminalSessions()
+	let previews: PreviewService
 	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
 	// serves), so it is a flag beside Status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
@@ -51,6 +52,7 @@ final class DaemonConnection: ObservableObject {
 	}
 
 	init() {
+		previews = PreviewService(store: vmStore)
 		registerLoginItem()
 		connect()
 	}
@@ -113,9 +115,10 @@ final class DaemonConnection: ObservableObject {
 					guard let self = self else { return }
 					self.vmStore.attach(api: api)
 					self.operationsStore.attach(api: api)
+					self.previews.attach(api: api)
 					let viewModel = VMListViewModel(
 						api: api, store: self.vmStore, operations: self.operationsStore,
-						terminals: self.terminals)
+						terminals: self.terminals, previews: self.previews)
 					self.api = api
 					self.viewModel = viewModel
 					// The menu bar commands observe this object; forward list changes so
@@ -201,6 +204,7 @@ final class DaemonConnection: ObservableObject {
 		MachmanLogger.log(.passiveWarning, "daemon connection lost; reconnecting")
 		vmStore.detach()
 		operationsStore.detach()
+		previews.detach()
 		api = nil
 		viewModel = nil
 		viewModelForwarder = nil
