@@ -60,44 +60,57 @@ struct SerialInspector: View {
 
 	// MARK: - Terminal profile
 
+	// Icon actions only (design): reload (always visible) + terminal settings; the
+	// tooltips carry the descriptions.
 	private var terminalSection: some View {
 		Section("Terminal") {
-			Picker("Profile", selection: profileBinding) {
-				ForEach(profiles.profiles) { p in
-					Text(p.name).tag(p.id)
+			HStack(spacing: 4) {
+				Picker("Profile", selection: profileBinding) {
+					ForEach(profiles.profiles) { p in
+						Text(p.name).tag(p.id)
+					}
 				}
+				IconButton(
+					symbol: MachmanSymbols.reloadTerminal,
+					tooltip: "Reload the terminal — rebuilds it with the profile's "
+						+ "startup settings (scrollback, TERM, cursor) and reconnects",
+					flat: true
+				) {
+					reload()
+				}
+				.disabled(gate != nil || sessions.controller(vm: vm.name, ref: ref) == nil)
+				terminalSettingsButton
 			}
-			HStack {
-				Button {
-					let p = profiles.addProfile()
-					profiles.associate(vm: vm.name, ref: ref, to: p.id)
-					profiles.editingProfileID = p.id
-					applySelected()
-					openSettings()
-				} label: {
-					Label("New…", systemImage: MachmanSymbols.add)
-				}
-				Button {
-					profiles.editingProfileID = profiles.associatedID(vm: vm.name, ref: ref)
-					openSettings()
-				} label: {
-					Label("Edit…", systemImage: MachmanSymbols.terminalProfile)
-				}
-				Spacer()
-			}
-			.font(.caption)
 			if reloadNeeded {
-				HStack(spacing: 6) {
-					Image(systemName: MachmanSymbols.reloadTerminal)
-						.foregroundColor(.orange)
-					Text("Startup settings changed.")
-						.font(.caption).foregroundColor(.secondary)
-					Spacer()
-					Button("Reload") { reload() }.font(.caption)
-						.disabled(gate != nil)
-				}
+				Text("Startup settings changed — reload to apply.")
+					.font(.caption)
+					.foregroundColor(.orange)
 			}
 		}
+	}
+
+	// Terminal-with-a-gear glyph: opens Settings on this port's profile.
+	private var terminalSettingsButton: some View {
+		Button {
+			profiles.editingProfileID = profiles.associatedID(vm: vm.name, ref: ref)
+			openSettings()
+		} label: {
+			ZStack(alignment: .bottomTrailing) {
+				Image(systemName: MachmanSymbols.serialConsole)
+					.font(.system(size: 13))
+				Image(systemName: MachmanSymbols.tabConfig)
+					.font(.system(size: 8, weight: .bold))
+					.padding(1)
+					.background(Circle().fill(.background))
+					.offset(x: 4, y: 3)
+			}
+			.frame(width: 22, height: 20)
+			.contentShape(Rectangle())
+		}
+		.buttonStyle(.plain)
+		.machmanHoverable()
+		.help("Terminal Settings — edit profiles (colors, font, behavior); the picker "
+			+ "chooses this port's profile")
 	}
 
 	private var profileBinding: Binding<UUID> {
