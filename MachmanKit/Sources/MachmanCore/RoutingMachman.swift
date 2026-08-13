@@ -13,6 +13,7 @@
 
 import Foundation
 import AppKit
+import Virtualization
 import MachmanAPI
 import MachmanClient
 
@@ -558,21 +559,68 @@ public final class RoutingMachman: MachmanControlling {
 		return try await local.resizeDisk(vm: name, diskID: diskID, sizeBytes: sizeBytes)
 	}
 
-	// MARK: - Operations (1.0.4) — the OperationCenter (emitters, cancel, rosetta) lands in
-	// the next stint; the methods exist now so the wire is complete.
+	// MARK: - Operations (1.0.4)
 
+	// The daemon's own operations plus every hosted VM's (imports on a running VM execute
+	// in its vmhost, which runs its own OperationCenter).
 	public func operations() async throws -> [OperationInfo] {
-		[]
+		var all = try await local.operations()
+		for host in hosted.values {
+			if let ops = try? await host.client.operations() {
+				all.append(contentsOf: ops)
+			}
+		}
+		return all.sorted { $0.startedAt < $1.startedAt }
 	}
 
 	public func cancelOperation(id: String) async throws {
+		do {
+			try await local.cancelOperation(id: id)
+			return
+		} catch let error as MachmanError where error.code == .notFound {
+			// Not a daemon-side operation — try the vmhosts.
+		}
+		for host in hosted.values {
+			do {
+				try await host.client.cancelOperation(id: id)
+				return
+			} catch let error as MachmanError where error.code == .notFound {
+				continue
+			}
+		}
 		throw MachmanError(code: .notFound, message: "no operation '\(id)'")
 	}
 
+	// System-prompted Rosetta install, tracked as an indeterminate operation. Returns
+	// immediately; the operation reaches its terminal state when the system flow completes
+	// (clients re-fetch host.capabilities on success). macOS 27 makes this an instant no-op.
 	public func installRosetta() async throws {
-		throw MachmanError(
-			code: .invalidState,
-			message: "this daemon does not implement Rosetta install yet")
+		switch VZLinuxRosettaDirectoryShare.availability {
+		case .installed:
+			return   // already there — success
+		case .notSupported:
+			throw MachmanError(
+				code: .invalidState, message: "Rosetta is not supported on this host")
+		case .notInstalled:
+			break
+		@unknown default:
+			throw MachmanError(
+				code: .invalidState, message: "Rosetta availability is unknown on this host")
+		}
+		let center = local.operationCenter
+		let opID = center.begin(
+			kind: OperationInfo.Kind.rosettaInstall, label: "Installing Rosetta")
+		VZLinuxRosettaDirectoryShare.installRosetta { error in
+			Task { @MainActor in
+				if let error {
+					center.finish(
+						opID, state: OperationInfo.State.failed,
+						message: error.localizedDescription)
+				} else {
+					center.finish(opID, state: OperationInfo.State.succeeded)
+				}
+			}
+		}
 	}
 
 	public func start(vm name: String, options: StartOptions) async throws {
@@ -643,19 +691,33 @@ public final class RoutingMachman: MachmanControlling {
 			try SafeRun.writeMarker(
 				ShadowMarker(vm: name, createdAt: Date(), pid: nil), runRoot: runRoot)
 			let events = registry.events
+			let center = local.operationCenter
+			let opID = center.begin(
+				kind: OperationInfo.Kind.shadowBuild, vm: name,
+				label: "Preparing safe run of \(name)")
 			let request = SafeRun.shadowRequest(
 				config: vm.config, sourceDir: machmanVMDir + "/" + name, runRoot: runRoot,
 				progress: { copied, total in
 					Task { @MainActor in
 						events.emit(.copyProgress(
 							vm: name, copiedBytes: copied, totalBytes: total))
+						center.update(
+							opID, fraction: total > 0 ? Double(copied) / Double(total) : nil,
+							completedBytes: Int64(copied), totalBytes: Int64(total))
 					}
 				})
 			// Detached: same-volume clones are instant, but unsafe-marked-safe external
 			// images can be real byte copies.
-			try await Task.detached(priority: .userInitiated) {
-				try VMCopier.copy(request)
-			}.value
+			do {
+				try await Task.detached(priority: .userInitiated) {
+					try VMCopier.copy(request)
+				}.value
+			} catch {
+				center.finish(
+					opID, state: OperationInfo.State.failed, message: "\(error)")
+				throw error
+			}
+			center.finish(opID, state: OperationInfo.State.succeeded)
 		} catch {
 			try? FileManager.default.removeItem(atPath: runRoot)
 			throw error

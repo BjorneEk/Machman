@@ -16,9 +16,14 @@ import MachmanAPI
 @MainActor
 public final class LocalMachman: MachmanControlling {
 	private let registry: VMRegistry
+	// Long-running-operation registry (host.operations / op.cancel / operationChanged).
+	// Internal so RoutingMachman can register its daemon-side operations (shadow builds,
+	// Rosetta installs) in the same place.
+	let operationCenter: OperationCenter
 
 	public init(registry: VMRegistry) {
 		self.registry = registry
+		self.operationCenter = OperationCenter(events: registry.events)
 	}
 
 	// MARK: - Host
@@ -138,6 +143,11 @@ public final class LocalMachman: MachmanControlling {
 			return .generic
 		}()
 		let events = registry.events
+		let center = operationCenter
+		let cancelFlag = CancelFlag()
+		let opID = center.begin(
+			kind: OperationInfo.Kind.copyVM, vm: target,
+			label: "Copying \(name) → \(target)", cancel: { cancelFlag.set() })
 		let request = VMCopyRequest(
 			sourceDir: machmanVMDir + "/" + name, destinationParent: machmanVMDir,
 			newName: target, diskPolicies: policies, includedMountIDs: nil,
@@ -145,13 +155,27 @@ public final class LocalMachman: MachmanControlling {
 			progress: { copied, total in
 				Task { @MainActor in
 					events.emit(.copyProgress(vm: target, copiedBytes: copied, totalBytes: total))
+					center.update(
+						opID, fraction: total > 0 ? Double(copied) / Double(total) : nil,
+						completedBytes: Int64(copied), totalBytes: Int64(total))
 				}
-			})
+			},
+			isCancelled: { cancelFlag.get() })
 		// Synchronous file work would freeze the main actor for the whole clone — detach it.
 		// The staging rename inside the copier arbitrates any name minted while we waited.
-		try await Task.detached(priority: .userInitiated) {
-			try VMCopier.copy(request)
-		}.value
+		do {
+			try await Task.detached(priority: .userInitiated) {
+				try VMCopier.copy(request)
+			}.value
+		} catch {
+			center.finish(
+				opID,
+				state: cancelFlag.get()
+					? OperationInfo.State.cancelled : OperationInfo.State.failed,
+				message: "\(error)")
+			throw error
+		}
+		center.finish(opID, state: OperationInfo.State.succeeded)
 		return info(for: try registry.adoptFromDisk(name: target))
 	}
 
@@ -219,7 +243,8 @@ public final class LocalMachman: MachmanControlling {
 
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
 		let vm = try lookup(name)
-		let imported = try await copyIntoVM(vm, name: name, sourcePath: path)
+		let imported = try await copyIntoVM(
+			vm, name: name, sourcePath: path, kind: OperationInfo.Kind.importDisk)
 		try vm.config.addDisk(disk: imported)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
@@ -245,7 +270,8 @@ public final class LocalMachman: MachmanControlling {
 		case .fromUrl(let url):
 			sourcePath = url.path
 		}
-		var promoted = try await copyIntoVM(vm, name: name, sourcePath: sourcePath)
+		var promoted = try await copyIntoVM(
+			vm, name: name, sourcePath: sourcePath, kind: OperationInfo.Kind.promoteDisk)
 		promoted.safe = disk.safe   // the entry swaps in place; the policy carries
 		try vm.config.replaceDisk(id: diskID, with: promoted)
 		registry.events.emit(.listChanged)
@@ -253,9 +279,10 @@ public final class LocalMachman: MachmanControlling {
 	}
 
 	// The shared import mechanics: gather taken names on-actor, then detach the sniff+copy
-	// (external images can be real cross-volume byte copies). Progress reuses copyProgress.
+	// (external images can be real cross-volume byte copies). Progress reuses copyProgress
+	// AND registers an operation (dual-emitted for older clients).
 	private func copyIntoVM(
-		_ vm: VirtualMachine, name: String, sourcePath: String
+		_ vm: VirtualMachine, name: String, sourcePath: String, kind: String
 	) async throws -> VMDisk {
 		let vmDir = vm.config.vmDirPath()
 		let taken = Set(vm.config.disks.compactMap { disk -> String? in
@@ -263,16 +290,38 @@ public final class LocalMachman: MachmanControlling {
 			return nil
 		})
 		let events = registry.events
-		return try await Task.detached(priority: .userInitiated) {
-			try DiskImport.importFile(
-				src: sourcePath, vmDir: vmDir, takenStorageNames: taken,
-				progress: { copied, total in
-					Task { @MainActor in
-						events.emit(.copyProgress(
-							vm: name, copiedBytes: copied, totalBytes: total))
-					}
-				})
-		}.value
+		let center = operationCenter
+		let cancelFlag = CancelFlag()
+		let file = (sourcePath as NSString).lastPathComponent
+		let verb = kind == OperationInfo.Kind.promoteDisk ? "Promoting" : "Importing"
+		let opID = center.begin(
+			kind: kind, vm: name, label: "\(verb) \(file)", cancel: { cancelFlag.set() })
+		do {
+			let disk = try await Task.detached(priority: .userInitiated) {
+				try DiskImport.importFile(
+					src: sourcePath, vmDir: vmDir, takenStorageNames: taken,
+					progress: { copied, total in
+						Task { @MainActor in
+							events.emit(.copyProgress(
+								vm: name, copiedBytes: copied, totalBytes: total))
+							center.update(
+								opID,
+								fraction: total > 0 ? Double(copied) / Double(total) : nil,
+								completedBytes: Int64(copied), totalBytes: Int64(total))
+						}
+					},
+					isCancelled: { cancelFlag.get() })
+			}.value
+			center.finish(opID, state: OperationInfo.State.succeeded)
+			return disk
+		} catch {
+			center.finish(
+				opID,
+				state: cancelFlag.get()
+					? OperationInfo.State.cancelled : OperationInfo.State.failed,
+				message: "\(error)")
+			throw error
+		}
 	}
 
 	public func addMount(vm name: String, path: String, tag: String) async throws {
@@ -316,11 +365,23 @@ public final class LocalMachman: MachmanControlling {
 	) async throws -> VMInfo {
 		let vm = try lookup(name)
 		let kernelsDir = vm.config.kernelsDirPath()
-		// Copies can be tens of MiB — detach so the main actor doesn't freeze.
-		let dest = try await Task.detached(priority: .userInitiated) {
-			try KernelStore.promote(
-				role: role, sourcePath: sourcePath, kernelsDir: kernelsDir, tag: tag)
-		}.value
+		// Copies can be tens of MiB — detach so the main actor doesn't freeze. Indeterminate
+		// operation (KernelStore reports no byte progress); previously fully silent.
+		let opID = operationCenter.begin(
+			kind: OperationInfo.Kind.kernelImport, vm: name,
+			label: "Importing \(role.rawValue) '\(tag)'")
+		let dest: String
+		do {
+			dest = try await Task.detached(priority: .userInitiated) {
+				try KernelStore.promote(
+					role: role, sourcePath: sourcePath, kernelsDir: kernelsDir, tag: tag)
+			}.value
+		} catch {
+			operationCenter.finish(
+				opID, state: OperationInfo.State.failed, message: "\(error)")
+			throw error
+		}
+		operationCenter.finish(opID, state: OperationInfo.State.succeeded)
 		var updated = vm.config.kernelSettings
 			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
 		switch role {
@@ -450,14 +511,12 @@ public final class LocalMachman: MachmanControlling {
 
 	// MARK: - Operations (1.0.4)
 
-	// The vmhost gains its own OperationCenter with the emitter work (S1); until then it
-	// reports an empty list and cannot cancel anything.
 	public func operations() async throws -> [OperationInfo] {
-		[]
+		operationCenter.list()
 	}
 
 	public func cancelOperation(id: String) async throws {
-		throw MachmanError(code: .notFound, message: "no operation '\(id)'")
+		try operationCenter.cancel(id: id)
 	}
 
 	public func installRosetta() async throws {
