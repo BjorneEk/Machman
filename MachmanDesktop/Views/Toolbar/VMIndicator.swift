@@ -56,7 +56,9 @@ struct VMIndicatorCluster: View {
 			}
 			.padding(.horizontal, 10)
 			.padding(.vertical, 4)
-			.machmanGlassCapsule()
+			// Tinted with the accent (the theme's, or the system/desktop accent when the
+			// theme follows the system).
+			.machmanGlassCapsule(tint: MachmanColors.selection.opacity(0.22))
 			.contentShape(Capsule())
 			.animation(.easeOut(duration: 0.12), value: hovering)
 		}
@@ -79,7 +81,7 @@ struct SafeModeChip: View {
 			.foregroundStyle(MachmanColors.safeMode)
 			.padding(.horizontal, 8)
 			.padding(.vertical, 5)
-			.machmanGlassCapsule()
+			.machmanGlassCapsule(tint: MachmanColors.safeMode.opacity(0.18))
 			.help("Safe mode — changes are discarded on stop")
 	}
 }

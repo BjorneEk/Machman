@@ -87,6 +87,13 @@ struct VMNavigationView: View {
 			}
 			.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
 		}
+		// WINDOW-LEVEL toolbar (not the detail pane's): items keep one home however the
+		// sidebar/inspector columns move, and the pinned background stops the bar's style
+		// flipping with scroll-under content. The indicator stays with no VM selected —
+		// the picker is the only VM switcher.
+		.toolbar { toolbar(viewModel.selected) }
+		.toolbar(removing: .title)   // the VM indicator IS the title
+		.toolbarBackground(.visible, for: .windowToolbar)
 		.alert(
 			viewModel.presentedError?.title ?? "Error",
 			isPresented: $viewModel.isErrorPresented,
@@ -120,6 +127,38 @@ struct VMNavigationView: View {
 		// transfer-progress sheet — imports/promotes/copies emit operations now).
 		.overlay {
 			NotificationOverlay(viewModel: viewModel, operations: viewModel.operationsStore)
+		}
+	}
+
+	@ToolbarContentBuilder
+	private func toolbar(_ vm: VMInfo?) -> some ToolbarContent {
+		ToolbarItem(placement: .navigation) {
+			VMIndicatorCluster(viewModel: viewModel, vm: vm)
+		}
+		if let vm {
+			if vm.safeRun == true {
+				ToolbarItem(placement: .navigation) {
+					SafeModeChip()
+				}
+			}
+			if vm.hasEnabledGraphics {
+				ToolbarItem(placement: .principal) {
+					WindowToggleItem(viewModel: viewModel, vm: vm)
+				}
+			}
+			ToolbarItem(placement: .principal) {
+				StartStopGroup(viewModel: viewModel, vm: vm)
+			}
+			// No delete in the toolbar (1.0.4 design): it lives in the picker's row menu.
+			ToolbarItemGroup(placement: .primaryAction) {
+				AddButton(viewModel: viewModel, vm: vm)
+				Button {
+					viewModel.showInfoPanel.toggle()
+				} label: {
+					Image(systemName: MachmanSymbols.inspectorToggle)
+				}
+				.help(viewModel.showInfoPanel ? "Hide Inspector" : "Show Inspector")
+			}
 		}
 	}
 

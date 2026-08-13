@@ -36,11 +36,6 @@ struct VMTabContainerView: View {
 			// fires before the mutation lands, so defer a tick to read the new values.
 			DispatchQueue.main.async { sessions.reapplyLiveProfiles(profiles) }
 		}
-		// The toolbar outlives the selection: with no VM the indicator still shows the
-		// picker (the only VM switcher), while the per-VM actions disappear.
-		.toolbar { toolbar(viewModel.selected) }
-		// The VM indicator IS the title (1.0.4 design) — hide the app-name window title.
-		.toolbar(removing: .title)
 	}
 
 	// The inspector is the window-level native column (VMNavigationView.inspector), so the
@@ -54,40 +49,4 @@ struct VMTabContainerView: View {
 				viewModel.onFocusEvent(focused: focused)
 			})
 	}
-
-	// MARK: - Toolbar (always-active VM header)
-
-	@ToolbarContentBuilder
-	private func toolbar(_ vm: VMInfo?) -> some ToolbarContent {
-		ToolbarItem(placement: .navigation) {
-			VMIndicatorCluster(viewModel: viewModel, vm: vm)
-		}
-		if let vm {
-			if vm.safeRun == true {
-				ToolbarItem(placement: .navigation) {
-					SafeModeChip()
-				}
-			}
-			if vm.hasEnabledGraphics {
-				ToolbarItem(placement: .principal) {
-					WindowToggleItem(viewModel: viewModel, vm: vm)
-				}
-			}
-			ToolbarItem(placement: .principal) {
-				StartStopGroup(viewModel: viewModel, vm: vm)
-			}
-			// No delete in the toolbar (1.0.4 design): it lives in the picker's row menu,
-			// and the sidebar tree + VM menu grow their own entries in later stints.
-			ToolbarItemGroup(placement: .primaryAction) {
-				AddButton(viewModel: viewModel, vm: vm)
-				Button {
-					viewModel.showInfoPanel.toggle()
-				} label: {
-					Image(systemName: MachmanSymbols.inspectorToggle)
-				}
-				.help(viewModel.showInfoPanel ? "Hide Inspector" : "Show Inspector")
-			}
-		}
-	}
-
 }

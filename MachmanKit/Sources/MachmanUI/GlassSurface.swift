@@ -14,15 +14,19 @@ public struct MachmanGlassSurface<S: InsettableShape>: ViewModifier {
 	@Environment(\.machmanTheme) private var theme
 	private let shape: S
 	private let prominent: Bool
+	// Optional wash: real Liquid Glass tinting on macOS 26, a fill overlay on the fallback.
+	private let tint: Color?
 
-	public init(shape: S, prominent: Bool = false) {
+	public init(shape: S, prominent: Bool = false, tint: Color? = nil) {
 		self.shape = shape
 		self.prominent = prominent
+		self.tint = tint
 	}
 
 	public func body(content: Content) -> some View {
 		if #available(macOS 26.0, *) {
-			content.glassEffect(prominent ? .regular.interactive() : .regular, in: shape)
+			let glass: Glass = prominent ? .regular.interactive() : .regular
+			content.glassEffect(tint.map { glass.tint($0) } ?? glass, in: shape)
 		} else {
 			legacy(content: content)
 		}
@@ -33,6 +37,11 @@ public struct MachmanGlassSurface<S: InsettableShape>: ViewModifier {
 			.background {
 				shape.fill(theme.glass == .extra
 					? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.thinMaterial))
+			}
+			.background {
+				if let tint {
+					shape.fill(tint.opacity(0.18))
+				}
 			}
 			.overlay {
 				shape.strokeBorder(
@@ -48,14 +57,16 @@ public struct MachmanGlassSurface<S: InsettableShape>: ViewModifier {
 }
 
 extension View {
-	public func machmanGlass(cornerRadius: CGFloat, prominent: Bool = false) -> some View {
+	public func machmanGlass(
+		cornerRadius: CGFloat, prominent: Bool = false, tint: Color? = nil
+	) -> some View {
 		modifier(MachmanGlassSurface(
 			shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
-			prominent: prominent))
+			prominent: prominent, tint: tint))
 	}
 
-	public func machmanGlassCapsule(prominent: Bool = false) -> some View {
-		modifier(MachmanGlassSurface(shape: Capsule(), prominent: prominent))
+	public func machmanGlassCapsule(prominent: Bool = false, tint: Color? = nil) -> some View {
+		modifier(MachmanGlassSurface(shape: Capsule(), prominent: prominent, tint: tint))
 	}
 }
 
