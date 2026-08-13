@@ -494,6 +494,17 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func resizeDisk(_ name: String, diskID: String, sizeBytes: UInt64) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.resizeDisk(
+					vm: name, diskID: diskID, sizeBytes: sizeBytes)
+			} catch {
+				self?.present(error, while: "Growing a disk")
+			}
+		}
+	}
+
 	func setDiskSafety(_ name: String, diskID: String, safe: Bool) {
 		Task { [weak self] in
 			do {

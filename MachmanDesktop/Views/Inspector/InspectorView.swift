@@ -28,6 +28,10 @@ struct InspectorView: View {
 				switch viewModel.treeSelection.first {
 				case .vmRoot, nil, .group:
 					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
+				case .disk(let id):
+					DiskInspector(viewModel: viewModel, vm: vm, diskID: id)
+				case .mount(let id):
+					MountInspector(viewModel: viewModel, vm: vm, mountID: id)
 				case .serial(let ref):
 					// Interim: the real per-port panel until SerialInspector absorbs it.
 					TerminalInfoPanel(
