@@ -74,14 +74,13 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var copyInFlight = false
 	@Published var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
 	@Published private(set) var safeSaveInFlight = false
-	// Live file transfers outside the duplicate sheet (imports, promotes, safe-run shadow
-	// builds), keyed by VM name — non-empty presents TransferProgressView.
-	struct TransferProgress: Equatable {
-		var done: UInt64
-		var total: UInt64
-	}
-	@Published private(set) var transfers: [String: TransferProgress] = [:]
 	@Published private(set) var copyProgress: (done: UInt64, total: UInt64)?
+	// Bottom-right transient toasts (engine warnings/errors, confirmations). Lifetime is
+	// the user's setting; transfers show as progress cards from OperationsStore instead.
+	@Published private(set) var toasts: [MachmanToast] = []
+
+	static let toastSecondsKey = "MachmanToastSeconds"
+	static let defaultToastSeconds = 4.0
 
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
@@ -183,16 +182,18 @@ final class VMListViewModel: ObservableObject {
 			// relaying through the client's logger keeps engine warnings visible from the app
 			// the user actually runs.
 			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
+			if level == .warning || level == .error {
+				pushToast(
+					symbol: MachmanSymbols.warning,
+					message: "\(vm.map { "\($0): " } ?? "")\(message)",
+					tint: MachmanColors.warning)
+			}
 		case .copyProgress(let vm, let copied, let total):
+			_ = vm
 			if copyInFlight {
-				// The duplicate sheet owns its own bar.
+				// The duplicate sheet owns its own bar; every other transfer shows as a
+				// progress card fed by operationChanged.
 				copyProgress = (done: copied, total: total)
-			} else if copied >= total {
-				transfers[vm] = nil
-			} else {
-				// Disk imports/promotes and safe-run shadow builds land here — the
-				// transfer popup shows them.
-				transfers[vm] = TransferProgress(done: copied, total: total)
 			}
 		case .operationChanged:
 			// The operations UI (progress cards) lands with the desktop overhaul; until
@@ -213,10 +214,26 @@ final class VMListViewModel: ObservableObject {
 	// dismissed unread.
 	func present(message: String, while action: String) {
 		MachmanLogger.log(.interactionError, "\(action) failed: \(message)")
-		// A failed transfer never emits its final progress event — drop any live bars so
-		// the popup can't linger behind the alert.
-		transfers.removeAll()
 		presentedError = PresentedError(title: "\(action) failed", message: message)
+	}
+
+	// A transient bottom-right toast; lifetime comes from the user's setting.
+	func pushToast(symbol: String, message: String, tint: Color? = nil) {
+		let toast = MachmanToast(symbol: symbol, message: message, tint: tint)
+		toasts.append(toast)
+		let stored = UserDefaults.standard.double(forKey: Self.toastSecondsKey)
+		let seconds = stored > 0 ? stored : Self.defaultToastSeconds
+		Task { [weak self] in
+			try? await Task.sleep(for: .seconds(seconds))
+			self?.toasts.removeAll { $0.id == toast.id }
+		}
+	}
+
+	func cancelOperation(id: String) {
+		Task { [weak self] in
+			do { try await self?.api.cancelOperation(id: id) }
+			catch { self?.present(error, while: "Canceling the operation") }
+		}
 	}
 
 	func present(_ error: Error, while action: String) {

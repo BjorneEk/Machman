@@ -79,6 +79,14 @@ final class OperationsStore: ObservableObject {
 			} else {
 				operations.append(op)
 			}
+			// Terminal states linger briefly (the card shows the outcome) then prune.
+			if op.isFinished {
+				let id = op.id
+				Task { [weak self] in
+					try? await Task.sleep(for: .seconds(5))
+					self?.operations.removeAll { $0.id == id && $0.isFinished }
+				}
+			}
 		default:
 			break
 		}
