@@ -49,6 +49,8 @@ final class VMListViewModel: ObservableObject {
 	var previewImages: PreviewStore { previews.images }
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
+	// The sidebar tree's selection (window UI state); drives the inspector's target.
+	@Published var treeSelection: Set<SidebarNode> = []
 	// Live terminal controllers (app-scoped, injected): transcripts persist across VM
 	// navigation AND daemon reconnects; a controller lives as long as its tab is open.
 	let terminals: TerminalSessions
@@ -399,14 +401,36 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func setHardware(_ name: String, cpuCount: Int? = nil, memoryBytes: UInt64? = nil) {
+	func setHardware(
+		_ name: String, cpuCount: Int? = nil, memoryBytes: UInt64? = nil, nested: Bool? = nil
+	) {
 		Task { [weak self] in
 			do {
 				try await self?.api.setHardware(
 					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
-					nestedVirtualization: nil)
+					nestedVirtualization: nested)
 			} catch {
 				self?.present(error, while: "Updating hardware for \(name)")
+			}
+		}
+	}
+
+	// The one rename flow (tree rename-in-place + the VM inspector's name field):
+	// dup-checked, migrating terminal/canvas/preview/profile state on success.
+	func requestRename(_ vm: VMInfo, to newName: String, profiles: TerminalProfileStore) {
+		let old = vm.name
+		guard !newName.isEmpty, newName != old else { return }
+		guard !hasVM(newName) else {
+			present(
+				message: "A VM named '\(newName)' already exists.",
+				while: "Renaming \(old)")
+			return
+		}
+		Task { [weak self] in
+			guard let self = self else { return }
+			if await self.rename(from: old, to: newName) {
+				profiles.renameVM(from: old, to: newName)
+				self.log(message: "Renamed \(old) to \(newName)")
 			}
 		}
 	}

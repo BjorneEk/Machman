@@ -49,23 +49,16 @@ struct VMTabContainerView: View {
 				viewModel: viewModel, sessions: sessions, canvases: viewModel.canvases,
 				profiles: profiles, vm: vm)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
-			if viewModel.showInfoPanel,
-				case let .terminal(ref) = viewModel.canvases.canvas(for: vm.name).activeTab {
+			if viewModel.showInfoPanel {
 				Divider()
-				TerminalInfoPanel(
-					vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
-					profiles: profiles)
+				InspectorView(
+					viewModel: viewModel, sessions: sessions, profiles: profiles, vm: vm)
 					.frame(width: 320)
 			}
 		}
 		.background(FocusAndTopmostTracker { focused in
 			viewModel.onFocusEvent(focused: focused)
 		})
-	}
-
-	private func isTerminalActive(_ vm: VMInfo) -> Bool {
-		if case .terminal = viewModel.canvases.canvas(for: vm.name).activeTab { return true }
-		return false
 	}
 
 	// MARK: - Toolbar (always-active VM header)
@@ -98,8 +91,7 @@ struct VMTabContainerView: View {
 				} label: {
 					Image(systemName: MachmanSymbols.inspectorToggle)
 				}
-				.disabled(!isTerminalActive(vm))
-				.help(viewModel.showInfoPanel ? "Hide terminal info" : "Show terminal info")
+				.help(viewModel.showInfoPanel ? "Hide Inspector" : "Show Inspector")
 			}
 		}
 	}

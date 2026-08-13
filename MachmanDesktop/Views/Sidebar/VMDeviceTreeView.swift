@@ -32,7 +32,6 @@ struct VMDeviceTreeView: View {
 	@ObservedObject var canvases: CanvasStateStore
 	let profiles: TerminalProfileStore
 	let vm: VMInfo
-	@State private var treeSelection: Set<SidebarNode> = []
 	@State private var renamingRoot = false
 	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
@@ -77,7 +76,7 @@ struct VMDeviceTreeView: View {
 	}
 
 	private var treeList: some View {
-		List(selection: $treeSelection) {
+		List(selection: $viewModel.treeSelection) {
 			vmRootRow
 			diskGroup
 			mountGroup
@@ -91,13 +90,14 @@ struct VMDeviceTreeView: View {
 		.listStyle(.sidebar)
 		.environment(\.defaultMinListRowHeight, theme.metrics.treeRowHeight)
 		.font(.system(size: theme.metrics.rowFontSize))
-		.onChange(of: treeSelection) {
-			guard treeSelection.count == 1, let node = treeSelection.first else { return }
+		.onChange(of: viewModel.treeSelection) {
+			guard viewModel.treeSelection.count == 1,
+				let node = viewModel.treeSelection.first else { return }
 			openNode(node)
 		}
 		// The tree shows ONE VM; stale nodes must not survive into another VM's tree.
 		.onChange(of: vm.name) {
-			treeSelection = []
+			viewModel.treeSelection = []
 		}
 		// Finder drop anywhere on the tree: folders become mounts, files ask
 		// copy-or-reference (same funnel as the picker and paste).
@@ -141,20 +141,7 @@ struct VMDeviceTreeView: View {
 
 	// In-place rename: Return commits (Esc cancels), so no extra confirmation dialog.
 	private func commitRename(to newName: String) {
-		let old = vm.name
-		guard !newName.isEmpty, newName != old else { return }
-		guard !viewModel.hasVM(newName) else {
-			viewModel.present(
-				message: "A VM named '\(newName)' already exists.",
-				while: "Renaming \(old)")
-			return
-		}
-		Task {
-			if await viewModel.rename(from: old, to: newName) {
-				profiles.renameVM(from: old, to: newName)
-				viewModel.log(message: "Renamed \(old) to \(newName)")
-			}
-		}
+		viewModel.requestRename(vm, to: newName, profiles: profiles)
 	}
 
 	@ViewBuilder
