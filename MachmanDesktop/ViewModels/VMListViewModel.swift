@@ -551,6 +551,13 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func addDevice(_ name: String, kind: DeviceKind) {
+		Task { [weak self] in
+			do { _ = try await self?.api.addDevice(vm: name, kind: kind) }
+			catch { self?.present(error, while: "Adding a device") }
+		}
+	}
+
 	func addConsolePort(_ name: String) {
 		Task { [weak self] in
 			do { try await self?.api.addConsolePort(vm: name) }

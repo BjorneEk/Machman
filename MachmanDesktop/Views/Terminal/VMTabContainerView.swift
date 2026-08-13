@@ -152,11 +152,12 @@ struct VMTabContainerView: View {
 			}
 			.help("delete \(vm.name)")
 		}
-		ToolbarItem {
+		ToolbarItemGroup(placement: .primaryAction) {
+			AddButton(viewModel: viewModel, vm: vm)
 			Button {
 				viewModel.showInfoPanel.toggle()
 			} label: {
-				Label("Info", systemImage: MachmanSymbols.infoPanel)
+				Image(systemName: MachmanSymbols.inspectorToggle)
 			}
 			.disabled(!isTerminalActive(vm))
 			.help(viewModel.showInfoPanel ? "Hide terminal info" : "Show terminal info")

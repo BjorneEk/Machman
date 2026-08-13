@@ -245,8 +245,10 @@ public struct PathRow: View {
 // MARK: - Add tile ----------------------------------------------------------------------------
 
 // Icon-first tile for the "+" add popover. `badge` overlays a small plus for glyphs that
-// have no `.badge.plus` variant of their own.
+// have no `.badge.plus` variant of their own. Dims when disabled (a capability-gated
+// tile); the tooltip then carries the reason.
 public struct AddTile: View {
+	@Environment(\.isEnabled) private var enabled
 	private let symbol: String
 	private let caption: String
 	private let tooltip: String
@@ -291,7 +293,8 @@ public struct AddTile: View {
 			.contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 		}
 		.buttonStyle(.plain)
-		.onHover { hovering = $0 }
+		.opacity(enabled ? 1 : MachmanColors.disabledOpacity)
+		.onHover { hovering = enabled && $0 }
 		.help(tooltip)
 	}
 }
