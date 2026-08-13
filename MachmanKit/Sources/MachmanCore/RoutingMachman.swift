@@ -362,8 +362,8 @@ public final class RoutingMachman: MachmanControlling {
 		return try await local.vm(named: name)
 	}
 
-	public func createVM() async throws -> VMInfo {
-		try await local.createVM()
+	public func createVM(template: String?) async throws -> VMInfo {
+		try await local.createVM(template: template)
 	}
 
 	public func deleteVM(named name: String) async throws {
@@ -391,8 +391,12 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
-	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
-		try await target(name).setHardware(vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
+	public func setHardware(
+		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
+	) async throws {
+		try await target(name).setHardware(
+			vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
+			nestedVirtualization: nestedVirtualization)
 	}
 
 	public func copyVM(
@@ -516,6 +520,59 @@ public final class RoutingMachman: MachmanControlling {
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
 	) async throws {
 		try await target(name).setSafety(vm: name, disks: disks, mounts: mounts)
+	}
+
+	// MARK: - Guest devices (1.0.4) — config-plane edits proxy like disks (next-boot effect).
+
+	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		try await target(name).addDevice(vm: name, kind: kind)
+	}
+
+	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		try await target(name).removeDevice(vm: name, kind: kind)
+	}
+
+	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
+		try await target(name).updateDevice(vm: name, device: device)
+	}
+
+	public func setEnabled(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	) async throws {
+		try await target(name).setEnabled(
+			vm: name, disks: disks, mounts: mounts, console: console, uart: uart)
+	}
+
+	public func setKernelOverride(
+		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
+	) async throws -> VMInfo {
+		try await target(name).setKernelOverride(
+			vm: name, path: path, commandLine: commandLine, overrideEnabled: overrideEnabled)
+	}
+
+	public func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws
+		-> VMInfo {
+		// Growing the raw file under a live VZ attachment is unsafe — stop first.
+		try refuseWhileHosted(name, "resizing its disks")
+		return try await local.resizeDisk(vm: name, diskID: diskID, sizeBytes: sizeBytes)
+	}
+
+	// MARK: - Operations (1.0.4) — the OperationCenter (emitters, cancel, rosetta) lands in
+	// the next stint; the methods exist now so the wire is complete.
+
+	public func operations() async throws -> [OperationInfo] {
+		[]
+	}
+
+	public func cancelOperation(id: String) async throws {
+		throw MachmanError(code: .notFound, message: "no operation '\(id)'")
+	}
+
+	public func installRosetta() async throws {
+		throw MachmanError(
+			code: .invalidState,
+			message: "this daemon does not implement Rosetta install yet")
 	}
 
 	public func start(vm name: String, options: StartOptions) async throws {

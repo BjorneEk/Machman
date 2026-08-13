@@ -73,4 +73,128 @@ extension VMConfig {
 	static func kernelOverrideKey(for file: OwnedKernelFile) -> String {
 		"\(file.role.rawValue)/\(file.tag)/\(file.fileName)"
 	}
+
+	// MARK: - Device mutations (vm.device.*)
+
+	func addDevice(_ device: GuestDevice) throws {
+		guard !devices.contains(where: { $0.kind == device.kind }) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "\(name) already has a \(device.kind) device")
+		}
+		devices.append(device)
+		try saveVMConfig()
+	}
+
+	func removeDevice(kind: DeviceKind) throws {
+		guard devices.contains(where: { $0.deviceKind == kind }) else {
+			throw MachmanError(
+				code: .notFound, message: "no \(kind.rawValue) device on \(name)")
+		}
+		devices.removeAll { $0.deviceKind == kind }
+		try saveVMConfig()
+	}
+
+	func updateDevice(_ updated: GuestDevice) throws {
+		guard let index = devices.firstIndex(where: { $0.kind == updated.kind }) else {
+			throw MachmanError(
+				code: .notFound, message: "no \(updated.kind) device on \(name)")
+		}
+		devices[index] = updated
+		try saveVMConfig()
+	}
+
+	// MARK: - Enabled flags (vm.setEnabled) — setSafety twin: all-or-nothing precheck.
+
+	func setEnabled(
+		disks diskFlags: [String: Bool], mounts mountFlags: [String: Bool],
+		console consoleFlags: [String: Bool], uart uartFlags: [String: Bool]
+	) throws {
+		for id in diskFlags.keys where !disks.contains(where: { $0.id == id }) {
+			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+		}
+		for id in mountFlags.keys
+			where !mountPoints.contains(where: { $0.id.uuidString == id }) {
+			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+		}
+		// Serial ports arrive as string indices ("0", "1"…) — JSON-object keys on the wire.
+		func parsed(_ flags: [String: Bool], count: Int, what: String) throws -> [Int: Bool] {
+			var out: [Int: Bool] = [:]
+			for (key, value) in flags {
+				guard let index = Int(key), (0..<count).contains(index) else {
+					throw MachmanError(
+						code: .notFound, message: "no \(what) port \(key) on \(name)")
+				}
+				out[index] = value
+			}
+			return out
+		}
+		let consoleByIndex = try parsed(consoleFlags, count: consolePorts.count, what: "console")
+		let uartByIndex = try parsed(uartFlags, count: uartPorts.count, what: "UART")
+		for i in disks.indices {
+			if let value = diskFlags[disks[i].id] { disks[i].enabled = value }
+		}
+		for i in mountPoints.indices {
+			if let value = mountFlags[mountPoints[i].id.uuidString] {
+				mountPoints[i].enabled = value
+			}
+		}
+		for (index, value) in consoleByIndex { consolePorts[index].enabled = value }
+		for (index, value) in uartByIndex { uartPorts[index].enabled = value }
+		try saveVMConfig()
+	}
+
+	// MARK: - Kernel overrides (vm.kernel.setOverride)
+
+	// nil fields leave that half unchanged; the override entry persists even while disabled
+	// so the text survives toggling.
+	func setKernelOverride(forFileAt path: String, commandLine: String?, enabled: Bool?) throws {
+		guard let file = ownedKernelFiles().first(where: { $0.path == path }) else {
+			throw MachmanError(
+				code: .notFound, message: "no owned kernel file at '\(path)' on \(name)")
+		}
+		let key = VMConfig.kernelOverrideKey(for: file)
+		var override = kernelOverrides[key]
+			?? KernelOverrideConfig(commandLine: "", enabled: false)
+		if let commandLine { override.commandLine = commandLine }
+		if let enabled { override.enabled = enabled }
+		kernelOverrides[key] = override
+		try saveVMConfig()
+	}
+
+	// Deleting an owned kernel file drops its override. The key is derivable from the path's
+	// last three components (<kernelsDir>/<role>/<tag>/<fileName>).
+	func pruneKernelOverride(forDeletedPath path: String) {
+		let components = (path as NSString).pathComponents.suffix(3)
+		guard components.count == 3 else { return }
+		let key = components.joined(separator: "/")
+		if kernelOverrides.removeValue(forKey: key) != nil {
+			try? saveVMConfig()
+		}
+	}
+
+	// MARK: - Disk resize (vm.disk.resize) — grow-only, owned storage only.
+
+	func growStorageDisk(id: String, to newSize: UInt64) throws {
+		guard let index = disks.firstIndex(where: { $0.id == id }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+		}
+		guard case .storage(let storageName, _) = disks[index].kind else {
+			throw MachmanError(
+				code: .invalidArgument, message: "only owned storage disks can be resized")
+		}
+		let path = configFilePath(file: "\(storageName).raw")
+		let current = getDiskSize(disk: disks[index]) ?? 0
+		guard newSize > current else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "resize can only grow (\(storageName).raw is already "
+					+ "\(current) bytes)")
+		}
+		let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+		defer { try? handle.close() }
+		try handle.truncate(atOffset: newSize)
+		// Also refresh the persisted size so the config stops going stale.
+		disks[index].kind = .storage(storageName, newSize)
+		try saveVMConfig()
+	}
 }

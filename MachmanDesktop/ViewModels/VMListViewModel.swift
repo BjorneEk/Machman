@@ -339,7 +339,7 @@ final class VMListViewModel: ObservableObject {
 
 	func createVM() async -> String? {
 		do {
-			let vm = try await api.createVM()
+			let vm = try await api.createVM(template: nil)
 			await reload()
 			return vm.name
 		} catch {
@@ -388,7 +388,8 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				try await self?.api.setHardware(
-					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes)
+					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
+					nestedVirtualization: nil)
 			} catch {
 				self?.present(error, while: "Updating hardware for \(name)")
 			}

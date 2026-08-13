@@ -45,6 +45,16 @@ public enum RPCMethod: String, Sendable {
 	case installStart = "vm.install.start"
 	case installCancel = "vm.install.cancel"
 	case installPhase = "vm.install.phase"
+	// 1.0.4: configurable guest devices, enabled flags, kernel overrides, resize, operations.
+	case deviceAdd = "vm.device.add"
+	case deviceRemove = "vm.device.remove"
+	case deviceUpdate = "vm.device.update"
+	case setEnabled = "vm.setEnabled"
+	case kernelSetOverride = "vm.kernel.setOverride"
+	case diskResize = "vm.disk.resize"
+	case hostOperations = "host.operations"
+	case operationCancel = "op.cancel"
+	case installRosetta = "host.installRosetta"
 	case eventsSubscribe = "events.subscribe"
 	case daemonRetire = "daemon.retire"
 	// Server -> client notification carrying a VMEvent as params.
@@ -96,11 +106,17 @@ public enum RPCParams {
 		public var name: String
 		public var cpuCount: Int?
 		public var memoryBytes: UInt64?
+		// 1.0.4: nested virtualization (EFI/kernel boots on supporting hardware).
+		public var nestedVirtualization: Bool?
 
-		public init(name: String, cpuCount: Int?, memoryBytes: UInt64?) {
+		public init(
+			name: String, cpuCount: Int?, memoryBytes: UInt64?,
+			nestedVirtualization: Bool? = nil
+		) {
 			self.name = name
 			self.cpuCount = cpuCount
 			self.memoryBytes = memoryBytes
+			self.nestedVirtualization = nestedVirtualization
 		}
 	}
 

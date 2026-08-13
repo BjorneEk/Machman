@@ -20,7 +20,10 @@ public protocol MachmanControlling: AnyObject {
 	// MARK: VM lifecycle
 	func listVMs() async throws -> [VMInfo]
 	func vm(named name: String) async throws -> VMInfo
-	func createVM() async throws -> VMInfo
+	// template: "blank" (no devices) | "default" (implied EFI set + a root disk) | "mac"
+	// (mac-guest device set minus trackpad, which needs macOS boot — add it after install).
+	// nil keeps the pre-template behavior (implied EFI set, no disk).
+	func createVM(template: String?) async throws -> VMInfo
 	func deleteVM(named name: String) async throws
 	func renameVM(named name: String, to newName: String) async throws
 	// Duplicate a stopped VM. diskIDs = writable disks to carry (nil = all); ISOs always
@@ -30,7 +33,9 @@ public protocol MachmanControlling: AnyObject {
 	) async throws -> VMInfo
 
 	// MARK: Configuration
-	func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws
+	func setHardware(
+		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
+	) async throws
 	// Mints a fresh persisted MAC; refused while the VM runs (the guest keeps the old one
 	// until its next boot, and conflict tracking keys on the live address).
 	func regenerateMAC(vm name: String) async throws -> VMInfo
@@ -54,6 +59,33 @@ public protocol MachmanControlling: AnyObject {
 	func setStartPolicy(vm name: String, policy: StartPolicy) async throws
 	// Batch per-id safe flags; unknown ids refuse the WHOLE batch (nothing half-applies).
 	func setSafety(vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?) async throws
+
+	// MARK: Guest devices (1.0.4)
+	// One device per kind; add/remove/update take effect at the next start (edits proxy to
+	// a running VM's own config like disks do). Kind validity depends on the boot mode.
+	func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo
+	func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo
+	func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo
+	// Batch per-entity enabled flags (setSafety twin); serial ports keyed by string index.
+	func setEnabled(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	) async throws
+	// Per-owned-kernel-file command-line override (replaces KernelSettings.commandLine while
+	// that file is the active kernel and the override is enabled). nil fields = unchanged.
+	func setKernelOverride(
+		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
+	) async throws -> VMInfo
+	// Grow an owned storage disk (shrink refuses); refused while the VM runs.
+	func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws -> VMInfo
+
+	// MARK: Operations (1.0.4)
+	// Live long-running operations, for progress-card resync after reconnect (events have no
+	// replay). Terminal states linger briefly; op.cancel cancels a running one.
+	func operations() async throws -> [OperationInfo]
+	func cancelOperation(id: String) async throws
+	// Host-level Rosetta install (system-prompted); reported as an operation.
+	func installRosetta() async throws
 
 	// MARK: Serial ports
 	// Append/remove a console (virtio) or uart (PL011) port. Ports are fixed at VM start, so

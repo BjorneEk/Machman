@@ -39,7 +39,9 @@ final class StubMachman: MachmanControlling {
 	}
 	func listVMs() async throws -> [VMInfo] { Array(vms.values).sorted { $0.name < $1.name } }
 	func vm(named name: String) async throws -> VMInfo { try get(name) }
-	func createVM() async throws -> VMInfo {
+	var lastCreateTemplate: String?
+	func createVM(template: String?) async throws -> VMInfo {
+		lastCreateTemplate = template
 		let vm = Self.makeInfo("new-VM\(vms.count + 1)")
 		vms[vm.name] = vm
 		emit(.listChanged)
@@ -70,11 +72,85 @@ final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return copy
 	}
-	func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
+	func setHardware(
+		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
+	) async throws {
 		var vm = try get(name)
 		if let cpuCount = cpuCount { vm.cpuCount = cpuCount }
 		if let memoryBytes = memoryBytes { vm.memoryBytes = memoryBytes }
+		if let nestedVirtualization { vm.nestedVirtualization = nestedVirtualization }
 		vms[name] = vm
+	}
+	func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		var vm = try get(name)
+		var devices = vm.devices ?? []
+		guard !devices.contains(where: { $0.kind == kind }) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "\(name) already has a \(kind.rawValue) device")
+		}
+		devices.append(DeviceInfo(kind: kind))
+		vm.devices = devices
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		var vm = try get(name)
+		vm.devices = (vm.devices ?? []).filter { $0.kind != kind }
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
+		var vm = try get(name)
+		var devices = vm.devices ?? []
+		guard let index = devices.firstIndex(where: { $0.kind == device.kind }) else {
+			throw MachmanError(
+				code: .notFound, message: "no \(device.kind.rawValue) device on \(name)")
+		}
+		devices[index] = device
+		vm.devices = devices
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
+	func setEnabled(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	) async throws {
+		var vm = try get(name)
+		for (id, value) in disks ?? [:] {
+			guard let index = vm.disks.firstIndex(where: { $0.id == id }) else {
+				throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			}
+			vm.disks[index].enabled = value ? nil : false
+		}
+		vms[name] = vm
+	}
+	func setKernelOverride(
+		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
+	) async throws -> VMInfo {
+		try get(name)
+	}
+	func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws -> VMInfo {
+		var vm = try get(name)
+		guard let index = vm.disks.firstIndex(where: { $0.id == diskID }) else {
+			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
+		}
+		vm.disks[index].sizeBytes = sizeBytes
+		vms[name] = vm
+		return vm
+	}
+	var ops: [OperationInfo] = []
+	func operations() async throws -> [OperationInfo] { ops }
+	func cancelOperation(id: String) async throws {
+		guard ops.contains(where: { $0.id == id }) else {
+			throw MachmanError(code: .notFound, message: "no operation '\(id)'")
+		}
+		ops.removeAll { $0.id == id }
+	}
+	func installRosetta() async throws {
+		throw MachmanError(code: .invalidState, message: "stub cannot install Rosetta")
 	}
 	func regenerateMAC(vm name: String) async throws -> VMInfo {
 		var vm = try get(name)
@@ -630,5 +706,83 @@ struct LoopbackTests {
 		#expect(throws: (any Error).self) {
 			try second.start()
 		}
+	}
+
+	// The 1.0.4 additions dispatch end to end: devices, enabled, overrides, resize,
+	// operations, templates, nested-virt.
+	@Test @MainActor func devicesAndOperationsRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-dev-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var seeded = StubMachman.makeInfo("Debian")
+		seeded.disks = [DiskInfo(
+			id: "storage:disk", type: .storage, name: "disk", path: nil, sizeBytes: 1024)]
+		stub.vms["Debian"] = seeded
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "devices")
+
+		// Templates ride vm.create's new optional params.
+		_ = try await client.createVM(template: "mac")
+		#expect(stub.lastCreateTemplate == "mac")
+
+		// Device add → update → remove, VMInfo echoed each time.
+		var info = try await client.addDevice(vm: "Debian", kind: .entropy)
+		#expect(info.devices?.map(\.kind) == [.entropy])
+		var device = DeviceInfo(kind: .entropy)
+		device.enabled = false
+		info = try await client.updateDevice(vm: "Debian", device: device)
+		#expect(info.devices?.first?.enabled == false)
+		info = try await client.removeDevice(vm: "Debian", kind: .entropy)
+		#expect(info.devices?.isEmpty == true)
+
+		// setEnabled: applies by id; unknown ids surface notFound with the daemon's message.
+		try await client.setEnabled(
+			vm: "Debian", disks: ["storage:disk": false], mounts: nil,
+			console: nil, uart: nil)
+		let flagged = try await client.vm(named: "Debian")
+		#expect(flagged.disks.first?.isEnabled == false)
+		do {
+			try await client.setEnabled(
+				vm: "Debian", disks: ["ghost": true], mounts: nil, console: nil, uart: nil)
+			Issue.record("expected notFound")
+		} catch let error as MachmanError {
+			#expect(error.code == .notFound)
+		}
+
+		// Kernel override + resize + hardware(nested) round-trip.
+		_ = try await client.setKernelOverride(
+			vm: "Debian", path: "/k", commandLine: "quiet", overrideEnabled: true)
+		let resized = try await client.resizeDisk(
+			vm: "Debian", diskID: "storage:disk", sizeBytes: 4096)
+		#expect(resized.disks.first?.sizeBytes == 4096)
+		try await client.setHardware(
+			vm: "Debian", cpuCount: nil, memoryBytes: nil, nestedVirtualization: true)
+		let nested = try await client.vm(named: "Debian")
+		#expect(nested.nestedVirtualization == true)
+
+		// Operations: list round-trips; cancel of an unknown id is notFound; rosetta refuses.
+		stub.ops = [OperationInfo(
+			id: "op-1", kind: OperationInfo.Kind.copyVM, vm: "Debian", label: "Copying…",
+			startedAt: Date(timeIntervalSince1970: 1_700_000_000))]
+		let ops = try await client.operations()
+		#expect(ops.map(\.id) == ["op-1"])
+		try await client.cancelOperation(id: "op-1")
+		#expect(stub.ops.isEmpty)
+		do {
+			try await client.cancelOperation(id: "op-1")
+			Issue.record("expected notFound")
+		} catch let error as MachmanError {
+			#expect(error.code == .notFound)
+		}
+		do {
+			try await client.installRosetta()
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+		}
+
+		await client.disconnect()
 	}
 }

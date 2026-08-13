@@ -48,8 +48,31 @@ public final class LocalMachman: MachmanControlling {
 		info(for: try lookup(name))
 	}
 
-	public func createVM() async throws -> VMInfo {
-		info(for: try registry.create())
+	public func createVM(template: String?) async throws -> VMInfo {
+		if let template, !["blank", "default", "mac"].contains(template) {
+			throw MachmanError(
+				code: .invalidArgument, message: "unknown VM template '\(template)'")
+		}
+		let vm = try registry.create()
+		switch template {
+		case "blank":
+			vm.config.devices = []
+			try vm.config.saveVMConfig()
+		case "default":
+			// The implied EFI set is already seeded; add the root disk the template promises.
+			try vm.config.addNewStorageDisk(name: "disk", size: 32 << 30)
+		case "mac":
+			// Trackpad needs macOS boot — addable once macOS is installed; keyboard/pointer
+			// resolve to the boot-appropriate VZ class at assembly.
+			vm.config.devices = ImpliedDevices.kinds(macGuest: true)
+				.filter { $0 != .trackpad }
+				.map(GuestDevice.init)
+			try vm.config.saveVMConfig()
+		default:
+			break   // nil: pre-template behavior (implied EFI set, no disk)
+		}
+		registry.events.emit(.listChanged)
+		return info(for: vm)
 	}
 
 	public func deleteVM(named name: String) async throws {
@@ -117,7 +140,9 @@ public final class LocalMachman: MachmanControlling {
 
 	// MARK: - Configuration
 
-	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
+	public func setHardware(
+		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
+	) async throws {
 		let vm = try lookup(name)
 		let floors = vm.config.boot.hardwareFloors
 		if let cpuCount = cpuCount {
@@ -127,6 +152,11 @@ public final class LocalMachman: MachmanControlling {
 		if let memoryBytes = memoryBytes {
 			try vm.config.setMemorySize(
 				VMConfig.clampMemorySize(size: memoryBytes, floor: floors?.mem ?? 0))
+		}
+		if let nestedVirtualization {
+			// Persist intent; the assembly skips+warns when the host/boot can't honor it.
+			vm.config.nestedVirtualization = nestedVirtualization
+			try vm.config.saveVMConfig()
 		}
 		registry.events.emit(.listChanged)
 	}
@@ -292,8 +322,130 @@ public final class LocalMachman: MachmanControlling {
 			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
 		}.value
 		try vm.config.clearKernelReference(to: path)
+		vm.config.pruneKernelOverride(forDeletedPath: path)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
+	}
+
+	// MARK: - Guest devices (1.0.4)
+
+	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try Self.validateDeviceKind(kind, for: vm.config)
+		try vm.config.addDevice(GuestDevice(kind: kind))
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		guard kind != .unknown else {
+			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
+		}
+		let vm = try lookup(name)
+		try vm.config.removeDevice(kind: kind)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try Self.validateDeviceSettings(device)
+		guard vm.config.devices.contains(where: { $0.deviceKind == device.kind }) else {
+			throw MachmanError(
+				code: .notFound, message: "no \(device.kind.rawValue) device on \(name)")
+		}
+		var updated = GuestDevice(kind: device.kind)
+		updated.enabled = device.enabled
+		updated.displayWidthPixels = device.displayWidthPixels
+		updated.displayHeightPixels = device.displayHeightPixels
+		updated.displayPixelsPerInch = device.displayPixelsPerInch
+		updated.sharesClipboard = device.sharesClipboard
+		try vm.config.updateDevice(updated)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	// Add-time validation keeps impossible configs out of the start path (which would only
+	// fail later inside VZ validate() with a far worse message).
+	private static func validateDeviceKind(_ kind: DeviceKind, for config: VMConfig) throws {
+		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
+		switch kind {
+		case .unknown:
+			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
+		case .trackpad where !macGuest:
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "the Mac trackpad needs a macOS guest — install macOS first")
+		case .clipboard where macGuest, .rosetta where macGuest:
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "\(kind.rawValue) is not supported for macOS guests")
+		default:
+			break
+		}
+	}
+
+	private static func validateDeviceSettings(_ device: DeviceInfo) throws {
+		guard device.kind != .unknown else {
+			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
+		}
+		for value in [device.displayWidthPixels, device.displayHeightPixels] {
+			if let value, !(640...8192).contains(value) {
+				throw MachmanError(
+					code: .invalidArgument,
+					message: "display size must be between 640 and 8192 pixels")
+			}
+		}
+		if let ppi = device.displayPixelsPerInch, !(40...300).contains(ppi) {
+			throw MachmanError(
+				code: .invalidArgument, message: "pixels per inch must be between 40 and 300")
+		}
+	}
+
+	public func setEnabled(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	) async throws {
+		let vm = try lookup(name)
+		try vm.config.setEnabled(
+			disks: disks ?? [:], mounts: mounts ?? [:],
+			console: console ?? [:], uart: uart ?? [:])
+		registry.events.emit(.listChanged)
+	}
+
+	public func setKernelOverride(
+		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
+	) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.setKernelOverride(
+			forFileAt: path, commandLine: commandLine, enabled: overrideEnabled)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws
+		-> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.growStorageDisk(id: diskID, to: sizeBytes)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	// MARK: - Operations (1.0.4)
+
+	// The vmhost gains its own OperationCenter with the emitter work (S1); until then it
+	// reports an empty list and cannot cancel anything.
+	public func operations() async throws -> [OperationInfo] {
+		[]
+	}
+
+	public func cancelOperation(id: String) async throws {
+		throw MachmanError(code: .notFound, message: "no operation '\(id)'")
+	}
+
+	public func installRosetta() async throws {
+		throw MachmanError(
+			code: .invalidState, message: "only the daemon can install Rosetta")
 	}
 
 	// MARK: - Run / stop / window
@@ -427,6 +579,8 @@ public final class LocalMachman: MachmanControlling {
 
 	private func info(for vm: VirtualMachine) -> VMInfo {
 		let config = vm.config
+		// enabled rides tri-state: nil = enabled (the wire's old-daemon meaning), false pins.
+		func enabledFlag(_ enabled: Bool) -> Bool? { enabled ? nil : false }
 		let disks = config.disks.map { disk -> DiskInfo in
 			switch disk.kind {
 			case .storage(let name, _):
@@ -435,21 +589,24 @@ public final class LocalMachman: MachmanControlling {
 					id: disk.id, type: .storage, name: name,
 					path: config.configFilePath(file: "\(name).raw"),
 					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
-					owned: true)
+					owned: true, enabled: enabledFlag(disk.enabled))
 			case .fromUrl(let url):
 				return DiskInfo(
 					id: disk.id, type: .image, name: nil, path: url.path,
 					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
-					owned: false)
+					owned: false, enabled: enabledFlag(disk.enabled))
 			case .iso(let url):
 				return DiskInfo(
 					id: disk.id, type: .iso, name: nil, path: url.path,
 					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
-					owned: url.path.hasPrefix(config.vmDirPath() + "/"))
+					owned: url.path.hasPrefix(config.vmDirPath() + "/"),
+					enabled: enabledFlag(disk.enabled))
 			}
 		}
 		let mounts = config.mountPoints.map {
-			MountInfo(id: $0.id.uuidString, path: $0.path, tag: $0.tag, safe: $0.safe)
+			MountInfo(
+				id: $0.id.uuidString, path: $0.path, tag: $0.tag, safe: $0.safe,
+				enabled: enabledFlag($0.enabled))
 		}
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		func serialPorts(_ kind: SerialPortKind, _ ports: [SerialPort]) -> [SerialPortInfo] {
@@ -462,8 +619,21 @@ public final class LocalMachman: MachmanControlling {
 					socketPath: registry.serialSocketPath(vm: vm, kind: kind, index: index),
 					logPath: registry.serialLogPath(vm: vm, kind: kind, index: index),
 					mmioBase: nil, irq: nil,   // uart mmio/irq: filled once platform info exists
-					unavailable: uartIssue)
+					unavailable: uartIssue,
+					enabled: enabledFlag(port.enabled))
 			}
+		}
+		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
+		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.
+		let devices = config.devices.compactMap { device -> DeviceInfo? in
+			guard device.deviceKind != .unknown else { return nil }
+			return DeviceInfo(
+				kind: device.deviceKind, enabled: device.enabled,
+				displayWidthPixels: device.displayWidthPixels,
+				displayHeightPixels: device.displayHeightPixels,
+				displayPixelsPerInch: device.displayPixelsPerInch,
+				sharesClipboard: device.sharesClipboard,
+				unavailable: nil)   // host-gating (rosetta/nested) computed with S1's assembly
 		}
 		return VMInfo(
 			name: config.name,
@@ -481,7 +651,9 @@ public final class LocalMachman: MachmanControlling {
 			safeRun: nil,   // daemon-overlay concept: only the router knows a run is safe
 			totalRuntimeSeconds: config.totalRuntimeSeconds,
 			consolePorts: serialPorts(.console, config.consolePorts),
-			uartPorts: serialPorts(.uart, config.uartPorts))
+			uartPorts: serialPorts(.uart, config.uartPorts),
+			devices: devices,
+			nestedVirtualization: config.nestedVirtualization)
 	}
 
 	private func bootInfo(for vm: VirtualMachine) -> BootInfo {
@@ -491,7 +663,14 @@ public final class LocalMachman: MachmanControlling {
 				kernelPath: $0.kernelPath, initrdPath: $0.initialRamdiskPath,
 				commandLine: $0.commandLine)
 		}
-		let owned = config.ownedKernelFiles()
+		let owned = config.ownedKernelFiles().map { file -> OwnedKernelFile in
+			var file = file
+			if let override = config.kernelOverrides[VMConfig.kernelOverrideKey(for: file)] {
+				file.overrideCommandLine = override.commandLine
+				file.overrideEnabled = override.enabled
+			}
+			return file
+		}
 		let ownedKernels = owned.isEmpty ? nil : owned   // nil-omitted keeps the wire fixture stable
 		switch config.boot {
 		case .efi:

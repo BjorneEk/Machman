@@ -114,7 +114,9 @@ public final class MachmanServer {
 				let p: RPCParams.Name = try params(line)
 				reply(client, id, try await api.vm(named: p.name))
 			case .vmCreate:
-				reply(client, id, try await api.createVM())
+				// Params are optional here (the method predates them): absent = nil template.
+				let p: RPCParams.Create? = try? params(line)
+				reply(client, id, try await api.createVM(template: p?.template))
 			case .vmDelete:
 				let p: RPCParams.Name = try params(line)
 				try await api.deleteVM(named: p.name)
@@ -133,7 +135,8 @@ public final class MachmanServer {
 			case .setHardware:
 				let p: RPCParams.SetHardware = try params(line)
 				try await api.setHardware(
-					vm: p.name, cpuCount: p.cpuCount, memoryBytes: p.memoryBytes)
+					vm: p.name, cpuCount: p.cpuCount, memoryBytes: p.memoryBytes,
+					nestedVirtualization: p.nestedVirtualization)
 				reply(client, id, RPCEmpty())
 			case .regenerateMAC:
 				let p: RPCParams.Name = try params(line)
@@ -238,6 +241,39 @@ public final class MachmanServer {
 			case .installPhase:
 				let p: RPCParams.Name = try params(line)
 				reply(client, id, try await api.macInstallPhase(vm: p.name))
+			case .deviceAdd:
+				let p: RPCParams.DeviceMutation = try params(line)
+				reply(client, id, try await api.addDevice(vm: p.name, kind: p.kind))
+			case .deviceRemove:
+				let p: RPCParams.DeviceMutation = try params(line)
+				reply(client, id, try await api.removeDevice(vm: p.name, kind: p.kind))
+			case .deviceUpdate:
+				let p: RPCParams.DeviceUpdate = try params(line)
+				reply(client, id, try await api.updateDevice(vm: p.name, device: p.device))
+			case .setEnabled:
+				let p: RPCParams.SetEnabled = try params(line)
+				try await api.setEnabled(
+					vm: p.name, disks: p.disks, mounts: p.mounts,
+					console: p.console, uart: p.uart)
+				reply(client, id, RPCEmpty())
+			case .kernelSetOverride:
+				let p: RPCParams.KernelOverride = try params(line)
+				reply(client, id, try await api.setKernelOverride(
+					vm: p.name, path: p.path, commandLine: p.commandLine,
+					overrideEnabled: p.overrideEnabled))
+			case .diskResize:
+				let p: RPCParams.ResizeDisk = try params(line)
+				reply(client, id, try await api.resizeDisk(
+					vm: p.name, diskID: p.diskID, sizeBytes: p.sizeBytes))
+			case .hostOperations:
+				reply(client, id, try await api.operations())
+			case .operationCancel:
+				let p: RPCParams.CancelOperation = try params(line)
+				try await api.cancelOperation(id: p.id)
+				reply(client, id, RPCEmpty())
+			case .installRosetta:
+				try await api.installRosetta()
+				reply(client, id, RPCEmpty())
 			case .eventsSubscribe:
 				subscribe(client)
 				reply(client, id, RPCEmpty())

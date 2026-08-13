@@ -56,8 +56,9 @@ public final class RemoteMachman: MachmanControlling {
 		try await connection.call(.vmGet, RPCParams.Name(name: name), expecting: VMInfo.self)
 	}
 
-	public func createVM() async throws -> VMInfo {
-		try await connection.call(.vmCreate, RPCEmpty?.none, expecting: VMInfo.self)
+	public func createVM(template: String?) async throws -> VMInfo {
+		try await connection.call(
+			.vmCreate, RPCParams.Create(template: template), expecting: VMInfo.self)
 	}
 
 	public func deleteVM(named name: String) async throws {
@@ -83,9 +84,12 @@ public final class RemoteMachman: MachmanControlling {
 			.regenerateMAC, RPCParams.Name(name: name), expecting: VMInfo.self)
 	}
 
-	public func setHardware(vm name: String, cpuCount: Int?, memoryBytes: UInt64?) async throws {
+	public func setHardware(
+		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
+	) async throws {
 		try await void(.setHardware, RPCParams.SetHardware(
-			name: name, cpuCount: cpuCount, memoryBytes: memoryBytes))
+			name: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
+			nestedVirtualization: nestedVirtualization))
 	}
 
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
@@ -151,6 +155,64 @@ public final class RemoteMachman: MachmanControlling {
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
 	) async throws {
 		try await void(.setSafety, RPCParams.SetSafety(name: name, disks: disks, mounts: mounts))
+	}
+
+	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		try await connection.call(
+			.deviceAdd, RPCParams.DeviceMutation(name: name, kind: kind),
+			expecting: VMInfo.self)
+	}
+
+	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
+		try await connection.call(
+			.deviceRemove, RPCParams.DeviceMutation(name: name, kind: kind),
+			expecting: VMInfo.self)
+	}
+
+	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
+		try await connection.call(
+			.deviceUpdate, RPCParams.DeviceUpdate(name: name, device: device),
+			expecting: VMInfo.self)
+	}
+
+	public func setEnabled(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	) async throws {
+		try await void(.setEnabled, RPCParams.SetEnabled(
+			name: name, disks: disks, mounts: mounts, console: console, uart: uart))
+	}
+
+	public func setKernelOverride(
+		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
+	) async throws -> VMInfo {
+		try await connection.call(
+			.kernelSetOverride,
+			RPCParams.KernelOverride(
+				name: name, path: path, commandLine: commandLine,
+				overrideEnabled: overrideEnabled),
+			expecting: VMInfo.self)
+	}
+
+	public func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws
+		-> VMInfo {
+		try await connection.call(
+			.diskResize,
+			RPCParams.ResizeDisk(name: name, diskID: diskID, sizeBytes: sizeBytes),
+			expecting: VMInfo.self)
+	}
+
+	public func operations() async throws -> [OperationInfo] {
+		try await connection.call(
+			.hostOperations, RPCEmpty?.none, expecting: [OperationInfo].self)
+	}
+
+	public func cancelOperation(id: String) async throws {
+		try await void(.operationCancel, RPCParams.CancelOperation(id: id))
+	}
+
+	public func installRosetta() async throws {
+		try await void(.installRosetta, RPCEmpty?.none)
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
