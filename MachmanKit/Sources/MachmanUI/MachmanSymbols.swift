@@ -16,7 +16,8 @@ public enum MachmanSymbols {
 	public static let vmStopped = "pause.fill"
 
 	// MARK: - Run / stop
-	public static let start = "play.circle"
+	public static let start = "play.fill"   // was play.circle — bolder, and the safe-start
+	                                        // composite needs a bare triangle in its shield
 	public static let startHeadless = "play.slash"
 	public static let shutDown = "power"
 	public static let forceStop = "stop.circle"
