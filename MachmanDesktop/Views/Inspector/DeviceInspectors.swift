@@ -25,6 +25,8 @@ struct DeviceInspector: View {
 				GraphicsInspector(viewModel: viewModel, vm: vm, device: device)
 			case .network:
 				NetworkInspector(viewModel: viewModel, vm: vm)
+			case .clipboard:
+				ClipboardInspector(viewModel: viewModel, vm: vm, device: device)
 			default:
 				NoSelectionInspector()
 			}
@@ -182,6 +184,35 @@ struct NetworkInspector: View {
 		} message: {
 			Text("\(vm.name) gets a new random MAC. DHCP leases and MAC-based network "
 				+ "rules tied to the old address will stop matching.")
+		}
+	}
+}
+
+// MARK: - Clipboard ---------------------------------------------------------------------------
+
+// The spice-agent console port (EFI/kernel guests): whether the pasteboard is shared.
+struct ClipboardInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	let device: DeviceInfo
+
+	var body: some View {
+		Form {
+			Section("Clipboard Sharing") {
+				Toggle("Share clipboard with guest", isOn: Binding(
+					get: { device.sharesClipboard ?? true },
+					set: { value in
+						var updated = device
+						updated.sharesClipboard = value
+						viewModel.updateDevice(vm.name, device: updated)
+					}))
+				Text("Spice agent port — Linux/EFI guests only (macOS guests don't "
+					+ "support it). The guest needs spice-vdagent running. Applies at "
+					+ "the next boot.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .clipboard)
 		}
 	}
 }
