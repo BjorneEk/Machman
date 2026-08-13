@@ -66,19 +66,9 @@ struct CopyVMSheet: View {
 					.foregroundColor(bytesNeeded > free ? .red : .secondary)
 			}
 			HStack {
-				if viewModel.copyInFlight {
-					if let progress = viewModel.copyProgress, progress.total > 0 {
-						ProgressView(
-							value: Double(progress.done), total: Double(progress.total))
-							.frame(width: 120)
-					} else {
-						ProgressView()
-							.controlSize(.small)
-					}
-				}
 				Spacer()
 				Button("Cancel", role: .cancel) { viewModel.copyRequest = nil }
-					.disabled(viewModel.copyInFlight)
+				// The sheet closes immediately; the corner progress card tracks the copy.
 				Button("Duplicate") {
 					viewModel.copyVM(vm.name, newName: newName,
 						diskIDs: Array(includedDiskIDs).sorted())

@@ -74,7 +74,6 @@ final class VMListViewModel: ObservableObject {
 	@Published private(set) var copyInFlight = false
 	@Published var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
 	@Published private(set) var safeSaveInFlight = false
-	@Published private(set) var copyProgress: (done: UInt64, total: UInt64)?
 	// Bottom-right transient toasts (engine warnings/errors, confirmations). Lifetime is
 	// the user's setting; transfers show as progress cards from OperationsStore instead.
 	@Published private(set) var toasts: [MachmanToast] = []
@@ -217,13 +216,8 @@ final class VMListViewModel: ObservableObject {
 					message: "\(vm.map { "\($0): " } ?? "")\(message)",
 					tint: MachmanColors.warning)
 			}
-		case .copyProgress(let vm, let copied, let total):
-			_ = vm
-			if copyInFlight {
-				// The duplicate sheet owns its own bar; every other transfer shows as a
-				// progress card fed by operationChanged.
-				copyProgress = (done: copied, total: total)
-			}
+		case .copyProgress:
+			break   // legacy wire event; the operation cards carry all copy progress
 		case .operationChanged:
 			// The operations UI (progress cards) lands with the desktop overhaul; until
 			// then the legacy copyProgress events above cover the same transfers.
@@ -496,20 +490,16 @@ final class VMListViewModel: ObservableObject {
 	func copyVM(_ name: String, newName: String, diskIDs: [String]) {
 		guard !copyInFlight else { return }
 		copyInFlight = true
-		copyProgress = nil
+		copyRequest = nil   // the sheet closes now; the corner card tracks the copy
 		Task { [weak self] in
 			do {
 				let copy = try await self?.api.copyVM(
 					vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: true)
 				self?.copyInFlight = false
-				self?.copyProgress = nil
-				self?.copyRequest = nil        // item binding dismisses the sheet
 				await self?.reload()
 				if let copy { self?.select(name: copy.name) }
 			} catch {
 				self?.copyInFlight = false
-				self?.copyProgress = nil
-				self?.copyRequest = nil        // dismiss first so the alert isn't sheet-blocked
 				self?.present(error, while: "Duplicating \(name)")
 			}
 		}
