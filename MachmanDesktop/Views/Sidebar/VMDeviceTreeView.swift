@@ -29,6 +29,7 @@ enum SidebarNode: Hashable {
 struct VMDeviceTreeView: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var sessions: TerminalSessions
+	@ObservedObject var canvases: CanvasStateStore
 	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var treeSelection: Set<SidebarNode> = []
@@ -266,7 +267,7 @@ struct VMDeviceTreeView: View {
 
 	private func serialRow(_ port: SerialPortInfo) -> some View {
 		let ref = SerialPortRef(port)
-		let open = sessions.isOpen(vm: vm.name, ref: ref)
+		let open = canvases.canvas(for: vm.name).allOpenTabs.contains(.terminal(ref))
 		let gated = port.unavailable != nil
 		let enabled = port.enabled ?? true
 		return HStack(spacing: 6) {
@@ -302,9 +303,7 @@ struct VMDeviceTreeView: View {
 	) -> some View {
 		if !gated && enabled {
 			if open {
-				Button("Close Terminal (disconnect)") {
-					sessions.closeTab(vm: vm.name, ref: ref)
-				}
+				Button("Close Terminal (disconnect)") { closeTerminal(ref) }
 			} else {
 				Button("Open Terminal (connect)") { openTerminal(ref) }
 			}
@@ -586,7 +585,7 @@ struct VMDeviceTreeView: View {
 	private func openNode(_ node: SidebarNode) {
 		switch node {
 		case .vmRoot:
-			sessions.setActive(.config, for: vm.name)
+			mutateCanvas { $0.open(.config) }
 		case .serial(let ref):
 			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 			guard let port = ports.first(where: { SerialPortRef($0) == ref }),
@@ -597,9 +596,20 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
+	private func mutateCanvas(_ change: (inout CanvasState) -> Void) {
+		var c = canvases.canvas(for: vm.name)
+		change(&c)
+		canvases.setCanvas(c, for: vm.name)
+	}
+
 	private func openTerminal(_ ref: SerialPortRef) {
-		// Instant: just record the tab. The container builds + connects the terminal lazily.
-		sessions.openTab(vm: vm.name, ref: ref)
+		// Instant: just record the tab. The canvas builds + connects the terminal lazily.
+		mutateCanvas { $0.open(.terminal(ref)) }
+	}
+
+	private func closeTerminal(_ ref: SerialPortRef) {
+		sessions.dropController(vm: vm.name, ref: ref)
+		mutateCanvas { $0.close(.terminal(ref)) }
 	}
 
 	// MARK: - Helpers

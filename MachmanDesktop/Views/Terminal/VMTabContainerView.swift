@@ -42,20 +42,18 @@ struct VMTabContainerView: View {
 	}
 
 	private func pane(_ vm: VMInfo) -> some View {
-		VStack(spacing: 0) {
-			VMTabStrip(vm: vm, sessions: sessions)
-			Divider()
-			HStack(spacing: 0) {
-				activeContent(vm)
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-				if viewModel.showInfoPanel,
-					case let .terminal(ref) = sessions.state(vm.name).active {
-					Divider()
-					TerminalInfoPanel(
-						vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
-						profiles: profiles)
-						.frame(width: 320)
-				}
+		HStack(spacing: 0) {
+			VMCanvasView(
+				viewModel: viewModel, sessions: sessions, canvases: viewModel.canvases,
+				profiles: profiles, vm: vm)
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
+			if viewModel.showInfoPanel,
+				case let .terminal(ref) = viewModel.canvases.canvas(for: vm.name).activeTab {
+				Divider()
+				TerminalInfoPanel(
+					vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
+					profiles: profiles)
+					.frame(width: 320)
 			}
 		}
 		.background(FocusAndTopmostTracker { focused in
@@ -64,68 +62,8 @@ struct VMTabContainerView: View {
 	}
 
 	private func isTerminalActive(_ vm: VMInfo) -> Bool {
-		if case .terminal = sessions.state(vm.name).active { return true }
+		if case .terminal = viewModel.canvases.canvas(for: vm.name).activeTab { return true }
 		return false
-	}
-
-	@ViewBuilder
-	private func activeContent(_ vm: VMInfo) -> some View {
-		switch sessions.state(vm.name).active {
-		case .config:
-			VMConfigTabView(vm: vm, viewModel: viewModel)
-		case .terminal(let ref):
-			terminalContent(vm: vm, ref: ref)
-		}
-	}
-
-	@ViewBuilder
-	private func terminalContent(vm: VMInfo, ref: SerialPortRef) -> some View {
-		// The socket exists only while the VM serves this port. Stopped → placeholder. Running →
-		// ensure the controller (built off the click, so a spinner shows briefly) then render.
-		if let socket = socketPath(vm: vm, ref: ref) {
-			Group {
-				if let controller = sessions.controller(vm: vm.name, ref: ref) {
-					SerialTerminalHost(controller: controller)
-						.id(ObjectIdentifier(controller))   // swap the view on reloadTab
-						.frame(maxWidth: .infinity, maxHeight: .infinity)
-						.padding(6)
-				} else {
-					VStack(spacing: 10) {
-						ProgressView()
-						Text("Connecting to \(guestName(vm: vm, ref: ref))…")
-							.foregroundColor(.secondary)
-					}
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-				}
-			}
-			.onAppear {
-				sessions.ensureController(
-					vm: vm.name, ref: ref, socketPath: socket,
-					profile: profiles.profile(vm: vm.name, ref: ref))
-			}
-		} else {
-			VStack(spacing: 8) {
-				Image(systemName: ref.kind == .console
-					? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-					.font(.largeTitle).foregroundColor(.secondary)
-				Text("Start the VM to open \(guestName(vm: vm, ref: ref)).")
-					.foregroundColor(.secondary)
-			}
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
-		}
-	}
-
-	private func socketPath(vm: VMInfo, ref: SerialPortRef) -> String? {
-		port(vm: vm, ref: ref)?.socketPath
-	}
-
-	private func port(vm: VMInfo, ref: SerialPortRef) -> SerialPortInfo? {
-		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-		return ports?.first(where: { $0.index == ref.index })
-	}
-
-	private func guestName(vm: VMInfo, ref: SerialPortRef) -> String {
-		port(vm: vm, ref: ref)?.guestDevice ?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
 	}
 
 	// MARK: - Toolbar (always-active VM header)

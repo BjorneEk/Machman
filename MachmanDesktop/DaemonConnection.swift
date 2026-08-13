@@ -12,6 +12,7 @@ import AppKit
 import Combine
 import ServiceManagement
 import MachmanAPI
+import MachmanUI
 import MachmanClient
 
 @MainActor
@@ -36,6 +37,8 @@ final class DaemonConnection: ObservableObject {
 	// Not api-bound (nothing to re-attach): open terminal tabs + their live SwiftTerm
 	// controllers, kept out of the per-connection teardown so transcripts survive it.
 	let terminals = TerminalSessions()
+	// Per-VM canvas layouts (panes/tabs/fractions), persisted to disk by the store itself.
+	let canvases = CanvasStateStore()
 	let previews: PreviewService
 	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
 	// serves), so it is a flag beside Status, not a fourth case.
@@ -118,7 +121,8 @@ final class DaemonConnection: ObservableObject {
 					self.previews.attach(api: api)
 					let viewModel = VMListViewModel(
 						api: api, store: self.vmStore, operations: self.operationsStore,
-						terminals: self.terminals, previews: self.previews)
+						terminals: self.terminals, previews: self.previews,
+						canvases: self.canvases)
 					self.api = api
 					self.viewModel = viewModel
 					// The menu bar commands observe this object; forward list changes so

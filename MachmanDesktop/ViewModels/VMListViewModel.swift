@@ -49,10 +49,11 @@ final class VMListViewModel: ObservableObject {
 	var previewImages: PreviewStore { previews.images }
 	@Published var selectedName: String? = nil
 	@Published var vmName: String = ""
-	// Per-VM terminal tabs + their live connections. App-scoped (injected): terminals and
-	// their transcripts persist across VM navigation AND daemon reconnects; a tab's
-	// connection lives exactly as long as the tab is open. Observed directly by the tab views.
+	// Live terminal controllers (app-scoped, injected): transcripts persist across VM
+	// navigation AND daemon reconnects; a controller lives as long as its tab is open.
 	let terminals: TerminalSessions
+	// Per-VM canvas layouts (app-scoped, injected): which tabs are open in which panes.
+	let canvases: CanvasStateStore
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published var showInfoPanel = false
@@ -83,6 +84,7 @@ final class VMListViewModel: ObservableObject {
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
 	private var operationsForwarder: AnyCancellable?
+	private var canvasForwarder: AnyCancellable?
 	private var listReactor: AnyCancellable?
 
 	var selected: VMInfo? {
@@ -91,18 +93,23 @@ final class VMListViewModel: ObservableObject {
 
 	init(
 		api: MachmanControlling, store: VMStore, operations: OperationsStore,
-		terminals: TerminalSessions, previews: PreviewService
+		terminals: TerminalSessions, previews: PreviewService, canvases: CanvasStateStore
 	) {
 		self.api = api
 		self.store = store
 		self.operationsStore = operations
 		self.terminals = terminals
 		self.previews = previews
+		self.canvases = canvases
 		// Views observe this object, not the stores — forward their changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
 		}
 		operationsForwarder = operations.objectWillChange.sink { [weak self] in
+			self?.objectWillChange.send()
+		}
+		// Canvas changes flip menu state (Save Terminal follows the active tab).
+		canvasForwarder = canvases.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
 		}
 		// React AFTER every list refresh (reconcile tabs, prime phases). $vms emits the
@@ -133,8 +140,20 @@ final class VMListViewModel: ObservableObject {
 	}
 
 	private func listRefreshed(_ list: [VMInfo]) {
-		// Close terminal tabs for ports/VMs that no longer exist.
+		// Terminals + canvas layouts follow the list: drop controllers of gone VMs, forget
+		// their layouts, and close tabs whose port vanished (tearing down the controller).
 		terminals.reconcile(vms: list)
+		let names = Set(list.map(\.name))
+		for vmName in Array(canvases.canvases.keys) where !names.contains(vmName) {
+			canvases.removeVM(vmName)
+		}
+		for vm in list {
+			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
+			let refs = Set(ports.map { SerialPortRef($0) })
+			for ref in canvases.reconcile(vm: vm.name, existing: refs) {
+				terminals.dropController(vm: vm.name, ref: ref)
+			}
+		}
 		operationsStore.primeInstallPhases(for: list)
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
@@ -368,6 +387,7 @@ final class VMListViewModel: ObservableObject {
 			// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
 			// old-keyed session would look like a vanished VM and its terminals get closed).
 			terminals.renameVM(from: oldName, to: newName)
+			canvases.renameVM(from: oldName, to: newName)
 			previews.renameVM(from: oldName, to: newName)
 			await reload()
 			select(name: newName)
@@ -646,10 +666,12 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// The terminal on the active tab of the currently-selected VM (nil on the config tab or with
-	// no selection) — drives File → Save Terminal.
+	// The terminal on the selected VM's active canvas tab (nil on the config tab or with no
+	// selection) — drives File → Save Terminal.
 	var activeTerminalController: SerialTerminalController? {
-		selectedName.flatMap { terminals.activeController(vm: $0) }
+		guard let name = selectedName,
+			case .terminal(let ref) = canvases.canvas(for: name).activeTab else { return nil }
+		return terminals.controller(vm: name, ref: ref)
 	}
 
 	// Save the on-screen terminal transcript. Used by File → Save Terminal.
