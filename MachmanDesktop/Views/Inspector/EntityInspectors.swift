@@ -20,12 +20,24 @@ struct DiskInspector: View {
 	let vm: VMInfo
 	let diskID: String
 	@State private var growGB = 0
+	@State private var draftName = ""
 
 	var body: some View {
 		if let disk = vm.disks.first(where: { $0.id == diskID }) {
 			Form {
 				Section("Info") {
-					LabeledContent("Name", value: disk.name ?? fileName(disk))
+					if disk.type == .storage && disk.owned != false {
+						TextField("Name", text: $draftName)
+							.onSubmit { commitRename(disk) }
+							.onAppear { draftName = disk.name ?? "" }
+							.onChange(of: disk.name) { draftName = disk.name ?? "" }
+							.disabled(vm.state.isRunning)
+							.help(vm.state.isRunning
+								? "Stop the VM to rename its disks"
+								: "Renames the backing file too")
+					} else {
+						LabeledContent("Name", value: disk.name ?? fileName(disk))
+					}
 					if let size = disk.sizeBytes {
 						LabeledContent("Size", value: ByteCountFormatter.string(
 							fromByteCount: Int64(size), countStyle: .file))
@@ -77,6 +89,15 @@ struct DiskInspector: View {
 		} else {
 			NoSelectionInspector()
 		}
+	}
+
+	private func commitRename(_ disk: DiskInfo) {
+		let newName = draftName.trimmingCharacters(in: .whitespaces)
+		guard !newName.isEmpty, newName != disk.name else {
+			draftName = disk.name ?? ""
+			return
+		}
+		viewModel.renameDisk(vm.name, diskID: diskID, newName: newName)
 	}
 
 	private func typeLabel(_ disk: DiskInfo) -> String {
@@ -133,13 +154,18 @@ struct MountInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let mountID: String
+	@State private var draftTag = ""
 
 	var body: some View {
 		if let mount = vm.mounts.first(where: { $0.id == mountID }) {
 			Form {
 				Section("Info") {
-					LabeledContent("Tag", value: mount.tag)
-						.help("The virtiofs tag guests use to mount this folder")
+					TextField("Tag", text: $draftTag)
+						.onSubmit { commitTag(mount) }
+						.onAppear { draftTag = mount.tag }
+						.onChange(of: mount.tag) { draftTag = mount.tag }
+						.help("The virtiofs tag guests use to mount this folder "
+							+ "(applies at the next boot)")
 					PathRow(label: "Host path", path: mount.path) {
 						NSWorkspace.shared.activateFileViewerSelecting(
 							[URL(fileURLWithPath: mount.path)])
@@ -181,6 +207,15 @@ struct MountInspector: View {
 		} else {
 			NoSelectionInspector()
 		}
+	}
+
+	private func commitTag(_ mount: MountInfo) {
+		let tag = draftTag.trimmingCharacters(in: .whitespaces)
+		guard !tag.isEmpty, tag != mount.tag else {
+			draftTag = mount.tag
+			return
+		}
+		viewModel.setMountTag(vm.name, mountID: mountID, tag: tag)
 	}
 
 	private func guestHelp(os: String, requirement: String, command: String) -> some View {

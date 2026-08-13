@@ -82,7 +82,7 @@ struct KernelEntryInspector: View {
 	var body: some View {
 		if let entry = KernelEntry(vm: vm, role: .kernel, path: path) {
 			Form {
-				KernelFileInfoSection(entry: entry)
+				KernelFileInfoSection(viewModel: viewModel, vm: vm, entry: entry)
 				Section("Command Line Override") {
 					Toggle("Override VM command line", isOn: overrideBinding(entry))
 					CmdlineEditor(
@@ -122,7 +122,7 @@ struct InitramfsEntryInspector: View {
 	var body: some View {
 		if let entry = KernelEntry(vm: vm, role: .initramfs, path: path) {
 			Form {
-				KernelFileInfoSection(entry: entry)
+				KernelFileInfoSection(viewModel: viewModel, vm: vm, entry: entry)
 				KernelFileActionsSection(viewModel: viewModel, vm: vm, entry: entry)
 			}
 		} else {
@@ -158,11 +158,25 @@ private struct KernelEntry {
 }
 
 private struct KernelFileInfoSection: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
 	let entry: KernelEntry
+	@State private var draftTag = ""
 
 	var body: some View {
 		Section(entry.role == .kernel ? "Kernel File" : "Initramfs File") {
-			LabeledContent("Tag", value: entry.label)
+			if entry.owned {
+				TextField("Tag", text: $draftTag)
+					.onSubmit { commitTag() }
+					.onAppear { draftTag = entry.label }
+					.onChange(of: entry.label) { draftTag = entry.label }
+					.disabled(vm.state.isRunning)
+					.help(vm.state.isRunning
+						? "Stop the VM to rename its kernel files"
+						: "Re-tags the file (it moves within the VM directory)")
+			} else {
+				LabeledContent("Tag", value: entry.label)
+			}
 			LabeledContent("File", value: entry.fileName)
 			LabeledContent("Ownership",
 				value: entry.owned ? "Owned (in VM directory)" : "External reference")
@@ -177,6 +191,15 @@ private struct KernelFileInfoSection: View {
 				}
 			}
 		}
+	}
+
+	private func commitTag() {
+		let tag = draftTag.trimmingCharacters(in: .whitespaces)
+		guard !tag.isEmpty, tag != entry.label else {
+			draftTag = entry.label
+			return
+		}
+		viewModel.renameKernelTag(vm.name, path: entry.path, tag: tag)
 	}
 }
 

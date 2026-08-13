@@ -494,6 +494,51 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// The disk id derives from the name, so a successful rename repoints a selection that
+	// was on the old id (the inspector would otherwise go blank).
+	func renameDisk(_ name: String, diskID: String, newName: String) {
+		Task { [weak self] in
+			do {
+				guard let updated = try await self?.api.renameDisk(
+					vm: name, diskID: diskID, newName: newName) else { return }
+				if self?.treeSelection == [.disk(diskID)],
+					let newID = updated.disks.first(where: { $0.name == newName })?.id {
+					self?.treeSelection = [.disk(newID)]
+				}
+			} catch {
+				self?.present(error, while: "Renaming a disk")
+			}
+		}
+	}
+
+	func setMountTag(_ name: String, mountID: String, tag: String) {
+		Task { [weak self] in
+			do { _ = try await self?.api.setMountTag(vm: name, mountID: mountID, tag: tag) }
+			catch { self?.present(error, while: "Changing a mount tag") }
+		}
+	}
+
+	// The file's path changes with its tag — repoint a selection that was on the old path.
+	func renameKernelTag(_ name: String, path: String, tag: String) {
+		let fileName = (path as NSString).lastPathComponent
+		Task { [weak self] in
+			do {
+				guard let updated = try await self?.api.renameKernelFile(
+					vm: name, path: path, tag: tag) else { return }
+				guard let file = updated.boot.ownedKernels?.first(where: {
+					$0.tag == tag && $0.fileName == fileName
+				}) else { return }
+				let old: SidebarNode = file.role == .kernel ? .kernel(path) : .initramfs(path)
+				if self?.treeSelection == [old] {
+					self?.treeSelection = [file.role == .kernel
+						? .kernel(file.path) : .initramfs(file.path)]
+				}
+			} catch {
+				self?.present(error, while: "Renaming a kernel file")
+			}
+		}
+	}
+
 	func resizeDisk(_ name: String, diskID: String, sizeBytes: UInt64) {
 		Task { [weak self] in
 			do {

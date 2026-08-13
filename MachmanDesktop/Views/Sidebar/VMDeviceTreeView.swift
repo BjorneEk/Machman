@@ -33,6 +33,8 @@ struct VMDeviceTreeView: View {
 	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var renamingRoot = false
+	// Entry being renamed in place (owned storage disks + owned kernel files).
+	@State private var renamingNode: SidebarNode?
 	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
 		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
@@ -158,9 +160,18 @@ struct VMDeviceTreeView: View {
 					Image(systemName: Self.symbol(for: disk.type))
 						.font(.system(size: theme.metrics.iconSize))
 						.foregroundStyle(disk.owned == false ? Color.secondary : Color.primary)
-					Text(disk.name ?? Self.lastComponent(disk.path))
-						.truncationMode(.middle)
-						.lineLimit(1)
+					if renamingNode == .disk(disk.id) {
+						RenameField(initial: disk.name ?? "") { newName in
+							renamingNode = nil
+							viewModel.renameDisk(vm.name, diskID: disk.id, newName: newName)
+						} cancel: {
+							renamingNode = nil
+						}
+					} else {
+						Text(disk.name ?? Self.lastComponent(disk.path))
+							.truncationMode(.middle)
+							.lineLimit(1)
+					}
 					Spacer()
 					if disk.owned == false {
 						Image(systemName: MachmanSymbols.externalReference)
@@ -186,6 +197,9 @@ struct VMDeviceTreeView: View {
 		}
 		Button(disk.isEnabled ? "Disable" : "Enable") {
 			viewModel.setEnabled(vm.name, disks: [disk.id: !disk.isEnabled])
+		}
+		if disk.type == .storage && disk.owned != false && !vm.state.isRunning {
+			Button("Rename") { renamingNode = .disk(disk.id) }
 		}
 		if disk.owned == false {
 			Button("Promote to Owned…") { viewModel.promoteDisk(vm.name, diskID: disk.id) }
@@ -434,11 +448,21 @@ struct VMDeviceTreeView: View {
 						Image(systemName: MachmanSymbols.initramfs)
 							.font(.system(size: theme.metrics.iconSize))
 					}
-					Text(file.label)
-						.fontWeight(file.active ? .medium : .regular)
-						.truncationMode(.middle)
-						.lineLimit(1)
-						.help(file.id)
+					if renamingNode == (role == .kernel
+						? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id)) {
+						RenameField(initial: file.label) { tag in
+							renamingNode = nil
+							viewModel.renameKernelTag(vm.name, path: file.id, tag: tag)
+						} cancel: {
+							renamingNode = nil
+						}
+					} else {
+						Text(file.label)
+							.fontWeight(file.active ? .medium : .regular)
+							.truncationMode(.middle)
+							.lineLimit(1)
+							.help(file.id)
+					}
 					Spacer()
 					if !file.owned {
 						Image(systemName: MachmanSymbols.externalReference)
@@ -503,6 +527,11 @@ struct VMDeviceTreeView: View {
 		}
 		Button("Copy Path") { Self.copyToPasteboard(file.id) }
 		Button("Show in Finder") { Self.revealInFinder(file.id) }
+		if file.owned && !vm.state.isRunning {
+			Button("Rename") {
+				renamingNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
+			}
+		}
 		if !file.owned {
 			Button("Promote to Owned…") {
 				viewModel.promoteKernel(
