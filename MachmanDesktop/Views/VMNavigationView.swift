@@ -12,8 +12,6 @@ import MachmanAPI
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	let profiles: TerminalProfileStore
-	@State private var lastSelection: String?
-	@State private var expandedVMs: Set<String> = []
 	@Binding private var selection: String?
 
 	init(
@@ -27,39 +25,35 @@ struct VMNavigationView: View {
 
 	var body: some View {
 		NavigationSplitView {
-			List(selection: $selection) {
-				// A flat list with manual expansion: only VM rows are selectable, and a VM's
-				// chevron toggles its subtree. Serial ports hang directly under the VM as
-				// non-selectable rows — clicking one opens (or focuses) its terminal tab.
-				ForEach(viewModel.vms) { item in
-					let ports = (item.consolePorts ?? []) + (item.uartPorts ?? [])
-					vmRow(item, hasPorts: !ports.isEmpty).tag(item.name)
-					if !ports.isEmpty && expandedVMs.contains(item.name) {
-						ForEach(ports) { port in
-							PortRowView(
-								vm: item.name, port: port, sessions: viewModel.terminals,
-								onOpen: { openPort(item.name, port) },
-								onProperties: { openPort(item.name, port, revealInfo: true) })
+			// The sidebar is the SELECTED VM's device tree (1.0.4 UI); switching VMs is the
+			// toolbar picker's job. `selection` (app-scoped) only mirrors the view model so
+			// it survives daemon reconnects.
+			Group {
+				if let vm = viewModel.selected {
+					VMDeviceTreeView(
+						viewModel: viewModel, sessions: viewModel.terminals, vm: vm)
+				} else {
+					VStack(spacing: 12) {
+						Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VM selected")
+							.foregroundColor(.secondary)
+						Button(action: {
+							Task {
+								if let name = await viewModel.createVM() {
+									viewModel.select(name: name)
+								}
+							}
+						}) {
+							Label("New VM", systemImage: MachmanSymbols.add)
 						}
 					}
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
 				}
 			}
-			.onChange(of: selection) {
-				if let sel = selection {
-					lastSelection = sel
-					viewModel.select(name: sel)
-				} else if let last = lastSelection {
-					// The sidebar List drops its selection on its own when focus moves to
-					// another app (the daemon's VM window). Re-assert the last selection
-					// instead of letting the detail pane reset.
-					selection = last
-				}
-			}
-			// Keep the sidebar in sync when the SELECTED VM changes elsewhere (rename, delete).
+			// Mirror the view model's selection into the window-scoped binding (rename,
+			// delete, picker) so a daemon reconnect can restore it.
 			.onChange(of: viewModel.selectedName) {
-				guard let name = viewModel.selectedName else { return }
-				if selection != name {
-					selection = name
+				if selection != viewModel.selectedName {
+					selection = viewModel.selectedName
 				}
 			}
 			// After a daemon reconnect the view model is fresh but the window kept its
@@ -69,21 +63,6 @@ struct VMNavigationView: View {
 					viewModel.select(name: sel)
 				}
 			}
-			Button(action: {
-				Task {
-					if let name = await viewModel.createVM() {
-						selection = name
-						viewModel.select(name: name)
-					}
-				}
-			}) {
-				HStack {
-					Image(systemName: MachmanSymbols.add)
-					Text("New VM")
-				}
-			}
-			.buttonStyle(.borderless)
-			.padding()
 		} detail: {
 			VMTabContainerView(
 				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
@@ -125,84 +104,6 @@ struct VMNavigationView: View {
 		}
 	}
 
-	// VM row: selectable; the chevron on the RIGHT toggles the subtree without selecting.
-	@ViewBuilder
-	private func vmRow(_ item: VMInfo, hasPorts: Bool) -> some View {
-		HStack {
-			StatusIcon(state: item.state, windowOpen: item.windowOpen)
-			Text(item.name).font(.callout)
-			Spacer()
-			if item.safeRun == true {
-				Image(systemName: MachmanSymbols.safe)
-					.foregroundColor(.yellow)
-					.help("Running in safe mode (changes are discarded on stop)")
-			}
-			if hasPorts {
-				Button {
-					if expandedVMs.contains(item.name) {
-						expandedVMs.remove(item.name)
-					} else {
-						expandedVMs.insert(item.name)
-					}
-				} label: {
-					Image(systemName: expandedVMs.contains(item.name)
-						? MachmanSymbols.disclosureExpanded : MachmanSymbols.disclosureCollapsed)
-						.font(.caption).foregroundColor(.secondary)
-				}
-				.buttonStyle(.plain)
-				.help(expandedVMs.contains(item.name) ? "Collapse" : "Expand serial ports")
-			}
-		}
-	}
-
-	// Open (or focus) a serial port's terminal tab, selecting its VM first so the pane shows.
-	private func openPort(_ vm: String, _ port: SerialPortInfo, revealInfo: Bool = false) {
-		selection = vm
-		viewModel.select(name: vm)
-		// Instant: just record the tab. The container builds + connects the terminal lazily.
-		viewModel.terminals.openTab(vm: vm, ref: SerialPortRef(port))
-		if revealInfo { viewModel.showInfoPanel = true }
-	}
-}
-
-// A non-selectable serial-port row: click opens/focuses its tab; the context menu offers
-// Open / Close / Properties. Observes the sessions store so the open indicator stays live.
-private struct PortRowView: View {
-	let vm: String
-	let port: SerialPortInfo
-	@ObservedObject var sessions: TerminalSessions
-	let onOpen: () -> Void
-	let onProperties: () -> Void
-
-	var body: some View {
-		let ref = SerialPortRef(port)
-		let open = sessions.isOpen(vm: vm, ref: ref)
-		// A Button, NOT onTapGesture: an onTapGesture inside a List(selection:) row fights the
-		// List's own row-selection gesture, which made a click select the row (or need a second
-		// click) instead of opening the tab. A plain Button fires cleanly and never selects.
-		Button(action: onOpen) {
-			HStack {
-				Image(systemName: port.kind == .console
-					? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-					.foregroundColor(.secondary).font(.caption)
-				Text(port.guestDevice).font(.callout)
-				Spacer()
-				if open {
-					Circle().fill(Color.accentColor).frame(width: 6, height: 6)
-				}
-			}
-			.contentShape(Rectangle())
-		}
-		.buttonStyle(.plain)
-		.padding(.leading, 24)
-		.help(open ? "Show the \(port.guestDevice) tab" : "Open \(port.guestDevice) in a tab")
-		.contextMenu {
-			Button("Open") { onOpen() }
-			Button("Close") { sessions.closeTab(vm: vm, ref: ref) }
-				.disabled(!open)
-			Button("Properties") { onProperties() }
-		}
-	}
 }
 
 #Preview {

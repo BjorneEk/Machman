@@ -107,7 +107,9 @@ final class VMListViewModel: ObservableObject {
 		}
 		// React AFTER every list refresh (reconcile tabs, prime phases). $vms emits the
 		// incoming value on willSet — use it, never store.vms (still the old list here).
-		listReactor = store.$vms.sink { [weak self] list in
+		// dropFirst skips the replay of the retained list at init: on reconnect the window's
+		// onAppear restore must run before listRefreshed's selection fallback can fire.
+		listReactor = store.$vms.dropFirst().sink { [weak self] list in
 			self?.listRefreshed(list)
 		}
 		// The view model keeps its own event stream for UI-side reactions (the transport
@@ -134,6 +136,17 @@ final class VMListViewModel: ObservableObject {
 		// Close terminal tabs for ports/VMs that no longer exist.
 		terminals.reconcile(vms: list)
 		operationsStore.primeInstallPhases(for: list)
+		// The sidebar shows the selected VM's device tree, so something should always be
+		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
+		// falls over to the first. (Renames pass through here with the old name still
+		// selected; the transient first-VM pick is corrected a beat later by rename().)
+		if let name = selectedName {
+			if !list.contains(where: { $0.name == name }) {
+				select(name: list.first?.name)
+			}
+		} else if let first = list.first {
+			select(name: first.name)
+		}
 	}
 
 	private func handle(event: VMEvent) {

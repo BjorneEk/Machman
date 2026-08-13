@@ -23,7 +23,9 @@ extension VMInfo {
 
 struct VMIndicatorCluster: View {
 	@ObservedObject var viewModel: VMListViewModel
-	let vm: VMInfo
+	// nil = nothing selected; the indicator still renders so the picker stays reachable
+	// (it is the ONLY way to switch VMs — the sidebar shows one VM's device tree).
+	let vm: VMInfo?
 	@State private var pickerShown = false
 	@State private var hovering = false
 
@@ -32,15 +34,21 @@ struct VMIndicatorCluster: View {
 			pickerShown.toggle()
 		} label: {
 			HStack(spacing: 7) {
-				StatusDot(state: vm.state)
-				VStack(alignment: .leading, spacing: 1) {
-					Text(vm.name)
+				if let vm {
+					StatusDot(state: vm.state)
+					VStack(alignment: .leading, spacing: 1) {
+						Text(vm.name)
+							.font(.system(size: 12.5, weight: .semibold))
+							.lineLimit(1)
+							.truncationMode(.tail)
+						BootBadge(mode: vm.boot.mode, size: 9)
+					}
+					.frame(maxWidth: 220, alignment: .leading)
+				} else {
+					Text("No VM")
 						.font(.system(size: 12.5, weight: .semibold))
-						.lineLimit(1)
-						.truncationMode(.tail)
-					BootBadge(mode: vm.boot.mode, size: 9)
+						.foregroundStyle(.secondary)
 				}
-				.frame(maxWidth: 220, alignment: .leading)
 				Image(systemName: MachmanSymbols.pickerChevron)
 					.font(.system(size: 8, weight: .bold))
 					.foregroundStyle(.secondary)
