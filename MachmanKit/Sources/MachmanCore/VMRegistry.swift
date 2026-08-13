@@ -199,7 +199,15 @@ public final class VMRegistry {
 		}
 		try? vm.config.markRan()
 		if openWindow, let vz = runtime.vz {
-			presenter.openWindow(name: vm.config.name, vz: vz)
+			if vz.graphicsDevices.isEmpty {
+				// A windowed start of a display-less VM starts headless and says so —
+				// the configured preference is preserved, not silently rewritten.
+				events.emit(.log(
+					vm: vm.config.name, level: .warning,
+					message: "\(vm.config.name) has no display device — started headless"))
+			} else {
+				presenter.openWindow(name: vm.config.name, vz: vz)
+			}
 		}
 	}
 
@@ -214,8 +222,17 @@ public final class VMRegistry {
 		}
 	}
 
-	func openWindow(_ vm: VirtualMachine) {
-		guard let vz = vm.runtime?.vz else { return }
+	func openWindow(_ vm: VirtualMachine) throws {
+		guard let vz = vm.runtime?.vz else {
+			throw MachmanError(
+				code: .invalidState, message: "\(vm.config.name) is not running")
+		}
+		guard !vz.graphicsDevices.isEmpty else {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(vm.config.name) has no display device — add a graphics "
+					+ "device and restart to use a window")
+		}
 		presenter.openWindow(name: vm.config.name, vz: vz)
 	}
 

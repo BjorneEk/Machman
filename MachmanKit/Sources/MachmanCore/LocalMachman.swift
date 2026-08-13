@@ -533,7 +533,7 @@ public final class LocalMachman: MachmanControlling {
 	}
 
 	public func openWindow(vm name: String) async throws {
-		registry.openWindow(try lookup(name))
+		try registry.openWindow(try lookup(name))
 	}
 
 	public func closeWindow(vm name: String) async throws {
