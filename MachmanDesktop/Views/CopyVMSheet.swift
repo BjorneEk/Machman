@@ -52,7 +52,7 @@ struct CopyVMSheet: View {
 							includedDiskIDs.remove(disk.id)
 						}
 					})) {
-					Text(disk.name ?? shortPath(disk.path ?? "", 2))
+					Text(disk.name ?? Self.shortPath(disk.path ?? "", 2))
 				}
 				.toggleStyle(.checkbox)
 				.help(disk.type == .storage
@@ -90,5 +90,12 @@ struct CopyVMSheet: View {
 		}
 		.padding(20)
 		.frame(minWidth: 380)
+	}
+
+	// Last `n` path components, for compact disk labels ("isos/debian.iso").
+	private static func shortPath(_ path: String, _ n: Int) -> String {
+		let components = path.split(separator: "/").map(String.init)
+		guard n > 0 else { return "" }
+		return components.suffix(n).joined(separator: "/")
 	}
 }

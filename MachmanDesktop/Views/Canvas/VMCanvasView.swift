@@ -447,7 +447,7 @@ struct VMCanvasView: View {
 		case nil:
 			emptyCanvas
 		case .config:
-			VMConfigTabView(vm: vm, viewModel: viewModel)
+			VMPreviewTabView(vm: vm, viewModel: viewModel)
 		case .terminal(let ref):
 			TerminalTabContent(
 				sessions: sessions, profiles: profiles, vm: vm, ref: ref,

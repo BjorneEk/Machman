@@ -52,7 +52,7 @@ struct TornTabWindowView: View {
 	private func content(viewModel: VMListViewModel, vm: VMInfo) -> some View {
 		switch payload.tab {
 		case .config:
-			VMConfigTabView(vm: vm, viewModel: viewModel)
+			VMPreviewTabView(vm: vm, viewModel: viewModel)
 		case .terminal(let ref):
 			TerminalTabContent(
 				sessions: connection.terminals, profiles: profiles, vm: vm, ref: ref,
