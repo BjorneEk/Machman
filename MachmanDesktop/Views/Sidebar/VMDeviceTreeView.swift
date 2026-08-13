@@ -32,6 +32,7 @@ struct VMDeviceTreeView: View {
 	@State private var treeSelection: Set<SidebarNode> = []
 	@State private var expanded: Set<SidebarNode> = [
 		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
+		.group("Kernel"), .group("Initramfs"),
 	]
 	@Environment(\.machmanTheme) private var theme
 
@@ -42,6 +43,10 @@ struct VMDeviceTreeView: View {
 			mountGroup
 			serialGroup
 			deviceGroup
+			if showsKernelSections {
+				kernelGroup(role: .kernel, title: "Kernel")
+				kernelGroup(role: .initramfs, title: "Initramfs")
+			}
 		}
 		.listStyle(.sidebar)
 		.environment(\.defaultMinListRowHeight, theme.metrics.treeRowHeight)
@@ -212,6 +217,113 @@ struct VMDeviceTreeView: View {
 		}
 		.opacity(device.enabled ? 1 : MachmanColors.inactiveEntryOpacity)
 		.frame(height: theme.metrics.treeRowHeight)
+	}
+
+	// MARK: - Kernel / Initramfs
+
+	// Kernel sections appear once kernel boot is (or was) configured — the draft survives
+	// toggling back to EFI, shown parked (dimmed) until kernel boot is on again.
+	private var showsKernelSections: Bool {
+		vm.boot.mode != .macOS
+			&& (vm.boot.kernel != nil || !(vm.boot.ownedKernels ?? []).isEmpty)
+	}
+
+	private var kernelSectionParked: Bool { vm.boot.mode != .linuxKernel }
+
+	private struct KernelEntry: Identifiable {
+		let id: String        // absolute path (OwnedKernelFile.id)
+		let label: String     // tag, or file name for external references
+		let owned: Bool
+		let active: Bool
+	}
+
+	// Owned files of the role, plus the active settings path when it points outside the
+	// owned set (an external reference — promotable).
+	private func kernelEntries(role: KernelRole) -> [KernelEntry] {
+		let owned = (vm.boot.ownedKernels ?? []).filter { $0.role == role }
+		let activePath = role == .kernel
+			? vm.boot.kernel?.kernelPath : vm.boot.kernel?.initrdPath
+		var entries = owned.map {
+			KernelEntry(id: $0.path, label: $0.tag, owned: true, active: $0.path == activePath)
+		}
+		if let activePath, !activePath.isEmpty,
+			!owned.contains(where: { $0.path == activePath }) {
+			entries.append(KernelEntry(
+				id: activePath, label: (activePath as NSString).lastPathComponent,
+				owned: false, active: true))
+		}
+		return entries
+	}
+
+	// The VM cannot start kernel boot without a kernel path.
+	private var missingKernelWarning: Bool {
+		vm.boot.mode == .linuxKernel && (vm.boot.kernel?.kernelPath ?? "").isEmpty
+	}
+
+	@ViewBuilder
+	private func kernelGroup(role: KernelRole, title: String) -> some View {
+		let entries = kernelEntries(role: role)
+		let dg = DisclosureGroup(isExpanded: groupBinding(.group(title))) {
+			ForEach(entries) { file in
+				HStack(spacing: 6) {
+					if role == .kernel {
+						TuxIcon(size: theme.metrics.iconSize + 1)
+					} else {
+						Image(systemName: MachmanSymbols.initramfs)
+							.font(.system(size: theme.metrics.iconSize))
+					}
+					Text(file.label)
+						.fontWeight(file.active ? .medium : .regular)
+						.truncationMode(.middle)
+						.lineLimit(1)
+						.help(file.id)
+					Spacer()
+					if !file.owned {
+						Image(systemName: MachmanSymbols.externalReference)
+							.font(.system(size: 9))
+							.foregroundStyle(.tertiary)
+							.help("External file — promote to copy it into the VM")
+					}
+					if file.active {
+						Image(systemName: MachmanSymbols.activeEntry)
+							.font(.system(size: 10))
+							.foregroundStyle(MachmanColors.activeEntry)
+							.help("Active")
+					}
+				}
+				.opacity(file.active ? 1 : MachmanColors.inactiveEntryOpacity)
+				.frame(height: theme.metrics.treeRowHeight)
+				.tag(role == .kernel
+					? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id))
+			}
+		} label: {
+			HStack(spacing: 6) {
+				if role == .kernel {
+					TuxIcon(size: theme.metrics.iconSize + 1)
+				} else {
+					Image(systemName: MachmanSymbols.initramfs)
+						.font(.system(size: theme.metrics.iconSize))
+				}
+				Text(title).fontWeight(.medium)
+				Spacer()
+				if role == .kernel && missingKernelWarning {
+					Image(systemName: MachmanSymbols.warning)
+						.font(.system(size: 10))
+						.foregroundStyle(MachmanColors.warning)
+						.help("No kernel selected — the VM cannot start")
+				}
+			}
+			.frame(height: theme.metrics.treeRowHeight)
+		}
+		// Kernel parent is selectable (it has an inspector); the initramfs parent is a dim
+		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
+		if role == .kernel {
+			dg
+				.tag(SidebarNode.group("Kernel"))
+				.opacity(kernelSectionParked ? 0.45 : 1)
+		} else {
+			dg.opacity(kernelSectionParked ? 0.45 : MachmanColors.dimmedRowOpacity)
+		}
 	}
 
 	// MARK: - Group scaffold
