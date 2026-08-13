@@ -166,6 +166,34 @@ struct MachmanDesktopApp: App {
 					}
 				}
 			}
+			// Entity clipboard beside the standard text Copy/Paste (Option variants so
+			// text-field editing keeps plain ⌘C/⌘V).
+			CommandGroup(after: .pasteboard) {
+				if let viewModel = connection.viewModel {
+					Divider()
+					Button("Copy Item") {
+						if let entity = viewModel.copyableSelection {
+							EntityClipboard.write(entity)
+						}
+					}
+					.keyboardShortcut("c", modifiers: [.option, .command])
+					.disabled(viewModel.copyableSelection == nil)
+					Button("Paste Item") {
+						guard let vm = viewModel.selected else { return }
+						if let entity = EntityClipboard.read() {
+							entity.paste(into: vm.name, viewModel: viewModel)
+						} else {
+							_ = AddFlows.handleFileURLs(
+								AddFlows.pasteboardFileURLs(), viewModel: viewModel,
+								vm: vm.name)
+						}
+					}
+					.keyboardShortcut("v", modifiers: [.option, .command])
+					.disabled(viewModel.selected == nil
+						|| (EntityClipboard.read() == nil
+							&& AddFlows.pasteboardFileURLs().isEmpty))
+				}
+			}
 			CommandGroup(before: CommandGroupPlacement.newItem) {
 				if let viewModel = connection.viewModel {
 					Button(action: {

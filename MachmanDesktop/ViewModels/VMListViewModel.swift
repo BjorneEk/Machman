@@ -858,6 +858,27 @@ final class VMListViewModel: ObservableObject {
 		return terminals.controller(vm: name, ref: ref)
 	}
 
+	// The single selected tree entity as a clipboard payload (nil when not copyable) —
+	// drives Edit → Copy Item.
+	var copyableSelection: EntityClipboard? {
+		guard treeSelection.count == 1, let node = treeSelection.first,
+			let vm = selected else { return nil }
+		switch node {
+		case .disk(let id):
+			guard let path = vm.disks.first(where: { $0.id == id })?.path else { return nil }
+			return EntityClipboard(kind: .disk, path: path)
+		case .mount(let id):
+			guard let mount = vm.mounts.first(where: { $0.id == id }) else { return nil }
+			return EntityClipboard(kind: .mount, path: mount.path, tag: mount.tag)
+		case .kernel(let path):
+			return EntityClipboard(kind: .kernel, path: path)
+		case .initramfs(let path):
+			return EntityClipboard(kind: .initramfs, path: path)
+		default:
+			return nil
+		}
+	}
+
 	// MARK: - Canvas commands (menu shortcuts)
 
 	func cycleTab(forward: Bool) {
