@@ -784,6 +784,30 @@ final class VMListViewModel: ObservableObject {
 		return terminals.controller(vm: name, ref: ref)
 	}
 
+	// MARK: - Canvas commands (menu shortcuts)
+
+	func cycleTab(forward: Bool) {
+		guard let name = selectedName else { return }
+		var canvas = canvases.canvas(for: name)
+		guard let pane = canvas.activePane, pane.tabs.count > 1,
+			let current = pane.active,
+			let index = pane.tabs.firstIndex(of: current) else { return }
+		let count = pane.tabs.count
+		canvas.activate(pane.tabs[(index + (forward ? 1 : count - 1)) % count])
+		canvases.setCanvas(canvas, for: name)
+	}
+
+	func closeActiveTab() {
+		guard let name = selectedName else { return }
+		var canvas = canvases.canvas(for: name)
+		guard let tab = canvas.activeTab else { return }
+		if case .terminal(let ref) = tab {
+			terminals.dropController(vm: name, ref: ref)
+		}
+		canvas.close(tab)
+		canvases.setCanvas(canvas, for: name)
+	}
+
 	// Save the on-screen terminal transcript. Used by File → Save Terminal.
 	func saveActiveTerminalTranscript() {
 		guard let terminal = activeTerminalController else { return }

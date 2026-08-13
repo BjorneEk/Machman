@@ -34,7 +34,9 @@ struct MachmanDesktopApp: App {
 	private var theme: MachmanTheme { .fromDefaults() }
 
 	init() {
-		_connection = StateObject(wrappedValue: DaemonConnection())
+		let connection = DaemonConnection()
+		_connection = StateObject(wrappedValue: connection)
+		AppDelegate.connection = connection   // the dock menu reads through it
 	}
 
 	private var connectedDaemonVersion: String? {
@@ -59,6 +61,17 @@ struct MachmanDesktopApp: App {
 		.commands {
 			CommandGroup(before: .sidebar) {
 				if let viewModel = connection.viewModel {
+					Button(viewModel.showInfoPanel ? "Hide Inspector" : "Show Inspector") {
+						viewModel.showInfoPanel.toggle()
+					}
+					.keyboardShortcut("0", modifiers: [.option, .command])
+					Button("Next Tab") { viewModel.cycleTab(forward: true) }
+						.keyboardShortcut("]", modifiers: [.shift, .command])
+					Button("Previous Tab") { viewModel.cycleTab(forward: false) }
+						.keyboardShortcut("[", modifiers: [.shift, .command])
+					Button("Close Tab") { viewModel.closeActiveTab() }
+						.keyboardShortcut("w", modifiers: [.shift, .command])
+					Divider()
 					ForEach(viewModel.vms) { vm in
 						Button(vm.name) {
 							selection = vm.name
@@ -90,6 +103,20 @@ struct MachmanDesktopApp: App {
 			}
 			CommandMenu("Run") {
 				if let viewModel = connection.viewModel {
+					// The selected VM's actions carry the shortcuts.
+					if let vm = viewModel.selected {
+						Button("Start \(vm.name)") {
+							viewModel.startPolicyDriven(vm)
+						}
+						.keyboardShortcut("r")
+						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+						Button("Start \(vm.name) Safe") {
+							viewModel.startPolicyDriven(vm, safeOverride: true)
+						}
+						.keyboardShortcut("r", modifiers: [.shift, .command])
+						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+						Divider()
+					}
 					ForEach(viewModel.vms) { vm in
 						Menu(vm.name) {
 							// Explicit items force their EXACT mode — window AND safety;
@@ -118,6 +145,19 @@ struct MachmanDesktopApp: App {
 			}
 			CommandMenu("Stop") {
 				if let viewModel = connection.viewModel {
+					if let vm = viewModel.selected {
+						Button("Shut Down \(vm.name)") {
+							viewModel.stopVM(vm.name, mode: .soft)
+						}
+						.keyboardShortcut(".")
+						.disabled(!vm.state.isRunning)
+						Button("Force Stop \(vm.name)") {
+							viewModel.stopVM(vm.name, mode: .force)
+						}
+						.keyboardShortcut(".", modifiers: [.option, .command])
+						.disabled(!vm.state.isRunning)
+						Divider()
+					}
 					ForEach(viewModel.vms) { vm in
 						Menu(vm.name) {
 							Button(action: {
@@ -171,6 +211,7 @@ struct MachmanDesktopApp: App {
 					}) {
 						Label("Save Terminal…", systemImage: MachmanSymbols.saveToFile)
 					}
+					.keyboardShortcut("s")
 					.disabled(viewModel.activeTerminalController == nil)
 				}
 			}
@@ -203,8 +244,50 @@ extension View {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+	static weak var connection: DaemonConnection?
+
 	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting.
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
 		true
+	}
+
+	// Dock menu: one start/stop toggle per VM, states at a glance. AppKit calls these on
+	// the main thread; assumeIsolated bridges to the main-actor stores.
+	func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+		MainActor.assumeIsolated {
+			guard let vms = Self.connection?.vmStore.vms, !vms.isEmpty else { return nil }
+			let menu = NSMenu()
+			for vm in vms {
+				let running = vm.state.isRunning
+				let item = NSMenuItem(
+					title: running ? "Shut Down \(vm.name)" : "Start \(vm.name)",
+					action: #selector(toggleVM(_:)), keyEquivalent: "")
+				item.target = self
+				item.representedObject = vm.name
+				item.state = running ? .on : .off
+				menu.addItem(item)
+			}
+			return menu
+		}
+	}
+
+	@objc private func toggleVM(_ sender: NSMenuItem) {
+		MainActor.assumeIsolated {
+			guard let name = sender.representedObject as? String,
+				let store = Self.connection?.vmStore,
+				let api = store.api else { return }
+			let running = store.vms.first { $0.name == name }?.state.isRunning == true
+			Task {
+				do {
+					if running {
+						try await api.stop(vm: name, mode: .soft)
+					} else {
+						try await api.start(vm: name, options: StartOptions())
+					}
+				} catch {
+					MachmanLogger.log(.interactionError, "dock action failed: \(error)")
+				}
+			}
+		}
 	}
 }
