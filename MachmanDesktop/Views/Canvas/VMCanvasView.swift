@@ -2,17 +2,39 @@
 //  VMCanvasView.swift
 //  MachmanDesktop
 //
-//  The editor-style canvas for one VM (1.0.4 UI): up to three side-by-side panes, each with
-//  its own tab strip over the active tab's content (config tab or a serial terminal), split
-//  by draggable dividers whose fractions persist per VM via CanvasStateStore. Layout is the
-//  CanvasState value; live terminals stay in TerminalSessions and are created lazily when a
-//  pane first shows their tab (spinner covers the gap). Drag-reorder and tear-off arrive in
-//  later slices.
+//  The editor-style canvas for one VM (1.0.4 UI, demo-parity): up to three panes with
+//  Xcode-like tab strips, a custom drag system — live in-strip reorder, pull down (or off
+//  the strip) to detach into a ghost with measured drop zones (move between panes, split a
+//  new edge pane), release outside the canvas to tear the tab off into its own window —
+//  and draggable pane dividers. Layout is the CanvasState value persisted per VM by
+//  CanvasStateStore; live terminals stay in TerminalSessions and reparent wherever the tab
+//  goes.
 //
 
 import SwiftUI
+import AppKit
 import MachmanUI
 import MachmanAPI
+
+private let dividerWidth: CGFloat = 9
+
+// The in-flight tab drag: translation drives in-strip reorder until the tab detaches
+// (pulled down or off its strip), after which the ghost + drop zones take over.
+private struct TabDragState {
+	var tab: VMPaneTab
+	var paneID: UUID
+	var location: CGPoint
+	var translation: CGSize
+	var detached = false
+	// Widths of siblings crossed during live reorder, so the tab stays under the cursor.
+	var baselineShift: CGFloat = 0
+}
+
+private enum CanvasDropZone: Equatable {
+	case pane(UUID)
+	case newLeading
+	case newTrailing
+}
 
 struct VMCanvasView: View {
 	@ObservedObject var viewModel: VMListViewModel
@@ -20,34 +42,54 @@ struct VMCanvasView: View {
 	@ObservedObject var canvases: CanvasStateStore
 	@ObservedObject var profiles: TerminalProfileStore
 	let vm: VMInfo
+
+	@State private var tabDrag: TabDragState?
+	@State private var canvasSize: CGSize = .zero
+	@State private var paneFrames: [UUID: CGRect] = [:]
+	@State private var stripFrames: [UUID: CGRect] = [:]
+	@State private var tabFrames: [VMPaneTab: CGRect] = [:]
 	// Divider drags apply fractions absolutely from the drag-start snapshot.
 	@State private var dragBaseFractions: [Double]?
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
 
-	private static let dividerWidth: CGFloat = 5
-
 	private var canvas: CanvasState { canvases.canvas(for: vm.name) }
 
 	var body: some View {
-		let canvas = self.canvas
 		GeometryReader { geo in
+			let c = canvas
 			HStack(spacing: 0) {
-				ForEach(Array(canvas.panes.enumerated()), id: \.element.id) { index, pane in
-					paneView(pane, activePane: pane.id == canvas.activePaneID)
-						.frame(width: paneWidth(
-							index, canvas: canvas, totalWidth: geo.size.width))
-					if index < canvas.panes.count - 1 {
-						paneDivider(index, totalWidth: geo.size.width)
+				ForEach(Array(c.panes.enumerated()), id: \.element.id) { index, pane in
+					paneView(pane, canvas: c)
+						.frame(width: paneWidth(index, canvas: c, total: geo.size.width))
+					if index < c.panes.count - 1 {
+						paneDivider(index)
 					}
 				}
 			}
+			.overlay(alignment: .topLeading) {
+				if tabDrag?.detached == true {
+					dropZonesOverlay()
+						.frame(width: geo.size.width, height: geo.size.height,
+							alignment: .topLeading)
+				}
+			}
+			.onAppear { canvasSize = geo.size }
+			.onChange(of: geo.size) { canvasSize = geo.size }
 		}
+		.coordinateSpace(name: "machman-canvas")
+		.background(Color(nsColor: .underPageBackgroundColor))
 		.onAppear { ensureConfigTab() }
-		.onChange(of: vm.name) { ensureConfigTab() }
+		.onChange(of: vm.name) {
+			tabDrag = nil
+			paneFrames = [:]
+			stripFrames = [:]
+			tabFrames = [:]
+			ensureConfigTab()
+		}
 	}
 
-	// A canvas with nothing open shows the config tab (fresh VM, or everything closed).
+	// A canvas with nothing open shows the config tab (fresh VM; reopenable if closed).
 	private func ensureConfigTab() {
 		if canvases.canvas(for: vm.name).allOpenTabs.isEmpty {
 			mutate { $0.open(.config) }
@@ -62,153 +104,141 @@ struct VMCanvasView: View {
 
 	// MARK: - Layout
 
-	private func paneWidth(_ index: Int, canvas: CanvasState, totalWidth: CGFloat) -> CGFloat {
-		let available = max(0, totalWidth
-			- CGFloat(canvas.panes.count - 1) * Self.dividerWidth)
+	private func paneWidth(_ index: Int, canvas: CanvasState, total: CGFloat) -> CGFloat {
+		let available = total - dividerWidth * CGFloat(canvas.panes.count - 1)
 		let fraction = canvas.fractions.indices.contains(index)
 			? canvas.fractions[index] : 1.0 / Double(canvas.panes.count)
-		return available * CGFloat(fraction)
+		return max(120, available * CGFloat(fraction))
 	}
 
-	private func paneDivider(_ index: Int, totalWidth: CGFloat) -> some View {
-		Rectangle()
-			.fill(Color.primary.opacity(0.08))
-			.frame(width: 1)
-			.frame(width: Self.dividerWidth)
-			.contentShape(Rectangle())
-			.gesture(
-				DragGesture(coordinateSpace: .global)
-					.onChanged { value in
-						let base = dragBaseFractions ?? canvas.fractions
-						if dragBaseFractions == nil { dragBaseFractions = base }
-						guard base.indices.contains(index) else { return }
-						let available = max(1, totalWidth
-							- CGFloat(canvas.panes.count - 1) * Self.dividerWidth)
-						let delta = Double(value.translation.width / available)
-						mutate { $0.setFraction(base[index] + delta, at: index) }
-					}
-					.onEnded { _ in dragBaseFractions = nil }
-			)
+	private func paneDivider(_ index: Int) -> some View {
+		ZStack {
+			Color.clear
+			Rectangle()
+				.fill(Color(nsColor: .separatorColor))
+				.frame(width: 1)
+		}
+		.frame(width: dividerWidth)
+		.contentShape(Rectangle())
+		.onHover { inside in
+			if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+		}
+		.gesture(
+			DragGesture(coordinateSpace: .named("machman-canvas"))
+				.onChanged { value in
+					let base = dragBaseFractions ?? canvas.fractions
+					if dragBaseFractions == nil { dragBaseFractions = base }
+					guard base.indices.contains(index) else { return }
+					let available = max(200, canvasSize.width
+						- dividerWidth * CGFloat(canvas.panes.count - 1))
+					let delta = Double(value.translation.width / available)
+					mutate { $0.setFraction(base[index] + delta, at: index) }
+				}
+				.onEnded { _ in dragBaseFractions = nil }
+		)
 	}
 
 	// MARK: - Pane
 
-	private func paneView(_ pane: CanvasPane, activePane: Bool) -> some View {
+	private func paneView(_ pane: CanvasPane, canvas: CanvasState) -> some View {
 		VStack(spacing: 0) {
-			paneStrip(pane, activePane: activePane)
-			Divider()
+			paneStrip(pane, canvas: canvas)
+			if canvas.panes.count > 1 {
+				// The active-pane hint: sidebar clicks and ⌘-cycling land here.
+				Rectangle()
+					.fill(pane.id == canvas.activePaneID
+						? MachmanColors.selection.opacity(0.55) : Color.clear)
+					.frame(height: 2)
+			}
 			paneContent(pane)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
-				// Drop into a pane's content moves the tab into that pane (appended).
-				.dropDestination(for: VMPaneTab.self) { dropped, _ in
-					guard let moved = dropped.first else { return false }
-					mutate { c in
-						let count = c.panes.first { $0.id == pane.id }?.tabs
-							.filter { $0 != moved }.count ?? 0
-						c.move(moved, toPane: pane.id, at: count)
-					}
-					return true
-				}
 		}
+		.background(GeometryReader { geo in
+			Color.clear
+				.onAppear { paneFrames[pane.id] = geo.frame(in: .named("machman-canvas")) }
+				.onChange(of: geo.frame(in: .named("machman-canvas"))) {
+					paneFrames[pane.id] = geo.frame(in: .named("machman-canvas"))
+				}
+		})
 	}
 
-	private func paneStrip(_ pane: CanvasPane, activePane: Bool) -> some View {
-		HStack(spacing: 2) {
-			ForEach(pane.tabs, id: \.self) { tab in
-				tabItem(tab, active: pane.active == tab && activePane,
-					current: pane.active == tab)
-					.draggable(tab)
-					// Drop ON a tab inserts at its position (index computed without the
-					// moved tab — CanvasState.move's drag semantics).
-					.dropDestination(for: VMPaneTab.self) { dropped, _ in
-						guard let moved = dropped.first, moved != tab else { return false }
-						mutate { c in
-							guard let paneID = c.pane(holding: tab),
-								let target = c.panes.first(where: { $0.id == paneID }),
-								var index = target.tabs.firstIndex(of: tab) else { return }
-							if let mIdx = target.tabs.firstIndex(of: moved), mIdx < index {
-								index -= 1
-							}
-							c.move(moved, toPane: paneID, at: index)
-						}
-						return true
+	private func paneStrip(_ pane: CanvasPane, canvas: CanvasState) -> some View {
+		ScrollView(.horizontal, showsIndicators: false) {
+			HStack(spacing: theme.tabStyle == .capsule ? 6 : 0) {
+				ForEach(pane.tabs, id: \.self) { tab in
+					CanvasTabItem(
+						title: tabTitle(tab),
+						symbol: tabSymbol(tab),
+						isTerminal: isTerminal(tab),
+						selected: pane.active == tab,
+						dragging: tabDrag?.tab == tab,
+						detachedDrag: tabDrag?.detached == true,
+						dragOffset: dragOffset(for: tab),
+						canSplit: canvas.panes.count < CanvasState.maxPanes,
+						hasSiblings: pane.tabs.count > 1,
+						tabStyle: theme.tabStyle,
+						metrics: theme.metrics,
+						onSelect: { mutate { $0.activate(tab) } },
+						onClose: { close(tab) },
+						onCloseOthers: { closeOthers(than: tab, in: pane) },
+						onSplit: { mutate { $0.split(tab, trailing: true) } },
+						onTearOff: { tearOff(tab) },
+						onDragChanged: { updateTabDrag(tab: tab, pane: pane.id, value: $0) },
+						onDragEnded: { completeTabDrag() },
+						reportFrame: { tabFrames[tab] = $0 })
+					if theme.tabStyle == .rectangular && tab != pane.tabs.last {
+						Divider().frame(height: theme.metrics.tabHeight * 0.6)
 					}
-			}
-			Spacer(minLength: 0)
-				// Drop on the empty strip area appends to this pane.
-				.dropDestination(for: VMPaneTab.self) { dropped, _ in
-					guard let moved = dropped.first else { return false }
-					mutate { c in
-						let count = c.panes.first { $0.id == pane.id }?.tabs
-							.filter { $0 != moved }.count ?? 0
-						c.move(moved, toPane: pane.id, at: count)
-					}
-					return true
-				}
-			IconButton(
-				symbol: MachmanSymbols.splitRight, tooltip: "Split right",
-				font: .caption, flat: true
-			) {
-				if let tab = pane.active {
-					mutate { $0.split(tab, trailing: true) }
 				}
 			}
-			.disabled(canvas.panes.count >= CanvasState.maxPanes || pane.tabs.count < 1)
+			.padding(.horizontal, theme.tabStyle == .capsule ? 8 : 0)
+			.padding(.vertical, theme.tabStyle == .capsule ? 4 : 0)
 		}
-		.padding(.horizontal, 6)
-		.frame(height: 32)
+		.frame(height: theme.metrics.tabStripHeight)
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.background(GeometryReader { geo in
+			Color.clear
+				.onAppear { stripFrames[pane.id] = geo.frame(in: .named("machman-canvas")) }
+				.onChange(of: geo.frame(in: .named("machman-canvas"))) {
+					stripFrames[pane.id] = geo.frame(in: .named("machman-canvas"))
+				}
+		})
+		.background {
+			if theme.tabStyle == .rectangular {
+				Rectangle().fill(.thinMaterial)
+			}
+		}
+		.overlay(alignment: .bottom) {
+			if theme.tabStyle == .rectangular {
+				Divider()
+			}
+		}
+		.contentShape(Rectangle())
+		.simultaneousGesture(TapGesture().onEnded {
+			mutate { $0.activatePane(pane.id) }
+		})
 	}
 
-	// A tab: select button + close button, never nested (reliable hit targets). The active
-	// tab of the ACTIVE pane gets the full fill; the current tab of an inactive pane a
-	// lighter one.
-	private func tabItem(_ tab: VMPaneTab, active: Bool, current: Bool) -> some View {
-		HStack(spacing: 4) {
-			Button {
-				mutate { $0.activate(tab) }
-			} label: {
-				HStack(spacing: 5) {
-					switch tab {
-					case .config:
-						Image(systemName: MachmanSymbols.tabConfig)
-							.font(.caption)
-					case .terminal(let ref):
-						Image(systemName: ref.kind == .console
-							? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-							.font(.caption)
-						Text(displayName(ref)).font(.callout).lineLimit(1)
-					}
-				}
-				.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.help(tab == .config ? "Configuration" : "")
-			Button {
-				close(tab)
-			} label: {
-				Image(systemName: MachmanSymbols.closeTab)
-					.font(.caption2)
-					.frame(width: 16, height: 16)
-					.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.help("Close tab")
-		}
-		.padding(.horizontal, 8)
-		.frame(height: 24)
-		.background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-			.fill(Color.primary.opacity(active ? 0.12 : (current ? 0.05 : 0))))
-		.contextMenu {
-			Button("Open in New Window") { tearOff(tab) }
-			Button("Close Tab") { close(tab) }
-		}
+	private func dragOffset(for tab: VMPaneTab) -> CGSize {
+		guard let drag = tabDrag, drag.tab == tab, !drag.detached else { return .zero }
+		return CGSize(
+			width: drag.translation.width - drag.baselineShift,
+			height: max(-4, min(4, drag.translation.height * 0.2)))
 	}
+
+	// MARK: - Tab actions
 
 	private func close(_ tab: VMPaneTab) {
 		if case .terminal(let ref) = tab {
 			sessions.dropController(vm: vm.name, ref: ref)
 		}
 		mutate { $0.close(tab) }
+	}
+
+	private func closeOthers(than tab: VMPaneTab, in pane: CanvasPane) {
+		for other in pane.tabs where other != tab {
+			close(other)
+		}
 	}
 
 	// Tear a tab off into its own window: the canvas tab closes but the controller stays —
@@ -218,14 +248,204 @@ struct VMCanvasView: View {
 		openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
 	}
 
+	// MARK: - Drag logic (demo parity)
+
+	private func updateTabDrag(tab: VMPaneTab, pane: UUID, value: DragGesture.Value) {
+		var drag = tabDrag ?? TabDragState(
+			tab: tab, paneID: pane, location: value.location,
+			translation: value.translation)
+		drag.location = value.location
+		drag.translation = value.translation
+		// Ghost mode when pulled down OR whenever the cursor leaves the source strip — the
+		// strips are clipping ScrollViews, so only the top-level ghost can cross panes.
+		let inSourceStrip = stripFrames[drag.paneID]?
+			.insetBy(dx: -8, dy: -8).contains(value.location) ?? true
+		let shouldDetach = abs(value.translation.height) > 42 || !inSourceStrip
+		if shouldDetach != drag.detached {
+			withAnimation(.snappy(duration: 0.18)) { drag.detached = shouldDetach }
+		}
+		if !drag.detached {
+			reorderIfNeeded(&drag)
+		}
+		tabDrag = drag
+	}
+
+	// Live reorder: when the cursor passes a sibling tab's midpoint, move the tab and add
+	// the sibling's width to the baseline so the dragged tab stays under the cursor.
+	private func reorderIfNeeded(_ drag: inout TabDragState) {
+		let c = canvas
+		guard let holder = c.pane(holding: drag.tab),
+			let pane = c.panes.first(where: { $0.id == holder }),
+			let ti = pane.tabs.firstIndex(of: drag.tab) else { return }
+		let x = drag.location.x
+		var target = ti
+		if ti + 1 < pane.tabs.count,
+			let next = tabFrames[pane.tabs[ti + 1]], x > next.midX + 2 {
+			target = ti + 1
+			drag.baselineShift += next.width
+		} else if ti > 0,
+			let prev = tabFrames[pane.tabs[ti - 1]], x < prev.midX - 2 {
+			target = ti - 1
+			drag.baselineShift -= prev.width
+		}
+		guard target != ti else { return }
+		let tab = drag.tab
+		withAnimation(.snappy(duration: 0.18)) {
+			mutate { $0.reorder(tab, to: target) }
+		}
+	}
+
+	private func completeTabDrag() {
+		guard let drag = tabDrag else { return }
+		defer {
+			withAnimation(.snappy(duration: 0.2)) { tabDrag = nil }
+		}
+		guard drag.detached else { return }
+		let loc = drag.location
+		// Released outside the canvas (with margin) → tear off into its own window.
+		let canvasRect = CGRect(origin: .zero, size: canvasSize).insetBy(dx: -40, dy: -40)
+		if !canvasRect.contains(loc) {
+			tearOff(drag.tab)
+			return
+		}
+		// Released over a strip → insert at that position.
+		if let (paneID, index) = stripInsertion(at: loc, excluding: drag.tab) {
+			mutate { $0.move(drag.tab, toPane: paneID, at: index) }
+			return
+		}
+		switch zone(at: loc) {
+		case .pane(let id):
+			if id != drag.paneID {
+				mutate { c in
+					let count = c.panes.first { $0.id == id }?.tabs
+						.filter { $0 != drag.tab }.count ?? 0
+					c.move(drag.tab, toPane: id, at: count)
+				}
+			}
+		case .newLeading:
+			mutate { $0.split(drag.tab, trailing: false) }
+		case .newTrailing:
+			mutate { $0.split(drag.tab, trailing: true) }
+		case nil:
+			break
+		}
+	}
+
+	// Which strip is under the cursor, and the insertion index among its tabs (computed
+	// EXCLUDING the dragged tab, so it stays valid after removal).
+	private func stripInsertion(
+		at loc: CGPoint, excluding dragged: VMPaneTab
+	) -> (UUID, Int)? {
+		for pane in canvas.panes {
+			guard let strip = stripFrames[pane.id],
+				strip.insetBy(dx: 0, dy: -6).contains(loc) else { continue }
+			let index = pane.tabs
+				.filter { $0 != dragged }
+				.filter { tab in
+					guard let frame = tabFrames[tab] else { return false }
+					return frame.midX < loc.x
+				}
+				.count
+			return (pane.id, index)
+		}
+		return nil
+	}
+
+	// Zone rects in canvas space, from MEASURED pane frames (immune to sidebar/inspector
+	// state); edge split-zones first, they win overlaps.
+	private func dropZones() -> [(CanvasDropZone, CGRect)] {
+		let size = canvasSize
+		guard size.width > 0 else { return [] }
+		let c = canvas
+		var zones: [(CanvasDropZone, CGRect)] = []
+		let edge = max(56, size.width * 0.11)
+		if c.panes.count < CanvasState.maxPanes {
+			zones.append((.newLeading,
+				CGRect(x: 4, y: 4, width: edge, height: size.height - 8)))
+			zones.append((.newTrailing,
+				CGRect(x: size.width - edge - 4, y: 4, width: edge, height: size.height - 8)))
+		}
+		for (i, pane) in c.panes.enumerated() {
+			guard let measured = paneFrames[pane.id] else { continue }
+			let edgePane = i == 0 || i == c.panes.count - 1
+			let inset: CGFloat = c.panes.count < CanvasState.maxPanes && edgePane
+				? (edge + 10) * 0.5 : 12
+			zones.append((.pane(pane.id), measured.insetBy(dx: inset, dy: 24)))
+		}
+		return zones
+	}
+
+	private func zone(at location: CGPoint) -> CanvasDropZone? {
+		dropZones().first { $0.1.contains(location) }?.0
+	}
+
+	// MARK: - Drop-zone overlay + ghost
+
+	private func dropZonesOverlay() -> some View {
+		let zones = dropZones()
+		let location = tabDrag?.location ?? .zero
+		let hovered = zone(at: location)
+		// Full-size top-leading root: children are positioned by absolute canvas rects, so
+		// the overlay must never be center-aligned by its container.
+		return ZStack(alignment: .topLeading) {
+			Color.clear
+			ForEach(Array(zones.enumerated()), id: \.offset) { _, zone in
+				let isHovered = hovered == zone.0
+				RoundedRectangle(cornerRadius: theme.metrics.radiusM, style: .continuous)
+					.fill(MachmanColors.selection.opacity(isHovered ? 0.16 : 0.05))
+					.overlay {
+						RoundedRectangle(
+							cornerRadius: theme.metrics.radiusM, style: .continuous)
+							.strokeBorder(
+								MachmanColors.selection.opacity(isHovered ? 0.7 : 0.25),
+								style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+					}
+					.overlay {
+						zoneLabel(zone.0)
+							.opacity(isHovered ? 1 : 0.55)
+					}
+					.frame(width: zone.1.width, height: zone.1.height)
+					.offset(x: zone.1.minX, y: zone.1.minY)
+					.animation(.easeOut(duration: 0.12), value: isHovered)
+			}
+			ghost(at: location)
+		}
+		.allowsHitTesting(false)
+	}
+
+	@ViewBuilder
+	private func zoneLabel(_ zone: CanvasDropZone) -> some View {
+		switch zone {
+		case .pane:
+			Label("Move Here", systemImage: MachmanSymbols.moveHere)
+				.font(.system(size: 11, weight: .medium))
+		case .newTrailing, .newLeading:
+			Label("Split", systemImage: MachmanSymbols.splitRight)
+				.font(.system(size: 11, weight: .medium))
+		}
+	}
+
+	@ViewBuilder
+	private func ghost(at location: CGPoint) -> some View {
+		if let drag = tabDrag {
+			HStack(spacing: 5) {
+				Image(systemName: tabSymbol(drag.tab)).font(.system(size: 10))
+				Text(tabTitle(drag.tab)).font(.system(size: 11.5))
+			}
+			.padding(.horizontal, 10)
+			.padding(.vertical, 5)
+			.machmanGlassCapsule(prominent: true)
+			.offset(x: location.x + 10, y: location.y + 8)
+		}
+	}
+
 	// MARK: - Content
 
 	@ViewBuilder
 	private func paneContent(_ pane: CanvasPane) -> some View {
 		switch pane.active {
 		case nil:
-			Text("No tab open")
-				.foregroundColor(.secondary)
+			emptyCanvas
 		case .config:
 			VMConfigTabView(vm: vm, viewModel: viewModel)
 		case .terminal(let ref):
@@ -238,10 +458,172 @@ struct VMCanvasView: View {
 		}
 	}
 
-	// Prefer the server's guest device name; fall back to a derived one if the list lags.
-	private func displayName(_ ref: SerialPortRef) -> String {
-		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-		return ports?.first(where: { $0.index == ref.index })?.guestDevice
-			?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
+	private var emptyCanvas: some View {
+		VStack(spacing: 10) {
+			Image(systemName: MachmanSymbols.vm)
+				.font(.system(size: 36, weight: .light))
+				.foregroundStyle(.tertiary)
+			Text("No open tabs")
+				.font(.title3)
+				.foregroundStyle(.secondary)
+			Text("Click the VM, a console, or a UART in the sidebar to open it here.")
+				.font(.callout)
+				.foregroundStyle(.tertiary)
+			Button {
+				mutate { $0.open(.config) }
+			} label: {
+				Label("Open \(vm.name)", systemImage: MachmanSymbols.tabConfig)
+			}
+			.buttonStyle(MachmanButtonStyle())
+			.padding(.top, 4)
+		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+	}
+
+	// MARK: - Tab metadata
+
+	private func isTerminal(_ tab: VMPaneTab) -> Bool {
+		if case .terminal = tab { return true }
+		return false
+	}
+
+	private func tabSymbol(_ tab: VMPaneTab) -> String {
+		switch tab {
+		case .config:
+			return MachmanSymbols.tabConfig
+		case .terminal(let ref):
+			return ref.kind == .console
+				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart
+		}
+	}
+
+	private func tabTitle(_ tab: VMPaneTab) -> String {
+		switch tab {
+		case .config:
+			return vm.name
+		case .terminal(let ref):
+			let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
+			return ports?.first(where: { $0.index == ref.index })?.guestDevice
+				?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
+		}
+	}
+}
+
+// MARK: - Tab item ----------------------------------------------------------------------------
+
+// One strip tab (demo design): the icon swaps to a close button on hover, style follows the
+// theme's tab style, and the custom drag gesture drives reorder/detach in the parent.
+private struct CanvasTabItem: View {
+	let title: String
+	let symbol: String
+	let isTerminal: Bool
+	let selected: Bool
+	let dragging: Bool
+	let detachedDrag: Bool
+	let dragOffset: CGSize
+	let canSplit: Bool
+	let hasSiblings: Bool
+	let tabStyle: MachmanTabStyle
+	let metrics: MachmanMetrics
+	let onSelect: () -> Void
+	let onClose: () -> Void
+	let onCloseOthers: () -> Void
+	let onSplit: () -> Void
+	let onTearOff: () -> Void
+	let onDragChanged: (DragGesture.Value) -> Void
+	let onDragEnded: () -> Void
+	let reportFrame: (CGRect) -> Void
+	@State private var hovering = false
+
+	var body: some View {
+		HStack(spacing: 5) {
+			iconOrClose
+			Text(title)
+				.font(.system(size: metrics.tabFontSize,
+					weight: selected ? .medium : .regular))
+				.lineLimit(1)
+		}
+		.padding(.horizontal, metrics.padM)
+		.frame(height: metrics.tabHeight)
+		.background(tabBackground)
+		.contentShape(Rectangle())
+		.opacity(detachedDrag && dragging ? 0.15 : 1)
+		.offset(dragOffset)
+		.zIndex(dragging ? 5 : 0)
+		.onHover { hovering = $0 }
+		.background(GeometryReader { geo in
+			Color.clear
+				.onAppear { reportFrame(geo.frame(in: .named("machman-canvas"))) }
+				.onChange(of: geo.frame(in: .named("machman-canvas"))) {
+					reportFrame(geo.frame(in: .named("machman-canvas")))
+				}
+		})
+		.onTapGesture { onSelect() }
+		.gesture(
+			DragGesture(minimumDistance: 5, coordinateSpace: .named("machman-canvas"))
+				.onChanged { onDragChanged($0) }
+				.onEnded { _ in onDragEnded() }
+		)
+		.contextMenu { menu }
+		.help(title)
+	}
+
+	// Xcode behavior: the tab's icon swaps to a close button on hover.
+	@ViewBuilder
+	private var iconOrClose: some View {
+		if hovering && !dragging {
+			Button(action: onClose) {
+				Image(systemName: MachmanSymbols.closeTab)
+					.font(.system(size: 9, weight: .bold))
+					.frame(width: 14, height: 14)
+					.background(Circle().fill(Color.primary.opacity(0.12)))
+			}
+			.buttonStyle(.plain)
+			.help("Close tab" + (isTerminal ? " (disconnects)" : ""))
+		} else {
+			Image(systemName: symbol)
+				.font(.system(size: metrics.tabFontSize - 1))
+				.foregroundStyle(selected && isTerminal ? MachmanColors.selection : .secondary)
+				.frame(width: 14, height: 14)
+		}
+	}
+
+	@ViewBuilder
+	private var tabBackground: some View {
+		switch tabStyle {
+		case .rectangular:
+			Rectangle().fill(Color.primary.opacity(
+				selected ? MachmanColors.activeOverlay
+					: (hovering ? MachmanColors.hoverOverlay : 0)))
+		case .capsule:
+			if selected {
+				Capsule().fill(MachmanColors.selection.opacity(0.16))
+					.overlay(Capsule().strokeBorder(MachmanColors.selection.opacity(0.35)))
+			} else {
+				Capsule().fill(Color.primary.opacity(
+					hovering ? MachmanColors.hoverOverlay : 0.04))
+			}
+		}
+	}
+
+	@ViewBuilder
+	private var menu: some View {
+		Button("Close Tab") { onClose() }
+		if hasSiblings {
+			Button("Close Other Tabs") { onCloseOthers() }
+		}
+		Divider()
+		if canSplit {
+			Button {
+				onSplit()
+			} label: {
+				Label("Split Right", systemImage: MachmanSymbols.splitRight)
+			}
+		}
+		Button {
+			onTearOff()
+		} label: {
+			Label("Move to New Window", systemImage: MachmanSymbols.newWindow)
+		}
 	}
 }
