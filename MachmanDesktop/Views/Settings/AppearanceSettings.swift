@@ -18,12 +18,17 @@ enum ThemeKeys {
 	static let glass = "MachmanThemeGlass"
 	static let scheme = "MachmanThemeScheme"
 	static let accent = "MachmanThemeAccent"
+	// Explicit tab sizing in points; 0/absent = auto (derived from the scales).
+	static let tabHeight = "MachmanThemeTabHeight"
+	static let tabFontSize = "MachmanThemeTabFontSize"
 }
 
 extension MachmanTheme {
 	static func fromDefaults(_ defaults: UserDefaults = .standard) -> MachmanTheme {
 		let density = defaults.double(forKey: ThemeKeys.density)
 		let fontScale = defaults.double(forKey: ThemeKeys.fontScale)
+		let tabHeight = defaults.double(forKey: ThemeKeys.tabHeight)
+		let tabFont = defaults.double(forKey: ThemeKeys.tabFontSize)
 		return MachmanTheme(
 			tabStyle: defaults.string(forKey: ThemeKeys.tabStyle)
 				.flatMap(MachmanTabStyle.init) ?? .rectangular,
@@ -34,7 +39,9 @@ extension MachmanTheme {
 			scheme: defaults.string(forKey: ThemeKeys.scheme)
 				.flatMap(MachmanScheme.init) ?? .system,
 			accent: defaults.string(forKey: ThemeKeys.accent)
-				.flatMap(MachmanAccent.init) ?? .system)
+				.flatMap(MachmanAccent.init) ?? .system,
+			tabHeightOverride: tabHeight > 0 ? tabHeight : nil,
+			tabFontOverride: tabFont > 0 ? tabFont : nil)
 	}
 }
 
@@ -45,6 +52,8 @@ struct AppearanceSettingsView: View {
 		= MachmanTabStyle.rectangular.rawValue
 	@AppStorage(ThemeKeys.density) private var density = 1.0
 	@AppStorage(ThemeKeys.fontScale) private var fontScale = 1.0
+	@AppStorage(ThemeKeys.tabHeight) private var tabHeight = 0.0
+	@AppStorage(ThemeKeys.tabFontSize) private var tabFontSize = 0.0
 
 	var body: some View {
 		Form {
@@ -90,10 +99,46 @@ struct AppearanceSettingsView: View {
 					schemeRaw = MachmanScheme.system.rawValue
 					accentRaw = MachmanAccent.system.rawValue
 					tabStyleRaw = MachmanTabStyle.rectangular.rawValue
+					tabHeight = 0
+					tabFontSize = 0
 				}
+			}
+			Section("Tab Bar") {
+				LabeledContent("Tab height") {
+					Slider(
+						value: explicitBinding($tabHeight, auto: 25),
+						in: MachmanMetrics.tabHeightRange, step: 1)
+					Text(tabHeight > 0 ? "\(Int(tabHeight)) pt" : "auto")
+						.monospacedDigit()
+						.frame(width: 44, alignment: .trailing)
+				}
+				LabeledContent("Tab font size") {
+					Slider(
+						value: explicitBinding($tabFontSize, auto: 11.5),
+						in: MachmanMetrics.tabFontRange, step: 0.5)
+					Text(tabFontSize > 0
+						? tabFontSize.formatted(.number.precision(.fractionLength(0...1)))
+							+ " pt"
+						: "auto")
+						.monospacedDigit()
+						.frame(width: 44, alignment: .trailing)
+				}
+				Button("Follow Density & Font Size") {
+					tabHeight = 0
+					tabFontSize = 0
+				}
+				.help("Clears the explicit sizes; tabs derive from the sliders above again")
 			}
 		}
 		.formStyle(.grouped)
+	}
+
+	// 0 means auto: the slider shows the derived default until the user drags it, which
+	// makes the value explicit.
+	private func explicitBinding(_ storage: Binding<Double>, auto: Double) -> Binding<Double> {
+		Binding(
+			get: { storage.wrappedValue > 0 ? storage.wrappedValue : auto },
+			set: { storage.wrappedValue = $0 })
 	}
 }
 

@@ -22,16 +22,6 @@ struct MachmanDesktopApp: App {
 	@StateObject var profiles = TerminalProfileStore()
 	// The selected VM (the sidebar's selection). Serial ports open as tabs, they are not selected.
 	@State var selection: String? = nil
-	// Theme knobs, observed here so every scene re-resolves MachmanTheme when Settings
-	// changes them (values read through MachmanTheme.fromDefaults()).
-	@AppStorage(ThemeKeys.tabStyle) private var themeTabStyle
-		= MachmanTabStyle.rectangular.rawValue
-	@AppStorage(ThemeKeys.density) private var themeDensity = 1.0
-	@AppStorage(ThemeKeys.fontScale) private var themeFontScale = 1.0
-	@AppStorage(ThemeKeys.scheme) private var themeScheme = MachmanScheme.system.rawValue
-	@AppStorage(ThemeKeys.accent) private var themeAccent = MachmanAccent.system.rawValue
-
-	private var theme: MachmanTheme { .fromDefaults() }
 
 	init() {
 		let connection = DaemonConnection()
@@ -46,7 +36,7 @@ struct MachmanDesktopApp: App {
 
 	var body: some Scene {
 		WindowGroup {
-			Group {
+			ThemedRoot {
 				if let viewModel = connection.viewModel {
 					VMNavigationView(
 						viewModel: viewModel, selection: $selection, profiles: profiles,
@@ -56,7 +46,6 @@ struct MachmanDesktopApp: App {
 					ConnectingView(connection: connection)
 				}
 			}
-			.machmanThemed(theme)
 		}
 		.commands {
 			CommandGroup(before: .sidebar) {
@@ -220,24 +209,38 @@ struct MachmanDesktopApp: App {
 		// them across relaunches. The terminal reparents from the app-scoped sessions.
 		WindowGroup(id: "torn-tab", for: TornTab.self) { $payload in
 			if let payload {
-				TornTabWindowView(
-					connection: connection, profiles: profiles, payload: payload)
-					.machmanThemed(theme)
+				ThemedRoot {
+					TornTabWindowView(
+						connection: connection, profiles: profiles, payload: payload)
+				}
 			}
 		}
 		.defaultSize(width: 800, height: 520)
 		Settings {
-			SettingsRootView(profiles: profiles)
-				.machmanThemed(theme)
+			ThemedRoot {
+				SettingsRootView(profiles: profiles)
+			}
 		}
 	}
 }
 
-extension View {
-	// One window-level application of the resolved theme: environment for MachmanUI,
-	// the color scheme, and the accent.
-	func machmanThemed(_ theme: MachmanTheme) -> some View {
-		environment(\.machmanTheme, theme)
+// Window-level theme application. A VIEW (not App-level state) so the @AppStorage knobs
+// reliably invalidate the hierarchy the moment Settings changes them: environment for
+// MachmanUI, the color scheme, and the accent tint.
+private struct ThemedRoot<Content: View>: View {
+	@AppStorage(ThemeKeys.tabStyle) private var tabStyle = MachmanTabStyle.rectangular.rawValue
+	@AppStorage(ThemeKeys.density) private var density = 1.0
+	@AppStorage(ThemeKeys.fontScale) private var fontScale = 1.0
+	@AppStorage(ThemeKeys.scheme) private var scheme = MachmanScheme.system.rawValue
+	@AppStorage(ThemeKeys.accent) private var accent = MachmanAccent.system.rawValue
+	@AppStorage(ThemeKeys.tabHeight) private var tabHeight = 0.0
+	@AppStorage(ThemeKeys.tabFontSize) private var tabFontSize = 0.0
+	@ViewBuilder var content: Content
+
+	var body: some View {
+		let theme = MachmanTheme.fromDefaults()
+		content
+			.environment(\.machmanTheme, theme)
 			.preferredColorScheme(theme.scheme.colorScheme)
 			.tint(theme.accent.color)
 	}

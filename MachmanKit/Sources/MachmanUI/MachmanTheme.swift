@@ -40,28 +40,43 @@ public enum MachmanColors {
 public struct MachmanMetrics {
 	public let scale: CGFloat
 	public let fontScale: CGFloat
+	// Explicit tab sizing (Settings knobs); nil derives from the scales as before.
+	public let tabHeightOverride: CGFloat?
+	public let tabFontOverride: CGFloat?
 
 	public static let scaleRange: ClosedRange<Double> = 0.7...1.4
 	public static let scaleStep = 0.05
 	public static let fontScaleRange: ClosedRange<Double> = 0.8...1.3
 	public static let fontScaleStep = 0.05
+	public static let tabHeightRange: ClosedRange<Double> = 18...40
+	public static let tabFontRange: ClosedRange<Double> = 9...16
 
-	public init(scale: CGFloat = 1.0, fontScale: CGFloat = 1.0) {
+	public init(
+		scale: CGFloat = 1.0, fontScale: CGFloat = 1.0,
+		tabHeightOverride: CGFloat? = nil, tabFontOverride: CGFloat? = nil
+	) {
 		self.scale = scale
 		self.fontScale = fontScale
+		self.tabHeightOverride = tabHeightOverride
+		self.tabFontOverride = tabFontOverride
 	}
 
 	public var radiusS: CGFloat { 5 }
 	public var radiusM: CGFloat { 8 }
 	public var radiusL: CGFloat { 12 }
 	public var treeRowHeight: CGFloat { max(16, (24 * scale).rounded()) }
-	public var tabHeight: CGFloat { max(18, (25 * scale).rounded()) }
-	public var tabStripHeight: CGFloat { max(24, (33 * scale).rounded()) }
+	public var tabHeight: CGFloat {
+		tabHeightOverride.map { max(16, $0.rounded()) } ?? max(18, (25 * scale).rounded())
+	}
+	// The strip tracks the tab height so the explicit knob moves both.
+	public var tabStripHeight: CGFloat { tabHeight + max(6, (8 * scale).rounded()) }
 	public var padS: CGFloat { max(2, (4 * scale).rounded()) }
 	public var padM: CGFloat { max(4, (8 * scale).rounded()) }
 	public var padL: CGFloat { max(8, (12 * scale).rounded()) }
 	public var rowFontSize: CGFloat { max(10, (12.5 * fontScale).rounded()) }
-	public var tabFontSize: CGFloat { max(10, (11.5 * fontScale).rounded()) }
+	public var tabFontSize: CGFloat {
+		tabFontOverride.map { max(8, $0.rounded()) } ?? max(10, (11.5 * fontScale).rounded())
+	}
 	public var iconSize: CGFloat { max(10, (13 * fontScale).rounded()) }
 }
 
@@ -115,11 +130,15 @@ public struct MachmanTheme {
 	public var glass: MachmanGlassLevel
 	public var scheme: MachmanScheme
 	public var accent: MachmanAccent
+	// Explicit tab sizing in points; nil = derive from the scales.
+	public var tabHeightOverride: Double?
+	public var tabFontOverride: Double?
 
 	public init(
 		tabStyle: MachmanTabStyle = .rectangular, density: Double = 1.0,
 		fontScale: Double = 1.0, glass: MachmanGlassLevel = .standard,
-		scheme: MachmanScheme = .system, accent: MachmanAccent = .system
+		scheme: MachmanScheme = .system, accent: MachmanAccent = .system,
+		tabHeightOverride: Double? = nil, tabFontOverride: Double? = nil
 	) {
 		self.tabStyle = tabStyle
 		self.density = density
@@ -127,9 +146,16 @@ public struct MachmanTheme {
 		self.glass = glass
 		self.scheme = scheme
 		self.accent = accent
+		self.tabHeightOverride = tabHeightOverride
+		self.tabFontOverride = tabFontOverride
 	}
 
-	public var metrics: MachmanMetrics { MachmanMetrics(scale: density, fontScale: fontScale) }
+	public var metrics: MachmanMetrics {
+		MachmanMetrics(
+			scale: density, fontScale: fontScale,
+			tabHeightOverride: tabHeightOverride.map { CGFloat($0) },
+			tabFontOverride: tabFontOverride.map { CGFloat($0) })
+	}
 	public var accentColor: Color { accent.color ?? .accentColor }
 }
 
