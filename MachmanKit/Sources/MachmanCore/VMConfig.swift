@@ -393,7 +393,18 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	func addMountPoint(_ mountPoint: HostMountPoint) throws {
-		mountPoints.append(mountPoint)
+		// Same rules as setMountTag — a duplicate tag would TRAP the vmhost at start
+		// (the share dictionary is built with uniqueKeysWithValues).
+		var mount = mountPoint
+		mount.tag = mount.tag.trimmingCharacters(in: .whitespaces)
+		guard !mount.tag.isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
+		}
+		guard !mountPoints.contains(where: { $0.tag == mount.tag }) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "a mount tagged '\(mount.tag)' already exists")
+		}
+		mountPoints.append(mount)
 		try saveVMConfig()
 	}
 	func removeMountPoint(_ mountPoint: HostMountPoint) throws {

@@ -129,6 +129,24 @@ struct DeviceConfigTests {
 		}
 	}
 
+	@Test func addMountPointValidatesTags() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("mtags")
+			try vm.addMountPoint(HostMountPoint(path: "/tmp", tag: "data"))
+			// A duplicate tag would trap the vmhost's share dictionary at start.
+			#expect(throws: MachmanError.self) {
+				try vm.addMountPoint(HostMountPoint(path: "/tmp/b", tag: "data"))
+			}
+			#expect(throws: MachmanError.self) {
+				try vm.addMountPoint(HostMountPoint(path: "/tmp/c", tag: "   "))
+			}
+			// Whitespace trims into the stored tag.
+			try vm.addMountPoint(HostMountPoint(path: "/tmp/d", tag: "  logs "))
+			#expect(vm.mountPoints.map(\.tag) == ["data", "logs"])
+			_ = vm.directoryShareDeviceConfig(mainTag: "host-share")   // must not trap
+		}
+	}
+
 	@Test func kernelOverridesPersistOnlyWhenPresent() throws {
 		try VMTestDir.withRedirectedDir {
 			let vm = try makeVM("kern")
