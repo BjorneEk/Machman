@@ -37,6 +37,10 @@ struct VMDeviceTreeView: View {
 	@State private var renamingNode: SidebarNode?
 	// A drag hovering a section: drives the would-be preview row + copy/forbidden cursor.
 	@State private var dragPreview: TreeDragPreview?
+	// The List's selection buffer: macOS sidebar Lists write their selection binding
+	// MID-view-update, so binding a @Published set directly warns ("Publishing changes
+	// from within view updates") on every click. The @Published mirror syncs deferred.
+	@State private var localSelection: Set<SidebarNode> = []
 	// Expiry watchdog: dropExited is not guaranteed on session cancel, so every delegate
 	// touch bumps the generation and the preview clears after two quiet seconds.
 	@State private var dragGeneration = 0
@@ -85,7 +89,7 @@ struct VMDeviceTreeView: View {
 	}
 
 	private var treeList: some View {
-		List(selection: $viewModel.treeSelection) {
+		List(selection: $localSelection) {
 			vmRootRow
 			diskGroup
 			mountGroup
@@ -99,15 +103,32 @@ struct VMDeviceTreeView: View {
 		.listStyle(.sidebar)
 		.environment(\.defaultMinListRowHeight, theme.metrics.treeRowHeight)
 		.font(.system(size: theme.metrics.rowFontSize))
+		// A remount (VM switch, reconnect) starts from the surviving published selection.
+		.onAppear { localSelection = viewModel.treeSelection }
+		// Mirror + open side effects run DEFERRED — the click lands mid-update.
+		.onChange(of: localSelection) {
+			let selection = localSelection
+			DispatchQueue.main.async { [weak viewModel] in
+				guard let viewModel, viewModel.treeSelection != selection else { return }
+				viewModel.treeSelection = selection
+				if selection.count == 1, let node = selection.first {
+					openNode(node)
+				}
+			}
+		}
+		// Programmatic selection (row menus, batch actions) flows back into the List.
 		.onChange(of: viewModel.treeSelection) {
-			guard viewModel.treeSelection.count == 1,
-				let node = viewModel.treeSelection.first else { return }
-			openNode(node)
+			if localSelection != viewModel.treeSelection {
+				localSelection = viewModel.treeSelection
+			}
 		}
 		// The tree shows ONE VM; stale nodes must not survive into another VM's tree.
 		.onChange(of: vm.name) {
-			viewModel.treeSelection = []
+			localSelection = []
 			dragPreview = nil
+			DispatchQueue.main.async { [weak viewModel] in
+				viewModel?.treeSelection = []
+			}
 		}
 		.onChange(of: dragGeneration) {
 			dragWatchdog?.cancel()
