@@ -320,14 +320,21 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var serialGroup: some View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
+		// The login installer lives with the consoles it serves, not in Devices.
+		let installer = (vm.devices ?? []).first { $0.kind == .consoleLoginInstaller }
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count) {
+			count: ports.count + (installer == nil ? 0 : 1)) {
 			// Search matches the display name AND the raw guest device (hvc0 finds
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {
 				matches($0.displayName(mode: vm.boot.mode)) || matches($0.guestDevice)
 			}) { port in
 				serialRow(port)
+			}
+			if let installer, matches(installer.kind.displayLabel) {
+				deviceRow(installer)
+					.tag(SidebarNode.device(installer.kind))
+					.contextMenu { deviceMenu(installer) }
 			}
 		}
 	}
@@ -416,7 +423,8 @@ struct VMDeviceTreeView: View {
 	// (Rosetta not installed, nested unsupported) carries the warning + reason.
 	@ViewBuilder
 	private var deviceGroup: some View {
-		let devices = vm.devices ?? []
+		// The login installer renders under Serial instead.
+		let devices = (vm.devices ?? []).filter { $0.kind != .consoleLoginInstaller }
 		group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
 			count: devices.count) {
 			ForEach(devices.filter { matches($0.kind.displayLabel) }) { device in

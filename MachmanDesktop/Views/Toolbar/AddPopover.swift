@@ -89,6 +89,19 @@ struct AddPopover: View {
 					dismiss()
 				}
 				uartTile
+				// The console companion (macOS guests): lives with the ports it serves.
+				if vm.boot.mode == .macOS,
+					!(vm.devices ?? []).contains(where: {
+						$0.kind == .consoleLoginInstaller
+					}) {
+					AddTile(symbol: MachmanSymbols.deviceLoginInstaller,
+						caption: "Login Installer",
+						tooltip: "Add Login Installer — sets up login prompts on this "
+							+ "VM's consoles from inside the macOS guest") {
+						viewModel.addDevice(vm.name, kind: .consoleLoginInstaller)
+						dismiss()
+					}
+				}
 			}
 			if !missing.isEmpty {
 				Divider()
@@ -130,6 +143,7 @@ struct AddPopover: View {
 			switch kind {
 			case .trackpad: return macGuest
 			case .clipboard, .rosetta: return !macGuest
+			case .consoleLoginInstaller: return false   // its tile lives in Serial
 			default: return true
 			}
 		}

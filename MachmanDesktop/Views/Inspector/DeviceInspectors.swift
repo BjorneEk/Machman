@@ -30,6 +30,8 @@ struct DeviceInspector: View {
 				ClipboardInspector(viewModel: viewModel, vm: vm, device: device)
 			case .rosetta:
 				RosettaInspector(viewModel: viewModel, vm: vm, device: device)
+			case .consoleLoginInstaller:
+				LoginInstallerInspector(viewModel: viewModel, vm: vm, device: device)
 			case .unknown:
 				NoSelectionInspector()
 			default:
@@ -437,4 +439,108 @@ struct RosettaInspector: View {
 	private static let setupCommand = "mount -t virtiofs rosetta /media/rosetta\n"
 		+ "/media/rosetta/rosetta must be registered with binfmt_misc "
 		+ "(see Apple's VZLinuxRosettaDirectoryShare docs)"
+}
+
+// MARK: - Login Installer ----------------------------------------------------------------------
+
+// The macOS-guest console login installer: a read-only folder (a generated install script)
+// automounting in the guest; one command installs a login prompt per console.
+struct LoginInstallerInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	let device: DeviceInfo
+	@State private var showGuide = false
+
+	// The enabled consoles' guest device names — what the script will cover.
+	private var consoleNames: [String] {
+		let count = (vm.consolePorts ?? []).filter(\.isEnabled).count
+		return (0..<count).map {
+			SerialPortKind.console.guestDevice(index: $0, os: .macOS)
+		}
+	}
+
+	private static let guestCommand = "sudo sh \"/Volumes/My Shared Files/"
+		+ "\(ConsoleLoginInstallerInfo.directoryName)/"
+		+ "\(ConsoleLoginInstallerInfo.scriptName)\""
+
+	var body: some View {
+		Form {
+			if let gate = device.unavailable {
+				Section {
+					Label {
+						VStack(alignment: .leading, spacing: 3) {
+							Text("Unavailable on this host")
+								.fontWeight(.medium)
+							Text(gate.message)
+								.font(.caption)
+								.foregroundStyle(.secondary)
+								.fixedSize(horizontal: false, vertical: true)
+						}
+					} icon: {
+						Image(systemName: MachmanSymbols.warning)
+							.foregroundStyle(MachmanColors.warning)
+					}
+				}
+			}
+			Section("Login Installer") {
+				Text("A read-only folder served to the macOS guest — it automounts as "
+					+ "part of the “My Shared Files” volume and carries an install "
+					+ "script that sets up a login prompt on every console.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				LabeledContent("Consoles covered") {
+					Text(consoleNames.isEmpty
+						? "none" : consoleNames.joined(separator: ", "))
+						.font(.system(.callout, design: .monospaced))
+				}
+				if consoleNames.isEmpty {
+					Text("Add a console first — the script has nothing to set up "
+						+ "without one.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			}
+			Section("Guest Setup") {
+				VStack(alignment: .leading, spacing: 6) {
+					Text("Boot the guest, then run in its Terminal:")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					HStack {
+						Text(Self.guestCommand)
+							.font(.system(.caption, design: .monospaced))
+							.textSelection(.enabled)
+						Spacer()
+						CopyToClipboardButton(Self.guestCommand, tooltip: "Copy command")
+					}
+					.padding(6)
+					.background(RoundedRectangle(cornerRadius: 5)
+						.fill(Color.primary.opacity(0.05)))
+					Text("Installs one login daemon per console — prompts appear "
+						+ "immediately. Re-run it after adding or removing consoles "
+						+ "(it cleans up removed ones); --uninstall removes the logins. "
+						+ "Afterwards this installer can be disabled or removed — the "
+						+ "logins persist in the guest.")
+						.font(.caption)
+						.foregroundStyle(.tertiary)
+						.fixedSize(horizontal: false, vertical: true)
+					Text("Volume missing (macOS 12 guests)? mkdir -p ~/shared && "
+						+ "mount_virtiofs com.apple.virtio-fs.automount ~/shared")
+						.font(.system(.caption2, design: .monospaced))
+						.foregroundStyle(.tertiary)
+						.fixedSize(horizontal: false, vertical: true)
+					Button {
+						showGuide = true
+					} label: {
+						Label("Setup Guide…", systemImage: MachmanSymbols.help)
+					}
+				}
+			}
+			DeviceImplementationSection(vm: vm, device: device)
+			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .consoleLoginInstaller)
+		}
+		.sheet(isPresented: $showGuide) {
+			ConsoleHelpSheet(mode: .macOS, guestIndex: 0)
+		}
+	}
 }
