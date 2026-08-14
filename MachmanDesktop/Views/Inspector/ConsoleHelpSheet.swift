@@ -30,14 +30,20 @@ struct ConsoleHelpSheet: View {
 		SerialPortKind.console.displayName(guestIndex: guestIndex, mode: mode)
 	}
 
+	// Type scale: review feedback said the guide read too small — the standard styles'
+	// sizes +20% (title3 15→18, callout 12→14.5, caption 10→12).
+	private static let titleSize: CGFloat = 18
+	private static let textSize: CGFloat = 14.5
+	private static let smallSize: CGFloat = 12
+
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
 			HStack(spacing: 8) {
 				Image(systemName: MachmanSymbols.help)
-					.font(.system(size: 20))
+					.font(.system(size: 24))
 					.foregroundStyle(.secondary)
 				Text("Console Setup — \(portLabel)")
-					.font(.title3.weight(.semibold))
+					.font(.system(size: Self.titleSize, weight: .semibold))
 				Spacer()
 			}
 			if mode == .efi {
@@ -58,12 +64,11 @@ struct ConsoleHelpSheet: View {
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.padding(.vertical, 2)
 			}
-			.frame(minHeight: 280, maxHeight: 400)
+			.frame(minHeight: 300, maxHeight: 440)
 			Divider()
 			HStack(alignment: .firstTextBaseline) {
-				Text("All commands run inside the virtual machine — nothing on your Mac "
-					+ "is modified.")
-					.font(.caption)
+				Text(footerText)
+					.font(.system(size: Self.smallSize))
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
 				Spacer()
@@ -72,7 +77,18 @@ struct ConsoleHelpSheet: View {
 			}
 		}
 		.padding(22)
-		.frame(width: 520)
+		.frame(width: 560)
+	}
+
+	// The FreeBSD tab's QEMU steps are the one place commands run on the Mac (Homebrew +
+	// booting the image in your terminal) — the blanket claim would be wrong there.
+	private var footerText: String {
+		if mode == .efi && tab == .freebsd {
+			return "Steps 1–3 run inside the virtual machine; the QEMU route runs in your "
+				+ "Mac's terminal and only touches the disk image you point it at."
+		}
+		return "All commands run inside the virtual machine — nothing on your Mac is "
+			+ "modified."
 	}
 
 	// MARK: - Linux (EFI + the guide is never shown for kernel boots)
@@ -169,7 +185,7 @@ struct ConsoleHelpSheet: View {
 
 	private func intro(_ text: String) -> some View {
 		Text(text)
-			.font(.callout)
+			.font(.system(size: Self.textSize))
 			.foregroundStyle(.secondary)
 			.fixedSize(horizontal: false, vertical: true)
 	}
@@ -177,12 +193,12 @@ struct ConsoleHelpSheet: View {
 	private func step(_ number: Int, _ text: String) -> some View {
 		HStack(alignment: .firstTextBaseline, spacing: 8) {
 			Text("\(number)")
-				.font(.caption.weight(.semibold))
+				.font(.system(size: Self.smallSize, weight: .semibold))
 				.monospacedDigit()
-				.frame(width: 17, height: 17)
+				.frame(width: 20, height: 20)
 				.background(Circle().fill(Color.primary.opacity(0.08)))
 			Text(text)
-				.font(.callout)
+				.font(.system(size: Self.textSize))
 				.fixedSize(horizontal: false, vertical: true)
 		}
 	}
@@ -190,22 +206,22 @@ struct ConsoleHelpSheet: View {
 	private func command(_ cmd: String) -> some View {
 		HStack {
 			Text(cmd)
-				.font(.system(.caption, design: .monospaced))
+				.font(.system(size: Self.smallSize, design: .monospaced))
 				.textSelection(.enabled)
 				.fixedSize(horizontal: false, vertical: true)
 			Spacer(minLength: 6)
 			CopyToClipboardButton(cmd, tooltip: "Copy")
 		}
-		.padding(6)
+		.padding(7)
 		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
-		.padding(.leading, 25)
+		.padding(.leading, 28)
 	}
 
 	private func note(_ text: String) -> some View {
 		Text(text)
-			.font(.caption)
+			.font(.system(size: Self.smallSize))
 			.foregroundStyle(.secondary)
 			.fixedSize(horizontal: false, vertical: true)
-			.padding(.leading, 25)
+			.padding(.leading, 28)
 	}
 }
