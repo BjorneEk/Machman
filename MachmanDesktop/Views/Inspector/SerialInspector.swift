@@ -5,7 +5,8 @@
 //  The serial-port inspector (1.0.4 UI), absorbing the old TerminalInfoPanel: host
 //  unavailability (a gated uart leads with the reason), terminal profile with New/Edit and
 //  the Reload hint when startup-only settings drifted, the data-plane socket, per-port file
-//  logging, guest device names + setup notes, and — for uarts — the probed platform info.
+//  logging, guest device names by boot mode (+ the console Setup Guide sheet), and — for
+//  uarts — the probed platform info.
 //
 
 import SwiftUI
@@ -19,6 +20,7 @@ struct SerialInspector: View {
 	@ObservedObject var sessions: TerminalSessions
 	@ObservedObject var profiles: TerminalProfileStore
 	@Environment(\.openSettings) private var openSettings
+	@State private var showSetupGuide = false
 
 	private var kind: SerialPortKind { ref.kind }
 	private var index: Int { ref.index }
@@ -28,6 +30,9 @@ struct SerialInspector: View {
 		return ports?.first { $0.index == index }
 	}
 	private var gate: UnavailabilityInfo? { port?.unavailable }
+	// The compacted index the guest actually sees (older daemons don't serve it — fall
+	// back to the config position, matching their config-indexed guestDevice).
+	private var guestIndex: Int { port?.guestIndex ?? index }
 
 	var body: some View {
 		Form {
@@ -55,6 +60,9 @@ struct SerialInspector: View {
 			if kind == .uart, port?.mmioBase != nil || port?.irq != nil {
 				platformSection
 			}
+		}
+		.sheet(isPresented: $showSetupGuide) {
+			ConsoleHelpSheet(mode: vm.boot.mode, guestIndex: guestIndex)
 		}
 	}
 
@@ -207,23 +215,43 @@ struct SerialInspector: View {
 
 	// MARK: - Guest device / platform
 
+	// Device rows match the boot mode: a kernel boot IS Linux, a macOS guest is macOS, and
+	// an EFI guest can boot anything — show the plausible conventions. Consoles on EFI and
+	// macOS get the Setup Guide sheet instead of a cramped caption.
 	private var guestDeviceSection: some View {
 		Section("Guest Device") {
-			LabeledContent("Linux") {
-				Text("/dev/" + kind.guestDevice(index: index, macGuest: false))
-					.font(.system(.callout, design: .monospaced))
+			switch (kind, vm.boot.mode) {
+			case (.console, .efi):
+				deviceRow("Linux", os: .linux)
+				deviceRow("FreeBSD", os: .freebsd)
+				setupGuideButton
+			case (.console, .macOS):
+				deviceRow("macOS", os: .macOS)
+				setupGuideButton
+			case (.console, .linuxKernel), (.uart, _):
+				deviceRow("Linux", os: .linux)
+				Text(setupNote)
+					.font(.caption)
+					.foregroundColor(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
 			}
-			if kind == .console {
-				LabeledContent("macOS") {
-					Text("/dev/" + kind.guestDevice(index: index, macGuest: true))
-						.font(.system(.callout, design: .monospaced))
-				}
-			}
-			Text(setupNote)
-				.font(.caption)
-				.foregroundColor(.secondary)
-				.fixedSize(horizontal: false, vertical: true)
 		}
+	}
+
+	private func deviceRow(_ label: String, os: SerialGuestOS) -> some View {
+		LabeledContent(label) {
+			Text("/dev/" + kind.guestDevice(index: guestIndex, os: os))
+				.font(.system(.callout, design: .monospaced))
+		}
+	}
+
+	private var setupGuideButton: some View {
+		Button {
+			showSetupGuide = true
+		} label: {
+			Label("Setup Guide…", systemImage: MachmanSymbols.help)
+		}
+		.help("How to set up this console inside the guest OS")
 	}
 
 	// From the generated platform info the daemon serves for uarts.
@@ -242,17 +270,17 @@ struct SerialInspector: View {
 		}
 	}
 
+	// Only the caption cases remain: kernel-boot consoles + uarts (consoles on EFI/macOS
+	// route to the Setup Guide sheet instead).
 	private var setupNote: String {
 		switch (kind, macGuest) {
-		case (.console, false):
-			return "Linux (systemd) starts a login on hvc\(index) automatically. Add "
-				+ "console=hvc\(index) to the kernel command line to also see boot messages."
+		case (.console, _):
+			return "Linux (systemd) starts a login on hvc\(guestIndex) automatically. Add "
+				+ "console=hvc\(guestIndex) to the kernel command line to also see boot "
+				+ "messages."
 		case (.uart, false):
-			return "Drivable by a bare-metal kernel, or add console=ttyAMA\(index) to a "
+			return "Drivable by a bare-metal kernel, or add console=ttyAMA\(guestIndex) to a "
 				+ "Linux kernel command line."
-		case (.console, true):
-			return "macOS runs no getty on serial by default — configure one in the guest "
-				+ "(launchd) to get a login shell."
 		case (.uart, true):
 			return "On a macOS guest the PL011 is the kernel debug UART; it needs reduced "
 				+ "security in the guest (boot-args serial=3) and has no userland device."

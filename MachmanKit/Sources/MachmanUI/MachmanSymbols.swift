@@ -36,6 +36,8 @@ public enum MachmanSymbols {
 	public static let duplicateVM = "plus.square.on.square"
 	public static let cancel = "xmark.circle.fill"
 	public static let info = "info.circle"
+	// Opens a setup-guide sheet (the console Setup Guide button).
+	public static let help = "questionmark.circle"
 	// Reserved: rendered by the MAC-regenerate button (phase 3.2).
 	public static let regenerate = "arrow.clockwise"
 
