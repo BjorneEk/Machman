@@ -64,7 +64,7 @@ struct ConsoleHelpSheet: View {
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.padding(.vertical, 2)
 			}
-			.frame(minHeight: 300, maxHeight: 440)
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			Divider()
 			HStack(alignment: .firstTextBaseline) {
 				Text(footerText)
@@ -77,7 +77,9 @@ struct ConsoleHelpSheet: View {
 			}
 		}
 		.padding(22)
-		.frame(width: 560)
+		// FIXED size on purpose: a min/max-height ScrollView inside a sheet makes the
+		// AppKit hosting view renegotiate during layout (_NSDetectedLayoutRecursion).
+		.frame(width: 560, height: 620)
 	}
 
 	// The FreeBSD tab's QEMU steps are the one place commands run on the Mac (Homebrew +
