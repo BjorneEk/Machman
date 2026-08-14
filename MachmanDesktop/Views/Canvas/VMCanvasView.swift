@@ -74,8 +74,12 @@ struct VMCanvasView: View {
 							alignment: .topLeading)
 				}
 			}
-			.onAppear { canvasSize = geo.size }
-			.onChange(of: geo.size) { canvasSize = geo.size }
+			// Sanctioned size reporter (a GeometryReader onChange fires multiple times per
+			// layout pass); the equality guard keeps a same-value report from invalidating
+			// state and cycling the layout.
+			.onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+				if canvasSize != size { canvasSize = size }
+			}
 		}
 		.coordinateSpace(name: "machman-canvas")
 		.background(Color(nsColor: .underPageBackgroundColor))
@@ -164,7 +168,7 @@ struct VMCanvasView: View {
 		.onGeometryChange(for: CGRect.self) { proxy in
 			proxy.frame(in: .named("machman-canvas"))
 		} action: { frame in
-			paneFrames[pane.id] = frame
+			if paneFrames[pane.id] != frame { paneFrames[pane.id] = frame }
 		}
 	}
 
@@ -191,7 +195,7 @@ struct VMCanvasView: View {
 						onTearOff: { tearOff(tab) },
 						onDragChanged: { updateTabDrag(tab: tab, pane: pane.id, value: $0) },
 						onDragEnded: { completeTabDrag() },
-						reportFrame: { tabFrames[tab] = $0 })
+						reportFrame: { if tabFrames[tab] != $0 { tabFrames[tab] = $0 } })
 					if theme.tabStyle == .rectangular && tab != pane.tabs.last {
 						Divider().frame(height: theme.metrics.tabHeight * 0.6)
 					}
@@ -205,7 +209,7 @@ struct VMCanvasView: View {
 		.onGeometryChange(for: CGRect.self) { proxy in
 			proxy.frame(in: .named("machman-canvas"))
 		} action: { frame in
-			stripFrames[pane.id] = frame
+			if stripFrames[pane.id] != frame { stripFrames[pane.id] = frame }
 		}
 		.background {
 			if theme.tabStyle == .rectangular {

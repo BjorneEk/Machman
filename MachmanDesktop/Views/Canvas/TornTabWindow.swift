@@ -78,10 +78,14 @@ struct TornTabWindowView: View {
 		}
 		// The OUTER view disappears only when the window closes (branch flips inside keep
 		// it mounted) — closing the window closes the tab, tearing down its terminal.
-		.onDisappear {
-			TornTabRegistry.shared.open.remove(payload)
-			if case .terminal(let ref) = payload.tab {
-				connection.terminals.dropController(vm: payload.vm, ref: ref)
+		// Deferred like the insert: both stores are @Published, and onDisappear runs
+		// mid-view-update.
+		.onDisappear { [payload, terminals = connection.terminals] in
+			DispatchQueue.main.async {
+				TornTabRegistry.shared.open.remove(payload)
+				if case .terminal(let ref) = payload.tab {
+					terminals.dropController(vm: payload.vm, ref: ref)
+				}
 			}
 		}
 	}
