@@ -749,7 +749,8 @@ public final class LocalMachman: MachmanControlling {
 					logPath: registry.serialLogPath(vm: vm, kind: kind, index: index),
 					mmioBase: nil, irq: nil,   // uart mmio/irq: filled once platform info exists
 					unavailable: uartIssue,
-					enabled: enabledFlag(port.enabled))
+					enabled: enabledFlag(port.enabled),
+					guestIndex: guestIndex)
 			}
 		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —

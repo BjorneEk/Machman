@@ -154,4 +154,20 @@ struct SerialConfigTests {
 			#expect(issue?.message.contains("com.apple.private.virtualization") == true)
 		}
 	}
+
+	// Per-OS guest device names (measured conventions: Linux hvc/ttyAMA, FreeBSD ttyV/ttyu,
+	// macOS cu.virtio with the bare index-0 name). The macGuest spelling stays an alias.
+	@Test func guestDeviceNamesPerOS() {
+		#expect(SerialPortKind.console.guestDevice(index: 0, os: .linux) == "hvc0")
+		#expect(SerialPortKind.console.guestDevice(index: 2, os: .linux) == "hvc2")
+		#expect(SerialPortKind.console.guestDevice(index: 0, os: .freebsd) == "ttyV0.0")
+		#expect(SerialPortKind.console.guestDevice(index: 1, os: .freebsd) == "ttyV1.0")
+		#expect(SerialPortKind.console.guestDevice(index: 0, os: .macOS) == "cu.virtio")
+		#expect(SerialPortKind.console.guestDevice(index: 1, os: .macOS) == "cu.virtio1")
+		#expect(SerialPortKind.uart.guestDevice(index: 0, os: .linux) == "ttyAMA0")
+		#expect(SerialPortKind.uart.guestDevice(index: 1, os: .freebsd) == "ttyu1")
+		#expect(SerialPortKind.uart.guestDevice(index: 0, os: .macOS) == "ttyAMA0")
+		#expect(SerialPortKind.console.guestDevice(index: 1, macGuest: true) == "cu.virtio1")
+		#expect(SerialPortKind.console.guestDevice(index: 1, macGuest: false) == "hvc1")
+	}
 }

@@ -91,6 +91,17 @@ struct WireFixtureTests {
 		#expect(try encode(minimal) == minExpected)
 		#expect(try decode(SerialPortInfo.self, minExpected) == minimal)
 
+		// The compacted guest index rides along when served (additive: the minimal case
+		// above proves absence still decodes — older daemons never send it).
+		let indexed = SerialPortInfo(
+			kind: .console, index: 2, guestDevice: "hvc1", logging: SerialLogConfig(),
+			enabled: true, guestIndex: 1)
+		let indexedExpected =
+			#"{"enabled":true,"guestDevice":"hvc1","guestIndex":1,"index":2,"kind":"console","#
+			+ #""logging":{"mode":"resetOnBoot"}}"#
+		#expect(try encode(indexed) == indexedExpected)
+		#expect(try decode(SerialPortInfo.self, indexedExpected) == indexed)
+
 		// A uart the host can't attach carries its reason; nil socket/mmio stay omitted.
 		let gated = SerialPortInfo(
 			kind: .uart, index: 0, guestDevice: "ttyAMA0", logging: SerialLogConfig(),

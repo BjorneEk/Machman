@@ -11,6 +11,15 @@
 
 import Foundation
 
+// Guest operating systems we can name serial devices for. A kernel boot is Linux by
+// construction; an EFI guest can be any of the non-mac ones — device names are per-OS
+// conventions, so the UI shows the plausible set instead of assuming Linux.
+public enum SerialGuestOS: String, Codable, Sendable {
+	case linux
+	case freebsd
+	case macOS
+}
+
 // Which family a serial port belongs to. Console = virtio console (needs a virtio driver in the
 // guest); uart = PL011 (drivable by bare-metal / minimal kernels).
 public enum SerialPortKind: String, Codable, Sendable, Equatable {
@@ -18,17 +27,28 @@ public enum SerialPortKind: String, Codable, Sendable, Equatable {
 	case uart
 
 	// The guest device name for the index-th port of this kind. Linux console ports enumerate
-	// hvc0, hvc1…; UARTs ttyAMA0, ttyAMA1…. A macOS guest surfaces virtio consoles as
-	// /dev/cu.virtio[N]; its UART path is not a userland tty (kernel debug channel), reported
-	// with the Linux name for reference.
-	public func guestDevice(index: Int, macGuest: Bool) -> String {
-		switch self {
-		case .console:
-			if macGuest { return index == 0 ? "cu.virtio" : "cu.virtio\(index)" }
+	// hvc0, hvc1…; FreeBSD sees each (single-port) virtio-console device as ttyV<unit>.0 once
+	// virtio_console.ko is loaded; a macOS guest surfaces them as /dev/cu.virtio[N]. UARTs:
+	// Linux ttyAMA*, FreeBSD ttyu*; on a macOS guest the PL011 is the kernel debug channel
+	// with no userland tty, reported with the Linux name for reference.
+	public func guestDevice(index: Int, os: SerialGuestOS) -> String {
+		switch (self, os) {
+		case (.console, .linux):
 			return "hvc\(index)"
-		case .uart:
+		case (.console, .freebsd):
+			return "ttyV\(index).0"
+		case (.console, .macOS):
+			return index == 0 ? "cu.virtio" : "cu.virtio\(index)"
+		case (.uart, .linux), (.uart, .macOS):
 			return "ttyAMA\(index)"
+		case (.uart, .freebsd):
+			return "ttyu\(index)"
 		}
+	}
+
+	// Two-way spelling used by the daemon's baked guestDevice: mac or "the Linux name".
+	public func guestDevice(index: Int, macGuest: Bool) -> String {
+		guestDevice(index: index, os: macGuest ? .macOS : .linux)
 	}
 }
 
@@ -97,13 +117,18 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 	// Disabled ports stay configured but are not attached at the next start (guest names
 	// renumber, same as removal). Tri-state, nil = enabled (DiskInfo pattern).
 	public var enabled: Bool?
+	// The index baked into guestDevice: enabled ports numbered compactly, as the guest sees
+	// them at the next boot (`index` is the config position). nil = older daemon — fall back
+	// to `index`.
+	public var guestIndex: Int?
 
 	public var id: String { "\(kind.rawValue)\(index)" }
 
 	public init(
 		kind: SerialPortKind, index: Int, guestDevice: String, logging: SerialLogConfig,
 		socketPath: String? = nil, logPath: String? = nil, mmioBase: String? = nil,
-		irq: Int? = nil, unavailable: SerialPortUnavailability? = nil, enabled: Bool? = nil
+		irq: Int? = nil, unavailable: SerialPortUnavailability? = nil, enabled: Bool? = nil,
+		guestIndex: Int? = nil
 	) {
 		self.kind = kind
 		self.index = index
@@ -115,6 +140,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.irq = irq
 		self.unavailable = unavailable
 		self.enabled = enabled
+		self.guestIndex = guestIndex
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -130,6 +156,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.irq = try c.decodeIfPresent(Int.self, forKey: .irq)
 		self.unavailable = try c.decodeIfPresent(SerialPortUnavailability.self, forKey: .unavailable)
 		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
+		self.guestIndex = try c.decodeIfPresent(Int.self, forKey: .guestIndex)
 	}
 
 	public var isEnabled: Bool { enabled ?? true }
