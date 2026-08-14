@@ -88,6 +88,9 @@ extension VMConfig {
 						+ "(written by a newer Machman)")
 			case .trackpad where !macGuest:
 				warnings.append("skipping trackpad on \(name): it needs a macOS guest")
+			case .consoleLoginInstaller where !macGuest:
+				warnings.append(
+					"skipping the login installer on \(name): it needs a macOS guest")
 			case .clipboard where macGuest:
 				warnings.append(
 					"skipping clipboard sharing on \(name): not supported for macOS guests")
@@ -299,8 +302,25 @@ extension VMConfig {
 			vmConfig.serialPorts = serial.ports
 			wiring = serial.wiring
 		}
+		// macOS guests automount the share at /Volumes/My Shared Files (one subdirectory
+		// per mount tag); other guests keep mounting the "host-share" tag by hand.
+		let macGuest: Bool = { if case .macOS = boot { return true }; return false }()
+		let shareTag = macGuest
+			? VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag : "host-share"
+		var extraShares: [String: VZSharedDirectory] = [:]
+		if byKind[.consoleLoginInstaller] != nil {
+			// mac-only by construction: resolvedDevices() skips the kind off macOS.
+			do {
+				let dir = try ConsoleLoginInstaller.writePayload(for: self)
+				extraShares[ConsoleLoginInstaller.directoryName] =
+					VZSharedDirectory(url: dir, readOnly: true)
+			} catch {
+				warnings.append(
+					"skipping the login installer on \(name): \(error.localizedDescription)")
+			}
+		}
 		var shares: [VZDirectorySharingDeviceConfiguration] =
-			[directoryShareDeviceConfig(mainTag: "host-share")]
+			[directoryShareDeviceConfig(mainTag: shareTag, extraDirectories: extraShares)]
 		if byKind[.rosetta] != nil {
 			do {
 				shares.append(try rosettaShareDeviceConfig())

@@ -400,6 +400,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		guard !mount.tag.isEmpty else {
 			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
 		}
+		guard mount.tag != ConsoleLoginInstaller.directoryName else {
+			throw MachmanError(
+				code: .alreadyExists,
+				message: "'\(ConsoleLoginInstaller.directoryName)' is reserved by Machman")
+		}
 		guard !mountPoints.contains(where: { $0.tag == mount.tag }) else {
 			throw MachmanError(
 				code: .alreadyExists, message: "a mount tagged '\(mount.tag)' already exists")
@@ -759,13 +764,18 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		}
 	}
 
-	func directoryShareDeviceConfig(mainTag: String) -> VZVirtioFileSystemDeviceConfiguration {
-		let sharedDirectories: [String: VZSharedDirectory] = Dictionary(
+	func directoryShareDeviceConfig(
+		mainTag: String, extraDirectories: [String: VZSharedDirectory] = [:]
+	) -> VZVirtioFileSystemDeviceConfiguration {
+		var sharedDirectories: [String: VZSharedDirectory] = Dictionary(
 			uniqueKeysWithValues: mountPoints.filter(\.enabled).map { mount in
 				(mount.tag,
 				VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
 			}
 		)
+		// Engine-reserved directories (the login installer). Mount validation refuses
+		// their names, so the merge cannot shadow a user mount.
+		sharedDirectories.merge(extraDirectories) { _, extra in extra }
 		let multipleDirectoryShare = VZMultipleDirectoryShare(directories: sharedDirectories)
 		let sharingConfiguration = VZVirtioFileSystemDeviceConfiguration(tag: mainTag)
 		sharingConfiguration.share = multipleDirectoryShare

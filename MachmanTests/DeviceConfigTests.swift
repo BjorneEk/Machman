@@ -144,6 +144,14 @@ struct DeviceConfigTests {
 			try vm.addMountPoint(HostMountPoint(path: "/tmp/d", tag: "  logs "))
 			#expect(vm.mountPoints.map(\.tag) == ["data", "logs"])
 			_ = vm.directoryShareDeviceConfig(mainTag: "host-share")   // must not trap
+			// The login installer's share directory name is reserved, add AND rename.
+			#expect(throws: MachmanError.self) {
+				try vm.addMountPoint(HostMountPoint(path: "/tmp/e", tag: "login-installer"))
+			}
+			#expect(throws: MachmanError.self) {
+				try vm.setMountTag(
+					id: vm.mountPoints[0].id.uuidString, tag: "login-installer")
+			}
 		}
 	}
 

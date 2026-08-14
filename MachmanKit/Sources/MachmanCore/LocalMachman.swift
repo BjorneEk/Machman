@@ -482,7 +482,7 @@ public final class LocalMachman: MachmanControlling {
 
 	// Add-time validation keeps impossible configs out of the start path (which would only
 	// fail later inside VZ validate() with a far worse message).
-	private static func validateDeviceKind(_ kind: DeviceKind, for config: VMConfig) throws {
+	static func validateDeviceKind(_ kind: DeviceKind, for config: VMConfig) throws {
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		switch kind {
 		case .unknown:
@@ -491,6 +491,10 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidArgument,
 				message: "the Mac trackpad needs a macOS guest — install macOS first")
+		case .consoleLoginInstaller where !macGuest:
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "the login installer needs a macOS guest")
 		case .clipboard where macGuest, .rosetta where macGuest:
 			throw MachmanError(
 				code: .invalidArgument,
@@ -802,6 +806,11 @@ public final class LocalMachman: MachmanControlling {
 			return UnavailabilityInfo(
 				reason: .unsupportedHost,
 				message: "The Mac trackpad needs a macOS guest — it is skipped until "
+					+ "macOS is installed.")
+		case .consoleLoginInstaller where !macGuest:
+			return UnavailabilityInfo(
+				reason: .unsupportedHost,
+				message: "The login installer needs a macOS guest — it is skipped until "
 					+ "macOS is installed.")
 		case .clipboard where macGuest:
 			return UnavailabilityInfo(

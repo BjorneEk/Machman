@@ -42,6 +42,16 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	}
 }
 
+// Shared names for the login installer's payload: the reserved share-directory name
+// (also a reserved mount tag) and the script inside it. On a macOS guest the share
+// automounts, so the full path is /Volumes/My Shared Files/<directoryName>/<scriptName>.
+// One home so the engine (generation), the daemon (tag validation), and the UI (shown
+// commands) can never drift.
+public enum ConsoleLoginInstallerInfo {
+	public static let directoryName = "login-installer"
+	public static let scriptName = "install.sh"
+}
+
 // Why something configured on a VM cannot be used on this host (a gated uart, Rosetta not
 // installed, nested virtualization unsupported…). Generalized from the serial-port shape —
 // same wire keys; SerialPortUnavailability remains as a typealias.
