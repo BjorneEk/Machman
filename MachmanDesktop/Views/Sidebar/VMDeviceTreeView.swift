@@ -411,8 +411,8 @@ struct VMDeviceTreeView: View {
 		return port.index == peers.map(\.index).max()
 	}
 
-	// Guest devices from the engine's assembly. Configurable kinds (inspector-backed) are
-	// selectable; the rest are dimmed with a Remove-only menu. A host-gated device
+	// Guest devices from the engine's assembly. Every kind is selectable (kinds without
+	// settings get the generic info inspector); disabled devices dim, and a host-gated one
 	// (Rosetta not installed, nested unsupported) carries the warning + reason.
 	@ViewBuilder
 	private var deviceGroup: some View {
@@ -420,15 +420,9 @@ struct VMDeviceTreeView: View {
 		group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
 			count: devices.count) {
 			ForEach(devices.filter { matches($0.kind.displayLabel) }) { device in
-				if device.kind.isConfigurable {
-					deviceRow(device)
-						.tag(SidebarNode.device(device.kind))
-						.contextMenu { deviceMenu(device) }
-				} else {
-					deviceRow(device)
-						.opacity(MachmanColors.dimmedRowOpacity)
-						.contextMenu { deviceMenu(device) }
-				}
+				deviceRow(device)
+					.tag(SidebarNode.device(device.kind))
+					.contextMenu { deviceMenu(device) }
 			}
 		}
 	}

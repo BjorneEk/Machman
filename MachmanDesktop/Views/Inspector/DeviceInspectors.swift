@@ -2,9 +2,9 @@
 //  DeviceInspectors.swift
 //  MachmanDesktop
 //
-//  Inspectors for the configurable guest devices (1.0.4 UI): graphics, network, clipboard,
-//  Rosetta. All settings ride vm.device.update; kinds without settings have no inspector
-//  (the tree offers Remove only).
+//  Inspectors for the guest devices (1.0.4 UI): graphics, network, clipboard, and Rosetta
+//  carry settings (riding vm.device.update); every other kind gets DeviceInfoInspector —
+//  what the device IS (Mac/Generic variant + the VZ class, for a docs lookup) and Remove.
 //
 
 import SwiftUI
@@ -12,7 +12,8 @@ import AppKit
 import MachmanUI
 import MachmanAPI
 
-// Router for the configurable device kinds.
+// Router for the device kinds: dedicated inspectors where there are settings, the generic
+// info inspector everywhere else.
 struct DeviceInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
@@ -24,17 +25,102 @@ struct DeviceInspector: View {
 			case .graphics:
 				GraphicsInspector(viewModel: viewModel, vm: vm, device: device)
 			case .network:
-				NetworkInspector(viewModel: viewModel, vm: vm)
+				NetworkInspector(viewModel: viewModel, vm: vm, device: device)
 			case .clipboard:
 				ClipboardInspector(viewModel: viewModel, vm: vm, device: device)
 			case .rosetta:
 				RosettaInspector(viewModel: viewModel, vm: vm, device: device)
-			default:
+			case .unknown:
 				NoSelectionInspector()
+			default:
+				DeviceInfoInspector(viewModel: viewModel, vm: vm, device: device)
 			}
 		} else {
 			NoSelectionInspector()
 		}
+	}
+}
+
+// The generic inspector for kinds without settings: the host gate if any, what the device
+// is, and Remove — selecting a keyboard is no longer a dead end.
+struct DeviceInfoInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	let device: DeviceInfo
+
+	var body: some View {
+		Form {
+			if let gate = device.unavailable {
+				Section {
+					Label {
+						VStack(alignment: .leading, spacing: 3) {
+							Text("Unavailable on this host")
+								.fontWeight(.medium)
+							Text(gate.message)
+								.font(.caption)
+								.foregroundStyle(.secondary)
+								.fixedSize(horizontal: false, vertical: true)
+						}
+					} icon: {
+						Image(systemName: MachmanSymbols.warning)
+							.foregroundStyle(MachmanColors.warning)
+					}
+				}
+			}
+			DeviceImplementationSection(vm: vm, device: device)
+			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: device.kind)
+		}
+	}
+}
+
+// Shared "what IS this device" section: the Mac/Generic variant where it's meaningful and
+// the VZ class the engine instantiates, copyable for a docs lookup. Sits directly above the
+// remove row in every device inspector.
+private struct DeviceImplementationSection: View {
+	let vm: VMInfo
+	let device: DeviceInfo
+
+	private var macGuest: Bool { vm.boot.mode == .macOS }
+
+	var body: some View {
+		Section("Implementation") {
+			if let variant = device.kind.variantLabel(macGuest: macGuest) {
+				LabeledContent("Variant", value: variant)
+			}
+			if let className = device.kind.vzClassName(macGuest: macGuest) {
+				LabeledContent("Class") {
+					HStack(spacing: 4) {
+						Text(className)
+							.font(.system(.caption, design: .monospaced))
+							.textSelection(.enabled)
+							.lineLimit(1)
+							.truncationMode(.middle)
+							.help(className)
+						CopyToClipboardButton(className, tooltip: "Copy class name")
+					}
+				}
+			}
+			Text(caption)
+				.font(.caption)
+				.foregroundStyle(.secondary)
+				.fixedSize(horizontal: false, vertical: true)
+		}
+	}
+
+	private var caption: String {
+		var text = "The Virtualization framework class this device instantiates — "
+			+ "searchable in Apple's developer documentation."
+		switch device.kind {
+		case .keyboard, .graphics:
+			text += " Chosen by the VM's boot mode: macOS guests get the Mac device, EFI "
+				+ "and kernel boots the generic one."
+		case .clipboard:
+			text += " The sharing itself is a spice agent port (VZSpiceAgentPortAttachment) "
+				+ "on this console device."
+		default:
+			break
+		}
+		return text
 	}
 }
 
@@ -139,6 +225,7 @@ struct GraphicsInspector: View {
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
+			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .graphics)
 		}
 		.onAppear { seedCustomFields() }
@@ -205,6 +292,7 @@ struct GraphicsInspector: View {
 struct NetworkInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
+	let device: DeviceInfo
 	@State private var regenConfirm = false
 
 	var body: some View {
@@ -233,6 +321,7 @@ struct NetworkInspector: View {
 					}
 				}
 			}
+			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .network)
 		}
 		.confirmationDialog("Regenerate MAC address?", isPresented: $regenConfirm) {
@@ -269,6 +358,7 @@ struct ClipboardInspector: View {
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
+			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .clipboard)
 		}
 	}
@@ -339,6 +429,7 @@ struct RosettaInspector: View {
 						.foregroundStyle(.tertiary)
 				}
 			}
+			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .rosetta)
 		}
 	}

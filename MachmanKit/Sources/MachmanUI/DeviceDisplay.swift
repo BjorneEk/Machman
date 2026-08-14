@@ -3,9 +3,9 @@
 //  MachmanUI
 //
 //  The shared display vocabulary for guest device kinds (1.0.4 UI): one symbol + label per
-//  kind, used by the sidebar tree, the add popover, and the device inspectors, so the
-//  mapping never forks. Configurable kinds get inspectors and are selectable in the tree;
-//  the rest are dim rows with a Remove action.
+//  kind, plus the VZ class/variant the engine resolves it to, used by the sidebar tree, the
+//  add popover, and the device inspectors, so the mapping never forks. Every real kind is
+//  selectable in the tree; kinds without settings get the generic info inspector.
 //
 
 import MachmanAPI
@@ -43,11 +43,36 @@ extension DeviceKind {
 		}
 	}
 
-	// Kinds with settings behind them (an inspector): selectable in the device tree.
-	public var isConfigurable: Bool {
+	// The Virtualization-framework class the engine instantiates for this kind — mirrors
+	// VMDevices.swift assembly, which switches on the boot mode (macOS guests get the Mac
+	// device classes, EFI/kernel boots the generic ones). nil only for .unknown.
+	public func vzClassName(macGuest: Bool) -> String? {
 		switch self {
-		case .graphics, .network, .clipboard, .rosetta: return true
-		default: return false
+		case .keyboard:
+			return macGuest ? "VZMacKeyboardConfiguration" : "VZUSBKeyboardConfiguration"
+		case .trackpad: return "VZMacTrackpadConfiguration"
+		case .pointer: return "VZUSBScreenCoordinatePointingDeviceConfiguration"
+		case .graphics:
+			return macGuest
+				? "VZMacGraphicsDeviceConfiguration" : "VZVirtioGraphicsDeviceConfiguration"
+		case .audioInput, .audioOutput: return "VZVirtioSoundDeviceConfiguration"
+		case .network: return "VZVirtioNetworkDeviceConfiguration"
+		case .clipboard: return "VZVirtioConsoleDeviceConfiguration"
+		case .entropy: return "VZVirtioEntropyDeviceConfiguration"
+		case .rosetta: return "VZLinuxRosettaDirectoryShare"
+		case .unknown: return nil
+		}
+	}
+
+	// "Mac" / "Generic" where the distinction is meaningful: the split kinds (keyboard,
+	// graphics — resolved by boot mode) and the inherently one-sided pointing devices.
+	// nil = platform-independent virtio device, no variant row.
+	public func variantLabel(macGuest: Bool) -> String? {
+		switch self {
+		case .keyboard, .graphics: return macGuest ? "Mac" : "Generic"
+		case .trackpad: return "Mac"
+		case .pointer: return "Generic (USB)"
+		default: return nil
 		}
 	}
 }
