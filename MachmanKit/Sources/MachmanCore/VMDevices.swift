@@ -307,24 +307,22 @@ extension VMConfig {
 		let macGuest: Bool = { if case .macOS = boot { return true }; return false }()
 		let shareTag = macGuest
 			? VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag : "host-share"
-		var shares: [VZDirectorySharingDeviceConfiguration] =
-			[directoryShareDeviceConfig(mainTag: shareTag)]
+		var extraShares: [String: VZSharedDirectory] = [:]
 		if byKind[.consoleLoginInstaller] != nil {
-			// mac-only by construction (resolvedDevices() skips the kind off macOS). Its
-			// OWN device, so the guest mounts it as a "LoginInstaller" volume with the
-			// script at the top level — not nested in the automounting user share.
+			// mac-only by construction (resolvedDevices() skips the kind off macOS): a
+			// reserved read-only directory on the automounting share, so it appears at
+			// /Volumes/My Shared Files/LoginInstaller with zero guest setup.
 			do {
 				let dir = try ConsoleLoginInstaller.writePayload(for: self)
-				let installer = VZVirtioFileSystemDeviceConfiguration(
-					tag: ConsoleLoginInstallerInfo.shareTag)
-				installer.share = VZSingleDirectoryShare(
-					directory: VZSharedDirectory(url: dir, readOnly: true))
-				shares.append(installer)
+				extraShares[ConsoleLoginInstaller.directoryName] =
+					VZSharedDirectory(url: dir, readOnly: true)
 			} catch {
 				warnings.append(
 					"skipping the login installer on \(name): \(error.localizedDescription)")
 			}
 		}
+		var shares: [VZDirectorySharingDeviceConfiguration] =
+			[directoryShareDeviceConfig(mainTag: shareTag, extraDirectories: extraShares)]
 		if byKind[.rosetta] != nil {
 			do {
 				shares.append(try rosettaShareDeviceConfig())

@@ -42,24 +42,24 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	}
 }
 
-// Shared vocabulary for the login installer: its own virtiofs share tag (a reserved
-// mount tag, and the volume name the guest mounts it under — NOT nested in the
-// automounting "My Shared Files" share), the script name, and the guest commands.
-// One home so the engine (generation), the daemon (tag validation), and the UI (shown
-// commands) can never drift.
+// Shared vocabulary for the login installer: the reserved directory name it appears
+// under inside the automounting share ("My Shared Files" is the ONE volume macOS guests
+// mount on their own — its name is fixed by the OS, so the installer rides it as a
+// folder next to the VM's regular mounts; the name is also a reserved mount tag), the
+// script name, and the guest commands. One home so the engine (generation), the daemon
+// (tag validation), and the UI (shown commands) can never drift.
 public enum ConsoleLoginInstallerInfo {
-	public static let shareTag = "LoginInstaller"
+	public static let directoryName = "LoginInstaller"
 	public static let scriptName = "install.sh"
 
-	// One paste: mount the LoginInstaller volume and run the script.
-	public static var mountAndRunCommand: String {
-		"sudo sh -c 'mkdir -p /Volumes/\(shareTag) && mount_virtiofs \(shareTag) "
-			+ "/Volumes/\(shareTag) && sh /Volumes/\(shareTag)/\(scriptName)'"
+	// The one guest command — the share automounts on macOS 13+, nothing to mount.
+	public static var runCommand: String {
+		"sudo sh \"/Volumes/My Shared Files/\(directoryName)/\(scriptName)\""
 	}
 
-	// While the mount is up (it lasts until the guest reboots), re-runs are direct.
-	public static var rerunCommand: String {
-		"sudo sh /Volumes/\(shareTag)/\(scriptName)"
+	// macOS 12 guests don't automount; mount the share by hand, then run from there.
+	public static var fallbackMountCommand: String {
+		"mkdir -p ~/shared && mount_virtiofs com.apple.virtio-fs.automount ~/shared"
 	}
 }
 

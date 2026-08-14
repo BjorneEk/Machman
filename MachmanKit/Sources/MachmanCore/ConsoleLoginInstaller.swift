@@ -7,18 +7,18 @@
 //  console — the measured recipe: /etc/ttys getty lines are dead on modern macOS, a
 //  LaunchDaemon running /usr/libexec/getty with KeepAlive shows a prompt immediately and
 //  survives reboots. The payload is regenerated at every assembly so it always matches
-//  the enabled console set, and is served to the guest read-only as its OWN virtiofs
-//  device tagged "LoginInstaller" (VMDevices) — the guest mounts it as a volume of that
-//  name with install.sh at the top level, not nested inside "My Shared Files".
+//  the enabled console set, and is served to the guest read-only as the reserved
+//  "LoginInstaller" directory inside the automounting share (VMDevices) — it appears at
+//  /Volumes/My Shared Files/LoginInstaller next to the VM's regular mounts.
 //
 
 import Foundation
 import MachmanAPI
 
 enum ConsoleLoginInstaller {
-	// The on-disk payload directory under the VM (the guest-facing name is the share
-	// tag, ConsoleLoginInstallerInfo.shareTag).
-	static let directoryName = "login-installer"
+	// One name everywhere: the on-disk payload directory under the VM AND the directory
+	// the guest sees inside the automounting share.
+	static let directoryName = ConsoleLoginInstallerInfo.directoryName
 	static let scriptName = ConsoleLoginInstallerInfo.scriptName
 
 	// The enabled console ports' macOS device names in compacted order — exactly the
