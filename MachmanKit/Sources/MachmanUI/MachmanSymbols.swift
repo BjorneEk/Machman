@@ -24,7 +24,9 @@ public enum MachmanSymbols {
 
 	// MARK: - VM windows
 	public static let openWindow = "macwindow.badge.plus"
-	public static let closeWindow = "macwindow.badge.minus"
+	// NOT macwindow.badge.minus — that name does not exist in the system symbol set
+	// (verified via NSImage(systemSymbolName:)); the badge-family sibling does.
+	public static let closeWindow = "rectangle.badge.xmark"
 
 	// MARK: - Generic actions
 	public static let add = "plus"
