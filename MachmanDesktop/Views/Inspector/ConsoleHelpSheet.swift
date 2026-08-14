@@ -146,17 +146,19 @@ struct ConsoleHelpSheet: View {
 		command("qemu-system-aarch64 -machine virt -accel hvf -cpu host -smp 4 -m 4G \\\n"
 			+ "  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \\\n"
 			+ "  -drive file=freebsd.raw,format=raw,if=virtio -nographic")
-		step(6, "Only an installer ISO? Create a target disk, boot the installer on the "
-			+ "same serial console, install onto the empty disk, and apply steps 1–2 "
-			+ "before the final reboot (the installer offers a shell) — or boot the new "
-			+ "disk as in step 5:")
-		command("qemu-img create -f raw freebsd.raw 20G")
+		step(6, "Only an installer ISO? Create this VM's disk first — Add (+) → Disk — "
+			+ "then right-click the disk row and Copy Path. Boot the installer with that "
+			+ "path as the target, install onto the empty disk, and apply steps 1–2 "
+			+ "before the final reboot (the installer offers a shell):")
 		command("qemu-system-aarch64 -machine virt -accel hvf -cpu host -smp 4 -m 4G \\\n"
 			+ "  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \\\n"
 			+ "  -drive file=freebsd.iso,format=raw,if=virtio,readonly=on \\\n"
-			+ "  -drive file=freebsd.raw,format=raw,if=virtio -nographic")
-		step(7, "Add the prepared freebsd.raw to this VM as a disk (Copy into VM or "
-			+ "Reference), boot, and the login prompt appears in this console.")
+			+ "  -drive file=<paste the copied path>,format=raw,if=virtio -nographic")
+		note("Machman disks are plain raw images, so QEMU installs straight into the VM's "
+			+ "own disk — nothing to import afterwards. Keep the VM stopped meanwhile.")
+		step(7, "Came from step 5 with an external .raw? Add it to this VM as a disk "
+			+ "(Copy into VM or Reference). Then boot — the login prompt appears in this "
+			+ "console.")
 		step(8, "Boot hangs? FreeBSD ≤ 15.1 can hang at boot under Apple virtualization "
 			+ "while a Display device is attached (its virtio-gpu driver waits forever "
 			+ "for a reply the host never sends). Disable this VM's Display device and "
