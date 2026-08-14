@@ -42,14 +42,25 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	}
 }
 
-// Shared names for the login installer's payload: the reserved share-directory name
-// (also a reserved mount tag) and the script inside it. On a macOS guest the share
-// automounts, so the full path is /Volumes/My Shared Files/<directoryName>/<scriptName>.
+// Shared vocabulary for the login installer: its own virtiofs share tag (a reserved
+// mount tag, and the volume name the guest mounts it under — NOT nested in the
+// automounting "My Shared Files" share), the script name, and the guest commands.
 // One home so the engine (generation), the daemon (tag validation), and the UI (shown
 // commands) can never drift.
 public enum ConsoleLoginInstallerInfo {
-	public static let directoryName = "login-installer"
+	public static let shareTag = "LoginInstaller"
 	public static let scriptName = "install.sh"
+
+	// One paste: mount the LoginInstaller volume and run the script.
+	public static var mountAndRunCommand: String {
+		"sudo sh -c 'mkdir -p /Volumes/\(shareTag) && mount_virtiofs \(shareTag) "
+			+ "/Volumes/\(shareTag) && sh /Volumes/\(shareTag)/\(scriptName)'"
+	}
+
+	// While the mount is up (it lasts until the guest reboots), re-runs are direct.
+	public static var rerunCommand: String {
+		"sudo sh /Volumes/\(shareTag)/\(scriptName)"
+	}
 }
 
 // Why something configured on a VM cannot be used on this host (a gated uart, Rosetta not

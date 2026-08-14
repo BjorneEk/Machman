@@ -177,26 +177,22 @@ struct ConsoleHelpSheet: View {
 			+ "login prompt on it — the Login Installer sets one up on every console in "
 			+ "a single run.")
 		step(1, "Add the Login Installer: Add (+) → Serial → Login Installer.")
-		step(2, "Boot the guest — the “My Shared Files” volume appears on its own "
-			+ "(macOS 13+ guests), with a \(ConsoleLoginInstallerInfo.directoryName) "
-			+ "folder inside, next to this VM's regular mounts.")
-		step(3, "In the guest's Terminal, run the script and enter your password:")
-		command(Self.installerCommand)
+		step(2, "Boot the guest.")
+		step(3, "In the guest's Terminal, mount the installer's own "
+			+ "“\(ConsoleLoginInstallerInfo.shareTag)” volume and run the script — one "
+			+ "paste, enter your password:")
+		command(ConsoleLoginInstallerInfo.mountAndRunCommand)
 		note("It checks every console device and installs a login daemon for each — "
-			+ "prompts appear in the Machman consoles immediately, no reboot needed.")
+			+ "prompts appear in the Machman consoles immediately, no reboot needed. "
+			+ "The mount lasts until the guest reboots; re-runs while mounted: "
+			+ "\(ConsoleLoginInstallerInfo.rerunCommand)")
 		step(4, "Afterwards: disable or remove the Login Installer device — the logins "
 			+ "live in the guest and persist. Re-enable it, reboot, and re-run after "
 			+ "adding or removing consoles (the script also cleans up removed ones); "
 			+ "run it with --uninstall to remove every login.")
 		step(5, "Troubleshooting — port I/O works even without a login: in the guest, "
-			+ "echo hello > /dev/cu.virtio\(macSuffix) prints here. Volume missing "
-			+ "(macOS 12 guests)? Mount it manually:")
-		command("mkdir -p ~/shared && mount_virtiofs com.apple.virtio-fs.automount ~/shared")
+			+ "echo hello > /dev/cu.virtio\(macSuffix) prints in this console.")
 	}
-
-	private static let installerCommand = "sudo sh \"/Volumes/My Shared Files/"
-		+ "\(ConsoleLoginInstallerInfo.directoryName)/"
-		+ "\(ConsoleLoginInstallerInfo.scriptName)\""
 
 	// MARK: - Building blocks
 

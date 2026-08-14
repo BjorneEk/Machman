@@ -459,9 +459,7 @@ struct LoginInstallerInspector: View {
 		}
 	}
 
-	private static let guestCommand = "sudo sh \"/Volumes/My Shared Files/"
-		+ "\(ConsoleLoginInstallerInfo.directoryName)/"
-		+ "\(ConsoleLoginInstallerInfo.scriptName)\""
+	private static let guestCommand = ConsoleLoginInstallerInfo.mountAndRunCommand
 
 	var body: some View {
 		Form {
@@ -483,9 +481,9 @@ struct LoginInstallerInspector: View {
 				}
 			}
 			Section("Login Installer") {
-				Text("A read-only folder served to the macOS guest — it automounts as "
-					+ "part of the “My Shared Files” volume and carries an install "
-					+ "script that sets up a login prompt on every console.")
+				Text("A read-only folder served to the macOS guest as its own "
+					+ "“\(ConsoleLoginInstallerInfo.shareTag)” volume, carrying an "
+					+ "install script that sets up a login prompt on every console.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
@@ -503,13 +501,15 @@ struct LoginInstallerInspector: View {
 			}
 			Section("Guest Setup") {
 				VStack(alignment: .leading, spacing: 6) {
-					Text("Boot the guest, then run in its Terminal:")
+					Text("Boot the guest, then run in its Terminal (mounts the volume "
+						+ "and runs the script in one go):")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 					HStack {
 						Text(Self.guestCommand)
 							.font(.system(.caption, design: .monospaced))
 							.textSelection(.enabled)
+							.fixedSize(horizontal: false, vertical: true)
 						Spacer()
 						CopyToClipboardButton(Self.guestCommand, tooltip: "Copy command")
 					}
@@ -518,15 +518,11 @@ struct LoginInstallerInspector: View {
 						.fill(Color.primary.opacity(0.05)))
 					Text("Installs one login daemon per console — prompts appear "
 						+ "immediately. Re-run it after adding or removing consoles "
-						+ "(it cleans up removed ones); --uninstall removes the logins. "
-						+ "Afterwards this installer can be disabled or removed — the "
-						+ "logins persist in the guest.")
+						+ "(it cleans up removed ones); while mounted: "
+						+ "\(ConsoleLoginInstallerInfo.rerunCommand), with --uninstall "
+						+ "to remove the logins. Afterwards this installer can be "
+						+ "disabled or removed — the logins persist in the guest.")
 						.font(.caption)
-						.foregroundStyle(.tertiary)
-						.fixedSize(horizontal: false, vertical: true)
-					Text("Volume missing (macOS 12 guests)? mkdir -p ~/shared && "
-						+ "mount_virtiofs com.apple.virtio-fs.automount ~/shared")
-						.font(.system(.caption2, design: .monospaced))
 						.foregroundStyle(.tertiary)
 						.fixedSize(horizontal: false, vertical: true)
 					Button {

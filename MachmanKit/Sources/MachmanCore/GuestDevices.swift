@@ -213,10 +213,10 @@ extension VMConfig {
 		guard !trimmed.isEmpty else {
 			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
 		}
-		guard trimmed != ConsoleLoginInstaller.directoryName else {
+		guard trimmed != ConsoleLoginInstallerInfo.shareTag else {
 			throw MachmanError(
 				code: .alreadyExists,
-				message: "'\(ConsoleLoginInstaller.directoryName)' is reserved by Machman")
+				message: "'\(ConsoleLoginInstallerInfo.shareTag)' is reserved by Machman")
 		}
 		guard mountPoints[index].tag != trimmed else { return }
 		guard !mountPoints.contains(where: { $0.tag == trimmed }) else {
