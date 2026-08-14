@@ -167,21 +167,34 @@ struct ConsoleHelpSheet: View {
 
 	// MARK: - macOS guest
 
+	// The Login Installer flow (measured recipe: a launchd getty with KeepAlive; /etc/ttys
+	// getty lines are DEAD on modern macOS — launchd ignores them).
 	@ViewBuilder
 	private var macOSSteps: some View {
-		intro("On a macOS guest this port is /dev/cu.virtio\(macSuffix) (with a matching "
-			+ "/dev/tty.virtio\(macSuffix)). macOS starts no login prompt on it — a fresh "
-			+ "console stays blank.")
-		step(1, "Quick test — in the guest's Terminal:")
-		command("echo hello > /dev/cu.virtio\(macSuffix)")
-		note("The text appears in this console; cat /dev/cu.virtio\(macSuffix) prints "
-			+ "what you type here.")
-		step(2, "Login prompt — append a getty line to /etc/ttys in the guest (needs "
-			+ "sudo), then reboot the guest:")
-		command("tty.virtio\(macSuffix) \"/usr/libexec/getty std.115200\" vt100 on secure")
-		note("The first field must match the device under /dev without the /dev/ prefix — "
-			+ "check ls /dev/tty.virtio* first.")
+		intro("On a macOS guest this port is /dev/cu.virtio\(macSuffix). macOS starts no "
+			+ "login prompt on it — the Login Installer sets one up on every console in "
+			+ "a single run.")
+		step(1, "Add the Login Installer: Add (+) → Serial → Login Installer.")
+		step(2, "Boot the guest — the “My Shared Files” volume appears on its own "
+			+ "(macOS 13+ guests), with a \(ConsoleLoginInstallerInfo.directoryName) "
+			+ "folder inside, next to this VM's regular mounts.")
+		step(3, "In the guest's Terminal, run the script and enter your password:")
+		command(Self.installerCommand)
+		note("It checks every console device and installs a login daemon for each — "
+			+ "prompts appear in the Machman consoles immediately, no reboot needed.")
+		step(4, "Afterwards: disable or remove the Login Installer device — the logins "
+			+ "live in the guest and persist. Re-enable it, reboot, and re-run after "
+			+ "adding or removing consoles (the script also cleans up removed ones); "
+			+ "run it with --uninstall to remove every login.")
+		step(5, "Troubleshooting — port I/O works even without a login: in the guest, "
+			+ "echo hello > /dev/cu.virtio\(macSuffix) prints here. Volume missing "
+			+ "(macOS 12 guests)? Mount it manually:")
+		command("mkdir -p ~/shared && mount_virtiofs com.apple.virtio-fs.automount ~/shared")
 	}
+
+	private static let installerCommand = "sudo sh \"/Volumes/My Shared Files/"
+		+ "\(ConsoleLoginInstallerInfo.directoryName)/"
+		+ "\(ConsoleLoginInstallerInfo.scriptName)\""
 
 	// MARK: - Building blocks
 
