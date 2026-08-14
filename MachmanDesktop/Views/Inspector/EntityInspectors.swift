@@ -171,19 +171,30 @@ struct MountInspector: View {
 						set: { viewModel.setEnabled(vm.name, mounts: [mountID: $0]) }))
 				}
 				Section("Mounting from the Guest") {
+					// The guest-visible virtiofs DEVICE is "host-share" (one device carries
+					// every mount); each mount is a subdirectory inside it named by its tag.
+					// The old text mounted the tag itself, which no guest can find.
+					Text("All mounts ride one virtiofs device tagged “host-share”. Mount it "
+						+ "once — this folder is the “\(mount.tag)” subdirectory inside it.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
 					guestHelp(
 						os: "Linux",
 						requirement: "virtiofs is built into kernels ≥ 5.4 "
 							+ "(CONFIG_VIRTIO_FS); no extra packages.",
-						command: "mount -t virtiofs \(mount.tag) /mnt/\(mount.tag)")
+						command: "mkdir -p /mnt/host-share && "
+							+ "mount -t virtiofs host-share /mnt/host-share")
 					guestHelp(
 						os: "macOS",
 						requirement: "Built in since macOS 12 — no drivers needed.",
-						command: "mount_virtiofs \(mount.tag) /Volumes/\(mount.tag)")
+						command: "mkdir -p ~/host-share && "
+							+ "mount_virtiofs host-share ~/host-share")
 					guestHelp(
 						os: "FreeBSD",
 						requirement: "Needs the virtio-fs port (sysutils/fusefs-virtiofs).",
-						command: "mount -t virtiofs \(mount.tag) /mnt/\(mount.tag)")
+						command: "mkdir -p /mnt/host-share && "
+							+ "mount -t virtiofs host-share /mnt/host-share")
 				}
 				Section {
 					HStack {
