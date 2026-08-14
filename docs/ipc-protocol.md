@@ -111,7 +111,11 @@ devices?, nestedVirtualization?}`.
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
 displayHeightPixels?, displayPixelsPerInch?, sharesClipboard?, unavailable?}`; kinds:
 `keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network, clipboard,
-entropy, rosetta` (treat unknown kinds as a device you don't recognize). One device per kind.
+entropy, rosetta, consoleLoginInstaller` (treat unknown kinds as a device you don't
+recognize). One device per kind. `consoleLoginInstaller` (additive, macOS boots only):
+a read-only directory share carrying a generated script the guest runs to install login
+prompts on the VM's consoles; older daemons preserve it in config and skip it at boot
+with a warning.
 Absent `devices` = an older daemon: the effective set is the implied per-boot default
 (mac guests: keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network;
 EFI/kernel guests: keyboard, pointer, graphics, audioInput, audioOutput, network, clipboard).

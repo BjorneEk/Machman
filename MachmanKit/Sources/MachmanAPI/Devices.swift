@@ -25,12 +25,15 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	case clipboard     // spice agent console port — EFI/kernel boots only
 	case entropy       // VZVirtioEntropyDevice
 	case rosetta       // VZLinuxRosettaDirectoryShare (tag "rosetta") — EFI/kernel boots
+	// macOS guests only: a read-only share carrying a generated install script that sets
+	// up login prompts (launchd gettys) on the VM's virtio consoles from inside the guest.
+	case consoleLoginInstaller
 	case unknown       // decode fallback only; never encode it
 
 	// Every real kind, for pickers/validation (excludes the .unknown decode fallback).
 	public static let allKinds: [DeviceKind] = [
 		.keyboard, .trackpad, .pointer, .graphics, .audioInput, .audioOutput,
-		.network, .clipboard, .entropy, .rosetta,
+		.network, .clipboard, .entropy, .rosetta, .consoleLoginInstaller,
 	]
 
 	public init(from decoder: Decoder) throws {

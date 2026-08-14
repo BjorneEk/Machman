@@ -140,6 +140,8 @@ public enum MachmanSymbols {
 	public static let deviceClipboard = "clipboard"
 	public static let deviceEntropy = "die.face.5"
 	public static let deviceRosetta = "translate"
+	// Installer-package metaphor — the terminal glyphs belong to the consoles themselves.
+	public static let deviceLoginInstaller = "shippingbox.fill"
 
 	// Add-popover tiles
 	public static let addDiskNew = "externaldrive.badge.plus"

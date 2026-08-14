@@ -391,6 +391,10 @@ struct WireFixtureTests {
 		#expect(linux.contains(.clipboard))
 		#expect(!linux.contains(.trackpad))
 		#expect(!DeviceKind.allKinds.contains(.unknown))
+		// The login installer (additive kind): raw value pinned; never implied.
+		#expect(DeviceKind(rawValue: "consoleLoginInstaller") == .consoleLoginInstaller)
+		#expect(DeviceKind.allKinds.contains(.consoleLoginInstaller))
+		#expect(!mac.contains(.consoleLoginInstaller))
 	}
 
 	@Test func newRequestShapes() throws {

@@ -23,6 +23,7 @@ extension DeviceKind {
 		case .clipboard: return MachmanSymbols.deviceClipboard
 		case .entropy: return MachmanSymbols.deviceEntropy
 		case .rosetta: return MachmanSymbols.deviceRosetta
+		case .consoleLoginInstaller: return MachmanSymbols.deviceLoginInstaller
 		case .unknown: return MachmanSymbols.warning
 		}
 	}
@@ -39,6 +40,7 @@ extension DeviceKind {
 		case .clipboard: return "Clipboard"
 		case .entropy: return "Entropy"
 		case .rosetta: return "Rosetta"
+		case .consoleLoginInstaller: return "Login Installer"
 		case .unknown: return "Unknown"
 		}
 	}
@@ -60,6 +62,7 @@ extension DeviceKind {
 		case .clipboard: return "VZVirtioConsoleDeviceConfiguration"
 		case .entropy: return "VZVirtioEntropyDeviceConfiguration"
 		case .rosetta: return "VZLinuxRosettaDirectoryShare"
+		case .consoleLoginInstaller: return "VZVirtioFileSystemDeviceConfiguration"
 		case .unknown: return nil
 		}
 	}
@@ -70,7 +73,7 @@ extension DeviceKind {
 	public func variantLabel(macGuest: Bool) -> String? {
 		switch self {
 		case .keyboard, .graphics: return macGuest ? "Mac" : "Generic"
-		case .trackpad: return "Mac"
+		case .trackpad, .consoleLoginInstaller: return "Mac"
 		case .pointer: return "Generic (USB)"
 		default: return nil
 		}
