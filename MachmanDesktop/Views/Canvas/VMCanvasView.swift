@@ -507,8 +507,9 @@ struct VMCanvasView: View {
 			return vm.name
 		case .terminal(let ref):
 			let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-			return ports?.first(where: { $0.index == ref.index })?.guestDevice
-				?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
+			return ports?.first(where: { $0.index == ref.index })?
+				.displayName(mode: vm.boot.mode)
+				?? ref.displayName(mode: vm.boot.mode)
 		}
 	}
 }

@@ -123,7 +123,14 @@ struct TornTabWindowView: View {
 		case .config:
 			return "\(payload.vm) — Configuration"
 		case .terminal(let ref):
-			return "\(payload.vm) — \(ref.guestDevice(macGuest: false))"
+			// Resolve the live VM for its boot mode (and compacted index); a gone VM gets
+			// the neutral EFI naming.
+			let vm = connection.viewModel?.vms.first(where: { $0.name == payload.vm })
+			let mode = vm?.boot.mode ?? .efi
+			let port = (ref.kind == .console ? vm?.consolePorts : vm?.uartPorts)?
+				.first(where: { $0.index == ref.index })
+			let name = port?.displayName(mode: mode) ?? ref.displayName(mode: mode)
+			return "\(payload.vm) — \(name)"
 		}
 	}
 }

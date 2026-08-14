@@ -68,6 +68,6 @@ struct TerminalTabContent: View {
 	private var socketPath: String? { port?.socketPath }
 
 	private var guestName: String {
-		port?.guestDevice ?? ref.guestDevice(macGuest: vm.boot.mode == .macOS)
+		port?.displayName(mode: vm.boot.mode) ?? ref.displayName(mode: vm.boot.mode)
 	}
 }

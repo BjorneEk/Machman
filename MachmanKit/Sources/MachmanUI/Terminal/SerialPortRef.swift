@@ -25,11 +25,6 @@ public struct SerialPortRef: Hashable, Codable, Sendable {
 		self.index = port.index
 	}
 
-	// The guest device name (hvc0 / ttyAMA0 / cu.virtio0) for display.
-	public func guestDevice(macGuest: Bool) -> String {
-		kind.guestDevice(index: index, macGuest: macGuest)
-	}
-
 	// Key for per-socket profile associations: stable across runs, unique within a VM.
 	public func assocKey(vm: String) -> String {
 		"\(vm)|\(kind.rawValue)|\(index)"

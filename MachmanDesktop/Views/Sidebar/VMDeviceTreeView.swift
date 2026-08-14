@@ -322,7 +322,11 @@ struct VMDeviceTreeView: View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
 			count: ports.count) {
-			ForEach(ports.filter { matches($0.guestDevice) }) { port in
+			// Search matches the display name AND the raw guest device (hvc0 finds
+			// "Console 0" on an EFI VM).
+			ForEach(ports.filter {
+				matches($0.displayName(mode: vm.boot.mode)) || matches($0.guestDevice)
+			}) { port in
 				serialRow(port)
 			}
 		}
@@ -337,7 +341,7 @@ struct VMDeviceTreeView: View {
 			Image(systemName: port.kind == .console
 				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
 				.font(.system(size: theme.metrics.iconSize))
-			Text(port.guestDevice)
+			Text(port.displayName(mode: vm.boot.mode))
 			Spacer()
 			if gated {
 				Image(systemName: MachmanSymbols.warning)
