@@ -44,10 +44,18 @@ struct VMCanvasView: View {
 	let vm: VMInfo
 
 	@State private var tabDrag: TabDragState?
-	@State private var canvasSize: CGSize = .zero
-	@State private var paneFrames: [UUID: CGRect] = [:]
-	@State private var stripFrames: [UUID: CGRect] = [:]
-	@State private var tabFrames: [VMPaneTab: CGRect] = [:]
+	// Measured geometry lives in PLAIN REFERENCE storage: writing frames back into
+	// @State re-enters layout, which oscillates during live resize ("Geometry action is
+	// cycling between duplicate values"). The drag system reads these imperatively from
+	// gesture callbacks, and tabDrag's own @State updates drive every render that draws
+	// from them (drop zones, reorder) — so the reports never need to invalidate anything.
+	private final class FrameStore {
+		var canvasSize: CGSize = .zero
+		var panes: [UUID: CGRect] = [:]
+		var strips: [UUID: CGRect] = [:]
+		var tabs: [VMPaneTab: CGRect] = [:]
+	}
+	@State private var frames = FrameStore()
 	// Divider drags apply fractions absolutely from the drag-start snapshot.
 	@State private var dragBaseFractions: [Double]?
 	@Environment(\.machmanTheme) private var theme
@@ -74,11 +82,9 @@ struct VMCanvasView: View {
 							alignment: .topLeading)
 				}
 			}
-			// Sanctioned size reporter (a GeometryReader onChange fires multiple times per
-			// layout pass); the equality guard keeps a same-value report from invalidating
-			// state and cycling the layout.
+			// Reports into the reference store — never @State (see FrameStore).
 			.onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-				if canvasSize != size { canvasSize = size }
+				frames.canvasSize = size
 			}
 		}
 		.coordinateSpace(name: "machman-canvas")
@@ -86,9 +92,9 @@ struct VMCanvasView: View {
 		.onAppear { ensureConfigTab() }
 		.onChange(of: vm.name) {
 			tabDrag = nil
-			paneFrames = [:]
-			stripFrames = [:]
-			tabFrames = [:]
+			frames.panes = [:]
+			frames.strips = [:]
+			frames.tabs = [:]
 			ensureConfigTab()
 		}
 	}
@@ -141,7 +147,7 @@ struct VMCanvasView: View {
 					let base = dragBaseFractions ?? canvas.fractions
 					if dragBaseFractions == nil { dragBaseFractions = base }
 					guard base.indices.contains(index) else { return }
-					let available = max(200, canvasSize.width
+					let available = max(200, frames.canvasSize.width
 						- dividerWidth * CGFloat(canvas.panes.count - 1))
 					let delta = Double(value.translation.width / available)
 					mutate { $0.setFraction(base[index] + delta, at: index) }
@@ -168,7 +174,7 @@ struct VMCanvasView: View {
 		.onGeometryChange(for: CGRect.self) { proxy in
 			proxy.frame(in: .named("machman-canvas"))
 		} action: { frame in
-			if paneFrames[pane.id] != frame { paneFrames[pane.id] = frame }
+			if frames.panes[pane.id] != frame { frames.panes[pane.id] = frame }
 		}
 	}
 
@@ -195,7 +201,7 @@ struct VMCanvasView: View {
 						onTearOff: { tearOff(tab) },
 						onDragChanged: { updateTabDrag(tab: tab, pane: pane.id, value: $0) },
 						onDragEnded: { completeTabDrag() },
-						reportFrame: { if tabFrames[tab] != $0 { tabFrames[tab] = $0 } })
+						reportFrame: { if frames.tabs[tab] != $0 { frames.tabs[tab] = $0 } })
 					if theme.tabStyle == .rectangular && tab != pane.tabs.last {
 						Divider().frame(height: theme.metrics.tabHeight * 0.6)
 					}
@@ -209,7 +215,7 @@ struct VMCanvasView: View {
 		.onGeometryChange(for: CGRect.self) { proxy in
 			proxy.frame(in: .named("machman-canvas"))
 		} action: { frame in
-			if stripFrames[pane.id] != frame { stripFrames[pane.id] = frame }
+			if frames.strips[pane.id] != frame { frames.strips[pane.id] = frame }
 		}
 		.background {
 			if theme.tabStyle == .rectangular {
@@ -266,7 +272,7 @@ struct VMCanvasView: View {
 		drag.translation = value.translation
 		// Ghost mode when pulled down OR whenever the cursor leaves the source strip — the
 		// strips are clipping ScrollViews, so only the top-level ghost can cross panes.
-		let inSourceStrip = stripFrames[drag.paneID]?
+		let inSourceStrip = frames.strips[drag.paneID]?
 			.insetBy(dx: -8, dy: -8).contains(value.location) ?? true
 		let shouldDetach = abs(value.translation.height) > 42 || !inSourceStrip
 		if shouldDetach != drag.detached {
@@ -288,11 +294,11 @@ struct VMCanvasView: View {
 		let x = drag.location.x
 		var target = ti
 		if ti + 1 < pane.tabs.count,
-			let next = tabFrames[pane.tabs[ti + 1]], x > next.midX + 2 {
+			let next = frames.tabs[pane.tabs[ti + 1]], x > next.midX + 2 {
 			target = ti + 1
 			drag.baselineShift += next.width
 		} else if ti > 0,
-			let prev = tabFrames[pane.tabs[ti - 1]], x < prev.midX - 2 {
+			let prev = frames.tabs[pane.tabs[ti - 1]], x < prev.midX - 2 {
 			target = ti - 1
 			drag.baselineShift -= prev.width
 		}
@@ -311,7 +317,7 @@ struct VMCanvasView: View {
 		guard drag.detached else { return }
 		let loc = drag.location
 		// Released outside the canvas (with margin) → tear off into its own window.
-		let canvasRect = CGRect(origin: .zero, size: canvasSize).insetBy(dx: -40, dy: -40)
+		let canvasRect = CGRect(origin: .zero, size: frames.canvasSize).insetBy(dx: -40, dy: -40)
 		if !canvasRect.contains(loc) {
 			tearOff(drag.tab)
 			return
@@ -345,12 +351,12 @@ struct VMCanvasView: View {
 		at loc: CGPoint, excluding dragged: VMPaneTab
 	) -> (UUID, Int)? {
 		for pane in canvas.panes {
-			guard let strip = stripFrames[pane.id],
+			guard let strip = frames.strips[pane.id],
 				strip.insetBy(dx: 0, dy: -6).contains(loc) else { continue }
 			let index = pane.tabs
 				.filter { $0 != dragged }
 				.filter { tab in
-					guard let frame = tabFrames[tab] else { return false }
+					guard let frame = frames.tabs[tab] else { return false }
 					return frame.midX < loc.x
 				}
 				.count
@@ -362,7 +368,7 @@ struct VMCanvasView: View {
 	// Zone rects in canvas space, from MEASURED pane frames (immune to sidebar/inspector
 	// state); edge split-zones first, they win overlaps.
 	private func dropZones() -> [(CanvasDropZone, CGRect)] {
-		let size = canvasSize
+		let size = frames.canvasSize
 		guard size.width > 0 else { return [] }
 		let c = canvas
 		var zones: [(CanvasDropZone, CGRect)] = []
@@ -374,7 +380,7 @@ struct VMCanvasView: View {
 				CGRect(x: size.width - edge - 4, y: 4, width: edge, height: size.height - 8)))
 		}
 		for (i, pane) in c.panes.enumerated() {
-			guard let measured = paneFrames[pane.id] else { continue }
+			guard let measured = frames.panes[pane.id] else { continue }
 			let edgePane = i == 0 || i == c.panes.count - 1
 			let inset: CGFloat = c.panes.count < CanvasState.maxPanes && edgePane
 				? (edge + 10) * 0.5 : 12
