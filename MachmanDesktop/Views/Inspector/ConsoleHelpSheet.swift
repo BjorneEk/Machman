@@ -119,14 +119,29 @@ struct ConsoleHelpSheet: View {
 		step(3, "Root login refused with the correct password? FreeBSD only allows root on "
 			+ "terminals marked “secure” in /etc/ttys — the line above includes it. "
 			+ "Regular users can log in either way.")
-		step(4, "No console or SSH to type any of this? Boot the FreeBSD installer ISO in "
-			+ "this VM, choose Shell (Live System), mount the installed system, edit "
-			+ "/mnt/etc/ttys and /mnt/boot/loader.conf with vi, then clean up and reboot:")
-		command("zpool import -f -R /mnt zroot && zfs mount zroot/ROOT/default")
-		note("UFS instead of ZFS: mount /dev/vtbd0p2 /mnt (find the partition with gpart "
-			+ "show vtbd0). When done: zpool export zroot — or umount /mnt — detach the "
-			+ "ISO, reboot.")
-		step(5, "Boot hangs? FreeBSD ≤ 15.1 can hang at boot under Apple virtualization "
+		step(4, "No shell to type any of this into? That's the catch-22: the console only "
+			+ "works after steps 1–2, and this Mac's virtualization gives FreeBSD no "
+			+ "other serial path. Prepare the disk on your Mac instead — under QEMU, "
+			+ "FreeBSD boots with a fully working serial console in your terminal:")
+		command("brew install qemu")
+		step(5, "Have a .raw image already (FreeBSD's official …-arm64-aarch64 VM images "
+			+ "work too)? Boot it, log in as root on the console, apply steps 1–2, then "
+			+ "shutdown -p now. Exit QEMU with Ctrl-A, then X:")
+		command("qemu-system-aarch64 -machine virt -accel hvf -cpu host -smp 4 -m 4G \\\n"
+			+ "  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \\\n"
+			+ "  -drive file=freebsd.raw,format=raw,if=virtio -nographic")
+		step(6, "Only an installer ISO? Create a target disk, boot the installer on the "
+			+ "same serial console, install onto the empty disk, and apply steps 1–2 "
+			+ "before the final reboot (the installer offers a shell) — or boot the new "
+			+ "disk as in step 5:")
+		command("qemu-img create -f raw freebsd.raw 20G")
+		command("qemu-system-aarch64 -machine virt -accel hvf -cpu host -smp 4 -m 4G \\\n"
+			+ "  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \\\n"
+			+ "  -drive file=freebsd.iso,format=raw,if=virtio,readonly=on \\\n"
+			+ "  -drive file=freebsd.raw,format=raw,if=virtio -nographic")
+		step(7, "Add the prepared freebsd.raw to this VM as a disk (Copy into VM or "
+			+ "Reference), boot, and the login prompt appears in this console.")
+		step(8, "Boot hangs? FreeBSD ≤ 15.1 can hang at boot under Apple virtualization "
 			+ "while a Display device is attached (its virtio-gpu driver waits forever "
 			+ "for a reply the host never sends). Disable this VM's Display device and "
 			+ "boot again.")
