@@ -34,6 +34,22 @@ struct ConsoleLoginInstallerTests {
 		#expect(s.contains("no consoles attached"))
 	}
 
+	// A quoting/heredoc slip would otherwise only surface inside a guest — parse the
+	// generated script with the same interpreter the guest uses (sh -n: no execution).
+	@Test func scriptParsesUnderSh() throws {
+		let s = ConsoleLoginInstaller.script(vmName: "mac", ports: ["cu.virtio", "cu.virtio1"])
+		let url = FileManager.default.temporaryDirectory
+			.appendingPathComponent("machman-installer-\(UUID().uuidString).sh")
+		try s.write(to: url, atomically: true, encoding: .utf8)
+		defer { try? FileManager.default.removeItem(at: url) }
+		let sh = Process()
+		sh.executableURL = URL(fileURLWithPath: "/bin/sh")
+		sh.arguments = ["-n", url.path]
+		try sh.run()
+		sh.waitUntilExit()
+		#expect(sh.terminationStatus == 0)
+	}
+
 	@Test @MainActor func portsCompactToEnabledConsoles() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "compact")
