@@ -76,24 +76,30 @@ public final class LocalMachman: MachmanControlling {
 				code: .invalidArgument, message: "unknown VM template '\(template)'")
 		}
 		let vm = try registry.create()
+		try Self.applyTemplate(template, to: vm.config)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	// The whole meaning of a createVM template, as a sync seam (tests pin it without the
+	// async surface). nil keeps the pre-template behavior — same seeding as "default".
+	static func applyTemplate(_ template: String?, to config: VMConfig) throws {
 		switch template {
 		case "blank":
-			vm.config.devices = []
-			try vm.config.saveVMConfig()
-		case "default":
-			break   // the implied EFI device set is already seeded; no disk — add your own
+			// Truly blank: no devices AND no seeded console port — add exactly what you need.
+			config.devices = []
+			config.consolePorts = []
+			try config.saveVMConfig()
 		case "mac":
 			// Trackpad needs macOS boot — addable once macOS is installed; keyboard/pointer
 			// resolve to the boot-appropriate VZ class at assembly.
-			vm.config.devices = ImpliedDevices.kinds(macGuest: true)
+			config.devices = ImpliedDevices.kinds(macGuest: true)
 				.filter { $0 != .trackpad }
 				.map(GuestDevice.init)
-			try vm.config.saveVMConfig()
+			try config.saveVMConfig()
 		default:
-			break   // nil: pre-template behavior (implied EFI set, no disk)
+			break   // "default"/nil: the implied EFI device set is already seeded; no disk
 		}
-		registry.events.emit(.listChanged)
-		return info(for: vm)
 	}
 
 	public func deleteVM(named name: String) async throws {

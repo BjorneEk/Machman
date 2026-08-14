@@ -3,6 +3,8 @@ import Foundation
 
 // machmanVMDir is a shared global and Swift Testing runs suites in parallel, so any test that
 // redirects it must hold this lock for the whole redirect to avoid clobbering a parallel test.
+// Sync-only ON PURPOSE: a blocking gate held across an await deadlocks the cooperative pool
+// (measured) — test async surfaces outside the redirect, or extract a sync seam instead.
 enum VMTestDir {
 	private static let lock = NSLock()
 
