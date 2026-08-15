@@ -93,6 +93,20 @@ struct SSHHostConfigWriterTests {
 		#expect(managed.contains("HostName 192.168.64.9"))
 	}
 
+	// An alias with no address would fail with a DNS-flavored error — no block (and no
+	// Include line) until discovery has ever answered.
+	@Test func unaddressedEntriesWriteNoBlocks() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let writer = SSHHostConfigWriter(sshDir: root)
+		try writer.apply(entries: [entry(address: nil)])
+		#expect(!FileManager.default.fileExists(
+			atPath: root.appendingPathComponent("machman/config").path))
+		let userConfig = root.appendingPathComponent("config")
+		let text = (try? String(contentsOf: userConfig, encoding: .utf8)) ?? ""
+		#expect(!text.contains(SSHHostConfigWriter.includeLine))
+	}
+
 	@Test func missingHostKeyFallsBackToAcceptNew() throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }

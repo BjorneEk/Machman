@@ -59,7 +59,16 @@ public struct SSHHostConfigWriter {
 	// Include line present exactly while there is something to include.
 	public func apply(entries: [VMEntry]) throws {
 		let fm = FileManager.default
-		guard !entries.isEmpty else {
+		let previous = previousHostNames()
+		// A block with no HostName would make `ssh <alias>` fail with a DNS-flavored
+		// error — an alias only exists once SOME address is known (fresh discovery, or
+		// the file's own last-known value: the file is the persistence across restarts).
+		let addressed = entries.compactMap { entry -> (VMEntry, String)? in
+			guard let address = entry.address ?? previous[Self.alias(for: entry.name)]
+				else { return nil }
+			return (entry, address)
+		}
+		guard !addressed.isEmpty else {
 			try setIncludeLine(present: false)
 			try? fm.removeItem(at: managedConfig)
 			try? fm.removeItem(at: knownHosts)
@@ -67,21 +76,16 @@ public struct SSHHostConfigWriter {
 		}
 		try fm.createDirectory(at: managedDir, withIntermediateDirectories: true)
 		try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: managedDir.path)
-		let previous = previousHostNames()
 		var config = [
 			"# Managed by Machman — do not edit; regenerated from the app's SSH state.",
 			"# One Host block per VM with SSH integration enabled (ssh \"<vm>.machman\").",
 			"",
 		]
 		var pins: [String] = []
-		for entry in entries {
+		for (entry, address) in addressed {
 			let alias = Self.alias(for: entry.name)
 			config.append("Host \"\(alias)\"")
-			// Last-known address: a fresh discovery wins; otherwise the file itself is
-			// the persistence (survives daemon restarts and stopped VMs).
-			if let address = entry.address ?? previous[alias] {
-				config.append("\tHostName \(address)")
-			}
+			config.append("\tHostName \(address)")
 			if let user = entry.user {
 				config.append("\tUser \(user)")
 			}
