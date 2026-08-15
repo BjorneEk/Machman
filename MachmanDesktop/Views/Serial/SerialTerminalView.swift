@@ -137,10 +137,71 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }
 
+// Live-resize throttle. Every size change makes SwiftTerm resize + reflow its ENTIRE
+// populated scrollback (Buffer.resize iterates lines.count, then reflowWider/Narrower
+// rewraps — and profiles default to 500k lines), so per-frame resizing during a window
+// drag stalls the whole app. The container feeds the terminal a new size at a bounded
+// cadence while the drag is live and snaps it exact when the drag ends; outside live
+// resize it tracks immediately.
+final class ThrottledResizeContainer: NSView {
+	private static let interval: TimeInterval = 0.15
+	private weak var child: NSView?
+	private var pendingApply = false
+	private var lastApply = Date.distantPast
+
+	func adopt(_ view: NSView) {
+		guard view.superview !== self else { return }
+		child = view
+		addSubview(view)
+		view.frame = bounds
+	}
+
+	override func layout() {
+		super.layout()
+		guard let child, child.frame.size != bounds.size else { return }
+		if inLiveResize {
+			throttledApply()
+		} else {
+			child.frame = bounds
+		}
+	}
+
+	private func throttledApply() {
+		if Date().timeIntervalSince(lastApply) >= Self.interval {
+			apply()
+		} else if !pendingApply {
+			pendingApply = true
+			DispatchQueue.main.asyncAfter(deadline: .now() + Self.interval) { [weak self] in
+				guard let self else { return }
+				self.pendingApply = false
+				self.apply()
+			}
+		}
+	}
+
+	private func apply() {
+		lastApply = Date()
+		child?.frame = bounds
+	}
+
+	override func viewDidEndLiveResize() {
+		super.viewDidEndLiveResize()
+		child?.frame = bounds
+	}
+}
+
 // Re-parents the controller's single persistent TerminalView; never recreates it.
 struct SerialTerminalHost: NSViewRepresentable {
 	let controller: SerialTerminalController
 
-	func makeNSView(context: Context) -> TerminalView { controller.terminalView }
-	func updateNSView(_ nsView: TerminalView, context: Context) {}
+	func makeNSView(context: Context) -> ThrottledResizeContainer {
+		let container = ThrottledResizeContainer()
+		container.adopt(controller.terminalView)
+		return container
+	}
+
+	func updateNSView(_ nsView: ThrottledResizeContainer, context: Context) {
+		// Tab moves re-parent the same TerminalView into a fresh container.
+		nsView.adopt(controller.terminalView)
+	}
 }
