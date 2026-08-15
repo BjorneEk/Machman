@@ -632,6 +632,10 @@ private struct NetworkSSHSection: View {
 			Text(source == "dhcp" ? "via the host's DHCP leases" : "via the ARP table")
 				.font(.caption2)
 				.foregroundStyle(.tertiary)
+		} else if vm.state.isRunning {
+			Text("The address appears once the guest's SSH server answers.")
+				.font(.caption2)
+				.foregroundStyle(.tertiary)
 		}
 		if let hostname = vm.ssh?.guestHostname {
 			LabeledContent("Hostname") {
@@ -677,10 +681,8 @@ private struct NetworkSSHSection: View {
 			Button("Add to ~/.ssh") { viewModel.setSSHIntegration(vm.name, enabled: true) }
 			Button("Cancel", role: .cancel) {}
 		} message: {
-			Text("Machman adds one marked Include line to ~/.ssh/config and keeps its own "
-				+ "~/.ssh/machman/config with a host entry per VM (pinned host key, no "
-				+ "first-connect prompt). Turning the last VM off removes the Include "
-				+ "line again. Your own config entries are never touched.")
+			Text("Adds one marked Include line to ~/.ssh/config plus a Machman-owned "
+				+ "entry per VM — your own entries are never touched.")
 		}
 	}
 
@@ -691,20 +693,23 @@ private struct NetworkSSHSection: View {
 			LabeledContent("Guest → Mac") {
 				Text("awaiting your approval").foregroundStyle(.secondary)
 			}
+			if let fingerprint = vm.ssh?.reversePublicKey.flatMap(sshKeyFingerprint) {
+				Text(fingerprint)
+					.font(.system(.caption2, design: .monospaced))
+					.foregroundStyle(.tertiary)
+					.textSelection(.enabled)
+			}
 			Button("Approve Guest Access…") { approveConsent = true }
 				.confirmationDialog(
-					"Let \(vm.name) log in to this Mac?", isPresented: $approveConsent
+					"Let \(vm.name) log in to this Mac as you?", isPresented: $approveConsent
 				) {
 					Button("Approve") {
 						viewModel.setSSHReverseApproved(vm.name, approved: true)
 					}
 					Button("Cancel", role: .cancel) {}
 				} message: {
-					Text("Adds the guest's key to your ~/.ssh/authorized_keys — anyone "
-						+ "with root in the VM can then open a shell as you on this Mac. "
-						+ "Key \(vm.ssh?.reversePublicKey.flatMap(sshKeyFingerprint) ?? "?")."
-						+ " Requires Remote Login (System Settings → General → Sharing), "
-						+ "which Machman never enables itself.")
+					Text("Adds the key shown in the inspector to ~/.ssh/authorized_keys — "
+						+ "needs Remote Login enabled on this Mac.")
 				}
 		case .approved:
 			LabeledContent("Guest → Mac") {
@@ -744,13 +749,11 @@ struct SSHSetupInspector: View {
 
 	var body: some View {
 		Form {
+			// Inspector text rule: nothing longer than one sentence — details live in
+			// the Setup Guide sheet, never here.
 			Section("SSH Setup") {
-				Text("Two folders on this VM's share: a read-only "
-					+ "“\(SSHSetupInfo.directoryName)” carrying a generated install "
-					+ "script plus this Mac's public keys, and a writable "
-					+ "“\(SSHSetupInfo.reportDirectoryName)” the guest reports back "
-					+ "through. The script enables the guest's SSH server and installs "
-					+ "the key — one-way, or two-way with --two-way.")
+				Text("Serves a script the guest runs once to enable SSH and exchange "
+					+ "keys with this Mac.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
@@ -768,25 +771,27 @@ struct SSHSetupInspector: View {
 						.font(.caption)
 						.foregroundStyle(.secondary)
 				}
+				if let identity = vm.ssh?.identityFilePath,
+					let pub = try? String(contentsOfFile: identity + ".pub",
+						encoding: .utf8) {
+					LabeledContent("Public key") {
+						CopyToClipboardButton(
+							pub.trimmingCharacters(in: .whitespacesAndNewlines),
+							tooltip: "Copy this Mac's public key")
+					}
+				}
 			}
 			Section("Guest Setup") {
 				VStack(alignment: .leading, spacing: 6) {
 					Text(macGuest
-						? "Boot the guest (the share automounts, macOS 13+), then run in "
-							+ "its Terminal:"
-						: "Boot the guest, mount the share once, and run the script:")
+						? "Run in the guest's Terminal (the share automounts, macOS 13+):"
+						: "Run in the guest (Linux; FreeBSD cannot mount the share — "
+							+ "see the guide):")
 						.font(.caption)
 						.foregroundStyle(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
 					commandBlock(macGuest
 						? SSHSetupInfo.runCommand : SSHSetupInfo.mountAndRunCommand)
-					Text("It asks whether to also set up guest → Mac SSH (or pass "
-						+ "--two-way / --one-way). Re-run any time; --uninstall removes "
-						+ "everything it installed; --install lets it install a missing "
-						+ "SSH server package. Status and switches live on the Network "
-						+ "device's inspector.")
-						.font(.caption)
-						.foregroundStyle(.tertiary)
-						.fixedSize(horizontal: false, vertical: true)
 					Button {
 						showGuide = true
 					} label: {
@@ -800,10 +805,8 @@ struct SSHSetupInspector: View {
 						Button("Reset", role: .destructive) { viewModel.resetSSH(vm.name) }
 						Button("Cancel", role: .cancel) {}
 					} message: {
-						Text("Forgets everything SSH about this VM: the key pair, the "
-							+ "pinned guest identity, the ~/.ssh entry, and any approved "
-							+ "guest access. The guest keeps what the script installed — "
-							+ "run it with --uninstall there.")
+						Text("Forgets this VM's keys, pinned identity, ~/.ssh entry, and "
+							+ "approvals — the guest keeps what the script installed.")
 					}
 			}
 			DeviceImplementationSection(vm: vm, device: device)

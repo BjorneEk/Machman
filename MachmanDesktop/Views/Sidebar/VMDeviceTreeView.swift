@@ -343,7 +343,13 @@ struct VMDeviceTreeView: View {
 	private var serialGroup: some View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count, accessory: { sshSessionButton }) {
+			count: ports.count, menu: {
+			// The + accessory's reliable twin — List group labels can swallow clicks.
+			if vm.ssh != nil {
+				Button("New SSH Session") { openSSHSession() }
+					.disabled(!sshSessionReady)
+			}
+		}, accessory: { sshSessionButton }) {
 			// Search matches the display name AND the raw guest device (hvc0 finds
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {
@@ -384,16 +390,19 @@ struct VMDeviceTreeView: View {
 
 	// The + on the Serial header (SSH is configured): each press opens a fresh ephemeral
 	// session TAB — sessions never appear in this tree, there is no underlying device.
+	private var sshSessionReady: Bool {
+		vm.state.isRunning && SSHCommand.arguments(for: vm) != nil
+	}
+
 	@ViewBuilder
 	private var sshSessionButton: some View {
 		if vm.ssh != nil {
-			let ready = vm.state.isRunning && SSHCommand.arguments(for: vm) != nil
 			IconButton(symbol: MachmanSymbols.add,
-				tooltip: ready
+				tooltip: sshSessionReady
 					? "New SSH session tab"
 					: "SSH tabs need the VM running with a discovered address",
 				font: .caption, flat: true) { openSSHSession() }
-				.disabled(!ready)
+				.disabled(!sshSessionReady)
 		}
 	}
 
