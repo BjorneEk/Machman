@@ -373,7 +373,9 @@ struct VMDeviceTreeView: View {
 				Button("New SSH Session") { openSSHSession() }
 					.disabled(!sshSessionReady)
 			}, accessory: { sshSessionButton }) {
-				ForEach(open.filter { matches($0.title) }) { ref in
+				ForEach(open.filter {
+					matches(sessions.sshSessionName(vm: vm.name, ref: $0))
+				}) { ref in
 					sshSessionRow(ref)
 				}
 			}
@@ -384,7 +386,7 @@ struct VMDeviceTreeView: View {
 		HStack(spacing: 6) {
 			Image(systemName: MachmanSymbols.tabTerminal)
 				.font(.system(size: theme.metrics.iconSize))
-			Text(ref.title)
+			Text(sessions.sshSessionName(vm: vm.name, ref: ref))
 				.lineLimit(1)
 			Spacer()
 			Circle().fill(MachmanColors.connected)
@@ -446,8 +448,15 @@ struct VMDeviceTreeView: View {
 	}
 
 	private func openSSHSession() {
-		guard let user = vm.ssh?.guestUser, let address = vm.ssh?.address else { return }
-		let ref = SSHSessionRef(title: "\(user)@\(address)")
+		guard SSHCommand.arguments(for: vm) != nil else { return }
+		// "Session N": next number above every open session's current name.
+		let taken = canvases.canvas(for: vm.name).allOpenTabs.compactMap { tab -> Int? in
+			guard case .ssh(let ref) = tab else { return nil }
+			let name = sessions.sshSessionName(vm: vm.name, ref: ref)
+			guard name.hasPrefix("Session ") else { return nil }
+			return Int(name.dropFirst("Session ".count))
+		}
+		let ref = SSHSessionRef(title: "Session \((taken.max() ?? 0) + 1)")
 		mutateCanvas { $0.open(.ssh(ref)) }
 	}
 

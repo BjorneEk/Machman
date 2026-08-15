@@ -89,9 +89,32 @@ final class TerminalSessions: ObservableObject {
 	// Same deferred-creation shape as the serial tabs, but the transport is a PTY-spawned
 	// /usr/bin/ssh, and it is one-shot: a dead session never reconnects — open a new tab.
 	private var sshControllers: [String: [SSHSessionRef: SerialTerminalController]] = [:]
+	// Display metadata: the ref's title is only the birth name ("Session N") — renames
+	// live here so tab identity (Hashable ref) never changes; startedAt drives duration.
+	private struct SSHSessionMeta {
+		var name: String
+		var startedAt: Date
+	}
+	private var sshMeta: [String: [SSHSessionRef: SSHSessionMeta]] = [:]
 
 	func sshController(vm: String, ref: SSHSessionRef) -> SerialTerminalController? {
 		sshControllers[vm]?[ref]
+	}
+
+	func sshSessionName(vm: String, ref: SSHSessionRef) -> String {
+		sshMeta[vm]?[ref]?.name ?? ref.title
+	}
+
+	func sshSessionStart(vm: String, ref: SSHSessionRef) -> Date? {
+		sshMeta[vm]?[ref]?.startedAt
+	}
+
+	func renameSSHSession(vm: String, ref: SSHSessionRef, to name: String) {
+		let trimmed = name.trimmingCharacters(in: .whitespaces)
+		guard !trimmed.isEmpty else { return }
+		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
+			name: ref.title, startedAt: Date())].name = trimmed
+		objectWillChange.send()
 	}
 
 	func ensureSSHController(
@@ -108,6 +131,10 @@ final class TerminalSessions: ObservableObject {
 			guard stillWanted() else { return }
 			let c = SerialTerminalController(profile: profile)
 			self.sshControllers[vm, default: [:]][ref] = c
+			if self.sshMeta[vm]?[ref] == nil {
+				self.sshMeta[vm, default: [:]][ref] =
+					SSHSessionMeta(name: ref.title, startedAt: Date())
+			}
 			// TERM matches what the emulator actually is — without it ssh sends "dumb".
 			c.connect(stream: PTYProcessStream(
 				executablePath: "/usr/bin/ssh", arguments: arguments,
@@ -117,6 +144,7 @@ final class TerminalSessions: ObservableObject {
 	}
 
 	func dropSSHController(vm: String, ref: SSHSessionRef) {
+		sshMeta[vm]?[ref] = nil
 		guard let c = sshControllers[vm]?[ref] else { return }
 		c.disconnect()
 		sshControllers[vm]?[ref] = nil
@@ -134,6 +162,7 @@ final class TerminalSessions: ObservableObject {
 		for vm in Array(sshControllers.keys) where !names.contains(vm) {
 			sshControllers[vm]?.values.forEach { $0.disconnect() }
 			sshControllers[vm] = nil
+			sshMeta[vm] = nil
 		}
 	}
 
@@ -147,6 +176,10 @@ final class TerminalSessions: ObservableObject {
 		if let c = sshControllers[old] {
 			sshControllers[new] = c
 			sshControllers[old] = nil
+		}
+		if let m = sshMeta[old] {
+			sshMeta[new] = m
+			sshMeta[old] = nil
 		}
 	}
 }

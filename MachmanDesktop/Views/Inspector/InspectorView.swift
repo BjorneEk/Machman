@@ -30,8 +30,12 @@ struct InspectorView: View {
 					KernelEntryInspector(viewModel: viewModel, vm: vm, path: path)
 				case .initramfs(let path):
 					InitramfsEntryInspector(viewModel: viewModel, vm: vm, path: path)
-				case .vmRoot, nil, .group, .sshSession:
+				case .vmRoot, nil, .group:
 					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
+				case .sshSession(let ref):
+					SSHSessionInspector(
+						viewModel: viewModel, sessions: viewModel.terminals,
+						vm: vm, ref: ref)
 				case .disk(let id):
 					DiskInspector(viewModel: viewModel, vm: vm, diskID: id)
 				case .mount(let id):

@@ -538,7 +538,7 @@ struct VMCanvasView: View {
 				.displayName(mode: vm.boot.mode)
 				?? ref.displayName(mode: vm.boot.mode)
 		case .ssh(let ref):
-			return ref.title
+			return sessions.sshSessionName(vm: vm.name, ref: ref)
 		}
 	}
 }
