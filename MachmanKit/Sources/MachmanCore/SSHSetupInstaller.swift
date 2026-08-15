@@ -154,7 +154,7 @@ enum SSHSetupInstaller {
 
 		usage() {
 			echo "usage: sh \"$0\" [--two-way | --one-way] [--install] [--user <name>]" >&2
-			echo "       sh \"$0\" --uninstall" >&2
+			echo "       sh \"$0\" --uninstall [--user <name>]" >&2
 			exit 64
 		}
 
@@ -525,8 +525,9 @@ enum SSHSetupInstaller {
 				rm -f "$config.machman-block"
 				chown "$U:$GROUP" "$config"
 				chmod 600 "$config"
-				echo "guest → host: 'ssh mac' will work once you approve this VM in" \
-					"Machman (and the Mac's Remote Login is on)."
+				echo "guest → host: 'ssh mac' (as $U — other users, root included, are" \
+					"not configured) reaches $host_target once you approve this VM in" \
+					"Machman and the Mac's Remote Login is on."
 			else
 				echo "warning: no route to the host found — guest → host config skipped" >&2
 			fi

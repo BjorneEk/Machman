@@ -68,9 +68,13 @@ struct SSHSetupInstallerTests {
 		] {
 			#expect(s.contains(key), "missing report key \(key)")
 		}
-		// Uninstall removes marker-matched artifacts but never disables sshd.
+		// Uninstall removes marker-matched artifacts but never disables sshd; its usage
+		// line advertises --user (root consoles need it for uninstall too).
 		#expect(s.contains(#"grep -vF "$MARKER""#))
 		#expect(s.contains("The SSH server itself was left"))
+		#expect(s.contains("--uninstall [--user <name>]"))
+		// Two-way names the configured user — running 'ssh mac' as root is not it.
+		#expect(s.contains("root included"))
 		// The report lands in the writable sibling, addressed payload-relatively.
 		#expect(s.contains("/../SSHReport"))
 	}
