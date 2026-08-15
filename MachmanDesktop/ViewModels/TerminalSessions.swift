@@ -108,8 +108,10 @@ final class TerminalSessions: ObservableObject {
 			guard stillWanted() else { return }
 			let c = SerialTerminalController(profile: profile)
 			self.sshControllers[vm, default: [:]][ref] = c
+			// TERM matches what the emulator actually is — without it ssh sends "dumb".
 			c.connect(stream: PTYProcessStream(
-				executablePath: "/usr/bin/ssh", arguments: arguments))
+				executablePath: "/usr/bin/ssh", arguments: arguments,
+				environmentOverrides: ["TERM": profile.termName]))
 			self.objectWillChange.send()
 		}
 	}

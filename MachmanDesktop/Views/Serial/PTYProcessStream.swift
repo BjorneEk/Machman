@@ -13,6 +13,7 @@ import Foundation
 final class PTYProcessStream: TerminalByteStream {
 	private let executablePath: String
 	private let arguments: [String]
+	private let environmentOverrides: [String: String]
 	private var process: Process?
 	private var parentFD: Int32 = -1
 	private var readSource: DispatchSourceRead?
@@ -23,9 +24,15 @@ final class PTYProcessStream: TerminalByteStream {
 	var onData: ((Data) -> Void)?
 	var onClose: (() -> Void)?
 
-	init(executablePath: String, arguments: [String]) {
+	// environmentOverrides ride on top of the app's environment — a GUI app carries no
+	// TERM, and without one ssh advertises TERM=dumb to the guest.
+	init(
+		executablePath: String, arguments: [String],
+		environmentOverrides: [String: String] = [:]
+	) {
 		self.executablePath = executablePath
 		self.arguments = arguments
+		self.environmentOverrides = environmentOverrides
 	}
 
 	func connect() -> Bool {
@@ -36,6 +43,10 @@ final class PTYProcessStream: TerminalByteStream {
 		let p = Process()
 		p.executableURL = URL(fileURLWithPath: executablePath)
 		p.arguments = arguments
+		if !environmentOverrides.isEmpty {
+			p.environment = ProcessInfo.processInfo.environment
+				.merging(environmentOverrides) { _, override in override }
+		}
 		p.standardInput = childHandle
 		p.standardOutput = childHandle
 		p.standardError = childHandle

@@ -54,6 +54,22 @@ struct PTYProcessStreamTests {
 		#expect(sink.isClosed)
 	}
 
+	@Test @MainActor func environmentOverridesReachTheChild() async throws {
+		let stream = PTYProcessStream(
+			executablePath: "/bin/sh", arguments: ["-c", "echo TERM=$TERM"],
+			environmentOverrides: ["TERM": "xterm-machman-test"])
+		let sink = Sink()
+		stream.onData = { sink.append($0) }
+		#expect(stream.connect())
+		for _ in 0..<250 where !String(decoding: sink.received, as: UTF8.self)
+			.contains("xterm-machman-test") {
+			try await Task.sleep(for: .milliseconds(20))
+		}
+		#expect(String(decoding: sink.received, as: UTF8.self)
+			.contains("TERM=xterm-machman-test"))
+		stream.stop()
+	}
+
 	@Test func windowSizeAndSendAreSafeBeforeConnect() {
 		let stream = PTYProcessStream(executablePath: "/bin/cat", arguments: [])
 		stream.setWindowSize(cols: 80, rows: 24)
