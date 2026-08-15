@@ -23,9 +23,9 @@ struct SSHHelpSheet: View {
 		case freebsd = "FreeBSD"
 	}
 
-	private static let titleSize: CGFloat = 18
-	private static let textSize: CGFloat = 14.5
-	private static let smallSize: CGFloat = 12
+	private static let titleSize: CGFloat = 19
+	private static let textSize: CGFloat = 15.5
+	private static let smallSize: CGFloat = 13
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
@@ -49,13 +49,12 @@ struct SSHHelpSheet: View {
 					switch (mode, tab) {
 					case (.macOS, _):
 						macOSSteps
-						sharedTail(from: 5)
+						sharedTail(from: 4)
 					case (_, .linux):
 						linuxSteps
-						sharedTail(from: 6)
-					case (_, .freebsd):
-						freebsdSteps
 						sharedTail(from: 5)
+					case (_, .freebsd):
+						freebsdSteps   // manual path — no script, no shared tail
 					}
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
@@ -84,70 +83,67 @@ struct SSHHelpSheet: View {
 
 	@ViewBuilder
 	private var linuxSteps: some View {
-		step(1, "Add the installer: Add (+) → Installers → SSH Setup, then boot the guest.")
-		step(2, "Mount the share once and run the script (it prompts for two-way SSH; "
-			+ "pass --two-way or --one-way to skip the prompt):")
+		step(1, "Add (+) → Installers → SSH Setup, then boot the guest.")
+		step(2, "As root (or with sudo), mount the share and run the script:")
 		command(SSHSetupInfo.mountAndRunCommand)
-		step(3, "What it does: starts the SSH server (systemd unit ssh/sshd, OpenRC on "
-			+ "Alpine, plus the firewall rule openSUSE needs), installs this Mac's key "
-			+ "for your user, and reports the guest's address back to Machman.")
-		step(4, "No SSH server installed (Arch, desktop images)? The script prints the "
-			+ "exact install command and stops — run it with --install to let it "
-			+ "install the package itself.")
-		note("NixOS is declarative: the script prints the services.openssh.enable "
-			+ "snippet for configuration.nix instead of enabling anything, and still "
-			+ "installs the key (honored once sshd is enabled).")
-		step(5, "Done — the Network device's inspector shows the guest's address and the "
-			+ "ready-to-copy ssh command; the alias toggle there makes "
-			+ "“ssh <vm>.machman” work from any terminal.")
+		note("Root console without sudo? Drop the sudos and add:  --user <your name>")
+		step(3, "The script enables sshd and installs this Mac's key for your user.")
+		note("No sshd installed? It prints the install command — or re-run with --install. "
+			+ "NixOS: it prints the configuration.nix snippet; finish with nixos-rebuild "
+			+ "switch.")
+		step(4, "The Network inspector shows the address once sshd answers, plus the ssh "
+			+ "command and the “ssh <vm>.machman” alias toggle.")
 	}
 
-	// MARK: - FreeBSD
+	// MARK: - FreeBSD (manual — FreeBSD cannot mount the share)
 
 	@ViewBuilder
 	private var freebsdSteps: some View {
-		step(1, "Add the installer: Add (+) → Installers → SSH Setup, then boot the guest.")
-		step(2, "Mount the share once and run the script:")
-		command(SSHSetupInfo.mountAndRunCommand)
-		step(3, "What it does: sysrc sshd_enable=YES + service sshd start (sshd ships in "
-			+ "base and the installer usually enables it already), installs this Mac's "
-			+ "key for your user, and reports the guest's address back to Machman.")
-		note("FreeBSD refuses root logins over SSH by default — the key is installed "
-			+ "for the user who ran sudo, not root.")
-		step(4, "Done — the Network device's inspector shows the address, the ssh "
-			+ "command, and the “ssh <vm>.machman” alias toggle.")
+		intro("FreeBSD has no virtiofs driver, so the script cannot reach the guest — "
+			+ "set SSH up by hand from the console instead.")
+		step(1, "Enable sshd (the installer usually already did):")
+		command("sysrc sshd_enable=YES && service sshd start")
+		step(2, "Copy this Mac's key (SSH Setup inspector → Public key), then as your "
+			+ "user in the console:")
+		command("mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys")
+		note("Paste the key, press Return, then Ctrl-D. Use a regular user — FreeBSD "
+			+ "refuses root logins by default.")
+		step(3, "The Network inspector shows the address once sshd answers — connect "
+			+ "with ssh <user>@<address>.")
+		note("Without the script there is no guest report, so the alias and session "
+			+ "tabs stay off — plain ssh works fine.")
 	}
 
 	// MARK: - macOS guest
 
 	@ViewBuilder
 	private var macOSSteps: some View {
-		step(1, "Add the installer: Add (+) → Installers → SSH Setup, then boot the "
-			+ "guest — the “My Shared Files” volume appears on its own (macOS 13+).")
-		step(2, "In the guest's Terminal, run the script and enter your password:")
+		step(1, "Add (+) → Installers → SSH Setup, then boot the guest — the share "
+			+ "automounts (macOS 13+).")
+		step(2, "In the guest's Terminal, run the script:")
 		command(SSHSetupInfo.runCommand)
-		step(3, "What it does: enables Remote Login via launchctl (the System Settings "
-			+ "toggle needs Full Disk Access and fails in a fresh VM — launchd control "
-			+ "doesn't), creates the guest's host keys, installs this Mac's key for "
-			+ "your user, and reports the guest's address back to Machman.")
-		step(4, "Done — the Network device's inspector shows the address, the ssh "
-			+ "command, and the “ssh <vm>.machman” alias toggle.")
+		note("It uses launchctl — the System Settings toggle is Full-Disk-Access-gated "
+			+ "in a fresh VM.")
+		step(3, "The Network inspector shows the address, the ssh command, and the "
+			+ "“ssh <vm>.machman” alias toggle.")
 	}
 
 	// MARK: - Shared tail
 
 	@ViewBuilder
 	private func sharedTail(from n: Int) -> some View {
-		step(n, "Two-way (guest → Mac): choose it at the prompt or re-run with "
-			+ "--two-way. The guest makes its own key and Machman asks you to approve "
-			+ "it before anything can log in to this Mac; it also needs Remote Login "
-			+ "enabled here (System Settings → General → Sharing) — Machman never "
-			+ "flips that itself. Afterwards “ssh mac” works inside the guest.")
-		step(n + 1, "Undo: --uninstall removes everything the script installed in the "
-			+ "guest (the SSH server stays enabled); the installer device can be "
-			+ "disabled or removed any time — SSH keeps working, Machman just stops "
-			+ "regenerating the payload. “Reset SSH State” in the inspector forgets "
-			+ "the Mac side.")
+		step(n, "Two-way (guest → Mac): choose it at the script's prompt, then approve "
+			+ "the key in the Network inspector — Remote Login on this Mac stays yours "
+			+ "to enable.")
+		step(n + 1, "Undo: --uninstall in the guest removes what it installed; “Reset "
+			+ "SSH State” in the inspector forgets the Mac side.")
+	}
+
+	private func intro(_ text: String) -> some View {
+		Text(text)
+			.font(.system(size: Self.textSize))
+			.foregroundStyle(.secondary)
+			.fixedSize(horizontal: false, vertical: true)
 	}
 
 	// MARK: - Building blocks (ConsoleHelpSheet vocabulary)

@@ -30,11 +30,11 @@ struct ConsoleHelpSheet: View {
 		SerialPortKind.console.displayName(guestIndex: guestIndex, mode: mode)
 	}
 
-	// Type scale: review feedback said the guide read too small — the standard styles'
-	// sizes +20% (title3 15→18, callout 12→14.5, caption 10→12).
-	private static let titleSize: CGFloat = 18
-	private static let textSize: CGFloat = 14.5
-	private static let smallSize: CGFloat = 12
+	// Type scale: review feedback twice said the guides read too small — the standard
+	// styles' sizes roughly +25-30% by now (title3 15→19, callout 12→15.5, caption 10→13).
+	private static let titleSize: CGFloat = 19
+	private static let textSize: CGFloat = 15.5
+	private static let smallSize: CGFloat = 13
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
