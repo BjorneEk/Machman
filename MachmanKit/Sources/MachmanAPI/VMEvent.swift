@@ -19,6 +19,9 @@ public enum VMEvent: Sendable, Equatable {
 	// A long-running operation changed (started, progressed, or reached a terminal state).
 	// Resync after reconnect via host.operations — events have no replay.
 	case operationChanged(op: OperationInfo)
+	// A VM's SSH state moved (guest report ingested, discovery resolved, switches flipped).
+	// Carries no payload beyond the name — clients re-fetch the VM.
+	case sshChanged(vm: String)
 	case unknown(type: String)
 }
 
@@ -42,6 +45,7 @@ extension VMEvent: Codable {
 		case log
 		case copyProgress
 		case operationChanged
+		case sshChanged
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -70,6 +74,8 @@ extension VMEvent: Codable {
 				totalBytes: try c.decode(UInt64.self, forKey: .totalBytes))
 		case .operationChanged:
 			self = .operationChanged(op: try c.decode(OperationInfo.self, forKey: .op))
+		case .sshChanged:
+			self = .sshChanged(vm: try c.decode(String.self, forKey: .vm))
 		case nil:
 			self = .unknown(type: type)
 		}
@@ -101,6 +107,9 @@ extension VMEvent: Codable {
 		case .operationChanged(let op):
 			try c.encode(Kind.operationChanged.rawValue, forKey: .type)
 			try c.encode(op, forKey: .op)
+		case .sshChanged(let vm):
+			try c.encode(Kind.sshChanged.rawValue, forKey: .type)
+			try c.encode(vm, forKey: .vm)
 		case .unknown(let type):
 			try c.encode(type, forKey: .type)
 		}

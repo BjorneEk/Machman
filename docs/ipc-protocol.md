@@ -92,6 +92,9 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; refused while running) |
 | `vm.mount.setTag` | `{name, mountID, tag}` | `VMInfo` (1.0.4+; next-boot effect, tag must be unique on the VM) |
 | `vm.kernel.rename` | `{name, path, tag}` | `VMInfo` (1.0.4+; owned kernel/initramfs files — the file moves to the new tag dir, kernel-boot references and the command-line override migrate; refused while running) |
+| `vm.ssh.set` | `{name, integrationEnabled?, reverseApproved?}` | `VMInfo` (1.0.5+; nil fields unchanged; approving reverse access requires a reported reverse key; refused with `invalidState` during safe runs — host-side ~/.ssh effects must not track a discardable shadow) |
+| `vm.ssh.refresh` | `{name}` | `{}` (1.0.5+; re-runs guest address discovery now; daemon-only — a vmhost refuses with `invalidState`) |
+| `vm.ssh.reset` | `{name}` | `VMInfo` (1.0.5+; forgets all SSH state: config, the per-VM keypair, payload/report dirs, and host-side artifacts; refused during safe runs) |
 | `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
@@ -106,16 +109,28 @@ mounts: [{id, path, tag, safe, enabled?}], boot: {mode: "efi"|"linuxKernel"|"mac
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
-devices?, nestedVirtualization?}`.
+devices?, nestedVirtualization?, ssh?}`.
 
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
 displayHeightPixels?, displayPixelsPerInch?, sharesClipboard?, unavailable?}`; kinds:
 `keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network, clipboard,
-entropy, rosetta, consoleLoginInstaller` (treat unknown kinds as a device you don't
-recognize). One device per kind. `consoleLoginInstaller` (additive, macOS boots only):
-a read-only directory share carrying a generated script the guest runs to install login
-prompts on the VM's consoles; older daemons preserve it in config and skip it at boot
-with a warning.
+entropy, rosetta, consoleLoginInstaller, sshInstaller` (treat unknown kinds as a device
+you don't recognize). One device per kind. `consoleLoginInstaller` (additive, macOS boots
+only): a read-only directory share carrying a generated script the guest runs to install
+login prompts on the VM's consoles; older daemons preserve it in config and skip it at
+boot with a warning. `sshInstaller` (1.0.5+, any boot mode): a read-only `SSHSetup` share
+directory carrying a generated script that enables sshd in the guest and exchanges keys,
+plus a writable `SSHReport` drop-box the guest reports back through; both names are
+reserved mount tags.
+
+`ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, reverseState:
+"none"|"pending"|"approved", reversePublicKey?, integrationEnabled?, lastReportAt?,
+address?, addressSource?: "dhcp"|"arp", identityFilePath?}` — absent entirely when SSH was
+never used (or from an older daemon). The persisted half comes from the guest's install
+report; `address`/`addressSource` are a daemon overlay (like `safeRun`), present only
+while the VM runs and discovery has an answer. `identityFilePath` is the server-resolved
+absolute path of the per-VM private key (clients must not derive library paths). Treat
+unknown `reverseState` strings as a state you don't recognize.
 Absent `devices` = an older daemon: the effective set is the implied per-boot default
 (mac guests: keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network;
 EFI/kernel guests: keyboard, pointer, graphics, audioInput, audioOutput, network, clipboard).
@@ -171,10 +186,18 @@ and `state` (`running, succeeded, failed, cancelled`). Terminal states are emitt
 resync after reconnect with `host.operations`. `copyProgress` keeps being emitted in
 parallel for older clients. ETA stays consumer math.
 
+`sshChanged {vm}` (1.0.5+): the VM's SSH state moved (guest report ingested, address
+discovery resolved, or switches flipped). No payload beyond the name — re-fetch the VM.
+
 **1.0.4 compatibility note**: the persisted config format gained `devices`/`enabled`/
 `kernelOverrides` keys. Older daemons decode configs fine but their next config save DROPS
 those keys — which is why 1.0.4 bumps the desktop's daemon-version floor and triggers the
 replace-older prompt. Wire-wise everything above is additive under `apiVersion` 1.
+
+**1.0.5 compatibility note**: the persisted config format gained the `ssh` key (same
+drop-on-rewrite hazard as 1.0.4), and `vm.ssh.*` answers `methodNotFound` on older
+daemons/vmhosts — both are why 1.0.5 bumps the floor again. Wire-wise everything above
+remains additive under `apiVersion` 1.
 
 ## Safe runs (invisible on the wire except `safeRun`)
 

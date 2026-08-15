@@ -183,6 +183,26 @@ public final class RemoteMachman: MachmanControlling {
 			name: name, disks: disks, mounts: mounts, console: console, uart: uart))
 	}
 
+	public func setSSH(
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+	) async throws -> VMInfo {
+		try await connection.call(
+			.sshSet,
+			RPCParams.SSHSet(
+				name: name, integrationEnabled: integrationEnabled,
+				reverseApproved: reverseApproved),
+			expecting: VMInfo.self)
+	}
+
+	public func refreshSSH(vm name: String) async throws {
+		try await void(.sshRefresh, RPCParams.Name(name: name))
+	}
+
+	public func resetSSH(vm name: String) async throws -> VMInfo {
+		try await connection.call(
+			.sshReset, RPCParams.Name(name: name), expecting: VMInfo.self)
+	}
+
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {

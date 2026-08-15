@@ -144,6 +144,7 @@ public enum MachmanSymbols {
 	public static let deviceRosetta = "translate"
 	// Installer-package metaphor — the terminal glyphs belong to the consoles themselves.
 	public static let deviceLoginInstaller = "shippingbox.fill"
+	public static let deviceSSHSetup = "key.fill"
 
 	// Add-popover tiles
 	public static let addDiskNew = "externaldrive.badge.plus"

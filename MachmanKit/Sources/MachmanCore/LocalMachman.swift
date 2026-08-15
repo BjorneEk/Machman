@@ -532,6 +532,34 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
+	// MARK: - SSH (1.0.5)
+
+	public func setSSH(
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+	) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.setSSH(
+			integrationEnabled: integrationEnabled, reverseApproved: reverseApproved)
+		registry.events.emit(.sshChanged(vm: name))
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	// Discovery is host-global (DHCP leases, ARP) and lives in the daemon; the engine half
+	// refuses like retire does.
+	public func refreshSSH(vm name: String) async throws {
+		throw MachmanError(
+			code: .invalidState, message: "only the daemon can refresh SSH state")
+	}
+
+	public func resetSSH(vm name: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.resetSSH()
+		registry.events.emit(.sshChanged(vm: name))
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {
@@ -763,6 +791,20 @@ public final class LocalMachman: MachmanControlling {
 					guestIndex: guestIndex)
 			}
 		}
+		// Persisted SSH half only; address stays nil here (daemon overlay, like safeRun).
+		let ssh: SSHInfo? = config.ssh.map { state in
+			let keyPath = config.configFilePath(file: "ssh/id_ed25519")
+			return SSHInfo(
+				guestUser: state.guestUser,
+				guestHostname: state.guestHostname,
+				guestOS: state.guestOS,
+				reverseState: state.reverseStateValue,
+				reversePublicKey: state.reversePublicKey,
+				integrationEnabled: state.integrationEnabled,
+				lastReportAt: state.lastReportAt,
+				identityFilePath: FileManager.default.fileExists(atPath: keyPath)
+					? keyPath : nil)
+		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
 		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.
 		let devices = config.devices.compactMap { device -> DeviceInfo? in
@@ -793,7 +835,8 @@ public final class LocalMachman: MachmanControlling {
 			consolePorts: serialPorts(.console, config.consolePorts),
 			uartPorts: serialPorts(.uart, config.uartPorts),
 			devices: devices,
-			nestedVirtualization: config.nestedVirtualization)
+			nestedVirtualization: config.nestedVirtualization,
+			ssh: ssh)
 	}
 
 	// Why a configured device cannot attach here — the serial-unavailability pattern for

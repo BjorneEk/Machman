@@ -56,6 +56,10 @@ public enum RPCMethod: String, Sendable {
 	case diskRename = "vm.disk.rename"
 	case mountSetTag = "vm.mount.setTag"
 	case kernelRename = "vm.kernel.rename"
+	// 1.0.5: ssh autoconfiguration.
+	case sshSet = "vm.ssh.set"
+	case sshRefresh = "vm.ssh.refresh"
+	case sshReset = "vm.ssh.reset"
 	case hostOperations = "host.operations"
 	case operationCancel = "op.cancel"
 	case installRosetta = "host.installRosetta"
@@ -422,6 +426,19 @@ public enum RPCParams {
 			self.name = name
 			self.path = path
 			self.tag = tag
+		}
+	}
+
+	// vm.ssh.set: nil fields leave that half unchanged (the setKernelOverride pattern).
+	public struct SSHSet: Codable, Equatable, Sendable {
+		public var name: String
+		public var integrationEnabled: Bool?
+		public var reverseApproved: Bool?
+
+		public init(name: String, integrationEnabled: Bool?, reverseApproved: Bool?) {
+			self.name = name
+			self.integrationEnabled = integrationEnabled
+			self.reverseApproved = reverseApproved
 		}
 	}
 

@@ -36,6 +36,9 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	// Nested virtualization flag (EFI/kernel boots on supporting hardware; nil = older
 	// daemon / off).
 	public var nestedVirtualization: Bool?
+	// SSH autoconfiguration state (1.0.5; nil = older daemon or SSH never used). The
+	// address half is a daemon overlay, like safeRun.
+	public var ssh: SSHInfo?
 
 	public var id: String { name }
 
@@ -46,7 +49,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		startPolicy: StartPolicy? = nil, safeRun: Bool? = nil,
 		totalRuntimeSeconds: Double? = nil,
 		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil,
-		devices: [DeviceInfo]? = nil, nestedVirtualization: Bool? = nil
+		devices: [DeviceInfo]? = nil, nestedVirtualization: Bool? = nil,
+		ssh: SSHInfo? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -66,6 +70,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.uartPorts = uartPorts
 		self.devices = devices
 		self.nestedVirtualization = nestedVirtualization
+		self.ssh = ssh
 	}
 
 	// Hand-written decode so payloads predating the optional fields (and clients that omit
@@ -92,6 +97,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.devices = try c.decodeIfPresent([DeviceInfo].self, forKey: .devices)
 		self.nestedVirtualization =
 			try c.decodeIfPresent(Bool.self, forKey: .nestedVirtualization)
+		self.ssh = try c.decodeIfPresent(SSHInfo.self, forKey: .ssh)
 	}
 }
 

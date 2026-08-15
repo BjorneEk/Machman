@@ -277,6 +277,18 @@ public final class MachmanServer {
 				let p: RPCParams.RenameKernel = try params(line)
 				reply(client, id, try await api.renameKernelFile(
 					vm: p.name, path: p.path, tag: p.tag))
+			case .sshSet:
+				let p: RPCParams.SSHSet = try params(line)
+				reply(client, id, try await api.setSSH(
+					vm: p.name, integrationEnabled: p.integrationEnabled,
+					reverseApproved: p.reverseApproved))
+			case .sshRefresh:
+				let p: RPCParams.Name = try params(line)
+				try await api.refreshSSH(vm: p.name)
+				reply(client, id, RPCEmpty())
+			case .sshReset:
+				let p: RPCParams.Name = try params(line)
+				reply(client, id, try await api.resetSSH(vm: p.name))
 			case .hostOperations:
 				reply(client, id, try await api.operations())
 			case .operationCancel:

@@ -143,7 +143,8 @@ struct AddPopover: View {
 			switch kind {
 			case .trackpad: return macGuest
 			case .clipboard, .rosetta: return !macGuest
-			case .consoleLoginInstaller: return false   // its tile lives in Serial
+			case .consoleLoginInstaller, .sshInstaller:
+				return false   // installer tiles never ride the Devices grid
 			default: return true
 			}
 		}

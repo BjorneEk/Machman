@@ -24,6 +24,7 @@ extension DeviceKind {
 		case .entropy: return MachmanSymbols.deviceEntropy
 		case .rosetta: return MachmanSymbols.deviceRosetta
 		case .consoleLoginInstaller: return MachmanSymbols.deviceLoginInstaller
+		case .sshInstaller: return MachmanSymbols.deviceSSHSetup
 		case .unknown: return MachmanSymbols.warning
 		}
 	}
@@ -41,6 +42,7 @@ extension DeviceKind {
 		case .entropy: return "Entropy"
 		case .rosetta: return "Rosetta"
 		case .consoleLoginInstaller: return "Login Installer"
+		case .sshInstaller: return "SSH Setup"
 		case .unknown: return "Unknown"
 		}
 	}
@@ -62,7 +64,8 @@ extension DeviceKind {
 		case .clipboard: return "VZVirtioConsoleDeviceConfiguration"
 		case .entropy: return "VZVirtioEntropyDeviceConfiguration"
 		case .rosetta: return "VZLinuxRosettaDirectoryShare"
-		case .consoleLoginInstaller: return "VZVirtioFileSystemDeviceConfiguration"
+		case .consoleLoginInstaller, .sshInstaller:
+			return "VZVirtioFileSystemDeviceConfiguration"
 		case .unknown: return nil
 		}
 	}

@@ -576,6 +576,41 @@ public final class RoutingMachman: MachmanControlling {
 		return try await local.renameKernelFile(vm: name, path: path, tag: tag)
 	}
 
+	// MARK: - SSH (1.0.5)
+
+	// Config-plane like devices, but with daemon-side ~/.ssh effects — refuse during safe
+	// runs (setStartPolicy reasoning: host-side state must never reconcile against a
+	// discardable shadow write).
+	private func refuseSSHWhileSafe(_ name: String) throws {
+		if let host = hosted[name], host.identity.isSafe {
+			throw MachmanError(
+				code: .invalidState,
+				message: "SSH settings cannot change during a safe run — stop \(name) "
+					+ "or save it first")
+		}
+	}
+
+	public func setSSH(
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+	) async throws -> VMInfo {
+		try refuseSSHWhileSafe(name)
+		// Daemon-side ~/.ssh effects ride behind this call once the host-config writer
+		// exists; the config mutation itself proxies like every other config edit.
+		return try await target(name).setSSH(
+			vm: name, integrationEnabled: integrationEnabled,
+			reverseApproved: reverseApproved)
+	}
+
+	public func refreshSSH(vm name: String) async throws {
+		// The discovery resolver lands in a later slice; until then the kick is a no-op.
+		MachmanLogger.log(.log, "ssh refresh requested for \(name) (resolver pending)")
+	}
+
+	public func resetSSH(vm name: String) async throws -> VMInfo {
+		try refuseSSHWhileSafe(name)
+		return try await target(name).resetSSH(vm: name)
+	}
+
 	// MARK: - Operations (1.0.4)
 
 	// The daemon's own operations plus every hosted VM's (imports on a running VM execute

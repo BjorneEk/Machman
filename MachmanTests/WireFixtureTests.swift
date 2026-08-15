@@ -156,6 +156,8 @@ struct WireFixtureTests {
 			 #"{"copiedBytes":512,"totalBytes":1024,"type":"copyProgress","vm":"Debian copy"}"#),
 			(.log(vm: "x", level: .error, message: "boom"),
 			 #"{"level":"error","message":"boom","type":"log","vm":"x"}"#),
+			(.sshChanged(vm: "Debian"),
+			 #"{"type":"sshChanged","vm":"Debian"}"#),
 			(.installPhaseChanged(vm: "macOS", phase: InstallPhase(
 				kind: .downloading, version: "15.5", build: "24F74",
 				progress: ProgressInfo(fraction: 0.5, completedBytes: 100, totalBytes: 200),
@@ -395,6 +397,11 @@ struct WireFixtureTests {
 		#expect(DeviceKind(rawValue: "consoleLoginInstaller") == .consoleLoginInstaller)
 		#expect(DeviceKind.allKinds.contains(.consoleLoginInstaller))
 		#expect(!mac.contains(.consoleLoginInstaller))
+		// The ssh installer (1.0.5 additive kind): raw value pinned; never implied.
+		#expect(DeviceKind(rawValue: "sshInstaller") == .sshInstaller)
+		#expect(DeviceKind.allKinds.contains(.sshInstaller))
+		#expect(!mac.contains(.sshInstaller))
+		#expect(!linux.contains(.sshInstaller))
 	}
 
 	@Test func newRequestShapes() throws {
@@ -424,5 +431,51 @@ struct WireFixtureTests {
 			name: "Debian", path: "/k/kernel/old/Image", tag: "new"))
 			== #"{"name":"Debian","path":"/k/kernel/old/Image","tag":"new"}"#)
 		#expect(try encode(RPCParams.CancelOperation(id: "op-1")) == #"{"id":"op-1"}"#)
+		#expect(try encode(RPCParams.SSHSet(
+			name: "Debian", integrationEnabled: true, reverseApproved: nil))
+			== #"{"integrationEnabled":true,"name":"Debian"}"#)
+		#expect(try encode(RPCParams.SSHSet(
+			name: "Debian", integrationEnabled: nil, reverseApproved: nil))
+			== #"{"name":"Debian"}"#)
+	}
+
+	@Test func sshInfoFixtures() throws {
+		// Minimal shape: only the non-optional state encodes.
+		#expect(try encode(SSHInfo()) == #"{"reverseState":"none"}"#)
+		let full = SSHInfo(
+			guestUser: "admin", guestHostname: "debs", guestOS: "debian",
+			reverseState: .pending, reversePublicKey: "ssh-ed25519 AAAA guest",
+			integrationEnabled: true,
+			lastReportAt: Date(timeIntervalSince1970: 1_700_000_000),
+			address: "192.168.64.5", addressSource: "dhcp",
+			identityFilePath: "/vms/Debian/ssh/id_ed25519")
+		let expected = #"{"address":"192.168.64.5","addressSource":"dhcp","#
+			+ #""guestHostname":"debs","guestOS":"debian","guestUser":"admin","#
+			+ #""identityFilePath":"/vms/Debian/ssh/id_ed25519","integrationEnabled":true,"#
+			+ #""lastReportAt":"2023-11-14T22:13:20Z","#
+			+ #""reversePublicKey":"ssh-ed25519 AAAA guest","reverseState":"pending"}"#
+		#expect(try encode(full) == expected)
+		#expect(try decode(SSHInfo.self, expected) == full)
+		// Unknown future reverse states degrade, never fail.
+		#expect(try decode(SSHInfo.self, #"{"reverseState":"futureThing"}"#).reverseState
+			== .unknown)
+	}
+
+	@Test func vmInfoSSHRoundTrip() throws {
+		var info = VMInfo(
+			name: "Debian", state: .stopped,
+			created: Date(timeIntervalSince1970: 1_700_000_000), lastRan: nil,
+			cpuCount: 2, memoryBytes: 1024, macAddress: nil, disks: [], mounts: [],
+			boot: BootInfo(
+				mode: .efi, kernel: nil, macInstallState: nil,
+				minCPUCount: nil, minMemoryBytes: nil))
+		info.ssh = SSHInfo(guestUser: "admin")
+		let encoded = try encode(info)
+		#expect(encoded.contains(#""ssh":{"guestUser":"admin","reverseState":"none"}"#))
+		#expect(try decode(VMInfo.self, encoded) == info)
+		// Payloads from daemons predating ssh still decode; the field reads nil.
+		let legacy = encoded.replacingOccurrences(
+			of: #","ssh":{"guestUser":"admin","reverseState":"none"}"#, with: "")
+		#expect(try decode(VMInfo.self, legacy).ssh == nil)
 	}
 }

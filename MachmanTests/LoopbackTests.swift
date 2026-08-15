@@ -162,6 +162,27 @@ final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return vm
 	}
+	func setSSH(
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+	) async throws -> VMInfo {
+		var vm = try get(name)
+		var ssh = vm.ssh ?? SSHInfo()
+		if let integrationEnabled { ssh.integrationEnabled = integrationEnabled }
+		if let reverseApproved { ssh.reverseState = reverseApproved ? .approved : .pending }
+		vm.ssh = ssh
+		vms[name] = vm
+		emit(.sshChanged(vm: name))
+		return vm
+	}
+	func refreshSSH(vm name: String) async throws {
+		_ = try get(name)
+	}
+	func resetSSH(vm name: String) async throws -> VMInfo {
+		var vm = try get(name)
+		vm.ssh = nil
+		vms[name] = vm
+		return vm
+	}
 	func renameKernelFile(vm name: String, path: String, tag: String) async throws -> VMInfo {
 		try get(name)
 	}
@@ -399,6 +420,25 @@ final class StubMachman: MachmanControlling {
 }
 
 struct LoopbackTests {
+
+	@Test @MainActor func sshSetRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "ssh-loop")
+
+		let updated = try await client.setSSH(
+			vm: "Debian", integrationEnabled: true, reverseApproved: nil)
+		#expect(updated.ssh?.integrationEnabled == true)
+		#expect(updated.ssh?.reverseState == SSHInfo.ReverseState.none)
+		try await client.refreshSSH(vm: "Debian")
+		let cleared = try await client.resetSSH(vm: "Debian")
+		#expect(cleared.ssh == nil)
+	}
 
 	@Test @MainActor func wireRoundTrip() async throws {
 		let socketPath = NSTemporaryDirectory() + "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"

@@ -169,6 +169,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Per-kernel-file command-line overrides, keyed by "role/tag/fileName"
 	// (VMConfig.kernelOverrideKey). Encoded only when non-empty.
 	var kernelOverrides: [String: KernelOverrideConfig] = [:]
+	// SSH autoconfiguration state (1.0.5). nil until first used; encoded only when present.
+	var ssh: SSHConfig?
 
 	// The framework caps a VM at 10 virtio serial-port devices; console + uart share that budget.
 	static let maxSerialPorts = 10
@@ -220,6 +222,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case devices
 		case nestedVirtualization
 		case kernelOverrides
+		case ssh
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
@@ -266,6 +269,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			try c.decodeIfPresent(Bool.self, forKey: .nestedVirtualization) ?? false
 		self.kernelOverrides = try c.decodeIfPresent(
 			[String: KernelOverrideConfig].self, forKey: .kernelOverrides) ?? [:]
+		self.ssh = try c.decodeIfPresent(SSHConfig.self, forKey: .ssh)
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -289,6 +293,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		if !kernelOverrides.isEmpty {
 			try c.encode(kernelOverrides, forKey: .kernelOverrides)
 		}
+		try c.encodeIfPresent(ssh, forKey: .ssh)
 	}
 
 	func getDisks() -> [VMDisk] {

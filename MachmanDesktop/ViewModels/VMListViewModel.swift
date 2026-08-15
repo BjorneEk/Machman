@@ -244,6 +244,8 @@ final class VMListViewModel: ObservableObject {
 			// The operations UI (progress cards) lands with the desktop overhaul; until
 			// then the legacy copyProgress events above cover the same transfers.
 			break
+		case .sshChanged:
+			break   // the SSH status UI reacts once it exists; listChanged rides along
 		case .unknown:
 			break
 		}

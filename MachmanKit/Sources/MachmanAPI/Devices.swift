@@ -28,12 +28,15 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	// macOS guests only: a read-only share carrying a generated install script that sets
 	// up login prompts (launchd gettys) on the VM's virtio consoles from inside the guest.
 	case consoleLoginInstaller
+	// Any guest: a read-only share carrying a generated script that enables sshd in the
+	// guest and exchanges keys, plus a writable drop-box the guest reports back through.
+	case sshInstaller
 	case unknown       // decode fallback only; never encode it
 
 	// Every real kind, for pickers/validation (excludes the .unknown decode fallback).
 	public static let allKinds: [DeviceKind] = [
 		.keyboard, .trackpad, .pointer, .graphics, .audioInput, .audioOutput,
-		.network, .clipboard, .entropy, .rosetta, .consoleLoginInstaller,
+		.network, .clipboard, .entropy, .rosetta, .consoleLoginInstaller, .sshInstaller,
 	]
 
 	public init(from decoder: Decoder) throws {
@@ -63,11 +66,36 @@ public enum ConsoleLoginInstallerInfo {
 	}
 }
 
+// Shared vocabulary for the SSH installer (the ConsoleLoginInstallerInfo pattern): the
+// read-only payload directory (generated script + the host's public keys), the writable
+// drop-box the guest reports back through, and the guest commands. One home so the engine
+// (generation), the daemon (tag validation), and the UI (shown commands) can never drift.
+public enum SSHSetupInfo {
+	public static let directoryName = "SSHSetup"
+	public static let reportDirectoryName = "SSHReport"
+	public static let scriptName = "install.sh"
+	public static let reportName = "report.env"
+
+	// macOS guests: the share automounts on 13+, nothing to mount.
+	public static var runCommand: String {
+		"sudo sh \"/Volumes/My Shared Files/\(directoryName)/\(scriptName)\""
+	}
+
+	// Linux/FreeBSD guests mount the share by hand once, then run from inside it.
+	public static var mountAndRunCommand: String {
+		"sudo mkdir -p /mnt/host-share && sudo mount -t virtiofs host-share /mnt/host-share"
+			+ " && sudo sh /mnt/host-share/\(directoryName)/\(scriptName)"
+	}
+}
+
 // Share-directory names the engine reserves for generated payloads. They ride the same
 // virtiofs share as the user's mounts, so mount validation refuses them as tags — one
 // home so validation and generation can never drift. Grows with each installer.
 public enum ReservedShareNames {
-	public static var all: Set<String> { [ConsoleLoginInstallerInfo.directoryName] }
+	public static var all: Set<String> {
+		[ConsoleLoginInstallerInfo.directoryName,
+			SSHSetupInfo.directoryName, SSHSetupInfo.reportDirectoryName]
+	}
 }
 
 // Why something configured on a VM cannot be used on this host (a gated uart, Rosetta not
