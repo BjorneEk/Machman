@@ -458,6 +458,14 @@ public final class LocalMachman: MachmanControlling {
 		}
 		let vm = try lookup(name)
 		try vm.config.removeDevice(kind: kind)
+		if kind == .sshInstaller {
+			// The share dirs stop being served next boot; drop them from disk too. The
+			// keypair and config.ssh survive re-adds — vm.ssh.reset is the deeper wipe.
+			try? FileManager.default.removeItem(
+				atPath: vm.config.configFilePath(file: SSHSetupInfo.directoryName))
+			try? FileManager.default.removeItem(
+				atPath: vm.config.configFilePath(file: SSHSetupInfo.reportDirectoryName))
+		}
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}

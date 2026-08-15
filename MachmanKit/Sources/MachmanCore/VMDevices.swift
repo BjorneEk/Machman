@@ -321,6 +321,21 @@ extension VMConfig {
 					"skipping the login installer on \(name): \(error.localizedDescription)")
 			}
 		}
+		if byKind[.sshInstaller] != nil {
+			// Any guest: read-only payload beside a writable report drop-box, both riding
+			// the one share device (reserved names; readOnly is per-directory). A writable
+			// script would let any guest process swap it before the admin sudo-runs it.
+			do {
+				let (payload, report) = try SSHSetupInstaller.writePayload(for: self)
+				extraShares[SSHSetupInstaller.directoryName] =
+					VZSharedDirectory(url: payload, readOnly: true)
+				extraShares[SSHSetupInstaller.reportDirectoryName] =
+					VZSharedDirectory(url: report, readOnly: false)
+			} catch {
+				warnings.append(
+					"skipping the ssh setup on \(name): \(error.localizedDescription)")
+			}
+		}
 		var shares: [VZDirectorySharingDeviceConfiguration] =
 			[directoryShareDeviceConfig(mainTag: shareTag, extraDirectories: extraShares)]
 		if byKind[.rosetta] != nil {
