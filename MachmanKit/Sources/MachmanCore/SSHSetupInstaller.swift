@@ -383,7 +383,11 @@ enum SSHSetupInstaller {
 				|| rc-service sshd restart >/dev/null 2>&1 || true
 			;;
 		nixos)
-			cat <<'NIXOS'
+			# Post-rebuild re-runs: once sshd is active the lecture is just noise.
+			if systemctl is-active sshd >/dev/null 2>&1; then
+				echo "sshd is already enabled (declaratively) — nothing to change."
+			else
+				cat <<'NIXOS'
 		NixOS is declarative — this script cannot enable sshd here. Add to your
 		configuration.nix and rebuild:
 
@@ -394,6 +398,7 @@ enum SSHSetupInstaller {
 		Your key is still installed below (NixOS honors ~/.ssh/authorized_keys once
 		sshd is enabled).
 		NIXOS
+			fi
 			;;
 		debian|arch|rhel|suse|linux-other)
 			case "$FAMILY" in

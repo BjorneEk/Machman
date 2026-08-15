@@ -37,8 +37,9 @@ struct SSHSetupInstallerTests {
 		// openSUSE firewall + SELinux fixup.
 		#expect(s.contains("firewall-cmd --permanent --add-service=ssh"))
 		#expect(s.contains("restorecon -R"))
-		// NixOS: guided-declarative, heredoc terminator at column 0.
+		// NixOS: guided-declarative (skipped once sshd is active), terminator at column 0.
 		#expect(s.contains("services.openssh.enable = true;"))
+		#expect(s.contains("systemctl is-active sshd"))
 		#expect(s.contains("\nNIXOS\n"))
 		// Missing-sshd guidance + the opt-in installs.
 		#expect(s.contains("apt-get install -y openssh-server"))
