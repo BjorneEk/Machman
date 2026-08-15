@@ -738,7 +738,7 @@ public final class RoutingMachman: MachmanControlling {
 		for vm in registry.list() {
 			let name = vm.name
 			var info: VMInfo?
-			if let host = hosted[name] {
+			if let host = hosted[name], !host.identity.isSafe {
 				// The vmhost's answer is the fresh state; the registry copy is stale.
 				info = try? await host.client.vm(named: name)
 				if var overlaid = info {
@@ -746,6 +746,10 @@ public final class RoutingMachman: MachmanControlling {
 					info = overlaid
 				}
 			} else {
+				// Stopped — or SAFE-hosted: a shadow's ssh state (its report, its
+				// address) is temporary by definition and must never persist into
+				// ~/.ssh. The daemon's copy of the REAL config is current here — the
+				// safe vmhost only ever writes the shadow.
 				info = try? await local.vm(named: name)
 			}
 			guard let ssh = info?.ssh, ssh.integrationEnabled == true else { continue }
