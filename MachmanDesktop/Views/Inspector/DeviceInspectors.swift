@@ -326,6 +326,7 @@ struct NetworkInspector: View {
 					}
 				}
 			}
+			NetworkAddressSection(viewModel: viewModel, vm: vm)
 			NetworkSSHSection(viewModel: viewModel, vm: vm)
 			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .network)
@@ -562,8 +563,44 @@ private func sshKeyFingerprint(_ keyLine: String) -> String? {
 	return "SHA256:" + digest.trimmingCharacters(in: CharacterSet(charactersIn: "="))
 }
 
-// The SSH half of the network inspector — the address story is host-side (leases/ARP by
-// the VM's MAC), so it lives with the network device. Switches are consent-gated.
+// The guest's discovered address — a fact of the running VM (leases/ARP by its MAC),
+// not of SSH, so it shows for every VM whether or not SSH is set up.
+private struct NetworkAddressSection: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+
+	var body: some View {
+		Section("Guest Address") {
+			LabeledContent("IP") {
+				HStack(spacing: 4) {
+					if let address = vm.ssh?.address {
+						Text(address)
+							.font(.system(.callout, design: .monospaced))
+						CopyToClipboardButton(address, tooltip: "Copy address")
+					} else {
+						Text(vm.state.isRunning ? "discovering…" : "— (start the VM)")
+							.foregroundStyle(.secondary)
+					}
+					if vm.state.isRunning {
+						IconButton(symbol: MachmanSymbols.regenerate,
+							tooltip: "Re-run address discovery", font: .callout,
+							flat: true) {
+							viewModel.refreshSSH(vm.name)
+						}
+					}
+				}
+			}
+			if let source = vm.ssh?.addressSource {
+				Text(source == "dhcp" ? "via the host's DHCP leases" : "via the ARP table")
+					.font(.caption2)
+					.foregroundStyle(.tertiary)
+			}
+		}
+	}
+}
+
+// The SSH half of the network inspector — status and switches; the address itself lives
+// in NetworkAddressSection above (it needs no SSH). Switches are consent-gated.
 private struct NetworkSSHSection: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
@@ -609,33 +646,6 @@ private struct NetworkSSHSection: View {
 			Text(vm.ssh?.guestUser ?? "— run the setup script in the guest")
 				.font(.system(.callout, design: .monospaced))
 				.foregroundStyle(vm.ssh?.guestUser == nil ? .secondary : .primary)
-		}
-		LabeledContent("Address") {
-			HStack(spacing: 4) {
-				if let address = vm.ssh?.address {
-					Text(address)
-						.font(.system(.callout, design: .monospaced))
-					CopyToClipboardButton(address, tooltip: "Copy address")
-				} else {
-					Text(vm.state.isRunning ? "discovering…" : "— (start the VM)")
-						.foregroundStyle(.secondary)
-				}
-				if vm.state.isRunning {
-					IconButton(symbol: MachmanSymbols.regenerate,
-						tooltip: "Re-run address discovery", font: .callout, flat: true) {
-						viewModel.refreshSSH(vm.name)
-					}
-				}
-			}
-		}
-		if let source = vm.ssh?.addressSource {
-			Text(source == "dhcp" ? "via the host's DHCP leases" : "via the ARP table")
-				.font(.caption2)
-				.foregroundStyle(.tertiary)
-		} else if vm.state.isRunning {
-			Text("The address appears once the guest's SSH server answers.")
-				.font(.caption2)
-				.foregroundStyle(.tertiary)
 		}
 		if let hostname = vm.ssh?.guestHostname {
 			LabeledContent("Hostname") {

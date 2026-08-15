@@ -89,20 +89,17 @@ struct SSHHelpSheet: View {
 		note("Root console without sudo? Drop the sudos and add:  --user <your name>")
 		step(3, "The script enables sshd and installs this Mac's key for your user.")
 		note("No sshd installed? It prints the install command — or re-run with --install. "
-			+ "NixOS: it prints the configuration.nix snippet; finish with nixos-rebuild "
-			+ "switch.")
-		step(4, "The Network inspector shows the address once sshd answers, plus the ssh "
-			+ "command and the “ssh <vm>.machman” alias toggle.")
+			+ "NixOS: --install edits configuration.nix and rebuilds for you.")
+		step(4, "The Network inspector shows the guest's address, the ssh command, and "
+			+ "the “ssh <vm>.machman” alias toggle.")
 	}
 
 	// MARK: - FreeBSD (manual — FreeBSD cannot mount the share)
 
 	@ViewBuilder
 	private var freebsdSteps: some View {
-		intro("FreeBSD has no virtiofs driver in base, so the script cannot reach the "
-			+ "guest — set SSH up by hand from the console instead.")
-		note("Alternative: pkg install fusefs-virtiofs adds share support — after that "
-			+ "the Linux tab's mount-and-run route works here too.")
+		intro("FreeBSD has no virtiofs driver, so the script cannot reach the guest — "
+			+ "set SSH up by hand from the console instead.")
 		step(1, "Enable sshd (the installer usually already did):")
 		command("sysrc sshd_enable=YES && service sshd start")
 		step(2, "Copy this Mac's key (SSH Setup inspector → Public key), then as your "

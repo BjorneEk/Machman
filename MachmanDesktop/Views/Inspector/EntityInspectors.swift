@@ -199,11 +199,9 @@ struct MountInspector: View {
 								+ "(CONFIG_VIRTIO_FS); no extra packages.",
 							command: "mkdir -p /mnt/host-share && "
 								+ "mount -t virtiofs host-share /mnt/host-share")
-						guestHelp(
-							os: "FreeBSD",
-							requirement: "No virtiofs driver in base ('Invalid fstype') — "
-								+ "install the port first, then mount per its docs.",
-							command: "pkg install fusefs-virtiofs")
+						Text("FreeBSD guests cannot mount virtiofs shares — no driver.")
+							.font(.caption)
+							.foregroundStyle(.tertiary)
 					}
 				}
 				Section {
