@@ -209,15 +209,7 @@ extension VMConfig {
 		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
 			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
 		}
-		let trimmed = tag.trimmingCharacters(in: .whitespaces)
-		guard !trimmed.isEmpty else {
-			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
-		}
-		guard trimmed != ConsoleLoginInstallerInfo.directoryName else {
-			throw MachmanError(
-				code: .alreadyExists,
-				message: "'\(ConsoleLoginInstallerInfo.directoryName)' is reserved by Machman")
-		}
+		let trimmed = try VMConfig.normalizedShareTag(tag)
 		guard mountPoints[index].tag != trimmed else { return }
 		guard !mountPoints.contains(where: { $0.tag == trimmed }) else {
 			throw MachmanError(

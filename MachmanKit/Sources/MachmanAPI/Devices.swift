@@ -63,6 +63,13 @@ public enum ConsoleLoginInstallerInfo {
 	}
 }
 
+// Share-directory names the engine reserves for generated payloads. They ride the same
+// virtiofs share as the user's mounts, so mount validation refuses them as tags — one
+// home so validation and generation can never drift. Grows with each installer.
+public enum ReservedShareNames {
+	public static var all: Set<String> { [ConsoleLoginInstallerInfo.directoryName] }
+}
+
 // Why something configured on a VM cannot be used on this host (a gated uart, Rosetta not
 // installed, nested virtualization unsupported…). Generalized from the serial-port shape —
 // same wire keys; SerialPortUnavailability remains as a typealias.

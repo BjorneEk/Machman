@@ -392,19 +392,25 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try? saveVMConfig()
 	}
 
+	// One rule for every user-supplied share tag (add AND rename): trimmed, non-empty, and
+	// never one of the engine's reserved payload directories.
+	static func normalizedShareTag(_ raw: String) throws -> String {
+		let trimmed = raw.trimmingCharacters(in: .whitespaces)
+		guard !trimmed.isEmpty else {
+			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
+		}
+		guard !ReservedShareNames.all.contains(trimmed) else {
+			throw MachmanError(
+				code: .alreadyExists, message: "'\(trimmed)' is reserved by Machman")
+		}
+		return trimmed
+	}
+
 	func addMountPoint(_ mountPoint: HostMountPoint) throws {
 		// Same rules as setMountTag — a duplicate tag would TRAP the vmhost at start
 		// (the share dictionary is built with uniqueKeysWithValues).
 		var mount = mountPoint
-		mount.tag = mount.tag.trimmingCharacters(in: .whitespaces)
-		guard !mount.tag.isEmpty else {
-			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
-		}
-		guard mount.tag != ConsoleLoginInstallerInfo.directoryName else {
-			throw MachmanError(
-				code: .alreadyExists,
-				message: "'\(ConsoleLoginInstallerInfo.directoryName)' is reserved by Machman")
-		}
+		mount.tag = try VMConfig.normalizedShareTag(mount.tag)
 		guard !mountPoints.contains(where: { $0.tag == mount.tag }) else {
 			throw MachmanError(
 				code: .alreadyExists, message: "a mount tagged '\(mount.tag)' already exists")
