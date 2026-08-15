@@ -90,7 +90,7 @@ extension VMConfig {
 				warnings.append("skipping trackpad on \(name): it needs a macOS guest")
 			case .consoleLoginInstaller where !macGuest:
 				warnings.append(
-					"skipping the login installer on \(name): it needs a macOS guest")
+					"skipping the console login installer on \(name): it needs a macOS guest")
 			case .clipboard where macGuest:
 				warnings.append(
 					"skipping clipboard sharing on \(name): not supported for macOS guests")
@@ -318,7 +318,7 @@ extension VMConfig {
 					VZSharedDirectory(url: dir, readOnly: true)
 			} catch {
 				warnings.append(
-					"skipping the login installer on \(name): \(error.localizedDescription)")
+					"skipping the console login installer on \(name): \(error.localizedDescription)")
 			}
 		}
 		if byKind[.sshInstaller] != nil {

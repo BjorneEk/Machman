@@ -502,7 +502,7 @@ public final class LocalMachman: MachmanControlling {
 		case .consoleLoginInstaller where !macGuest:
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "the login installer needs a macOS guest")
+				message: "the console login installer needs a macOS guest")
 		case .clipboard where macGuest, .rosetta where macGuest:
 			throw MachmanError(
 				code: .invalidArgument,
@@ -862,7 +862,7 @@ public final class LocalMachman: MachmanControlling {
 		case .consoleLoginInstaller where !macGuest:
 			return UnavailabilityInfo(
 				reason: .unsupportedHost,
-				message: "The login installer needs a macOS guest — it is skipped until "
+				message: "The console login installer needs a macOS guest — it is skipped until "
 					+ "macOS is installed.")
 		case .clipboard where macGuest:
 			return UnavailabilityInfo(

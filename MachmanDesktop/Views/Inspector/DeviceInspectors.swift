@@ -441,7 +441,7 @@ struct RosettaInspector: View {
 		+ "(see Apple's VZLinuxRosettaDirectoryShare docs)"
 }
 
-// MARK: - Login Installer ----------------------------------------------------------------------
+// MARK: - Console Login ----------------------------------------------------------------------
 
 // The macOS-guest console login installer: a read-only folder (a generated install script)
 // automounting in the guest; one command installs a login prompt per console.
@@ -480,7 +480,7 @@ struct LoginInstallerInspector: View {
 					}
 				}
 			}
-			Section("Login Installer") {
+			Section("Console Login") {
 				Text("A read-only “\(ConsoleLoginInstallerInfo.directoryName)” folder in "
 					+ "the guest's automounting “My Shared Files” volume (next to this "
 					+ "VM's mounts), carrying an install script that sets up a login "

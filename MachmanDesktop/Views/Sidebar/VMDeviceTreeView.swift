@@ -47,8 +47,8 @@ struct VMDeviceTreeView: View {
 	@State private var dragWatchdog: Task<Void, Never>?
 	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
-		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Devices"),
-		.group("Kernel"), .group("Initramfs"),
+		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Installers"),
+		.group("Devices"), .group("Kernel"), .group("Initramfs"),
 	]
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
@@ -94,6 +94,7 @@ struct VMDeviceTreeView: View {
 			diskGroup
 			mountGroup
 			serialGroup
+			installerGroup
 			deviceGroup
 			if showsKernelSections {
 				kernelGroup(role: .kernel, title: "Kernel")
@@ -341,10 +342,8 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var serialGroup: some View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
-		// The login installer lives with the consoles it serves, not in Devices.
-		let installer = (vm.devices ?? []).first { $0.kind == .consoleLoginInstaller }
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count + (installer == nil ? 0 : 1)) {
+			count: ports.count) {
 			// Search matches the display name AND the raw guest device (hvc0 finds
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {
@@ -352,10 +351,33 @@ struct VMDeviceTreeView: View {
 			}) { port in
 				serialRow(port)
 			}
-			if let installer, matches(installer.kind.displayLabel) {
-				deviceRow(installer)
-					.tag(SidebarNode.device(installer.kind))
-					.contextMenu { deviceMenu(installer) }
+		}
+	}
+
+	// Installer devices (share-served guest-setup payloads): their own section — they
+	// configure the guest rather than being hardware. Add actions live in the group's
+	// context menu, the Disks convention.
+	@ViewBuilder
+	private var installerGroup: some View {
+		let installers = (vm.devices ?? []).filter(\.kind.isInstaller)
+		let macGuest = vm.boot.mode == .macOS
+		group(.group("Installers"), symbol: MachmanSymbols.installerGroup,
+			title: "Installers", count: installers.count, menu: {
+			if macGuest, !installers.contains(where: { $0.kind == .consoleLoginInstaller }) {
+				Button("Add Console Login") {
+					viewModel.addDevice(vm.name, kind: .consoleLoginInstaller)
+				}
+			}
+			if !installers.contains(where: { $0.kind == .sshInstaller }) {
+				Button("Add SSH Setup") {
+					viewModel.addDevice(vm.name, kind: .sshInstaller)
+				}
+			}
+		}) {
+			ForEach(installers.filter { matches($0.kind.displayLabel) }) { device in
+				deviceRow(device)
+					.tag(SidebarNode.device(device.kind))
+					.contextMenu { deviceMenu(device) }
 			}
 		}
 	}
@@ -444,8 +466,8 @@ struct VMDeviceTreeView: View {
 	// (Rosetta not installed, nested unsupported) carries the warning + reason.
 	@ViewBuilder
 	private var deviceGroup: some View {
-		// The login installer renders under Serial instead.
-		let devices = (vm.devices ?? []).filter { $0.kind != .consoleLoginInstaller }
+		// Installer kinds render under Installers instead.
+		let devices = (vm.devices ?? []).filter { !$0.kind.isInstaller }
 		group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
 			count: devices.count) {
 			ForEach(devices.filter { matches($0.kind.displayLabel) }) { device in

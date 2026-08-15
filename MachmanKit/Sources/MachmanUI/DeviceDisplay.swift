@@ -11,6 +11,16 @@
 import MachmanAPI
 
 extension DeviceKind {
+	// Installer devices — share-served setup payloads (Console Login, SSH Setup). They
+	// get their own tree/popover section: they configure the guest, they're not hardware.
+	// The ONE taxonomy spot a future installer kind must join.
+	public var isInstaller: Bool {
+		switch self {
+		case .consoleLoginInstaller, .sshInstaller: return true
+		default: return false
+		}
+	}
+
 	public var displaySymbol: String {
 		switch self {
 		case .graphics: return MachmanSymbols.deviceGraphics
@@ -41,7 +51,7 @@ extension DeviceKind {
 		case .clipboard: return "Clipboard"
 		case .entropy: return "Entropy"
 		case .rosetta: return "Rosetta"
-		case .consoleLoginInstaller: return "Login Installer"
+		case .consoleLoginInstaller: return "Console Login"
 		case .sshInstaller: return "SSH Setup"
 		case .unknown: return "Unknown"
 		}

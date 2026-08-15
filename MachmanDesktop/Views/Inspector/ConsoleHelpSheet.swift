@@ -169,14 +169,14 @@ struct ConsoleHelpSheet: View {
 
 	// MARK: - macOS guest
 
-	// The Login Installer flow (measured recipe: a launchd getty with KeepAlive; /etc/ttys
+	// The Console Login flow (measured recipe: a launchd getty with KeepAlive; /etc/ttys
 	// getty lines are DEAD on modern macOS — launchd ignores them).
 	@ViewBuilder
 	private var macOSSteps: some View {
 		intro("On a macOS guest this port is /dev/cu.virtio\(macSuffix). macOS starts no "
-			+ "login prompt on it — the Login Installer sets one up on every console in "
-			+ "a single run.")
-		step(1, "Add the Login Installer: Add (+) → Serial → Login Installer.")
+			+ "login prompt on it — the Console Login installer sets one up on every "
+			+ "console in a single run.")
+		step(1, "Add the Console Login installer: Add (+) → Installers → Console Login.")
 		step(2, "Boot the guest — the “My Shared Files” volume appears on its own "
 			+ "(macOS 13+ guests) with a \(ConsoleLoginInstallerInfo.directoryName) "
 			+ "folder inside, next to this VM's regular mounts.")
@@ -184,7 +184,7 @@ struct ConsoleHelpSheet: View {
 		command(ConsoleLoginInstallerInfo.runCommand)
 		note("It checks every console device and installs a login daemon for each — "
 			+ "prompts appear in the Machman consoles immediately, no reboot needed.")
-		step(4, "Afterwards: disable or remove the Login Installer device — the logins "
+		step(4, "Afterwards: disable or remove the Console Login device — the logins "
 			+ "live in the guest and persist. Re-enable it, reboot, and re-run after "
 			+ "adding or removing consoles (the script also cleans up removed ones); "
 			+ "run it with --uninstall to remove every login.")

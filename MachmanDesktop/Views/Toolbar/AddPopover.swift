@@ -89,17 +89,28 @@ struct AddPopover: View {
 					dismiss()
 				}
 				uartTile
-				// The console companion (macOS guests): lives with the ports it serves.
-				if vm.boot.mode == .macOS,
-					!(vm.devices ?? []).contains(where: {
-						$0.kind == .consoleLoginInstaller
-					}) {
-					AddTile(symbol: MachmanSymbols.deviceLoginInstaller,
-						caption: "Login Installer",
-						tooltip: "Add Login Installer — sets up login prompts on this "
-							+ "VM's consoles from inside the macOS guest") {
-						viewModel.addDevice(vm.name, kind: .consoleLoginInstaller)
-						dismiss()
+			}
+			if hasInstallerTiles {
+				Divider()
+				section("Installers") {
+					// Guest-setup payloads served over the share — their own section.
+					if vm.boot.mode == .macOS, !attached(.consoleLoginInstaller) {
+						AddTile(symbol: MachmanSymbols.deviceLoginInstaller,
+							caption: "Console Login",
+							tooltip: "Add Console Login — sets up login prompts on this "
+								+ "VM's consoles from inside the macOS guest") {
+							viewModel.addDevice(vm.name, kind: .consoleLoginInstaller)
+							dismiss()
+						}
+					}
+					if !attached(.sshInstaller) {
+						AddTile(symbol: MachmanSymbols.deviceSSHSetup,
+							caption: "SSH Setup",
+							tooltip: "Add SSH Setup — enables SSH in the guest and "
+								+ "exchanges keys with this Mac") {
+							viewModel.addDevice(vm.name, kind: .sshInstaller)
+							dismiss()
+						}
 					}
 				}
 			}
@@ -133,6 +144,16 @@ struct AddPopover: View {
 		.disabled(gate != nil)
 	}
 
+	private func attached(_ kind: DeviceKind) -> Bool {
+		(vm.devices ?? []).contains { $0.kind == kind }
+	}
+
+	// At least one installer tile applies (Console Login is mac-only; SSH fits any boot).
+	private var hasInstallerTiles: Bool {
+		(vm.boot.mode == .macOS && !attached(.consoleLoginInstaller))
+			|| !attached(.sshInstaller)
+	}
+
 	// Kinds the daemon would accept for this boot that aren't attached yet (present but
 	// disabled still counts as attached — re-enable it instead).
 	private var missingKinds: [DeviceKind] {
@@ -143,8 +164,8 @@ struct AddPopover: View {
 			switch kind {
 			case .trackpad: return macGuest
 			case .clipboard, .rosetta: return !macGuest
-			case .consoleLoginInstaller, .sshInstaller:
-				return false   // installer tiles never ride the Devices grid
+			case _ where kind.isInstaller:
+				return false   // installer tiles live in their own section above
 			default: return true
 			}
 		}
