@@ -19,7 +19,7 @@ import MachmanUI
 
 final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDelegate {
 	let terminalView: TerminalView
-	private var connection: SerialTerminalConnection?
+	private var connection: TerminalByteStream?
 	@Published var connected = false
 	// The last connection's transcript, retained when it closes (VM stop, daemon bounce) so
 	// File → Save Terminal can still save what is on screen. A reconnect starts fresh.
@@ -88,14 +88,19 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 
 	// Idempotent: connect once per socket. A different socket (VM restart) is a new controller.
 	func connect(path: String) {
+		connect(stream: SerialTerminalConnection(path: path))
+	}
+
+	// The generalized seam: any TerminalByteStream (serial socket, PTY-backed ssh).
+	func connect(stream: TerminalByteStream) {
 		guard connection == nil else { return }
-		let c = SerialTerminalConnection(path: path)
+		let c = stream
 		c.onData = { [weak self] data in
 			self?.terminalView.feed(byteArray: [UInt8](data)[...])
 		}
 		// Clear the connection on close so a VM restart (same socket path) can reconnect.
 		// `weak c` (not captured strongly — that would cycle through onClose) is alive here:
-		// the closing connection is the one invoking us.
+		// the closing stream is the one invoking us.
 		c.onClose = { [weak self, weak c] in
 			guard let self else { return }
 			if let c { self.lastTranscript = c.transcriptData() }
@@ -118,7 +123,9 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	func send(source: TerminalView, data: ArraySlice<UInt8>) {
 		connection?.send(Data(data))
 	}
-	func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
+	func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+		connection?.setWindowSize(cols: newCols, rows: newRows)
+	}
 	func setTerminalTitle(source: TerminalView, title: String) {}
 	func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 	func scrolled(source: TerminalView, position: Double) {}
