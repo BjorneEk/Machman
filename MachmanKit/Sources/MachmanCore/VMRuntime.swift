@@ -21,6 +21,10 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	private var lastEmitted: VMState = .stopped
 	// One data-plane bridge per serial port, live while the VM runs.
 	private var serialBridges: [SerialPortBridge] = []
+	// SSH report ingestion (1.0.5): mtime-poll of the guest-writable drop-box while the
+	// VM runs — this process owns the config, so ingestion persists here (single writer).
+	private var sshReportTimer: Timer?
+	private var sshReportMtime: Date?
 	// Called exactly once, after the VZ machine is gone (guest stop, forced stop, or crash).
 	var onTeardown: (() -> Void)?
 
@@ -71,6 +75,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		machine.delegate = self
 		vz = machine
 		startSerialBridges(built.serialWiring)
+		startSSHReportPolling()
 		stateObservation = machine.observe(\.state, options: [.new]) { [weak self] machine, _ in
 			let mapped = VMRuntime.map(machine.state)
 			Task { @MainActor [weak self] in
@@ -145,9 +150,48 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		stateObservation = nil
 		for bridge in serialBridges { bridge.stop() }
 		serialBridges.removeAll()
+		// One final poll: a report written seconds before shutdown must not be lost.
+		pollSSHReport()
+		sshReportTimer?.invalidate()
+		sshReportTimer = nil
 		vz = nil
 		emitState(.stopped)
 		onTeardown?()
+	}
+
+	// MARK: - SSH report ingestion (1.0.5)
+
+	private func startSSHReportPolling() {
+		guard config.devices.contains(where: {
+			$0.deviceKind == .sshInstaller && $0.enabled
+		}) else { return }
+		// A report is a rare, tiny file: a 2 s mtime stat is effectively free
+		// (InstallSession's timer pattern; the body hops back to the main actor).
+		sshReportTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) {
+			[weak self] _ in
+			Task { @MainActor [weak self] in
+				self?.pollSSHReport()
+			}
+		}
+	}
+
+	private func pollSSHReport() {
+		let path = config.configFilePath(
+			file: "\(SSHSetupInfo.reportDirectoryName)/\(SSHSetupInfo.reportName)")
+		guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+			let mtime = attrs[.modificationDate] as? Date, mtime != sshReportMtime else {
+			return
+		}
+		sshReportMtime = mtime
+		guard let report = SSHReport.read(atPath: path) else { return }
+		do {
+			if try report.apply(to: config, stampedAt: Date()) {
+				events.emit(.sshChanged(vm: config.name))
+			}
+		} catch {
+			MachmanLogger.log(.passiveError,
+				"cannot persist \(config.name)'s ssh report: \(error)")
+		}
 	}
 
 	// MARK: - Serial data plane
