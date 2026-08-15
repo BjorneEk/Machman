@@ -52,6 +52,10 @@ public final class RoutingMachman: MachmanControlling {
 		let app: NSRunningApplication?
 		var deathWatch: NSKeyValueObservation?
 		var eventTask: Task<Void, Never>?
+		// SSH address discovery (1.0.5): daemon memory only, rebuilt after restarts by
+		// the adopt path; served as a VMInfo overlay like safeRun.
+		var sshAnswer: SSHDiscovery.Answer?
+		var sshDiscoveryTask: Task<Void, Never>?
 
 		init(
 			identity: HostIdentity, client: RemoteMachman,
@@ -281,15 +285,63 @@ public final class RoutingMachman: MachmanControlling {
 		let host = HostedVM(identity: identity, client: client, app: nil, deathWatch: nil)
 		hosted[identity.name] = host
 		subscribeEvents(host)
+		// Adopted hosts are already running and may never emit another stateChanged —
+		// this is how discovery (daemon memory) survives a daemon restart mid-run.
+		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
 	}
 
 	private func subscribeEvents(_ host: HostedVM) {
+		let id = host.identity.id
 		host.eventTask = Task { [weak self] in
 			let stream = await host.client.events()
 			for await event in stream {
 				guard let self = self else { return }
+				if case .stateChanged(_, let state) = event, state.isRunning,
+					let host = self.host(withID: id) {
+					// The guest just came up (boot or reboot): (re)start discovery.
+					self.startSSHDiscovery(host)
+				}
+				if case .sshChanged = event, let host = self.host(withID: id),
+					host.sshAnswer == nil {
+					// A fresh report can mean sshd just appeared — probe again now.
+					self.startSSHDiscovery(host)
+				}
 				self.registry.events.emit(event)
+			}
+		}
+	}
+
+	// MARK: - SSH discovery (1.0.5, daemon-side)
+
+	private func host(withID id: UUID) -> HostedVM? {
+		hosted.values.first { $0.identity.id == id }
+	}
+
+	// Bounded per-VM resolver: 5 s cadence while DHCP settles (2 min), then once a
+	// minute while the VM stays hosted and unresolved. Keyed by identity.id so safe-save
+	// re-keying can't cross wires; cancelled in hostGone.
+	private func startSSHDiscovery(_ host: HostedVM) {
+		host.sshDiscoveryTask?.cancel()
+		guard let mac = host.identity.macInUse else { return }
+		let id = host.identity.id
+		host.sshDiscoveryTask = Task { [weak self] in
+			var attempt = 0
+			while !Task.isCancelled {
+				// Detached: the live loaders read /var/db and run arp — off the main actor.
+				let answer = await Task.detached {
+					await SSHDiscovery.discoverLive(mac: mac)
+				}.value
+				guard let self, let host = self.host(withID: id) else { return }
+				if let answer {
+					if host.sshAnswer != answer {
+						host.sshAnswer = answer
+						self.registry.events.emit(.sshChanged(vm: host.identity.name))
+					}
+					return
+				}
+				attempt += 1
+				try? await Task.sleep(for: attempt < 24 ? .seconds(5) : .seconds(60))
 			}
 		}
 	}
@@ -302,6 +354,7 @@ public final class RoutingMachman: MachmanControlling {
 		host.deathWatch?.invalidate()
 		host.deathWatch = nil
 		host.eventTask?.cancel()
+		host.sshDiscoveryTask?.cancel()
 		let client = host.client
 		Task {
 			await client.disconnect()
@@ -345,8 +398,10 @@ public final class RoutingMachman: MachmanControlling {
 		for vm in registry.list() {
 			if let host = hosted[vm.name],
 				var info = try? await host.client.vm(named: vm.name) {
-				// The one daemon-side overlay: only the router knows a run is safe.
+				// The daemon-side overlays: only the router knows a run is safe, and only
+				// it runs address discovery.
 				if host.identity.isSafe { info.safeRun = true }
+				overlaySSH(&info, from: host)
 				infos.append(info)
 				continue
 			}
@@ -358,9 +413,20 @@ public final class RoutingMachman: MachmanControlling {
 	public func vm(named name: String) async throws -> VMInfo {
 		if let host = hosted[name], var info = try? await host.client.vm(named: name) {
 			if host.identity.isSafe { info.safeRun = true }
+			overlaySSH(&info, from: host)
 			return info
 		}
 		return try await local.vm(named: name)
+	}
+
+	// The discovered address rides every VMInfo answer while the VM is hosted — attached
+	// to the served ssh state, or as a minimal shell when the guest never reported.
+	private func overlaySSH(_ info: inout VMInfo, from host: HostedVM) {
+		guard let answer = host.sshAnswer else { return }
+		var ssh = info.ssh ?? SSHInfo()
+		ssh.address = answer.address
+		ssh.addressSource = answer.source
+		info.ssh = ssh
 	}
 
 	public func createVM(template: String?) async throws -> VMInfo {
@@ -602,8 +668,12 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func refreshSSH(vm name: String) async throws {
-		// The discovery resolver lands in a later slice; until then the kick is a no-op.
-		MachmanLogger.log(.log, "ssh refresh requested for \(name) (resolver pending)")
+		guard let host = hosted[name] else {
+			throw MachmanError(
+				code: .invalidState, message: "\(name) is not running — nothing to discover")
+		}
+		host.sshAnswer = nil
+		startSSHDiscovery(host)
 	}
 
 	public func resetSSH(vm name: String) async throws -> VMInfo {
