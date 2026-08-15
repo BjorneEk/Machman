@@ -50,9 +50,11 @@ struct SSHSetupInstallerTests {
 
 	@Test func scriptFlagsReportAndUninstall() {
 		let s = script
-		for flag in ["--two-way", "--one-way", "--install", "--uninstall"] {
+		for flag in ["--two-way", "--one-way", "--install", "--uninstall", "--user"] {
 			#expect(s.contains(flag))
 		}
+		// Root consoles (no sudo, no SUDO_USER) get pointed at --user, never a dead end.
+		#expect(s.contains("USER_OVERRIDE"))
 		// Report keys the vmhost parser consumes.
 		for key in [
 			"SCRIPT_VERSION=", "MARKER=", "OS_ID=", "USER=", "HOME=", "HOSTNAME=",

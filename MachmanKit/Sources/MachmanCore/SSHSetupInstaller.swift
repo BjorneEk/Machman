@@ -153,37 +153,47 @@ enum SSHSetupInstaller {
 		REPORT_DIR="$PAYLOAD_DIR/../\#(reportDirectoryName)"
 
 		usage() {
-			echo "usage: sudo sh \"$0\" [--two-way | --one-way] [--install] [--uninstall]" >&2
+			echo "usage: sh \"$0\" [--two-way | --one-way] [--install] [--user <name>]" >&2
+			echo "       sh \"$0\" --uninstall" >&2
 			exit 64
 		}
 
 		TWO_WAY=""
 		DO_INSTALL=""
 		UNINSTALL=""
-		for arg in "$@"; do
-			case "$arg" in
+		USER_OVERRIDE=""
+		while [ $# -gt 0 ]; do
+			case "$1" in
 			--two-way) TWO_WAY=1 ;;
 			--one-way) TWO_WAY=0 ;;
 			--install) DO_INSTALL=1 ;;
 			--uninstall) UNINSTALL=1 ;;
+			--user)
+				shift
+				[ $# -gt 0 ] || usage
+				USER_OVERRIDE="$1"
+				;;
 			*) usage ;;
 			esac
+			shift
 		done
 
 		if [ "$(id -u)" -ne 0 ]; then
-			echo "Please run with sudo:  sudo sh \"$0\" $*" >&2
+			echo "Please run as root (sudo sh \"$0\" …, or from a root shell)." >&2
 			exit 1
 		fi
 
 		# ----- who asked --------------------------------------------------------------
 		OS="$(uname -s)"
-		U="${SUDO_USER:-}"
+		U="${USER_OVERRIDE:-${SUDO_USER:-}}"
 		if [ "$OS" = "Darwin" ] && { [ -z "$U" ] || [ "$U" = "root" ]; }; then
 			U="$(echo "show State:/Users/ConsoleUser" | scutil \
 				| awk '/Name :/ && ! /loginwindow/ { print $3 }')"
 		fi
 		if [ -z "$U" ] || [ "$U" = "root" ]; then
-			echo "Cannot tell which user to set up — run via sudo from your own account." >&2
+			# Root consoles (Alpine, FreeBSD) have no sudo and no SUDO_USER.
+			echo "Cannot tell which user to set up — run via sudo from your account," >&2
+			echo "or name one:  sh \"$0\" --user <name>" >&2
 			exit 1
 		fi
 		case "$OS" in
