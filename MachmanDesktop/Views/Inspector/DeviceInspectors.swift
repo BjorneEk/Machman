@@ -9,6 +9,7 @@
 
 import SwiftUI
 import AppKit
+import CryptoKit
 import MachmanUI
 import MachmanAPI
 
@@ -32,6 +33,8 @@ struct DeviceInspector: View {
 				RosettaInspector(viewModel: viewModel, vm: vm, device: device)
 			case .consoleLoginInstaller:
 				LoginInstallerInspector(viewModel: viewModel, vm: vm, device: device)
+			case .sshInstaller:
+				SSHSetupInspector(viewModel: viewModel, vm: vm, device: device)
 			case .unknown:
 				NoSelectionInspector()
 			default:
@@ -323,6 +326,7 @@ struct NetworkInspector: View {
 					}
 				}
 			}
+			NetworkSSHSection(viewModel: viewModel, vm: vm)
 			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .network)
 		}
@@ -543,5 +547,283 @@ struct LoginInstallerInspector: View {
 		.sheet(isPresented: $showGuide) {
 			ConsoleHelpSheet(mode: .macOS, guestIndex: 0)
 		}
+	}
+}
+
+// MARK: - SSH Setup ------------------------------------------------------------------------------
+
+// OpenSSH-style fingerprint of a public-key line ("SHA256:…") for approval dialogs.
+private func sshKeyFingerprint(_ keyLine: String) -> String? {
+	let fields = keyLine.split(separator: " ")
+	guard fields.count >= 2, let blob = Data(base64Encoded: String(fields[1])) else {
+		return nil
+	}
+	let digest = Data(SHA256.hash(data: blob)).base64EncodedString()
+	return "SHA256:" + digest.trimmingCharacters(in: CharacterSet(charactersIn: "="))
+}
+
+// The SSH half of the network inspector — the address story is host-side (leases/ARP by
+// the VM's MAC), so it lives with the network device. Switches are consent-gated.
+private struct NetworkSSHSection: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	@State private var integrationConsent = false
+	@State private var approveConsent = false
+	@State private var revokeConsent = false
+
+	private var setupAttached: Bool {
+		(vm.devices ?? []).contains { $0.kind == .sshInstaller }
+	}
+	private var alias: String { "\(vm.name).machman" }
+	private var sshCommand: String? {
+		guard let ssh = vm.ssh else { return nil }
+		if ssh.integrationEnabled == true {
+			return "ssh \"\(alias)\""
+		}
+		// Self-contained command — works without the ~/.ssh integration.
+		guard let user = ssh.guestUser, let address = ssh.address,
+			let identity = ssh.identityFilePath else { return nil }
+		return "ssh -i '\(identity)' -o IdentitiesOnly=yes \(user)@\(address)"
+	}
+
+	var body: some View {
+		Section("SSH") {
+			if vm.ssh == nil && !setupAttached {
+				Text("Add the SSH Setup installer to reach this VM over SSH — it enables "
+					+ "sshd in the guest and exchanges keys with this Mac.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				Button("Add SSH Setup") {
+					viewModel.addDevice(vm.name, kind: .sshInstaller)
+				}
+			} else {
+				statusRows
+			}
+		}
+	}
+
+	@ViewBuilder
+	private var statusRows: some View {
+		LabeledContent("Guest user") {
+			Text(vm.ssh?.guestUser ?? "— run the setup script in the guest")
+				.font(.system(.callout, design: .monospaced))
+				.foregroundStyle(vm.ssh?.guestUser == nil ? .secondary : .primary)
+		}
+		LabeledContent("Address") {
+			HStack(spacing: 4) {
+				if let address = vm.ssh?.address {
+					Text(address)
+						.font(.system(.callout, design: .monospaced))
+					CopyToClipboardButton(address, tooltip: "Copy address")
+				} else {
+					Text(vm.state.isRunning ? "discovering…" : "— (start the VM)")
+						.foregroundStyle(.secondary)
+				}
+				if vm.state.isRunning {
+					IconButton(symbol: MachmanSymbols.regenerate,
+						tooltip: "Re-run address discovery", font: .callout, flat: true) {
+						viewModel.refreshSSH(vm.name)
+					}
+				}
+			}
+		}
+		if let source = vm.ssh?.addressSource {
+			Text(source == "dhcp" ? "via the host's DHCP leases" : "via the ARP table")
+				.font(.caption2)
+				.foregroundStyle(.tertiary)
+		}
+		if let hostname = vm.ssh?.guestHostname {
+			LabeledContent("Hostname") {
+				Text(hostname).font(.system(.callout, design: .monospaced))
+			}
+		}
+		if let command = sshCommand {
+			HStack {
+				Text(command)
+					.font(.system(.caption, design: .monospaced))
+					.textSelection(.enabled)
+					.fixedSize(horizontal: false, vertical: true)
+				Spacer()
+				CopyToClipboardButton(command, tooltip: "Copy command")
+			}
+			.padding(6)
+			.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
+		}
+		integrationToggle
+		reverseRows
+	}
+
+	private var integrationToggle: some View {
+		Toggle(isOn: Binding(
+			get: { vm.ssh?.integrationEnabled == true },
+			set: { enable in
+				if enable {
+					integrationConsent = true   // the dialog confirms before any write
+				} else {
+					viewModel.setSSHIntegration(vm.name, enabled: false)
+				}
+			})) {
+			VStack(alignment: .leading, spacing: 2) {
+				Text("Terminal alias")
+				Text("ssh \"\(alias)\" from any terminal")
+					.font(.caption2)
+					.foregroundStyle(.secondary)
+			}
+		}
+		.confirmationDialog(
+			"Add \(alias) to your SSH config?", isPresented: $integrationConsent
+		) {
+			Button("Add to ~/.ssh") { viewModel.setSSHIntegration(vm.name, enabled: true) }
+			Button("Cancel", role: .cancel) {}
+		} message: {
+			Text("Machman adds one marked Include line to ~/.ssh/config and keeps its own "
+				+ "~/.ssh/machman/config with a host entry per VM (pinned host key, no "
+				+ "first-connect prompt). Turning the last VM off removes the Include "
+				+ "line again. Your own config entries are never touched.")
+		}
+	}
+
+	@ViewBuilder
+	private var reverseRows: some View {
+		switch vm.ssh?.reverseState ?? SSHInfo.ReverseState.none {
+		case .pending:
+			LabeledContent("Guest → Mac") {
+				Text("awaiting your approval").foregroundStyle(.secondary)
+			}
+			Button("Approve Guest Access…") { approveConsent = true }
+				.confirmationDialog(
+					"Let \(vm.name) log in to this Mac?", isPresented: $approveConsent
+				) {
+					Button("Approve") {
+						viewModel.setSSHReverseApproved(vm.name, approved: true)
+					}
+					Button("Cancel", role: .cancel) {}
+				} message: {
+					Text("Adds the guest's key to your ~/.ssh/authorized_keys — anyone "
+						+ "with root in the VM can then open a shell as you on this Mac. "
+						+ "Key \(vm.ssh?.reversePublicKey.flatMap(sshKeyFingerprint) ?? "?")."
+						+ " Requires Remote Login (System Settings → General → Sharing), "
+						+ "which Machman never enables itself.")
+				}
+		case .approved:
+			LabeledContent("Guest → Mac") {
+				Text("approved").foregroundStyle(MachmanColors.connected)
+			}
+			Button("Revoke Guest Access…", role: .destructive) { revokeConsent = true }
+				.confirmationDialog(
+					"Revoke \(vm.name)'s access?", isPresented: $revokeConsent
+				) {
+					Button("Revoke", role: .destructive) {
+						viewModel.setSSHReverseApproved(vm.name, approved: false)
+					}
+					Button("Cancel", role: .cancel) {}
+				} message: {
+					Text("Removes exactly this VM's key line from ~/.ssh/authorized_keys.")
+				}
+		case .none, .unknown:
+			Text("Two-way SSH: run the setup script with --two-way in the guest, then "
+				+ "approve it here.")
+				.font(.caption2)
+				.foregroundStyle(.tertiary)
+				.fixedSize(horizontal: false, vertical: true)
+		}
+	}
+}
+
+// The SSH Setup installer's own inspector: what it serves, how to run it per guest OS,
+// report status, and the deeper reset.
+struct SSHSetupInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	let device: DeviceInfo
+	@State private var showGuide = false
+	@State private var resetConfirm = false
+
+	private var macGuest: Bool { vm.boot.mode == .macOS }
+
+	var body: some View {
+		Form {
+			Section("SSH Setup") {
+				Text("Two folders on this VM's share: a read-only "
+					+ "“\(SSHSetupInfo.directoryName)” carrying a generated install "
+					+ "script plus this Mac's public keys, and a writable "
+					+ "“\(SSHSetupInfo.reportDirectoryName)” the guest reports back "
+					+ "through. The script enables the guest's SSH server and installs "
+					+ "the key — one-way, or two-way with --two-way.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				if let at = vm.ssh?.lastReportAt {
+					LabeledContent("Last report") {
+						Text(at.formatted(date: .abbreviated, time: .shortened))
+					}
+					if let os = vm.ssh?.guestOS, let user = vm.ssh?.guestUser {
+						Text("\(user) on \(os)")
+							.font(.system(.caption, design: .monospaced))
+							.foregroundStyle(.secondary)
+					}
+				} else {
+					Text("No report yet — the guest hasn't run the script.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			}
+			Section("Guest Setup") {
+				VStack(alignment: .leading, spacing: 6) {
+					Text(macGuest
+						? "Boot the guest (the share automounts, macOS 13+), then run in "
+							+ "its Terminal:"
+						: "Boot the guest, mount the share once, and run the script:")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					commandBlock(macGuest
+						? SSHSetupInfo.runCommand : SSHSetupInfo.mountAndRunCommand)
+					Text("It asks whether to also set up guest → Mac SSH (or pass "
+						+ "--two-way / --one-way). Re-run any time; --uninstall removes "
+						+ "everything it installed; --install lets it install a missing "
+						+ "SSH server package. Status and switches live on the Network "
+						+ "device's inspector.")
+						.font(.caption)
+						.foregroundStyle(.tertiary)
+						.fixedSize(horizontal: false, vertical: true)
+					Button {
+						showGuide = true
+					} label: {
+						Label("Setup Guide…", systemImage: MachmanSymbols.help)
+					}
+				}
+			}
+			Section {
+				Button("Reset SSH State…", role: .destructive) { resetConfirm = true }
+					.confirmationDialog("Reset SSH state?", isPresented: $resetConfirm) {
+						Button("Reset", role: .destructive) { viewModel.resetSSH(vm.name) }
+						Button("Cancel", role: .cancel) {}
+					} message: {
+						Text("Forgets everything SSH about this VM: the key pair, the "
+							+ "pinned guest identity, the ~/.ssh entry, and any approved "
+							+ "guest access. The guest keeps what the script installed — "
+							+ "run it with --uninstall there.")
+					}
+			}
+			DeviceImplementationSection(vm: vm, device: device)
+			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .sshInstaller)
+		}
+		.sheet(isPresented: $showGuide) {
+			SSHHelpSheet(mode: vm.boot.mode)
+		}
+	}
+
+	private func commandBlock(_ command: String) -> some View {
+		HStack {
+			Text(command)
+				.font(.system(.caption, design: .monospaced))
+				.textSelection(.enabled)
+				.fixedSize(horizontal: false, vertical: true)
+			Spacer()
+			CopyToClipboardButton(command, tooltip: "Copy command")
+		}
+		.padding(6)
+		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
 	}
 }

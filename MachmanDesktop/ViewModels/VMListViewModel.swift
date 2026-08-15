@@ -245,7 +245,8 @@ final class VMListViewModel: ObservableObject {
 			// then the legacy copyProgress events above cover the same transfers.
 			break
 		case .sshChanged:
-			break   // the SSH status UI reacts once it exists; listChanged rides along
+			// Discovery answers arrive with no listChanged — refresh the rows ourselves.
+			Task { [weak self] in await self?.store.reload() }
 		case .unknown:
 			break
 		}
@@ -788,6 +789,52 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do { _ = try await self?.api.updateDevice(vm: name, device: device) }
 			catch { self?.present(error, while: "Updating a device") }
+		}
+	}
+
+	// MARK: - SSH (1.0.5)
+
+	func setSSHIntegration(_ name: String, enabled: Bool) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.setSSH(
+					vm: name, integrationEnabled: enabled, reverseApproved: nil)
+			}
+			catch { self?.present(error, while: "Updating the SSH alias") }
+		}
+	}
+
+	func setSSHReverseApproved(_ name: String, approved: Bool) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.setSSH(
+					vm: name, integrationEnabled: nil, reverseApproved: approved)
+				self?.pushToast(
+					symbol: MachmanSymbols.deviceSSHSetup,
+					message: approved
+						? "\(name) can now log in to this Mac"
+						: "Revoked \(name)'s access to this Mac")
+			}
+			catch { self?.present(error, while: "Updating guest access") }
+		}
+	}
+
+	func refreshSSH(_ name: String) {
+		Task { [weak self] in
+			do { try await self?.api.refreshSSH(vm: name) }
+			catch { self?.present(error, while: "Refreshing the SSH address") }
+		}
+	}
+
+	func resetSSH(_ name: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.resetSSH(vm: name)
+				self?.pushToast(
+					symbol: MachmanSymbols.deviceSSHSetup,
+					message: "SSH state reset for \(name)")
+			}
+			catch { self?.present(error, while: "Resetting SSH state") }
 		}
 	}
 
