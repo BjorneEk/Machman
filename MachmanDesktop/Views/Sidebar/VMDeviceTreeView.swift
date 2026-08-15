@@ -24,6 +24,7 @@ enum SidebarNode: Hashable {
 	case device(DeviceKind)
 	case kernel(String)          // OwnedKernelFile.id (path)
 	case initramfs(String)
+	case sshSession(SSHSessionRef)   // an OPEN ephemeral session tab (no device behind it)
 }
 
 struct VMDeviceTreeView: View {
@@ -47,8 +48,8 @@ struct VMDeviceTreeView: View {
 	@State private var dragWatchdog: Task<Void, Never>?
 	@State private var filter = ""
 	@State private var expanded: Set<SidebarNode> = [
-		.group("Disks"), .group("Mounts"), .group("Serial"), .group("Installers"),
-		.group("Devices"), .group("Kernel"), .group("Initramfs"),
+		.group("Disks"), .group("Mounts"), .group("Serial"), .group("SSH"),
+		.group("Installers"), .group("Devices"), .group("Kernel"), .group("Initramfs"),
 	]
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
@@ -94,6 +95,7 @@ struct VMDeviceTreeView: View {
 			diskGroup
 			mountGroup
 			serialGroup
+			sshGroup
 			installerGroup
 			deviceGroup
 			if showsKernelSections {
@@ -343,13 +345,7 @@ struct VMDeviceTreeView: View {
 	private var serialGroup: some View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count, menu: {
-			// The + accessory's reliable twin — List group labels can swallow clicks.
-			if vm.ssh != nil {
-				Button("New SSH Session") { openSSHSession() }
-					.disabled(!sshSessionReady)
-			}
-		}, accessory: { sshSessionButton }) {
+			count: ports.count) {
 			// Search matches the display name AND the raw guest device (hvc0 finds
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {
@@ -358,6 +354,54 @@ struct VMDeviceTreeView: View {
 				serialRow(port)
 			}
 		}
+	}
+
+	// Ephemeral SSH sessions, once the guest has reported a user: the section title IS
+	// the command, the + opens a fresh session tab, and the open sessions are the
+	// children — no devices behind them, nothing persists.
+	@ViewBuilder
+	private var sshGroup: some View {
+		if let user = vm.ssh?.guestUser {
+			let open = canvases.canvas(for: vm.name).allOpenTabs
+				.compactMap { tab -> SSHSessionRef? in
+					if case .ssh(let ref) = tab { return ref }
+					return nil
+				}
+			group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
+				title: "ssh \(user)@\(vm.name)", count: open.count, menu: {
+				// The + accessory's reliable twin — List group labels can swallow clicks.
+				Button("New SSH Session") { openSSHSession() }
+					.disabled(!sshSessionReady)
+			}, accessory: { sshSessionButton }) {
+				ForEach(open.filter { matches($0.title) }) { ref in
+					sshSessionRow(ref)
+				}
+			}
+		}
+	}
+
+	private func sshSessionRow(_ ref: SSHSessionRef) -> some View {
+		HStack(spacing: 6) {
+			Image(systemName: MachmanSymbols.tabTerminal)
+				.font(.system(size: theme.metrics.iconSize))
+			Text(ref.title)
+				.lineLimit(1)
+			Spacer()
+			Circle().fill(MachmanColors.connected)
+				.frame(width: 5, height: 5)
+				.help("Session tab open")
+		}
+		.font(.system(size: theme.metrics.rowFontSize))
+		.frame(height: theme.metrics.treeRowHeight)
+		.tag(SidebarNode.sshSession(ref))
+		.contextMenu {
+			Button("Close Session") { closeSSHSession(ref) }
+		}
+	}
+
+	private func closeSSHSession(_ ref: SSHSessionRef) {
+		sessions.dropSSHController(vm: vm.name, ref: ref)
+		mutateCanvas { $0.close(.ssh(ref)) }
 	}
 
 	// Installer devices (share-served guest-setup payloads): their own section — they
@@ -388,22 +432,17 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
-	// The + on the Serial header (SSH is configured): each press opens a fresh ephemeral
-	// session TAB — sessions never appear in this tree, there is no underlying device.
 	private var sshSessionReady: Bool {
 		vm.state.isRunning && SSHCommand.arguments(for: vm) != nil
 	}
 
-	@ViewBuilder
 	private var sshSessionButton: some View {
-		if vm.ssh != nil {
-			IconButton(symbol: MachmanSymbols.add,
-				tooltip: sshSessionReady
-					? "New SSH session tab"
-					: "SSH tabs need the VM running with a discovered address",
-				font: .caption, flat: true) { openSSHSession() }
-				.disabled(!sshSessionReady)
-		}
+		IconButton(symbol: MachmanSymbols.add,
+			tooltip: sshSessionReady
+				? "New SSH session tab"
+				: "Sessions need the VM running with a discovered address",
+			font: .caption, flat: true) { openSSHSession() }
+			.disabled(!sshSessionReady)
 	}
 
 	private func openSSHSession() {
@@ -771,6 +810,9 @@ struct VMDeviceTreeView: View {
 			guard let port = ports.first(where: { SerialPortRef($0) == ref }),
 				port.unavailable == nil, port.enabled ?? true else { return }
 			openTerminal(ref)
+		case .sshSession(let ref):
+			// Rows exist only for OPEN session tabs — selecting one focuses its tab.
+			mutateCanvas { $0.activate(.ssh(ref)) }
 		default:
 			break
 		}
