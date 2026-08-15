@@ -108,6 +108,9 @@ struct ConsoleHelpSheet: View {
 				+ "this port:")
 		}
 		command("sudo systemctl enable --now serial-getty@hvc\(guestIndex).service")
+		note("OpenRC (Alpine) has no systemctl — add a getty line to /etc/inittab instead:")
+		command("echo 'hvc\(guestIndex)::respawn:/sbin/getty 38400 hvc\(guestIndex)' "
+			+ ">> /etc/inittab && kill -HUP 1")
 		step(2, "Boot messages (one-time) — add console=hvc\(guestIndex) to the kernel "
 			+ "command line: in the VM's display window, at the GRUB menu press E, append "
 			+ "it to the line starting with “linux”, then press Ctrl-X to boot. Works on "

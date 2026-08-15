@@ -99,8 +99,10 @@ struct SSHHelpSheet: View {
 
 	@ViewBuilder
 	private var freebsdSteps: some View {
-		intro("FreeBSD has no virtiofs driver, so the script cannot reach the guest — "
-			+ "set SSH up by hand from the console instead.")
+		intro("FreeBSD has no virtiofs driver in base, so the script cannot reach the "
+			+ "guest — set SSH up by hand from the console instead.")
+		note("Alternative: pkg install fusefs-virtiofs adds share support — after that "
+			+ "the Linux tab's mount-and-run route works here too.")
 		step(1, "Enable sshd (the installer usually already did):")
 		command("sysrc sshd_enable=YES && service sshd start")
 		step(2, "Copy this Mac's key (SSH Setup inspector → Public key), then as your "
