@@ -90,22 +90,17 @@ struct SSHDiscoveryTests {
 		#expect(!(await SSHDiscovery.probeTCP(host: "127.0.0.1", port: 1, timeout: 1)))
 	}
 
-	@Test func orchestrationIsProbeGated() async {
+	// No liveness gate (a guest without sshd still has an address worth showing):
+	// the lease wins, ARP is the fallback, nothing found → retry.
+	@Test func orchestrationPrefersLeasesThenARP() {
 		let arp = "? (192.168.64.20) at a6:83:e7:12:3:45 on bridge100 [ethernet]"
-		// Lease candidate first; a dead lease falls through to a live arp answer.
-		var answer = await SSHDiscovery.discover(
-			mac: "A6:83:E7:12:03:45", leasesText: leases, arpText: arp,
-			probe: { $0 == "192.168.64.20" })
-		#expect(answer == SSHDiscovery.Answer(address: "192.168.64.20", source: "arp"))
-		// The lease answer wins while it is alive.
-		answer = await SSHDiscovery.discover(
-			mac: "A6:83:E7:12:03:45", leasesText: leases, arpText: arp,
-			probe: { _ in true })
-		#expect(answer == SSHDiscovery.Answer(address: "192.168.64.9", source: "dhcp"))
-		// Nothing alive → no answer at all (the resolver retries instead).
-		answer = await SSHDiscovery.discover(
-			mac: "A6:83:E7:12:03:45", leasesText: leases, arpText: arp,
-			probe: { _ in false })
-		#expect(answer == nil)
+		#expect(SSHDiscovery.discover(
+			mac: "A6:83:E7:12:03:45", leasesText: leases, arpText: arp)
+			== SSHDiscovery.Answer(address: "192.168.64.9", source: "dhcp"))
+		#expect(SSHDiscovery.discover(
+			mac: "A6:83:E7:12:03:45", leasesText: nil, arpText: arp)
+			== SSHDiscovery.Answer(address: "192.168.64.20", source: "arp"))
+		#expect(SSHDiscovery.discover(
+			mac: "de:ad:be:ef:00:01", leasesText: leases, arpText: arp) == nil)
 	}
 }

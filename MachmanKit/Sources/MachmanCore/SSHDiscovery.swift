@@ -123,33 +123,26 @@ enum SSHDiscovery {
 	// MARK: - Orchestration
 
 	// Leases first (authoritative while fresh), ARP as fallback (needs recent guest
-	// traffic); every candidate must answer on :22 before it is believed.
-	static func discover(
-		mac: String, leasesText: String?, arpText: String?,
-		probe: (String) async -> Bool
-	) async -> Answer? {
-		var candidates: [Answer] = []
+	// traffic). Deliberately NO liveness gate: the address is a fact of the running VM
+	// whether or not anything listens on it yet (a guest without sshd still has an IP
+	// worth showing) — ssh reachability is the connection's own business. The cost is
+	// that a stale lease can win briefly after renumbering; a reboot or the refresh
+	// button re-resolves.
+	static func discover(mac: String, leasesText: String?, arpText: String?) -> Answer? {
 		if let leasesText, let ip = leaseIP(for: mac, inLeasesText: leasesText) {
-			candidates.append(Answer(address: ip, source: "dhcp"))
+			return Answer(address: ip, source: "dhcp")
 		}
 		if let arpText, let ip = arpIP(for: mac, inARPOutput: arpText) {
-			if !candidates.contains(where: { $0.address == ip }) {
-				candidates.append(Answer(address: ip, source: "arp"))
-			}
-		}
-		for candidate in candidates where await probe(candidate.address) {
-			return candidate
+			return Answer(address: ip, source: "arp")
 		}
 		return nil
 	}
 
 	// The live variant — reads /var/db/dhcpd_leases and runs arp. Call off the main
 	// actor (Process + file reads block their thread).
-	static func discoverLive(mac: String) async -> Answer? {
+	static func discoverLive(mac: String) -> Answer? {
 		let leases = try? String(contentsOfFile: "/var/db/dhcpd_leases", encoding: .utf8)
-		return await discover(
-			mac: mac, leasesText: leases, arpText: currentARPOutput(),
-			probe: { await probeTCP(host: $0) })
+		return discover(mac: mac, leasesText: leases, arpText: currentARPOutput())
 	}
 
 	static func currentARPOutput() -> String? {

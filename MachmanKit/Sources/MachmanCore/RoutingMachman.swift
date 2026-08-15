@@ -338,7 +338,7 @@ public final class RoutingMachman: MachmanControlling {
 			while !Task.isCancelled {
 				// Detached: the live loaders read /var/db and run arp — off the main actor.
 				let answer = await Task.detached {
-					await SSHDiscovery.discoverLive(mac: mac)
+					SSHDiscovery.discoverLive(mac: mac)
 				}.value
 				guard let self, let host = self.host(withID: id) else { return }
 				if let answer {
