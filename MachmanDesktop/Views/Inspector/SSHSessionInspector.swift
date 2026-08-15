@@ -14,6 +14,7 @@ import MachmanAPI
 struct SSHSessionInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var sessions: TerminalSessions
+	@ObservedObject var profiles: TerminalProfileStore
 	let vm: VMInfo
 	let ref: SSHSessionRef
 	@State private var draftName = ""
@@ -40,6 +41,16 @@ struct SSHSessionInspector: View {
 					}
 				}
 			}
+			Section("Terminal") {
+				Picker("Profile", selection: profileBinding) {
+					ForEach(profiles.profiles) { p in
+						Text(p.name).tag(p.id)
+					}
+				}
+				Text("Colors and font apply now; startup settings apply to new sessions.")
+					.font(.caption)
+					.foregroundStyle(.tertiary)
+			}
 			Section {
 				Button("Close Session", role: .destructive) {
 					sessions.dropSSHController(vm: vm.name, ref: ref)
@@ -51,6 +62,18 @@ struct SSHSessionInspector: View {
 		}
 		.onAppear { draftName = sessions.sshSessionName(vm: vm.name, ref: ref) }
 		.id(ref)   // a different session re-seeds the name draft via onAppear
+	}
+
+	private var profileBinding: Binding<UUID> {
+		Binding(
+			get: {
+				sessions.sshSessionProfileID(vm: vm.name, ref: ref)
+					?? profiles.defaultProfile.id
+			},
+			set: { id in
+				guard let profile = profiles.profile(id: id) else { return }
+				sessions.applySSHProfile(vm: vm.name, ref: ref, id: id, profile: profile)
+			})
 	}
 
 	private static func format(_ seconds: TimeInterval) -> String {

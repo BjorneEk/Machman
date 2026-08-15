@@ -35,7 +35,7 @@ struct InspectorView: View {
 				case .sshSession(let ref):
 					SSHSessionInspector(
 						viewModel: viewModel, sessions: viewModel.terminals,
-						vm: vm, ref: ref)
+						profiles: profiles, vm: vm, ref: ref)
 				case .disk(let id):
 					DiskInspector(viewModel: viewModel, vm: vm, diskID: id)
 				case .mount(let id):

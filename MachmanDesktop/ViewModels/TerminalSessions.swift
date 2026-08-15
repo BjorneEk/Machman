@@ -94,6 +94,7 @@ final class TerminalSessions: ObservableObject {
 	private struct SSHSessionMeta {
 		var name: String
 		var startedAt: Date
+		var profileID: UUID?   // per-session pick; nil = the default profile
 	}
 	private var sshMeta: [String: [SSHSessionRef: SSHSessionMeta]] = [:]
 
@@ -114,6 +115,20 @@ final class TerminalSessions: ObservableObject {
 		guard !trimmed.isEmpty else { return }
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
 			name: ref.title, startedAt: Date())].name = trimmed
+		objectWillChange.send()
+	}
+
+	func sshSessionProfileID(vm: String, ref: SSHSessionRef) -> UUID? {
+		sshMeta[vm]?[ref]?.profileID
+	}
+
+	// Live-apply a profile to one session (font/colors/behaviour) and remember the pick.
+	// Startup-only settings can't change on a live remote session — they apply to the
+	// NEXT session; there is deliberately no ssh "reload".
+	func applySSHProfile(vm: String, ref: SSHSessionRef, id: UUID, profile: TerminalProfile) {
+		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
+			name: ref.title, startedAt: Date())].profileID = id
+		sshControllers[vm]?[ref]?.applyLive(profile)
 		objectWillChange.send()
 	}
 
