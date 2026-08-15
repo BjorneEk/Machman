@@ -29,6 +29,9 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 	public var guestUser: String?
 	public var guestHostname: String?
 	public var guestOS: String?       // /etc/os-release ID, "darwin", or "freebsd"
+	// The guest's SSH host public key line — what the daemon pins into known_hosts
+	// (host keys are public by nature).
+	public var guestHostKey: String?
 	public var reverseState: ReverseState
 	public var reversePublicKey: String?   // guest's reverse key — public half only
 	public var integrationEnabled: Bool?   // managed ~/.ssh entry on/off
@@ -42,6 +45,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 
 	public init(
 		guestUser: String? = nil, guestHostname: String? = nil, guestOS: String? = nil,
+		guestHostKey: String? = nil,
 		reverseState: ReverseState = .none, reversePublicKey: String? = nil,
 		integrationEnabled: Bool? = nil, lastReportAt: Date? = nil,
 		address: String? = nil, addressSource: String? = nil,
@@ -50,6 +54,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 		self.guestUser = guestUser
 		self.guestHostname = guestHostname
 		self.guestOS = guestOS
+		self.guestHostKey = guestHostKey
 		self.reverseState = reverseState
 		self.reversePublicKey = reversePublicKey
 		self.integrationEnabled = integrationEnabled
@@ -65,6 +70,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 		self.guestUser = try c.decodeIfPresent(String.self, forKey: .guestUser)
 		self.guestHostname = try c.decodeIfPresent(String.self, forKey: .guestHostname)
 		self.guestOS = try c.decodeIfPresent(String.self, forKey: .guestOS)
+		self.guestHostKey = try c.decodeIfPresent(String.self, forKey: .guestHostKey)
 		self.reverseState =
 			try c.decodeIfPresent(ReverseState.self, forKey: .reverseState) ?? .none
 		self.reversePublicKey = try c.decodeIfPresent(String.self, forKey: .reversePublicKey)

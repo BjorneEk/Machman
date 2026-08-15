@@ -30,19 +30,24 @@ enum SSHSetupInstaller {
 	// machine-identity file bytes — stable across renames (the file never moves content),
 	// fresh on copies (VMCopier regenerates identity) — never from the VM name.
 	static func marker(for config: VMConfig) throws -> String {
+		if let existing = existingMarker(for: config) { return existing }
+		_ = try config.getVmIdentifier()   // creates + persists the identity file
+		guard let minted = existingMarker(for: config) else {
+			throw VirtualMachineError.critical(
+				"no machine identity to derive \(config.name)'s SSH marker from")
+		}
+		return minted
+	}
+
+	// Read-only lookup for the daemon (which must never write a hosted VM's dir): nil
+	// until an identity file exists — and one always does once a payload was written.
+	static func existingMarker(for config: VMConfig) -> String? {
 		let fm = FileManager.default
 		var data = fm.contents(atPath: config.vmIdentifierPath())
 		if data?.isEmpty != false {
 			data = fm.contents(atPath: config.macMachineIdPath())
 		}
-		if data?.isEmpty != false {
-			_ = try config.getVmIdentifier()   // creates + persists the identity file
-			data = fm.contents(atPath: config.vmIdentifierPath())
-		}
-		guard let bytes = data, !bytes.isEmpty else {
-			throw VirtualMachineError.critical(
-				"no machine identity to derive \(config.name)'s SSH marker from")
-		}
+		guard let bytes = data, !bytes.isEmpty else { return nil }
 		let hex = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }
 			.joined().prefix(12)
 		return "machman-\(hex)"

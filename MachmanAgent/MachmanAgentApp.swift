@@ -26,7 +26,8 @@ enum Daemon {
 				"MachmanVMHost.app not found; autostart agents will not be written")
 		}
 		return RoutingMachman(
-			registry: registry, daemonVersion: version, launchAgents: launchAgents)
+			registry: registry, daemonVersion: version, launchAgents: launchAgents,
+			sshHostConfig: SSHHostConfigWriter())
 	}()
 	static let server = MachmanServer(api: api, daemonVersion: version)
 

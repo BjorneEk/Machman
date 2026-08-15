@@ -806,6 +806,7 @@ public final class LocalMachman: MachmanControlling {
 				guestUser: state.guestUser,
 				guestHostname: state.guestHostname,
 				guestOS: state.guestOS,
+				guestHostKey: state.guestHostKey,
 				reverseState: state.reverseStateValue,
 				reversePublicKey: state.reversePublicKey,
 				integrationEnabled: state.integrationEnabled,

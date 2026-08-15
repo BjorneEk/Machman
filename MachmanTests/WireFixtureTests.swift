@@ -444,12 +444,14 @@ struct WireFixtureTests {
 		#expect(try encode(SSHInfo()) == #"{"reverseState":"none"}"#)
 		let full = SSHInfo(
 			guestUser: "admin", guestHostname: "debs", guestOS: "debian",
+			guestHostKey: "ssh-ed25519 HHHH host",
 			reverseState: .pending, reversePublicKey: "ssh-ed25519 AAAA guest",
 			integrationEnabled: true,
 			lastReportAt: Date(timeIntervalSince1970: 1_700_000_000),
 			address: "192.168.64.5", addressSource: "dhcp",
 			identityFilePath: "/vms/Debian/ssh/id_ed25519")
 		let expected = #"{"address":"192.168.64.5","addressSource":"dhcp","#
+			+ #""guestHostKey":"ssh-ed25519 HHHH host","#
 			+ #""guestHostname":"debs","guestOS":"debian","guestUser":"admin","#
 			+ #""identityFilePath":"/vms/Debian/ssh/id_ed25519","integrationEnabled":true,"#
 			+ #""lastReportAt":"2023-11-14T22:13:20Z","#

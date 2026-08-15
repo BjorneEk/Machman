@@ -25,6 +25,9 @@ public final class RoutingMachman: MachmanControlling {
 	// Injected (not built here) so unit tests can never touch ~/Library/LaunchAgents by
 	// construction. nil = no agents are written; policy toggles still persist.
 	private let launchAgents: LaunchAgentManager?
+	// Same rule for ~/.ssh: injected by the daemon, nil in tests — SSH switches still
+	// persist, only the host-side files stay untouched.
+	private let sshHostConfig: SSHHostConfigWriter?
 
 	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
 	// recomputed: hostGone unlinks identity.socketPath and closures capture identity.id, so
@@ -71,12 +74,14 @@ public final class RoutingMachman: MachmanControlling {
 
 	public init(
 		registry: VMRegistry, daemonVersion: String,
-		launchAgents: LaunchAgentManager? = nil
+		launchAgents: LaunchAgentManager? = nil,
+		sshHostConfig: SSHHostConfigWriter? = nil
 	) {
 		self.registry = registry
 		self.local = LocalMachman(registry: registry)
 		self.daemonVersion = daemonVersion
 		self.launchAgents = launchAgents
+		self.sshHostConfig = sshHostConfig
 	}
 
 	var hostedNames: [String] { Array(hosted.keys) }
@@ -302,10 +307,13 @@ public final class RoutingMachman: MachmanControlling {
 					// The guest just came up (boot or reboot): (re)start discovery.
 					self.startSSHDiscovery(host)
 				}
-				if case .sshChanged = event, let host = self.host(withID: id),
-					host.sshAnswer == nil {
-					// A fresh report can mean sshd just appeared — probe again now.
-					self.startSSHDiscovery(host)
+				if case .sshChanged = event {
+					if let host = self.host(withID: id), host.sshAnswer == nil {
+						// A fresh report can mean sshd just appeared — probe again now.
+						self.startSSHDiscovery(host)
+					}
+					// Report ingestion may have changed users/keys the managed file pins.
+					self.scheduleSSHHostConfigWrite()
 				}
 				self.registry.events.emit(event)
 			}
@@ -337,6 +345,8 @@ public final class RoutingMachman: MachmanControlling {
 					if host.sshAnswer != answer {
 						host.sshAnswer = answer
 						self.registry.events.emit(.sshChanged(vm: host.identity.name))
+						// The alias's HostName just became known/changed.
+						self.scheduleSSHHostConfigWrite()
 					}
 					return
 				}
@@ -437,8 +447,14 @@ public final class RoutingMachman: MachmanControlling {
 		guard hosted[name] == nil else {
 			throw MachmanError(code: .invalidState, message: "stop \(name) before deleting it")
 		}
+		// Capture the marker BEFORE the identity file dies with the VM dir.
+		let sshMarker = existingSSHMarker(name)
 		try await local.deleteVM(named: name)
 		launchAgents?.remove(vm: name, canBootout: true)
+		if let writer = sshHostConfig, let sshMarker {
+			try? writer.setReverseKey(nil, marker: sshMarker, vmName: name)
+		}
+		scheduleSSHHostConfigWrite()
 	}
 
 	public func renameVM(named name: String, to newName: String) async throws {
@@ -446,6 +462,9 @@ public final class RoutingMachman: MachmanControlling {
 			throw MachmanError(code: .invalidState, message: "stop \(name) before renaming it")
 		}
 		try await local.renameVM(named: name, to: newName)
+		// The managed ssh alias is name-keyed; regeneration re-keys the block (the
+		// marker — and with it the reverse authorized_keys label — never changes).
+		scheduleSSHHostConfigWrite()
 		guard let launchAgents else { return }
 		launchAgents.remove(vm: name, canBootout: true)
 		if registry.vm(named: newName)?.config.startPolicy.autostart == true {
@@ -660,11 +679,21 @@ public final class RoutingMachman: MachmanControlling {
 		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
 	) async throws -> VMInfo {
 		try refuseSSHWhileSafe(name)
-		// Daemon-side ~/.ssh effects ride behind this call once the host-config writer
-		// exists; the config mutation itself proxies like every other config edit.
-		return try await target(name).setSSH(
+		let info = try await target(name).setSSH(
 			vm: name, integrationEnabled: integrationEnabled,
 			reverseApproved: reverseApproved)
+		// Host-side effects AFTER the config write succeeded, from the RETURNED state —
+		// the daemon's registry copy is stale while the VM is hosted (setStartPolicy
+		// precedent). Approving with no key is refused engine-side, so the force-unwrap
+		// shape never arises here.
+		if let writer = sshHostConfig, let reverseApproved,
+			let marker = existingSSHMarker(name) {
+			try? writer.setReverseKey(
+				reverseApproved ? info.ssh?.reversePublicKey : nil,
+				marker: marker, vmName: name)
+		}
+		scheduleSSHHostConfigWrite()
+		return info
 	}
 
 	public func refreshSSH(vm name: String) async throws {
@@ -678,7 +707,57 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func resetSSH(vm name: String) async throws -> VMInfo {
 		try refuseSSHWhileSafe(name)
-		return try await target(name).resetSSH(vm: name)
+		let marker = existingSSHMarker(name)
+		let info = try await target(name).resetSSH(vm: name)
+		if let writer = sshHostConfig, let marker {
+			try? writer.setReverseKey(nil, marker: marker, vmName: name)
+		}
+		scheduleSSHHostConfigWrite()
+		return info
+	}
+
+	// The marker labeling this VM's host-side artifacts — a read-only derivation from
+	// the identity file, safe against the stale-while-hosted registry copy (paths only).
+	private func existingSSHMarker(_ name: String) -> String? {
+		guard let config = registry.vm(named: name)?.config else { return nil }
+		return SSHSetupInstaller.existingMarker(for: config)
+	}
+
+	// Rebuild ~/.ssh/machman/config (+ Include line) from current state. Fire-and-forget
+	// with whole-state writes — concurrent triggers converge on last-write-wins.
+	private func scheduleSSHHostConfigWrite() {
+		guard sshHostConfig != nil else { return }
+		Task { [weak self] in
+			await self?.writeSSHHostConfig()
+		}
+	}
+
+	private func writeSSHHostConfig() async {
+		guard let writer = sshHostConfig else { return }
+		var entries: [SSHHostConfigWriter.VMEntry] = []
+		for vm in registry.list() {
+			let name = vm.name
+			var info: VMInfo?
+			if let host = hosted[name] {
+				// The vmhost's answer is the fresh state; the registry copy is stale.
+				info = try? await host.client.vm(named: name)
+				if var overlaid = info {
+					overlaySSH(&overlaid, from: host)
+					info = overlaid
+				}
+			} else {
+				info = try? await local.vm(named: name)
+			}
+			guard let ssh = info?.ssh, ssh.integrationEnabled == true else { continue }
+			entries.append(SSHHostConfigWriter.VMEntry(
+				name: name, user: ssh.guestUser, address: ssh.address,
+				identityFilePath: ssh.identityFilePath, hostKey: ssh.guestHostKey))
+		}
+		do {
+			try writer.apply(entries: entries)
+		} catch {
+			MachmanLogger.log(.passiveError, "cannot write ~/.ssh/machman/config: \(error)")
+		}
 	}
 
 	// MARK: - Operations (1.0.4)

@@ -123,7 +123,7 @@ directory carrying a generated script that enables sshd in the guest and exchang
 plus a writable `SSHReport` drop-box the guest reports back through; both names are
 reserved mount tags.
 
-`ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, reverseState:
+`ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, guestHostKey?, reverseState:
 "none"|"pending"|"approved", reversePublicKey?, integrationEnabled?, lastReportAt?,
 address?, addressSource?: "dhcp"|"arp", identityFilePath?}` — absent entirely when SSH was
 never used (or from an older daemon). The persisted half comes from the guest's install
