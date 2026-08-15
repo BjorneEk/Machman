@@ -192,8 +192,13 @@ enum SSHSetupInstaller {
 		fi
 		if [ -z "$U" ] || [ "$U" = "root" ]; then
 			# Root consoles (Alpine, FreeBSD) have no sudo and no SUDO_USER.
-			echo "Cannot tell which user to set up — run via sudo from your account," >&2
-			echo "or name one:  sh \"$0\" --user <name>" >&2
+			echo "Cannot tell which user to set up — name one:  sh \"$0\" --user <name>" >&2
+			candidates="$(awk -F: '$3 >= 1000 && $7 !~ /(nologin|false)$/ { print "  "$1 }' \
+				/etc/passwd 2>/dev/null || true)"
+			if [ -n "$candidates" ]; then
+				echo "Users on this guest:" >&2
+				echo "$candidates" >&2
+			fi
 			exit 1
 		fi
 		case "$OS" in
@@ -323,6 +328,14 @@ enum SSHSetupInstaller {
 			[ -f "$HOME_DIR/.ssh/config" ] && strip_block "$HOME_DIR/.ssh/config"
 			rm -f "$HOME_DIR/.ssh/machman_host" "$HOME_DIR/.ssh/machman_host.pub" \
 				"$HOME_DIR/.ssh/machman_known_hosts"
+			if [ "$FAMILY" = "nixos" ] && [ -f /etc/nixos/configuration.nix ] \
+				&& grep -q "# $MARKER" /etc/nixos/configuration.nix; then
+				tmp="/etc/nixos/configuration.nix.machman-tmp"
+				grep -v "# $MARKER" /etc/nixos/configuration.nix > "$tmp"
+				mv "$tmp" /etc/nixos/configuration.nix
+				echo "removed the Machman line from configuration.nix — run" \
+					"'sudo nixos-rebuild switch' to apply."
+			fi
 			find_addresses
 			write_report uninstalled
 			echo "done — Machman's SSH artifacts removed. The SSH server itself was left"
@@ -383,20 +396,40 @@ enum SSHSetupInstaller {
 				|| rc-service sshd restart >/dev/null 2>&1 || true
 			;;
 		nixos)
-			# Post-rebuild re-runs: once sshd is active the lecture is just noise.
+			# Post-rebuild re-runs: once sshd is active there is nothing to say.
 			if systemctl is-active sshd >/dev/null 2>&1; then
 				echo "sshd is already enabled (declaratively) — nothing to change."
+			elif [ -n "$DO_INSTALL" ] && [ -f /etc/nixos/configuration.nix ] \
+				&& ! grep -q "services.openssh" /etc/nixos/configuration.nix; then
+				# --install: append one marked line inside the final brace, then
+				# rebuild. Backed up first; flake systems (no configuration.nix in
+				# charge) or existing openssh config fall through to the manual steps.
+				cp /etc/nixos/configuration.nix /etc/nixos/configuration.nix.machman-backup
+				awk -v m="$MARKER" '
+					{ lines[NR] = $0 }
+					END {
+						for (i = NR; i >= 1; i--) {
+							if (lines[i] ~ /^}/) {
+								lines[i] = "  services.openssh.enable = true; # " m \
+									"\n" lines[i]
+								break
+							}
+						}
+						for (i = 1; i <= NR; i++) print lines[i]
+					}
+				' /etc/nixos/configuration.nix.machman-backup > /etc/nixos/configuration.nix
+				echo "enabled services.openssh in configuration.nix — rebuilding (slow)…"
+				nixos-rebuild switch
 			else
 				cat <<'NIXOS'
-		NixOS is declarative — this script cannot enable sshd here. Add to your
-		configuration.nix and rebuild:
+		NixOS is declarative — enable sshd yourself (or re-run with --install and this
+		script edits configuration.nix and rebuilds for you):
 
-		    services.openssh.enable = true;
+		  1. add to /etc/nixos/configuration.nix:   services.openssh.enable = true;
+		  2. apply it:                              sudo nixos-rebuild switch
+		  3. re-run this script
 
-		then:    sudo nixos-rebuild switch
-
-		Your key is still installed below (NixOS honors ~/.ssh/authorized_keys once
-		sshd is enabled).
+		Your key is already installed either way (honored once sshd is up).
 		NIXOS
 			fi
 			;;

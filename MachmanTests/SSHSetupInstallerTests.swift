@@ -37,10 +37,15 @@ struct SSHSetupInstallerTests {
 		// openSUSE firewall + SELinux fixup.
 		#expect(s.contains("firewall-cmd --permanent --add-service=ssh"))
 		#expect(s.contains("restorecon -R"))
-		// NixOS: guided-declarative (skipped once sshd is active), terminator at column 0.
+		// NixOS: guided-declarative (skipped once sshd is active), --install edits the
+		// config with a backup + rebuild; terminator at column 0.
 		#expect(s.contains("services.openssh.enable = true;"))
 		#expect(s.contains("systemctl is-active sshd"))
+		#expect(s.contains("configuration.nix.machman-backup"))
+		#expect(s.contains("nixos-rebuild switch"))
 		#expect(s.contains("\nNIXOS\n"))
+		// Root consoles get the candidate users listed, never a dead end.
+		#expect(s.contains("Users on this guest:"))
 		// Missing-sshd guidance + the opt-in installs.
 		#expect(s.contains("apt-get install -y openssh-server"))
 		#expect(s.contains("pacman -S --noconfirm openssh"))
