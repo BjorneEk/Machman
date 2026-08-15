@@ -954,9 +954,15 @@ final class VMListViewModel: ObservableObject {
 	// The terminal on the selected VM's active canvas tab (nil on the config tab or with no
 	// selection) — drives File → Save Terminal.
 	var activeTerminalController: SerialTerminalController? {
-		guard let name = selectedName,
-			case .terminal(let ref) = canvases.canvas(for: name).activeTab else { return nil }
-		return terminals.controller(vm: name, ref: ref)
+		guard let name = selectedName else { return nil }
+		switch canvases.canvas(for: name).activeTab {
+		case .terminal(let ref):
+			return terminals.controller(vm: name, ref: ref)
+		case .ssh(let ref):
+			return terminals.sshController(vm: name, ref: ref)
+		default:
+			return nil
+		}
 	}
 
 	// Every copyable entity in the tree selection (kernel + initramfs + disks together) —
@@ -1004,6 +1010,9 @@ final class VMListViewModel: ObservableObject {
 		guard let tab = canvas.activeTab else { return false }
 		if case .terminal(let ref) = tab {
 			terminals.dropController(vm: name, ref: ref)
+		}
+		if case .ssh(let ref) = tab {
+			terminals.dropSSHController(vm: name, ref: ref)
 		}
 		canvas.close(tab)
 		canvases.setCanvas(canvas, for: name)

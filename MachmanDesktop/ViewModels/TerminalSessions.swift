@@ -84,6 +84,43 @@ final class TerminalSessions: ObservableObject {
 		}
 	}
 
+	// MARK: - SSH sessions (ephemeral tabs)
+
+	// Same deferred-creation shape as the serial tabs, but the transport is a PTY-spawned
+	// /usr/bin/ssh, and it is one-shot: a dead session never reconnects — open a new tab.
+	private var sshControllers: [String: [SSHSessionRef: SerialTerminalController]] = [:]
+
+	func sshController(vm: String, ref: SSHSessionRef) -> SerialTerminalController? {
+		sshControllers[vm]?[ref]
+	}
+
+	func ensureSSHController(
+		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile,
+		stillWanted: @escaping @MainActor () -> Bool = { true }
+	) {
+		guard sshControllers[vm]?[ref] == nil else { return }
+		let key = "ssh|\(vm)|\(ref.id.uuidString)"
+		guard !creating.contains(key) else { return }
+		creating.insert(key)
+		DispatchQueue.main.async { [weak self] in
+			guard let self else { return }
+			self.creating.remove(key)
+			guard stillWanted() else { return }
+			let c = SerialTerminalController(profile: profile)
+			self.sshControllers[vm, default: [:]][ref] = c
+			c.connect(stream: PTYProcessStream(
+				executablePath: "/usr/bin/ssh", arguments: arguments))
+			self.objectWillChange.send()
+		}
+	}
+
+	func dropSSHController(vm: String, ref: SSHSessionRef) {
+		guard let c = sshControllers[vm]?[ref] else { return }
+		c.disconnect()
+		sshControllers[vm]?[ref] = nil
+		objectWillChange.send()
+	}
+
 	// Drop every controller of VMs that no longer exist. Per-port pruning is the canvas
 	// reconcile's job — it reports removed refs into dropController.
 	func reconcile(vms: [VMInfo]) {
@@ -92,13 +129,22 @@ final class TerminalSessions: ObservableObject {
 			controllers[vm]?.values.forEach { $0.disconnect() }
 			controllers[vm] = nil
 		}
+		for vm in Array(sshControllers.keys) where !names.contains(vm) {
+			sshControllers[vm]?.values.forEach { $0.disconnect() }
+			sshControllers[vm] = nil
+		}
 	}
 
-	// Migrate a VM's controllers on rename, so open terminals survive it.
+	// Migrate a VM's controllers on rename, so open terminals survive it. (A live SSH
+	// process is unaffected by the rename; its argv already resolved.)
 	func renameVM(from old: String, to new: String) {
 		if let c = controllers[old] {
 			controllers[new] = c
 			controllers[old] = nil
+		}
+		if let c = sshControllers[old] {
+			sshControllers[new] = c
+			sshControllers[old] = nil
 		}
 	}
 }

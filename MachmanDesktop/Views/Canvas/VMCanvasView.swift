@@ -246,6 +246,9 @@ struct VMCanvasView: View {
 		if case .terminal(let ref) = tab {
 			sessions.dropController(vm: vm.name, ref: ref)
 		}
+		if case .ssh(let ref) = tab {
+			sessions.dropSSHController(vm: vm.name, ref: ref)
+		}
 		mutate { $0.close(tab) }
 	}
 
@@ -258,6 +261,9 @@ struct VMCanvasView: View {
 	// Tear a tab off into its own window: the canvas tab closes but the controller stays —
 	// the new window adopts the same terminal (one mount at a time).
 	private func tearOff(_ tab: VMPaneTab) {
+		// SSH tabs never tear off (v1): scene restoration would revive a window whose
+		// process died with the app — the drag just snaps back.
+		if case .ssh = tab { return }
 		mutate { $0.close(tab) }
 		openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
 	}
@@ -469,6 +475,13 @@ struct VMCanvasView: View {
 					canvases?.canvas(for: vm.name).allOpenTabs
 						.contains(.terminal(ref)) == true
 				})
+		case .ssh(let ref):
+			SSHTabContent(
+				sessions: sessions, profiles: profiles, vm: vm, ref: ref,
+				stillWanted: { [weak canvases] in
+					canvases?.canvas(for: vm.name).allOpenTabs
+						.contains(.ssh(ref)) == true
+				})
 		}
 	}
 
@@ -497,8 +510,10 @@ struct VMCanvasView: View {
 	// MARK: - Tab metadata
 
 	private func isTerminal(_ tab: VMPaneTab) -> Bool {
-		if case .terminal = tab { return true }
-		return false
+		switch tab {
+		case .terminal, .ssh: return true
+		case .config: return false
+		}
 	}
 
 	private func tabSymbol(_ tab: VMPaneTab) -> String {
@@ -508,6 +523,8 @@ struct VMCanvasView: View {
 		case .terminal(let ref):
 			return ref.kind == .console
 				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart
+		case .ssh:
+			return MachmanSymbols.deviceSSHSetup
 		}
 	}
 
@@ -520,6 +537,8 @@ struct VMCanvasView: View {
 			return ports?.first(where: { $0.index == ref.index })?
 				.displayName(mode: vm.boot.mode)
 				?? ref.displayName(mode: vm.boot.mode)
+		case .ssh(let ref):
+			return ref.title
 		}
 	}
 }

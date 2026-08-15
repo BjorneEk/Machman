@@ -343,7 +343,7 @@ struct VMDeviceTreeView: View {
 	private var serialGroup: some View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count) {
+			count: ports.count, accessory: { sshSessionButton }) {
 			// Search matches the display name AND the raw guest device (hvc0 finds
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {
@@ -380,6 +380,27 @@ struct VMDeviceTreeView: View {
 					.contextMenu { deviceMenu(device) }
 			}
 		}
+	}
+
+	// The + on the Serial header (SSH is configured): each press opens a fresh ephemeral
+	// session TAB — sessions never appear in this tree, there is no underlying device.
+	@ViewBuilder
+	private var sshSessionButton: some View {
+		if vm.ssh != nil {
+			let ready = vm.state.isRunning && SSHCommand.arguments(for: vm) != nil
+			IconButton(symbol: MachmanSymbols.add,
+				tooltip: ready
+					? "New SSH session tab"
+					: "SSH tabs need the VM running with a discovered address",
+				font: .caption, flat: true) { openSSHSession() }
+				.disabled(!ready)
+		}
+	}
+
+	private func openSSHSession() {
+		guard let user = vm.ssh?.guestUser, let address = vm.ssh?.address else { return }
+		let ref = SSHSessionRef(title: "\(user)@\(address)")
+		mutateCanvas { $0.open(.ssh(ref)) }
 	}
 
 	private func serialRow(_ port: SerialPortInfo) -> some View {
@@ -687,10 +708,12 @@ struct VMDeviceTreeView: View {
 	// MARK: - Group scaffold
 
 	// Group parents are dimmed and NOT selectable (no tag — selection skips them); their
-	// add actions live in a row-level context menu on the label.
-	private func group<Content: View, MenuItems: View>(
+	// add actions live in a row-level context menu on the label. `accessory` renders as a
+	// trailing control before the count (the Serial group's + for SSH session tabs).
+	private func group<Content: View, MenuItems: View, Accessory: View>(
 		_ node: SidebarNode, symbol: String, title: String, count: Int,
 		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
+		@ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
 		@ViewBuilder content: @escaping () -> Content
 	) -> some View {
 		DisclosureGroup(isExpanded: groupBinding(node)) {
@@ -702,6 +725,7 @@ struct VMDeviceTreeView: View {
 					.foregroundStyle(.secondary)
 				Text(title).fontWeight(.medium)
 				Spacer()
+				accessory()
 				Text("\(count)")
 					.font(.caption2)
 					.foregroundStyle(.tertiary)

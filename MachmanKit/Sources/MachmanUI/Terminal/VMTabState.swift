@@ -11,10 +11,12 @@
 import Foundation
 
 // Which tab is active in a VM's pane. The config tab (gear) is always present and is the fallback
-// when no terminal tab is; terminal tabs are keyed by their stable port ref.
+// when no terminal tab is; terminal tabs are keyed by their stable port ref. SSH tabs are
+// ephemeral sessions (fresh UUID per open, stripped from persistence — see SSHSessionRef).
 public enum VMPaneTab: Hashable, Sendable {
 	case config
 	case terminal(SerialPortRef)
+	case ssh(SSHSessionRef)
 }
 
 public struct VMTabState: Equatable, Sendable {

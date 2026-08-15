@@ -17,6 +17,7 @@ extension VMPaneTab: Codable {
 	private enum CodingKeys: String, CodingKey {
 		case kind
 		case port
+		case session
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -24,6 +25,10 @@ extension VMPaneTab: Codable {
 		switch try c.decode(String.self, forKey: .kind) {
 		case "terminal":
 			self = .terminal(try c.decode(SerialPortRef.self, forKey: .port))
+		case "ssh":
+			// Decodable for completeness; the store never persists ssh tabs, and older
+			// builds' tolerant default degrades a leaked one to .config.
+			self = .ssh(try c.decode(SSHSessionRef.self, forKey: .session))
 		default:
 			self = .config
 		}
@@ -37,6 +42,9 @@ extension VMPaneTab: Codable {
 		case .terminal(let ref):
 			try c.encode("terminal", forKey: .kind)
 			try c.encode(ref, forKey: .port)
+		case .ssh(let ref):
+			try c.encode("ssh", forKey: .kind)
+			try c.encode(ref, forKey: .session)
 		}
 	}
 }
@@ -219,6 +227,20 @@ public struct CanvasState: Equatable, Sendable, Codable {
 		}
 		if !removed.isEmpty { collapseEmptyPanes() }
 		return removed
+	}
+
+	// Persistence variant: SSH tabs are sessions, not layout — they must never survive a
+	// relaunch (there is no process to restore). Empty panes collapse like live closes.
+	public func strippingEphemeralTabs() -> CanvasState {
+		var copy = self
+		for i in copy.panes.indices {
+			copy.panes[i].remove { tab in
+				if case .ssh = tab { return true }
+				return false
+			}
+		}
+		copy.collapseEmptyPanes()
+		return copy
 	}
 
 	// MARK: - Internals

@@ -78,7 +78,9 @@ public final class CanvasStateStore: ObservableObject {
 
 	private func save() {
 		// Snapshot on the main actor (cheap value copy), then encode + write off it.
-		let snapshot = PersistedState(canvases: canvases)
+		// SSH tabs are stripped: sessions are ephemeral, only layout persists.
+		let snapshot = PersistedState(
+			canvases: canvases.mapValues { $0.strippingEphemeralTabs() })
 		let url = fileURL
 		saveQueue.async {
 			do {

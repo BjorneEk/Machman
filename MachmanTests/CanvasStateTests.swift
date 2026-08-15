@@ -131,4 +131,39 @@ struct CanvasStateTests {
 		#expect(json.contains(#""kind":"terminal""#))
 		#expect(json.contains(#""kind":"config""#))
 	}
+
+	// MARK: - SSH session tabs (ephemeral)
+
+	@Test func sshTabsOpenCloseAndActivateLikeTabs() {
+		let ref = SSHSessionRef(title: "admin@192.168.64.9")
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.ssh(ref))
+		#expect(canvas.activeTab == .ssh(ref))
+		#expect(canvas.allOpenTabs.contains(.ssh(ref)))
+		canvas.close(.ssh(ref))
+		#expect(!canvas.allOpenTabs.contains(.ssh(ref)))
+	}
+
+	@Test func strippingEphemeralTabsDropsOnlySSH() {
+		let ref = SSHSessionRef(title: "admin@192.168.64.9")
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		canvas.open(.ssh(ref))
+		// A pane holding ONLY the ssh tab collapses on strip, like a live close would.
+		canvas.split(.ssh(ref))
+		let stripped = canvas.strippingEphemeralTabs()
+		#expect(!stripped.allOpenTabs.contains(.ssh(ref)))
+		#expect(stripped.allOpenTabs.contains(.terminal(hvc0)))
+		#expect(stripped.allOpenTabs.contains(.config))
+		#expect(stripped.panes.count == 1)
+	}
+
+	@Test func sshTabCodingRoundTripsAndTitleSurvives() throws {
+		let ref = SSHSessionRef(title: "admin@192.168.64.9")
+		let data = try JSONEncoder().encode(VMPaneTab.ssh(ref))
+		#expect(String(decoding: data, as: UTF8.self).contains(#""kind":"ssh""#))
+		#expect(try JSONDecoder().decode(VMPaneTab.self, from: data) == .ssh(ref))
+	}
 }

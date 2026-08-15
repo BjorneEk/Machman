@@ -86,6 +86,11 @@ struct TornTabWindowView: View {
 				if case .terminal(let ref) = payload.tab {
 					terminals.dropController(vm: payload.vm, ref: ref)
 				}
+				if case .ssh(let ref) = payload.tab {
+					// Defensive: tear-out is blocked for ssh tabs, but a leaked one must
+					// still tear down its process.
+					terminals.dropSSHController(vm: payload.vm, ref: ref)
+				}
 			}
 		}
 	}
@@ -102,6 +107,8 @@ struct TornTabWindowView: View {
 					SerialInspector(
 						vm: vm, ref: ref, viewModel: viewModel,
 						sessions: connection.terminals, profiles: profiles)
+				case .ssh:
+					NoSelectionInspector()   // unreachable: ssh tabs never tear off
 				}
 			}
 			.formStyle(.grouped)
@@ -117,6 +124,10 @@ struct TornTabWindowView: View {
 			VMPreviewTabView(vm: vm, viewModel: viewModel)
 		case .terminal(let ref):
 			TerminalTabContent(
+				sessions: connection.terminals, profiles: profiles, vm: vm, ref: ref,
+				stillWanted: { true })
+		case .ssh(let ref):
+			SSHTabContent(
 				sessions: connection.terminals, profiles: profiles, vm: vm, ref: ref,
 				stillWanted: { true })
 		}
@@ -135,6 +146,8 @@ struct TornTabWindowView: View {
 				.first(where: { $0.index == ref.index })
 			let name = port?.displayName(mode: mode) ?? ref.displayName(mode: mode)
 			return "\(payload.vm) — \(name)"
+		case .ssh(let ref):
+			return "\(payload.vm) — \(ref.title)"
 		}
 	}
 }

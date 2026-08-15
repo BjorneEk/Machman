@@ -37,6 +37,29 @@ struct CanvasStateStoreTests {
 		#expect(reloaded.canvas(for: "debian") == canvas)
 	}
 
+	// SSH tabs are sessions, not layout: a saved canvas comes back WITHOUT them.
+	@Test func sshTabsAreNeverPersisted() throws {
+		let url = tempURL()
+		defer { try? FileManager.default.removeItem(at: url) }
+		let ref = SSHSessionRef(title: "admin@192.168.64.9")
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		canvas.open(.ssh(ref))
+
+		let store = CanvasStateStore(fileURL: url)
+		store.setCanvas(canvas, for: "debian")
+		store.flush()
+
+		let reloaded = CanvasStateStore(fileURL: url)
+		let tabs = reloaded.canvas(for: "debian").allOpenTabs
+		#expect(!tabs.contains(.ssh(ref)))
+		#expect(tabs.contains(.terminal(hvc0)))
+		#expect(tabs.contains(.config))
+		let raw = try String(contentsOf: url, encoding: .utf8)
+		#expect(!raw.contains(#""kind" : "ssh""#) && !raw.contains(#""kind":"ssh""#))
+	}
+
 	@Test func renameMigratesAndRemoveForgets() throws {
 		let url = tempURL()
 		defer { try? FileManager.default.removeItem(at: url) }
