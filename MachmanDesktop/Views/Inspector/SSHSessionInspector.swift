@@ -47,9 +47,6 @@ struct SSHSessionInspector: View {
 						Text(p.name).tag(p.id)
 					}
 				}
-				Text("Colors and font apply now; startup settings apply to new sessions.")
-					.font(.caption)
-					.foregroundStyle(.tertiary)
 			}
 			Section {
 				Button("Close Session", role: .destructive) {
