@@ -876,6 +876,10 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		hosted[name] = host
 		subscribeEvents(host)
+		// Explicit kick, not the event filter: the vmhost emitted .running while start()
+		// was still in flight — BEFORE this subscription existed — so a fresh start would
+		// otherwise never discover (the filter still covers guest reboots).
+		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
 	}
 
@@ -957,6 +961,9 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		hosted[name] = host
 		subscribeEvents(host)
+		// Same missed-running reasoning as the plain start path; the shadow impersonates
+		// the VM's MAC, so discovery works for safe runs too.
+		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
 	}
 
