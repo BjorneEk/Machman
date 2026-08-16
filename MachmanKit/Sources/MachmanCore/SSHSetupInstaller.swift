@@ -83,6 +83,32 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
+	// MARK: - Pinned guest identity
+
+	static func knownHostsPath(for config: VMConfig) -> String {
+		config.configFilePath(file: "ssh/known_hosts")
+	}
+
+	// The guest's own host key, pinned under the VM's alias rather than its address —
+	// the HostKeyAlias trick the managed ~/.ssh file already uses, so the pin survives
+	// the NAT lease moving. In-app session tabs point ssh at this file, which is how they
+	// verify the guest without ever writing the user's ~/.ssh/known_hosts.
+	static func writeKnownHosts(for config: VMConfig) {
+		let path = knownHostsPath(for: config)
+		let fm = FileManager.default
+		guard fm.fileExists(atPath: config.configFilePath(file: "ssh")) else { return }
+		let fields = (config.ssh?.guestHostKey ?? "").split(separator: " ")
+		guard fields.count >= 2 else {
+			try? fm.removeItem(atPath: path)   // nothing reported (yet): no stale pin
+			return
+		}
+		let line = "\(config.effectiveSSHAlias) \(fields[0]) \(fields[1])\n"
+		guard (try? line.write(toFile: path, atomically: true, encoding: .utf8)) != nil else {
+			return
+		}
+		try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+	}
+
 	// MARK: - Payload
 
 	// Facts about the host and this VM the guest-side half needs (sourced by the script).
@@ -138,6 +164,8 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 		try FileManager.default.createDirectory(at: report, withIntermediateDirectories: true)
 		GuestInstallerWriter.removeLegacyPayload(named: reportDirectoryName, for: config)
 		let payload = try GuestInstallerWriter.write(Self.self, for: config)
+		// The alias (and so the pin's key) can have changed while the VM was stopped.
+		writeKnownHosts(for: config)
 		return (payload, report)
 	}
 

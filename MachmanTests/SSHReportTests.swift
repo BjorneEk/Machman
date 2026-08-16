@@ -141,4 +141,33 @@ struct SSHReportTests {
 			#expect(vm.ssh?.guestOSVersion == nil)
 		}
 	}
+
+	// The reported host key is pinned where the in-app session tabs look for it — under
+	// the VM's alias, so the app never has to touch the user's own known_hosts.
+	@Test @MainActor func reportedHostKeyIsPinnedUnderTheAlias() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "sshpin")
+			let vm = try VMConfig(name: "sshpin", memorySize: 1 << 30, cpuCount: 2)
+			let fm = FileManager.default
+			try fm.createDirectory(
+				atPath: vm.configFilePath(file: "ssh"), withIntermediateDirectories: true)
+			let path = SSHSetupInstaller.knownHostsPath(for: vm)
+
+			#expect(try SSHReport.parse("USER=admin\nHOST_KEY=ssh-ed25519 AAAA guest@host")
+				.apply(to: vm, stampedAt: Date()))
+			#expect(try String(contentsOfFile: path, encoding: .utf8)
+				== "sshpin.machman ssh-ed25519 AAAA\n")
+			#expect((try fm.attributesOfItem(atPath: path)[.posixPermissions] as? Int) == 0o600)
+
+			// A renamed alias re-keys the pin (payload regeneration rewrites it).
+			try vm.setSSH(integrationEnabled: nil, reverseApproved: nil, alias: "dev")
+			SSHSetupInstaller.writeKnownHosts(for: vm)
+			#expect(try String(contentsOfFile: path, encoding: .utf8)
+				== "dev ssh-ed25519 AAAA\n")
+
+			// Uninstalled: no key, no stale pin.
+			#expect(try SSHReport.parse("UNINSTALLED=1").apply(to: vm, stampedAt: Date()))
+			#expect(!fm.fileExists(atPath: path))
+		}
+	}
 }

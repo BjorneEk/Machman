@@ -824,7 +824,7 @@ public final class LocalMachman: MachmanControlling {
 				alias: config.effectiveSSHAlias,
 				identityFilePath: hasKey ? keyPath : nil,
 				knownHostsPath: hasKey
-					? config.configFilePath(file: "ssh/known_hosts") : nil,
+					? SSHSetupInstaller.knownHostsPath(for: config) : nil,
 				setupSharePath: GuestInstallerWriter.payloadRoot(for: config).path,
 				hostUser: NSUserName())
 		}

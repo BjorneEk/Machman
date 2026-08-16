@@ -14,17 +14,38 @@ import MachmanAPI
 
 // argv for /usr/bin/ssh from daemon-served state — self-contained (-i + IdentitiesOnly),
 // deliberately independent of the ~/.ssh integration so tabs work without consent.
-// accept-new instead of an interactive TOFU prompt; later mismatches still fail hard.
+//
+// Host verification uses the VM's OWN known-hosts file, keyed by its alias: the app never
+// writes the user's ~/.ssh (which is the promise the setup guide makes), the pin follows
+// the guest rather than its address, and a guest whose key we already know is verified
+// strictly. Keepalives matter because a guest that dies mid-session otherwise leaves the
+// tab hanging with no output and no exit.
 enum SSHCommand {
 	static func arguments(for vm: VMInfo) -> [String]? {
 		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
 			let identity = ssh.identityFilePath else { return nil }
-		return [
+		var arguments = [
 			"-i", identity,
 			"-o", "IdentitiesOnly=yes",
-			"-o", "StrictHostKeyChecking=accept-new",
-			"\(user)@\(address)",
+			"-o", "ConnectTimeout=10",
+			"-o", "ServerAliveInterval=15",
+			"-o", "ServerAliveCountMax=3",
 		]
+		if let knownHosts = ssh.knownHostsPath {
+			arguments += ["-o", "UserKnownHostsFile=\(knownHosts)"]
+			arguments += ["-o", "HostKeyAlias=\(ssh.alias ?? vm.name)"]
+			// A reported host key means we know exactly who should answer; without one
+			// (a partial run, an older daemon) accept-new still beats a TOFU prompt in a
+			// terminal the user did not ask to be prompted in.
+			arguments += [
+				"-o",
+				ssh.guestHostKey == nil
+					? "StrictHostKeyChecking=accept-new" : "StrictHostKeyChecking=yes",
+			]
+		} else {
+			arguments += ["-o", "StrictHostKeyChecking=accept-new"]
+		}
+		return arguments + ["\(user)@\(address)"]
 	}
 }
 

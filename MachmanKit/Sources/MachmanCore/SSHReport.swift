@@ -116,6 +116,9 @@ struct SSHReport {
 		state.lastReportAt = stampedAt
 		config.ssh = state
 		try config.saveVMConfig()
+		// The guest just told us its identity: pin it where the session tabs look, so a
+		// tab verifies the guest without touching the user's own ~/.ssh/known_hosts.
+		SSHSetupInstaller.writeKnownHosts(for: config)
 		return true
 	}
 }
