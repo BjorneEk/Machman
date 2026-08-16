@@ -49,6 +49,17 @@ struct SSHSessionInspector: View {
 				}
 			}
 			Section {
+				// A session whose ssh died is worth reviving in place (same tab, same
+				// scrollback) — but only if the guest is answering; otherwise the useful
+				// action is to find out whether it still is.
+				if let controller = sessions.sshController(vm: vm.name, ref: ref),
+					!controller.connected {
+					if vm.ssh?.reachability == .ready {
+						Button("Reconnect") { reconnect() }
+					} else {
+						Button("Check Connection") { viewModel.refreshSSH(vm.name) }
+					}
+				}
 				Button("Close Session", role: .destructive) {
 					sessions.dropSSHController(vm: vm.name, ref: ref)
 					var canvas = viewModel.canvases.canvas(for: vm.name)
@@ -59,6 +70,14 @@ struct SSHSessionInspector: View {
 		}
 		.onAppear { draftName = sessions.sshSessionName(vm: vm.name, ref: ref) }
 		.id(ref)   // a different session re-seeds the name draft via onAppear
+	}
+
+	private func reconnect() {
+		guard let arguments = SSHCommand.arguments(for: vm) else { return }
+		sessions.reconnectSSHSession(
+			vm: vm.name, ref: ref, arguments: arguments,
+			profile: sessions.sshSessionProfileID(vm: vm.name, ref: ref)
+				.flatMap { profiles.profile(id: $0) } ?? profiles.defaultProfile)
 	}
 
 	private var profileBinding: Binding<UUID> {

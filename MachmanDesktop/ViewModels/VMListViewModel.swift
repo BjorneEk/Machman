@@ -181,6 +181,7 @@ final class VMListViewModel: ObservableObject {
 		}
 		operationsStore.primeInstallPhases(for: list)
 		diffStatesAndToast(list)
+		diffSSHAndToast(list)
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
 		// falls over to the first. (Renames pass through here with the old name still
@@ -217,6 +218,95 @@ final class VMListViewModel: ObservableObject {
 		}
 		let names = Set(list.map(\.name))
 		knownStates = knownStates.filter { names.contains($0.key) }
+	}
+
+	// What the SSH half of a VM looked like last time, so only MOVEMENT is reported.
+	private struct SSHSnapshot: Equatable {
+		var running = false
+		var address: String?
+		var reachability: SSHInfo.Reachability?
+		var lastReportAt: Date?
+		var reverseState: SSHInfo.ReverseState = .none
+	}
+	private var knownSSH: [String: SSHSnapshot] = [:]
+
+	static func sshWaitToastKey(_ vm: String) -> String { "ssh-wait-\(vm)" }
+
+	// The SSH story, told through toasts: the guest answering at all, then whether its
+	// sshd does, then what its setup run achieved. Same rule as the state diff — a first
+	// sighting (launch, reconnect) never toasts, only a change does.
+	private func diffSSHAndToast(_ list: [VMInfo]) {
+		for vm in list {
+			let now = SSHSnapshot(
+				running: vm.state.isRunning,
+				address: vm.ssh?.address,
+				reachability: vm.ssh?.reachability,
+				lastReportAt: vm.ssh?.lastReportAt,
+				reverseState: vm.ssh?.reverseState ?? .none)
+			let previous = knownSSH[vm.name]
+			knownSSH[vm.name] = now
+			guard let previous, previous != now else { continue }
+
+			// The guest is on the network — the first sign of life Machman gets.
+			if let address = now.address, previous.address != address, now.running {
+				pushToast(
+					symbol: MachmanSymbols.network, message: "\(vm.name) answered — \(address)")
+			}
+			if previous.reachability != now.reachability {
+				switch now.reachability {
+				case .waiting:
+					pushToast(
+						symbol: MachmanSymbols.deviceSSHSetup,
+						message: "SSH: connecting to \(vm.name)…",
+						key: Self.sshWaitToastKey(vm.name), spinner: true, sticky: true)
+				case .ready:
+					pushToast(
+						symbol: MachmanSymbols.confirm, message: "\(vm.name): SSH ready",
+						tint: MachmanColors.connected, key: Self.sshWaitToastKey(vm.name))
+				case .unreachable:
+					pushToast(
+						symbol: MachmanSymbols.warning,
+						message: "\(vm.name): SSH not answering"
+							+ (vm.ssh?.reachabilityDetail.map { " — \($0)" } ?? ""),
+						tint: MachmanColors.warning, key: Self.sshWaitToastKey(vm.name))
+				case .unknown, nil:
+					dismissToast(key: Self.sshWaitToastKey(vm.name))
+				}
+			}
+			// A setup run landed. Its own status is the interesting half: "partial" is
+			// exactly the case the old script could not report at all.
+			if let stamp = now.lastReportAt, previous.lastReportAt != stamp {
+				let user = vm.ssh?.guestUser ?? "the guest"
+				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
+				if let status = vm.ssh?.lastRunStatus, status != "ok" {
+					pushToast(
+						symbol: MachmanSymbols.warning,
+						message: "\(vm.name): SSH setup \(status)"
+							+ (vm.ssh?.lastRunNote.map { " — \($0)" } ?? ""),
+						tint: MachmanColors.warning)
+				} else {
+					pushToast(
+						symbol: MachmanSymbols.deviceSSHSetup,
+						message: "\(vm.name): SSH set up for \(user)\(os)")
+				}
+			}
+			if previous.reverseState != .pending, now.reverseState == .pending {
+				pushToast(
+					symbol: MachmanSymbols.deviceSSHSetup,
+					message: "\(vm.name) asks to log in to this Mac — approve it in the "
+						+ "Network inspector",
+					tint: MachmanColors.warning)
+			}
+		}
+		// A VM that stopped or vanished has no pending SSH wait to report on.
+		let names = Set(list.map(\.name))
+		for name in knownSSH.keys where !names.contains(name) {
+			knownSSH[name] = nil
+			dismissToast(key: Self.sshWaitToastKey(name))
+		}
+		for vm in list where !vm.state.isRunning {
+			dismissToast(key: Self.sshWaitToastKey(vm.name))
+		}
 	}
 
 	private func handle(event: VMEvent) {

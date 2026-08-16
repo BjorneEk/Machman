@@ -116,6 +116,13 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		if c.connect() { connection = c; connected = true }
 	}
 
+	// Machman's own line in the guest's terminal — session boundaries, nothing else. CRLF
+	// on both sides so it starts at column 0 whatever the guest left behind.
+	func note(_ text: String) {
+		let line = "\r\n\u{1b}[2m— \(text) —\u{1b}[0m\r\n"
+		terminalView.feed(byteArray: [UInt8](Array(line.utf8))[...])
+	}
+
 	func disconnect() {
 		if let c = connection { lastTranscript = c.transcriptData() }
 		connection?.stop()

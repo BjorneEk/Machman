@@ -373,6 +373,9 @@ struct VMDeviceTreeView: View {
 				// The + accessory's reliable twin — List group labels can swallow clicks.
 				Button("New SSH Session") { openSSHSession() }
 					.disabled(!sshSessionReady)
+				if sshUnreachable || sshWaiting {
+					Button("Check Connection") { viewModel.refreshSSH(vm.name) }
+				}
 			}, accessory: { sshSessionButton }) {
 				ForEach(open.filter {
 					matches(sessions.sshSessionName(vm: vm.name, ref: $0))
@@ -482,17 +485,44 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
+	// A session can only start once the guest's sshd actually answers — the daemon's
+	// reachability, not just an address (which appears long before sshd is listening).
 	private var sshSessionReady: Bool {
-		vm.state.isRunning && SSHCommand.arguments(for: vm) != nil
+		vm.state.isRunning && vm.ssh?.reachability == .ready
+			&& SSHCommand.arguments(for: vm) != nil
 	}
 
+	private var sshUnreachable: Bool {
+		vm.state.isRunning && vm.ssh?.reachability == .unreachable
+	}
+
+	private var sshWaiting: Bool {
+		vm.state.isRunning && vm.ssh?.reachability == .waiting
+	}
+
+	// One control, three states: waiting on the guest, retry after giving up, or open a
+	// session. The tooltip carries the reason, so the row itself stays quiet.
+	@ViewBuilder
 	private var sshSessionButton: some View {
-		IconButton(symbol: MachmanSymbols.add,
-			tooltip: sshSessionReady
-				? "New SSH session tab"
-				: "Sessions need the VM running with a discovered address",
-			font: .caption, flat: true) { openSSHSession() }
-			.disabled(!sshSessionReady)
+		if sshWaiting {
+			ProgressView()
+				.controlSize(.small)
+				.scaleEffect(0.6)
+				.frame(width: 16, height: 16)
+				.help("Waiting for sshd in the guest to answer…")
+		} else if sshUnreachable {
+			IconButton(symbol: MachmanSymbols.regenerate,
+				tooltip: vm.ssh?.reachabilityDetail.map { "SSH: \($0) — try again" }
+					?? "SSH did not answer — try again",
+				font: .caption, flat: true) { viewModel.refreshSSH(vm.name) }
+		} else {
+			IconButton(symbol: MachmanSymbols.add,
+				tooltip: sshSessionReady
+					? "New SSH session tab"
+					: "Sessions need the VM running and answering on port 22",
+				font: .caption, flat: true) { openSSHSession() }
+				.disabled(!sshSessionReady)
+		}
 	}
 
 	private func openSSHSession() {

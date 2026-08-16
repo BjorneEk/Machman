@@ -130,8 +130,8 @@ struct TornTabWindowView: View {
 				stillWanted: { true })
 		case .ssh(let ref):
 			SSHTabContent(
-				sessions: connection.terminals, profiles: profiles, vm: vm, ref: ref,
-				stillWanted: { true }, adoptOnly: true)
+				sessions: connection.terminals, viewModel: viewModel, profiles: profiles,
+				vm: vm, ref: ref, stillWanted: { true }, adoptOnly: true)
 		}
 	}
 

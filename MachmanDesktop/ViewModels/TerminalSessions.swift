@@ -158,6 +158,20 @@ final class TerminalSessions: ObservableObject {
 		}
 	}
 
+	// Re-attach a dead session to a fresh ssh process on the SAME controller, so the tab
+	// keeps its identity, its name and — the point — its scrollback. A live session is
+	// left alone; the caller decides whether the guest is worth reconnecting to.
+	func reconnectSSHSession(
+		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile
+	) {
+		guard let controller = sshControllers[vm]?[ref], !controller.connected else { return }
+		controller.note("reconnected " + Date().formatted(date: .omitted, time: .shortened))
+		controller.connect(stream: PTYProcessStream(
+			executablePath: "/usr/bin/ssh", arguments: arguments,
+			environmentOverrides: ["TERM": profile.termName]))
+		objectWillChange.send()
+	}
+
 	func dropSSHController(vm: String, ref: SSHSessionRef) {
 		sshMeta[vm]?[ref] = nil
 		guard let c = sshControllers[vm]?[ref] else { return }

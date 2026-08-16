@@ -478,7 +478,8 @@ struct VMCanvasView: View {
 				})
 		case .ssh(let ref):
 			SSHTabContent(
-				sessions: sessions, profiles: profiles, vm: vm, ref: ref,
+				sessions: sessions, viewModel: viewModel, profiles: profiles,
+				vm: vm, ref: ref,
 				stillWanted: { [weak canvases] in
 					canvases?.canvas(for: vm.name).allOpenTabs
 						.contains(.ssh(ref)) == true
