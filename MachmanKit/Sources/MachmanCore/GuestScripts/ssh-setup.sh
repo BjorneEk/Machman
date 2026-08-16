@@ -26,7 +26,7 @@ for _needed in machman-lib.sh machman.env; do
 	fi
 done
 . "$PAYLOAD_DIR/machman-lib.sh"
-# VM_NAME, MARKER, REPORT_DIR_NAME, HOST_USER, HOST_NAME, HOST_LOCAL
+# VM_NAME, MARKER, REPORT_DIR_NAME, MOUNT_ROOT, HOST_USER, HOST_NAME, HOST_LOCAL
 . "$PAYLOAD_DIR/machman.env"
 REPORT_DIR="$PAYLOAD_DIR/../$REPORT_DIR_NAME"
 # Resolved when it exists, so everything the user sees is a real path.
@@ -53,7 +53,7 @@ What
   --mount-setup        let ANY user of the guest mount filesystems
                        (vfs.usermount=1; root can mount without it)
   --no-mount-setup
-  --mountpoint <path>  where host folders get mounted (default $DEFAULT_MOUNTPOINT)
+  --mountpoint <path>  where host folders get mounted (default $MOUNT_ROOT)
   --install            install missing packages with this guest's package manager
   --no-install
   --pm <name>          force the package manager (apt, dnf, yum, zypper, pacman, apk,
@@ -75,7 +75,6 @@ USAGE
 
 # ---------------------------------------------------------------------------- options ----
 
-DEFAULT_MOUNTPOINT="/mnt/machman"
 TWO_WAY=""
 DO_INSTALL=""
 WANT_SSHFS=""
@@ -127,7 +126,9 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
-[ -n "$MOUNTPOINT" ] || MOUNTPOINT="$DEFAULT_MOUNTPOINT"
+# Where host folders would mount. Machman owns the path (GuestPaths) and hands it over in
+# machman.env, so the guide, the app and this script cannot disagree about it.
+[ -n "$MOUNTPOINT" ] || MOUNTPOINT="$MOUNT_ROOT"
 
 ui_detect
 

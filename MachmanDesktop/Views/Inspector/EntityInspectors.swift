@@ -187,7 +187,7 @@ struct MountInspector: View {
 								+ "com.apple.virtio-fs.automount ~/shared",
 							command: "/Volumes/My Shared Files/\(mount.tag)")
 					} else {
-						Text("All mounts ride one virtiofs device tagged “host-share”. "
+						Text("All mounts ride one virtiofs device tagged “\(GuestPaths.shareTag)”. "
 							+ "Mount it once — this folder is the “\(mount.tag)” "
 							+ "subdirectory inside it.")
 							.font(.caption)
@@ -197,8 +197,7 @@ struct MountInspector: View {
 							os: "Linux",
 							requirement: "virtiofs is built into kernels ≥ 5.4 "
 								+ "(CONFIG_VIRTIO_FS); no extra packages.",
-							command: "mkdir -p /mnt/host-share && "
-								+ "mount -t virtiofs host-share /mnt/host-share")
+							command: GuestPaths.mountShareCommand)
 						Text("FreeBSD guests cannot mount virtiofs shares — no driver.")
 							.font(.caption)
 							.foregroundStyle(.tertiary)

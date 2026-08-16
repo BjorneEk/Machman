@@ -136,12 +136,9 @@ struct SSHHelpSheet: View {
 	private var linuxSteps: some View {
 		step(1, "Add (+) → Installers → SSH Setup, then boot the guest.")
 		step(2, "Mount the share and run the script:")
-		command(
-			SSHSetupInfo.mountShareCommand + " && "
-				+ SSHSetupInfo.runCommand(inShareAt: SSHSetupInfo.linuxMountPoint))
+		command(GuestPaths.mountShareCommand + " && " + SSHSetupInfo.runCommand())
 		step(3, "Undo it later:")
-		command(SSHSetupInfo.runCommand(inShareAt: SSHSetupInfo.linuxMountPoint)
-			+ " --uninstall")
+		command(SSHSetupInfo.runCommand() + " --uninstall")
 	}
 
 	// MARK: - macOS guest (steps only)
@@ -161,7 +158,8 @@ struct SSHHelpSheet: View {
 	private var hostUser: String { vm.ssh?.hostUser ?? "<mac-user>" }
 	private var hostAddress: String { vm.ssh?.hostAddressForGuest ?? "<mac-address>" }
 	private var sharePath: String { vm.ssh?.setupSharePath ?? "<machman-share>" }
-	private var mountPoint: String { SSHSetupInfo.bsdMountPoint }
+	// The same guest path Linux mounts the share at — only the mount verb differs.
+	private var mountPoint: String { GuestPaths.share }
 
 	@ViewBuilder
 	private var bsdSteps: some View {
@@ -177,12 +175,14 @@ struct SSHHelpSheet: View {
 			+ "once, because keys are what the script is about to set up:")
 		command("mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
 			+ "\(mountPoint) -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
+		note("Same folder Linux mounts over virtiofs, same path — so step 5 is the same "
+			+ "command on every guest.")
 		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
 			note("Boot the VM once so Machman can fill in this Mac's address and the real "
 				+ "path above.")
 		}
 		step(5, "Run the installer:")
-		command(SSHSetupInfo.runCommand(inShareAt: mountPoint))
+		command(SSHSetupInfo.runCommand())
 		note("Mounting as root needs no system changes. The script keeps the fuse driver "
 			+ "across reboots by itself, and can allow user mounts later if you ask it to.")
 	}

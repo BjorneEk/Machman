@@ -75,22 +75,19 @@ public enum SSHSetupInfo {
 	public static let reportDirectoryName = "SSHReport"
 	public static let scriptName = "install.sh"
 	public static let reportName = "report.env"
-	// Where a guest without a virtiofs driver mounts the payload (BSD bootstrap).
-	public static let bsdMountPoint = "/mnt/machman"
-	public static let linuxMountPoint = "/mnt/host-share"
 
 	// The commands, unprivileged: what needs root is decided by the caller, because the
 	// guest may have sudo, doas, or neither (FreeBSD base ships no sudo at all).
-	public static var mountShareCommand: String {
-		"mkdir -p \(linuxMountPoint) && mount -t virtiofs host-share \(linuxMountPoint)"
-	}
+	// Guest-side paths come from GuestPaths — never spelled out again here.
 
-	public static func runCommand(inShareAt mountPoint: String) -> String {
+	// The installer, wherever the share landed. The default is the standard mount point,
+	// so this is the same sentence on every guest that mounts by hand.
+	public static func runCommand(inShareAt mountPoint: String = GuestPaths.share) -> String {
 		"sh \(mountPoint)/\(directoryName)/\(scriptName)"
 	}
 
 	public static var runFromAutomountCommand: String {
-		"sh \"/Volumes/My Shared Files/\(directoryName)/\(scriptName)\""
+		"sh \"\(GuestPaths.macOSAutomount)/\(directoryName)/\(scriptName)\""
 	}
 
 	// Prefixes EVERY command in an && chain — "sudo a && b" would run b as the user.
@@ -108,9 +105,7 @@ public enum SSHSetupInfo {
 
 	// Linux guests mount the share by hand once, then run from inside it.
 	public static var mountAndRunCommand: String {
-		escalated(
-			mountShareCommand + " && " + runCommand(inShareAt: linuxMountPoint),
-			with: "sudo ")
+		escalated(GuestPaths.mountShareCommand + " && " + runCommand(), with: "sudo ")
 	}
 }
 

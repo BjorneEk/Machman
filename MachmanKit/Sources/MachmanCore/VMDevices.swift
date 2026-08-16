@@ -306,7 +306,8 @@ extension VMConfig {
 		// per mount tag); other guests keep mounting the "host-share" tag by hand.
 		let macGuest: Bool = { if case .macOS = boot { return true }; return false }()
 		let shareTag = macGuest
-			? VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag : "host-share"
+			? VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag
+			: GuestPaths.shareTag
 		var extraShares: [String: VZSharedDirectory] = [:]
 		if byKind[.consoleLoginInstaller] != nil {
 			// mac-only by construction (resolvedDevices() skips the kind off macOS): a

@@ -118,6 +118,7 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 			"VM_NAME": config.name,
 			"MARKER": try marker(for: config),
 			"REPORT_DIR_NAME": reportDirectoryName,
+			"MOUNT_ROOT": GuestPaths.mounts,
 			"HOST_USER": NSUserName(),
 			"HOST_NAME": Host.current().localizedName ?? "",
 			"HOST_LOCAL": localHost.map { $0 + ".local" } ?? "",

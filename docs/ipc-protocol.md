@@ -121,7 +121,9 @@ login prompts on the VM's consoles; older daemons preserve it in config and skip
 boot with a warning. `sshInstaller` (1.0.5+, any boot mode): a read-only `SSHSetup` share
 directory carrying a generated script that enables sshd in the guest and exchanges keys,
 plus a writable `SSHReport` drop-box the guest reports back through; both names are
-reserved mount tags.
+reserved mount tags. Guests mount the share at `/mnt/machman/share` (1.0.6+ — virtiofs, or
+sshfs of `ssh.setupSharePath` where there is no driver, same path either way); host
+folders mounted over SSH land under `/mnt/machman/mounts`.
 
 `ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
 reverseState: "none"|"pending"|"approved"|"denied", reversePublicKey?, integrationEnabled?,
