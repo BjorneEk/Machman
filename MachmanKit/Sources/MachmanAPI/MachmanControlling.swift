@@ -87,12 +87,14 @@ public protocol MachmanControlling: AnyObject {
 	// the VM runs.
 	func renameKernelFile(vm name: String, path: String, tag: String) async throws -> VMInfo
 
-	// MARK: SSH (1.0.5)
-	// Per-VM SSH switches: the managed ~/.ssh entry (integrationEnabled) and reverse
-	// guest→host approval. nil fields leave that half unchanged; refused during safe runs
-	// (the daemon-side ~/.ssh effects must never track a discardable shadow write).
+	// MARK: SSH (1.0.5, alias 1.0.6)
+	// Per-VM SSH switches: the managed ~/.ssh entry (integrationEnabled), reverse
+	// guest→host approval, and the alias that entry is named after. nil fields leave that
+	// half unchanged; an EMPTY alias resets it to the default "<vm>.machman". Refused
+	// during safe runs (the daemon-side ~/.ssh effects must never track a discardable
+	// shadow write).
 	func setSSH(
-		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo
 	// Re-run guest address discovery now. Daemon-only — a vmhost refuses (retire pattern).
 	func refreshSSH(vm name: String) async throws

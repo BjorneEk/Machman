@@ -430,15 +430,21 @@ public enum RPCParams {
 	}
 
 	// vm.ssh.set: nil fields leave that half unchanged (the setKernelOverride pattern).
+	// alias (1.0.6) is the one field with a third state: "" resets it to the default.
 	public struct SSHSet: Codable, Equatable, Sendable {
 		public var name: String
 		public var integrationEnabled: Bool?
 		public var reverseApproved: Bool?
+		public var alias: String?
 
-		public init(name: String, integrationEnabled: Bool?, reverseApproved: Bool?) {
+		public init(
+			name: String, integrationEnabled: Bool?, reverseApproved: Bool?,
+			alias: String? = nil
+		) {
 			self.name = name
 			self.integrationEnabled = integrationEnabled
 			self.reverseApproved = reverseApproved
+			self.alias = alias
 		}
 	}
 

@@ -20,7 +20,7 @@ struct SSHConfigTests {
 			// A fresh config carries no ssh key at all (conditional encode).
 			var raw = try String(contentsOfFile: vm.configPath(), encoding: .utf8)
 			#expect(!raw.contains("\"ssh\""))
-			try vm.setSSH(integrationEnabled: true, reverseApproved: nil)
+			try vm.setSSH(integrationEnabled: true, reverseApproved: nil, alias: nil)
 			raw = try String(contentsOfFile: vm.configPath(), encoding: .utf8)
 			#expect(raw.contains("\"ssh\""))
 			let loaded = try VMConfig.load(name: "sshvm")
@@ -51,21 +51,48 @@ struct SSHConfigTests {
 		}
 	}
 
+	// The alias becomes an ssh_config Host pattern, so what it may contain is not a matter
+	// of taste: a glob would capture unrelated hosts.
+	@Test @MainActor func aliasIsValidatedAndResettable() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "sshalias")
+			let vm = try VMConfig(name: "sshalias", memorySize: 1 << 30, cpuCount: 2)
+			#expect(vm.effectiveSSHAlias == "sshalias.machman")
+
+			try vm.setSSH(integrationEnabled: nil, reverseApproved: nil, alias: "  dev  ")
+			#expect(vm.ssh?.alias == "dev")
+			#expect(vm.effectiveSSHAlias == "dev")
+
+			for bad in ["dev *", "dev?", "-dev", "de v", "a/b", "#dev", "dev\"",
+				String(repeating: "a", count: 65)] {
+				#expect(throws: MachmanError.self, "\(bad) should be refused") {
+					try vm.setSSH(integrationEnabled: nil, reverseApproved: nil, alias: bad)
+				}
+			}
+			#expect(vm.ssh?.alias == "dev")   // a refused alias changes nothing
+
+			// Empty means "back to the default", not "an empty Host name".
+			try vm.setSSH(integrationEnabled: nil, reverseApproved: nil, alias: "")
+			#expect(vm.ssh?.alias == nil)
+			#expect(vm.effectiveSSHAlias == "sshalias.machman")
+		}
+	}
+
 	@Test @MainActor func reverseApprovalNeedsAReportedKey() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "sshrev")
 			let vm = try VMConfig(name: "sshrev", memorySize: 1 << 30, cpuCount: 2)
 			// Approving with no reported key is refused — nothing to install.
 			#expect(throws: MachmanError.self) {
-				try vm.setSSH(integrationEnabled: nil, reverseApproved: true)
+				try vm.setSSH(integrationEnabled: nil, reverseApproved: true, alias: nil)
 			}
 			var state = SSHConfig()
 			state.reversePublicKey = "ssh-ed25519 AAAA guest"
 			vm.ssh = state
-			try vm.setSSH(integrationEnabled: nil, reverseApproved: true)
+			try vm.setSSH(integrationEnabled: nil, reverseApproved: true, alias: nil)
 			#expect(vm.ssh?.reverseStateValue == .approved)
 			// Revoking with the key still on file goes back to pending, not none.
-			try vm.setSSH(integrationEnabled: nil, reverseApproved: false)
+			try vm.setSSH(integrationEnabled: nil, reverseApproved: false, alias: nil)
 			#expect(vm.ssh?.reverseStateValue == .pending)
 		}
 	}
@@ -74,7 +101,7 @@ struct SSHConfigTests {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "sshreset")
 			let vm = try VMConfig(name: "sshreset", memorySize: 1 << 30, cpuCount: 2)
-			try vm.setSSH(integrationEnabled: true, reverseApproved: nil)
+			try vm.setSSH(integrationEnabled: true, reverseApproved: nil, alias: nil)
 			let fm = FileManager.default
 			let payloads = [SSHSetupInfo.directoryName, SSHSetupInfo.reportDirectoryName]
 			var paths = [vm.configFilePath(file: "ssh")]

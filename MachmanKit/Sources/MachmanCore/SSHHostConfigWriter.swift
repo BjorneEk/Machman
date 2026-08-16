@@ -28,16 +28,20 @@ public struct SSHHostConfigWriter {
 
 	public struct VMEntry {
 		public var name: String
+		// The Host name this VM answers to. Passed in, never derived here: naming policy
+		// belongs to the config (a VM can override it), not to the file writer.
+		public var alias: String
 		public var user: String?
 		public var address: String?          // nil = keep whatever the managed file last knew
 		public var identityFilePath: String?
 		public var hostKey: String?          // guest host public key line; nil → accept-new
 
 		public init(
-			name: String, user: String?, address: String?,
+			name: String, alias: String, user: String?, address: String?,
 			identityFilePath: String?, hostKey: String?
 		) {
 			self.name = name
+			self.alias = alias
 			self.user = user
 			self.address = address
 			self.identityFilePath = identityFilePath
@@ -54,8 +58,6 @@ public struct SSHHostConfigWriter {
 	// The alias a VM gets unless its config names another one (SSHConfig.alias).
 	public static func defaultAlias(for vmName: String) -> String { "\(vmName).machman" }
 
-	public static func alias(for vmName: String) -> String { defaultAlias(for: vmName) }
-
 	// MARK: - Whole-state regeneration
 
 	// Rewrites the managed config + known_hosts from the given entries and keeps the
@@ -67,7 +69,7 @@ public struct SSHHostConfigWriter {
 		// error — an alias only exists once SOME address is known (fresh discovery, or
 		// the file's own last-known value: the file is the persistence across restarts).
 		let addressed = entries.compactMap { entry -> (VMEntry, String)? in
-			guard let address = entry.address ?? previous[Self.alias(for: entry.name)]
+			guard let address = entry.address ?? previous[entry.alias]
 				else { return nil }
 			return (entry, address)
 		}
@@ -86,7 +88,7 @@ public struct SSHHostConfigWriter {
 		]
 		var pins: [String] = []
 		for (entry, address) in addressed {
-			let alias = Self.alias(for: entry.name)
+			let alias = entry.alias
 			config.append("Host \"\(alias)\"")
 			config.append("\tHostName \(address)")
 			if let user = entry.user {

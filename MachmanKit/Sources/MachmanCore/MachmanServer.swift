@@ -281,7 +281,7 @@ public final class MachmanServer {
 				let p: RPCParams.SSHSet = try params(line)
 				reply(client, id, try await api.setSSH(
 					vm: p.name, integrationEnabled: p.integrationEnabled,
-					reverseApproved: p.reverseApproved))
+					reverseApproved: p.reverseApproved, alias: p.alias))
 			case .sshRefresh:
 				let p: RPCParams.Name = try params(line)
 				try await api.refreshSSH(vm: p.name)

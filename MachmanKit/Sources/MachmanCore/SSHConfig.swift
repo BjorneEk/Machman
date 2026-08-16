@@ -97,12 +97,40 @@ struct SSHConfig: Codable, Equatable {
 }
 
 extension VMConfig {
+	// The alias rules, in one place. An ssh_config Host pattern, so glob characters would
+	// silently capture unrelated hosts — and a name with a slash or a space is not a host
+	// at all. Uniqueness across VMs is the daemon's check (only it sees every VM).
+	static func validateSSHAlias(_ alias: String) throws {
+		guard alias.count <= 64 else {
+			throw MachmanError(
+				code: .invalidArgument, message: "an SSH alias can be at most 64 characters")
+		}
+		let allowed = CharacterSet(charactersIn:
+			"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_")
+		guard alias.unicodeScalars.allSatisfy({ allowed.contains($0) }),
+			let first = alias.first, first.isLetter || first.isNumber else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "an SSH alias must start with a letter or digit and use only "
+					+ "letters, digits, dots, dashes and underscores")
+		}
+	}
+
 	// vm.ssh.set — nil fields leave that half unchanged. Approving reverse access requires
-	// a reported key (there is nothing to install otherwise).
-	func setSSH(integrationEnabled: Bool?, reverseApproved: Bool?) throws {
+	// a reported key (there is nothing to install otherwise); an empty alias resets it.
+	func setSSH(integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?) throws {
 		var state = ssh ?? SSHConfig()
 		if let integrationEnabled {
 			state.integrationEnabled = integrationEnabled
+		}
+		if let alias {
+			let trimmed = alias.trimmingCharacters(in: .whitespaces)
+			if trimmed.isEmpty {
+				state.alias = nil          // back to "<vm>.machman"
+			} else {
+				try Self.validateSSHAlias(trimmed)
+				state.alias = trimmed
+			}
 		}
 		if let reverseApproved {
 			if reverseApproved {
@@ -121,6 +149,11 @@ extension VMConfig {
 		}
 		ssh = state
 		try saveVMConfig()
+	}
+
+	// The name this VM answers to in ~/.ssh — its own if it has one, the default otherwise.
+	var effectiveSSHAlias: String {
+		ssh?.alias ?? SSHHostConfigWriter.defaultAlias(for: name)
 	}
 
 	// vm.ssh.reset — forget everything SSH this side of the guest: persisted state, the

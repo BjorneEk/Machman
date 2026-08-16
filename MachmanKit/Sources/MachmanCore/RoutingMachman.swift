@@ -676,12 +676,25 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func setSSH(
-		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
 		try refuseSSHWhileSafe(name)
+		// Uniqueness is checkable only here: a vmhost sees exactly one VM, and two VMs
+		// sharing a Host name would make `ssh <alias>` reach whichever block came first.
+		if let alias {
+			let wanted = alias.trimmingCharacters(in: .whitespaces)
+			if !wanted.isEmpty {
+				for other in registry.list() where other.name != name {
+					guard other.config.effectiveSSHAlias == wanted else { continue }
+					throw MachmanError(
+						code: .invalidArgument,
+						message: "\(other.name) already answers to \"\(wanted)\"")
+				}
+			}
+		}
 		let info = try await target(name).setSSH(
 			vm: name, integrationEnabled: integrationEnabled,
-			reverseApproved: reverseApproved)
+			reverseApproved: reverseApproved, alias: alias)
 		// Host-side effects AFTER the config write succeeded, from the RETURNED state —
 		// the daemon's registry copy is stale while the VM is hosted (setStartPolicy
 		// precedent). Approving with no key is refused engine-side, so the force-unwrap
@@ -754,7 +767,13 @@ public final class RoutingMachman: MachmanControlling {
 			}
 			guard let ssh = info?.ssh, ssh.integrationEnabled == true else { continue }
 			entries.append(SSHHostConfigWriter.VMEntry(
-				name: name, user: ssh.guestUser, address: ssh.address,
+				name: name,
+				alias: ssh.alias ?? SSHHostConfigWriter.defaultAlias(for: name),
+				user: ssh.guestUser,
+				// Discovery first, then what the guest last reported: without the
+				// fallback a rename (or an alias change) strands a stopped VM's entry,
+				// because the managed file itself was the only memory of the address.
+				address: ssh.address ?? vm.config.ssh?.lastAddress,
 				identityFilePath: ssh.identityFilePath, hostKey: ssh.guestHostKey))
 		}
 		do {

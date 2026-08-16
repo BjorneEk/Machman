@@ -817,9 +817,20 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.setSSH(
-					vm: name, integrationEnabled: enabled, reverseApproved: nil)
+					vm: name, integrationEnabled: enabled, reverseApproved: nil, alias: nil)
 			}
 			catch { self?.present(error, while: "Updating the SSH alias") }
+		}
+	}
+
+	// An empty alias resets the VM to its default "<vm>.machman" name.
+	func setSSHAlias(_ name: String, alias: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.setSSH(
+					vm: name, integrationEnabled: nil, reverseApproved: nil, alias: alias)
+			}
+			catch { self?.present(error, while: "Renaming the SSH alias") }
 		}
 	}
 
@@ -827,7 +838,7 @@ final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.setSSH(
-					vm: name, integrationEnabled: nil, reverseApproved: approved)
+					vm: name, integrationEnabled: nil, reverseApproved: approved, alias: nil)
 				self?.pushToast(
 					symbol: MachmanSymbols.deviceSSHSetup,
 					message: approved

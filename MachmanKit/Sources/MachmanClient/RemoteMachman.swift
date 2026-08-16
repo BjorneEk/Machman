@@ -184,13 +184,13 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func setSSH(
-		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
 		try await connection.call(
 			.sshSet,
 			RPCParams.SSHSet(
 				name: name, integrationEnabled: integrationEnabled,
-				reverseApproved: reverseApproved),
+				reverseApproved: reverseApproved, alias: alias),
 			expecting: VMInfo.self)
 	}
 

@@ -21,13 +21,14 @@ struct SSHHostConfigWriterTests {
 	}
 
 	private func entry(
-		name: String = "Debian kept", user: String? = "admin",
+		name: String = "Debian kept", alias: String? = nil, user: String? = "admin",
 		address: String? = "192.168.64.9",
 		identity: String? = "/vms/Debian kept/ssh/id_ed25519",
 		hostKey: String? = "ssh-ed25519 AAAAC3Nz host-key comment"
 	) -> SSHHostConfigWriter.VMEntry {
 		SSHHostConfigWriter.VMEntry(
-			name: name, user: user, address: address,
+			name: name, alias: alias ?? SSHHostConfigWriter.defaultAlias(for: name),
+			user: user, address: address,
 			identityFilePath: identity, hostKey: hostKey)
 	}
 
@@ -53,6 +54,35 @@ struct SSHHostConfigWriterTests {
 		let user = try String(
 			contentsOf: root.appendingPathComponent("config"), encoding: .utf8)
 		#expect(user.hasPrefix(SSHHostConfigWriter.includeLine))
+	}
+
+	// A VM can be named something else in ~/.ssh; every place the alias appears follows it.
+	@Test func customAliasNamesTheBlockAndThePin() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let writer = SSHHostConfigWriter(sshDir: root)
+		try writer.apply(entries: [entry(name: "Debian kept", alias: "dev")])
+
+		let managed = try String(
+			contentsOf: root.appendingPathComponent("machman/config"), encoding: .utf8)
+		#expect(managed.contains(#"Host "dev""#))
+		#expect(managed.contains("HostKeyAlias dev"))
+		#expect(!managed.contains("Debian kept.machman"))
+		let pins = try String(
+			contentsOf: root.appendingPathComponent("machman/known_hosts"), encoding: .utf8)
+		#expect(pins.hasPrefix("dev ssh-ed25519"))
+
+		// Regeneration keeps a known address for an alias it already wrote…
+		try writer.apply(entries: [entry(name: "Debian kept", alias: "dev", address: nil)])
+		#expect(try String(contentsOf: root.appendingPathComponent("machman/config"),
+			encoding: .utf8).contains("HostName 192.168.64.9"))
+		// …but a RENAMED alias has no history: with no address to write, the entry drops
+		// out entirely. That is exactly why the daemon passes the guest's last reported
+		// address instead of relying on this file.
+		try writer.apply(entries: [entry(name: "Debian kept", alias: "other", address: nil)])
+		let after = (try? String(contentsOf: root.appendingPathComponent("machman/config"),
+			encoding: .utf8)) ?? ""
+		#expect(!after.contains(#"Host "other""#))
 	}
 
 	@Test func includeLineSurgeryLeavesUserContentAlone() throws {

@@ -163,12 +163,13 @@ final class StubMachman: MachmanControlling {
 		return vm
 	}
 	func setSSH(
-		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
 		var vm = try get(name)
 		var ssh = vm.ssh ?? SSHInfo()
 		if let integrationEnabled { ssh.integrationEnabled = integrationEnabled }
 		if let reverseApproved { ssh.reverseState = reverseApproved ? .approved : .pending }
+		if let alias { ssh.alias = alias.isEmpty ? nil : alias }
 		vm.ssh = ssh
 		vms[name] = vm
 		emit(.sshChanged(vm: name))
@@ -432,9 +433,10 @@ struct LoopbackTests {
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "ssh-loop")
 
 		let updated = try await client.setSSH(
-			vm: "Debian", integrationEnabled: true, reverseApproved: nil)
+			vm: "Debian", integrationEnabled: true, reverseApproved: nil, alias: "dev")
 		#expect(updated.ssh?.integrationEnabled == true)
 		#expect(updated.ssh?.reverseState == SSHInfo.ReverseState.none)
+		#expect(updated.ssh?.alias == "dev")
 		try await client.refreshSSH(vm: "Debian")
 		let cleared = try await client.resetSSH(vm: "Debian")
 		#expect(cleared.ssh == nil)

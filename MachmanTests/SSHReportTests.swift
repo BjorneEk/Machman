@@ -75,7 +75,7 @@ struct SSHReportTests {
 			#expect(vm.ssh?.lastReportAt == stamp)
 
 			// Approval, then a NEW reverse key: approval is revoked back to pending.
-			try vm.setSSH(integrationEnabled: nil, reverseApproved: true)
+			try vm.setSSH(integrationEnabled: nil, reverseApproved: true, alias: nil)
 			#expect(vm.ssh?.reverseStateValue == .approved)
 			changed = try SSHReport.parse("REVERSE_PUBKEY=ssh-ed25519 CCCC fresh")
 				.apply(to: vm, stampedAt: Date())
@@ -84,7 +84,7 @@ struct SSHReportTests {
 			#expect(vm.ssh?.reversePublicKey == "ssh-ed25519 CCCC fresh")
 
 			// Uninstall clears the guest-derived half, keeps switches + marker.
-			try vm.setSSH(integrationEnabled: true, reverseApproved: nil)
+			try vm.setSSH(integrationEnabled: true, reverseApproved: nil, alias: nil)
 			vm.ssh?.marker = "machman-abc"
 			changed = try SSHReport.parse("UNINSTALLED=1").apply(to: vm, stampedAt: Date())
 			#expect(changed)

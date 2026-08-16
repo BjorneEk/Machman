@@ -540,11 +540,12 @@ public final class LocalMachman: MachmanControlling {
 	// MARK: - SSH (1.0.5)
 
 	public func setSSH(
-		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?
+		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
 		let vm = try lookup(name)
 		try vm.config.setSSH(
-			integrationEnabled: integrationEnabled, reverseApproved: reverseApproved)
+			integrationEnabled: integrationEnabled, reverseApproved: reverseApproved,
+			alias: alias)
 		registry.events.emit(.sshChanged(vm: name))
 		registry.events.emit(.listChanged)
 		return info(for: vm)
@@ -820,7 +821,7 @@ public final class LocalMachman: MachmanControlling {
 				sshfsAvailable: state.sshfsAvailable,
 				sshfsMountReady: state.sshfsMountReady,
 				sshfsMountRoot: state.sshfsMountRoot,
-				alias: state.alias ?? SSHHostConfigWriter.defaultAlias(for: config.name),
+				alias: config.effectiveSSHAlias,
 				identityFilePath: hasKey ? keyPath : nil,
 				knownHostsPath: hasKey
 					? config.configFilePath(file: "ssh/known_hosts") : nil,
