@@ -864,7 +864,7 @@ struct SSHSetupInspector: View {
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .sshInstaller)
 		}
 		.sheet(isPresented: $showGuide) {
-			SSHHelpSheet(mode: vm.boot.mode)
+			SSHHelpSheet(vm: vm)
 		}
 	}
 
