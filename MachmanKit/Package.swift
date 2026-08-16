@@ -24,9 +24,18 @@ let package = Package(
 		),
 		// Core depends on the client lib too: the daemon's router speaks to its vmhost
 		// children through RemoteMachman, exactly like any other client.
+		// GuestScripts/*.sh are the installer payloads Machman serves to guests. They are
+		// embedded in the binary (no bundle lookup, so they work identically from the
+		// desktop, the daemon, the vmhost and the tests) and stay real shell sources:
+		// runnable, lintable, and parameterless — everything per-VM rides the machman.env
+		// the writer generates beside them (GuestInstaller.swift).
 		.target(
 			name: "MachmanCore",
 			dependencies: ["MachmanAPI", "MachmanClient"],
+			resources: [
+				.embedInCode("GuestScripts/ssh-setup.sh"),
+				.embedInCode("GuestScripts/console-login.sh"),
+			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 		// The client half: RemoteMachman over the socket. Depends on the API only —
