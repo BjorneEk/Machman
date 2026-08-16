@@ -91,10 +91,8 @@ extension VMConfig {
 	// device stays attached).
 	func resetSSH() throws {
 		ssh = nil
-		let fm = FileManager.default
-		try? fm.removeItem(atPath: configFilePath(file: "ssh"))
-		try? fm.removeItem(atPath: configFilePath(file: SSHSetupInfo.directoryName))
-		try? fm.removeItem(atPath: configFilePath(file: SSHSetupInfo.reportDirectoryName))
+		try? FileManager.default.removeItem(atPath: configFilePath(file: "ssh"))
+		SSHSetupInstaller.removePayload(for: self)
 		try saveVMConfig()
 	}
 }

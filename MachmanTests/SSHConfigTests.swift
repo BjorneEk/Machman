@@ -54,15 +54,20 @@ struct SSHConfigTests {
 			let vm = try VMConfig(name: "sshreset", memorySize: 1 << 30, cpuCount: 2)
 			try vm.setSSH(integrationEnabled: true, reverseApproved: nil)
 			let fm = FileManager.default
-			let dirs = ["ssh", SSHSetupInfo.directoryName, SSHSetupInfo.reportDirectoryName]
-			for dir in dirs {
-				try fm.createDirectory(
-					atPath: vm.configFilePath(file: dir), withIntermediateDirectories: true)
+			let payloads = [SSHSetupInfo.directoryName, SSHSetupInfo.reportDirectoryName]
+			var paths = [vm.configFilePath(file: "ssh")]
+			for dir in payloads {
+				paths.append(GuestInstallerWriter.payloadPath(named: dir, for: vm))
+				// Pre-<vmdir>/share leftovers are cleaned up too.
+				paths.append(vm.configFilePath(file: dir))
+			}
+			for path in paths {
+				try fm.createDirectory(atPath: path, withIntermediateDirectories: true)
 			}
 			try vm.resetSSH()
 			#expect(vm.ssh == nil)
-			for dir in dirs {
-				#expect(!fm.fileExists(atPath: vm.configFilePath(file: dir)))
+			for path in paths {
+				#expect(!fm.fileExists(atPath: path))
 			}
 			let raw = try String(contentsOfFile: vm.configPath(), encoding: .utf8)
 			#expect(!raw.contains("\"ssh\""))

@@ -82,7 +82,8 @@ struct ConsoleLoginInstallerTests {
 			try VMConfig.createNewVMDirectory(name: "machost")
 			let vm = try VMConfig(name: "machost", memorySize: 1 << 30, cpuCount: 2)
 			let dir = try ConsoleLoginInstaller.writePayload(for: vm)
-			#expect(dir.path.hasPrefix(vm.vmDirPath()))
+			#expect(dir.deletingLastPathComponent().path
+				== GuestInstallerWriter.payloadRoot(for: vm).path)
 			let script = dir.appendingPathComponent(ConsoleLoginInstaller.scriptName)
 			let attrs = try FileManager.default.attributesOfItem(atPath: script.path)
 			#expect((attrs[.posixPermissions] as? Int) == 0o755)

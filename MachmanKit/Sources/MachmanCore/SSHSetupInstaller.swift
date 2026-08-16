@@ -111,8 +111,19 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 		]
 	}
 
-	// Writes <vmdir>/SSHSetup/ (script 0755 + machman.env + public keys) and the empty
-	// writable <vmdir>/SSHReport/; returns both. Regenerated at every assembly.
+	// The guest-writable drop-box: a sibling of the payload dir, so the script addresses
+	// it payload-relatively and it rides the same share (or the same sshfs mount).
+	static func reportDirectoryURL(for config: VMConfig) -> URL {
+		GuestInstallerWriter.payloadDirectory(named: reportDirectoryName, for: config)
+	}
+
+	static func reportFilePath(for config: VMConfig) -> String {
+		reportDirectoryURL(for: config)
+			.appendingPathComponent(SSHSetupInfo.reportName).path
+	}
+
+	// Writes <vmdir>/share/SSHSetup/ (script 0755 + machman.env + public keys) and the
+	// empty writable <vmdir>/share/SSHReport/; returns both. Regenerated at every assembly.
 	@discardableResult
 	static func writePayload(for config: VMConfig) throws -> (payload: URL, report: URL) {
 		let marker = try marker(for: config)
@@ -123,10 +134,22 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 			config.ssh = state
 			try config.saveVMConfig()
 		}
-		let report = config.localURL(file: reportDirectoryName)
+		let report = reportDirectoryURL(for: config)
 		try FileManager.default.createDirectory(at: report, withIntermediateDirectories: true)
+		GuestInstallerWriter.removeLegacyPayload(named: reportDirectoryName, for: config)
 		let payload = try GuestInstallerWriter.write(Self.self, for: config)
 		return (payload, report)
+	}
+
+	// Drop both share dirs from disk: the device was removed, or vm.ssh.reset wiped
+	// everything. Keys and config.ssh are the caller's business.
+	static func removePayload(for config: VMConfig) {
+		let fm = FileManager.default
+		for name in [directoryName, reportDirectoryName] {
+			try? fm.removeItem(at: GuestInstallerWriter.payloadDirectory(
+				named: name, for: config))
+			GuestInstallerWriter.removeLegacyPayload(named: name, for: config)
+		}
 	}
 
 	// MARK: - The script

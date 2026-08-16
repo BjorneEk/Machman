@@ -104,9 +104,13 @@ struct SSHSetupInstallerTests {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "sshpay")
 			let vm = try VMConfig(name: "sshpay", memorySize: 1 << 30, cpuCount: 2)
+			// Both dirs live under <vmdir>/share and nowhere else: that directory is what a
+			// driverless guest sshfs-mounts, so it must never contain the disk images.
+			let root = GuestInstallerWriter.payloadRoot(for: vm)
 			let (payload, report) = try SSHSetupInstaller.writePayload(for: vm)
-			#expect(payload.path.hasPrefix(vm.vmDirPath()))
-			#expect(report.path.hasPrefix(vm.vmDirPath()))
+			#expect(payload.deletingLastPathComponent().path == root.path)
+			#expect(report.deletingLastPathComponent().path == root.path)
+			#expect(root.path.hasPrefix(vm.vmDirPath()))
 			let fm = FileManager.default
 			// Script 0755; machman.env sourced by it; the public key rides the payload.
 			let scriptURL = payload.appendingPathComponent(SSHSetupInstaller.scriptName)

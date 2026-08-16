@@ -65,6 +65,31 @@ enum GuestInstallerWriter {
 	// Sourced by every payload script as "$PAYLOAD_DIR/machman.env".
 	static let environmentFileName = "machman.env"
 
+	// Every generated payload lives under ONE directory in the VM, never beside its disk
+	// images: guests without a virtiofs driver (FreeBSD, OpenBSD) bootstrap by
+	// sshfs-mounting this directory from the Mac, and a mount that also exposed the live
+	// disk images would let a running guest write its own backing store.
+	static let payloadRootName = "share"
+
+	static func payloadRoot(for config: VMConfig) -> URL {
+		config.localURL(file: payloadRootName)
+	}
+
+	static func payloadDirectory(named name: String, for config: VMConfig) -> URL {
+		payloadRoot(for: config).appendingPathComponent(name)
+	}
+
+	static func payloadPath(named name: String, for config: VMConfig) -> String {
+		payloadDirectory(named: name, for: config).path
+	}
+
+	// Payloads written before the <vmdir>/share move sat directly under the VM directory.
+	// Removing the old copy keeps exactly one served truth (the names are reserved, so
+	// nothing of the user's can live there).
+	static func removeLegacyPayload(named name: String, for config: VMConfig) {
+		try? FileManager.default.removeItem(atPath: config.configFilePath(file: name))
+	}
+
 	// Writes (and rewrites) a payload directory. Called at every VM assembly, so it is
 	// idempotent and always leaves the current content — never a merge of old and new.
 	@discardableResult
@@ -72,8 +97,9 @@ enum GuestInstallerWriter {
 		_ payload: P.Type, for config: VMConfig
 	) throws -> URL {
 		let fm = FileManager.default
-		let dir = config.localURL(file: P.directoryName)
+		let dir = payloadDirectory(named: P.directoryName, for: config)
 		try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+		removeLegacyPayload(named: P.directoryName, for: config)
 
 		let scriptURL = dir.appendingPathComponent(P.scriptName)
 		try P.script.text.write(to: scriptURL, atomically: true, encoding: .utf8)

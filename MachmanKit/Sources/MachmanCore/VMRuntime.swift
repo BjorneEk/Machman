@@ -176,8 +176,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	}
 
 	private func pollSSHReport() {
-		let path = config.configFilePath(
-			file: "\(SSHSetupInfo.reportDirectoryName)/\(SSHSetupInfo.reportName)")
+		let path = SSHSetupInstaller.reportFilePath(for: config)
 		guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
 			let mtime = attrs[.modificationDate] as? Date, mtime != sshReportMtime else {
 			return
