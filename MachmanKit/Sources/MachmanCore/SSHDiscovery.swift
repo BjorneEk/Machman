@@ -81,6 +81,15 @@ enum SSHDiscovery {
 		return nil
 	}
 
+	// The address the guest reaches this Mac at. vmnet's bootpd hands out <net>.x and
+	// answers on <net>.1 — the same value the guest's own default route reports, derived
+	// here so the UI can show it before any guest has reported anything.
+	static func hostAddress(seenFrom guestAddress: String) -> String? {
+		let parts = guestAddress.split(separator: ".")
+		guard parts.count == 4, parts.allSatisfy({ UInt8($0) != nil }) else { return nil }
+		return parts.dropLast().joined(separator: ".") + ".1"
+	}
+
 	// MARK: - Liveness
 
 	static func probeTCP(

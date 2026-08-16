@@ -59,6 +59,11 @@ public final class RoutingMachman: MachmanControlling {
 		// the adopt path; served as a VMInfo overlay like safeRun.
 		var sshAnswer: SSHDiscovery.Answer?
 		var sshDiscoveryTask: Task<Void, Never>?
+		// …and whether the guest's sshd actually answers (1.0.6). Also daemon memory:
+		// it describes THIS run, so a stopped VM has no reachability at all.
+		var sshReach: SSHInfo.Reachability = .unknown
+		var sshReachDetail: String?
+		var sshReadySince: Date?
 
 		init(
 			identity: HostIdentity, client: RemoteMachman,
@@ -308,8 +313,11 @@ public final class RoutingMachman: MachmanControlling {
 					self.startSSHDiscovery(host)
 				}
 				if case .sshChanged = event {
-					if let host = self.host(withID: id), host.sshAnswer == nil {
+					if let host = self.host(withID: id),
+						host.sshAnswer == nil || host.sshReach == .unknown {
 						// A fresh report can mean sshd just appeared — probe again now.
+						// (reach == .unknown means the guest had not run the script when
+						// this run started, so readiness was never being watched.)
 						self.startSSHDiscovery(host)
 					}
 					// Report ingestion may have changed users/keys the managed file pins.
@@ -326,16 +334,31 @@ public final class RoutingMachman: MachmanControlling {
 		hosted.values.first { $0.identity.id == id }
 	}
 
-	// Bounded per-VM resolver: 5 s cadence while DHCP settles (2 min), then once a
-	// minute while the VM stays hosted and unresolved. Keyed by identity.id so safe-save
-	// re-keying can't cross wires; cancelled in hostGone.
+	// Bounded per-VM resolver in two phases, on one task keyed by identity.id (so
+	// safe-save re-keying can't cross wires) and cancelled in hostGone:
+	//
+	//   1. the address — 5 s cadence while DHCP settles (2 min), then once a minute for
+	//      as long as the VM stays hosted and unresolved. The address is a fact of the
+	//      running VM whether or not anything listens on it, so nothing gates it.
+	//   2. reachability — does the guest's sshd actually answer? Only for VMs whose guest
+	//      has run the setup script (without a reported user there is nothing to connect
+	//      as, and "waiting for SSH" would be noise on every other VM).
 	private func startSSHDiscovery(_ host: HostedVM) {
 		host.sshDiscoveryTask?.cancel()
 		guard let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
+		let name = host.identity.name
+		let wantsSSH = registry.vm(named: name)?.config.ssh?.guestUser != nil
+		host.sshReach = wantsSSH ? .waiting : .unknown
+		host.sshReachDetail = nil
+		host.sshReadySince = nil
+		if wantsSSH {
+			registry.events.emit(.sshChanged(vm: name))
+		}
 		host.sshDiscoveryTask = Task { [weak self] in
 			var attempt = 0
-			while !Task.isCancelled {
+			var address: String?
+			while !Task.isCancelled, address == nil {
 				// Detached: the live loaders read /var/db and run arp — off the main actor.
 				let answer = await Task.detached {
 					SSHDiscovery.discoverLive(mac: mac)
@@ -344,15 +367,46 @@ public final class RoutingMachman: MachmanControlling {
 				if let answer {
 					if host.sshAnswer != answer {
 						host.sshAnswer = answer
-						self.registry.events.emit(.sshChanged(vm: host.identity.name))
+						self.registry.events.emit(.sshChanged(vm: name))
 						// The alias's HostName just became known/changed.
 						self.scheduleSSHHostConfigWrite()
 					}
-					return
+					address = answer.address
+					break
 				}
 				attempt += 1
 				try? await Task.sleep(for: attempt < 24 ? .seconds(5) : .seconds(60))
 			}
+			guard wantsSSH, let address else { return }
+			await self?.probeSSHReadiness(id: id, name: name, address: address)
+		}
+	}
+
+	// Phase 2. Tight while a guest is still booting, then slower, and bounded: a VM whose
+	// sshd never comes up gets an answer ("unreachable", with the reason) instead of a
+	// spinner that never stops. vm.ssh.refresh starts the whole thing over — that is what
+	// the desktop's retry and session reconnect call.
+	private func probeSSHReadiness(id: UUID, name: String, address: String) async {
+		let deadline = Date().addingTimeInterval(180)
+		var probes = 0
+		while !Task.isCancelled {
+			let answered = await SSHDiscovery.probeTCP(host: address, timeout: 1.5)
+			guard let host = self.host(withID: id) else { return }
+			if answered {
+				host.sshReach = .ready
+				host.sshReachDetail = nil
+				host.sshReadySince = Date()
+				registry.events.emit(.sshChanged(vm: name))
+				return
+			}
+			if Date() >= deadline {
+				host.sshReach = .unreachable
+				host.sshReachDetail = "no answer on \(address):22 after 3 minutes"
+				registry.events.emit(.sshChanged(vm: name))
+				return
+			}
+			probes += 1
+			try? await Task.sleep(for: probes < 15 ? .seconds(2) : .seconds(5))
 		}
 	}
 
@@ -431,11 +485,20 @@ public final class RoutingMachman: MachmanControlling {
 
 	// The discovered address rides every VMInfo answer while the VM is hosted — attached
 	// to the served ssh state, or as a minimal shell when the guest never reported.
+	// The daemon's half of SSHInfo: what discovery found, and how this run is going.
+	// Nothing is invented for a VM that never used SSH and has no address either — the
+	// clients read a nil `ssh` as "SSH was never set up here".
 	private func overlaySSH(_ info: inout VMInfo, from host: HostedVM) {
-		guard let answer = host.sshAnswer else { return }
+		guard host.sshAnswer != nil || info.ssh != nil else { return }
 		var ssh = info.ssh ?? SSHInfo()
-		ssh.address = answer.address
-		ssh.addressSource = answer.source
+		if let answer = host.sshAnswer {
+			ssh.address = answer.address
+			ssh.addressSource = answer.source
+			ssh.hostAddressForGuest = SSHDiscovery.hostAddress(seenFrom: answer.address)
+		}
+		ssh.reachability = host.sshReach
+		ssh.reachabilityDetail = host.sshReachDetail
+		ssh.readySince = host.sshReadySince
 		info.ssh = ssh
 	}
 

@@ -7,6 +7,8 @@
 //  probe against an in-test listener, and the probe-gated orchestration.
 //
 
+// (1.0.6) The gateway derivation the BSD setup guide and the reverse-SSH hint both show
+// before any guest has reported anything.
 import Testing
 import Foundation
 @testable import MachmanCore
@@ -102,5 +104,15 @@ struct SSHDiscoveryTests {
 			== SSHDiscovery.Answer(address: "192.168.64.20", source: "arp"))
 		#expect(SSHDiscovery.discover(
 			mac: "de:ad:be:ef:00:01", leasesText: leases, arpText: arp) == nil)
+	}
+
+	// vmnet answers on <net>.1 — what the guest calls "the Mac", shown in the BSD setup
+	// guide before any guest has reported its own default route.
+	@Test func hostAddressIsTheGuestSubnetsGateway() {
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.9") == "192.168.64.1")
+		#expect(SSHDiscovery.hostAddress(seenFrom: "10.0.3.55") == "10.0.3.1")
+		#expect(SSHDiscovery.hostAddress(seenFrom: "not-an-address") == nil)
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64") == nil)
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.999") == nil)
 	}
 }
