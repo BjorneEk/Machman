@@ -7,15 +7,16 @@
 //  console — the measured recipe: /etc/ttys getty lines are dead on modern macOS, a
 //  LaunchDaemon running /usr/libexec/getty with KeepAlive shows a prompt immediately and
 //  survives reboots. The payload is regenerated at every assembly so it always matches
-//  the enabled console set, and is served to the guest read-only as the reserved
-//  "LoginInstaller" directory inside the automounting share (VMDevices) — it appears at
-//  /Volumes/My Shared Files/LoginInstaller next to the VM's regular mounts.
+//  the enabled console set (the port list rides machman.env, never the script text), and
+//  is served to the guest read-only as the reserved "LoginInstaller" directory inside the
+//  automounting share (VMDevices) — it appears at /Volumes/My Shared Files/LoginInstaller
+//  next to the VM's regular mounts.
 //
 
 import Foundation
 import MachmanAPI
 
-enum ConsoleLoginInstaller {
+enum ConsoleLoginInstaller: GuestInstallerPayload {
 	// One name everywhere: the on-disk payload directory under the VM AND the directory
 	// the guest sees inside the automounting share.
 	static let directoryName = ConsoleLoginInstallerInfo.directoryName
@@ -29,33 +30,43 @@ enum ConsoleLoginInstaller {
 		}
 	}
 
-	// Writes <vmdir>/login-installer/install.sh (0755) and returns the directory URL.
+	static func environment(for config: VMConfig) throws -> [String: String] {
+		[
+			"VM_NAME": config.name,
+			"PORTS": ports(for: config).joined(separator: " "),
+		]
+	}
+
+	// Writes <vmdir>/LoginInstaller/ (script 0755 + machman.env) and returns the directory.
+	@discardableResult
 	static func writePayload(for config: VMConfig) throws -> URL {
-		let dir = config.localURL(file: directoryName)
-		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-		let scriptURL = dir.appendingPathComponent(scriptName)
-		try script(vmName: config.name, ports: ports(for: config))
-			.write(to: scriptURL, atomically: true, encoding: .utf8)
-		try FileManager.default.setAttributes(
-			[.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-		return dir
+		try GuestInstallerWriter.write(Self.self, for: config)
 	}
 
 	// The whole installer. Idempotent: every run first removes all Machman console
 	// logins (cleans up ports that no longer exist), then installs the current set.
-	static func script(vmName: String, ports: [String]) -> String {
-		#"""
+	static var script: EmbeddedScript {
+		EmbeddedScript(text: #"""
 		#!/bin/sh
-		# Machman console login installer — generated for "\#(vmName)". Do not edit:
-		# Machman regenerates this file at every VM start to match the attached consoles.
+		# Machman console login installer. Do not edit: Machman regenerates this file at
+		# every VM start to match the attached consoles.
 		#
 		# Installs a login prompt (launchd getty) for each Machman console. Safe to
 		# re-run at any time; run with --uninstall to remove everything it installed.
 		set -eu
 
-		PORTS="\#(ports.joined(separator: " "))"
+		SCRIPT_VERSION=1
 		PREFIX="com.machman.console-getty"
 		DAEMONS="/Library/LaunchDaemons"
+
+		PAYLOAD_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+		if [ ! -r "$PAYLOAD_DIR/machman.env" ]; then
+			echo "machman.env is missing next to this script — run the copy Machman put in" >&2
+			echo "the share, not install.sh on its own." >&2
+			exit 1
+		fi
+		# VM_NAME, PORTS
+		. "$PAYLOAD_DIR/machman.env"
 
 		if [ "$(id -u)" -ne 0 ]; then
 			echo "Please run with sudo:  sudo sh \"$0\" ${1:-}" >&2
@@ -88,6 +99,10 @@ enum ConsoleLoginInstaller {
 
 		i=0
 		installed=0
+		total=0
+		for port in $PORTS; do
+			total=$((total + 1))
+		done
 		for port in $PORTS; do
 			if [ ! -e "/dev/$port" ]; then
 				echo "warning: /dev/$port is not present in this guest — skipped" >&2
@@ -121,8 +136,8 @@ enum ConsoleLoginInstaller {
 			installed=$((installed + 1))
 			i=$((i + 1))
 		done
-		echo "done — $installed of \#(ports.count) console login(s) active." \
+		echo "done — $installed of $total console login(s) active." \
 			"Prompts appear in the Machman consoles immediately."
-		"""#
+		"""#)
 	}
 }

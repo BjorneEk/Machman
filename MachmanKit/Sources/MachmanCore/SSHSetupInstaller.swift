@@ -6,11 +6,13 @@
 //  guest's sshd (per-OS: launchctl on macOS — systemsetup is TCC-gated and fails in fresh
 //  VMs —, systemctl/OpenRC/sysrc elsewhere, guided-declarative on NixOS), installs the
 //  host's public key for the invoking user, optionally prepares guest→host SSH
-//  (--two-way), and reports facts back through the writable SSHReport drop-box. The
-//  payload is regenerated at every assembly and served READ-ONLY (a writable script would
-//  let any guest process swap it before the admin sudo-runs it); only public keys ever
-//  cross the share, in either direction. Every artifact the script writes in the guest
-//  carries the per-VM marker, so re-runs and --uninstall are exact-match idempotent.
+//  (--two-way), and reports facts back through the writable SSHReport drop-box. The script
+//  itself is parameterless; everything per-VM (marker, host facts) rides the machman.env
+//  it sources — see GuestInstaller. The payload is regenerated at every assembly and
+//  served READ-ONLY (a writable script would let any guest process swap it before the
+//  admin sudo-runs it); only public keys ever cross the share, in either direction. Every
+//  artifact the script writes in the guest carries the per-VM marker, so re-runs and
+//  --uninstall are exact-match idempotent.
 //
 
 import Foundation
@@ -18,13 +20,14 @@ import CryptoKit
 import SystemConfiguration
 import MachmanAPI
 
-enum SSHSetupInstaller {
+enum SSHSetupInstaller: GuestInstallerPayload {
 	// One name everywhere: on-disk payload dirs under the VM AND the directories the
 	// guest sees inside the share.
 	static let directoryName = SSHSetupInfo.directoryName
 	static let reportDirectoryName = SSHSetupInfo.reportDirectoryName
 	static let scriptName = SSHSetupInfo.scriptName
-	static let scriptVersion = 1
+	// Declared by the script, read back here — one source of truth.
+	static var scriptVersion: Int { script.version }
 
 	// The per-VM marker labeling every guest/host-side artifact. Derived from the
 	// machine-identity file bytes — stable across renames (the file never moves content),
@@ -80,11 +83,38 @@ enum SSHSetupInstaller {
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
-	// Writes <vmdir>/SSHSetup/ (script 0755 + public keys + host.env) and the empty
+	// MARK: - Payload
+
+	// Facts about the host and this VM the guest-side half needs (sourced by the script).
+	static func environment(for config: VMConfig) throws -> [String: String] {
+		let localHost = SCDynamicStoreCopyLocalHostName(nil) as String?
+		return [
+			"VM_NAME": config.name,
+			"MARKER": try marker(for: config),
+			"REPORT_DIR_NAME": reportDirectoryName,
+			"HOST_USER": NSUserName(),
+			"HOST_NAME": Host.current().localizedName ?? "",
+			"HOST_LOCAL": localHost.map { $0 + ".local" } ?? "",
+		]
+	}
+
+	// Public keys only, in both directions. The host's machine host key is world-readable
+	// once Remote Login was ever enabled; absence just skips guest-side pinning (the
+	// script tolerates it), so it is served as "make sure this is absent" instead.
+	static func extraFiles(for config: VMConfig) throws -> [String: Data?] {
+		let publicKey = try ensureKeypair(for: config, marker: try marker(for: config))
+		let machineKey = try? String(
+			contentsOfFile: "/etc/ssh/ssh_host_ed25519_key.pub", encoding: .utf8)
+		return [
+			"host_key.pub": Data((publicKey + "\n").utf8),
+			"host_machine_key.pub": machineKey.map { Data($0.utf8) },
+		]
+	}
+
+	// Writes <vmdir>/SSHSetup/ (script 0755 + machman.env + public keys) and the empty
 	// writable <vmdir>/SSHReport/; returns both. Regenerated at every assembly.
 	@discardableResult
 	static func writePayload(for config: VMConfig) throws -> (payload: URL, report: URL) {
-		let fm = FileManager.default
 		let marker = try marker(for: config)
 		// Cache the marker for reset-time cleanup (creates the ssh state on first use).
 		if config.ssh?.marker != marker {
@@ -93,53 +123,21 @@ enum SSHSetupInstaller {
 			config.ssh = state
 			try config.saveVMConfig()
 		}
-		let publicKey = try ensureKeypair(for: config, marker: marker)
-		let dir = config.localURL(file: directoryName)
 		let report = config.localURL(file: reportDirectoryName)
-		try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-		try fm.createDirectory(at: report, withIntermediateDirectories: true)
-		let scriptURL = dir.appendingPathComponent(scriptName)
-		try script(vmName: config.name, marker: marker)
-			.write(to: scriptURL, atomically: true, encoding: .utf8)
-		try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-		try (publicKey + "\n").write(
-			to: dir.appendingPathComponent("host_key.pub"), atomically: true, encoding: .utf8)
-		// The host's machine host key: world-readable once Remote Login was ever enabled;
-		// absence just skips guest-side pinning (the script tolerates it).
-		let machineKeyDest = dir.appendingPathComponent("host_machine_key.pub")
-		try? fm.removeItem(at: machineKeyDest)
-		if let key = try? String(
-			contentsOfFile: "/etc/ssh/ssh_host_ed25519_key.pub", encoding: .utf8) {
-			try? key.write(to: machineKeyDest, atomically: true, encoding: .utf8)
-		}
-		try hostEnv().write(
-			to: dir.appendingPathComponent("host.env"), atomically: true, encoding: .utf8)
-		return (dir, report)
+		try FileManager.default.createDirectory(at: report, withIntermediateDirectories: true)
+		let payload = try GuestInstallerWriter.write(Self.self, for: config)
+		return (payload, report)
 	}
 
-	private static func shellQuoted(_ value: String) -> String {
-		"'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-	}
-
-	// Facts about the host the guest-side half needs (sourced by the script).
-	static func hostEnv() -> String {
-		let localHost = SCDynamicStoreCopyLocalHostName(nil) as String?
-		return [
-			"HOST_USER=\(shellQuoted(NSUserName()))",
-			"HOST_NAME=\(shellQuoted(Host.current().localizedName ?? ""))",
-			"HOST_LOCAL=\(shellQuoted(localHost.map { $0 + ".local" } ?? ""))",
-			"",
-		].joined(separator: "\n")
-	}
+	// MARK: - The script
 
 	// The whole installer. Idempotent: key installs dedupe, the guest-side config block
 	// is replaced wholesale between marker lines, and --uninstall removes exactly what
 	// carries the marker. sshd is never disabled by --uninstall.
-	static func script(vmName: String, marker: String) -> String {
-		#"""
+	static var script: EmbeddedScript {
+		EmbeddedScript(text: #"""
 		#!/bin/sh
-		# Machman SSH setup — generated for "\#(vmName)". Do not edit: Machman regenerates
-		# this file at every VM start.
+		# Machman SSH setup. Do not edit: Machman regenerates this file at every VM start.
 		#
 		# Enables this guest's SSH server and installs the Machman host's public key for
 		# the invoking user. --two-way additionally prepares guest→host SSH (the host side
@@ -147,10 +145,17 @@ enum SSHSetupInstaller {
 		# --uninstall removes everything it installed (the SSH server stays enabled).
 		set -eu
 
-		MARKER="\#(marker)"
-		SCRIPT_VERSION="\#(scriptVersion)"
+		SCRIPT_VERSION=1
+
 		PAYLOAD_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-		REPORT_DIR="$PAYLOAD_DIR/../\#(reportDirectoryName)"
+		if [ ! -r "$PAYLOAD_DIR/machman.env" ]; then
+			echo "machman.env is missing next to this script — run the copy Machman put in" >&2
+			echo "the share, not install.sh on its own." >&2
+			exit 1
+		fi
+		# VM_NAME, MARKER, REPORT_DIR_NAME, HOST_USER, HOST_NAME, HOST_LOCAL
+		. "$PAYLOAD_DIR/machman.env"
+		REPORT_DIR="$PAYLOAD_DIR/../$REPORT_DIR_NAME"
 
 		usage() {
 			echo "usage: sh \"$0\" [--two-way | --one-way] [--install] [--user <name>]" >&2
@@ -243,12 +248,6 @@ enum SSHSetupInstaller {
 		# without systemd.
 		SYSTEMD=""
 		[ -d /run/systemd/system ] && SYSTEMD=1
-
-		# ----- host facts (from the payload) ------------------------------------------
-		HOST_USER=""
-		HOST_NAME=""
-		HOST_LOCAL=""
-		[ -r "$PAYLOAD_DIR/host.env" ] && . "$PAYLOAD_DIR/host.env"
 
 		# ----- helpers ----------------------------------------------------------------
 		strip_block() {
@@ -544,6 +543,6 @@ enum SSHSetupInstaller {
 			echo "From your Mac:    ssh $U@$IP"
 		fi
 		echo "Machman shows this VM's live address in the Network device's inspector."
-		"""#
+		"""#)
 	}
 }

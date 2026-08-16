@@ -15,14 +15,16 @@ import MachmanAPI
 
 struct SSHSetupInstallerTests {
 
-	private var script: String {
-		SSHSetupInstaller.script(vmName: "Debian", marker: "machman-abc123def456")
-	}
+	private var script: String { SSHSetupInstaller.script.text }
 
 	@Test func scriptCarriesThePerOSRecipes() {
 		let s = script
 		#expect(s.hasPrefix("#!/bin/sh"))
-		#expect(s.contains(#"MARKER="machman-abc123def456""#))
+		// Parameterless by design: the marker and the host facts ride machman.env, so the
+		// script text is the same bytes for every VM.
+		#expect(s.contains(#". "$PAYLOAD_DIR/machman.env""#))
+		#expect(s.contains("machman.env is missing"))
+		#expect(!s.contains("machman-abc123def456"))
 		// macOS: launchctl path, never the TCC-gated systemsetup; host keys are minted at
 		// first connection, so the script creates them itself.
 		#expect(s.contains("launchctl enable system/com.openssh.sshd"))
@@ -75,8 +77,12 @@ struct SSHSetupInstallerTests {
 		#expect(s.contains("--uninstall [--user <name>]"))
 		// Two-way names the configured user — running 'ssh mac' as root is not it.
 		#expect(s.contains("root included"))
-		// The report lands in the writable sibling, addressed payload-relatively.
-		#expect(s.contains("/../SSHReport"))
+		// The report lands in the writable sibling, addressed payload-relatively (the
+		// directory name itself comes from machman.env).
+		#expect(s.contains(#"REPORT_DIR="$PAYLOAD_DIR/../$REPORT_DIR_NAME""#))
+		// The script owns its version; Swift reads it back rather than declaring a twin.
+		#expect(SSHSetupInstaller.script.version == 1)
+		#expect(SSHSetupInstaller.scriptVersion == SSHSetupInstaller.script.version)
 	}
 
 	// A quoting/heredoc slip would otherwise only surface inside a guest — parse the
@@ -102,13 +108,16 @@ struct SSHSetupInstallerTests {
 			#expect(payload.path.hasPrefix(vm.vmDirPath()))
 			#expect(report.path.hasPrefix(vm.vmDirPath()))
 			let fm = FileManager.default
-			// Script 0755; host.env sourced by it; the public key rides the payload.
+			// Script 0755; machman.env sourced by it; the public key rides the payload.
 			let scriptURL = payload.appendingPathComponent(SSHSetupInstaller.scriptName)
 			let attrs = try fm.attributesOfItem(atPath: scriptURL.path)
 			#expect((attrs[.posixPermissions] as? Int) == 0o755)
 			let env = try String(
-				contentsOf: payload.appendingPathComponent("host.env"), encoding: .utf8)
+				contentsOf: payload.appendingPathComponent(
+					GuestInstallerWriter.environmentFileName), encoding: .utf8)
 			#expect(env.contains("HOST_USER="))
+			#expect(env.contains("REPORT_DIR_NAME='SSHReport'"))
+			#expect(env.contains("VM_NAME='sshpay'"))
 			let pub = try String(
 				contentsOf: payload.appendingPathComponent("host_key.pub"), encoding: .utf8)
 			#expect(pub.hasPrefix("ssh-ed25519 "))
@@ -122,9 +131,8 @@ struct SSHSetupInstallerTests {
 			#expect(first?.hasPrefix("machman-") == true)
 			_ = try SSHSetupInstaller.writePayload(for: vm)
 			#expect(vm.ssh?.marker == first)
-			// The script embeds the same marker it cached.
-			let body = try String(contentsOf: scriptURL, encoding: .utf8)
-			#expect(body.contains(#"MARKER="\#(first ?? "!")""#))
+			// The env carries the same marker the config cached.
+			#expect(env.contains("MARKER='\(first ?? "!")'"))
 		}
 	}
 

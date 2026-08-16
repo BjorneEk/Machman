@@ -3,7 +3,8 @@
 //  MachmanTests
 //
 //  The macOS-guest login installer payload: script content, enabled-compacted port
-//  naming, the on-disk write, and the mac-only gates.
+//  naming, the generated machman.env (the script itself is parameterless), the on-disk
+//  write, and the mac-only gates.
 //
 
 import Testing
@@ -13,10 +14,11 @@ import MachmanAPI
 
 struct ConsoleLoginInstallerTests {
 
-	@Test func scriptCarriesPortsPlistsAndUninstall() {
-		let s = ConsoleLoginInstaller.script(
-			vmName: "mac", ports: ["cu.virtio", "cu.virtio1"])
-		#expect(s.contains(#"PORTS="cu.virtio cu.virtio1""#))
+	private var script: String { ConsoleLoginInstaller.script.text }
+
+	@Test func scriptCarriesPlistsAndUninstall() {
+		let s = script
+		#expect(s.hasPrefix("#!/bin/sh"))
 		#expect(s.contains(#"PREFIX="com.machman.console-getty""#))
 		#expect(s.contains("--uninstall"))
 		#expect(s.contains("<string>/usr/libexec/getty</string>"))
@@ -25,22 +27,21 @@ struct ConsoleLoginInstallerTests {
 		#expect(s.contains("<key>KeepAlive</key>"))
 		// The heredoc terminator must sit at column 0 or sh never ends the plist.
 		#expect(s.contains("\nPLIST\n"))
-		#expect(s.hasPrefix("#!/bin/sh"))
-	}
-
-	@Test func scriptHandlesZeroConsoles() {
-		let s = ConsoleLoginInstaller.script(vmName: "mac", ports: [])
-		#expect(s.contains(#"PORTS="""#))
+		// Parameters ride machman.env, never the script text — and a lone copy of the
+		// script says so instead of failing obscurely.
+		#expect(s.contains(#". "$PAYLOAD_DIR/machman.env""#))
+		#expect(s.contains("machman.env is missing"))
 		#expect(s.contains("no consoles attached"))
+		// The script owns its version; Swift reads it back.
+		#expect(ConsoleLoginInstaller.script.version == 1)
 	}
 
 	// A quoting/heredoc slip would otherwise only surface inside a guest — parse the
-	// generated script with the same interpreter the guest uses (sh -n: no execution).
+	// script with the same interpreter the guest uses (sh -n: no execution).
 	@Test func scriptParsesUnderSh() throws {
-		let s = ConsoleLoginInstaller.script(vmName: "mac", ports: ["cu.virtio", "cu.virtio1"])
 		let url = FileManager.default.temporaryDirectory
 			.appendingPathComponent("machman-installer-\(UUID().uuidString).sh")
-		try s.write(to: url, atomically: true, encoding: .utf8)
+		try script.write(to: url, atomically: true, encoding: .utf8)
 		defer { try? FileManager.default.removeItem(at: url) }
 		let sh = Process()
 		sh.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -62,6 +63,20 @@ struct ConsoleLoginInstallerTests {
 		}
 	}
 
+	@Test @MainActor func environmentCarriesPortsAndName() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "envvm")
+			let vm = try VMConfig(name: "envvm", memorySize: 1 << 30, cpuCount: 2)
+			try vm.addConsolePort()
+			let env = try ConsoleLoginInstaller.environment(for: vm)
+			#expect(env["VM_NAME"] == "envvm")
+			#expect(env["PORTS"] == "cu.virtio cu.virtio1")
+			// No enabled consoles is a valid state — the script prints its own advice.
+			vm.consolePorts.indices.forEach { vm.consolePorts[$0].enabled = false }
+			#expect(try ConsoleLoginInstaller.environment(for: vm)["PORTS"] == "")
+		}
+	}
+
 	@Test @MainActor func payloadWritesUnderTheVMDir() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "machost")
@@ -69,10 +84,14 @@ struct ConsoleLoginInstallerTests {
 			let dir = try ConsoleLoginInstaller.writePayload(for: vm)
 			#expect(dir.path.hasPrefix(vm.vmDirPath()))
 			let script = dir.appendingPathComponent(ConsoleLoginInstaller.scriptName)
-			let body = try String(contentsOf: script, encoding: .utf8)
-			#expect(body.contains(#"PORTS="cu.virtio""#))   // the one seeded console
 			let attrs = try FileManager.default.attributesOfItem(atPath: script.path)
 			#expect((attrs[.posixPermissions] as? Int) == 0o755)
+			// The per-VM half lives beside it, shell-quoted.
+			let env = try String(
+				contentsOf: dir.appendingPathComponent(
+					GuestInstallerWriter.environmentFileName), encoding: .utf8)
+			#expect(env.contains("PORTS='cu.virtio'"))    // the one seeded console
+			#expect(env.contains("VM_NAME='machost'"))
 		}
 	}
 
