@@ -159,9 +159,9 @@ struct SSHReportTests {
 				== "sshpin.machman ssh-ed25519 AAAA\n")
 			#expect((try fm.attributesOfItem(atPath: path)[.posixPermissions] as? Int) == 0o600)
 
-			// A renamed alias re-keys the pin (payload regeneration rewrites it).
+			// Renaming the alias re-keys the pin then and there — a session verifying
+			// against the old name would fail with "no host key is known".
 			try vm.setSSH(integrationEnabled: nil, reverseApproved: nil, alias: "dev")
-			SSHSetupInstaller.writeKnownHosts(for: vm)
 			#expect(try String(contentsOfFile: path, encoding: .utf8)
 				== "dev ssh-ed25519 AAAA\n")
 

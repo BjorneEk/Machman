@@ -147,8 +147,14 @@ extension VMConfig {
 					: SSHInfo.ReverseState.pending.rawValue
 			}
 		}
+		let aliasChanged = ssh?.alias != state.alias
 		ssh = state
 		try saveVMConfig()
+		// The pin is keyed by the alias (HostKeyAlias), so renaming without rewriting it
+		// would leave sessions verifying against a name that is no longer in the file.
+		if aliasChanged {
+			SSHSetupInstaller.writeKnownHosts(for: self)
+		}
 	}
 
 	// The name this VM answers to in ~/.ssh — its own if it has one, the default otherwise.
