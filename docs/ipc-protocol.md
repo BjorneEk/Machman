@@ -125,14 +125,18 @@ reserved mount tags. Guests mount the share at `/mnt/machman/share` (1.0.6+ — 
 sshfs of `ssh.setupSharePath` where there is no driver, same path either way); host
 folders mounted over SSH land under `/mnt/machman/mounts`.
 
-`ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
+`ssh` (1.0.5+) is `{configured?, guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
 reverseState: "none"|"pending"|"approved"|"denied", reversePublicKey?, integrationEnabled?,
 lastReportAt?, lastRunStatus?, lastRunNote?, lastTransport?, scriptVersion?,
 sshfsAvailable?, sshfsMountReady?, sshfsMountRoot?, alias?, identityFilePath?,
 knownHostsPath?, setupSharePath?, hostUser?, address?, addressSource?: "dhcp"|"arp",
 hostAddressForGuest?, reachability?: "unknown"|"waiting"|"ready"|"unreachable",
 reachabilityDetail?, readySince?}` — absent entirely when SSH was never used (or from an
-older daemon). The persisted half comes from the guest's install report:
+older daemon). `configured` (1.0.6+) is true when SSH is part of that VM — state on
+file, or the installer attached — and is set only by the process that owns the config:
+a running VM has a discovered address whether or not anyone asked for SSH, so a
+non-nil `ssh` alone does NOT mean SSH is set up there. The persisted half comes from
+the guest's install report:
 `lastRunStatus` (`"ok"|"partial"|"failed"`, 1.0.6+) plus `lastRunNote` say what the last
 run achieved and why it fell short, `lastTransport` (`"virtiofs"|"sshfs"|"local"`) how the
 guest reached the payload, and `sshfs*` whether the guest can mount host folders over SSH
