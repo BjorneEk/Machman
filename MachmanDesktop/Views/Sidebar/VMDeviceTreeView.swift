@@ -505,10 +505,11 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var sshSessionButton: some View {
 		if sshWaiting {
+			// No scaleEffect + fixed frame here: constraining a hosted AppKit
+			// ProgressView to a size it also computes for itself makes it complain
+			// ("maximum length … doesn't satisfy min <= max") on every layout pass.
 			ProgressView()
 				.controlSize(.small)
-				.scaleEffect(0.6)
-				.frame(width: 16, height: 16)
 				.help("Waiting for sshd in the guest to answer…")
 		} else if sshUnreachable {
 			IconButton(symbol: MachmanSymbols.regenerate,

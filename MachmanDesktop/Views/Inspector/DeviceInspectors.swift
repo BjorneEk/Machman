@@ -673,14 +673,17 @@ private struct NetworkSSHSection: View {
 	}
 
 	// The name this VM answers to — in ~/.ssh and in the session tabs' host-key pin.
+	// A plain Form TextField (the Machine section's Name field, same shape): a value the
+	// user types has to LOOK typed-in, not like a label that happens to be selectable.
 	private var aliasField: some View {
-		VStack(alignment: .leading, spacing: 2) {
-			LabeledContent("Alias") {
-				TextField("\(vm.name).machman", text: $aliasDraft)
-					.multilineTextAlignment(.trailing)
-					.onSubmit { viewModel.setSSHAlias(vm.name, alias: aliasDraft) }
-			}
-			if !aliasDraft.contains(".") && !aliasDraft.isEmpty {
+		VStack(alignment: .leading, spacing: 3) {
+			TextField("Alias", text: $aliasDraft)
+				.onSubmit { viewModel.setSSHAlias(vm.name, alias: aliasDraft) }
+			if aliasDraft != alias {
+				Text("Press Return to rename.")
+					.font(.caption2)
+					.foregroundStyle(.tertiary)
+			} else if !aliasDraft.contains(".") && !aliasDraft.isEmpty {
 				Text("A plain name can shadow a real host in your SSH config.")
 					.font(.caption2)
 					.foregroundStyle(.tertiary)

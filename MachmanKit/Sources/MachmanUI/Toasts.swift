@@ -82,8 +82,6 @@ public struct ToastStack: View {
 					if toast.spinner {
 						ProgressView()
 							.controlSize(.small)
-							.scaleEffect(0.7)
-							.frame(width: 14, height: 14)
 					} else {
 						Image(systemName: toast.symbol)
 							.foregroundStyle(toast.tint.map(AnyShapeStyle.init)

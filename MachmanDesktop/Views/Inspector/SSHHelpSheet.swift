@@ -4,10 +4,10 @@
 //
 //  The SSH Setup guide: four tabs, and a hard split between them. Linux / macOS / BSD are
 //  STEPS — do this, then this — and nothing else; everything explanatory lives in Info, so
-//  a user following the guide is never reading past the next command. Every command block
-//  carries the guest's escalation (sudo / doas / root) as one shared choice: FreeBSD base
-//  ships neither sudo nor doas, OpenBSD ships doas, most Linux ships sudo, and a root
-//  console needs none — so the guide adapts instead of assuming.
+//  a user following the guide is never reading past the next command. How commands get
+//  root is one choice at the top of the page (sudo / doas / root) applied to every command
+//  below it: FreeBSD base ships neither sudo nor doas, OpenBSD ships doas, most Linux ships
+//  sudo, and a root console needs none — so the guide adapts instead of assuming.
 //
 //  ConsoleHelpSheet's structure otherwise: fixed frame (sheets must not renegotiate
 //  layout) and the +20% type scale.
@@ -81,6 +81,24 @@ struct SSHHelpSheet: View {
 			}
 			.pickerStyle(.segmented)
 			.labelsHidden()
+			// One choice for the whole page, stated once at the top: every command below
+			// follows it. Guests differ — FreeBSD base has neither sudo nor doas, OpenBSD
+			// has doas, a root console needs nothing.
+			if tab != .info {
+				HStack(spacing: 10) {
+					Text("Run commands as")
+						.font(.system(size: Self.smallSize))
+						.foregroundStyle(.secondary)
+					Picker("Run commands as", selection: $escalation) {
+						ForEach(escalations) { Text($0.label).tag($0) }
+					}
+					.pickerStyle(.segmented)
+					.labelsHidden()
+					.frame(width: 190)
+					Spacer()
+				}
+				.padding(.top, 2)
+			}
 			ScrollView {
 				VStack(alignment: .leading, spacing: 12) {
 					switch tab {
@@ -120,8 +138,7 @@ struct SSHHelpSheet: View {
 		step(2, "Mount the share and run the script:")
 		command(
 			SSHSetupInfo.mountShareCommand + " && "
-				+ SSHSetupInfo.runCommand(inShareAt: SSHSetupInfo.linuxMountPoint),
-			picker: true)
+				+ SSHSetupInfo.runCommand(inShareAt: SSHSetupInfo.linuxMountPoint))
 		step(3, "Undo it later:")
 		command(SSHSetupInfo.runCommand(inShareAt: SSHSetupInfo.linuxMountPoint)
 			+ " --uninstall")
@@ -134,7 +151,7 @@ struct SSHHelpSheet: View {
 		step(1, "Add (+) → Installers → SSH Setup, then boot the guest — the share "
 			+ "automounts (macOS 13+).")
 		step(2, "In the guest's Terminal, run the script:")
-		command(SSHSetupInfo.runFromAutomountCommand, picker: true)
+		command(SSHSetupInfo.runFromAutomountCommand)
 		step(3, "Undo it later:")
 		command(SSHSetupInfo.runFromAutomountCommand + " --uninstall")
 	}
@@ -152,26 +169,22 @@ struct SSHHelpSheet: View {
 			+ "over SSH instead — then the same script runs.")
 		step(1, "Turn on Remote Login on this Mac (System Settings → General → Sharing).")
 		step(2, "Install sshfs in the guest:")
-		command("pkg install fusefs-sshfs", picker: true)
-		note("OpenBSD: doas pkg_add sshfs-fuse — and skip step 3, where mounting stays "
-			+ "root-only.")
-		step(3, "Load the fuse module and let your user mount:")
-		command("kldload fusefs && sysctl vfs.usermount=1")
-		step(4, "Make a mount point you own:")
-		command("mkdir -p \(mountPoint) && chown $(id -un) \(mountPoint)")
-		step(5, "Mount Machman's setup folder — this asks for your Mac account password, "
-			+ "the one time:")
-		command(
-			"sshfs \(hostUser)@\(hostAddress):'\(sharePath)' \(mountPoint)"
-				+ " -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3",
-			escalate: false)
-		if vm.ssh?.setupSharePath == nil {
-			note("Boot the VM once so Machman can fill in the real address and path here.")
+		command("pkg install fusefs-sshfs")
+		note("OpenBSD: pkg_add sshfs-fuse — and skip step 3; fuse is already in its kernel.")
+		step(3, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
+		command("kldstat -q -m fusefs || kldload fusefs")
+		step(4, "Mount Machman's setup folder. This asks for your Mac account password — "
+			+ "once, because keys are what the script is about to set up:")
+		command("mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
+			+ "\(mountPoint) -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
+		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
+			note("Boot the VM once so Machman can fill in this Mac's address and the real "
+				+ "path above.")
 		}
-		step(6, "Run the installer:")
+		step(5, "Run the installer:")
 		command(SSHSetupInfo.runCommand(inShareAt: mountPoint))
-		note("The script makes steps 3 and 4 stick on its own when it sees it ran over "
-			+ "sshfs — they are only needed once.")
+		note("Mounting as root needs no system changes. The script keeps the fuse driver "
+			+ "across reboots by itself, and can allow user mounts later if you ask it to.")
 	}
 
 	// MARK: - Info (everything that is not a step)
@@ -256,32 +269,18 @@ struct SSHHelpSheet: View {
 		}
 	}
 
-	// A copyable command. `escalate` adds the tab's sudo/doas prefix to every command in
-	// the line (a chained "sudo a && b" would run b as the user); `picker` puts the choice
-	// on this block — one per tab is enough, since the choice is shared.
-	private func command(
-		_ raw: String, picker: Bool = false, escalate: Bool = true
-	) -> some View {
+	// A copyable command, carrying the page's escalation on every command in the line —
+	// a chained "sudo a && b" would run b as the user.
+	private func command(_ raw: String, escalate: Bool = true) -> some View {
 		let text = escalate
 			? SSHSetupInfo.escalated(raw, with: resolved.prefix) : raw
-		return VStack(alignment: .leading, spacing: 5) {
-			if picker {
-				Picker("Run as", selection: $escalation) {
-					ForEach(escalations) { Text($0.label).tag($0) }
-				}
-				.pickerStyle(.segmented)
-				.labelsHidden()
-				.controlSize(.small)
-				.frame(maxWidth: 210)
-			}
-			HStack(alignment: .top) {
-				Text(text)
-					.font(.system(size: Self.smallSize, design: .monospaced))
-					.textSelection(.enabled)
-					.fixedSize(horizontal: false, vertical: true)
-				Spacer(minLength: 6)
-				CopyToClipboardButton(text, tooltip: "Copy")
-			}
+		return HStack(alignment: .top) {
+			Text(text)
+				.font(.system(size: Self.smallSize, design: .monospaced))
+				.textSelection(.enabled)
+				.fixedSize(horizontal: false, vertical: true)
+			Spacer(minLength: 6)
+			CopyToClipboardButton(text, tooltip: "Copy")
 		}
 		.padding(7)
 		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
