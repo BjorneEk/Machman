@@ -211,6 +211,29 @@ struct SSHSetupInstallerTests {
 		}
 	}
 
+	// Attaching the installer writes its payload THERE AND THEN. Every other device change
+	// takes effect at the next boot, but a guest without a virtiofs driver mounts this
+	// directory over SSH from a running VM — and an empty directory is a dead end with no
+	// explanation (measured: "cannot open …/install.sh: No such file or directory").
+	@Test @MainActor func attachingTheInstallerWritesThePayload() throws {
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			let scriptPath = GuestInstallerWriter
+				.payloadDirectory(named: SSHSetupInfo.directoryName, for: vm.config)
+				.appendingPathComponent(SSHSetupInfo.scriptName).path
+			let fm = FileManager.default
+			#expect(!fm.fileExists(atPath: scriptPath))
+
+			try api.attachDevice(.sshInstaller, to: vm)
+			#expect(fm.fileExists(atPath: scriptPath))
+			// …and SSH counts as part of this VM from that moment, so its section appears
+			// (a discovered address alone must never make that true).
+			#expect(vm.config.ssh != nil)
+		}
+	}
+
 	// The reserved share names are refused as user mount tags (add AND rename).
 	@Test @MainActor func reservedShareNamesAreRefusedAsTags() throws {
 		try VMTestDir.withRedirectedDir {

@@ -446,10 +446,24 @@ public final class LocalMachman: MachmanControlling {
 
 	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
 		let vm = try lookup(name)
-		try Self.validateDeviceKind(kind, for: vm.config)
-		try vm.config.addDevice(GuestDevice(kind: kind))
+		try attachDevice(kind, to: vm)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
+	}
+
+	// The sync core, so the ordering is testable without the async shell.
+	func attachDevice(_ kind: DeviceKind, to vm: VirtualMachine) throws {
+		try Self.validateDeviceKind(kind, for: vm.config)
+		try vm.config.addDevice(GuestDevice(kind: kind))
+		// Generated payloads normally appear at the next assembly, like every other device
+		// change — but a guest without a virtiofs driver reaches this one by mounting the
+		// directory over SSH from a RUNNING VM, and finding it empty is a dead end with no
+		// explanation. Writing it on add costs a few files and makes "add the installer,
+		// then mount it" true immediately. Runs in the process that owns the config (the
+		// vmhost proxies this call while hosted), so the single-writer rule holds.
+		if kind == .sshInstaller {
+			try? SSHSetupInstaller.writePayload(for: vm.config)
+		}
 	}
 
 	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
@@ -816,6 +830,7 @@ public final class LocalMachman: MachmanControlling {
 			let pinPath = SSHSetupInstaller.knownHostsPath(for: config)
 			let hasPin = FileManager.default.fileExists(atPath: pinPath)
 			return SSHInfo(
+				configured: true,
 				guestUser: state.guestUser,
 				guestHostname: state.guestHostname,
 				guestOS: state.guestOS,

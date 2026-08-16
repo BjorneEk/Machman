@@ -46,6 +46,11 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 		}
 	}
 
+	// Whether SSH is part of this VM at all: state on file, or the installer attached.
+	// Set by the process that owns the config, NEVER by the daemon's overlay — a running
+	// VM has a discovered address whether or not anyone asked for SSH, and that address
+	// alone must not make the app believe SSH is set up here.
+	public var configured: Bool?
 	// Persisted half — from the guest's install report.
 	public var guestUser: String?
 	public var guestHostname: String?
@@ -87,6 +92,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 	public var readySince: Date?
 
 	public init(
+		configured: Bool? = nil,
 		guestUser: String? = nil, guestHostname: String? = nil, guestOS: String? = nil,
 		guestOSVersion: String? = nil, guestHostKey: String? = nil,
 		reverseState: ReverseState = .none, reversePublicKey: String? = nil,
@@ -102,6 +108,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 		reachability: Reachability? = nil, reachabilityDetail: String? = nil,
 		readySince: Date? = nil
 	) {
+		self.configured = configured
 		self.guestUser = guestUser
 		self.guestHostname = guestHostname
 		self.guestOS = guestOS
@@ -134,6 +141,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 	// Tolerant decode; encode stays synthesized so nil optionals are omitted.
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.configured = try c.decodeIfPresent(Bool.self, forKey: .configured)
 		self.guestUser = try c.decodeIfPresent(String.self, forKey: .guestUser)
 		self.guestHostname = try c.decodeIfPresent(String.self, forKey: .guestHostname)
 		self.guestOS = try c.decodeIfPresent(String.self, forKey: .guestOS)

@@ -443,6 +443,7 @@ struct WireFixtureTests {
 		// Minimal shape: only the non-optional state encodes.
 		#expect(try encode(SSHInfo()) == #"{"reverseState":"none"}"#)
 		let full = SSHInfo(
+			configured: true,
 			guestUser: "admin", guestHostname: "debs", guestOS: "debian",
 			guestOSVersion: "13", guestHostKey: "ssh-ed25519 HHHH host",
 			reverseState: .pending, reversePublicKey: "ssh-ed25519 AAAA guest",
@@ -460,7 +461,8 @@ struct WireFixtureTests {
 			reachability: .ready, reachabilityDetail: nil,
 			readySince: Date(timeIntervalSince1970: 1_700_000_060))
 		let expected = #"{"address":"192.168.64.5","addressSource":"dhcp","#
-			+ #""alias":"Debian.machman","guestHostKey":"ssh-ed25519 HHHH host","#
+			+ #""alias":"Debian.machman","configured":true,"#
+			+ #""guestHostKey":"ssh-ed25519 HHHH host","#
 			+ #""guestHostname":"debs","guestOS":"debian","guestOSVersion":"13","#
 			+ #""guestUser":"admin","hostAddressForGuest":"192.168.64.1","#
 			+ #""hostUser":"gustaf","#

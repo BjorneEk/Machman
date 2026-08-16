@@ -365,7 +365,7 @@ struct VMDeviceTreeView: View {
 	// Present as soon as SSH is part of this VM — the installer attached, or state on
 	// file — because this section is where SSH is set up, not just where sessions live.
 	private var sshSectionVisible: Bool {
-		vm.ssh != nil || (vm.devices ?? []).contains { $0.kind == .sshInstaller }
+		vm.ssh?.configured == true
 	}
 
 	@ViewBuilder
