@@ -35,6 +35,7 @@ let package = Package(
 			resources: [
 				.embedInCode("GuestScripts/ssh-setup.sh"),
 				.embedInCode("GuestScripts/console-login.sh"),
+				.embedInCode("GuestScripts/machman-lib.sh"),
 			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),

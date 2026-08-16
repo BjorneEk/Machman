@@ -20,6 +20,13 @@ struct EmbeddedScriptTests {
 		("console-login.sh", ConsoleLoginInstaller.script),
 	]
 
+	// What actually runs in the guest: the payload's script plus the helpers it sources.
+	private static let payloads: [(name: String, source: String)] = scripts.map { entry in
+		let library = entry.name == "ssh-setup.sh"
+			? SSHSetupInstaller.sharedLibrary?.text : nil
+		return (entry.name, (library ?? "") + "\n" + entry.script.text)
+	}
+
 	@Test func scriptsAreEmbeddedAndVersioned() {
 		for (name, script) in Self.scripts {
 			#expect(script.text.hasPrefix("#!/bin/sh"), "\(name) lost its shebang")
@@ -39,7 +46,11 @@ struct EmbeddedScriptTests {
 			("/bin/bash", ["--posix", "-n"]),
 			("/bin/ksh", ["-n"]),
 		]
-		for (name, script) in Self.scripts {
+		var sources = Self.scripts
+		if let library = SSHSetupInstaller.sharedLibrary {
+			sources.append(("machman-lib.sh", library))
+		}
+		for (name, script) in sources {
 			let url = FileManager.default.temporaryDirectory
 				.appendingPathComponent("machman-\(UUID().uuidString)-\(name)")
 			try script.text.write(to: url, atomically: true, encoding: .utf8)
@@ -68,16 +79,19 @@ struct EmbeddedScriptTests {
 				"ssh-setup.sh": Set(try SSHSetupInstaller.environment(for: vm).keys),
 				"console-login.sh": Set(try ConsoleLoginInstaller.environment(for: vm).keys),
 			]
-			// Set by the guest's own environment, or by an inlined awk program.
-			let ambient: Set<String> = ["SUDO_USER", "NF"]
-			for (name, script) in Self.scripts {
-				let unresolved = Self.referenced(script.text)
-					.subtracting(Self.assigned(script.text))
+			// Set by the guest's own environment (or by sudo/doas), never by us.
+			let ambient: Set<String> = [
+				"SUDO_USER", "DOAS_USER", "TERM", "NO_COLOR", "COLUMNS",
+				"LANG", "LC_ALL", "LC_CTYPE", "IFS", "CDPATH",
+			]
+			for (name, source) in Self.payloads {
+				let unresolved = Self.referenced(source)
+					.subtracting(Self.assigned(source))
 					.subtracting(provided[name] ?? [])
 					.subtracting(ambient)
 				#expect(unresolved.isEmpty, "\(name) reads unprovided \(unresolved.sorted())")
 				// And the wiring is real: the script does read what the env carries.
-				#expect(!Self.referenced(script.text)
+				#expect(!Self.referenced(source)
 					.intersection(provided[name] ?? []).isEmpty, "\(name) reads no env key")
 			}
 		}
@@ -96,14 +110,18 @@ struct EmbeddedScriptTests {
 		return found
 	}
 
-	// $NAME, ${NAME}, ${NAME:-default}
+	// $NAME, ${NAME}, ${NAME:-default}. The lookahead keeps the scanner off the
+	// lowercase-with-leading-underscore temporaries the scripts use inside functions.
 	private static func referenced(_ text: String) -> Set<String> {
-		matches(#"\$\{?([A-Z_][A-Z0-9_]*)"#, in: text, group: 1)
+		matches(#"\$\{?([A-Z_][A-Z0-9_]*)(?![a-z])"#, in: text, group: 1)
 	}
 
-	// NAME=…, for NAME in …, read -r NAME
+	// NAME= at the start of a command (line start, or after ; & | or a case-branch's
+	// paren), the : "${NAME:=default}" idiom, for NAME in …, and read -r NAME.
 	private static func assigned(_ text: String) -> Set<String> {
 		matches(#"(?m)^[ \t]*([A-Z_][A-Z0-9_]*)="#, in: text, group: 1)
+			.union(matches(#"[;&|)] *([A-Z_][A-Z0-9_]*)="#, in: text, group: 1))
+			.union(matches(#"\$\{([A-Z_][A-Z0-9_]*):="#, in: text, group: 1))
 			.union(matches(#"for +([A-Z_][A-Z0-9_]*) +in"#, in: text, group: 1))
 			.union(matches(#"read +-r +([A-Z_][A-Z0-9_]*)"#, in: text, group: 1))
 	}

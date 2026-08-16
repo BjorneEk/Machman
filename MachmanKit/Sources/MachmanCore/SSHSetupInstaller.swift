@@ -161,4 +161,10 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 	static var script: EmbeddedScript {
 		EmbeddedScript(bytes: PackageResources.ssh_setup_sh)
 	}
+
+	// The shared sh helpers (output vocabulary, terminal detection, prompts, the run
+	// wrapper) the script sources beside itself.
+	static var sharedLibrary: EmbeddedScript? {
+		EmbeddedScript(bytes: PackageResources.machman_lib_sh)
+	}
 }

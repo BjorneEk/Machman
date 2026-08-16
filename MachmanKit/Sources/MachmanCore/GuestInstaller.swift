@@ -51,6 +51,8 @@ protocol GuestInstallerPayload {
 	static var directoryName: String { get }
 	static var scriptName: String { get }
 	static var script: EmbeddedScript { get }
+	// The shared sh helpers the script sources, when it uses them.
+	static var sharedLibrary: EmbeddedScript? { get }
 	// Everything per-VM the script needs, written as `machman.env` (shell-quoted).
 	static func environment(for config: VMConfig) throws -> [String: String]
 	// Files shipped beside the script; a nil value means "make sure this is absent".
@@ -58,12 +60,15 @@ protocol GuestInstallerPayload {
 }
 
 extension GuestInstallerPayload {
+	static var sharedLibrary: EmbeddedScript? { nil }
 	static func extraFiles(for config: VMConfig) throws -> [String: Data?] { [:] }
 }
 
 enum GuestInstallerWriter {
 	// Sourced by every payload script as "$PAYLOAD_DIR/machman.env".
 	static let environmentFileName = "machman.env"
+	// …and, for the scripts that use them, "$PAYLOAD_DIR/machman-lib.sh".
+	static let sharedLibraryFileName = "machman-lib.sh"
 
 	// Every generated payload lives under ONE directory in the VM, never beside its disk
 	// images: guests without a virtiofs driver (FreeBSD, OpenBSD) bootstrap by
@@ -104,6 +109,12 @@ enum GuestInstallerWriter {
 		let scriptURL = dir.appendingPathComponent(P.scriptName)
 		try P.script.text.write(to: scriptURL, atomically: true, encoding: .utf8)
 		try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+
+		if let library = P.sharedLibrary {
+			let libURL = dir.appendingPathComponent(sharedLibraryFileName)
+			try library.text.write(to: libURL, atomically: true, encoding: .utf8)
+			try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: libURL.path)
+		}
 
 		let envURL = dir.appendingPathComponent(environmentFileName)
 		try environmentFile(try P.environment(for: config))
