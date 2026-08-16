@@ -608,10 +608,13 @@ private struct NetworkSSHSection: View {
 	@State private var approveConsent = false
 	@State private var revokeConsent = false
 
+	@State private var aliasDraft = ""
+
 	private var setupAttached: Bool {
 		(vm.devices ?? []).contains { $0.kind == .sshInstaller }
 	}
-	private var alias: String { "\(vm.name).machman" }
+	// Served, never derived: the VM can be named something else in ~/.ssh.
+	private var alias: String { vm.ssh?.alias ?? "\(vm.name).machman" }
 	private var sshCommand: String? {
 		guard let ssh = vm.ssh else { return nil }
 		if ssh.integrationEnabled == true {
@@ -665,7 +668,26 @@ private struct NetworkSSHSection: View {
 			.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
 		}
 		integrationToggle
+		aliasField
 		reverseRows
+	}
+
+	// The name this VM answers to — in ~/.ssh and in the session tabs' host-key pin.
+	private var aliasField: some View {
+		VStack(alignment: .leading, spacing: 2) {
+			LabeledContent("Alias") {
+				TextField("\(vm.name).machman", text: $aliasDraft)
+					.multilineTextAlignment(.trailing)
+					.onSubmit { viewModel.setSSHAlias(vm.name, alias: aliasDraft) }
+			}
+			if !aliasDraft.contains(".") && !aliasDraft.isEmpty {
+				Text("A plain name can shadow a real host in your SSH config.")
+					.font(.caption2)
+					.foregroundStyle(.tertiary)
+			}
+		}
+		.onAppear { aliasDraft = alias }
+		.onChange(of: alias) { aliasDraft = alias }
 	}
 
 	private var integrationToggle: some View {
@@ -768,13 +790,32 @@ struct SSHSetupInspector: View {
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
 				if let at = vm.ssh?.lastReportAt {
-					LabeledContent("Last report") {
-						Text(at.formatted(date: .abbreviated, time: .shortened))
+					LabeledContent("Last run") {
+						HStack(spacing: 5) {
+							if let status = vm.ssh?.lastRunStatus, status != "ok" {
+								Image(systemName: MachmanSymbols.warning)
+									.foregroundStyle(MachmanColors.warning)
+								Text(status)
+							}
+							Text(at.formatted(date: .abbreviated, time: .shortened))
+						}
+					}
+					// The script says what it could not finish; this is that sentence.
+					if let note = vm.ssh?.lastRunNote,
+						vm.ssh?.lastRunStatus != "ok" {
+						Text(note)
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.fixedSize(horizontal: false, vertical: true)
 					}
 					if let os = vm.ssh?.guestOS, let user = vm.ssh?.guestUser {
-						Text("\(user) on \(os)")
+						let version = vm.ssh?.guestOSVersion.map { " \($0)" } ?? ""
+						Text("\(user) on \(os)\(version)")
 							.font(.system(.caption, design: .monospaced))
 							.foregroundStyle(.secondary)
+					}
+					if vm.ssh?.sshfsAvailable != nil {
+						LabeledContent("sshfs") { Text(sshfsSummary) }
 					}
 				} else {
 					Text("No report yet — the guest hasn't run the script.")
@@ -825,6 +866,19 @@ struct SSHSetupInspector: View {
 		.sheet(isPresented: $showGuide) {
 			SSHHelpSheet(mode: vm.boot.mode)
 		}
+	}
+
+	// Mounting host folders needs sshfs in the guest AND the guest→Mac link it rides on,
+	// so the capability is only usable once that access is approved.
+	private var sshfsSummary: String {
+		guard vm.ssh?.sshfsAvailable == true else { return "not installed" }
+		if vm.ssh?.reverseState != .approved {
+			return "available — needs guest → Mac approval"
+		}
+		if vm.ssh?.sshfsMountReady == false {
+			return "available — mounts need root"
+		}
+		return "available"
 	}
 
 	private func commandBlock(_ command: String) -> some View {
