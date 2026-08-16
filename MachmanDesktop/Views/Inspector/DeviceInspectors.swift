@@ -34,7 +34,7 @@ struct DeviceInspector: View {
 			case .consoleLoginInstaller:
 				LoginInstallerInspector(viewModel: viewModel, vm: vm, device: device)
 			case .sshInstaller:
-				SSHSetupInspector(viewModel: viewModel, vm: vm, device: device)
+				SSHInspector(viewModel: viewModel, vm: vm)
 			case .unknown:
 				NoSelectionInspector()
 			default:
@@ -326,8 +326,9 @@ struct NetworkInspector: View {
 					}
 				}
 			}
+			// The address is a fact of the network device; everything SSH lives in the
+			// tree's SSH section, which is one place instead of three.
 			NetworkAddressSection(viewModel: viewModel, vm: vm)
-			NetworkSSHSection(viewModel: viewModel, vm: vm)
 			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .network)
 		}
@@ -565,7 +566,7 @@ private func sshKeyFingerprint(_ keyLine: String) -> String? {
 
 // The guest's discovered address — a fact of the running VM (leases/ARP by its MAC),
 // not of SSH, so it shows for every VM whether or not SSH is set up.
-private struct NetworkAddressSection: View {
+struct NetworkAddressSection: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 
@@ -599,9 +600,10 @@ private struct NetworkAddressSection: View {
 	}
 }
 
-// The SSH half of the network inspector — status and switches; the address itself lives
-// in NetworkAddressSection above (it needs no SSH). Switches are consent-gated.
-private struct NetworkSSHSection: View {
+// The status-and-switches half of the SSH inspector: who the guest is, the command that
+// reaches it, the managed ~/.ssh entry and its name, and guest→host access. The address
+// itself stays with the network device (it needs no SSH). Switches are consent-gated.
+struct NetworkSSHSection: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	@State private var integrationConsent = false
@@ -734,7 +736,29 @@ private struct NetworkSSHSection: View {
 					.foregroundStyle(.tertiary)
 					.textSelection(.enabled)
 			}
-			Button("Approve Guest Access…") { approveConsent = true }
+			HStack {
+				Button("Approve…") { approveConsent = true }
+					.confirmationDialog(
+						"Let \(vm.name) log in to this Mac as you?",
+						isPresented: $approveConsent
+					) {
+						Button("Approve") {
+							viewModel.setSSHReverseApproved(vm.name, approved: true)
+						}
+						Button("Cancel", role: .cancel) {}
+					} message: {
+						Text("Adds the key shown above to ~/.ssh/authorized_keys — needs "
+							+ "Remote Login enabled on this Mac.")
+					}
+				// An answer, not a postponement: denying stops the asking until the guest
+				// reports a different key.
+				Button("Deny") { viewModel.setSSHReverseApproved(vm.name, approved: false) }
+			}
+		case .denied:
+			LabeledContent("Guest → Mac") {
+				Text("denied").foregroundStyle(.secondary)
+			}
+			Button("Approve…") { approveConsent = true }
 				.confirmationDialog(
 					"Let \(vm.name) log in to this Mac as you?", isPresented: $approveConsent
 				) {
@@ -743,8 +767,8 @@ private struct NetworkSSHSection: View {
 					}
 					Button("Cancel", role: .cancel) {}
 				} message: {
-					Text("Adds the key shown in the inspector to ~/.ssh/authorized_keys — "
-						+ "needs Remote Login enabled on this Mac.")
+					Text("Adds the key shown above to ~/.ssh/authorized_keys — needs "
+						+ "Remote Login enabled on this Mac.")
 				}
 		case .approved:
 			LabeledContent("Guest → Mac") {
@@ -771,22 +795,29 @@ private struct NetworkSSHSection: View {
 	}
 }
 
-// The SSH Setup installer's own inspector: what it serves, how to run it per guest OS,
-// report status, and the deeper reset.
-struct SSHSetupInspector: View {
+// EVERYTHING SSH for one VM, in one place: the tree's SSH section is its home, and the
+// SSH Setup device row routes here too. It used to be spread across the network device
+// (status, alias, guest access) and the installer device (payload, guide, reset), which
+// meant reading two inspectors to answer one question.
+struct SSHInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
-	let device: DeviceInfo
 	@State private var showGuide = false
 	@State private var resetConfirm = false
 
 	private var macGuest: Bool { vm.boot.mode == .macOS }
+	private var device: DeviceInfo? {
+		(vm.devices ?? []).first { $0.kind == .sshInstaller }
+	}
 
 	var body: some View {
 		Form {
+			// Reachability and switches first — what someone opening this is usually
+			// after; the setup half is below it.
+			NetworkSSHSection(viewModel: viewModel, vm: vm)
 			// Inspector text rule: nothing longer than one sentence — details live in
 			// the Setup Guide sheet, never here.
-			Section("SSH Setup") {
+			Section("Setup Script") {
 				Text("Serves a script the guest runs once to enable SSH and exchange "
 					+ "keys with this Mac.")
 					.font(.caption)
@@ -863,8 +894,10 @@ struct SSHSetupInspector: View {
 							+ "approvals — the guest keeps what the script installed.")
 					}
 			}
-			DeviceImplementationSection(vm: vm, device: device)
-			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .sshInstaller)
+			if let device {
+				DeviceImplementationSection(vm: vm, device: device)
+				DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .sshInstaller)
+			}
 		}
 		.sheet(isPresented: $showGuide) {
 			SSHHelpSheet(vm: vm)

@@ -142,9 +142,13 @@ extension VMConfig {
 				}
 				state.reverseState = SSHInfo.ReverseState.approved.rawValue
 			} else {
+				// Answering no is an ANSWER, not a return to the question: a denied key
+				// stops being asked about until the guest reports a different one (which
+				// SSHReport.apply moves back to pending). Revoking lands here too — same
+				// end state, since both mean "this key does not get in".
 				state.reverseState = state.reversePublicKey == nil
 					? SSHInfo.ReverseState.none.rawValue
-					: SSHInfo.ReverseState.pending.rawValue
+					: SSHInfo.ReverseState.denied.rawValue
 			}
 		}
 		let aliasChanged = ssh?.alias != state.alias

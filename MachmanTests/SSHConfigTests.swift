@@ -91,8 +91,17 @@ struct SSHConfigTests {
 			vm.ssh = state
 			try vm.setSSH(integrationEnabled: nil, reverseApproved: true, alias: nil)
 			#expect(vm.ssh?.reverseStateValue == .approved)
-			// Revoking with the key still on file goes back to pending, not none.
+			// Saying no is an answer: the key stays on file as DENIED, not back in the
+			// queue as pending — otherwise the UI would ask about it again forever.
 			try vm.setSSH(integrationEnabled: nil, reverseApproved: false, alias: nil)
+			#expect(vm.ssh?.reverseStateValue == .denied)
+			// Re-reporting the SAME key does not re-open the question…
+			#expect(!(try SSHReport.parse("REVERSE_PUBKEY=ssh-ed25519 AAAA guest")
+				.apply(to: vm, stampedAt: Date())))
+			#expect(vm.ssh?.reverseStateValue == .denied)
+			// …but a DIFFERENT key is a new request.
+			#expect(try SSHReport.parse("REVERSE_PUBKEY=ssh-ed25519 BBBB fresh")
+				.apply(to: vm, stampedAt: Date()))
 			#expect(vm.ssh?.reverseStateValue == .pending)
 		}
 	}

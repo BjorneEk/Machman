@@ -13,12 +13,15 @@
 import Foundation
 
 public struct SSHInfo: Codable, Sendable, Equatable {
-	// Guest→host access: none (never offered), pending (the guest reported a reverse key,
-	// awaiting user approval), approved (key installed in the host's authorized_keys).
+	// Guest→host access: none (never offered), pending (the guest reported a reverse key
+	// and is waiting on an answer), approved (key installed in the host's
+	// authorized_keys), denied (answered no — the key stays on file, nothing is installed,
+	// and the UI stops asking until the guest reports a DIFFERENT key).
 	public enum ReverseState: String, Codable, Sendable, Equatable {
 		case none
 		case pending
 		case approved
+		case denied
 		case unknown   // decode fallback only; never encode it
 
 		public init(from decoder: Decoder) throws {

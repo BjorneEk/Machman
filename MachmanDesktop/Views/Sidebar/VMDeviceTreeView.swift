@@ -362,14 +362,20 @@ struct VMDeviceTreeView: View {
 	// Ephemeral SSH sessions, once the guest has reported a user: the section title IS
 	// the command, the + opens a fresh session tab, and the open sessions are the
 	// children — no devices behind them, nothing persists.
+	// Present as soon as SSH is part of this VM — the installer attached, or state on
+	// file — because this section is where SSH is set up, not just where sessions live.
+	private var sshSectionVisible: Bool {
+		vm.ssh != nil || (vm.devices ?? []).contains { $0.kind == .sshInstaller }
+	}
+
 	@ViewBuilder
 	private var sshGroup: some View {
-		if let user = vm.ssh?.guestUser {
+		if sshSectionVisible {
 			// Canvas tabs AND torn-off windows: a detached session is still open, and
 			// dropping it from this list would leave no way back to its window.
 			let open = openSSHSessions
 			group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
-				title: "ssh \(user)@\(vm.name)", count: open.count, menu: {
+				title: "SSH", count: open.count, selectable: true, menu: {
 				// The + accessory's reliable twin — List group labels can swallow clicks.
 				Button("New SSH Session") { openSSHSession() }
 					.disabled(!sshSessionReady)
@@ -854,14 +860,18 @@ struct VMDeviceTreeView: View {
 
 	// Group parents are dimmed and NOT selectable (no tag — selection skips them); their
 	// add actions live in a row-level context menu on the label. `accessory` renders as a
-	// trailing control before the count (the Serial group's + for SSH session tabs).
+	// trailing control before the count (the SSH group's +). `selectable` is for the
+	// groups that ARE a thing in their own right and carry an inspector (Kernel, SSH):
+	// they keep a tag and full opacity.
+	@ViewBuilder
 	private func group<Content: View, MenuItems: View, Accessory: View>(
 		_ node: SidebarNode, symbol: String, title: String, count: Int,
+		selectable: Bool = false,
 		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
 		@ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
 		@ViewBuilder content: @escaping () -> Content
 	) -> some View {
-		DisclosureGroup(isExpanded: groupBinding(node)) {
+		let disclosure = DisclosureGroup(isExpanded: groupBinding(node)) {
 			content()
 		} label: {
 			HStack(spacing: 6) {
@@ -880,7 +890,11 @@ struct VMDeviceTreeView: View {
 			.frame(height: theme.metrics.treeRowHeight)
 			.contextMenu { menu() }
 		}
-		.opacity(MachmanColors.dimmedRowOpacity)
+		if selectable {
+			disclosure.tag(node)
+		} else {
+			disclosure.opacity(MachmanColors.dimmedRowOpacity)
+		}
 	}
 
 	private func groupBinding(_ node: SidebarNode) -> Binding<Bool> {

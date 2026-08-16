@@ -26,6 +26,8 @@ struct InspectorView: View {
 				switch viewModel.treeSelection.first {
 				case .group("Kernel"):
 					KernelParentInspector(viewModel: viewModel, vm: vm)
+				case .group("SSH"):
+					SSHInspector(viewModel: viewModel, vm: vm)
 				case .kernel(let path):
 					KernelEntryInspector(viewModel: viewModel, vm: vm, path: path)
 				case .initramfs(let path):

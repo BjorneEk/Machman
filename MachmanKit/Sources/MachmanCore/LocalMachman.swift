@@ -799,7 +799,15 @@ public final class LocalMachman: MachmanControlling {
 		}
 		// Persisted SSH half plus the paths and names clients must not derive themselves;
 		// address and reachability stay nil here (daemon overlay, like safeRun).
-		let ssh: SSHInfo? = config.ssh.map { state in
+		//
+		// Served as soon as the installer is ATTACHED, not only once a guest has reported:
+		// the host facts (this Mac's account, the folder a driverless guest mounts) are
+		// what the setup guide has to show BEFORE the first run, and deriving them
+		// client-side is exactly the drift this shape exists to prevent.
+		let sshAttached = config.devices.contains {
+			$0.deviceKind == .sshInstaller && $0.enabled
+		}
+		let ssh: SSHInfo? = (config.ssh ?? (sshAttached ? SSHConfig() : nil)).map { state in
 			let keyPath = config.configFilePath(file: "ssh/id_ed25519")
 			let hasKey = FileManager.default.fileExists(atPath: keyPath)
 			// Served only once the pin FILE exists: clients turn strict host-key checking
