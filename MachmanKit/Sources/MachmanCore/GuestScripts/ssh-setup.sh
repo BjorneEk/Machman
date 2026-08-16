@@ -50,7 +50,8 @@ What
   --one-way            skip guest -> host SSH
   --sshfs              install sshfs in the guest (implies --two-way)
   --no-sshfs           leave sshfs alone
-  --mount-setup        permit user mounts and create/own the mount point
+  --mount-setup        let ANY user of the guest mount filesystems
+                       (vfs.usermount=1; root can mount without it)
   --no-mount-setup
   --mountpoint <path>  where host folders get mounted (default $DEFAULT_MOUNTPOINT)
   --install            install missing packages with this guest's package manager
@@ -537,7 +538,8 @@ find_addresses() {
 
 SSHD_PLAN=""        # what we will do about the server
 SSHFS_PLAN=""       # …about sshfs
-MOUNT_PLAN=""       # …about user mounts and the mount point
+MOUNT_PLAN=""       # …about the fuse module and the mount point
+USER_MOUNT_PLAN=""  # …about the vfs.usermount permission
 
 decide_sshd() {
 	if [ "$NO_SERVICE" -eq 1 ]; then
@@ -626,42 +628,46 @@ decide_sshfs() {
 	return 0
 }
 
+# Two separate things, deliberately:
+#
+#   * the fuse module and a mount point — harmless plumbing, done whenever sshfs is set
+#     up, because a driver that is not loaded at boot just breaks the next mount;
+#   * vfs.usermount — a system-wide permission that lets ANY user of this guest mount
+#     filesystems. Root can mount without it, so it is never assumed, never implied by
+#     something else, and never turned on silently. Only --mount-setup or an explicit
+#     "yes" enables it.
 decide_mount_setup() {
-	MOUNT_PLAN="nothing to do"
+	MOUNT_PLAN=""
+	USER_MOUNT_PLAN=""
 	if [ "$WANT_SSHFS" != "1" ]; then
 		WANT_MOUNT_SETUP=0
 		return 0
 	fi
+	MOUNT_PLAN="$MOUNTPOINT"
+	[ -d "$MOUNTPOINT" ] && MOUNT_PLAN="$MOUNT_PLAN (exists)"
+	if ! fuse_loaded; then
+		MOUNT_PLAN="$MOUNT_PLAN, load fusefs"
+	fi
+	if [ "$OS_FAMILY" = freebsd ] && [ "$FUSE_PERSISTED" -eq 0 ]; then
+		MOUNT_PLAN="$MOUNT_PLAN, keep fusefs across reboots"
+	fi
 	if [ "$OS_FAMILY" = openbsd ]; then
-		MOUNT_PLAN="root-only on OpenBSD — mount with doas, nothing to change"
+		# OpenBSD removed kern.usermount in 5.7 — there is no knob to offer.
+		USER_MOUNT_PLAN="root only (OpenBSD has no user mounts)"
 		WANT_MOUNT_SETUP=0
-		return 0
-	fi
-	_dms_needed=0
-	fuse_loaded || _dms_needed=1
-	[ "$FUSE_PERSISTED" -eq 1 ] || _dms_needed=1
-	user_mounts_allowed || _dms_needed=1
-	[ -d "$MOUNTPOINT" ] || _dms_needed=1
-	if [ "$_dms_needed" -eq 0 ]; then
+	elif user_mounts_allowed; then
+		USER_MOUNT_PLAN="already allowed"
 		WANT_MOUNT_SETUP=0
-		MOUNT_PLAN="already set up ($MOUNTPOINT)"
-		return 0
-	fi
-	if [ -z "$WANT_MOUNT_SETUP" ]; then
-		# Running FROM an sshfs mount means the user already did this by hand for one
-		# boot; making it stick is the obvious next step, so default to yes there.
-		if [ "$TRANSPORT" = sshfs ]; then
-			WANT_MOUNT_SETUP=1
-			verbose ask "mount setup: yes (this script is running over sshfs)"
-		else
-			ask_yes_no "Permit user mounts and create $MOUNTPOINT for $U?" y
+	else
+		if [ -z "$WANT_MOUNT_SETUP" ]; then
+			ask_yes_no "Let ANY user of this guest mount filesystems (vfs.usermount=1)? Root can mount without it." n
 			WANT_MOUNT_SETUP="$R_YES"
 		fi
-	fi
-	if [ "$WANT_MOUNT_SETUP" = 1 ]; then
-		MOUNT_PLAN="permit user mounts, create $MOUNTPOINT owned by $U"
-	else
-		MOUNT_PLAN="left alone — mounts will need root"
+		if [ "$WANT_MOUNT_SETUP" = 1 ]; then
+			USER_MOUNT_PLAN="enable vfs.usermount=1"
+		else
+			USER_MOUNT_PLAN="left off — mount as root"
+		fi
 	fi
 	return 0
 }
@@ -701,7 +707,8 @@ preflight() {
 		plan_line "guest -> host" "not configured"
 	fi
 	[ -n "$SSHFS_PLAN" ] && plan_line "sshfs" "$SSHFS_PLAN"
-	[ "$WANT_SSHFS" = "1" ] && plan_line "mounts" "$MOUNT_PLAN"
+	[ -n "$MOUNT_PLAN" ] && plan_line "mount point" "$MOUNT_PLAN"
+	[ -n "$USER_MOUNT_PLAN" ] && plan_line "user mounts" "$USER_MOUNT_PLAN"
 	if [ -d "$REPORT_DIR" ] && [ -w "$REPORT_DIR" ]; then
 		plan_line "report" "$REPORT_DIR"
 	else
@@ -951,44 +958,55 @@ act_sshfs() {
 			return 0
 		fi
 	fi
-	act_mount_setup
+	act_fuse_ready
+	act_user_mounts
 	if [ "$SSHFS" -eq 1 ] && fuse_loaded && user_mounts_allowed; then
 		SSHFS_MOUNT_OK=1
 	fi
 	return 0
 }
 
-act_mount_setup() {
-	[ "$WANT_MOUNT_SETUP" = "1" ] || return 0
+# The plumbing: a loaded (and still-loaded-next-boot) fuse driver, and somewhere to mount.
+act_fuse_ready() {
 	if [ "$OS_FAMILY" = freebsd ]; then
-		fuse_loaded || run "loading the fuse module" kldload fusefs \
-			|| step_failed mount-setup "could not load the fusefs module" \
-				"Load it yourself: kldload fusefs"
-		if [ "$FUSE_PERSISTED" -eq 0 ]; then
-			# The BSD bootstrap loads fusefs by hand for one boot; make it stick.
-			run "persisting the fuse module" sysrc "kld_list+=fusefs" \
-				|| step_failed mount-setup "could not persist the fusefs module" \
-					"Add it yourself: sysrc kld_list+=fusefs"
+		if ! fuse_loaded; then
+			run "loading the fuse module" kldload fusefs \
+				|| step_failed sshfs "could not load the fusefs module" \
+					"Load it yourself: kldload fusefs"
 		fi
-		if ! user_mounts_allowed; then
-			run "permitting user mounts" sysctl vfs.usermount=1 \
-				|| step_failed mount-setup "could not set vfs.usermount" \
-					"Set it yourself: sysctl vfs.usermount=1"
-			if [ "$DRY_RUN" -eq 0 ] && ! grep -q '^vfs.usermount' /etc/sysctl.conf 2>/dev/null
-			then
-				echo 'vfs.usermount=1' >> /etc/sysctl.conf
-			fi
+		if [ "$FUSE_PERSISTED" -eq 0 ]; then
+			# The BSD bootstrap loads fusefs by hand for one boot; make it stick, or the
+			# next boot quietly loses the ability to mount anything.
+			run "keeping fusefs across reboots" sysrc "kld_list+=fusefs" \
+				|| step_failed sshfs "could not persist the fusefs module" \
+					"Add it yourself: sysrc kld_list+=fusefs"
 		fi
 	fi
 	if [ ! -d "$MOUNTPOINT" ]; then
 		run "creating $MOUNTPOINT" mkdir -p "$MOUNTPOINT" \
-			|| step_failed mount-setup "could not create $MOUNTPOINT" \
+			|| step_failed sshfs "could not create $MOUNTPOINT" \
 				"Create it yourself, or pass --mountpoint <path>."
 	fi
 	if [ -d "$MOUNTPOINT" ] || [ "$DRY_RUN" -eq 1 ]; then
 		run "giving $U the mount point" chown "$U:$GROUP" "$MOUNTPOINT" || true
 	fi
 	ok "$MOUNTPOINT is ready for host folders"
+	return 0
+}
+
+# The permission. Only ever reached when the user said yes to exactly this.
+act_user_mounts() {
+	[ "$WANT_MOUNT_SETUP" = "1" ] || return 0
+	[ "$OS_FAMILY" = freebsd ] || return 0
+	if ! run "allowing user mounts" sysctl vfs.usermount=1; then
+		step_failed mount-setup "could not set vfs.usermount" \
+			"Set it yourself: sysctl vfs.usermount=1"
+		return 0
+	fi
+	if [ "$DRY_RUN" -eq 0 ] && ! grep -q '^vfs.usermount' /etc/sysctl.conf 2>/dev/null; then
+		echo 'vfs.usermount=1' >> /etc/sysctl.conf
+	fi
+	ok "user mounts allowed (vfs.usermount=1)"
 	return 0
 }
 

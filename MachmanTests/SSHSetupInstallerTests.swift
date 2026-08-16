@@ -138,15 +138,18 @@ struct SSHSetupInstallerTests {
 		#expect(s.contains("Install sshfs so this guest can mount host folders?"))
 		#expect(s.contains("skipped — needs guest -> host SSH"))
 		#expect(s.contains("needs macFUSE"))
-		// FreeBSD's fuse knobs, including making a hand-mounted bootstrap stick.
+		// FreeBSD's fuse knobs. Loading and persisting the driver is plumbing and rides
+		// with sshfs; vfs.usermount is a system-wide permission, so it lives behind its
+		// own explicit yes and is never implied by anything else.
 		#expect(s.contains("kldload fusefs"))
 		#expect(s.contains("kld_list+=fusefs"))
+		#expect(s.contains("act_fuse_ready"))
 		#expect(s.contains("vfs.usermount=1"))
 		#expect(s.contains("/etc/sysctl.conf"))
+		#expect(s.contains("Let ANY user of this guest mount filesystems"))
+		#expect(s.contains(#"[ "$WANT_MOUNT_SETUP" = "1" ] || return 0"#))
 		// OpenBSD dropped kern.usermount: say so instead of trying.
-		#expect(s.contains("root-only on OpenBSD"))
-		// Running over sshfs IS the BSD bootstrap — persist without asking.
-		#expect(s.contains(#"[ "$TRANSPORT" = sshfs ]"#))
+		#expect(s.contains("OpenBSD has no user mounts"))
 	}
 
 	// A quoting/heredoc slip would otherwise only surface inside a guest — parse the
