@@ -259,13 +259,14 @@ struct VMCanvasView: View {
 	}
 
 	// Tear a tab off into its own window: the canvas tab closes but the controller stays —
-	// the new window adopts the same terminal (one mount at a time).
+	// the new window adopts the same terminal (one mount at a time). The window is opened
+	// on the NEXT runloop turn so SwiftUI finishes removing this mount first; opening it
+	// inline makes the window's container adopt the terminal while the canvas's is still
+	// alive, and the outgoing mount's last update takes it back.
 	private func tearOff(_ tab: VMPaneTab) {
-		// SSH tabs never tear off (v1): scene restoration would revive a window whose
-		// process died with the app — the drag just snaps back.
-		if case .ssh = tab { return }
 		mutate { $0.close(tab) }
-		openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
+		let payload = TornTab(vm: vm.name, tab: tab)
+		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
 	}
 
 	// MARK: - Drag logic (demo parity)

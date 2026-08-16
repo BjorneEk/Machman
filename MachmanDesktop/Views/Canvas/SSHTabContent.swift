@@ -56,10 +56,26 @@ struct SSHTabContent: View {
 	let ref: SSHSessionRef
 	// Re-checked on the deferred creation turn — the tab may have closed meanwhile.
 	let stillWanted: @MainActor () -> Bool
+	// Torn-off windows adopt a session that already exists; they never start one. Without
+	// this a window restored by the system at launch would silently open a NEW ssh
+	// process for a session that died when the app quit.
+	var adoptOnly = false
 
 	var body: some View {
 		if let controller = sessions.sshController(vm: vm.name, ref: ref) {
 			SSHSessionSurface(controller: controller)
+		} else if adoptOnly {
+			VStack(spacing: 8) {
+				Image(systemName: MachmanSymbols.deviceSSHSetup)
+					.font(.largeTitle).foregroundColor(.secondary)
+				Text("This session ended — sessions do not survive quitting Machman.")
+					.foregroundColor(.secondary)
+					.multilineTextAlignment(.center)
+				Text("Open a new one from the SSH section in the sidebar.")
+					.font(.caption)
+					.foregroundColor(.secondary)
+			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
 		} else if let arguments = SSHCommand.arguments(for: vm) {
 			VStack(spacing: 10) {
 				ProgressView()

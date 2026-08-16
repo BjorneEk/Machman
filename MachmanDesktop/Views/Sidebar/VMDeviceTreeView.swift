@@ -31,6 +31,9 @@ struct VMDeviceTreeView: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var sessions: TerminalSessions
 	@ObservedObject var canvases: CanvasStateStore
+	// Torn-off windows are open tabs too — the tree observes them so a detached terminal
+	// keeps its row (and its way back).
+	@ObservedObject private var tornTabs = TornTabRegistry.shared
 	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var renamingRoot = false
@@ -362,11 +365,9 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var sshGroup: some View {
 		if let user = vm.ssh?.guestUser {
-			let open = canvases.canvas(for: vm.name).allOpenTabs
-				.compactMap { tab -> SSHSessionRef? in
-					if case .ssh(let ref) = tab { return ref }
-					return nil
-				}
+			// Canvas tabs AND torn-off windows: a detached session is still open, and
+			// dropping it from this list would leave no way back to its window.
+			let open = openSSHSessions
 			group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
 				title: "ssh \(user)@\(vm.name)", count: open.count, menu: {
 				// The + accessory's reliable twin — List group labels can swallow clicks.
@@ -382,21 +383,54 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
+	// Open sessions: the canvas's tabs plus any torn into their own window.
+	private var openSSHSessions: [SSHSessionRef] {
+		var refs = canvases.canvas(for: vm.name).allOpenTabs
+			.compactMap { tab -> SSHSessionRef? in
+				if case .ssh(let ref) = tab { return ref }
+				return nil
+			}
+		for torn in tornTabs.open where torn.vm == vm.name {
+			if case .ssh(let ref) = torn.tab, !refs.contains(ref) {
+				refs.append(ref)
+			}
+		}
+		return refs
+	}
+
+	private func isTorn(_ tab: VMPaneTab) -> Bool {
+		tornTabs.open.contains(TornTab(vm: vm.name, tab: tab))
+	}
+
 	private func sshSessionRow(_ ref: SSHSessionRef) -> some View {
-		HStack(spacing: 6) {
+		let torn = isTorn(.ssh(ref))
+		return HStack(spacing: 6) {
 			Image(systemName: MachmanSymbols.tabTerminal)
 				.font(.system(size: theme.metrics.iconSize))
 			Text(sessions.sshSessionName(vm: vm.name, ref: ref))
 				.lineLimit(1)
 			Spacer()
+			if torn {
+				Image(systemName: MachmanSymbols.newWindow)
+					.font(.system(size: 9))
+					.foregroundStyle(.tertiary)
+					.help("Open in its own window")
+			}
 			Circle().fill(MachmanColors.connected)
 				.frame(width: 5, height: 5)
-				.help("Session tab open")
+				.help("Session open")
 		}
 		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
 		.tag(SidebarNode.sshSession(ref))
 		.contextMenu {
+			if !torn {
+				Button {
+					detach(.ssh(ref))
+				} label: {
+					Label("Move to New Window", systemImage: MachmanSymbols.newWindow)
+				}
+			}
 			Button("Close Session") { closeSSHSession(ref) }
 		}
 	}
@@ -404,6 +438,20 @@ struct VMDeviceTreeView: View {
 	private func closeSSHSession(_ ref: SSHSessionRef) {
 		sessions.dropSSHController(vm: vm.name, ref: ref)
 		mutateCanvas { $0.close(.ssh(ref)) }
+	}
+
+	// Move a tab out of the canvas into its own window (or focus the window it already
+	// has). The controller is deliberately NOT torn down — the window adopts it — and the
+	// window is opened a turn later so the canvas mount is gone first (SerialTerminalHost
+	// hands the terminal to the newest mount).
+	private func detach(_ tab: VMPaneTab) {
+		if isTorn(tab) {
+			openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
+			return
+		}
+		mutateCanvas { $0.close(tab) }
+		let payload = TornTab(vm: vm.name, tab: tab)
+		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
 	}
 
 	// Installer devices (share-served guest-setup payloads): their own section — they
@@ -462,7 +510,9 @@ struct VMDeviceTreeView: View {
 
 	private func serialRow(_ port: SerialPortInfo) -> some View {
 		let ref = SerialPortRef(port)
+		// Open counts a torn-off window too: the terminal is live either way.
 		let open = canvases.canvas(for: vm.name).allOpenTabs.contains(.terminal(ref))
+			|| isTorn(.terminal(ref))
 		let gated = port.unavailable != nil
 		let enabled = port.enabled ?? true
 		return HStack(spacing: 6) {
@@ -503,6 +553,13 @@ struct VMDeviceTreeView: View {
 				Button("Close Terminal (disconnect)") { closeTerminal(ref) }
 			} else {
 				Button("Open Terminal (connect)") { openTerminal(ref) }
+			}
+			if !isTorn(.terminal(ref)) {
+				Button {
+					detach(.terminal(ref))
+				} label: {
+					Label("Move to New Window", systemImage: MachmanSymbols.newWindow)
+				}
 			}
 			Button("Properties") {
 				openTerminal(ref)
@@ -820,7 +877,12 @@ struct VMDeviceTreeView: View {
 				port.unavailable == nil, port.enabled ?? true else { return }
 			openTerminal(ref)
 		case .sshSession(let ref):
-			// Rows exist only for OPEN session tabs — selecting one focuses its tab.
+			// Rows exist only for OPEN sessions — selecting one focuses wherever it
+			// lives: its canvas tab, or the window it was torn into.
+			if isTorn(.ssh(ref)) {
+				openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .ssh(ref)))
+				return
+			}
 			mutateCanvas { $0.activate(.ssh(ref)) }
 		default:
 			break

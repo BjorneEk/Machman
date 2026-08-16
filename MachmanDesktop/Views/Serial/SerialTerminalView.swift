@@ -21,6 +21,12 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	let terminalView: TerminalView
 	private var connection: TerminalByteStream?
 	@Published var connected = false
+	// Which container is currently responsible for showing this terminal. There is only
+	// ever ONE TerminalView, and SwiftUI can update a mount that is on its way out AFTER
+	// its replacement has adopted the view — tearing a tab into its own window does
+	// exactly that — so the outgoing mount must not re-adopt and drag the terminal into a
+	// container that is about to leave the hierarchy.
+	fileprivate weak var mountedIn: ThrottledResizeContainer?
 	// The last connection's transcript, retained when it closes (VM stop, daemon bounce) so
 	// File → Save Terminal can still save what is on screen. A reconnect starts fresh.
 	private var lastTranscript = Data()
@@ -148,12 +154,31 @@ final class ThrottledResizeContainer: NSView {
 	private weak var child: NSView?
 	private var pendingApply = false
 	private var lastApply = Date.distantPast
+	// Set at mount time so the dying container can hand ownership back (see below).
+	fileprivate weak var owner: SerialTerminalController?
 
+	// Re-parents the terminal here. The explicit removeFromSuperview (rather than relying
+	// on addSubview's implicit move) and the autoresizing mask are belt and braces for the
+	// tab-to-window move: the new container is sized after the fact, and a terminal that
+	// missed a layout pass would sit at 0×0 — indistinguishable from "gone".
 	func adopt(_ view: NSView) {
-		guard view.superview !== self else { return }
+		if view.superview !== self {
+			view.removeFromSuperview()
+			addSubview(view)
+		}
 		child = view
-		addSubview(view)
-		view.frame = bounds
+		view.autoresizingMask = [.width, .height]
+		if view.frame.size != bounds.size {
+			view.frame = bounds
+		}
+	}
+
+	// Called when this mount goes away. Only the container that still HOLDS the terminal
+	// releases it; one that already lost it to another mount must not touch it.
+	func releaseChildIfOwned() {
+		guard let held = child, held.superview === self else { return }
+		held.removeFromSuperview()
+		child = nil
 	}
 
 	override func layout() {
@@ -190,18 +215,30 @@ final class ThrottledResizeContainer: NSView {
 	}
 }
 
-// Re-parents the controller's single persistent TerminalView; never recreates it.
+// Re-parents the controller's single persistent TerminalView; never recreates it. The
+// newest mount owns it (tearing a tab off makes the window's container before SwiftUI has
+// finished removing the canvas's), and older mounts keep their hands off.
 struct SerialTerminalHost: NSViewRepresentable {
 	let controller: SerialTerminalController
 
 	func makeNSView(context: Context) -> ThrottledResizeContainer {
 		let container = ThrottledResizeContainer()
+		container.owner = controller
+		controller.mountedIn = container
 		container.adopt(controller.terminalView)
 		return container
 	}
 
 	func updateNSView(_ nsView: ThrottledResizeContainer, context: Context) {
-		// Tab moves re-parent the same TerminalView into a fresh container.
+		// An outgoing mount would otherwise steal the terminal back on its way out.
+		guard controller.mountedIn === nsView else { return }
 		nsView.adopt(controller.terminalView)
+	}
+
+	static func dismantleNSView(_ nsView: ThrottledResizeContainer, coordinator: ()) {
+		if nsView.owner?.mountedIn === nsView {
+			nsView.owner?.mountedIn = nil
+		}
+		nsView.releaseChildIfOwned()
 	}
 }

@@ -87,8 +87,8 @@ struct TornTabWindowView: View {
 					terminals.dropController(vm: payload.vm, ref: ref)
 				}
 				if case .ssh(let ref) = payload.tab {
-					// Defensive: tear-out is blocked for ssh tabs, but a leaked one must
-					// still tear down its process.
+					// A session lives exactly as long as the thing showing it, window or
+					// tab: closing this window ends the ssh process.
 					terminals.dropSSHController(vm: payload.vm, ref: ref)
 				}
 			}
@@ -107,8 +107,10 @@ struct TornTabWindowView: View {
 					SerialInspector(
 						vm: vm, ref: ref, viewModel: viewModel,
 						sessions: connection.terminals, profiles: profiles)
-				case .ssh:
-					NoSelectionInspector()   // unreachable: ssh tabs never tear off
+				case .ssh(let ref):
+					SSHSessionInspector(
+						viewModel: viewModel, sessions: connection.terminals,
+						profiles: profiles, vm: vm, ref: ref)
 				}
 			}
 			.formStyle(.grouped)
@@ -129,7 +131,7 @@ struct TornTabWindowView: View {
 		case .ssh(let ref):
 			SSHTabContent(
 				sessions: connection.terminals, profiles: profiles, vm: vm, ref: ref,
-				stillWanted: { true })
+				stillWanted: { true }, adoptOnly: true)
 		}
 	}
 
