@@ -265,16 +265,35 @@ final class VMListViewModel: ObservableObject {
 		presentedError = PresentedError(title: "\(action) failed", message: message)
 	}
 
-	// A transient bottom-right toast; lifetime comes from the user's setting.
-	func pushToast(symbol: String, message: String, tint: Color? = nil) {
-		let toast = MachmanToast(symbol: symbol, message: message, tint: tint)
-		toasts.append(toast)
+	// A bottom-right toast; lifetime comes from the user's setting. A `key` makes it a
+	// named slot: pushing the same key replaces what is showing IN PLACE, so a state that
+	// moves (waiting → ready) reads as one toast changing rather than three piling up.
+	// `spinner` shows an indeterminate indicator instead of the symbol, and `sticky` skips
+	// the timer entirely — for waits that end with another push.
+	func pushToast(
+		symbol: String, message: String, tint: Color? = nil,
+		key: String? = nil, spinner: Bool = false, sticky: Bool = false
+	) {
+		let toast = MachmanToast(
+			symbol: symbol, message: message, tint: tint,
+			key: key, spinner: spinner, sticky: sticky)
+		if let key, let existing = toasts.firstIndex(where: { $0.key == key }) {
+			toasts[existing] = toast
+		} else {
+			toasts.append(toast)
+		}
+		guard !sticky else { return }
 		let stored = UserDefaults.standard.double(forKey: Self.toastSecondsKey)
 		let seconds = stored > 0 ? stored : Self.defaultToastSeconds
 		Task { [weak self] in
 			try? await Task.sleep(for: .seconds(seconds))
 			self?.toasts.removeAll { $0.id == toast.id }
 		}
+	}
+
+	// Retire a named slot without replacing it (the wait ended in nothing worth saying).
+	func dismissToast(key: String) {
+		toasts.removeAll { $0.key == key }
 	}
 
 	func cancelOperation(id: String) {

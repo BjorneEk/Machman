@@ -16,11 +16,25 @@ public struct MachmanToast: Identifiable, Equatable {
 	public var symbol: String
 	public var message: String
 	public var tint: Color?
+	// A named slot rather than one more toast in the pile: pushing the same key replaces
+	// what is showing (waiting → ready), which is how a state that MOVES is reported
+	// without stacking three toasts for one event.
+	public var key: String?
+	// Waiting on something whose end we will hear about: a spinner instead of a symbol,
+	// and no timer — the toast lives until its key is replaced or dismissed.
+	public var spinner: Bool
+	public var sticky: Bool
 
-	public init(symbol: String, message: String, tint: Color? = nil) {
+	public init(
+		symbol: String, message: String, tint: Color? = nil,
+		key: String? = nil, spinner: Bool = false, sticky: Bool = false
+	) {
 		self.symbol = symbol
 		self.message = message
 		self.tint = tint
+		self.key = key
+		self.spinner = spinner
+		self.sticky = sticky
 	}
 }
 
@@ -65,9 +79,16 @@ public struct ToastStack: View {
 		VStack(alignment: .trailing, spacing: 6) {
 			ForEach(toasts) { toast in
 				HStack(spacing: 6) {
-					Image(systemName: toast.symbol)
-						.foregroundStyle(toast.tint.map(AnyShapeStyle.init)
-							?? AnyShapeStyle(.secondary))
+					if toast.spinner {
+						ProgressView()
+							.controlSize(.small)
+							.scaleEffect(0.7)
+							.frame(width: 14, height: 14)
+					} else {
+						Image(systemName: toast.symbol)
+							.foregroundStyle(toast.tint.map(AnyShapeStyle.init)
+								?? AnyShapeStyle(.secondary))
+					}
 					Text(toast.message).font(.callout)
 				}
 				.padding(.horizontal, 12)
