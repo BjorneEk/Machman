@@ -96,4 +96,49 @@ struct SSHReportTests {
 			#expect(vm.ssh?.marker == "machman-abc")
 		}
 	}
+
+	// 1.0.6 keys: what the run achieved, how it got there, what the guest can do.
+	@Test @MainActor func applyRecordsRunOutcomeAndCapabilities() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "sshv2")
+			let vm = try VMConfig(name: "sshv2", memorySize: 1 << 30, cpuCount: 2)
+			#expect(try SSHReport.parse("""
+				SCRIPT_VERSION=2
+				USER=gustaf
+				OS_ID=freebsd
+				OS_VERSION=15.1
+				IP=192.168.64.5
+				STATUS=partial
+				NOTE=sshfs is installed but user mounts are off
+				FAILED_STEPS=mount-setup
+				TRANSPORT=sshfs
+				SSHFS=1
+				SSHFS_VERSION=3.7.3
+				SSHFS_MOUNT_OK=0
+				SSHFS_MOUNTROOT=/mnt/machman
+				""").apply(to: vm, stampedAt: Date()))
+			#expect(vm.ssh?.scriptVersion == 2)
+			#expect(vm.ssh?.guestOSVersion == "15.1")
+			#expect(vm.ssh?.lastAddress == "192.168.64.5")
+			#expect(vm.ssh?.lastRunStatus == "partial")
+			#expect(vm.ssh?.lastRunNote == "sshfs is installed but user mounts are off")
+			#expect(vm.ssh?.lastTransport == "sshfs")
+			#expect(vm.ssh?.sshfsAvailable == true)
+			#expect(vm.ssh?.sshfsMountReady == false)
+			#expect(vm.ssh?.sshfsMountRoot == "/mnt/machman")
+
+			// A v1 report (no STATUS/SSHFS keys) is an older script, not a failure — it
+			// must not silently clear what a v2 run recorded.
+			#expect(try SSHReport.parse("USER=gustaf\nHOSTNAME=bsd")
+				.apply(to: vm, stampedAt: Date()))
+			#expect(vm.ssh?.lastRunStatus == "partial")
+			#expect(vm.ssh?.sshfsAvailable == true)
+
+			// Uninstall does clear them: the guest no longer carries our artifacts.
+			#expect(try SSHReport.parse("UNINSTALLED=1").apply(to: vm, stampedAt: Date()))
+			#expect(vm.ssh?.sshfsAvailable == nil)
+			#expect(vm.ssh?.lastRunStatus == nil)
+			#expect(vm.ssh?.guestOSVersion == nil)
+		}
+	}
 }

@@ -158,7 +158,10 @@ final class DaemonConnection: ObservableObject {
 	// silently DROPS those keys (VMConfig encodes only enumerated keys), so it must be
 	// replaced before it can save configs the new desktop depends on.
 	// 1.0.5: configs gained ssh — same drop-on-rewrite hazard, plus the vm.ssh.* methods.
-	static let oldestCompatibleDaemonVersion = "1.0.5"
+	// 1.0.6: the ssh config grew again (alias, last address, run status, sshfs capability)
+	// and payloads moved to <vmdir>/share — an older daemon drops the new keys on its next
+	// rewrite and regenerates payloads in the old place.
+	static let oldestCompatibleDaemonVersion = "1.0.6"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer

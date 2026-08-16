@@ -123,14 +123,27 @@ directory carrying a generated script that enables sshd in the guest and exchang
 plus a writable `SSHReport` drop-box the guest reports back through; both names are
 reserved mount tags.
 
-`ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, guestHostKey?, reverseState:
-"none"|"pending"|"approved", reversePublicKey?, integrationEnabled?, lastReportAt?,
-address?, addressSource?: "dhcp"|"arp", identityFilePath?}` — absent entirely when SSH was
-never used (or from an older daemon). The persisted half comes from the guest's install
-report; `address`/`addressSource` are a daemon overlay (like `safeRun`), present only
-while the VM runs and discovery has an answer. `identityFilePath` is the server-resolved
-absolute path of the per-VM private key (clients must not derive library paths). Treat
-unknown `reverseState` strings as a state you don't recognize.
+`ssh` (1.0.5+) is `{guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
+reverseState: "none"|"pending"|"approved", reversePublicKey?, integrationEnabled?,
+lastReportAt?, lastRunStatus?, lastRunNote?, lastTransport?, scriptVersion?,
+sshfsAvailable?, sshfsMountReady?, sshfsMountRoot?, alias?, identityFilePath?,
+knownHostsPath?, setupSharePath?, hostUser?, address?, addressSource?: "dhcp"|"arp",
+hostAddressForGuest?, reachability?: "unknown"|"waiting"|"ready"|"unreachable",
+reachabilityDetail?, readySince?}` — absent entirely when SSH was never used (or from an
+older daemon). The persisted half comes from the guest's install report:
+`lastRunStatus` (`"ok"|"partial"|"failed"`, 1.0.6+) plus `lastRunNote` say what the last
+run achieved and why it fell short, `lastTransport` (`"virtiofs"|"sshfs"|"local"`) how the
+guest reached the payload, and `sshfs*` whether the guest can mount host folders over SSH
+(usable only once `reverseState` is `approved` — compute that, don't cache it).
+`alias`, `identityFilePath`, `knownHostsPath`, `setupSharePath` and `hostUser` are
+server-resolved (clients must not derive library paths or naming policy): `alias` is the
+effective `~/.ssh` name, `<vm>.machman` unless the VM's config overrides it, and
+`setupSharePath` is the directory a guest without a virtiofs driver sshfs-mounts to reach
+the payload. `address`/`addressSource`/`hostAddressForGuest`/`reachability*`/`readySince`
+are a daemon overlay (like `safeRun`), present only while the VM runs — `reachability`
+(1.0.6+) is this run's answer to "does the guest's sshd actually respond", never
+persisted. Treat unknown `reverseState`/`reachability` strings as a state you don't
+recognize.
 Absent `devices` = an older daemon: the effective set is the implied per-boot default
 (mac guests: keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network;
 EFI/kernel guests: keyboard, pointer, graphics, audioInput, audioOutput, network, clipboard).
@@ -198,6 +211,12 @@ replace-older prompt. Wire-wise everything above is additive under `apiVersion` 
 drop-on-rewrite hazard as 1.0.4), and `vm.ssh.*` answers `methodNotFound` on older
 daemons/vmhosts — both are why 1.0.5 bumps the floor again. Wire-wise everything above
 remains additive under `apiVersion` 1.
+
+**1.0.6 compatibility note**: the `ssh` config sub-object gained keys (alias, last
+address, last-run status, sshfs capability) with the same drop-on-rewrite hazard, and
+generated installer payloads moved from `<vmdir>/` to `<vmdir>/share/` — an older daemon
+regenerates them in the old place, so the two cannot share a library. Hence the floor
+bump. Wire-wise everything above remains additive under `apiVersion` 1.
 
 ## Safe runs (invisible on the wire except `safeRun`)
 

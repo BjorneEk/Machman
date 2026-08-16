@@ -2,10 +2,10 @@
 //  SSHConfig.swift
 //  MachmanCore
 //
-//  Persisted SSH state (wire 1.0.5): what the guest's install report taught us plus the
+//  Persisted SSH state (wire 1.0.6): what the guest's install report taught us plus the
 //  user's per-VM switches. Absent from disk until SSH is first used (conditional encode) —
-//  and the reason 1.0.5 is the version floor: an older daemon's config rewrite drops the
-//  unknown key.
+//  and the reason 1.0.6 is the version floor: an older daemon's config rewrite drops the
+//  keys it does not know.
 //
 
 import Foundation
@@ -15,6 +15,7 @@ struct SSHConfig: Codable, Equatable {
 	var guestUser: String?
 	var guestHostname: String?
 	var guestOS: String?
+	var guestOSVersion: String?
 	var guestHostKey: String?        // "ssh-ed25519 AAAA…" line from the guest's report
 	var reversePublicKey: String?    // guest's reverse key — public half only
 	// Plain string on disk (the GuestDevice.kind lesson): a value written by a NEWER daemon
@@ -23,6 +24,22 @@ struct SSHConfig: Codable, Equatable {
 	var integrationEnabled: Bool = false
 	var lastReportAt: Date?          // stamped by the host at ingestion
 	var marker: String?              // labels guest/host artifacts; never on the wire
+	// The ~/.ssh alias the user chose; nil means the default "<vm>.machman". Kept across
+	// renames precisely because it was chosen (a default alias follows the name instead).
+	var alias: String?
+	// The last address the guest reported. The managed ~/.ssh file is otherwise the only
+	// memory of it, so a rename — or an alias change — would silently strand the entry.
+	var lastAddress: String?
+	// What the last script run achieved, in the script's own vocabulary (plain strings,
+	// the reverseState lesson: a newer daemon's value round-trips through this one).
+	var lastRunStatus: String?
+	var lastRunNote: String?
+	var lastTransport: String?       // how the guest reached the payload
+	var scriptVersion: Int?
+	// sshfs in the guest: the capability behind mounting host folders without virtiofs.
+	var sshfsAvailable: Bool?
+	var sshfsMountReady: Bool?
+	var sshfsMountRoot: String?
 
 	var reverseStateValue: SSHInfo.ReverseState {
 		guard let reverseState else { return .none }
@@ -35,12 +52,22 @@ struct SSHConfig: Codable, Equatable {
 		case guestUser
 		case guestHostname
 		case guestOS
+		case guestOSVersion
 		case guestHostKey
 		case reversePublicKey
 		case reverseState
 		case integrationEnabled
 		case lastReportAt
 		case marker
+		case alias
+		case lastAddress
+		case lastRunStatus
+		case lastRunNote
+		case lastTransport
+		case scriptVersion
+		case sshfsAvailable
+		case sshfsMountReady
+		case sshfsMountRoot
 	}
 
 	// Tolerant decode: every field optional-or-defaulted so future additions round-trip.
@@ -49,6 +76,7 @@ struct SSHConfig: Codable, Equatable {
 		self.guestUser = try c.decodeIfPresent(String.self, forKey: .guestUser)
 		self.guestHostname = try c.decodeIfPresent(String.self, forKey: .guestHostname)
 		self.guestOS = try c.decodeIfPresent(String.self, forKey: .guestOS)
+		self.guestOSVersion = try c.decodeIfPresent(String.self, forKey: .guestOSVersion)
 		self.guestHostKey = try c.decodeIfPresent(String.self, forKey: .guestHostKey)
 		self.reversePublicKey = try c.decodeIfPresent(String.self, forKey: .reversePublicKey)
 		self.reverseState = try c.decodeIfPresent(String.self, forKey: .reverseState)
@@ -56,6 +84,15 @@ struct SSHConfig: Codable, Equatable {
 			try c.decodeIfPresent(Bool.self, forKey: .integrationEnabled) ?? false
 		self.lastReportAt = try c.decodeIfPresent(Date.self, forKey: .lastReportAt)
 		self.marker = try c.decodeIfPresent(String.self, forKey: .marker)
+		self.alias = try c.decodeIfPresent(String.self, forKey: .alias)
+		self.lastAddress = try c.decodeIfPresent(String.self, forKey: .lastAddress)
+		self.lastRunStatus = try c.decodeIfPresent(String.self, forKey: .lastRunStatus)
+		self.lastRunNote = try c.decodeIfPresent(String.self, forKey: .lastRunNote)
+		self.lastTransport = try c.decodeIfPresent(String.self, forKey: .lastTransport)
+		self.scriptVersion = try c.decodeIfPresent(Int.self, forKey: .scriptVersion)
+		self.sshfsAvailable = try c.decodeIfPresent(Bool.self, forKey: .sshfsAvailable)
+		self.sshfsMountReady = try c.decodeIfPresent(Bool.self, forKey: .sshfsMountReady)
+		self.sshfsMountRoot = try c.decodeIfPresent(String.self, forKey: .sshfsMountRoot)
 	}
 }
 

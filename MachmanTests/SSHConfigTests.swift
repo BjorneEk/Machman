@@ -2,7 +2,7 @@
 //  SSHConfigTests.swift
 //  MachmanTests
 //
-//  The persisted ssh sub-struct (1.0.5): present-key round-trip, absent-key default, the
+//  The persisted ssh sub-struct (1.0.6): present-key round-trip, absent-key default, the
 //  conditional encode that keeps untouched configs byte-identical, and the reset wipe.
 //
 
@@ -26,6 +26,28 @@ struct SSHConfigTests {
 			let loaded = try VMConfig.load(name: "sshvm")
 			#expect(loaded.ssh?.integrationEnabled == true)
 			#expect(loaded.ssh?.reverseStateValue == SSHInfo.ReverseState.none)
+		}
+	}
+
+	// The 1.0.6 additions survive a save/load cycle — the three-site lockstep guard.
+	@Test @MainActor func newFieldsRoundTripThroughDisk() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "sshfields")
+			let vm = try VMConfig(name: "sshfields", memorySize: 1 << 30, cpuCount: 2)
+			var state = SSHConfig()
+			state.alias = "dev"
+			state.lastAddress = "192.168.64.7"
+			state.guestOSVersion = "15.1"
+			state.lastRunStatus = "partial"
+			state.lastRunNote = "user mounts are off"
+			state.lastTransport = "sshfs"
+			state.scriptVersion = 2
+			state.sshfsAvailable = true
+			state.sshfsMountReady = false
+			state.sshfsMountRoot = "/mnt/machman"
+			vm.ssh = state
+			try vm.saveVMConfig()
+			#expect(try VMConfig.load(name: "sshfields").ssh == state)
 		}
 	}
 

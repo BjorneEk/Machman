@@ -796,20 +796,36 @@ public final class LocalMachman: MachmanControlling {
 					guestIndex: guestIndex)
 			}
 		}
-		// Persisted SSH half only; address stays nil here (daemon overlay, like safeRun).
+		// Persisted SSH half plus the paths and names clients must not derive themselves;
+		// address and reachability stay nil here (daemon overlay, like safeRun).
 		let ssh: SSHInfo? = config.ssh.map { state in
 			let keyPath = config.configFilePath(file: "ssh/id_ed25519")
+			// The key's presence is what proves <vmdir>/ssh exists, so known_hosts is
+			// served exactly when something could use it.
+			let hasKey = FileManager.default.fileExists(atPath: keyPath)
 			return SSHInfo(
 				guestUser: state.guestUser,
 				guestHostname: state.guestHostname,
 				guestOS: state.guestOS,
+				guestOSVersion: state.guestOSVersion,
 				guestHostKey: state.guestHostKey,
 				reverseState: state.reverseStateValue,
 				reversePublicKey: state.reversePublicKey,
 				integrationEnabled: state.integrationEnabled,
 				lastReportAt: state.lastReportAt,
-				identityFilePath: FileManager.default.fileExists(atPath: keyPath)
-					? keyPath : nil)
+				lastRunStatus: state.lastRunStatus,
+				lastRunNote: state.lastRunNote,
+				lastTransport: state.lastTransport,
+				scriptVersion: state.scriptVersion,
+				sshfsAvailable: state.sshfsAvailable,
+				sshfsMountReady: state.sshfsMountReady,
+				sshfsMountRoot: state.sshfsMountRoot,
+				alias: state.alias ?? SSHHostConfigWriter.defaultAlias(for: config.name),
+				identityFilePath: hasKey ? keyPath : nil,
+				knownHostsPath: hasKey
+					? config.configFilePath(file: "ssh/known_hosts") : nil,
+				setupSharePath: GuestInstallerWriter.payloadRoot(for: config).path,
+				hostUser: NSUserName())
 		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
 		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.

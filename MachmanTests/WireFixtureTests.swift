@@ -444,23 +444,45 @@ struct WireFixtureTests {
 		#expect(try encode(SSHInfo()) == #"{"reverseState":"none"}"#)
 		let full = SSHInfo(
 			guestUser: "admin", guestHostname: "debs", guestOS: "debian",
-			guestHostKey: "ssh-ed25519 HHHH host",
+			guestOSVersion: "13", guestHostKey: "ssh-ed25519 HHHH host",
 			reverseState: .pending, reversePublicKey: "ssh-ed25519 AAAA guest",
 			integrationEnabled: true,
 			lastReportAt: Date(timeIntervalSince1970: 1_700_000_000),
+			lastRunStatus: "partial", lastRunNote: "sshfs install failed",
+			lastTransport: "virtiofs", scriptVersion: 2,
+			sshfsAvailable: true, sshfsMountReady: false, sshfsMountRoot: "/mnt/machman",
+			alias: "Debian.machman",
+			identityFilePath: "/vms/Debian/ssh/id_ed25519",
+			knownHostsPath: "/vms/Debian/ssh/known_hosts",
+			setupSharePath: "/vms/Debian/share", hostUser: "gustaf",
 			address: "192.168.64.5", addressSource: "dhcp",
-			identityFilePath: "/vms/Debian/ssh/id_ed25519")
+			hostAddressForGuest: "192.168.64.1",
+			reachability: .ready, reachabilityDetail: nil,
+			readySince: Date(timeIntervalSince1970: 1_700_000_060))
 		let expected = #"{"address":"192.168.64.5","addressSource":"dhcp","#
-			+ #""guestHostKey":"ssh-ed25519 HHHH host","#
-			+ #""guestHostname":"debs","guestOS":"debian","guestUser":"admin","#
+			+ #""alias":"Debian.machman","guestHostKey":"ssh-ed25519 HHHH host","#
+			+ #""guestHostname":"debs","guestOS":"debian","guestOSVersion":"13","#
+			+ #""guestUser":"admin","hostAddressForGuest":"192.168.64.1","#
+			+ #""hostUser":"gustaf","#
 			+ #""identityFilePath":"/vms/Debian/ssh/id_ed25519","integrationEnabled":true,"#
-			+ #""lastReportAt":"2023-11-14T22:13:20Z","#
-			+ #""reversePublicKey":"ssh-ed25519 AAAA guest","reverseState":"pending"}"#
+			+ #""knownHostsPath":"/vms/Debian/ssh/known_hosts","#
+			+ #""lastReportAt":"2023-11-14T22:13:20Z","lastRunNote":"sshfs install failed","#
+			+ #""lastRunStatus":"partial","lastTransport":"virtiofs","#
+			+ #""reachability":"ready","readySince":"2023-11-14T22:14:20Z","#
+			+ #""reversePublicKey":"ssh-ed25519 AAAA guest","reverseState":"pending","#
+			+ #""scriptVersion":2,"setupSharePath":"/vms/Debian/share","#
+			+ #""sshfsAvailable":true,"sshfsMountReady":false,"#
+			+ #""sshfsMountRoot":"/mnt/machman"}"#
 		#expect(try encode(full) == expected)
 		#expect(try decode(SSHInfo.self, expected) == full)
-		// Unknown future reverse states degrade, never fail.
+		// Unknown future reverse states and reachabilities degrade, never fail.
 		#expect(try decode(SSHInfo.self, #"{"reverseState":"futureThing"}"#).reverseState
 			== .unknown)
+		#expect(try decode(SSHInfo.self, #"{"reachability":"futureThing"}"#).reachability
+			== .unknown)
+		// A 1.0.5 payload still decodes: the new keys are simply absent.
+		let old = #"{"guestUser":"admin","reverseState":"none"}"#
+		#expect(try decode(SSHInfo.self, old).alias == nil)
 	}
 
 	@Test func vmInfoSSHRoundTrip() throws {

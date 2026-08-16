@@ -51,7 +51,10 @@ public struct SSHHostConfigWriter {
 	private var userConfig: URL { sshDir.appendingPathComponent("config") }
 	private var authorizedKeys: URL { sshDir.appendingPathComponent("authorized_keys") }
 
-	public static func alias(for vmName: String) -> String { "\(vmName).machman" }
+	// The alias a VM gets unless its config names another one (SSHConfig.alias).
+	public static func defaultAlias(for vmName: String) -> String { "\(vmName).machman" }
+
+	public static func alias(for vmName: String) -> String { defaultAlias(for: vmName) }
 
 	// MARK: - Whole-state regeneration
 
