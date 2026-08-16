@@ -31,21 +31,28 @@ enum SSHCommand {
 			"-o", "ServerAliveInterval=15",
 			"-o", "ServerAliveCountMax=3",
 		]
-		if let knownHosts = ssh.knownHostsPath {
-			arguments += ["-o", "UserKnownHostsFile=\(knownHosts)"]
-			arguments += ["-o", "HostKeyAlias=\(ssh.alias ?? vm.name)"]
-			// A reported host key means we know exactly who should answer; without one
-			// (a partial run, an older daemon) accept-new still beats a TOFU prompt in a
-			// terminal the user did not ask to be prompted in.
+		// Strict checking only when there is a pin to check against: the daemon serves
+		// knownHostsPath once the file actually exists, and a host key means we know who
+		// should answer. Otherwise accept-new — better than a TOFU prompt in a terminal
+		// the user did not ask to be prompted in, and it cannot lock them out.
+		if let knownHosts = ssh.knownHostsPath, ssh.guestHostKey != nil {
 			arguments += [
-				"-o",
-				ssh.guestHostKey == nil
-					? "StrictHostKeyChecking=accept-new" : "StrictHostKeyChecking=yes",
+				"-o", quotedOption("UserKnownHostsFile", path: knownHosts),
+				"-o", "HostKeyAlias=\(ssh.alias ?? vm.name)",
+				"-o", "StrictHostKeyChecking=yes",
 			]
 		} else {
 			arguments += ["-o", "StrictHostKeyChecking=accept-new"]
 		}
 		return arguments + ["\(user)@\(address)"]
+	}
+
+	// ssh parses -o values with its own config parser, and UserKnownHostsFile takes a
+	// SPACE-SEPARATED LIST — so an unquoted path under "Application Support" becomes three
+	// filenames that do not exist, and strict checking then fails with "no host key is
+	// known" (measured). Quoting inside the value is what ssh_config expects.
+	private static func quotedOption(_ key: String, path: String) -> String {
+		"\(key)=\"\(path)\""
 	}
 }
 

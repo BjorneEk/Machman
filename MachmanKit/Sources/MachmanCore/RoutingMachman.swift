@@ -312,7 +312,8 @@ public final class RoutingMachman: MachmanControlling {
 					// The guest just came up (boot or reboot): (re)start discovery.
 					self.startSSHDiscovery(host)
 				}
-				if case .sshChanged = event {
+				if case .sshChanged(let changed) = event {
+					self.reconcileReverseKey(vm: changed)
 					if let host = self.host(withID: id),
 						host.sshAnswer == nil || host.sshReach == .unknown {
 						// A fresh report can mean sshd just appeared — probe again now.
@@ -334,6 +335,20 @@ public final class RoutingMachman: MachmanControlling {
 		hosted.values.first { $0.identity.id == id }
 	}
 
+	// Host-side access follows the CURRENT key, always. A guest that re-runs the setup
+	// script after an uninstall mints a fresh reverse key, which drops approval back to
+	// pending — and the line installed for the old key has to go with it, or that key
+	// keeps its way in with nothing in the UI offering to revoke it.
+	private func reconcileReverseKey(vm name: String) {
+		guard let writer = sshHostConfig, let marker = existingSSHMarker(name) else { return }
+		Task { [weak self] in
+			guard let self,
+				let ssh = (try? await self.target(name).vm(named: name))?.ssh else { return }
+			guard ssh.reverseState != .approved else { return }
+			try? writer.setReverseKey(nil, marker: marker, vmName: name)
+		}
+	}
+
 	// Bounded per-VM resolver in two phases, on one task keyed by identity.id (so
 	// safe-save re-keying can't cross wires) and cancelled in hostGone:
 	//
@@ -348,14 +363,20 @@ public final class RoutingMachman: MachmanControlling {
 		guard let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
 		let name = host.identity.name
-		let wantsSSH = registry.vm(named: name)?.config.ssh?.guestUser != nil
-		host.sshReach = wantsSSH ? .waiting : .unknown
+		let client = host.client
+		host.sshReach = .unknown
 		host.sshReachDetail = nil
 		host.sshReadySince = nil
-		if wantsSSH {
-			registry.events.emit(.sshChanged(vm: name))
-		}
 		host.sshDiscoveryTask = Task { [weak self] in
+			// Whether this guest has SSH set up must be read from the process that OWNS
+			// the config — the vmhost. The daemon's registry copy was parsed at scan time
+			// and never sees the guest's first report, so asking it left readiness stuck
+			// at "unknown" for exactly the run where the user just ran the script.
+			let wantsSSH = (try? await client.vm(named: name))?.ssh?.guestUser != nil
+			if wantsSSH, let self, let host = self.host(withID: id) {
+				host.sshReach = .waiting
+				self.registry.events.emit(.sshChanged(vm: name))
+			}
 			var attempt = 0
 			var address: String?
 			while !Task.isCancelled, address == nil {

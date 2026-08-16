@@ -801,9 +801,12 @@ public final class LocalMachman: MachmanControlling {
 		// address and reachability stay nil here (daemon overlay, like safeRun).
 		let ssh: SSHInfo? = config.ssh.map { state in
 			let keyPath = config.configFilePath(file: "ssh/id_ed25519")
-			// The key's presence is what proves <vmdir>/ssh exists, so known_hosts is
-			// served exactly when something could use it.
 			let hasKey = FileManager.default.fileExists(atPath: keyPath)
+			// Served only once the pin FILE exists: clients turn strict host-key checking
+			// on when they get this path, and a path to a file that is not there yet
+			// would lock every session out instead of falling back to accept-new.
+			let pinPath = SSHSetupInstaller.knownHostsPath(for: config)
+			let hasPin = FileManager.default.fileExists(atPath: pinPath)
 			return SSHInfo(
 				guestUser: state.guestUser,
 				guestHostname: state.guestHostname,
@@ -823,10 +826,14 @@ public final class LocalMachman: MachmanControlling {
 				sshfsMountRoot: state.sshfsMountRoot,
 				alias: config.effectiveSSHAlias,
 				identityFilePath: hasKey ? keyPath : nil,
-				knownHostsPath: hasKey
-					? SSHSetupInstaller.knownHostsPath(for: config) : nil,
+				knownHostsPath: hasPin ? pinPath : nil,
 				setupSharePath: GuestInstallerWriter.payloadRoot(for: config).path,
-				hostUser: NSUserName())
+				hostUser: NSUserName(),
+				// The gateway from the last address the guest reported, so the BSD setup
+				// guide has a real target even while the VM is stopped. The daemon
+				// overwrites this with the live one when discovery has an answer.
+				hostAddressForGuest: state.lastAddress
+					.flatMap { SSHDiscovery.hostAddress(seenFrom: $0) })
 		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
 		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.
