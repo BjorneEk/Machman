@@ -55,18 +55,20 @@ struct DiskInspector: View {
 				}
 				Section("Actions") {
 					if disk.type == .storage && disk.owned != false {
-						LabeledContent("Grow") {
+						LabeledContent("Grow by") {
 							HStack {
 								// Typed like the Memory field (ByteSize): "8g", "512m",
 								// "8 GB" — a stepper could only offer one fixed increment.
-								TextField("+8 GB", text: $growText)
-									.textFieldStyle(.plain)
-									.multilineTextAlignment(.trailing)
-									.frame(width: 90)
+								// Bordered on purpose: a plain field in a value position
+								// reads as a label, and this one is meant to be typed in.
+								TextField("8 GB", text: $growText)
+									.frame(width: 110)
 									.onChange(of: growText) {
-										// Permissive while typing; parsed on apply.
+										// Permissive while typing; parsed on apply. "+" is
+										// tolerated (people write "+8 GB") and dropped
+										// before parsing.
 										let filtered = String(growText
-											.filter { "0123456789.,kmgbKMGB ".contains($0) }
+											.filter { "+0123456789.,kmgbKMGB ".contains($0) }
 											.prefix(12))
 										if filtered != growText { growText = filtered }
 									}
@@ -137,9 +139,12 @@ struct DiskInspector: View {
 	}
 
 	// How much to add, in the Memory field's vocabulary: "8g", "512m", "8 GB" — and a bare
-	// number is bytes, which is why the row spells the resulting size out.
+	// number is bytes, which is why the row spells the resulting size out. A leading "+"
+	// is dropped first: ByteSize.parse takes digits only, and "grow by" invites one.
 	private var growBytes: UInt64? {
-		guard let parsed = ByteSize.parse(growText), parsed > 0 else { return nil }
+		let typed = growText.trimmingCharacters(in: .whitespaces)
+			.drop { $0 == "+" }
+		guard let parsed = ByteSize.parse(String(typed)), parsed > 0 else { return nil }
 		return parsed
 	}
 
