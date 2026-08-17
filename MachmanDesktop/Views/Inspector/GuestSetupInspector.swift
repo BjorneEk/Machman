@@ -59,6 +59,12 @@ struct GuestSetupInspector: View {
 	private var statusSection: some View {
 		Section("Status") {
 			LabeledContent("Install status") { statusLabel }
+			// Payloads are ephemeral: served while the VM runs, regenerated at start.
+			LabeledContent("Payload") {
+				Text(vm.state.isRunning
+					? "served in the share" : "appears at boot — start the VM")
+					.foregroundStyle(.secondary)
+			}
 			if let setup, installed {
 				if let os = setup.guestOS {
 					let version = setup.guestOSVersion.map { " \($0)" } ?? ""

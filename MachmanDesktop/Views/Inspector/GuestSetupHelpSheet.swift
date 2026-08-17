@@ -173,23 +173,25 @@ struct GuestSetupHelpSheet: View {
 	private var bsdSteps: some View {
 		intro("FreeBSD and OpenBSD have no virtiofs driver, so the setup folder is mounted "
 			+ "over SSH instead — then the same script runs.")
-		step(1, "Turn on Remote Login on this Mac (System Settings → General → Sharing).")
-		step(2, "Install sshfs in the guest:")
+		step(1, "Start the VM — the payload is generated fresh at boot and served only "
+			+ "while it runs.")
+		step(2, "Turn on Remote Login on this Mac (System Settings → General → Sharing).")
+		step(3, "Install sshfs in the guest:")
 		command("pkg install fusefs-sshfs")
-		note("OpenBSD: pkg_add sshfs-fuse — and skip step 3; fuse is already in its kernel.")
-		step(3, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
+		note("OpenBSD: pkg_add sshfs-fuse — and skip step 4; fuse is already in its kernel.")
+		step(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
 		command("kldstat -q -m fusefs || kldload fusefs")
-		step(4, "Mount Machman's setup folder. This asks for your Mac account password — "
+		step(5, "Mount Machman's setup folder. This asks for your Mac account password — "
 			+ "once, because keys are what the script is about to set up:")
 		command("mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
 			+ "\(mountPoint) -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
-		note("Same folder Linux mounts over virtiofs, same path — so step 5 is the same "
+		note("Same folder Linux mounts over virtiofs, same path — so step 6 is the same "
 			+ "command on every guest.")
 		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
 			note("Boot the VM once so Machman can fill in this Mac's address and the real "
 				+ "path above.")
 		}
-		step(5, "Run the installer:")
+		step(6, "Run the installer:")
 		command(GuestSetupInstallerInfo.runCommand())
 		note("Mounting as root needs no system changes. The script keeps the fuse driver "
 			+ "across reboots by itself, and can allow user mounts later if you ask it to.")
