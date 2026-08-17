@@ -111,21 +111,25 @@ mounts: [{id, path, tag, safe, enabled?, kind?, automounted?}], boot: {mode: "ef
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
-devices?, nestedVirtualization?, ssh?}`.
+devices?, nestedVirtualization?, ssh?, setup?}`.
 
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
 displayHeightPixels?, displayPixelsPerInch?, sharesClipboard?, unavailable?}`; kinds:
 `keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network, clipboard,
-entropy, rosetta, consoleLoginInstaller, sshInstaller` (treat unknown kinds as a device
-you don't recognize). One device per kind. `consoleLoginInstaller` (additive, macOS boots
-only): a read-only directory share carrying a generated script the guest runs to install
-login prompts on the VM's consoles; older daemons preserve it in config and skip it at
-boot with a warning. `sshInstaller` (1.0.5+, any boot mode): a read-only `SSHSetup` share
-directory carrying a generated script that enables sshd in the guest and exchanges keys,
-plus a writable `SSHReport` drop-box the guest reports back through; both names are
-reserved mount tags. Guests mount the share at `/mnt/machman/share` (1.0.6+ — virtiofs, or
-sshfs of `ssh.setupSharePath` where there is no driver, same path either way); host
-folders mounted over SSH land under `/mnt/machman/mounts`.
+entropy, rosetta, consoleLoginInstaller, sshInstaller, guestSetup` (treat unknown kinds
+as a device you don't recognize). One device per kind. `guestSetup` (1.0.7+, any boot
+mode) is THE installer: a read-only `GuestSetup` share directory carrying one generated
+script that sets up everything guest-side — console logins, kernel console output, SSH,
+guest→host SSH, sshfs, and boot automounts — plus a writable `GuestReport` drop-box the
+guest reports back through. It supersedes `consoleLoginInstaller` and `sshInstaller`:
+1.0.7 daemons collapse those into one `guestSetup` on config load and MAP them onto it
+in `vm.device.add`/`remove`, so old clients keep working; all five directory names
+(`GuestSetup`, `GuestReport`, and the legacy `LoginInstaller`/`SSHSetup`/`SSHReport`)
+are reserved mount tags. Guests mount the share at `/mnt/machman/share` (1.0.6+ —
+virtiofs, or sshfs of `ssh.setupSharePath` where there is no driver, same path either
+way); sshfs-kind host folders land under `/mnt/machman/mounts`, and the script's own
+state lives at `/var/lib/machman/state.env` (Linux) or `/var/db/machman/state.env`
+(BSDs, macOS).
 
 `ssh` (1.0.5+) is `{configured?, guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
 reverseState: "none"|"pending"|"approved"|"denied", reversePublicKey?, integrationEnabled?,
@@ -152,6 +156,20 @@ are a daemon overlay (like `safeRun`), present only while the VM runs — `reach
 (1.0.6+) is this run's answer to "does the guest's sshd actually respond", never
 persisted. Treat unknown `reverseState`/`reachability` strings as a state you don't
 recognize.
+`setup` (1.0.7+) is `{installed?, guestOS?, guestOSFamily?, guestOSVersion?,
+guestInit?, lastReportAt?, scriptVersion?, currentScriptVersion?, lastRunStatus?,
+lastRunNote?, lastTransport?, errors?: [{step, message}], features?: [{id, available,
+reason?, configured, detail?}], consoles?: [{device, login, kernelConsole?}],
+automounts?: [{kind, target, path}]}` — the unified installer's report, absent when the
+installer was never used (or from an older daemon). Feature `id`s are plain strings
+(`console, kernelConsole, ssh, reverseSSH, sshfs, virtiofsAutomount, sshfsAutomount` —
+render unknown ids verbatim), `login` is `active|active-auto|configured|none|missing`,
+and automount `kind` is a mount kind. `currentScriptVersion` is the script version the
+serving app ships (server-resolved) — greater than `scriptVersion` means a re-run
+updates the guest. `mounts[].kind` (1.0.7+, `"virtiofs"` when absent) says how a mount
+reaches the guest; `mounts[].automounted` reflects the report (the one share automount
+covers every virtiofs mount; sshfs mounts match by tag).
+
 Absent `devices` = an older daemon: the effective set is the implied per-boot default
 (mac guests: keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network;
 EFI/kernel guests: keyboard, pointer, graphics, audioInput, audioOutput, network, clipboard).
@@ -228,6 +246,14 @@ address, last-run status, sshfs capability) with the same drop-on-rewrite hazard
 generated installer payloads moved from `<vmdir>/` to `<vmdir>/share/` — an older daemon
 regenerates them in the old place, so the two cannot share a library. Hence the floor
 bump. Wire-wise everything above remains additive under `apiVersion` 1.
+
+**1.0.7 compatibility note**: the two installer devices collapse into `guestSetup` —
+configs migrate on load, so an older daemon neither understands the migrated kind nor
+keeps the new `setup` sub-object and per-mount `kind` through its rewrite, and it would
+regenerate the superseded `LoginInstaller`/`SSHSetup`/`SSHReport` payload dirs beside the
+new `GuestSetup`/`GuestReport` ones. Hence the floor bump. Wire-wise everything above
+remains additive under `apiVersion` 1 (`vm.mount.setKind`, `vm.setup.reset`,
+`setupChanged`, `VMInfo.setup`, `mounts[].kind/automounted`).
 
 ## Safe runs (invisible on the wire except `safeRun`)
 
