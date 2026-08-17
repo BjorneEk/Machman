@@ -50,7 +50,7 @@ struct GuestSetupInspector: View {
 			}
 		}
 		.sheet(isPresented: $showGuide) {
-			SSHHelpSheet(vm: vm)
+			GuestSetupHelpSheet(vm: vm)
 		}
 	}
 

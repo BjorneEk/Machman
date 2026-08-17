@@ -48,7 +48,7 @@ struct SerialInspector: View {
 			}
 		}
 		.sheet(isPresented: $showSetupGuide) {
-			ConsoleHelpSheet(mode: vm.boot.mode, guestIndex: guestIndex)
+			GuestSetupHelpSheet(vm: vm)
 		}
 	}
 

@@ -1,23 +1,23 @@
 //
-//  SSHHelpSheet.swift
+//  GuestSetupHelpSheet.swift
 //  MachmanDesktop
 //
-//  The SSH Setup guide: four tabs, and a hard split between them. Linux / macOS / BSD are
-//  STEPS — do this, then this — and nothing else; everything explanatory lives in Info, so
-//  a user following the guide is never reading past the next command. How commands get
-//  root is one choice at the top of the page (sudo / doas / root) applied to every command
-//  below it: FreeBSD base ships neither sudo nor doas, OpenBSD ships doas, most Linux ships
-//  sudo, and a root console needs none — so the guide adapts instead of assuming.
+//  The Guest Setup guide (merges the old Console and SSH sheets): four tabs, and a hard
+//  split between them. Linux / macOS / BSD are STEPS — do this, then this — and nothing
+//  else; everything explanatory lives in Info, so a user following the guide is never
+//  reading past the next command. How commands get root is one choice at the top of the
+//  page (sudo / doas / root) applied to every command below it: FreeBSD base ships
+//  neither sudo nor doas, OpenBSD ships doas, most Linux ships sudo, and a root console
+//  needs none — so the guide adapts instead of assuming.
 //
-//  ConsoleHelpSheet's structure otherwise: fixed frame (sheets must not renegotiate
-//  layout) and the +20% type scale.
+//  Fixed frame on purpose (sheets must not renegotiate layout) and the +20% type scale.
 //
 
 import SwiftUI
 import MachmanUI
 import MachmanAPI
 
-struct SSHHelpSheet: View {
+struct GuestSetupHelpSheet: View {
 	let vm: VMInfo
 	@Environment(\.dismiss) private var dismiss
 	@State private var tab: GuestTab
@@ -48,9 +48,13 @@ struct SSHHelpSheet: View {
 	private static let textSize: CGFloat = 15.5
 	private static let smallSize: CGFloat = 13
 
-	// macOS guests never see the Linux/BSD paths, and vice versa.
+	// macOS guests never see the Linux/BSD paths; a kernel boot IS Linux.
 	private var tabs: [GuestTab] {
-		vm.boot.mode == .macOS ? [.macOS, .info] : [.linux, .bsd, .info]
+		switch vm.boot.mode {
+		case .macOS: return [.macOS, .info]
+		case .linuxKernel: return [.linux, .info]
+		case .efi: return [.linux, .bsd, .info]
+		}
 	}
 
 	// FreeBSD/OpenBSD lead with doas (neither ships sudo in base); macOS has no doas.
@@ -69,10 +73,10 @@ struct SSHHelpSheet: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
 			HStack(spacing: 8) {
-				Image(systemName: MachmanSymbols.deviceSSHSetup)
+				Image(systemName: MachmanSymbols.deviceGuestSetup)
 					.font(.system(size: 24))
 					.foregroundStyle(.secondary)
-				Text("SSH Setup")
+				Text("Guest Setup")
 					.font(.system(size: Self.titleSize, weight: .semibold))
 				Spacer()
 			}
@@ -82,8 +86,7 @@ struct SSHHelpSheet: View {
 			.pickerStyle(.segmented)
 			.labelsHidden()
 			// One choice for the whole page, stated once at the top: every command below
-			// follows it. Guests differ — FreeBSD base has neither sudo nor doas, OpenBSD
-			// has doas, a root console needs nothing.
+			// follows it.
 			if tab != .info {
 				HStack(spacing: 10) {
 					Text("Run commands as")
@@ -114,8 +117,9 @@ struct SSHHelpSheet: View {
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			Divider()
 			HStack(alignment: .firstTextBaseline) {
-				Text("The script runs inside the virtual machine. On this Mac, Machman "
-					+ "only touches ~/.ssh — and only with your confirmation.")
+				Text("The script runs inside the virtual machine and asks before every "
+					+ "change. On this Mac, Machman only touches ~/.ssh — and only with "
+					+ "your confirmation.")
 					.font(.system(size: Self.smallSize))
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
@@ -125,8 +129,8 @@ struct SSHHelpSheet: View {
 			}
 		}
 		.padding(22)
-		// FIXED size on purpose (ConsoleHelpSheet lesson): a flexible ScrollView inside a
-		// sheet makes the AppKit hosting view renegotiate during layout.
+		// FIXED size on purpose: a flexible ScrollView inside a sheet makes the AppKit
+		// hosting view renegotiate during layout.
 		.frame(width: 560, height: 620)
 	}
 
@@ -134,23 +138,27 @@ struct SSHHelpSheet: View {
 
 	@ViewBuilder
 	private var linuxSteps: some View {
-		step(1, "Add (+) → Installers → SSH Setup, then boot the guest.")
+		step(1, "Add (+) → Installers → Guest Setup, then boot the guest.")
 		step(2, "Mount the share and run the script:")
-		command(GuestPaths.mountShareCommand + " && " + SSHSetupInfo.runCommand())
+		command(GuestPaths.mountShareCommand + " && " + GuestSetupInstallerInfo.runCommand())
+		note("It asks per feature — console logins, kernel boot output, SSH, boot "
+			+ "automounts — and re-running it later reconfigures.")
 		step(3, "Undo it later:")
-		command(SSHSetupInfo.runCommand() + " --uninstall")
+		command(GuestSetupInstallerInfo.runCommand() + " --uninstall")
 	}
 
 	// MARK: - macOS guest (steps only)
 
 	@ViewBuilder
 	private var macOSSteps: some View {
-		step(1, "Add (+) → Installers → SSH Setup, then boot the guest — the share "
+		step(1, "Add (+) → Installers → Guest Setup, then boot the guest — the share "
 			+ "automounts (macOS 13+).")
 		step(2, "In the guest's Terminal, run the script:")
-		command(SSHSetupInfo.runFromAutomountCommand)
+		command(GuestSetupInstallerInfo.runFromAutomountCommand)
+		note("Volume missing (macOS 12 guests)? "
+			+ ConsoleLoginInstallerInfo.fallbackMountCommand)
 		step(3, "Undo it later:")
-		command(SSHSetupInfo.runFromAutomountCommand + " --uninstall")
+		command(GuestSetupInstallerInfo.runFromAutomountCommand + " --uninstall")
 	}
 
 	// MARK: - BSD (steps only — no virtiofs driver, so the payload arrives over SSH)
@@ -182,7 +190,7 @@ struct SSHHelpSheet: View {
 				+ "path above.")
 		}
 		step(5, "Run the installer:")
-		command(SSHSetupInfo.runCommand())
+		command(GuestSetupInstallerInfo.runCommand())
 		note("Mounting as root needs no system changes. The script keeps the fuse driver "
 			+ "across reboots by itself, and can allow user mounts later if you ask it to.")
 	}
@@ -192,35 +200,46 @@ struct SSHHelpSheet: View {
 	@ViewBuilder
 	private var infoPage: some View {
 		sectionTitle("Where the details live")
-		intro("The Network device's inspector carries this guest's address, a ready-to-paste "
-			+ "ssh command, and the ~/.ssh alias.")
+		intro("The Guest Setup inspector shows the report: install status, per-feature "
+			+ "state, and errors. SSH specifics (address, alias, guest → Mac approval) "
+			+ "live in the SSH section.")
 		sectionTitle("What the script does")
-		bullet("Enables the guest's SSH server and installs this Mac's key for one user.")
+		bullet("One script for everything guest-side: console logins, kernel boot output, "
+			+ "SSH, guest → host SSH, sshfs, and boot automounts.")
+		bullet("Probes before offering: a feature the guest cannot do is skipped with the "
+			+ "reason, never a failure.")
 		bullet("Asks first, always: it prints the whole plan, then does it. Run it with -n "
 			+ "to see that plan and change nothing.")
-		bullet("Reports back what it managed — including what it could not do, which the "
-			+ "SSH Setup inspector then shows.")
+		bullet("Remembers its choices in the guest, so re-running offers reconfiguration "
+			+ "and repairs older versions.")
 		sectionTitle("Options")
 		optionRow("-n, --dry-run", "print the plan and exit")
-		optionRow("-v, --verbose", "narrate every decision and command")
 		optionRow("-y, --yes", "never ask; take the defaults")
 		optionRow("--user <name>", "set SSH up for this user")
+		optionRow("--consoles \"…\"", "logins on exactly these consoles")
+		optionRow("--kernel-console", "send kernel boot messages to a console")
 		optionRow("--two-way", "also configure guest → host SSH")
 		optionRow("--sshfs", "install sshfs (implies --two-way)")
+		optionRow("--automount-virtiofs", "mount the share at boot")
+		optionRow("--automount-sshfs", "mount sshfs folders at boot")
 		optionRow("--install", "install missing packages")
 		optionRow("--uninstall", "remove everything it installed")
 		note("Every question the script can ask has a flag, so the same script runs "
 			+ "unattended.")
-		sectionTitle("Two-way and sshfs")
-		intro("--two-way lets the guest ssh back to this Mac; approve the key in the "
-			+ "Network inspector before it works. sshfs rides that link, so a guest can "
-			+ "mount host folders without virtiofs.")
+		sectionTitle("Consoles")
+		intro("Linux with systemd usually gives the first console a login on its own; the "
+			+ "script verifies, covers the rest, and can put kernel boot messages on one. "
+			+ "OpenBSD has no virtio-console driver — the script says so and moves on.")
+		sectionTitle("Automounts")
+		intro("The share is one fstab line (every mount is a folder inside it); sshfs "
+			+ "folders ride the guest → host link, so approve the key in the SSH section "
+			+ "before they connect.")
 		sectionTitle("Undoing it")
-		intro("--uninstall removes what the script installed in the guest; “Reset SSH "
-			+ "State” in this inspector forgets the Mac side.")
+		intro("--uninstall removes what the script installed in the guest; “Reset Setup "
+			+ "State” in the inspector forgets the report on the Mac side.")
 	}
 
-	// MARK: - Building blocks (ConsoleHelpSheet vocabulary)
+	// MARK: - Building blocks
 
 	private func intro(_ text: String) -> some View {
 		Text(text)
@@ -248,7 +267,7 @@ struct SSHHelpSheet: View {
 		HStack(alignment: .firstTextBaseline, spacing: 8) {
 			Text(flag)
 				.font(.system(size: Self.smallSize, design: .monospaced))
-				.frame(width: 130, alignment: .leading)
+				.frame(width: 160, alignment: .leading)
 			Text(meaning)
 				.font(.system(size: Self.smallSize))
 				.foregroundStyle(.secondary)
