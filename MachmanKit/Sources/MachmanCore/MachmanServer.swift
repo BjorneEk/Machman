@@ -151,7 +151,7 @@ public final class MachmanServer {
 				reply(client, id, RPCEmpty())
 			case .mountAdd:
 				let p: RPCParams.AddMount = try params(line)
-				try await api.addMount(vm: p.name, path: p.path, tag: p.tag)
+				try await api.addMount(vm: p.name, path: p.path, tag: p.tag, kind: p.kind)
 				reply(client, id, RPCEmpty())
 			case .mountRemove:
 				let p: RPCParams.RemoveMount = try params(line)
@@ -289,6 +289,13 @@ public final class MachmanServer {
 			case .sshReset:
 				let p: RPCParams.Name = try params(line)
 				reply(client, id, try await api.resetSSH(vm: p.name))
+			case .mountSetKind:
+				let p: RPCParams.SetMountKind = try params(line)
+				reply(client, id, try await api.setMountKind(
+					vm: p.name, mountID: p.mountID, kind: p.kind))
+			case .setupReset:
+				let p: RPCParams.Name = try params(line)
+				reply(client, id, try await api.resetSetup(vm: p.name))
 			case .hostOperations:
 				reply(client, id, try await api.operations())
 			case .operationCancel:

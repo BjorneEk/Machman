@@ -849,10 +849,10 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	func addMount(_ name: String, path: String, tag: String) {
+	func addMount(_ name: String, path: String, tag: String, kind: String? = nil) {
 		Task { [weak self] in
 			do {
-				try await self?.api.addMount(vm: name, path: path, tag: tag)
+				try await self?.api.addMount(vm: name, path: path, tag: tag, kind: kind)
 				self?.pushToast(
 					symbol: MachmanSymbols.mount, message: "Added mount \u{201C}\(tag)\u{201D}")
 			} catch {

@@ -432,6 +432,15 @@ struct WireFixtureTests {
 		#expect(try encode(RPCParams.SetMountTag(
 			name: "Debian", mountID: "m1", tag: "shared"))
 			== #"{"mountID":"m1","name":"Debian","tag":"shared"}"#)
+		#expect(try encode(RPCParams.SetMountKind(
+			name: "Debian", mountID: "m1", kind: MountKind.sshfs))
+			== #"{"kind":"sshfs","mountID":"m1","name":"Debian"}"#)
+		// AddMount without a kind stays byte-identical to the 1.0.6 shape.
+		#expect(try encode(RPCParams.AddMount(name: "Debian", path: "/x", tag: "t"))
+			== #"{"name":"Debian","path":"/x","tag":"t"}"#)
+		#expect(try encode(RPCParams.AddMount(
+			name: "Debian", path: "/x", tag: "t", kind: MountKind.sshfs))
+			== #"{"kind":"sshfs","name":"Debian","path":"/x","tag":"t"}"#)
 		#expect(try encode(RPCParams.RenameKernel(
 			name: "Debian", path: "/k/kernel/old/Image", tag: "new"))
 			== #"{"name":"Debian","path":"/k/kernel/old/Image","tag":"new"}"#)

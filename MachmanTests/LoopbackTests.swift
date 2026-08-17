@@ -162,6 +162,16 @@ final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return vm
 	}
+	func setMountKind(vm name: String, mountID: String, kind: String) async throws -> VMInfo {
+		var vm = try get(name)
+		guard let index = vm.mounts.firstIndex(where: { $0.id == mountID }) else {
+			throw MachmanError(code: .notFound, message: "no mount '\(mountID)' on \(name)")
+		}
+		vm.mounts[index].kind = kind
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
 	func setSSH(
 		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
@@ -181,6 +191,12 @@ final class StubMachman: MachmanControlling {
 	func resetSSH(vm name: String) async throws -> VMInfo {
 		var vm = try get(name)
 		vm.ssh = nil
+		vms[name] = vm
+		return vm
+	}
+	func resetSetup(vm name: String) async throws -> VMInfo {
+		var vm = try get(name)
+		vm.setup = nil
 		vms[name] = vm
 		return vm
 	}
@@ -231,7 +247,12 @@ final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return vm
 	}
-	func addMount(vm name: String, path: String, tag: String) async throws { _ = try get(name) }
+	func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
+		var vm = try get(name)
+		vm.mounts.append(MountInfo(
+			id: UUID().uuidString, path: path, tag: tag, kind: kind))
+		vms[name] = vm
+	}
 	func removeMount(vm name: String, mountID: String) async throws { _ = try get(name) }
 	func setKernelBoot(vm name: String, enabled: Bool) async throws { _ = try get(name) }
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
@@ -440,6 +461,29 @@ struct LoopbackTests {
 		try await client.refreshSSH(vm: "Debian")
 		let cleared = try await client.resetSSH(vm: "Debian")
 		#expect(cleared.ssh == nil)
+	}
+
+	@Test @MainActor func mountKindAndSetupResetRoundTrip() async throws {
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var info = StubMachman.makeInfo("Debian")
+		info.setup = GuestSetupInfo(installed: true, guestOS: "debian")
+		stub.vms["Debian"] = info
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "setup-loop")
+
+		try await client.addMount(vm: "Debian", path: "/x/docs", tag: "docs", kind: nil)
+		let mountID = try await client.vm(named: "Debian").mounts.last?.id ?? ""
+		let switched = try await client.setMountKind(
+			vm: "Debian", mountID: mountID, kind: MountKind.sshfs)
+		#expect(switched.mounts.last?.kind == MountKind.sshfs)
+
+		#expect(try await client.vm(named: "Debian").setup?.installed == true)
+		let cleared = try await client.resetSetup(vm: "Debian")
+		#expect(cleared.setup == nil)
 	}
 
 	@Test @MainActor func wireRoundTrip() async throws {

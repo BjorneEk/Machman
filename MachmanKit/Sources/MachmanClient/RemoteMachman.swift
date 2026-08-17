@@ -112,8 +112,9 @@ public final class RemoteMachman: MachmanControlling {
 			expecting: VMInfo.self)
 	}
 
-	public func addMount(vm name: String, path: String, tag: String) async throws {
-		try await void(.mountAdd, RPCParams.AddMount(name: name, path: path, tag: tag))
+	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
+		try await void(
+			.mountAdd, RPCParams.AddMount(name: name, path: path, tag: tag, kind: kind))
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
@@ -236,6 +237,19 @@ public final class RemoteMachman: MachmanControlling {
 			.mountSetTag,
 			RPCParams.SetMountTag(name: name, mountID: mountID, tag: tag),
 			expecting: VMInfo.self)
+	}
+
+	public func setMountKind(vm name: String, mountID: String, kind: String) async throws
+		-> VMInfo {
+		try await connection.call(
+			.mountSetKind,
+			RPCParams.SetMountKind(name: name, mountID: mountID, kind: kind),
+			expecting: VMInfo.self)
+	}
+
+	public func resetSetup(vm name: String) async throws -> VMInfo {
+		try await connection.call(
+			.setupReset, RPCParams.Name(name: name), expecting: VMInfo.self)
 	}
 
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws

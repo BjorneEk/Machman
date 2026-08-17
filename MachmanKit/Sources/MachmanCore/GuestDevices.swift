@@ -223,6 +223,17 @@ extension VMConfig {
 		try saveVMConfig()
 	}
 
+	// Change how a mount reaches the guest (1.0.7). Value/boot-mode validation is the
+	// caller's (LocalMachman.validateMountKind — only it can name the error well).
+	func setMountKind(id: String, kind: String) throws {
+		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
+			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+		}
+		guard mountPoints[index].kind != kind else { return }
+		mountPoints[index].kind = kind
+		try saveVMConfig()
+	}
+
 	// Change a mount's guest tag (what the guest passes to mount -t virtiofs).
 	func setMountTag(id: String, tag: String) throws {
 		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {

@@ -47,7 +47,8 @@ public protocol MachmanControlling: AnyObject {
 	// Copy a referenced external disk into the VM dir, replacing the entry in place
 	// (safe flag and row position preserved). Owned entries refuse.
 	func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo
-	func addMount(vm name: String, path: String, tag: String) async throws
+	// nil kind = MountKind.virtiofs; MountKind.sshfs is refused for macOS guests.
+	func addMount(vm name: String, path: String, tag: String, kind: String?) async throws
 	func removeMount(vm name: String, mountID: String) async throws
 	func setKernelBoot(vm name: String, enabled: Bool) async throws
 	func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws
@@ -83,6 +84,10 @@ public protocol MachmanControlling: AnyObject {
 	func renameDisk(vm name: String, diskID: String, newName: String) async throws -> VMInfo
 	// Change a mount's guest tag (next-boot effect, like other mount edits).
 	func setMountTag(vm name: String, mountID: String, tag: String) async throws -> VMInfo
+	// Change how a mount reaches the guest (1.0.7): MountKind.virtiofs rides the share,
+	// MountKind.sshfs is mounted by the guest over its SSH link. Next-boot effect; refused
+	// for macOS guests (their share automounts — sshfs would need macFUSE).
+	func setMountKind(vm name: String, mountID: String, kind: String) async throws -> VMInfo
 	// Re-tag an owned kernel/initramfs file (path + override key migrate); refused while
 	// the VM runs.
 	func renameKernelFile(vm name: String, path: String, tag: String) async throws -> VMInfo
@@ -101,6 +106,11 @@ public protocol MachmanControlling: AnyObject {
 	// Forget everything SSH about a VM: persisted state, the per-VM keypair, and the
 	// host-side artifacts (managed config block, pinned host key, reverse key entry).
 	func resetSSH(vm name: String) async throws -> VMInfo
+
+	// MARK: Guest setup (1.0.7)
+	// Forget the unified installer's report state (config.setup + the report drop-box).
+	// The guest keeps what the script installed; SSH state has its own reset.
+	func resetSetup(vm name: String) async throws -> VMInfo
 
 	// MARK: Operations (1.0.4)
 	// Live long-running operations, for progress-card resync after reconnect (events have no

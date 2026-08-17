@@ -60,6 +60,9 @@ public enum RPCMethod: String, Sendable {
 	case sshSet = "vm.ssh.set"
 	case sshRefresh = "vm.ssh.refresh"
 	case sshReset = "vm.ssh.reset"
+	// 1.0.7: the unified guest-setup installer + mount transport kinds.
+	case mountSetKind = "vm.mount.setKind"
+	case setupReset = "vm.setup.reset"
 	case hostOperations = "host.operations"
 	case operationCancel = "op.cancel"
 	case installRosetta = "host.installRosetta"
@@ -163,11 +166,14 @@ public enum RPCParams {
 		public var name: String
 		public var path: String
 		public var tag: String
+		// 1.0.7: a MountKind value; nil (and what older clients send) = virtiofs.
+		public var kind: String?
 
-		public init(name: String, path: String, tag: String) {
+		public init(name: String, path: String, tag: String, kind: String? = nil) {
 			self.name = name
 			self.path = path
 			self.tag = tag
+			self.kind = kind
 		}
 	}
 
@@ -412,6 +418,19 @@ public enum RPCParams {
 			self.name = name
 			self.mountID = mountID
 			self.tag = tag
+		}
+	}
+
+	// vm.mount.setKind (1.0.7): change how a mount reaches the guest (a MountKind value).
+	public struct SetMountKind: Codable, Equatable, Sendable {
+		public var name: String
+		public var mountID: String
+		public var kind: String
+
+		public init(name: String, mountID: String, kind: String) {
+			self.name = name
+			self.mountID = mountID
+			self.kind = kind
 		}
 	}
 

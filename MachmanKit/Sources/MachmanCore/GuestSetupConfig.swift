@@ -70,3 +70,16 @@ struct GuestSetupConfig: Codable, Equatable {
 			try c.decodeIfPresent([GuestAutomountInfo].self, forKey: .automounts) ?? []
 	}
 }
+
+extension VMConfig {
+	// vm.setup.reset — forget the report state; the guest keeps what the script installed.
+	// The drop-box is wiped too, so a stale report cannot re-teach what was just forgotten;
+	// it regenerates empty at the next assembly while the device stays attached.
+	func resetSetup() throws {
+		setup = nil
+		try? FileManager.default.removeItem(
+			at: GuestInstallerWriter.payloadDirectory(
+				named: GuestSetupInstallerInfo.reportDirectoryName, for: self))
+		try saveVMConfig()
+	}
+}

@@ -329,10 +329,25 @@ public final class LocalMachman: MachmanControlling {
 		}
 	}
 
-	public func addMount(vm name: String, path: String, tag: String) async throws {
+	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
 		let vm = try lookup(name)
-		try vm.config.addMountPoint(HostMountPoint(path: path, tag: tag))
+		let kind = kind ?? MountKind.virtiofs
+		try Self.validateMountKind(kind, for: vm.config)
+		try vm.config.addMountPoint(HostMountPoint(path: path, tag: tag, kind: kind))
 		registry.events.emit(.listChanged)
+	}
+
+	// The two kinds the engine knows, and the one boot mode that cannot use the second:
+	// macOS guests automount the share and have no scriptable FUSE.
+	static func validateMountKind(_ kind: String, for config: VMConfig) throws {
+		guard kind == MountKind.virtiofs || kind == MountKind.sshfs else {
+			throw MachmanError(code: .invalidArgument, message: "unknown mount kind '\(kind)'")
+		}
+		if case .macOS = config.boot, kind == MountKind.sshfs {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "macOS guests automount the share — sshfs mounts would need macFUSE")
+		}
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
@@ -414,6 +429,15 @@ public final class LocalMachman: MachmanControlling {
 		async throws -> VMInfo {
 		let vm = try lookup(name)
 		try vm.config.setMountTag(id: mountID, tag: tag)
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func setMountKind(vm name: String, mountID: String, kind: String)
+		async throws -> VMInfo {
+		let vm = try lookup(name)
+		try Self.validateMountKind(kind, for: vm.config)
+		try vm.config.setMountKind(id: mountID, kind: kind)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}
@@ -576,6 +600,13 @@ public final class LocalMachman: MachmanControlling {
 		let vm = try lookup(name)
 		try vm.config.resetSSH()
 		registry.events.emit(.sshChanged(vm: name))
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	public func resetSetup(vm name: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		try vm.config.resetSetup()
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}

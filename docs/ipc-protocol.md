@@ -61,7 +61,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected) |
 | `vm.disk.import` | `{name, path}` | `VMInfo` (copies the file INTO the VM as an owned disk; format by magic bytes — ISO9660 → iso, qcow2 refused, else raw storage validated as a non-empty 512-multiple; emits `copyProgress`) |
 | `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`; emits `copyProgress`) |
-| `vm.mount.add` | `{name, path, tag}` | `{}` |
+| `vm.mount.add` | `{name, path, tag, kind?}` | `{}` (`kind` (1.0.7+): `"virtiofs"` (default) rides the share device, `"sshfs"` is mounted by the guest over its SSH link; sshfs refused for macOS guests) |
 | `vm.mount.remove` | `{name, mountID}` | `{}` |
 | `vm.console.add` | `{name}` | `{}` (appends a virtio console port, guest `/dev/hvcN`; refused while running) |
 | `vm.console.remove` | `{name}` | `{}` (pops the last console port; refused while running) |
@@ -91,10 +91,12 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.disk.resize` | `{name, diskID, sizeBytes}` | `VMInfo` (1.0.4+; grow-only, owned storage disks, refused while running) |
 | `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; refused while running) |
 | `vm.mount.setTag` | `{name, mountID, tag}` | `VMInfo` (1.0.4+; next-boot effect, tag must be unique on the VM) |
+| `vm.mount.setKind` | `{name, mountID, kind}` | `VMInfo` (1.0.7+; next-boot effect; `"virtiofs"`\|`"sshfs"`, sshfs refused for macOS guests) |
 | `vm.kernel.rename` | `{name, path, tag}` | `VMInfo` (1.0.4+; owned kernel/initramfs files — the file moves to the new tag dir, kernel-boot references and the command-line override migrate; refused while running) |
 | `vm.ssh.set` | `{name, integrationEnabled?, reverseApproved?, alias?}` | `VMInfo` (1.0.5+; nil fields unchanged; `alias` (1.0.6+) renames the ~/.ssh entry and an EMPTY alias resets it to `<vm>.machman` (validated as an ssh_config Host name and refused when another VM already answers to it); approving reverse access requires a reported reverse key, and `reverseApproved: false` DENIES it (1.0.6+: the key stays on file, nothing is installed, and the state only returns to `pending` when the guest reports a different key); refused with `invalidState` during safe runs — host-side ~/.ssh effects must not track a discardable shadow) |
 | `vm.ssh.refresh` | `{name}` | `{}` (1.0.5+; re-runs guest address discovery now; daemon-only — a vmhost refuses with `invalidState`) |
 | `vm.ssh.reset` | `{name}` | `VMInfo` (1.0.5+; forgets all SSH state: config, the per-VM keypair, payload/report dirs, and host-side artifacts; refused during safe runs) |
+| `vm.setup.reset` | `{name}` | `VMInfo` (1.0.7+; forgets the guest-setup report state (`setup` + the report drop-box); the guest keeps what the script installed — SSH state has its own reset) |
 | `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
@@ -105,7 +107,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
 [{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe, owned?, enabled?}],
-mounts: [{id, path, tag, safe, enabled?}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
+mounts: [{id, path, tag, safe, enabled?, kind?, automounted?}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,

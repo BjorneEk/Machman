@@ -606,8 +606,8 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).promoteDisk(vm: name, diskID: diskID)
 	}
 
-	public func addMount(vm name: String, path: String, tag: String) async throws {
-		try await target(name).addMount(vm: name, path: path, tag: tag)
+	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
+		try await target(name).addMount(vm: name, path: path, tag: tag, kind: kind)
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
@@ -738,6 +738,11 @@ public final class RoutingMachman: MachmanControlling {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
 		try await target(name).setMountTag(vm: name, mountID: mountID, tag: tag)
 	}
+	public func setMountKind(vm name: String, mountID: String, kind: String) async throws
+		-> VMInfo {
+		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
+		try await target(name).setMountKind(vm: name, mountID: mountID, kind: kind)
+	}
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
 		-> VMInfo {
 		// The hosted VM's config references the old path — stop first.
@@ -811,6 +816,13 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		scheduleSSHHostConfigWrite()
 		return info
+	}
+
+	// MARK: - Guest setup (1.0.7)
+
+	public func resetSetup(vm name: String) async throws -> VMInfo {
+		// Config-plane only (no daemon-side effects) — plain proxy, like device edits.
+		try await target(name).resetSetup(vm: name)
 	}
 
 	// The marker labeling this VM's host-side artifacts — a read-only derivation from
