@@ -33,6 +33,14 @@ state_get() {
 read_state() {
 	state_paths
 	[ -r "$STATE_FILE" ] || return 0
+	# A cloned guest carries the source VM's state; its records describe artifacts
+	# tagged with the source's marker, which the ownership probes treat as foreign.
+	# Start fresh instead of trusting them. (Pre-marker v3 states pass as ours.)
+	_rs_marker="$(state_get MARKER)"
+	if [ -n "$_rs_marker" ] && [ "$_rs_marker" != "$MARKER" ]; then
+		note "this guest looks cloned from another Machman VM — treating it as new"
+		return 0
+	fi
 	HAD_STATE=1
 	ST_SCRIPT_VERSION="$(state_get SCRIPT_VERSION)"
 	ST_CONFIGURED="$(state_get CONFIGURED)"

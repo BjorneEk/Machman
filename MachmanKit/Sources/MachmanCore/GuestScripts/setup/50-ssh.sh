@@ -233,6 +233,17 @@ ssh_act_key() {
 	fi
 	mkdir -p "$HOME_DIR/.ssh"
 	touch "$HOME_DIR/.ssh/authorized_keys"
+	# A cloned guest disk carries the source VM's machman key. A machman-tagged line
+	# whose marker is not ours is stale, not the user's — sweep it before installing.
+	if grep 'machman-[0-9a-f]' "$HOME_DIR/.ssh/authorized_keys" 2>/dev/null \
+		| grep -qvF "$MARKER"; then
+		_aik_swp="$HOME_DIR/.ssh/authorized_keys.machman-tmp"
+		awk -v m="$MARKER" \
+			'/machman-[0-9a-f]/ && index($0, m) == 0 { next } { print }' \
+			"$HOME_DIR/.ssh/authorized_keys" > "$_aik_swp"
+		mv "$_aik_swp" "$HOME_DIR/.ssh/authorized_keys"
+		ok "removed another Machman VM's key (cloned guest)"
+	fi
 	_aik_had=0
 	if grep -qF "$_aik_key" "$HOME_DIR/.ssh/authorized_keys"; then
 		_aik_had=1
@@ -309,7 +320,9 @@ ssh_act() {
 
 collect_host_key() {
 	if [ "$OS_FAMILY" != nixos ] && [ ! -r /etc/ssh/ssh_host_ed25519_key.pub ]; then
-		ssh-keygen -A 2>/dev/null || true
+		# Fully silenced: its "generating new host keys" chatter goes to STDOUT, and
+		# this can run inside write_report's redirection — straight into report.env.
+		ssh-keygen -A >/dev/null 2>&1 || true
 	fi
 	if [ -r /etc/ssh/ssh_host_ed25519_key.pub ]; then
 		GUEST_HOST_KEY="$(cat /etc/ssh/ssh_host_ed25519_key.pub)"

@@ -15,7 +15,10 @@ reverse_is_configured() {
 	_ric_h=""
 	[ -n "$SSH_INSTALLED_USER" ] && _ric_h="$(home_of "$SSH_INSTALLED_USER")"
 	[ -z "$_ric_h" ] && [ -n "$HOME_DIR" ] && _ric_h="$HOME_DIR"
-	[ -n "$_ric_h" ] && [ -f "$_ric_h/.ssh/machman_host" ]
+	# The comment pins the owner: a cloned guest's key carries the source VM's marker
+	# and does not count — reverse_act replaces it.
+	[ -n "$_ric_h" ] && [ -f "$_ric_h/.ssh/machman_host" ] \
+		&& grep -qF "$MARKER-reverse" "$_ric_h/.ssh/machman_host.pub" 2>/dev/null
 }
 
 reverse_menu_note() {
@@ -69,6 +72,11 @@ reverse_act() {
 	_atw_dir="$HOME_DIR/.ssh"
 	_atw_key="$_atw_dir/machman_host"
 	mkdir -p "$_atw_dir"
+	if [ -f "$_atw_key" ] \
+		&& ! grep -qF "$MARKER-reverse" "$_atw_key.pub" 2>/dev/null; then
+		rm -f "$_atw_key" "$_atw_key.pub"
+		ok "replaced another Machman VM's guest key (cloned guest)"
+	fi
 	if [ ! -f "$_atw_key" ]; then
 		run "creating the guest's key" ssh-keygen -q -t ed25519 -N "" \
 			-C "$MARKER-reverse" -f "$_atw_key" \

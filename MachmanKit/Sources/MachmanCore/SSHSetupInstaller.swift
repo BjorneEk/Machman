@@ -49,6 +49,20 @@ enum SSHSetupInstaller {
 		try fm.createDirectory(at: sshDir, withIntermediateDirectories: true)
 		try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: sshDir.path)
 		let keyURL = sshDir.appendingPathComponent("id_ed25519")
+		let pubPath = keyURL.path + ".pub"
+		// A copied VM directory carries the source VM's keypair; the comment's leading
+		// marker word exposes that. Each VM identity keys itself — re-mint on drift
+		// (and when the public half is missing, since only that half enters payloads).
+		if fm.fileExists(atPath: keyURL.path) {
+			let comment = (try? String(contentsOfFile: pubPath, encoding: .utf8))
+				.flatMap { $0.split(separator: " ").dropFirst(2).first.map(String.init) }
+			if comment != marker {
+				try? fm.removeItem(at: keyURL)
+				try? fm.removeItem(atPath: pubPath)
+				MachmanLogger.log(.log,
+					"\(config.name): re-minting the SSH key a VM copy brought along")
+			}
+		}
 		if !fm.fileExists(atPath: keyURL.path) {
 			let keygen = Process()
 			keygen.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")

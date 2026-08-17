@@ -213,6 +213,38 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("OpenBSD has no user mounts"))
 	}
 
+	// A cloned guest disk (and a copied VM directory) carries the SOURCE's marker on
+	// every machman artifact; each layer treats that as stale and replaces it.
+	@Test func scriptHandlesClonedGuests() {
+		let s = script
+		#expect(s.contains("removed another Machman VM's key (cloned guest)"))
+		#expect(s.contains("replaced another Machman VM's guest key (cloned guest)"))
+		#expect(s.contains("treating it as new"))
+		// Host-key generation chatter goes to stdout — inside write_report's
+		// redirection that would land in report.env.
+		#expect(s.contains("ssh-keygen -A >/dev/null 2>&1"))
+	}
+
+	@Test @MainActor func copiedKeypairIsReminted() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "clonekey")
+			let vm = try VMConfig(name: "clonekey", memorySize: 1 << 30, cpuCount: 2)
+			let first = try SSHSetupInstaller.ensureKeypair(
+				for: vm, marker: "machman-aaaa11112222")
+			#expect(first.contains("machman-aaaa11112222"))
+			// Same marker: the key is stable across payload writes.
+			let again = try SSHSetupInstaller.ensureKeypair(
+				for: vm, marker: "machman-aaaa11112222")
+			#expect(again == first)
+			// A different marker means the key came from another VM's directory (a
+			// copy): it is re-minted under the new identity.
+			let reminted = try SSHSetupInstaller.ensureKeypair(
+				for: vm, marker: "machman-bbbb33334444")
+			#expect(reminted.contains("machman-bbbb33334444"))
+			#expect(reminted != first)
+		}
+	}
+
 	@Test @MainActor func payloadWritesKeysScriptMountsAndReportDir() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "setuppay")
