@@ -337,6 +337,9 @@ final class VMListViewModel: ObservableObject {
 		case .sshChanged:
 			// Discovery answers arrive with no listChanged — refresh the rows ourselves.
 			Task { [weak self] in await self?.store.reload() }
+		case .setupChanged:
+			// Guest-setup reports land with no listChanged — same treatment.
+			Task { [weak self] in await self?.store.reload() }
 		case .unknown:
 			break
 		}

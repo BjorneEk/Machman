@@ -519,6 +519,16 @@ struct WireFixtureTests {
 		#expect(try decode(VMInfo.self, legacy).ssh == nil)
 	}
 
+	@Test func setupChangedEventFixture() throws {
+		let event = VMEvent.setupChanged(vm: "Debian")
+		let expected = #"{"type":"setupChanged","vm":"Debian"}"#
+		#expect(try encode(event) == expected)
+		#expect(try decode(VMEvent.self, expected) == event)
+		// Clients predating it degrade to .unknown, never fail the stream.
+		#expect(try decode(VMEvent.self, #"{"type":"somethingNewer","vm":"x"}"#)
+			== .unknown(type: "somethingNewer"))
+	}
+
 	@Test func guestSetupInfoFixtures() throws {
 		// Empty shape encodes to nothing at all — every field is optional.
 		#expect(try encode(GuestSetupInfo()) == "{}")

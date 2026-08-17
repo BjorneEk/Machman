@@ -210,6 +210,9 @@ parallel for older clients. ETA stays consumer math.
 `sshChanged {vm}` (1.0.5+): the VM's SSH state moved (guest report ingested, address
 discovery resolved, or switches flipped). No payload beyond the name — re-fetch the VM.
 
+`setupChanged {vm}` (1.0.7+): the VM's guest-setup state moved (report ingested or reset).
+No payload beyond the name — re-fetch the VM.
+
 **1.0.4 compatibility note**: the persisted config format gained `devices`/`enabled`/
 `kernelOverrides` keys. Older daemons decode configs fine but their next config save DROPS
 those keys — which is why 1.0.4 bumps the desktop's daemon-version floor and triggers the

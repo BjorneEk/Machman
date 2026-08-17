@@ -22,6 +22,9 @@ public enum VMEvent: Sendable, Equatable {
 	// A VM's SSH state moved (guest report ingested, discovery resolved, switches flipped).
 	// Carries no payload beyond the name — clients re-fetch the VM.
 	case sshChanged(vm: String)
+	// A VM's guest-setup state moved (1.0.7: report ingested, state reset). Carries no
+	// payload beyond the name — clients re-fetch the VM (the sshChanged pattern).
+	case setupChanged(vm: String)
 	case unknown(type: String)
 }
 
@@ -46,6 +49,7 @@ extension VMEvent: Codable {
 		case copyProgress
 		case operationChanged
 		case sshChanged
+		case setupChanged
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -76,6 +80,8 @@ extension VMEvent: Codable {
 			self = .operationChanged(op: try c.decode(OperationInfo.self, forKey: .op))
 		case .sshChanged:
 			self = .sshChanged(vm: try c.decode(String.self, forKey: .vm))
+		case .setupChanged:
+			self = .setupChanged(vm: try c.decode(String.self, forKey: .vm))
 		case nil:
 			self = .unknown(type: type)
 		}
@@ -109,6 +115,9 @@ extension VMEvent: Codable {
 			try c.encode(op, forKey: .op)
 		case .sshChanged(let vm):
 			try c.encode(Kind.sshChanged.rawValue, forKey: .type)
+			try c.encode(vm, forKey: .vm)
+		case .setupChanged(let vm):
+			try c.encode(Kind.setupChanged.rawValue, forKey: .type)
 			try c.encode(vm, forKey: .vm)
 		case .unknown(let type):
 			try c.encode(type, forKey: .type)

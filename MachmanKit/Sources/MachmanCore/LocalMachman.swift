@@ -607,6 +607,7 @@ public final class LocalMachman: MachmanControlling {
 	public func resetSetup(vm name: String) async throws -> VMInfo {
 		let vm = try lookup(name)
 		try vm.config.resetSetup()
+		registry.events.emit(.setupChanged(vm: name))
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}
