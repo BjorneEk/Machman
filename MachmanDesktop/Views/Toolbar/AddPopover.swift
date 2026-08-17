@@ -93,24 +93,13 @@ struct AddPopover: View {
 			if hasInstallerTiles {
 				Divider()
 				section("Installers") {
-					// Guest-setup payloads served over the share — their own section.
-					if vm.boot.mode == .macOS, !attached(.consoleLoginInstaller) {
-						AddTile(symbol: MachmanSymbols.deviceLoginInstaller,
-							caption: "Console Login",
-							tooltip: "Add Console Login — sets up login prompts on this "
-								+ "VM's consoles from inside the macOS guest") {
-							viewModel.addDevice(vm.name, kind: .consoleLoginInstaller)
-							dismiss()
-						}
-					}
-					if !attached(.sshInstaller) {
-						AddTile(symbol: MachmanSymbols.deviceSSHSetup,
-							caption: "SSH Setup",
-							tooltip: "Add SSH Setup — enables SSH in the guest and "
-								+ "exchanges keys with this Mac") {
-							viewModel.addDevice(vm.name, kind: .sshInstaller)
-							dismiss()
-						}
+					// The guest-setup payload served over the share — its own section.
+					AddTile(symbol: MachmanSymbols.deviceGuestSetup,
+						caption: "Guest Setup",
+						tooltip: "Add Guest Setup — one script that sets up console "
+							+ "logins, SSH, and boot automounts from inside the guest") {
+						viewModel.addDevice(vm.name, kind: .guestSetup)
+						dismiss()
 					}
 				}
 			}
@@ -148,10 +137,9 @@ struct AddPopover: View {
 		(vm.devices ?? []).contains { $0.kind == kind }
 	}
 
-	// At least one installer tile applies (Console Login is mac-only; SSH fits any boot).
+	// The one installer fits any boot; present but disabled counts as attached.
 	private var hasInstallerTiles: Bool {
-		(vm.boot.mode == .macOS && !attached(.consoleLoginInstaller))
-			|| !attached(.sshInstaller)
+		!attached(.guestSetup)
 	}
 
 	// Kinds the daemon would accept for this boot that aren't attached yet (present but

@@ -961,6 +961,18 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func resetSetup(_ name: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.resetSetup(vm: name)
+				self?.pushToast(
+					symbol: MachmanSymbols.deviceGuestSetup,
+					message: "Guest-setup state reset for \(name)")
+			}
+			catch { self?.present(error, while: "Resetting guest-setup state") }
+		}
+	}
+
 	// Batch enable/disable everything in the tree selection that carries the flag
 	// (multi-select context menus + the multi-selection inspector).
 	func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
