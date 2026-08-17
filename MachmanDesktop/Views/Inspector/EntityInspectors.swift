@@ -55,45 +55,58 @@ struct DiskInspector: View {
 				}
 				Section("Actions") {
 					if disk.type == .storage && disk.owned != false {
-						// A plain row, NOT LabeledContent: a grouped Form treats
-						// LabeledContent's content as a value, and a TextField nested in
-						// there (rather than being its direct child, like Memory and the
-						// display size) never takes focus — which is exactly how this
-						// field ended up looking editable without being it.
-						HStack(spacing: 6) {
-							Text("Grow by")
-							Spacer()
-							// The sign is fixed, not typed: this only ever adds.
-							Text("+")
-								.foregroundStyle(.secondary)
-							// Typed like the Memory field (ByteSize): "8g", "512m", "8 GB"
-							// — a stepper could only offer one fixed increment.
-							TextField("8 GB", text: $growText)
-								.frame(width: 90)
-								.onChange(of: growText) {
-									// Permissive while typing; parsed on apply.
-									let filtered = String(growText
-										.filter { "0123456789.,kmgbKMGB ".contains($0) }
-										.prefix(12))
-									if filtered != growText { growText = filtered }
-								}
-								.onSubmit { grow(disk) }
-							Button("Apply") { grow(disk) }
-								.disabled(!canGrow)
+						// Wrapped in a VStack on purpose. A grouped Form derives a row's
+						// LABEL from its leading Text and lays the rest out as that row's
+						// VALUE — and a TextField in a value slot takes no focus and shows
+						// no I-beam. Nesting the row one level down hides that shape, which
+						// is why the SSH alias field (also VStack-wrapped) is typeable and
+						// two earlier attempts here were not.
+						VStack(alignment: .leading, spacing: 4) {
+							HStack(spacing: 6) {
+								// The label yields first: in a 250pt inspector this row is
+								// tight, and a squeezed-to-nothing field is a field nobody
+								// can click (measured: 80pt requested, 46pt granted).
+								Text("Grow by")
+									.lineLimit(1)
+									.layoutPriority(-1)
+								Spacer(minLength: 4)
+								// The sign is fixed, not typed: this only ever adds.
+								Text("+")
+									.foregroundStyle(.secondary)
+								// Typed like the Memory field (ByteSize): "8g", "512m",
+								// "8 GB" — a stepper offers one fixed increment at best.
+								TextField("8 GB", text: $growText)
+									.frame(minWidth: 64, idealWidth: 80, maxWidth: 90)
+									.layoutPriority(1)
+									.onChange(of: growText) {
+										// Permissive while typing; parsed on apply.
+										let filtered = String(growText
+											.filter { "0123456789.,kmgbKMGB ".contains($0) }
+											.prefix(12))
+										if filtered != growText { growText = filtered }
+									}
+									.onSubmit { grow(disk) }
+									// Growing needs the VM stopped, so say that by being
+									// unavailable (the row's tooltip explains why) instead
+									// of taking input the Apply button will refuse.
+									.disabled(vm.state.isRunning)
+								Button("Apply") { grow(disk) }
+									.disabled(!canGrow)
+							}
+							// A typed amount is ambiguous on its own (a bare number is
+							// BYTES), so the result is spelled out before Apply is pressed.
+							if let added = growBytes, let current = disk.sizeBytes {
+								Text(fitsFreeSpace
+									? "New size: \(byteText(current + added))"
+									: "Larger than the \(byteText(freeBytes ?? 0)) free here.")
+									.font(.caption)
+									.foregroundStyle(fitsFreeSpace
+										? AnyShapeStyle(.secondary)
+										: AnyShapeStyle(MachmanColors.warning))
+							}
 						}
 						.help(vm.state.isRunning
 							? "Stop the VM to grow its disks" : "Grow-only; shrink refuses")
-						// A typed amount is ambiguous on its own (a bare number is BYTES),
-						// so the result is spelled out before Apply is pressed.
-						if let added = growBytes, let current = disk.sizeBytes {
-							Text(fitsFreeSpace
-								? "New size: \(byteText(current + added))"
-								: "Larger than the \(byteText(freeBytes ?? 0)) free on this Mac.")
-								.font(.caption)
-								.foregroundStyle(fitsFreeSpace
-									? AnyShapeStyle(.secondary)
-									: AnyShapeStyle(MachmanColors.warning))
-						}
 					}
 					HStack(spacing: 6) {
 						if disk.owned == false {
