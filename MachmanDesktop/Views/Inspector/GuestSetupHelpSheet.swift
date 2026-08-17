@@ -227,6 +227,8 @@ struct GuestSetupHelpSheet: View {
 		optionRow("--automount-virtiofs", "mount the share at boot")
 		optionRow("--automount-sshfs", "mount sshfs folders at boot")
 		optionRow("--install", "install missing packages")
+		optionRow("--report-only", "refresh Machman's report, change nothing — a boot hook "
+			+ "runs this so \"next boot\" states flip after a reboot")
 		optionRow("--uninstall", "remove everything it installed")
 		note("Every question the script can ask has a flag, so the same script runs "
 			+ "unattended.")

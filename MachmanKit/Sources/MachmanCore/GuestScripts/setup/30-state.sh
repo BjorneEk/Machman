@@ -15,6 +15,7 @@ ST_KERNEL_CONSOLE=""
 ST_KERNEL_CONSOLE_METHOD=""
 ST_SSH_USER=""
 ST_AUTOMOUNT_SSHFS=""      # space-separated mount names
+ST_LAST_STATUS=""          # ok|partial from the last real run — --report-only keeps it
 
 state_paths() {
 	case "$OS_FAMILY" in
@@ -49,6 +50,7 @@ read_state() {
 	ST_KERNEL_CONSOLE_METHOD="$(state_get KERNEL_CONSOLE_METHOD)"
 	ST_SSH_USER="$(state_get SSH_USER)"
 	ST_AUTOMOUNT_SSHFS="$(state_get AUTOMOUNT_SSHFS)"
+	ST_LAST_STATUS="$(state_get LAST_STATUS)"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
 	# version writing state at all (v2 left only marker-tagged artifacts), so there is
@@ -73,6 +75,11 @@ write_state() {
 		printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
 		printf "MARKER='%s'\n" "$MARKER"
 		printf "CONFIGURED='%s'\n" "$1"
+		if [ -n "$FAILED_STEPS" ]; then
+			printf "LAST_STATUS='partial'\n"
+		else
+			printf "LAST_STATUS='ok'\n"
+		fi
 		[ -n "$CONSOLE_MANAGED" ] && printf "CONSOLE_LOGINS='%s'\n" "$CONSOLE_MANAGED"
 		[ -n "$KC_DEVICE_DONE" ] && printf "KERNEL_CONSOLE='%s'\n" "$KC_DEVICE_DONE"
 		[ -n "$KC_METHOD_DONE" ] && printf "KERNEL_CONSOLE_METHOD='%s'\n" "$KC_METHOD_DONE"

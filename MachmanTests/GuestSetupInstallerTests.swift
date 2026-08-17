@@ -213,6 +213,20 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("OpenBSD has no user mounts"))
 	}
 
+	// --report-only + the boot hook: promised states ("configured", "pending reboot")
+	// flip to reality once the guest reboots, without a manual re-run.
+	@Test func scriptRefreshesTheReportAtBoot() {
+		let s = script
+		#expect(s.contains("--report-only"))
+		#expect(s.contains("machman-report.service"))
+		#expect(s.contains("ConditionPathExists="))
+		#expect(s.contains("/etc/local.d/machman-report.start"))
+		#expect(s.contains("com.machman.report"))
+		// A probe run describes the LAST real run's outcome, not its own.
+		#expect(s.contains(#"_wr_status="${ST_LAST_STATUS:-ok}""#))
+		#expect(s.contains("refreshed Machman's report"))
+	}
+
 	// A cloned guest disk (and a copied VM directory) carries the SOURCE's marker on
 	// every machman artifact; each layer treats that as stale and replaces it.
 	@Test func scriptHandlesClonedGuests() {

@@ -107,7 +107,14 @@ write_report() {
 	case "$_wr_mode" in
 	failed) _wr_status=failed ;;
 	uninstalled) _wr_status=ok ;;
-	*) [ -n "$FAILED_STEPS" ] && _wr_status=partial ;;
+	*)
+		if [ "${REPORT_ONLY:-0}" -eq 1 ]; then
+			# A probe run describes the LAST real run's outcome, not its own.
+			_wr_status="${ST_LAST_STATUS:-ok}"
+		elif [ -n "$FAILED_STEPS" ]; then
+			_wr_status=partial
+		fi
+		;;
 	esac
 	{
 		printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
@@ -161,5 +168,79 @@ write_report() {
 	mv "$REPORT_DIR/report.env.tmp" "$REPORT_DIR/report.env"
 	REPORT_DONE=1
 	verbose report "wrote $REPORT_DIR/report.env (status=$_wr_status)"
+	return 0
+}
+
+# ---------------------------------------------------------------- boot-time refresh ----
+# A tiny per-init hook re-runs this script with --report-only at boot, so states a run
+# could only promise ("configured", "pending reboot") flip to what the guest actually
+# does once it reboots. The payload is regenerated at every VM start and gone when the
+# VM is off, so the hook no-ops unless Machman is serving the share. rc-style inits
+# (FreeBSD/OpenBSD) are skipped: no virtiofs share mounts there at boot anyway.
+
+report_hook_install() {
+	[ "$DRY_RUN" -eq 1 ] && return 0
+	_rh_script="$SHARE_ROOT/GuestSetup/$(basename "$0")"
+	case "$INIT" in
+	systemd)
+		{
+			printf '# %s\n' "$MARKER"
+			printf '[Unit]\n'
+			printf 'Description=Machman guest report refresh\n'
+			printf 'ConditionPathExists=%s\n' "$_rh_script"
+			printf 'After=local-fs.target network.target\n'
+			printf '\n[Service]\nType=oneshot\n'
+			printf 'ExecStart=/bin/sh %s --report-only -q\n' "$_rh_script"
+			printf '\n[Install]\nWantedBy=multi-user.target\n'
+		} > /etc/systemd/system/machman-report.service
+		systemctl daemon-reload >/dev/null 2>&1 || true
+		systemctl enable machman-report.service >/dev/null 2>&1 || true
+		;;
+	openrc|inittab)
+		mkdir -p /etc/local.d
+		{
+			printf '#!/bin/sh\n# %s\n' "$MARKER"
+			printf '[ -r "%s" ] || exit 0\n' "$_rh_script"
+			printf 'sh "%s" --report-only -q >/dev/null 2>&1 &\n' "$_rh_script"
+		} > /etc/local.d/machman-report.start
+		chmod 755 /etc/local.d/machman-report.start
+		have rc-update && rc-update add local default >/dev/null 2>&1
+		;;
+	launchd)
+		{
+			printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+			printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
+			printf ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+			printf '<plist version="1.0"><dict>\n'
+			printf '<key>Label</key><string>com.machman.report</string>\n'
+			printf '<!-- %s -->\n' "$MARKER"
+			printf '<key>ProgramArguments</key><array>\n'
+			printf '<string>/bin/sh</string><string>%s</string>\n' "$_rh_script"
+			printf '<string>--report-only</string><string>-q</string>\n'
+			printf '</array>\n'
+			printf '<key>RunAtLoad</key><true/>\n'
+			printf '</dict></plist>\n'
+		} > /Library/LaunchDaemons/com.machman.report.plist
+		chmod 644 /Library/LaunchDaemons/com.machman.report.plist
+		launchctl bootstrap system /Library/LaunchDaemons/com.machman.report.plist \
+			>/dev/null 2>&1 || true
+		;;
+	*)
+		return 0
+		;;
+	esac
+	verbose report "boot refresh hook installed ($INIT)"
+	return 0
+}
+
+report_hook_uninstall() {
+	rm -f /etc/systemd/system/machman-report.service \
+		/etc/systemd/system/multi-user.target.wants/machman-report.service \
+		/etc/local.d/machman-report.start 2>/dev/null || true
+	have systemctl && systemctl daemon-reload >/dev/null 2>&1
+	if [ -f /Library/LaunchDaemons/com.machman.report.plist ]; then
+		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
+		rm -f /Library/LaunchDaemons/com.machman.report.plist
+	fi
 	return 0
 }

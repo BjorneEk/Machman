@@ -319,7 +319,8 @@ ssh_act() {
 }
 
 collect_host_key() {
-	if [ "$OS_FAMILY" != nixos ] && [ ! -r /etc/ssh/ssh_host_ed25519_key.pub ]; then
+	if [ "$OS_FAMILY" != nixos ] && [ "${REPORT_ONLY:-0}" -eq 0 ] \
+		&& [ ! -r /etc/ssh/ssh_host_ed25519_key.pub ]; then
 		# Fully silenced: its "generating new host keys" chatter goes to STDOUT, and
 		# this can run inside write_report's redirection — straight into report.env.
 		ssh-keygen -A >/dev/null 2>&1 || true

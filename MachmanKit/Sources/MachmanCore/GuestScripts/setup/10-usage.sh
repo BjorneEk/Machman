@@ -32,6 +32,9 @@ What                     (default: ask per feature; every --x has a --no-x)
 How
   -y, --yes              never ask; take the defaults shown by --dry-run
   -n, --dry-run          print the plan and exit; change nothing
+      --report-only      probe and refresh Machman's report; change nothing else.
+                         A boot hook installed with the setup runs this at every
+                         boot, so "next boot" states flip once the guest reboots.
   -v, --verbose          narrate every decision and command
   -q, --quiet            only the summary and errors
   -h, --help             this text

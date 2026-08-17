@@ -32,9 +32,8 @@ feature_selected() {
 # ------------------------------------------------------------------------- detection ----
 
 if [ "$(id -u)" -ne 0 ]; then
-	if [ "$DRY_RUN" -eq 1 ]; then
-		warn "not running as root — the plan below is what a real run would do, and some"
-		warn "checks (service state) may read as unknown."
+	if [ "$DRY_RUN" -eq 1 ] || [ "$REPORT_ONLY" -eq 1 ]; then
+		warn "not running as root — some checks (service state) may read as unknown."
 	else
 		die 3 "this script has to run as root." \
 			"Use:  sudo sh install.sh  (or doas, or a root shell)"
@@ -52,6 +51,23 @@ for _mm_f in $FEATURES; do
 	"${_mm_f}_available"
 done
 
+# ----------------------------------------------------------------------- report only ----
+
+# The boot hook's mode (and a hand tool): probe everything, refresh the report, change
+# nothing else. States the last run could only promise flip to what the guest does now.
+if [ "$REPORT_ONLY" -eq 1 ]; then
+	if vfsauto_configured || vfsauto_foreign; then
+		AUTOMOUNT_LINES="virtiofs	$SHARE_TAG	$SHARE_ROOT"
+	fi
+	for _mm_n in $ST_AUTOMOUNT_SSHFS; do
+		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
+}sshfs	$_mm_n	$MOUNT_ROOT/$_mm_n"
+	done
+	write_report
+	[ "$QUIET" -eq 1 ] || ok "refreshed Machman's report"
+	exit 0
+fi
+
 # ------------------------------------------------------------------------- uninstall ----
 
 if [ "$UNINSTALL" -eq 1 ]; then
@@ -66,6 +82,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
 	done
 	# The shared fstab block (virtiofs + sshfs automounts) strips once, here.
 	[ -f /etc/fstab ] && strip_block /etc/fstab
+	report_hook_uninstall
 	remove_state
 	write_report uninstalled
 	ok "Machman's guest configuration is gone."
@@ -256,6 +273,8 @@ for _mm_f in $FEATURES; do
 	esac
 done
 write_state "${_mm_configured# }"
+# Anything configured wants the boot-time report refresh, so promised states flip.
+[ -n "$_mm_configured" ] && report_hook_install
 find_addresses
 write_report
 

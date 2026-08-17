@@ -15,6 +15,7 @@ CONSOLES_OVERRIDE=""       # --consoles "hvc0 hvc1"
 KERNEL_CONSOLE_DEVICE=""   # --kernel-console=<dev>
 MOUNTPOINT=""
 UNINSTALL=0
+REPORT_ONLY=0
 NO_SERVICE=0
 USER_OVERRIDE=""
 PM_OVERRIDE=""
@@ -48,6 +49,7 @@ while [ $# -gt 0 ]; do
 	--no-automount-virtiofs) want_vfsauto=0 ;;
 	--automount-sshfs) want_sshfsauto=1 ;;
 	--no-automount-sshfs) want_sshfsauto=0 ;;
+	--report-only) REPORT_ONLY=1 ;;
 	--mount-setup) WANT_MOUNT_SETUP=1 ;;
 	--no-mount-setup) WANT_MOUNT_SETUP=0 ;;
 	--mountpoint)
