@@ -37,21 +37,7 @@ struct SerialInspector: View {
 	var body: some View {
 		Form {
 			if let gate {
-				Section {
-					Label {
-						VStack(alignment: .leading, spacing: 3) {
-							Text("Unavailable on this host")
-								.fontWeight(.medium)
-							Text(gate.message)
-								.font(.caption)
-								.foregroundStyle(.secondary)
-								.fixedSize(horizontal: false, vertical: true)
-						}
-					} icon: {
-						Image(systemName: MachmanSymbols.warning)
-							.foregroundStyle(MachmanColors.warning)
-					}
-				}
+				UnavailableGateSection(gate)
 			}
 			terminalSection
 			socketSection
@@ -246,12 +232,9 @@ struct SerialInspector: View {
 	}
 
 	private var setupGuideButton: some View {
-		Button {
-			showSetupGuide = true
-		} label: {
-			Label("Setup Guide…", systemImage: MachmanSymbols.help)
-		}
-		.help("How to set up this console inside the guest OS")
+		GuideButton(
+			isPresented: $showSetupGuide,
+			help: "How to set up this console inside the guest OS")
 	}
 
 	// From the generated platform info the daemon serves for uarts.

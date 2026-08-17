@@ -56,21 +56,7 @@ struct DeviceInfoInspector: View {
 	var body: some View {
 		Form {
 			if let gate = device.unavailable {
-				Section {
-					Label {
-						VStack(alignment: .leading, spacing: 3) {
-							Text("Unavailable on this host")
-								.fontWeight(.medium)
-							Text(gate.message)
-								.font(.caption)
-								.foregroundStyle(.secondary)
-								.fixedSize(horizontal: false, vertical: true)
-						}
-					} icon: {
-						Image(systemName: MachmanSymbols.warning)
-							.foregroundStyle(MachmanColors.warning)
-					}
-				}
+				UnavailableGateSection(gate)
 			}
 			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: device.kind)
@@ -422,16 +408,7 @@ struct RosettaInspector: View {
 					Text("Mount the share, then register the binfmt handler:")
 						.font(.caption)
 						.foregroundStyle(.secondary)
-					HStack {
-						Text(Self.setupCommand)
-							.font(.system(.caption, design: .monospaced))
-							.textSelection(.enabled)
-						Spacer()
-						CopyToClipboardButton(Self.setupCommand, tooltip: "Copy commands")
-					}
-					.padding(6)
-					.background(RoundedRectangle(cornerRadius: 5)
-						.fill(Color.primary.opacity(0.05)))
+					CommandBlock(Self.setupCommand, tooltip: "Copy commands")
 					Text("Lets Linux guests run x86-64 binaries through Rosetta.")
 						.font(.caption)
 						.foregroundStyle(.tertiary)
@@ -470,21 +447,7 @@ struct LoginInstallerInspector: View {
 	var body: some View {
 		Form {
 			if let gate = device.unavailable {
-				Section {
-					Label {
-						VStack(alignment: .leading, spacing: 3) {
-							Text("Unavailable on this host")
-								.fontWeight(.medium)
-							Text(gate.message)
-								.font(.caption)
-								.foregroundStyle(.secondary)
-								.fixedSize(horizontal: false, vertical: true)
-						}
-					} icon: {
-						Image(systemName: MachmanSymbols.warning)
-							.foregroundStyle(MachmanColors.warning)
-					}
-				}
+				UnavailableGateSection(gate)
 			}
 			Section("Console Login") {
 				Text("A read-only “\(ConsoleLoginInstallerInfo.directoryName)” folder in "
@@ -512,17 +475,7 @@ struct LoginInstallerInspector: View {
 						+ "run in its Terminal:")
 						.font(.caption)
 						.foregroundStyle(.secondary)
-					HStack {
-						Text(Self.guestCommand)
-							.font(.system(.caption, design: .monospaced))
-							.textSelection(.enabled)
-							.fixedSize(horizontal: false, vertical: true)
-						Spacer()
-						CopyToClipboardButton(Self.guestCommand, tooltip: "Copy command")
-					}
-					.padding(6)
-					.background(RoundedRectangle(cornerRadius: 5)
-						.fill(Color.primary.opacity(0.05)))
+					CommandBlock(Self.guestCommand)
 					Text("Installs one login daemon per console — prompts appear "
 						+ "immediately. Re-run it after adding or removing consoles (it "
 						+ "cleans up removed ones); --uninstall removes the logins. "
@@ -536,11 +489,7 @@ struct LoginInstallerInspector: View {
 						.font(.system(.caption2, design: .monospaced))
 						.foregroundStyle(.tertiary)
 						.fixedSize(horizontal: false, vertical: true)
-					Button {
-						showGuide = true
-					} label: {
-						Label("Setup Guide…", systemImage: MachmanSymbols.help)
-					}
+					GuideButton(isPresented: $showGuide)
 				}
 			}
 			DeviceImplementationSection(vm: vm, device: device)
@@ -658,16 +607,7 @@ struct NetworkSSHSection: View {
 			}
 		}
 		if let command = sshCommand {
-			HStack {
-				Text(command)
-					.font(.system(.caption, design: .monospaced))
-					.textSelection(.enabled)
-					.fixedSize(horizontal: false, vertical: true)
-				Spacer()
-				CopyToClipboardButton(command, tooltip: "Copy command")
-			}
-			.padding(6)
-			.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
+			CommandBlock(command)
 		}
 		integrationToggle
 		aliasField
@@ -875,13 +815,9 @@ struct SSHInspector: View {
 						.font(.caption)
 						.foregroundStyle(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
-					commandBlock(macGuest
+					CommandBlock(macGuest
 						? SSHSetupInfo.runCommand : SSHSetupInfo.mountAndRunCommand)
-					Button {
-						showGuide = true
-					} label: {
-						Label("Setup Guide…", systemImage: MachmanSymbols.help)
-					}
+					GuideButton(isPresented: $showGuide)
 				}
 			}
 			Section {
@@ -915,18 +851,5 @@ struct SSHInspector: View {
 			return "available — mounts need root"
 		}
 		return "available"
-	}
-
-	private func commandBlock(_ command: String) -> some View {
-		HStack {
-			Text(command)
-				.font(.system(.caption, design: .monospaced))
-				.textSelection(.enabled)
-				.fixedSize(horizontal: false, vertical: true)
-			Spacer()
-			CopyToClipboardButton(command, tooltip: "Copy command")
-		}
-		.padding(6)
-		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
 	}
 }

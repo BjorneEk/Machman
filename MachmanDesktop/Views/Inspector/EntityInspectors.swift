@@ -236,16 +236,7 @@ struct MountInspector: View {
 					.font(.caption)
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
-				HStack {
-					Text(command)
-						.font(.system(.caption, design: .monospaced))
-						.textSelection(.enabled)
-					Spacer()
-					CopyToClipboardButton(command, tooltip: "Copy command")
-				}
-				.padding(6)
-				.background(RoundedRectangle(cornerRadius: 5)
-					.fill(Color.primary.opacity(0.05)))
+				CommandBlock(command)
 			}
 			.padding(.vertical, 2)
 		}
