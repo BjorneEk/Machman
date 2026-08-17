@@ -64,15 +64,25 @@ ui_detect() {
 			esac
 		fi
 	fi
-	# Unicode: a UTF-8 locale — or an ssh session with a modern TERM: the bytes render on
-	# the CLIENT terminal (the connected terminal is what matters), and locale often is
-	# not forwarded over ssh. Serial consoles (no SSH_*) stay conservative.
+	# Unicode: a UTF-8 locale — or a PSEUDO-terminal with a modern TERM. The glyph bytes
+	# render on the CONNECTED terminal (an ssh client, tmux, a GUI terminal), which is
+	# UTF-8 in practice; only the raw consoles (hvc*, ttyV*, tty1…) stay conservative.
+	# The controlling tty's NAME is the escalation-proof signal: doas/sudo strip LANG and
+	# every SSH_* variable, but the terminal itself follows the session into root.
 	case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
 	*UTF-8*|*utf-8*|*UTF8*|*utf8*) UI_UNICODE=1 ;;
 	esac
-	if [ "$UI_UNICODE" -eq 0 ] && [ -n "${SSH_TTY:-}${SSH_CONNECTION:-}" ]; then
-		case "${TERM:-}" in
-		xterm*|screen*|tmux*|*256color*|foot*|alacritty|kitty|rxvt*) UI_UNICODE=1 ;;
+	if [ "$UI_UNICODE" -eq 0 ]; then
+		# The REAL fds, never /dev/tty: ttyname of an fd opened from /dev/tty is just
+		# "/dev/tty" again. stdin first; stderr covers a piped stdin.
+		_ud_tty="$(tty 2>/dev/null)" || _ud_tty=""
+		[ -n "$_ud_tty" ] || { _ud_tty="$( (tty <&2) 2>/dev/null)" || _ud_tty=""; }
+		case "$_ud_tty" in
+		/dev/pts/*|/dev/ttyp*|/dev/ttys[0-9]*)   # Linux/FreeBSD pts, OpenBSD ttyp, macOS ttys
+			case "${TERM:-}" in
+			xterm*|screen*|tmux*|*256color*|foot*|alacritty|kitty|rxvt*) UI_UNICODE=1 ;;
+			esac
+			;;
 		esac
 	fi
 	UI_COLS="$( (have tput && tput cols) 2>/dev/null || true )"

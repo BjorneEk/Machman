@@ -103,9 +103,11 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains(#"sed 's/ /\\040/g'"#))
 		#expect(s.contains("/etc/local.d/machman-sshfs.start"))
 		#expect(s.contains("/etc/rc.local"))
-		// The connected-terminal rules: ssh sessions trust the client terminal.
-		#expect(s.contains("SSH_TTY"))
-		#expect(s.contains("SSH_CONNECTION"))
+		// The connected-terminal rules: a pseudo-terminal trusts the client terminal —
+		// keyed on the tty NAME, which survives doas/sudo stripping LANG and SSH_*.
+		#expect(s.contains("/dev/pts/"))
+		#expect(s.contains("/dev/ttyp"))
+		#expect(!s.contains("SSH_TTY"))   // env-based detection dies under doas/sudo
 		#expect(!s.contains("|vt100)"))   // vt100 never implies colour
 	}
 
