@@ -154,6 +154,17 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
+	// Runs at daemon startup, after adoptExistingHosts (same ordering reason as
+	// sweepSafeRuns): payloads are ephemeral — served while a VM runs, regenerated at
+	// start — so whatever a crash-killed vmhost left behind for a NON-hosted VM is stale
+	// by definition. Hosted VMs are skipped: the daemon never writes (or removes) a
+	// directory a vmhost is serving.
+	public func sweepGuestPayloads() {
+		for vm in registry.list() where hosted[vm.name] == nil {
+			GuestSetupInstaller.removePayload(for: vm.config)
+		}
+	}
+
 	// Belt for the sweep: any start clears provably dead shadow leftovers for this VM, so a
 	// later daemon restart cannot misread them against the new run. Never touches a
 	// live-pid run root — a live pid means some vmhost owns the name's socket, and the

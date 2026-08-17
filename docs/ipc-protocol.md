@@ -255,6 +255,11 @@ new `GuestSetup`/`GuestReport` ones. Hence the floor bump. Wire-wise everything 
 remains additive under `apiVersion` 1 (`vm.mount.setKind`, `vm.setup.reset`,
 `setupChanged`, `VMInfo.setup`, `mounts[].kind/automounted`).
 
+Payload directories are EPHEMERAL (1.0.7): written at VM start (and on attaching the
+installer to a running VM), removed at VM stop after the final report ingest, and swept
+at daemon startup for non-hosted VMs — a stopped VM's share holds no payload, so a stale
+script from an older build cannot outlive the run that served it.
+
 ## Safe runs (invisible on the wire except `safeRun`)
 
 `vm.start {safe: true}` clones the VM into a hidden shadow (safe disks → discardable

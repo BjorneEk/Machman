@@ -100,6 +100,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		Task {
 			await Daemon.api.adoptExistingHosts()
 			Daemon.api.sweepSafeRuns()
+			Daemon.api.sweepGuestPayloads()
 			Daemon.api.healLaunchAgents()
 			Daemon.registry.sweepCopyStaging()
 		}

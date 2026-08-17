@@ -266,10 +266,11 @@ struct GuestSetupInstallerTests {
 		}
 	}
 
-	// Attaching the installer writes its payload THERE AND THEN (a driverless guest
-	// sshfs-mounts the directory from a running VM — empty is a dead end), and the two
-	// pre-1.0.7 kinds map onto it instead of refusing.
-	@Test @MainActor func attachingTheInstallerWritesThePayload() throws {
+	// Payloads are ephemeral (1.0.7): attach on a STOPPED VM defers to the next start —
+	// the eager write exists only for attach-on-a-running-VM (the sshfs bootstrap). The
+	// two pre-1.0.7 kinds map onto guestSetup instead of refusing, and removePayload
+	// clears the current AND superseded directory names.
+	@Test @MainActor func payloadsAreEphemeral() throws {
 		try VMTestDir.withRedirectedDir {
 			let registry = VMRegistry()
 			let vm = try registry.create()
@@ -278,15 +279,28 @@ struct GuestSetupInstallerTests {
 				.payloadDirectory(named: GuestSetupInstallerInfo.directoryName, for: vm.config)
 				.appendingPathComponent(GuestSetupInstallerInfo.scriptName).path
 			let fm = FileManager.default
-			#expect(!fm.fileExists(atPath: scriptPath))
 
 			try api.attachDevice(.sshInstaller, to: vm)   // legacy kind maps to guestSetup
-			#expect(fm.fileExists(atPath: scriptPath))
 			#expect(vm.config.devices.contains { $0.deviceKind == .guestSetup })
 			#expect(!vm.config.devices.contains { $0.deviceKind == .sshInstaller })
-			// …and SSH counts as part of this VM from that moment, so its section appears
-			// (a discovered address alone must never make that true).
-			#expect(vm.config.ssh != nil)
+			// Stopped: nothing written yet — the payload appears at the next assembly.
+			#expect(!fm.fileExists(atPath: scriptPath))
+
+			// The start-time write (assembly calls this): everything appears…
+			_ = try GuestSetupInstaller.writePayload(for: vm.config)
+			#expect(fm.fileExists(atPath: scriptPath))
+			#expect(vm.config.ssh != nil)   // marker cached: SSH is part of this VM now
+			// …and a stale superseded dir from an older build is cleaned with it.
+			let legacy = GuestInstallerWriter.payloadDirectory(
+				named: SSHSetupInfo.directoryName, for: vm.config)
+			try fm.createDirectory(at: legacy, withIntermediateDirectories: true)
+			_ = try GuestSetupInstaller.writePayload(for: vm.config)
+			#expect(!fm.fileExists(atPath: legacy.path))
+
+			// Teardown/sweep call this: the served dirs are gone, the share dir stays.
+			GuestSetupInstaller.removePayload(for: vm.config)
+			#expect(!fm.fileExists(atPath: scriptPath))
+			#expect(fm.fileExists(atPath: GuestInstallerWriter.payloadRoot(for: vm.config).path))
 		}
 	}
 

@@ -485,13 +485,13 @@ public final class LocalMachman: MachmanControlling {
 		}
 		try Self.validateDeviceKind(kind, for: vm.config)
 		try vm.config.addDevice(GuestDevice(kind: kind))
-		// Generated payloads normally appear at the next assembly, like every other device
-		// change — but a guest without a virtiofs driver reaches this one by mounting the
-		// directory over SSH from a RUNNING VM, and finding it empty is a dead end with no
-		// explanation. Writing it on add costs a few files and makes "add the installer,
-		// then mount it" true immediately. Runs in the process that owns the config (the
-		// vmhost proxies this call while hosted), so the single-writer rule holds.
-		if kind == .guestSetup {
+		// Payloads are ephemeral (1.0.7): they exist while the VM runs and appear at the
+		// next assembly otherwise. The one eager write left is attach-on-a-RUNNING VM — a
+		// guest without a virtiofs driver reaches the payload by mounting the directory
+		// over SSH from a live guest, and finding it empty is a dead end with no
+		// explanation. Runs in the process that owns the config (the vmhost proxies this
+		// call while hosted), so the single-writer rule holds.
+		if kind == .guestSetup, vm.state.isRunning {
 			try? GuestSetupInstaller.writePayload(for: vm.config)
 		}
 	}

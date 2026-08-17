@@ -154,6 +154,10 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		pollSSHReport()
 		sshReportTimer?.invalidate()
 		sshReportTimer = nil
+		// Payloads are ephemeral (1.0.7): served while the VM runs, regenerated at the
+		// next start — removing them here (AFTER the final ingest) means a stopped VM can
+		// never offer a stale script from an older build.
+		GuestSetupInstaller.removePayload(for: config)
 		vz = nil
 		emitState(.stopped)
 		onTeardown?()
