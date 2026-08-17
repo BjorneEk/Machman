@@ -227,6 +227,7 @@ final class VMListViewModel: ObservableObject {
 		var reachability: SSHInfo.Reachability?
 		var lastReportAt: Date?
 		var reverseState: SSHInfo.ReverseState = .none
+		var setupReportAt: Date?
 	}
 	private var knownSSH: [String: SSHSnapshot] = [:]
 
@@ -242,7 +243,8 @@ final class VMListViewModel: ObservableObject {
 				address: vm.ssh?.address,
 				reachability: vm.ssh?.reachability,
 				lastReportAt: vm.ssh?.lastReportAt,
-				reverseState: vm.ssh?.reverseState ?? .none)
+				reverseState: vm.ssh?.reverseState ?? .none,
+				setupReportAt: vm.setup?.lastReportAt)
 			let previous = knownSSH[vm.name]
 			knownSSH[vm.name] = now
 			guard let previous, previous != now else { continue }
@@ -273,9 +275,24 @@ final class VMListViewModel: ObservableObject {
 					dismissToast(key: Self.sshWaitToastKey(vm.name))
 				}
 			}
-			// A setup run landed. Its own status is the interesting half: "partial" is
-			// exactly the case the old script could not report at all.
-			if let stamp = now.lastReportAt, previous.lastReportAt != stamp {
+			// A setup run landed. One toast per run: the unified (v3) report speaks for
+			// the whole run; the SSH-only phrasing survives for v2 guests, whose reports
+			// carry no setup half.
+			let setupLanded = now.setupReportAt != nil
+				&& previous.setupReportAt != now.setupReportAt
+			if setupLanded {
+				if let status = vm.setup?.lastRunStatus, status != "ok" {
+					pushToast(
+						symbol: MachmanSymbols.warning,
+						message: "\(vm.name): guest setup \(status) — details in the "
+							+ "inspector",
+						tint: MachmanColors.warning)
+				} else {
+					pushToast(
+						symbol: MachmanSymbols.deviceGuestSetup,
+						message: "\(vm.name): guest setup complete")
+				}
+			} else if let stamp = now.lastReportAt, previous.lastReportAt != stamp {
 				let user = vm.ssh?.guestUser ?? "the guest"
 				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
 				if let status = vm.ssh?.lastRunStatus, status != "ok" {
@@ -294,7 +311,7 @@ final class VMListViewModel: ObservableObject {
 				pushToast(
 					symbol: MachmanSymbols.deviceSSHSetup,
 					message: "\(vm.name) asks to log in to this Mac — approve it in the "
-						+ "Network inspector",
+						+ "SSH section",
 					tint: MachmanColors.warning)
 			}
 		}
