@@ -145,6 +145,7 @@ public enum MachmanSymbols {
 	// Installer-package metaphor — the terminal glyphs belong to the consoles themselves.
 	public static let deviceLoginInstaller = "shippingbox.fill"
 	public static let deviceSSHSetup = "key.fill"
+	public static let deviceGuestSetup = "shippingbox.fill"   // THE installer (1.0.7)
 	public static let installerGroup = "shippingbox"
 
 	// Add-popover tiles

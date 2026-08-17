@@ -39,6 +39,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	// SSH autoconfiguration state (1.0.5; nil = older daemon or SSH never used). The
 	// address half is a daemon overlay, like safeRun.
 	public var ssh: SSHInfo?
+	// Guest-setup installer state (1.0.7; nil = older daemon or the installer never used).
+	public var setup: GuestSetupInfo?
 
 	public var id: String { name }
 
@@ -50,7 +52,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		totalRuntimeSeconds: Double? = nil,
 		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil,
 		devices: [DeviceInfo]? = nil, nestedVirtualization: Bool? = nil,
-		ssh: SSHInfo? = nil
+		ssh: SSHInfo? = nil, setup: GuestSetupInfo? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -71,6 +73,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.devices = devices
 		self.nestedVirtualization = nestedVirtualization
 		self.ssh = ssh
+		self.setup = setup
 	}
 
 	// Hand-written decode so payloads predating the optional fields (and clients that omit
@@ -98,6 +101,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.nestedVirtualization =
 			try c.decodeIfPresent(Bool.self, forKey: .nestedVirtualization)
 		self.ssh = try c.decodeIfPresent(SSHInfo.self, forKey: .ssh)
+		self.setup = try c.decodeIfPresent(GuestSetupInfo.self, forKey: .setup)
 	}
 }
 
@@ -164,13 +168,25 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 	// Disabled mounts are not shared at the next start. Tri-state, nil = enabled (DiskInfo
 	// pattern).
 	public var enabled: Bool?
+	// How the mount reaches the guest (a MountKind, 1.0.7): "virtiofs" rides the share
+	// device, "sshfs" is mounted by the guest over the guest→host SSH link. nil = older
+	// daemon = virtiofs; nil is omitted on the wire.
+	public var kind: String?
+	// Whether the guest-setup script configured this mount to attach at boot (from the
+	// setup report; nil = unknown/older daemon).
+	public var automounted: Bool?
 
-	public init(id: String, path: String, tag: String, safe: Bool = true, enabled: Bool? = nil) {
+	public init(
+		id: String, path: String, tag: String, safe: Bool = true, enabled: Bool? = nil,
+		kind: String? = nil, automounted: Bool? = nil
+	) {
 		self.id = id
 		self.path = path
 		self.tag = tag
 		self.safe = safe
 		self.enabled = enabled
+		self.kind = kind
+		self.automounted = automounted
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -180,9 +196,13 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 		self.tag = try c.decode(String.self, forKey: .tag)
 		self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
+		self.kind = try c.decodeIfPresent(String.self, forKey: .kind)
+		self.automounted = try c.decodeIfPresent(Bool.self, forKey: .automounted)
 	}
 
 	public var isEnabled: Bool { enabled ?? true }
+	// Effective transport: nil means virtiofs (what older daemons serve).
+	public var effectiveKind: String { kind ?? MountKind.virtiofs }
 }
 
 public struct BootInfo: Codable, Sendable, Equatable {

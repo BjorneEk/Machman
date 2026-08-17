@@ -43,4 +43,17 @@ public enum GuestPaths {
 	public static var mountShareCommand: String {
 		"mkdir -p \(share) && mount -t virtiofs \(shareTag) \(share)"
 	}
+
+	// Where one sshfs-carried host folder lands (a subdirectory of `mounts`, named by the
+	// mount's tag).
+	public static func sshfsMountPoint(name: String) -> String {
+		mounts + "/" + name
+	}
+
+	// The guest-setup script's persistent state (what it configured, which version wrote
+	// it), so re-runs can offer reconfiguration and repairs. Written by the script — these
+	// exist host-side only for guide text and docs.
+	public static let stateDirLinux = "/var/lib/machman"
+	public static let stateDirBSD = "/var/db/machman"   // BSDs and macOS guests
+	public static let stateFileName = "state.env"
 }

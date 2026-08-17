@@ -16,7 +16,7 @@ extension DeviceKind {
 	// The ONE taxonomy spot a future installer kind must join.
 	public var isInstaller: Bool {
 		switch self {
-		case .consoleLoginInstaller, .sshInstaller: return true
+		case .consoleLoginInstaller, .sshInstaller, .guestSetup: return true
 		default: return false
 		}
 	}
@@ -35,6 +35,7 @@ extension DeviceKind {
 		case .rosetta: return MachmanSymbols.deviceRosetta
 		case .consoleLoginInstaller: return MachmanSymbols.deviceLoginInstaller
 		case .sshInstaller: return MachmanSymbols.deviceSSHSetup
+		case .guestSetup: return MachmanSymbols.deviceGuestSetup
 		case .unknown: return MachmanSymbols.warning
 		}
 	}
@@ -53,6 +54,7 @@ extension DeviceKind {
 		case .rosetta: return "Rosetta"
 		case .consoleLoginInstaller: return "Console Login"
 		case .sshInstaller: return "SSH Setup"
+		case .guestSetup: return "Guest Setup"
 		case .unknown: return "Unknown"
 		}
 	}
@@ -74,7 +76,7 @@ extension DeviceKind {
 		case .clipboard: return "VZVirtioConsoleDeviceConfiguration"
 		case .entropy: return "VZVirtioEntropyDeviceConfiguration"
 		case .rosetta: return "VZLinuxRosettaDirectoryShare"
-		case .consoleLoginInstaller, .sshInstaller:
+		case .consoleLoginInstaller, .sshInstaller, .guestSetup:
 			return "VZVirtioFileSystemDeviceConfiguration"
 		case .unknown: return nil
 		}

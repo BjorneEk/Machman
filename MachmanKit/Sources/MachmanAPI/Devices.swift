@@ -27,16 +27,23 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	case rosetta       // VZLinuxRosettaDirectoryShare (tag "rosetta") — EFI/kernel boots
 	// macOS guests only: a read-only share carrying a generated install script that sets
 	// up login prompts (launchd gettys) on the VM's virtio consoles from inside the guest.
+	// Superseded by .guestSetup (1.0.7) — kept so old payloads/configs still decode.
 	case consoleLoginInstaller
 	// Any guest: a read-only share carrying a generated script that enables sshd in the
 	// guest and exchanges keys, plus a writable drop-box the guest reports back through.
+	// Superseded by .guestSetup (1.0.7) — kept so old payloads/configs still decode.
 	case sshInstaller
+	// Any guest (1.0.7): the unified installer — a read-only share carrying one generated
+	// script that sets up everything guest-side (console logins, kernel console, SSH,
+	// sshfs, boot automounts), plus a writable drop-box the guest reports back through.
+	case guestSetup
 	case unknown       // decode fallback only; never encode it
 
 	// Every real kind, for pickers/validation (excludes the .unknown decode fallback).
 	public static let allKinds: [DeviceKind] = [
 		.keyboard, .trackpad, .pointer, .graphics, .audioInput, .audioOutput,
 		.network, .clipboard, .entropy, .rosetta, .consoleLoginInstaller, .sshInstaller,
+		.guestSetup,
 	]
 
 	public init(from decoder: Decoder) throws {
@@ -109,13 +116,50 @@ public enum SSHSetupInfo {
 	}
 }
 
+// Shared vocabulary for the unified guest-setup installer (1.0.7, the SSHSetupInfo
+// pattern): the read-only payload directory (generated script + env + keys + mount list),
+// the writable drop-box the guest reports back through, and the guest commands. One home
+// so the engine (generation), the daemon (tag validation), and the UI (shown commands)
+// can never drift.
+public enum GuestSetupInstallerInfo {
+	public static let directoryName = "GuestSetup"
+	public static let reportDirectoryName = "GuestReport"
+	public static let scriptName = "install.sh"
+	public static let reportName = "report.env"
+	// Per-mount hand-off beside the script: `kind<TAB>name<TAB>hostpath` lines.
+	public static let mountsFileName = "mounts.list"
+
+	// The installer, wherever the share landed (see SSHSetupInfo for the escalation rules).
+	public static func runCommand(inShareAt mountPoint: String = GuestPaths.share) -> String {
+		"sh \(mountPoint)/\(directoryName)/\(scriptName)"
+	}
+
+	public static var runFromAutomountCommand: String {
+		"sh \"\(GuestPaths.macOSAutomount)/\(directoryName)/\(scriptName)\""
+	}
+
+	// macOS guests: the share automounts on 13+, nothing to mount.
+	public static var runCommand: String {
+		SSHSetupInfo.escalated(runFromAutomountCommand, with: "sudo ")
+	}
+
+	// Linux guests mount the share by hand once, then run from inside it.
+	public static var mountAndRunCommand: String {
+		SSHSetupInfo.escalated(
+			GuestPaths.mountShareCommand + " && " + runCommand(), with: "sudo ")
+	}
+}
+
 // Share-directory names the engine reserves for generated payloads. They ride the same
 // virtiofs share as the user's mounts, so mount validation refuses them as tags — one
-// home so validation and generation can never drift. Grows with each installer.
+// home so validation and generation can never drift. The pre-1.0.7 names stay reserved:
+// old daemons still generate them, and a user tag matching one would collide on downgrade.
 public enum ReservedShareNames {
 	public static var all: Set<String> {
 		[ConsoleLoginInstallerInfo.directoryName,
-			SSHSetupInfo.directoryName, SSHSetupInfo.reportDirectoryName]
+			SSHSetupInfo.directoryName, SSHSetupInfo.reportDirectoryName,
+			GuestSetupInstallerInfo.directoryName,
+			GuestSetupInstallerInfo.reportDirectoryName]
 	}
 }
 

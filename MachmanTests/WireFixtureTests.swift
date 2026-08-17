@@ -402,6 +402,11 @@ struct WireFixtureTests {
 		#expect(DeviceKind.allKinds.contains(.sshInstaller))
 		#expect(!mac.contains(.sshInstaller))
 		#expect(!linux.contains(.sshInstaller))
+		// The unified installer (1.0.7 additive kind): raw value pinned; never implied.
+		#expect(DeviceKind(rawValue: "guestSetup") == .guestSetup)
+		#expect(DeviceKind.allKinds.contains(.guestSetup))
+		#expect(!mac.contains(.guestSetup))
+		#expect(!linux.contains(.guestSetup))
 	}
 
 	@Test func newRequestShapes() throws {
@@ -503,5 +508,74 @@ struct WireFixtureTests {
 		let legacy = encoded.replacingOccurrences(
 			of: #","ssh":{"guestUser":"admin","reverseState":"none"}"#, with: "")
 		#expect(try decode(VMInfo.self, legacy).ssh == nil)
+	}
+
+	@Test func guestSetupInfoFixtures() throws {
+		// Empty shape encodes to nothing at all — every field is optional.
+		#expect(try encode(GuestSetupInfo()) == "{}")
+		let full = GuestSetupInfo(
+			installed: true,
+			guestOS: "debian", guestOSFamily: "debian", guestOSVersion: "13",
+			guestInit: "systemd",
+			lastReportAt: Date(timeIntervalSince1970: 1_700_000_000),
+			scriptVersion: 3, currentScriptVersion: 3,
+			lastRunStatus: "partial", lastRunNote: "one step failed",
+			lastTransport: "virtiofs",
+			errors: [GuestSetupError(step: "sshd", message: "could not enable the service")],
+			features: [GuestFeatureInfo(
+				id: GuestFeature.ssh, available: true, configured: true, detail: "gustaf")],
+			consoles: [GuestConsoleInfo(device: "hvc0", login: "active", kernelConsole: true)],
+			automounts: [GuestAutomountInfo(
+				kind: MountKind.virtiofs, target: "host-share", path: "/mnt/machman/share")])
+		let encoded = try encode(full)
+		#expect(encoded.contains(#""installed":true"#))
+		#expect(encoded.contains(#""guestInit":"systemd""#))
+		#expect(encoded.contains(#""scriptVersion":3"#))
+		#expect(encoded.contains(
+			#""errors":[{"message":"could not enable the service","step":"sshd"}]"#))
+		#expect(encoded.contains(
+			#""features":[{"available":true,"configured":true,"detail":"gustaf","id":"ssh"}]"#))
+		#expect(encoded.contains(
+			#""consoles":[{"device":"hvc0","kernelConsole":true,"login":"active"}]"#))
+		#expect(encoded.contains(#""automounts":[{"kind":"virtiofs","#
+			+ #""path":"/mnt/machman/share","target":"host-share"}]"#))
+		#expect(try decode(GuestSetupInfo.self, encoded) == full)
+		// A feature with only an id still decodes (defaults false), and unknown feature
+		// ids are plain strings — they survive untouched.
+		let sparse = try decode(GuestFeatureInfo.self, #"{"id":"futureFeature"}"#)
+		#expect(sparse.id == "futureFeature")
+		#expect(!sparse.available)
+		#expect(!sparse.configured)
+	}
+
+	@Test func vmInfoSetupRoundTrip() throws {
+		var info = VMInfo(
+			name: "Debian", state: .stopped,
+			created: Date(timeIntervalSince1970: 1_700_000_000), lastRan: nil,
+			cpuCount: 2, memoryBytes: 1024, macAddress: nil, disks: [], mounts: [],
+			boot: BootInfo(
+				mode: .efi, kernel: nil, macInstallState: nil,
+				minCPUCount: nil, minMemoryBytes: nil))
+		info.setup = GuestSetupInfo(installed: true, guestOS: "debian")
+		let encoded = try encode(info)
+		#expect(encoded.contains(#""setup":{"guestOS":"debian","installed":true}"#))
+		#expect(try decode(VMInfo.self, encoded) == info)
+		// Payloads from daemons predating setup still decode; the field reads nil.
+		let legacy = encoded.replacingOccurrences(
+			of: #","setup":{"guestOS":"debian","installed":true}"#, with: "")
+		#expect(try decode(VMInfo.self, legacy).setup == nil)
+	}
+
+	@Test func mountKindRoundTrip() throws {
+		// kind/automounted pin when set and are omitted when nil.
+		#expect(try encode(MountInfo(
+			id: "m", path: "/x", tag: "docs", kind: MountKind.sshfs, automounted: true))
+			== #"{"automounted":true,"id":"m","kind":"sshfs","path":"/x","#
+			+ #""safe":true,"tag":"docs"}"#)
+		// Legacy payloads (no kind) decode as virtiofs through effectiveKind.
+		let legacy = try decode(MountInfo.self, #"{"id":"m","path":"/x","tag":"docs"}"#)
+		#expect(legacy.kind == nil)
+		#expect(legacy.effectiveKind == MountKind.virtiofs)
+		#expect(legacy.automounted == nil)
 	}
 }
