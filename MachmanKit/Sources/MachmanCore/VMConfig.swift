@@ -799,11 +799,15 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	func directoryShareDeviceConfig(
 		mainTag: String, extraDirectories: [String: VZSharedDirectory] = [:]
 	) -> VZVirtioFileSystemDeviceConfiguration {
+		// sshfs-kind mounts (1.0.7) never enter the share: the guest mounts them itself
+		// over its SSH link (the payload's mounts.list carries them there instead).
 		var sharedDirectories: [String: VZSharedDirectory] = Dictionary(
-			uniqueKeysWithValues: mountPoints.filter(\.enabled).map { mount in
-				(mount.tag,
-				VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
-			}
+			uniqueKeysWithValues: mountPoints
+				.filter { $0.enabled && $0.kind != MountKind.sshfs }
+				.map { mount in
+					(mount.tag,
+					VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
+				}
 		)
 		// Engine-reserved directories (the login installer). Mount validation refuses
 		// their names, so the merge cannot shadow a user mount.

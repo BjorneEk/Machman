@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Virtualization
 import MachmanAPI
 @testable import MachmanCore
 
@@ -152,6 +153,30 @@ struct DeviceConfigTests {
 				try vm.setMountTag(
 					id: vm.mountPoints[0].id.uuidString, tag: "LoginInstaller")
 			}
+		}
+	}
+
+	// sshfs-kind mounts (1.0.7) never enter the share device — the guest mounts them
+	// itself over its SSH link; the tag namespace stays shared across both kinds.
+	@Test func sshfsMountsStayOutOfTheShare() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("mkinds")
+			try vm.addMountPoint(HostMountPoint(path: "/tmp/a", tag: "data"))
+			try vm.addMountPoint(HostMountPoint(
+				path: "/tmp/b", tag: "docs", kind: MountKind.sshfs))
+			let share = vm.directoryShareDeviceConfig(mainTag: "host-share")
+			let directories = (share.share as? VZMultipleDirectoryShare)?.directories ?? [:]
+			#expect(directories.keys.contains("data"))
+			#expect(!directories.keys.contains("docs"))
+			// One namespace: an sshfs mount's tag still blocks a virtiofs twin.
+			#expect(throws: MachmanError.self) {
+				try vm.addMountPoint(HostMountPoint(path: "/tmp/c", tag: "docs"))
+			}
+			// Switching kinds moves it in and out of the share.
+			try vm.setMountKind(id: vm.mountPoints[1].id.uuidString, kind: MountKind.virtiofs)
+			let after = vm.directoryShareDeviceConfig(mainTag: "host-share")
+			#expect(((after.share as? VZMultipleDirectoryShare)?.directories ?? [:])
+				.keys.contains("docs"))
 		}
 	}
 
