@@ -72,10 +72,12 @@ struct SerialGroupInspector: View {
 		guard port.kind == .console else {
 			return "uart"
 		}
-		switch reportedInfo(for: port)?.login {
+		let reported = reportedInfo(for: port)
+		let external = reported?.external == true ? " (outside Machman)" : ""
+		switch reported?.login {
 		case "active-auto": return "login active (automatic)"
-		case "active": return "login active"
-		case "configured": return "login configured (next boot)"
+		case "active": return "login active" + external
+		case "configured": return "login configured (next boot)" + external
 		case "missing": return "not present in the guest"
 		case "none": return "no login"
 		case .some(let other): return other   // a newer script's state renders verbatim

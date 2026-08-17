@@ -556,6 +556,10 @@ struct WireFixtureTests {
 			#""features":[{"available":true,"configured":true,"detail":"gustaf","id":"ssh"}]"#))
 		#expect(encoded.contains(
 			#""consoles":[{"device":"hvc0","kernelConsole":true,"login":"active"}]"#))
+		// external (a login configured outside Machman) pins when set, omits when nil.
+		#expect(try encode(GuestConsoleInfo(
+			device: "hvc1", login: "configured", external: true))
+			== #"{"device":"hvc1","external":true,"login":"configured"}"#)
 		#expect(encoded.contains(#""automounts":[{"kind":"virtiofs","#
 			+ #""path":"/mnt/machman/share","target":"host-share"}]"#))
 		#expect(try decode(GuestSetupInfo.self, encoded) == full)

@@ -75,18 +75,23 @@ public struct GuestFeatureInfo: Codable, Sendable, Equatable, Identifiable {
 
 // One console interface as the script found it: the guest device name, its login state
 // ("active" — a getty is running, "configured" — one is set up for the next boot,
-// "none"), and whether it is the kernel console (console= points at it).
+// "none"), whether it is the kernel console (console= points at it), and whether the
+// login was configured OUTSIDE Machman (present, unmarked, left as is).
 public struct GuestConsoleInfo: Codable, Sendable, Equatable, Identifiable {
 	public var device: String        // "hvc0", "ttyV0.0", "cu.virtio"
 	public var login: String
 	public var kernelConsole: Bool?
+	public var external: Bool?
 
 	public var id: String { device }
 
-	public init(device: String, login: String, kernelConsole: Bool? = nil) {
+	public init(
+		device: String, login: String, kernelConsole: Bool? = nil, external: Bool? = nil
+	) {
 		self.device = device
 		self.login = login
 		self.kernelConsole = kernelConsole
+		self.external = external
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -94,6 +99,7 @@ public struct GuestConsoleInfo: Codable, Sendable, Equatable, Identifiable {
 		self.device = try c.decode(String.self, forKey: .device)
 		self.login = try c.decodeIfPresent(String.self, forKey: .login) ?? "none"
 		self.kernelConsole = try c.decodeIfPresent(Bool.self, forKey: .kernelConsole)
+		self.external = try c.decodeIfPresent(Bool.self, forKey: .external)
 	}
 }
 

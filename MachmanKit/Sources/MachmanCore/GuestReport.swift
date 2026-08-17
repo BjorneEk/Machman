@@ -114,18 +114,20 @@ struct GuestReport {
 			}
 	}
 
-	// CONSOLE_<n>=<device> <login> [auto] [kernel]
+	// CONSOLE_<n>=<device> <login> [auto] [external] [kernel]
 	private func consoles() -> [GuestConsoleInfo] {
 		numbered("CONSOLE_").compactMap { value in
 			let words = value.split(separator: " ").map(String.init)
 			guard words.count >= 2 else { return nil }
 			var login = words[1]
-			if words.dropFirst(2).contains("auto") {
+			let flags = words.dropFirst(2)
+			if flags.contains("auto") {
 				login = "active-auto"
 			}
 			return GuestConsoleInfo(
 				device: words[0], login: login,
-				kernelConsole: words.dropFirst(2).contains("kernel") ? true : nil)
+				kernelConsole: flags.contains("kernel") ? true : nil,
+				external: flags.contains("external") ? true : nil)
 		}
 	}
 
