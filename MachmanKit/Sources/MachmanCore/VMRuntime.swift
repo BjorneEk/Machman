@@ -182,14 +182,18 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 			return
 		}
 		sshReportMtime = mtime
-		guard let report = SSHReport.read(atPath: path) else { return }
+		guard let report = GuestReport.read(atPath: path) else { return }
 		do {
-			if try report.apply(to: config, stampedAt: Date()) {
+			let changes = try report.apply(to: config, stampedAt: Date())
+			if changes.ssh {
 				events.emit(.sshChanged(vm: config.name))
+			}
+			if changes.setup {
+				events.emit(.setupChanged(vm: config.name))
 			}
 		} catch {
 			MachmanLogger.log(.passiveError,
-				"cannot persist \(config.name)'s ssh report: \(error)")
+				"cannot persist \(config.name)'s guest report: \(error)")
 		}
 	}
 

@@ -96,12 +96,12 @@ struct SSHConfigTests {
 			try vm.setSSH(integrationEnabled: nil, reverseApproved: false, alias: nil)
 			#expect(vm.ssh?.reverseStateValue == .denied)
 			// Re-reporting the SAME key does not re-open the question…
-			#expect(!(try SSHReport.parse("REVERSE_PUBKEY=ssh-ed25519 AAAA guest")
-				.apply(to: vm, stampedAt: Date())))
+			#expect(!(try GuestReport.parse("REVERSE_PUBKEY=ssh-ed25519 AAAA guest")
+				.apply(to: vm, stampedAt: Date()).any))
 			#expect(vm.ssh?.reverseStateValue == .denied)
 			// …but a DIFFERENT key is a new request.
-			#expect(try SSHReport.parse("REVERSE_PUBKEY=ssh-ed25519 BBBB fresh")
-				.apply(to: vm, stampedAt: Date()))
+			#expect(try GuestReport.parse("REVERSE_PUBKEY=ssh-ed25519 BBBB fresh")
+				.apply(to: vm, stampedAt: Date()).any)
 			#expect(vm.ssh?.reverseStateValue == .pending)
 		}
 	}

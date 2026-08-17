@@ -1,0 +1,287 @@
+//
+//  GuestReport.swift
+//  MachmanCore
+//
+//  The guest's setup report: flat key=value lines written into the writable GuestReport
+//  drop-box by the generated script. The drop-box is guest-writable, so the parser is
+//  deliberately defensive — size-capped, whitelist-keyed (exact keys plus the numbered/
+//  named section prefixes), garbage-tolerant — and apply() treats values as claims, not
+//  truth (the daemon's own discovery cross-checks the address; host keys only pin the
+//  guest's own identity). Ingested by the process that owns the config (the vmhost while
+//  running); the HOST stamps the ingestion time. Two halves: the SSH keys the v2 script
+//  already wrote (applied into config.ssh, byte-compatible), and the v3 setup sections
+//  (FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_) applied into config.setup as a whole snapshot.
+//
+
+import Foundation
+import MachmanAPI
+
+struct GuestReport {
+	var values: [String: String]
+
+	// Which halves an apply() actually moved — the caller emits per-half events.
+	struct Changes {
+		var ssh = false
+		var setup = false
+		var any: Bool { ssh || setup }
+	}
+
+	// A report is a handful of short lines; anything bigger is not our file.
+	static let maxBytes = 64 * 1024
+	static let maxValueLength = 8 * 1024
+	// A hostile guest could fill the 64 KB with section lines; nothing legitimate has
+	// more than a handful per section.
+	static let maxSectionEntries = 64
+	// Whitelist, so a v2 report still applies to a v3 daemon and a future report's extra
+	// keys are ignored rather than fatal.
+	static let allowedKeys: Set<String> = [
+		"SCRIPT_VERSION", "MARKER", "OS_ID", "USER", "HOME", "HOSTNAME",
+		"IP", "GATEWAY", "TWO_WAY", "HOST_KEY", "REVERSE_PUBKEY", "UNINSTALLED",
+		// 1.0.6: what the run achieved, how it got here, and what the guest can do.
+		"STATUS", "NOTE", "FAILED_STEPS", "TRANSPORT", "OS_FAMILY", "OS_VERSION", "INIT",
+		"SSHD", "SSHFS", "SSHFS_VERSION", "SSHFS_MOUNT_OK", "SSHFS_MOUNTROOT",
+		// 1.0.7: the unified installer's extras.
+		"KERNEL_CONSOLE", "KERNEL_CONSOLE_METHOD",
+	]
+	// Section keys: FEATURE_<wire id>, and CONSOLE_/AUTOMOUNT_/ERROR_<n>.
+	static let allowedPrefixes = ["FEATURE_", "CONSOLE_", "AUTOMOUNT_", "ERROR_"]
+
+	static func read(atPath path: String) -> GuestReport? {
+		guard let data = FileManager.default.contents(atPath: path),
+			!data.isEmpty, data.count <= maxBytes else { return nil }
+		return parse(String(decoding: data, as: UTF8.self))
+	}
+
+	static func parse(_ text: String) -> GuestReport {
+		var values: [String: String] = [:]
+		// components(separatedBy: .newlines), not split(separator: "\n") — Swift folds
+		// CRLF into ONE Character, so a "\n" split walks straight past CRLF endings.
+		for rawLine in text.components(separatedBy: .newlines) {
+			let line = rawLine.trimmingCharacters(in: .whitespaces)
+			guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+			guard let eq = line.firstIndex(of: "=") else { continue }
+			let key = String(line[..<eq])
+			guard allowedKeys.contains(key)
+				|| allowedPrefixes.contains(where: { key.hasPrefix($0) && key.count > $0.count })
+			else { continue }
+			let value = String(line[line.index(after: eq)...])
+				.trimmingCharacters(in: .whitespaces)
+			guard value.count <= maxValueLength else { continue }
+			values[key] = value   // last occurrence wins
+		}
+		return GuestReport(values: values)
+	}
+
+	// MARK: - Section extraction
+
+	// Numbered section values (CONSOLE_1, CONSOLE_2, …) in index order, capped.
+	private func numbered(_ prefix: String) -> [String] {
+		values.keys
+			.compactMap { key -> (Int, String)? in
+				guard key.hasPrefix(prefix), let n = Int(key.dropFirst(prefix.count)),
+					(1...Self.maxSectionEntries).contains(n) else { return nil }
+				return (n, values[key] ?? "")
+			}
+			.sorted { $0.0 < $1.0 }
+			.map(\.1)
+	}
+
+	// FEATURE_<id>=<state> <detail…>, state ∈ unavailable|available|configured.
+	private func features() -> [GuestFeatureInfo] {
+		values.keys
+			.filter { $0.hasPrefix("FEATURE_") }
+			.sorted()
+			.prefix(Self.maxSectionEntries)
+			.compactMap { key in
+				let id = String(key.dropFirst("FEATURE_".count))
+				guard !id.isEmpty, let value = values[key] else { return nil }
+				let parts = value.split(separator: " ", maxSplits: 1)
+				let state = parts.first.map(String.init) ?? ""
+				let detail = parts.count > 1 ? String(parts[1]) : nil
+				switch state {
+				case "configured":
+					return GuestFeatureInfo(
+						id: id, available: true, configured: true, detail: detail)
+				case "available":
+					return GuestFeatureInfo(
+						id: id, available: true, configured: false, detail: detail)
+				case "unavailable":
+					return GuestFeatureInfo(
+						id: id, available: false, reason: detail, configured: false)
+				default:
+					return nil
+				}
+			}
+	}
+
+	// CONSOLE_<n>=<device> <login> [auto] [kernel]
+	private func consoles() -> [GuestConsoleInfo] {
+		numbered("CONSOLE_").compactMap { value in
+			let words = value.split(separator: " ").map(String.init)
+			guard words.count >= 2 else { return nil }
+			var login = words[1]
+			if words.dropFirst(2).contains("auto") {
+				login = "active-auto"
+			}
+			return GuestConsoleInfo(
+				device: words[0], login: login,
+				kernelConsole: words.dropFirst(2).contains("kernel") ? true : nil)
+		}
+	}
+
+	// AUTOMOUNT_<n>=<kind> <target> <path with spaces allowed>
+	private func automounts() -> [GuestAutomountInfo] {
+		numbered("AUTOMOUNT_").compactMap { value in
+			let words = value.split(separator: " ", maxSplits: 2).map(String.init)
+			guard words.count == 3 else { return nil }
+			return GuestAutomountInfo(kind: words[0], target: words[1], path: words[2])
+		}
+	}
+
+	// ERROR_<n>=<step>: <message>
+	private func errors() -> [GuestSetupError] {
+		numbered("ERROR_").map { value in
+			if let colon = value.firstIndex(of: ":") {
+				return GuestSetupError(
+					step: String(value[..<colon]),
+					message: String(value[value.index(after: colon)...])
+						.trimmingCharacters(in: .whitespaces))
+			}
+			return GuestSetupError(step: "", message: value)
+		}
+	}
+
+	// MARK: - Application
+
+	// Fold the report into the persisted state. Caller saves-and-emits per changed half;
+	// .any false = nothing changed (identical report re-read).
+	@discardableResult
+	func apply(to config: VMConfig, stampedAt: Date) throws -> Changes {
+		var changes = Changes()
+		var state = config.ssh ?? SSHConfig()
+		let beforeSSH = state
+		if values["UNINSTALLED"] == "1" {
+			// The guest removed our artifacts: forget what the report taught us; the
+			// user's switches, the alias and the marker stay.
+			state.guestUser = nil
+			state.guestHostname = nil
+			state.guestOS = nil
+			state.guestOSVersion = nil
+			state.guestHostKey = nil
+			state.reversePublicKey = nil
+			state.reverseState = SSHInfo.ReverseState.none.rawValue
+			state.sshfsAvailable = nil
+			state.sshfsMountReady = nil
+			state.sshfsMountRoot = nil
+			state.lastRunStatus = nil
+			state.lastRunNote = nil
+			state.lastTransport = nil
+		} else {
+			if let user = values["USER"], !user.isEmpty { state.guestUser = user }
+			if let host = values["HOSTNAME"], !host.isEmpty { state.guestHostname = host }
+			if let os = values["OS_ID"], !os.isEmpty { state.guestOS = os }
+			if let version = values["OS_VERSION"], !version.isEmpty {
+				state.guestOSVersion = version
+			}
+			if let key = values["HOST_KEY"], !key.isEmpty { state.guestHostKey = key }
+			// The address is a claim (the drop-box is guest-writable), kept only as the
+			// fallback that survives a rename — the daemon's own discovery is the truth.
+			if let ip = values["IP"], !ip.isEmpty { state.lastAddress = ip }
+			// What the run achieved. A v1 report carries none of this: absence means
+			// "an older script ran", not "it failed", so nothing is cleared here.
+			if let status = values["STATUS"], !status.isEmpty { state.lastRunStatus = status }
+			if let note = values["NOTE"], !note.isEmpty { state.lastRunNote = note }
+			if let transport = values["TRANSPORT"], !transport.isEmpty {
+				state.lastTransport = transport
+			}
+			if let version = values["SCRIPT_VERSION"], let number = Int(version) {
+				state.scriptVersion = number
+			}
+			if let sshfs = values["SSHFS"] {
+				state.sshfsAvailable = sshfs == "1"
+				state.sshfsMountReady = values["SSHFS_MOUNT_OK"] == "1"
+				let root = values["SSHFS_MOUNTROOT"] ?? ""
+				state.sshfsMountRoot = root.isEmpty ? nil : root
+			}
+			if let reverse = values["REVERSE_PUBKEY"], !reverse.isEmpty {
+				if state.reversePublicKey != reverse {
+					// A new key always needs fresh approval — even if one was approved.
+					state.reversePublicKey = reverse
+					state.reverseState = SSHInfo.ReverseState.pending.rawValue
+				} else if state.reverseStateValue == .none {
+					state.reverseState = SSHInfo.ReverseState.pending.rawValue
+				}
+			}
+		}
+		changes.ssh = state != beforeSSH
+
+		// The setup half: a v3 report is a whole snapshot — sections REPLACE, so a clean
+		// run clears a partial one's errors. A v2 report (script < 3, no sections) leaves
+		// setup alone entirely: an older script ran, it has nothing to say here.
+		let scriptVersion = values["SCRIPT_VERSION"].flatMap(Int.init)
+		let isV3 = (scriptVersion ?? 0) >= 3
+			|| values.keys.contains { key in
+				Self.allowedPrefixes.contains { key.hasPrefix($0) }
+			}
+		if values["UNINSTALLED"] == "1" {
+			if var setup = config.setup {
+				let before = setup
+				setup.installed = false
+				setup.lastRunStatus = nil
+				setup.lastRunNote = nil
+				setup.errors = []
+				setup.features = []
+				setup.consoles = []
+				setup.automounts = []
+				if setup != before {
+					setup.lastReportAt = stampedAt
+					config.setup = setup
+					changes.setup = true
+				}
+			}
+		} else if isV3 {
+			var setup = config.setup ?? GuestSetupConfig()
+			let before = setup
+			setup.installed = true
+			// The guest's identity updates when reported, never blanks when omitted…
+			if let os = values["OS_ID"], !os.isEmpty { setup.guestOS = os }
+			if let family = values["OS_FAMILY"], !family.isEmpty {
+				setup.guestOSFamily = family
+			}
+			if let version = values["OS_VERSION"], !version.isEmpty {
+				setup.guestOSVersion = version
+			}
+			if let initSystem = values["INIT"], !initSystem.isEmpty {
+				setup.guestInit = initSystem
+			}
+			if let scriptVersion { setup.scriptVersion = scriptVersion }
+			// …while the RUN is a whole snapshot: a clean run replaces a partial one's
+			// status, errors and sections instead of accumulating them.
+			setup.lastRunStatus = values["STATUS"]
+			setup.lastRunNote = values["NOTE"]
+			setup.lastTransport = values["TRANSPORT"]
+			setup.errors = errors()
+			setup.features = features()
+			setup.consoles = consoles()
+			setup.automounts = automounts()
+			if setup != before {
+				setup.lastReportAt = stampedAt
+				config.setup = setup
+				changes.setup = true
+			}
+		}
+
+		guard changes.any else { return changes }
+		if changes.ssh {
+			state.lastReportAt = stampedAt
+			config.ssh = state
+		}
+		try config.saveVMConfig()
+		// The guest just told us its identity: pin it where the session tabs look, so a
+		// tab verifies the guest without touching the user's own ~/.ssh/known_hosts.
+		if changes.ssh {
+			SSHSetupInstaller.writeKnownHosts(for: config)
+		}
+		return changes
+	}
+}

@@ -826,10 +826,24 @@ public final class LocalMachman: MachmanControlling {
 					enabled: enabledFlag(disk.enabled))
 			}
 		}
-		let mounts = config.mountPoints.map {
-			MountInfo(
-				id: $0.id.uuidString, path: $0.path, tag: $0.tag, safe: $0.safe,
-				enabled: enabledFlag($0.enabled))
+		// automounted comes from the guest's setup report: the ONE share automount covers
+		// every virtiofs mount (they are its subdirectories); sshfs mounts match by tag.
+		let automounts = config.setup?.automounts ?? []
+		let shareAutomounted = automounts.contains { $0.kind == MountKind.virtiofs }
+		let mounts = config.mountPoints.map { mount -> MountInfo in
+			let automounted: Bool?
+			if mount.kind == MountKind.sshfs {
+				automounted = automounts.contains {
+					$0.kind == MountKind.sshfs && $0.target == mount.tag
+				} ? true : nil
+			} else {
+				automounted = shareAutomounted ? true : nil
+			}
+			return MountInfo(
+				id: mount.id.uuidString, path: mount.path, tag: mount.tag, safe: mount.safe,
+				enabled: enabledFlag(mount.enabled),
+				kind: mount.kind == MountKind.virtiofs ? nil : mount.kind,
+				automounted: automounted)
 		}
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		func serialPorts(_ kind: SerialPortKind, _ ports: [SerialPort]) -> [SerialPortInfo] {
@@ -904,6 +918,28 @@ public final class LocalMachman: MachmanControlling {
 				hostAddressForGuest: state.lastAddress
 					.flatMap { SSHDiscovery.hostAddress(seenFrom: $0) })
 		}
+		// The guest-setup half (1.0.7): the persisted report snapshot, plus the one
+		// server-resolved field — the script version this app ships, so clients can say
+		// "an update is available" without a second source of truth.
+		let setup: GuestSetupInfo? = (config.setup
+			?? (sshAttached ? GuestSetupConfig() : nil)).map { state in
+			GuestSetupInfo(
+				installed: state.installed,
+				guestOS: state.guestOS,
+				guestOSFamily: state.guestOSFamily,
+				guestOSVersion: state.guestOSVersion,
+				guestInit: state.guestInit,
+				lastReportAt: state.lastReportAt,
+				scriptVersion: state.scriptVersion,
+				currentScriptVersion: GuestSetupInstaller.scriptVersion,
+				lastRunStatus: state.lastRunStatus,
+				lastRunNote: state.lastRunNote,
+				lastTransport: state.lastTransport,
+				errors: state.errors.isEmpty ? nil : state.errors,
+				features: state.features.isEmpty ? nil : state.features,
+				consoles: state.consoles.isEmpty ? nil : state.consoles,
+				automounts: state.automounts.isEmpty ? nil : state.automounts)
+		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
 		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.
 		let devices = config.devices.compactMap { device -> DeviceInfo? in
@@ -935,7 +971,7 @@ public final class LocalMachman: MachmanControlling {
 			uartPorts: serialPorts(.uart, config.uartPorts),
 			devices: devices,
 			nestedVirtualization: config.nestedVirtualization,
-			ssh: ssh)
+			ssh: ssh, setup: setup)
 	}
 
 	// Why a configured device cannot attach here — the serial-unavailability pattern for
