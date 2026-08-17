@@ -602,24 +602,30 @@ private struct CanvasTabItem: View {
 		.help(title)
 	}
 
-	// Xcode behavior: the tab's icon swaps to a close button on hover.
-	@ViewBuilder
+	// Xcode behavior: the tab's icon swaps to a close button on hover — and the icon AREA
+	// is the close target even before the hover render lands. The swap is cosmetic only:
+	// with the button's existence gated on `hovering`, a fast move-and-click reached the
+	// row before onHover re-rendered, fell through to onSelect, and a second click was
+	// needed to actually close.
 	private var iconOrClose: some View {
-		if hovering && !dragging {
-			Button(action: onClose) {
-				Image(systemName: MachmanSymbols.closeTab)
-					.font(.system(size: 9, weight: .bold))
-					.frame(width: 14, height: 14)
-					.background(Circle().fill(Color.primary.opacity(0.12)))
+		Button(action: onClose) {
+			Group {
+				if hovering && !dragging {
+					Image(systemName: MachmanSymbols.closeTab)
+						.font(.system(size: 9, weight: .bold))
+						.frame(width: 14, height: 14)
+						.background(Circle().fill(Color.primary.opacity(0.12)))
+				} else {
+					Image(systemName: symbol)
+						.font(.system(size: metrics.tabFontSize - 1))
+						.foregroundStyle(selected && isTerminal
+							? MachmanColors.selection : .secondary)
+						.frame(width: 14, height: 14)
+				}
 			}
-			.buttonStyle(.plain)
-			.help("Close tab" + (isTerminal ? " (disconnects)" : ""))
-		} else {
-			Image(systemName: symbol)
-				.font(.system(size: metrics.tabFontSize - 1))
-				.foregroundStyle(selected && isTerminal ? MachmanColors.selection : .secondary)
-				.frame(width: 14, height: 14)
 		}
+		.buttonStyle(.plain)
+		.help("Close tab" + (isTerminal ? " (disconnects)" : ""))
 	}
 
 	@ViewBuilder
