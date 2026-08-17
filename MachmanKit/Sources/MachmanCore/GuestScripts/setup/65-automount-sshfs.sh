@@ -7,8 +7,8 @@
 SSHFSAUTO_PLAN=""
 SSHFSAUTO_SELECTED=""      # mount names chosen, space-separated ("@share" = the share)
 SSHFSAUTO_DONE=""
-F_AVAIL_sshfsauto=0
-F_REASON_sshfsauto=""
+avail_sshfsauto=0
+reason_sshfsauto=""
 
 sshfsauto_detect() {
 	return 0
@@ -29,21 +29,21 @@ sshfsauto_items() {
 }
 
 sshfsauto_available() {
-	F_AVAIL_sshfsauto=0
-	F_REASON_sshfsauto=""
+	avail_sshfsauto=0
+	reason_sshfsauto=""
 	if [ "$OS_FAMILY" = darwin ]; then
-		F_REASON_sshfsauto="macOS needs macFUSE — install it yourself"
+		reason_sshfsauto="macOS needs macFUSE — install it yourself"
 		return 0
 	fi
 	if [ -z "$(sshfsauto_items)" ]; then
-		F_REASON_sshfsauto="no sshfs mounts on this VM — set a mount's kind to sshfs in Machman"
+		reason_sshfsauto="no sshfs mounts on this VM — set a mount's kind to sshfs in Machman"
 		return 0
 	fi
 	if [ -z "$GATEWAY" ]; then
-		F_REASON_sshfsauto="no route to the Mac — the guest needs a default route first"
+		reason_sshfsauto="no route to the Mac — the guest needs a default route first"
 		return 0
 	fi
-	F_AVAIL_sshfsauto=1
+	avail_sshfsauto=1
 	return 0
 }
 

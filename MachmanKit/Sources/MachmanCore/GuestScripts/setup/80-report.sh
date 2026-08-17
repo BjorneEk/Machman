@@ -24,8 +24,8 @@ wire_id() {
 # feature_line <id> → "FEATURE_<wire>=<state> <detail>" (state: unavailable|available|
 # configured; detail = the reason when unavailable, a short fact otherwise).
 feature_line() {
-	_fl_avail="$(eval "printf '%s' \"\$F_AVAIL_$1\"")"
-	_fl_reason="$(eval "printf '%s' \"\$F_REASON_$1\"")"
+	_fl_avail="$(eval "printf '%s' \"\$avail_$1\"")"
+	_fl_reason="$(eval "printf '%s' \"\$reason_$1\"")"
 	if [ "$_fl_avail" != 1 ]; then
 		printf 'FEATURE_%s=unavailable %s\n' "$(wire_id "$1")" "$_fl_reason"
 		return 0

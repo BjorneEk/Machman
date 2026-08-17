@@ -309,32 +309,19 @@ extension VMConfig {
 			? VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag
 			: GuestPaths.shareTag
 		var extraShares: [String: VZSharedDirectory] = [:]
-		if byKind[.consoleLoginInstaller] != nil {
-			// mac-only by construction (resolvedDevices() skips the kind off macOS): a
-			// reserved read-only directory on the automounting share, so it appears at
-			// /Volumes/My Shared Files/LoginInstaller with zero guest setup.
-			do {
-				let dir = try ConsoleLoginInstaller.writePayload(for: self)
-				extraShares[ConsoleLoginInstaller.directoryName] =
-					VZSharedDirectory(url: dir, readOnly: true)
-			} catch {
-				warnings.append(
-					"skipping the console login installer on \(name): \(error.localizedDescription)")
-			}
-		}
-		if byKind[.sshInstaller] != nil {
+		if byKind[.guestSetup] != nil {
 			// Any guest: read-only payload beside a writable report drop-box, both riding
 			// the one share device (reserved names; readOnly is per-directory). A writable
 			// script would let any guest process swap it before the admin sudo-runs it.
 			do {
-				let (payload, report) = try SSHSetupInstaller.writePayload(for: self)
-				extraShares[SSHSetupInstaller.directoryName] =
+				let (payload, report) = try GuestSetupInstaller.writePayload(for: self)
+				extraShares[GuestSetupInstaller.directoryName] =
 					VZSharedDirectory(url: payload, readOnly: true)
-				extraShares[SSHSetupInstaller.reportDirectoryName] =
+				extraShares[GuestSetupInstaller.reportDirectoryName] =
 					VZSharedDirectory(url: report, readOnly: false)
 			} catch {
 				warnings.append(
-					"skipping the ssh setup on \(name): \(error.localizedDescription)")
+					"skipping the guest setup on \(name): \(error.localizedDescription)")
 			}
 		}
 		var shares: [VZDirectorySharingDeviceConfiguration] =

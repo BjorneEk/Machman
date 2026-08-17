@@ -3,8 +3,8 @@
 # for one user. The proven v2 recipes, feature-shaped.
 
 SSHD_PLAN=""
-F_AVAIL_ssh=0
-F_REASON_ssh=""
+avail_ssh=0
+reason_ssh=""
 
 ssh_detect() {
 	detect_sshd
@@ -12,13 +12,13 @@ ssh_detect() {
 }
 
 ssh_available() {
-	F_AVAIL_ssh=0
-	F_REASON_ssh=""
+	avail_ssh=0
+	reason_ssh=""
 	if [ ! -r "$PAYLOAD_DIR/host_key.pub" ]; then
-		F_REASON_ssh="the Mac's public key is missing from the payload — restart the VM"
+		reason_ssh="the Mac's public key is missing from the payload — restart the VM"
 		return 0
 	fi
-	F_AVAIL_ssh=1
+	avail_ssh=1
 	return 0
 }
 

@@ -83,13 +83,13 @@ _mm_menu=""
 _mm_marks=""
 _mm_i=0
 for _mm_f in $FEATURES; do
-	_mm_avail="$(eval "printf '%s' \"\$F_AVAIL_$_mm_f\"")"
+	_mm_avail="$(eval "printf '%s' \"\$avail_$_mm_f\"")"
 	[ "$_mm_avail" = 1 ] || continue
 	AVAILABLE_FEATURES="$AVAILABLE_FEATURES $_mm_f"
 	_mm_i=$((_mm_i + 1))
 	_mm_menu="$_mm_menu$(feature_title "$_mm_f")
 "
-	_mm_want="$(eval "printf '%s' \"\$F_WANT_$_mm_f\"")"
+	_mm_want="$(eval "printf '%s' \"\$want_$_mm_f\"")"
 	_mm_on=0
 	if [ -n "$_mm_want" ]; then
 		_mm_on="$_mm_want"
@@ -136,7 +136,7 @@ if feature_selected sshfsauto; then
 	feature_selected reverse || SELECTED_FEATURES="$SELECTED_FEATURES reverse"
 fi
 if feature_selected sshfs && ! feature_selected reverse; then
-	if [ "$F_AVAIL_reverse" = 1 ] && [ "${F_WANT_reverse:-}" != 0 ]; then
+	if [ "$avail_reverse" = 1 ] && [ "${want_reverse:-}" != 0 ]; then
 		SELECTED_FEATURES="$SELECTED_FEATURES reverse"
 	fi
 fi
@@ -169,9 +169,9 @@ for _mm_f in $FEATURES; do
 done
 _mm_skipped=""
 for _mm_f in $FEATURES; do
-	_mm_avail="$(eval "printf '%s' \"\$F_AVAIL_$_mm_f\"")"
+	_mm_avail="$(eval "printf '%s' \"\$avail_$_mm_f\"")"
 	if [ "$_mm_avail" != 1 ]; then
-		_mm_reason="$(eval "printf '%s' \"\$F_REASON_$_mm_f\"")"
+		_mm_reason="$(eval "printf '%s' \"\$reason_$_mm_f\"")"
 		[ -n "$_mm_reason" ] \
 			&& _mm_skipped="$_mm_skipped$(feature_title "$_mm_f"): $_mm_reason
 "

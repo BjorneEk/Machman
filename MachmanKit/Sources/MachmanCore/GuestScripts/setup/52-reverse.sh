@@ -3,21 +3,21 @@
 # Needs approval in Machman before it works; only public keys ever cross the share.
 
 REVERSE_PLAN=""
-F_AVAIL_reverse=0
-F_REASON_reverse=""
+avail_reverse=0
+reason_reverse=""
 
 reverse_detect() {
 	return 0
 }
 
 reverse_available() {
-	F_AVAIL_reverse=0
-	F_REASON_reverse=""
+	avail_reverse=0
+	reason_reverse=""
 	if ! have ssh-keygen; then
-		F_REASON_reverse="ssh-keygen is missing — install the OpenSSH client"
+		reason_reverse="ssh-keygen is missing — install the OpenSSH client"
 		return 0
 	fi
-	F_AVAIL_reverse=1
+	avail_reverse=1
 	return 0
 }
 

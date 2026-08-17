@@ -7,8 +7,8 @@
 CONSOLE_DEVICES=""         # expected device names, space-separated
 CONSOLE_SELECTED=""        # devices chosen for a login, space-separated
 CONSOLE_PLAN=""
-F_AVAIL_console=0
-F_REASON_console=""
+avail_console=0
+reason_console=""
 GETTY_MECH="none"          # systemd | launchd | inittab | runit | freebsd-rc | none
 LAUNCHD_GETTY_PREFIX="com.machman.console-getty"
 
@@ -57,15 +57,15 @@ console_login_state() {
 }
 
 console_available() {
-	F_AVAIL_console=0
-	F_REASON_console=""
+	avail_console=0
+	reason_console=""
 	if [ "${CONSOLE_COUNT:-0}" -eq 0 ]; then
-		F_REASON_console="no consoles attached — add one in Machman first"
+		reason_console="no consoles attached — add one in Machman first"
 		return 0
 	fi
 	case "$OS_FAMILY" in
 	openbsd)
-		F_REASON_console="OpenBSD has no virtio-console driver"
+		reason_console="OpenBSD has no virtio-console driver"
 		return 0
 		;;
 	freebsd)
@@ -73,16 +73,16 @@ console_available() {
 		# the act, so availability is about the loader, not the device.
 		if ! kldstat 2>/dev/null | grep -q virtio_console \
 			&& ! kldload -n virtio_console 2>/dev/null; then
-			F_REASON_console="no virtio_console driver in this FreeBSD"
+			reason_console="no virtio_console driver in this FreeBSD"
 			return 0
 		fi
 		;;
 	esac
 	if [ "$GETTY_MECH" = none ]; then
-		F_REASON_console="no known way to configure a login under init '$INIT'"
+		reason_console="no known way to configure a login under init '$INIT'"
 		return 0
 	fi
-	F_AVAIL_console=1
+	avail_console=1
 	return 0
 }
 

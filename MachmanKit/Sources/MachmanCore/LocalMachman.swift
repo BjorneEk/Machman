@@ -475,8 +475,14 @@ public final class LocalMachman: MachmanControlling {
 		return info(for: vm)
 	}
 
-	// The sync core, so the ordering is testable without the async shell.
+	// The sync core, so the ordering is testable without the async shell. The two
+	// pre-1.0.7 installer kinds map onto guestSetup, so clients that still ask for them
+	// get the unified installer rather than a refusal.
 	func attachDevice(_ kind: DeviceKind, to vm: VirtualMachine) throws {
+		var kind = kind
+		if kind == .sshInstaller || kind == .consoleLoginInstaller {
+			kind = .guestSetup
+		}
 		try Self.validateDeviceKind(kind, for: vm.config)
 		try vm.config.addDevice(GuestDevice(kind: kind))
 		// Generated payloads normally appear at the next assembly, like every other device
@@ -485,8 +491,8 @@ public final class LocalMachman: MachmanControlling {
 		// explanation. Writing it on add costs a few files and makes "add the installer,
 		// then mount it" true immediately. Runs in the process that owns the config (the
 		// vmhost proxies this call while hosted), so the single-writer rule holds.
-		if kind == .sshInstaller {
-			try? SSHSetupInstaller.writePayload(for: vm.config)
+		if kind == .guestSetup {
+			try? GuestSetupInstaller.writePayload(for: vm.config)
 		}
 	}
 
@@ -494,12 +500,16 @@ public final class LocalMachman: MachmanControlling {
 		guard kind != .unknown else {
 			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
 		}
+		var kind = kind
+		if kind == .sshInstaller || kind == .consoleLoginInstaller {
+			kind = .guestSetup
+		}
 		let vm = try lookup(name)
 		try vm.config.removeDevice(kind: kind)
-		if kind == .sshInstaller {
+		if kind == .guestSetup {
 			// The share dirs stop being served next boot; drop them from disk too. The
 			// keypair and config.ssh survive re-adds — vm.ssh.reset is the deeper wipe.
-			SSHSetupInstaller.removePayload(for: vm.config)
+			GuestSetupInstaller.removePayload(for: vm.config)
 		}
 		registry.events.emit(.listChanged)
 		return info(for: vm)
@@ -534,10 +544,14 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidArgument,
 				message: "the Mac trackpad needs a macOS guest — install macOS first")
-		case .consoleLoginInstaller where !macGuest:
+		case .consoleLoginInstaller:
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "the console login installer needs a macOS guest")
+				message: "superseded by the Guest Setup installer (1.0.7)")
+		case .sshInstaller:
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "superseded by the Guest Setup installer (1.0.7)")
 		case .clipboard where macGuest, .rosetta where macGuest:
 			throw MachmanError(
 				code: .invalidArgument,
@@ -851,7 +865,7 @@ public final class LocalMachman: MachmanControlling {
 		// what the setup guide has to show BEFORE the first run, and deriving them
 		// client-side is exactly the drift this shape exists to prevent.
 		let sshAttached = config.devices.contains {
-			$0.deviceKind == .sshInstaller && $0.enabled
+			$0.deviceKind == .guestSetup && $0.enabled
 		}
 		let ssh: SSHInfo? = (config.ssh ?? (sshAttached ? SSHConfig() : nil)).map { state in
 			let keyPath = config.configFilePath(file: "ssh/id_ed25519")

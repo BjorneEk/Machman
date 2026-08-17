@@ -9,8 +9,8 @@ KC_DEVICE=""
 KC_PLAN=""
 KC_DEVICE_DONE=""
 KC_METHOD_DONE=""
-F_AVAIL_kernelconsole=0
-F_REASON_kernelconsole=""
+avail_kernelconsole=0
+reason_kernelconsole=""
 
 kernelconsole_detect() {
 	detect_cmdline_consoles
@@ -19,32 +19,32 @@ kernelconsole_detect() {
 }
 
 kernelconsole_available() {
-	F_AVAIL_kernelconsole=0
-	F_REASON_kernelconsole=""
+	avail_kernelconsole=0
+	reason_kernelconsole=""
 	if ! linux_guest; then
-		F_REASON_kernelconsole="kernel console output is a Linux feature"
+		reason_kernelconsole="kernel console output is a Linux feature"
 		return 0
 	fi
 	if [ "${BOOT_MODE:-efi}" = kernel ]; then
-		F_REASON_kernelconsole="this VM boots a kernel directly — Machman owns its command line"
+		reason_kernelconsole="this VM boots a kernel directly — Machman owns its command line"
 		return 0
 	fi
 	if [ "${CONSOLE_COUNT:-0}" -eq 0 ]; then
-		F_REASON_kernelconsole="no consoles attached — add one in Machman first"
+		reason_kernelconsole="no consoles attached — add one in Machman first"
 		return 0
 	fi
 	case "$BOOTLOADER" in
 	grubby|update-grub|grub-mkconfig|grub2-mkconfig)
-		F_AVAIL_kernelconsole=1
+		avail_kernelconsole=1
 		;;
 	systemd-boot)
-		F_REASON_kernelconsole="systemd-boot entries are hand-edited here — add console=hvc0 to /boot/loader/entries/*.conf yourself"
+		reason_kernelconsole="systemd-boot entries are hand-edited here — add console=hvc0 to /boot/loader/entries/*.conf yourself"
 		;;
 	kernel-cmdline)
-		F_REASON_kernelconsole="this guest builds unified kernel images — add console=hvc0 to /etc/kernel/cmdline yourself"
+		reason_kernelconsole="this guest builds unified kernel images — add console=hvc0 to /etc/kernel/cmdline yourself"
 		;;
 	*)
-		F_REASON_kernelconsole="no known bootloader tool on this guest"
+		reason_kernelconsole="no known bootloader tool on this guest"
 		;;
 	esac
 	return 0
@@ -92,7 +92,11 @@ kernelconsole_grub_default_edit() {
 	fi
 	grep -v "# $MARKER\$" /etc/default/grub > /etc/default/grub.machman-tmp || true
 	mv /etc/default/grub.machman-tmp /etc/default/grub
-	printf 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT console=%s" # %s\n' \
+	# The variable name is a printf argument: the emitted line extends the distro's own
+	# value, and spelling the dollar-name literally here would look like a read to the
+	# drift scanner.
+	printf '%s="$%s console=%s" # %s\n' \
+		GRUB_CMDLINE_LINUX_DEFAULT GRUB_CMDLINE_LINUX_DEFAULT \
 		"$KC_DEVICE" "$MARKER" >> /etc/default/grub
 	return 0
 }

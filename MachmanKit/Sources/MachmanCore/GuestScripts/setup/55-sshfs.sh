@@ -7,8 +7,8 @@
 SSHFS_PLAN=""
 MOUNT_PLAN=""
 USER_MOUNT_PLAN=""
-F_AVAIL_sshfs=0
-F_REASON_sshfs=""
+avail_sshfs=0
+reason_sshfs=""
 
 sshfs_detect() {
 	detect_sshfs
@@ -16,17 +16,17 @@ sshfs_detect() {
 }
 
 sshfs_available() {
-	F_AVAIL_sshfs=0
-	F_REASON_sshfs=""
+	avail_sshfs=0
+	reason_sshfs=""
 	if [ "$OS_FAMILY" = darwin ]; then
-		F_REASON_sshfs="macOS needs macFUSE — install it yourself"
+		reason_sshfs="macOS needs macFUSE — install it yourself"
 		return 0
 	fi
 	if [ "$SSHFS" -eq 0 ] && ! any_pm_present; then
-		F_REASON_sshfs="not installed and no package manager to install it with"
+		reason_sshfs="not installed and no package manager to install it with"
 		return 0
 	fi
-	F_AVAIL_sshfs=1
+	avail_sshfs=1
 	return 0
 }
 

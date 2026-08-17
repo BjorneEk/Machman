@@ -172,7 +172,7 @@ extension VMConfig {
 	func resetSSH() throws {
 		ssh = nil
 		try? FileManager.default.removeItem(atPath: configFilePath(file: "ssh"))
-		SSHSetupInstaller.removePayload(for: self)
+		GuestSetupInstaller.removePayload(for: self)
 		try saveVMConfig()
 	}
 }

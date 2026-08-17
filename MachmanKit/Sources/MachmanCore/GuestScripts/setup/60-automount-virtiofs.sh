@@ -7,8 +7,8 @@
 VFSAUTO_PLAN=""
 VFSAUTO_MOUNT_NOW=""
 AUTOMOUNT_LINES=""         # kind<TAB>target<TAB>path, collected for state + report
-F_AVAIL_vfsauto=0
-F_REASON_vfsauto=""
+avail_vfsauto=0
+reason_vfsauto=""
 
 vfsauto_detect() {
 	detect_virtiofs
@@ -21,17 +21,17 @@ vfsauto_configured() {
 }
 
 vfsauto_available() {
-	F_AVAIL_vfsauto=0
-	F_REASON_vfsauto=""
+	avail_vfsauto=0
+	reason_vfsauto=""
 	if [ "$OS_FAMILY" = darwin ]; then
-		F_REASON_vfsauto="macOS automounts the share itself"
+		reason_vfsauto="macOS automounts the share itself"
 		return 0
 	fi
 	if [ "$VIRTIOFS_OK" -eq 0 ]; then
-		F_REASON_vfsauto="no virtiofs driver in this guest — sshfs automount covers the share instead"
+		reason_vfsauto="no virtiofs driver in this guest — sshfs automount covers the share instead"
 		return 0
 	fi
-	F_AVAIL_vfsauto=1
+	avail_vfsauto=1
 	return 0
 }
 

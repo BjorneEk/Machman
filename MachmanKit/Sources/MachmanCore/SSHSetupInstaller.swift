@@ -2,33 +2,18 @@
 //  SSHSetupInstaller.swift
 //  MachmanCore
 //
-//  The SSH setup payload (any guest): one self-contained POSIX script that enables the
-//  guest's sshd (per-OS: launchctl on macOS — systemsetup is TCC-gated and fails in fresh
-//  VMs —, systemctl/OpenRC/sysrc elsewhere, guided-declarative on NixOS), installs the
-//  host's public key for the invoking user, optionally prepares guest→host SSH
-//  (--two-way), and reports facts back through the writable SSHReport drop-box. The script
-//  itself is parameterless; everything per-VM (marker, host facts) rides the machman.env
-//  it sources — see GuestInstaller. The payload is regenerated at every assembly and
-//  served READ-ONLY (a writable script would let any guest process swap it before the
-//  admin sudo-runs it); only public keys ever cross the share, in either direction. Every
-//  artifact the script writes in the guest carries the per-VM marker, so re-runs and
-//  --uninstall are exact-match idempotent.
+//  The per-VM SSH identity machinery: the marker labeling every guest/host-side
+//  artifact, the host→guest keypair, and the pinned guest host key the session tabs
+//  verify against. The SSH *payload* this file used to generate was folded into
+//  GuestSetupInstaller (1.0.7); the identities outlive any one payload, so they stay
+//  here under the name the rest of the code already knows.
 //
 
 import Foundation
 import CryptoKit
-import SystemConfiguration
 import MachmanAPI
 
-enum SSHSetupInstaller: GuestInstallerPayload {
-	// One name everywhere: on-disk payload dirs under the VM AND the directories the
-	// guest sees inside the share.
-	static let directoryName = SSHSetupInfo.directoryName
-	static let reportDirectoryName = SSHSetupInfo.reportDirectoryName
-	static let scriptName = SSHSetupInfo.scriptName
-	// Declared by the script, read back here — one source of truth.
-	static var scriptVersion: Int { script.version }
-
+enum SSHSetupInstaller {
 	// The per-VM marker labeling every guest/host-side artifact. Derived from the
 	// machine-identity file bytes — stable across renames (the file never moves content),
 	// fresh on copies (VMCopier regenerates identity) — never from the VM name.
@@ -57,7 +42,7 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 	}
 
 	// The per-VM host→guest keypair, minted lazily (0600, in the 0700 <vmdir>/ssh dir).
-	// Returns the public-key line — the only half that ever enters the payload.
+	// Returns the public-key line — the only half that ever enters a payload.
 	static func ensureKeypair(for config: VMConfig, marker: String) throws -> String {
 		let fm = FileManager.default
 		let sshDir = config.localURL(file: "ssh")
@@ -107,93 +92,5 @@ enum SSHSetupInstaller: GuestInstallerPayload {
 			return
 		}
 		try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
-	}
-
-	// MARK: - Payload
-
-	// Facts about the host and this VM the guest-side half needs (sourced by the script).
-	static func environment(for config: VMConfig) throws -> [String: String] {
-		let localHost = SCDynamicStoreCopyLocalHostName(nil) as String?
-		return [
-			"VM_NAME": config.name,
-			"MARKER": try marker(for: config),
-			"REPORT_DIR_NAME": reportDirectoryName,
-			"MOUNT_ROOT": GuestPaths.mounts,
-			"HOST_USER": NSUserName(),
-			"HOST_NAME": Host.current().localizedName ?? "",
-			"HOST_LOCAL": localHost.map { $0 + ".local" } ?? "",
-		]
-	}
-
-	// Public keys only, in both directions. The host's machine host key is world-readable
-	// once Remote Login was ever enabled; absence just skips guest-side pinning (the
-	// script tolerates it), so it is served as "make sure this is absent" instead.
-	static func extraFiles(for config: VMConfig) throws -> [String: Data?] {
-		let publicKey = try ensureKeypair(for: config, marker: try marker(for: config))
-		let machineKey = try? String(
-			contentsOfFile: "/etc/ssh/ssh_host_ed25519_key.pub", encoding: .utf8)
-		return [
-			"host_key.pub": Data((publicKey + "\n").utf8),
-			"host_machine_key.pub": machineKey.map { Data($0.utf8) },
-		]
-	}
-
-	// The guest-writable drop-box: a sibling of the payload dir, so the script addresses
-	// it payload-relatively and it rides the same share (or the same sshfs mount).
-	static func reportDirectoryURL(for config: VMConfig) -> URL {
-		GuestInstallerWriter.payloadDirectory(named: reportDirectoryName, for: config)
-	}
-
-	static func reportFilePath(for config: VMConfig) -> String {
-		reportDirectoryURL(for: config)
-			.appendingPathComponent(SSHSetupInfo.reportName).path
-	}
-
-	// Writes <vmdir>/share/SSHSetup/ (script 0755 + machman.env + public keys) and the
-	// empty writable <vmdir>/share/SSHReport/; returns both. Regenerated at every assembly.
-	@discardableResult
-	static func writePayload(for config: VMConfig) throws -> (payload: URL, report: URL) {
-		let marker = try marker(for: config)
-		// Cache the marker for reset-time cleanup (creates the ssh state on first use).
-		if config.ssh?.marker != marker {
-			var state = config.ssh ?? SSHConfig()
-			state.marker = marker
-			config.ssh = state
-			try config.saveVMConfig()
-		}
-		let report = reportDirectoryURL(for: config)
-		try FileManager.default.createDirectory(at: report, withIntermediateDirectories: true)
-		GuestInstallerWriter.removeLegacyPayload(named: reportDirectoryName, for: config)
-		let payload = try GuestInstallerWriter.write(Self.self, for: config)
-		// The alias (and so the pin's key) can have changed while the VM was stopped.
-		writeKnownHosts(for: config)
-		return (payload, report)
-	}
-
-	// Drop both share dirs from disk: the device was removed, or vm.ssh.reset wiped
-	// everything. Keys and config.ssh are the caller's business.
-	static func removePayload(for config: VMConfig) {
-		let fm = FileManager.default
-		for name in [directoryName, reportDirectoryName] {
-			try? fm.removeItem(at: GuestInstallerWriter.payloadDirectory(
-				named: name, for: config))
-			GuestInstallerWriter.removeLegacyPayload(named: name, for: config)
-		}
-	}
-
-	// MARK: - The script
-
-	// The whole installer — GuestScripts/ssh-setup.sh, embedded at build time. Idempotent:
-	// key installs dedupe, the guest-side config block is replaced wholesale between marker
-	// lines, and --uninstall removes exactly what carries the marker. sshd is never
-	// disabled by --uninstall.
-	static var script: EmbeddedScript {
-		EmbeddedScript(bytes: PackageResources.ssh_setup_sh)
-	}
-
-	// The shared sh helpers (output vocabulary, terminal detection, prompts, the run
-	// wrapper) the script sources beside itself.
-	static var sharedLibrary: EmbeddedScript? {
-		EmbeddedScript(bytes: PackageResources.machman_lib_sh)
 	}
 }

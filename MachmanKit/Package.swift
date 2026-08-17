@@ -37,9 +37,6 @@ let package = Package(
 				"GuestScripts/dist",          // its (gitignored) output
 			],
 			resources: [
-				.embedInCode("GuestScripts/ssh-setup.sh"),
-				.embedInCode("GuestScripts/console-login.sh"),
-				.embedInCode("GuestScripts/machman-lib.sh"),
 				// The unified installer, one module per concern; EmbeddedScript.assembled
 				// concatenates them in this order at payload-write time (assemble.sh is the
 				// same concatenation for the shellcheck/docker dev loop).

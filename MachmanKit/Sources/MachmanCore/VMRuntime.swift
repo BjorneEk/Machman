@@ -159,11 +159,11 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		onTeardown?()
 	}
 
-	// MARK: - SSH report ingestion (1.0.5)
+	// MARK: - Guest report ingestion (1.0.5; unified drop-box 1.0.7)
 
 	private func startSSHReportPolling() {
 		guard config.devices.contains(where: {
-			$0.deviceKind == .sshInstaller && $0.enabled
+			$0.deviceKind == .guestSetup && $0.enabled
 		}) else { return }
 		// A report is a rare, tiny file: a 2 s mtime stat is effectively free
 		// (InstallSession's timer pattern; the body hops back to the main actor).
@@ -176,7 +176,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	}
 
 	private func pollSSHReport() {
-		let path = SSHSetupInstaller.reportFilePath(for: config)
+		let path = GuestSetupInstaller.reportFilePath(for: config)
 		guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
 			let mtime = attrs[.modificationDate] as? Date, mtime != sshReportMtime else {
 			return
