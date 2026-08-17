@@ -1,13 +1,64 @@
 # === machman-setup: 50-ssh ===
 # Feature: Mac -> guest SSH — enable this guest's sshd and install the Mac's public key
-# for one user. The proven v2 recipes, feature-shaped.
+# for one user. The proven v2 recipes, feature-shaped and ownership-aware: the marker in
+# the key's comment tells us WHO it is installed for, so the plan can say "verify" or
+# "switch gustaf -> bob" instead of a generic install line.
 
 SSHD_PLAN=""
+KEY_PLAN=""
+SSH_INSTALLED_USER=""      # who carries the Mac's marker-tagged key already, if anyone
+SSH_SWITCH_FROM=""         # remove that user's key after installing for the new one
 avail_ssh=0
 reason_ssh=""
 
+# Marker-scan the candidate homes (state first — it is cheaper and usually right).
+ssh_find_installed_user() {
+	SSH_INSTALLED_USER=""
+	if [ -n "$ST_SSH_USER" ]; then
+		_sfu_h="$(home_of "$ST_SSH_USER")"
+		if [ -n "$_sfu_h" ] \
+			&& grep -qF "$MARKER" "$_sfu_h/.ssh/authorized_keys" 2>/dev/null; then
+			SSH_INSTALLED_USER="$ST_SSH_USER"
+			return 0
+		fi
+	fi
+	for _sfu_u in $(candidate_users) root; do
+		_sfu_h="$(home_of "$_sfu_u")"
+		[ -n "$_sfu_h" ] || continue
+		if grep -qF "$MARKER" "$_sfu_h/.ssh/authorized_keys" 2>/dev/null; then
+			SSH_INSTALLED_USER="$_sfu_u"
+			return 0
+		fi
+	done
+	return 0
+}
+
 ssh_detect() {
 	detect_sshd
+	ssh_find_installed_user
+	verbose detect "ssh installed-for=${SSH_INSTALLED_USER:-nobody}"
+	return 0
+}
+
+ssh_is_configured() {
+	[ -n "$SSH_INSTALLED_USER" ]
+}
+
+ssh_menu_note() {
+	if [ -n "$SSH_INSTALLED_USER" ]; then
+		echo "key installed for $SSH_INSTALLED_USER — verify"
+	elif [ "$SSHD" = running ]; then
+		echo "sshd running — install the Mac's key"
+	elif [ "$SSHD" = installed ]; then
+		echo "enable sshd, install the Mac's key"
+	else
+		echo "install sshd and the Mac's key"
+	fi
+	return 0
+}
+
+ssh_menu_default() {
+	echo 1
 	return 0
 }
 
@@ -23,6 +74,21 @@ ssh_available() {
 }
 
 ssh_decide() {
+	# The key verb: verify, switch, or install — decided against the marker's owner.
+	SSH_SWITCH_FROM=""
+	if [ -n "$SSH_INSTALLED_USER" ] && [ "$SSH_INSTALLED_USER" = "$U" ]; then
+		KEY_PLAN="already installed for $U — verify"
+	elif [ -n "$SSH_INSTALLED_USER" ]; then
+		ask_yes_no "Move SSH from $SSH_INSTALLED_USER to $U (removes $SSH_INSTALLED_USER's Machman key)?" y
+		if [ "$R_YES" = 1 ]; then
+			SSH_SWITCH_FROM="$SSH_INSTALLED_USER"
+			KEY_PLAN="switch $SSH_INSTALLED_USER -> $U"
+		else
+			KEY_PLAN="install for $U ($SSH_INSTALLED_USER keeps the key too)"
+		fi
+	else
+		KEY_PLAN="the Mac's key -> $HOME_DIR/.ssh/authorized_keys"
+	fi
 	if [ "$NO_SERVICE" -eq 1 ]; then
 		SSHD_PLAN="left alone (--no-service)"
 		return 0
@@ -64,7 +130,7 @@ ssh_decide() {
 ssh_plan() {
 	plan_line "user" "$U -> $HOME_DIR"
 	plan_line "ssh server" "$SSHD_PLAN"
-	plan_line "host key" "the Mac's key -> $HOME_DIR/.ssh/authorized_keys"
+	plan_line "host key" "$KEY_PLAN"
 	return 0
 }
 
@@ -167,7 +233,10 @@ ssh_act_key() {
 	fi
 	mkdir -p "$HOME_DIR/.ssh"
 	touch "$HOME_DIR/.ssh/authorized_keys"
-	if ! grep -qF "$_aik_key" "$HOME_DIR/.ssh/authorized_keys"; then
+	_aik_had=0
+	if grep -qF "$_aik_key" "$HOME_DIR/.ssh/authorized_keys"; then
+		_aik_had=1
+	else
 		printf '%s\n' "$_aik_key" >> "$HOME_DIR/.ssh/authorized_keys"
 	fi
 	chown "$U:$GROUP" "$HOME_DIR/.ssh" "$HOME_DIR/.ssh/authorized_keys"
@@ -178,7 +247,25 @@ ssh_act_key() {
 	if have restorecon; then
 		restorecon -R "$HOME_DIR/.ssh" 2>/dev/null || true
 	fi
-	ok "the Mac's key is installed for $U"
+	if [ "$_aik_had" -eq 1 ]; then
+		ok "the Mac's key is verified for $U"
+	else
+		ok "the Mac's key is installed for $U"
+	fi
+	# The switch: remove exactly the marker-tagged line from the previous user.
+	if [ -n "$SSH_SWITCH_FROM" ] && [ "$SSH_SWITCH_FROM" != "$U" ]; then
+		_aik_oh="$(home_of "$SSH_SWITCH_FROM")"
+		_aik_oak="$_aik_oh/.ssh/authorized_keys"
+		if [ -n "$_aik_oh" ] && [ -f "$_aik_oak" ]; then
+			_aik_tmp="$_aik_oak.machman-tmp"
+			grep -vF "$MARKER" "$_aik_oak" > "$_aik_tmp" || true
+			mv "$_aik_tmp" "$_aik_oak"
+			chown "$SSH_SWITCH_FROM:$(id -gn "$SSH_SWITCH_FROM" 2>/dev/null || echo "$SSH_SWITCH_FROM")" \
+				"$_aik_oak" 2>/dev/null || true
+			chmod 600 "$_aik_oak"
+			ok "removed the Mac's key from $SSH_SWITCH_FROM"
+		fi
+	fi
 	return 0
 }
 

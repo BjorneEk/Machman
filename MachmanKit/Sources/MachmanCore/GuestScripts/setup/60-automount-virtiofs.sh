@@ -20,6 +20,38 @@ vfsauto_configured() {
 		&& grep -q " $SHARE_ROOT " /etc/fstab 2>/dev/null
 }
 
+# A share mount in fstab that is NOT inside our marker block: someone else's entry.
+vfsauto_foreign() {
+	[ -f /etc/fstab ] || return 1
+	awk -v m="$MARKER" -v tag="$SHARE_TAG" -v root="$SHARE_ROOT" '
+		$0 == "# BEGIN " m { inb = 1; next }
+		$0 == "# END " m { inb = 0; next }
+		inb || /^[[:space:]]*#/ || NF < 2 { next }
+		$1 == tag || $2 == root { found = 1 }
+		END { exit found ? 0 : 1 }
+	' /etc/fstab
+}
+
+vfsauto_is_configured() {
+	vfsauto_configured || vfsauto_foreign
+}
+
+vfsauto_menu_note() {
+	if vfsauto_configured; then
+		echo "fstab entry present — refresh"
+	elif vfsauto_foreign; then
+		echo "configured outside Machman — report only"
+	else
+		echo "mount the share at boot (fstab)"
+	fi
+	return 0
+}
+
+vfsauto_menu_default() {
+	echo 1
+	return 0
+}
+
 vfsauto_available() {
 	avail_vfsauto=0
 	reason_vfsauto=""
@@ -35,11 +67,22 @@ vfsauto_available() {
 	return 0
 }
 
+VFSAUTO_ACTION="install"   # install | refresh | report
+
 vfsauto_decide() {
+	VFSAUTO_MOUNT_NOW=0
+	if vfsauto_foreign && ! vfsauto_configured; then
+		# Someone else's fstab entry mounts the share — not ours to rewrite.
+		VFSAUTO_ACTION=report
+		VFSAUTO_PLAN="left alone — an fstab entry outside Machman already mounts it"
+		return 0
+	fi
 	if vfsauto_configured; then
-		VFSAUTO_PLAN="$SHARE_ROOT already in fstab — refresh the entry"
+		VFSAUTO_ACTION=refresh
+		VFSAUTO_PLAN="refresh: $SHARE_TAG -> $SHARE_ROOT (fstab, nofail)"
 	else
-		VFSAUTO_PLAN="$SHARE_TAG -> $SHARE_ROOT (fstab, nofail)"
+		VFSAUTO_ACTION=install
+		VFSAUTO_PLAN="install: $SHARE_TAG -> $SHARE_ROOT (fstab, nofail)"
 	fi
 	if mount 2>/dev/null | grep -q " $SHARE_ROOT "; then
 		VFSAUTO_MOUNT_NOW=0
@@ -56,6 +99,10 @@ vfsauto_plan() {
 }
 
 vfsauto_act() {
+	if [ "$VFSAUTO_ACTION" = report ]; then
+		note "share automount left as is (configured outside Machman)."
+		return 0
+	fi
 	if [ "$DRY_RUN" -eq 1 ]; then
 		acting "would add '$SHARE_TAG $SHARE_ROOT virtiofs rw,nofail' to /etc/fstab"
 		return 0

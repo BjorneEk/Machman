@@ -75,9 +75,10 @@ fi
 
 # ------------------------------------------------------------------ feature selection ----
 
-# Menu over the AVAILABLE features. Default ON: not-yet-configured core features
-# (console, ssh, the share automount) and everything the state file says was configured
-# here before (a re-run verifies and repairs). Opt-in features start OFF. Flags override.
+# Menu over the AVAILABLE features. Every row carries its VERB — what selecting it will
+# actually do here (set up, verify, adopt-or-report, refresh) — from the feature's own
+# probes; each feature also owns its default (ON for core work and anything it manages
+# already, OFF for opt-ins). Flags override.
 AVAILABLE_FEATURES=""
 _mm_menu=""
 _mm_marks=""
@@ -87,18 +88,15 @@ for _mm_f in $FEATURES; do
 	[ "$_mm_avail" = 1 ] || continue
 	AVAILABLE_FEATURES="$AVAILABLE_FEATURES $_mm_f"
 	_mm_i=$((_mm_i + 1))
-	_mm_menu="$_mm_menu$(feature_title "$_mm_f")
+	_mm_menu="$_mm_menu$(printf '%s   %s' "$(feature_title "$_mm_f")" \
+		"$("${_mm_f}_menu_note")")
 "
 	_mm_want="$(eval "printf '%s' \"\$want_$_mm_f\"")"
 	_mm_on=0
 	if [ -n "$_mm_want" ]; then
 		_mm_on="$_mm_want"
-	elif state_was_configured "$_mm_f"; then
-		_mm_on=1
 	else
-		case "$_mm_f" in
-		console|ssh|vfsauto) _mm_on=1 ;;
-		esac
+		_mm_on="$("${_mm_f}_menu_default")"
 	fi
 	if [ "$_mm_on" = 1 ]; then
 		toggle_mark "$_mm_marks" "$_mm_i"
@@ -167,6 +165,17 @@ plan_line "payload" "$PAYLOAD_DIR (over $TRANSPORT)"
 for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_plan"
 done
+# Configured features that were NOT selected: named, so nothing is silently ambiguous.
+_mm_left=""
+for _mm_f in $FEATURES; do
+	feature_selected "$_mm_f" && continue
+	_mm_avail="$(eval "printf '%s' \"\$avail_$_mm_f\"")"
+	[ "$_mm_avail" = 1 ] || continue
+	if "${_mm_f}_is_configured"; then
+		_mm_left="$_mm_left$(feature_title "$_mm_f"), "
+	fi
+done
+[ -n "$_mm_left" ] && plan_line "left as is" "${_mm_left%, } (configured)"
 _mm_skipped=""
 for _mm_f in $FEATURES; do
 	_mm_avail="$(eval "printf '%s' \"\$avail_$_mm_f\"")"
@@ -206,24 +215,21 @@ for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_act"
 done
 
-# What is configured NOW (probes, not intentions) becomes the state file's truth.
+# The state file's truth: selected features re-probe what this run MANAGES (never a
+# foreign artifact); unselected features keep their previous record.
 _mm_configured=""
 for _mm_f in $FEATURES; do
+	if ! feature_selected "$_mm_f"; then
+		state_was_configured "$_mm_f" && _mm_configured="$_mm_configured $_mm_f"
+		continue
+	fi
 	case "$_mm_f" in
 	console)
-		for _mm_dev in $CONSOLE_DEVICES; do
-			case "$(console_login_state "$_mm_dev")" in
-			active|active-auto|configured)
-				has_word console "$_mm_configured" \
-					|| _mm_configured="$_mm_configured console"
-				;;
-			esac
-		done
-		;;
+		[ -n "$CONSOLE_MANAGED" ] && _mm_configured="$_mm_configured console" ;;
 	kernelconsole)
 		[ -n "$KC_DEVICE_DONE" ] && _mm_configured="$_mm_configured kernelconsole" ;;
 	ssh)
-		feature_selected ssh && _mm_configured="$_mm_configured ssh" ;;
+		_mm_configured="$_mm_configured ssh" ;;
 	reverse)
 		[ -n "$REVERSE_PUBKEY" ] && _mm_configured="$_mm_configured reverse" ;;
 	sshfs)

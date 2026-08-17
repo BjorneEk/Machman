@@ -37,7 +37,13 @@ feature_line() {
 		_fl_cfg=""
 		for _fl_dev in $CONSOLE_DEVICES; do
 			case "$(console_login_state "$_fl_dev")" in
-			active|active-auto|configured) _fl_cfg="$_fl_cfg $_fl_dev" ;;
+			active|active-auto|configured)
+				if [ "$(console_ownership "$_fl_dev")" = foreign ]; then
+					_fl_cfg="$_fl_cfg $_fl_dev (external)"
+				else
+					_fl_cfg="$_fl_cfg $_fl_dev"
+				fi
+				;;
 			esac
 		done
 		_fl_cfg="${_fl_cfg# }"
@@ -55,16 +61,15 @@ feature_line() {
 		fi
 		;;
 	ssh)
-		if [ -n "$HOME_DIR" ] \
-			&& grep -qF "$MARKER" "$HOME_DIR/.ssh/authorized_keys" 2>/dev/null; then
-			_fl_state=configured; _fl_detail="$U"
-		elif state_was_configured ssh; then
-			_fl_state=configured; _fl_detail="${ST_SSH_USER:-}"
+		# Re-probe: the act may just have installed or switched the marker's owner.
+		ssh_find_installed_user
+		if [ -n "$SSH_INSTALLED_USER" ]; then
+			_fl_state=configured; _fl_detail="$SSH_INSTALLED_USER"
 		fi
 		;;
 	reverse)
-		if [ -n "$HOME_DIR" ] && [ -f "$HOME_DIR/.ssh/machman_host" ]; then
-			_fl_state=configured; _fl_detail="$U"
+		if reverse_is_configured; then
+			_fl_state=configured; _fl_detail="${SSH_INSTALLED_USER:-$U}"
 		elif state_was_configured reverse; then
 			_fl_state=configured
 		fi
@@ -73,7 +78,11 @@ feature_line() {
 		[ "$SSHFS" -eq 1 ] && { _fl_state=configured; _fl_detail="${SSHFS_VERSION:-}"; }
 		;;
 	vfsauto)
-		vfsauto_configured && { _fl_state=configured; _fl_detail="$SHARE_ROOT"; }
+		if vfsauto_configured; then
+			_fl_state=configured; _fl_detail="$SHARE_ROOT"
+		elif vfsauto_foreign; then
+			_fl_state=configured; _fl_detail="$SHARE_ROOT (external)"
+		fi
 		;;
 	sshfsauto)
 		if [ -n "$SSHFSAUTO_DONE" ]; then

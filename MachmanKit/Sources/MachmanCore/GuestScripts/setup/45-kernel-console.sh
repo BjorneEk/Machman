@@ -18,6 +18,30 @@ kernelconsole_detect() {
 	return 0
 }
 
+kernelconsole_is_configured() {
+	for _kic_dev in $CONSOLE_DEVICES; do
+		has_word "$_kic_dev" "$CMDLINE_CONSOLES" && return 0
+	done
+	[ -n "$KC_DEVICE_DONE" ]
+}
+
+kernelconsole_menu_note() {
+	for _kmn_dev in $CONSOLE_DEVICES; do
+		if has_word "$_kmn_dev" "$CMDLINE_CONSOLES"; then
+			echo "already on $_kmn_dev — nothing to do"
+			return 0
+		fi
+	done
+	echo "send boot messages to a console"
+	return 0
+}
+
+kernelconsole_menu_default() {
+	# Opt-in unless a previous run of ours set it up (then verify keeps it honest).
+	if state_was_configured kernelconsole; then echo 1; else echo 0; fi
+	return 0
+}
+
 kernelconsole_available() {
 	avail_kernelconsole=0
 	reason_kernelconsole=""

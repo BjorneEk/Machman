@@ -14,6 +14,27 @@ sshfsauto_detect() {
 	return 0
 }
 
+sshfsauto_is_configured() {
+	sshfsauto_configured
+}
+
+sshfsauto_menu_note() {
+	_smn_count="$(printf '%s\n' "$MOUNTS_SSHFS_NAMES" | wc -w | tr -d ' ')"
+	if sshfsauto_configured; then
+		echo "configured — verify"
+	elif [ "$_smn_count" -gt 0 ]; then
+		echo "mount $_smn_count host folder(s) at boot"
+	else
+		echo "mount the share at boot over ssh"
+	fi
+	return 0
+}
+
+sshfsauto_menu_default() {
+	if state_was_configured sshfsauto; then echo 1; else echo 0; fi
+	return 0
+}
+
 sshfsauto_configured() {
 	[ -n "$ST_AUTOMOUNT_SSHFS" ] \
 		|| { grep -q "^# BEGIN $MARKER" /etc/fstab 2>/dev/null \

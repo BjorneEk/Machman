@@ -10,6 +10,29 @@ reverse_detect() {
 	return 0
 }
 
+# The key lives in the installed user's home; at menu time that is the marker's owner.
+reverse_is_configured() {
+	_ric_h=""
+	[ -n "$SSH_INSTALLED_USER" ] && _ric_h="$(home_of "$SSH_INSTALLED_USER")"
+	[ -z "$_ric_h" ] && [ -n "$HOME_DIR" ] && _ric_h="$HOME_DIR"
+	[ -n "$_ric_h" ] && [ -f "$_ric_h/.ssh/machman_host" ]
+}
+
+reverse_menu_note() {
+	if reverse_is_configured; then
+		echo "configured — verify ('ssh mac' entry refreshed)"
+	else
+		echo "enables 'ssh mac' and sshfs mounts"
+	fi
+	return 0
+}
+
+reverse_menu_default() {
+	# Opt-in — except a re-run keeps what is configured fresh.
+	if reverse_is_configured || state_was_configured reverse; then echo 1; else echo 0; fi
+	return 0
+}
+
 reverse_available() {
 	avail_reverse=0
 	reason_reverse=""
@@ -22,10 +45,12 @@ reverse_available() {
 }
 
 reverse_decide() {
+	_rd_verb="set up"
+	reverse_is_configured && _rd_verb="verify"
 	if [ -n "$GATEWAY" ] || { [ "$OS" = Darwin ] && [ -n "$HOST_LOCAL" ]; }; then
-		REVERSE_PLAN="ssh mac -> ${GATEWAY:-$HOST_LOCAL} as $HOST_USER (needs approval in Machman)"
+		REVERSE_PLAN="$_rd_verb: ssh mac -> ${GATEWAY:-$HOST_LOCAL} as $HOST_USER (needs approval in Machman)"
 	else
-		REVERSE_PLAN="key prepared; no route to the Mac yet"
+		REVERSE_PLAN="$_rd_verb: key prepared; no route to the Mac yet"
 	fi
 	return 0
 }

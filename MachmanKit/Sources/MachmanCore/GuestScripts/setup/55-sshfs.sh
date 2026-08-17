@@ -15,6 +15,24 @@ sshfs_detect() {
 	return 0
 }
 
+sshfs_is_configured() {
+	[ "$SSHFS" -eq 1 ]
+}
+
+sshfs_menu_note() {
+	if [ "$SSHFS" -eq 1 ]; then
+		echo "installed${SSHFS_VERSION:+ ($SSHFS_VERSION)} — verify"
+	else
+		echo "install the tool that mounts host folders"
+	fi
+	return 0
+}
+
+sshfs_menu_default() {
+	if state_was_configured sshfs; then echo 1; else echo 0; fi
+	return 0
+}
+
 sshfs_available() {
 	avail_sshfs=0
 	reason_sshfs=""

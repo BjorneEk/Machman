@@ -585,3 +585,30 @@ strip_block() {
 	mv "$_sb_tmp" "$1"
 	return 0
 }
+
+# Adopt: comment matching UNMARKED lines out, tagged so uninstall can restore them
+# exactly. Lines inside our marker block and already-commented lines are left alone.
+# supersede_lines <file> <awk ERE>
+supersede_lines() {
+	[ -f "$1" ] || return 0
+	_sl_tmp="$1.machman-tmp"
+	awk -v re="$2" -v m="$MARKER" '
+		$0 == "# BEGIN " m { inb = 1 }
+		$0 == "# END " m { inb = 0 }
+		!inb && $0 !~ /^#/ && $0 ~ re { print "#" $0 " # " m "-superseded"; next }
+		{ print }
+	' "$1" > "$_sl_tmp"
+	mv "$_sl_tmp" "$1"
+	return 0
+}
+
+# Undo supersede_lines: strip the tag and the leading comment mark, restoring the
+# original line byte-for-byte.
+restore_superseded() {
+	[ -f "$1" ] || return 0
+	_rs_tmp="$1.machman-tmp"
+	sed "/ # ${MARKER}-superseded\$/{s/ # ${MARKER}-superseded\$//;s/^#//;}" \
+		"$1" > "$_rs_tmp"
+	mv "$_rs_tmp" "$1"
+	return 0
+}

@@ -1,11 +1,16 @@
 # === machman-setup: 40-console ===
 # Feature: login prompts on the VM's virtio consoles. Detection is live (is a getty on
 # the port NOW; is one persistent for the next boot) — distro tables lie, running
-# processes do not. systemd's getty-generator gives hvc0 a login on its own when the
-# device exists; that shows up as "active (automatic)" and is left alone.
+# processes do not — and OWNERSHIP-aware: a login configured outside Machman (no marker)
+# is never touched blind. Per console the plan carries a verb: install, verify, adopt
+# (comment the existing line, tagged for restore, and manage a marked one), or report
+# only. systemd's getty-generator gives hvc0 a login on its own; that shows up as
+# "active (automatic)" and is left alone.
 
 CONSOLE_DEVICES=""         # expected device names, space-separated
-CONSOLE_SELECTED=""        # devices chosen for a login, space-separated
+CONSOLE_SELECTED=""        # devices chosen for this run, space-separated
+CONSOLE_MANAGED=""         # devices this run manages (for the state file)
+CONSOLE_ACTIONS=""         # "dev=install dev=verify dev=adopt dev=report dev=auto"
 CONSOLE_PLAN=""
 avail_console=0
 reason_console=""
@@ -56,6 +61,61 @@ console_login_state() {
 	return 0
 }
 
+# The device name as an ERE fragment (ttyV0.0 carries dots).
+console_dev_esc() {
+	printf '%s' "$1" | sed 's/\./\\./g'
+}
+
+# Is a matching line inside OUR marker block? <file> <awk ERE>
+console_line_in_block() {
+	[ -f "$1" ] || return 1
+	awk -v re="$2" -v m="$MARKER" '
+		$0 == "# BEGIN " m { inb = 1; next }
+		$0 == "# END " m { inb = 0; next }
+		inb && $0 ~ re { found = 1 }
+		END { exit found ? 0 : 1 }
+	' "$1"
+}
+
+# The ERE matching a getty entry for this device in inittab-style files.
+console_inittab_re() {
+	printf 'getty.*[^a-zA-Z0-9]%s([^0-9]|$)' "$(console_dev_esc "$1")"
+}
+
+# Who owns the persistent login: ours (marker-managed, or attributable to us) | foreign
+# (configured, but not by this script) | none. systemd enablement is unattributable but
+# also duplication-free, so it counts as ours; launchd persistence is only ever probed
+# through our own plist labels.
+console_ownership() {
+	getty_persistent_on "$1" || { echo none; return 0; }
+	case "$GETTY_MECH" in
+	systemd|launchd) echo ours ;;
+	inittab)
+		if console_line_in_block /etc/inittab "$(console_inittab_re "$1")"; then
+			echo ours
+		else
+			echo foreign
+		fi
+		;;
+	freebsd-rc)
+		if console_line_in_block /etc/ttys "^$(console_dev_esc "$1")[[:space:]]"; then
+			echo ours
+		else
+			echo foreign
+		fi
+		;;
+	runit)
+		if grep -q "$MARKER" "/etc/sv/agetty-$1/run" 2>/dev/null; then
+			echo ours
+		else
+			echo foreign
+		fi
+		;;
+	*) echo foreign ;;
+	esac
+	return 0
+}
+
 console_available() {
 	avail_console=0
 	reason_console=""
@@ -86,17 +146,82 @@ console_available() {
 	return 0
 }
 
+console_is_configured() {
+	for _cic_dev in $CONSOLE_DEVICES; do
+		case "$(console_login_state "$_cic_dev")" in
+		active|active-auto|configured) return 0 ;;
+		esac
+	done
+	return 1
+}
+
+# The one-line annotation for the feature menu: the worst case first.
+console_menu_note() {
+	_cmn_foreign=""
+	_cmn_todo=0
+	_cmn_auto=0
+	_cmn_ours=0
+	for _cmn_dev in $CONSOLE_DEVICES; do
+		case "$(console_login_state "$_cmn_dev")" in
+		active-auto) _cmn_auto=$((_cmn_auto + 1)) ;;
+		active|configured)
+			if [ "$(console_ownership "$_cmn_dev")" = foreign ]; then
+				_cmn_foreign="$_cmn_foreign $_cmn_dev"
+			else
+				_cmn_ours=$((_cmn_ours + 1))
+			fi
+			;;
+		*) _cmn_todo=$((_cmn_todo + 1)) ;;
+		esac
+	done
+	if [ -n "$_cmn_foreign" ]; then
+		echo "${_cmn_foreign# } configured outside Machman — adopt or report"
+	elif [ "$_cmn_todo" -gt 0 ]; then
+		echo "set up logins"
+	elif [ "$_cmn_ours" -gt 0 ]; then
+		echo "managed by Machman — verify"
+	else
+		echo "automatic (systemd) — nothing to do"
+	fi
+	return 0
+}
+
+console_menu_default() {
+	# ON unless every console already has its automatic login.
+	for _cmd_dev in $CONSOLE_DEVICES; do
+		[ "$(console_login_state "$_cmd_dev")" = active-auto ] || { echo 1; return 0; }
+	done
+	echo 0
+	return 0
+}
+
 # One menu line per console, annotated with what is already true.
 console_menu_lines() {
 	for _cml_dev in $CONSOLE_DEVICES; do
 		case "$(console_login_state "$_cml_dev")" in
 		active-auto) echo "$_cml_dev   login active (automatic)" ;;
-		active) echo "$_cml_dev   login active" ;;
-		configured) echo "$_cml_dev   login configured (next boot)" ;;
+		active|configured)
+			if [ "$(console_ownership "$_cml_dev")" = foreign ]; then
+				echo "$_cml_dev   configured outside Machman — adopt or report"
+			else
+				echo "$_cml_dev   managed by Machman — verify"
+			fi
+			;;
 		missing) echo "$_cml_dev   device not present in this guest" ;;
-		*) echo "$_cml_dev   no login" ;;
+		*) echo "$_cml_dev   no login — set up" ;;
 		esac
 	done
+	return 0
+}
+
+console_action_of() { # <dev> → the recorded action
+	for _cao_pair in $CONSOLE_ACTIONS; do
+		case "$_cao_pair" in
+		"$1="*) printf '%s' "${_cao_pair#*=}"; return 0 ;;
+		esac
+	done
+	printf 'install'
+	return 0
 }
 
 console_decide() {
@@ -104,23 +229,17 @@ console_decide() {
 	if [ -n "$CONSOLES_OVERRIDE" ]; then
 		CONSOLE_SELECTED="$CONSOLES_OVERRIDE"
 	elif [ "$(printf '%s\n' "$CONSOLE_DEVICES" | wc -w | tr -d ' ')" = "1" ]; then
+		# One console: nothing to pick — the per-device ACTION below still decides what
+		# actually happens (verify/adopt/report, never a blind re-install).
 		CONSOLE_SELECTED="$CONSOLE_DEVICES"
 	else
-		# Default ON: every console that has no login yet (present or not — the act
-		# re-checks); previously configured ones stay ON so re-runs verify them.
 		_cdc_marks=""
 		_cdc_i=1
 		for _cdc_dev in $CONSOLE_DEVICES; do
-			case "$(console_login_state "$_cdc_dev")" in
-			none|missing) toggle_mark "$_cdc_marks" "$_cdc_i"; _cdc_marks="$R_MARKS" ;;
-			*)
-				if state_was_configured console \
-					&& has_word "$_cdc_dev" "$ST_CONSOLE_LOGINS"; then
-					toggle_mark "$_cdc_marks" "$_cdc_i"
-					_cdc_marks="$R_MARKS"
-				fi
-				;;
-			esac
+			[ "$(console_login_state "$_cdc_dev")" = active-auto ] || {
+				toggle_mark "$_cdc_marks" "$_cdc_i"
+				_cdc_marks="$R_MARKS"
+			}
 			_cdc_i=$((_cdc_i + 1))
 		done
 		menu_multi "Configure a login on which consoles?" \
@@ -134,15 +253,55 @@ console_decide() {
 		done
 		CONSOLE_SELECTED="${CONSOLE_SELECTED# }"
 	fi
+	# The verb per selected device — what this run WILL do, shown before it does it.
+	# CONSOLE_MANAGED collects the devices WE manage after this run (install/verify/
+	# adopt) — report-only and automatic ones are not ours and stay out of the state.
+	CONSOLE_ACTIONS=""
+	CONSOLE_MANAGED=""
 	CONSOLE_PLAN=""
 	for _cdc_dev in $CONSOLE_SELECTED; do
 		case "$(console_login_state "$_cdc_dev")" in
-		active|active-auto) _cdc_what="already active" ;;
-		configured) _cdc_what="already configured" ;;
-		*) _cdc_what="enable ($GETTY_MECH)" ;;
+		active-auto)
+			_cdc_act=auto
+			_cdc_what="automatic — nothing to do"
+			;;
+		active|configured)
+			if [ "$(console_ownership "$_cdc_dev")" = foreign ]; then
+				if [ "$GETTY_MECH" = runit ]; then
+					# Someone else's service dir is not ours to take over.
+					_cdc_act=report
+					_cdc_what="report only — configured outside Machman"
+				else
+					menu_select \
+						"$_cdc_dev already has a login not managed by Machman:" \
+"Leave it — report only
+Adopt — comment the existing line (restorable) and manage a marked one" 1
+					if [ "$R_INDEX" = 2 ]; then
+						_cdc_act=adopt
+						_cdc_what="adopt — supersede the existing line"
+					else
+						_cdc_act=report
+						_cdc_what="report only — configured outside Machman"
+					fi
+				fi
+			else
+				_cdc_act=verify
+				_cdc_what="verify — no changes expected"
+			fi
+			;;
+		*)
+			_cdc_act=install
+			_cdc_what="install ($GETTY_MECH)"
+			;;
+		esac
+		CONSOLE_ACTIONS="$CONSOLE_ACTIONS $_cdc_dev=$_cdc_act"
+		case "$_cdc_act" in
+		install|verify|adopt) CONSOLE_MANAGED="$CONSOLE_MANAGED $_cdc_dev" ;;
 		esac
 		CONSOLE_PLAN="$CONSOLE_PLAN$_cdc_dev ($_cdc_what) · "
 	done
+	CONSOLE_ACTIONS="${CONSOLE_ACTIONS# }"
+	CONSOLE_MANAGED="${CONSOLE_MANAGED# }"
 	CONSOLE_PLAN="${CONSOLE_PLAN% · }"
 	[ -n "$CONSOLE_PLAN" ] || CONSOLE_PLAN="none selected"
 	return 0
@@ -156,9 +315,6 @@ console_plan() {
 # --------------------------------------------------------------------- per-mechanism ----
 
 console_act_systemd() {
-	case "$(console_login_state "$1")" in
-	active|active-auto) ok "login on $1 is already active"; return 0 ;;
-	esac
 	if run "enabling a login on $1" systemctl enable --now "serial-getty@$1.service"; then
 		ok "login enabled on $1"
 	else
@@ -269,6 +425,29 @@ console_flush_lines() {
 	return 0
 }
 
+# The install arm for one device (adopt falls through here after superseding).
+console_install_one() {
+	# A respawning getty on an absent device is a churn loop (systemd's unit binds the
+	# device and waits; launchd checks itself) — skip what is not there and say so.
+	case "$GETTY_MECH" in
+	inittab|runit|freebsd-rc)
+		if [ ! -e "/dev/$1" ] && [ "$DRY_RUN" -eq 0 ]; then
+			step_failed console "/dev/$1 is not present in this guest — skipped" \
+				"Boot with the console attached, then re-run."
+			return 0
+		fi
+		;;
+	esac
+	case "$GETTY_MECH" in
+	systemd) console_act_systemd "$1" ;;
+	inittab) console_act_inittab "$1" "$2" ;;
+	runit) console_act_runit "$1" ;;
+	freebsd-rc) console_act_freebsd "$1" ;;
+	launchd) console_act_launchd "$1" "$2" ;;
+	esac
+	return 0
+}
+
 console_act() {
 	[ -n "$CONSOLE_SELECTED" ] || return 0
 	if [ "$OS_FAMILY" = freebsd ]; then
@@ -284,29 +463,48 @@ console_act() {
 	fi
 	rm -f /etc/inittab.machman-add /etc/ttys.machman-add 2>/dev/null || true
 	_ca_i=0
+	_ca_flush=0
 	for _ca_dev in $CONSOLE_SELECTED; do
-		# A respawning getty on an absent device is a churn loop (systemd's unit binds the
-		# device and waits; launchd checks below) — skip what is not there and say so.
-		case "$GETTY_MECH" in
-		inittab|runit|freebsd-rc)
-			if [ ! -e "/dev/$_ca_dev" ] && [ "$DRY_RUN" -eq 0 ]; then
-				step_failed console "/dev/$_ca_dev is not present in this guest — skipped" \
-					"Boot with the console attached, then re-run."
-				_ca_i=$((_ca_i + 1))
-				continue
+		case "$(console_action_of "$_ca_dev")" in
+		auto)
+			ok "$_ca_dev: automatic login (systemd) — nothing to do"
+			;;
+		verify)
+			if getty_persistent_on "$_ca_dev"; then
+				ok "login on $_ca_dev verified"
+			else
+				# Drifted since detection (or the state file lied): reinstall.
+				console_install_one "$_ca_dev" "$_ca_i"
+				_ca_flush=1
 			fi
 			;;
-		esac
-		case "$GETTY_MECH" in
-		systemd) console_act_systemd "$_ca_dev" ;;
-		inittab) console_act_inittab "$_ca_dev" "$_ca_i" ;;
-		runit) console_act_runit "$_ca_dev" ;;
-		freebsd-rc) console_act_freebsd "$_ca_dev" ;;
-		launchd) console_act_launchd "$_ca_dev" "$_ca_i" ;;
+		report)
+			note "$_ca_dev left as is (configured outside Machman)."
+			;;
+		adopt)
+			if [ "$DRY_RUN" -eq 1 ]; then
+				acting "would supersede the existing $_ca_dev line and manage a marked one"
+			else
+				case "$GETTY_MECH" in
+				inittab)
+					supersede_lines /etc/inittab "$(console_inittab_re "$_ca_dev")" ;;
+				freebsd-rc)
+					supersede_lines /etc/ttys \
+						"^$(console_dev_esc "$_ca_dev")[[:space:]]" ;;
+				esac
+				ok "adopted $_ca_dev — the original line is tagged and restorable"
+			fi
+			console_install_one "$_ca_dev" "$_ca_i"
+			_ca_flush=1
+			;;
+		install)
+			console_install_one "$_ca_dev" "$_ca_i"
+			_ca_flush=1
+			;;
 		esac
 		_ca_i=$((_ca_i + 1))
 	done
-	if [ "$DRY_RUN" -eq 0 ]; then
+	if [ "$DRY_RUN" -eq 0 ] && [ "$_ca_flush" -eq 1 ]; then
 		case "$GETTY_MECH" in
 		inittab)
 			if [ -f /etc/inittab.machman-add ]; then
@@ -338,6 +536,12 @@ console_report() {
 		missing) _cr_out="$_cr_dev missing" ;;
 		*) _cr_out="$_cr_dev none" ;;
 		esac
+		case "$_cr_state" in
+		active|configured)
+			[ "$(console_ownership "$_cr_dev")" = foreign ] \
+				&& _cr_out="$_cr_out external"
+			;;
+		esac
 		if has_word "$_cr_dev" "$CMDLINE_CONSOLES"; then
 			_cr_out="$_cr_out kernel"
 		fi
@@ -360,10 +564,12 @@ console_uninstall() {
 		;;
 	inittab)
 		strip_block /etc/inittab
+		restore_superseded /etc/inittab
 		kill -HUP 1 2>/dev/null || true
 		;;
 	freebsd-rc)
 		strip_block /etc/ttys
+		restore_superseded /etc/ttys
 		kill -HUP 1 2>/dev/null || true
 		;;
 	runit)

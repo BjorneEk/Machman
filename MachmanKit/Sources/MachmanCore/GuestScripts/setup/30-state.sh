@@ -65,7 +65,7 @@ write_state() {
 		printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
 		printf "MARKER='%s'\n" "$MARKER"
 		printf "CONFIGURED='%s'\n" "$1"
-		[ -n "$CONSOLE_SELECTED" ] && printf "CONSOLE_LOGINS='%s'\n" "$CONSOLE_SELECTED"
+		[ -n "$CONSOLE_MANAGED" ] && printf "CONSOLE_LOGINS='%s'\n" "$CONSOLE_MANAGED"
 		[ -n "$KC_DEVICE_DONE" ] && printf "KERNEL_CONSOLE='%s'\n" "$KC_DEVICE_DONE"
 		[ -n "$KC_METHOD_DONE" ] && printf "KERNEL_CONSOLE_METHOD='%s'\n" "$KC_METHOD_DONE"
 		[ -n "$U" ] && printf "SSH_USER='%s'\n" "$U"

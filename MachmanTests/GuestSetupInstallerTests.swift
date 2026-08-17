@@ -174,6 +174,14 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("/var/lib/machman"))
 		#expect(s.contains("/var/db/machman"))
 		#expect(s.contains("STATE_VERSION"))
+		// Ownership-aware verbs: foreign artifacts are adopted (restorably) or reported,
+		// never touched blind; a different key owner becomes an explicit switch.
+		#expect(s.contains("-superseded"))
+		#expect(s.contains("restore_superseded"))
+		#expect(s.contains("configured outside Machman"))
+		#expect(s.contains("Move SSH from"))
+		#expect(s.contains("left as is"))
+		#expect(s.contains("(external)"))
 		// Uninstall removes marker-matched artifacts but never disables sshd.
 		#expect(s.contains(#"grep -vF "$MARKER""#))
 		#expect(s.contains("--uninstall [--user <name>]"))
