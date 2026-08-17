@@ -19,7 +19,7 @@ struct DiskInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let diskID: String
-	@State private var growText = ""
+	@State private var growGB = 0
 	@State private var draftName = ""
 
 	var body: some View {
@@ -55,54 +55,11 @@ struct DiskInspector: View {
 				}
 				Section("Actions") {
 					if disk.type == .storage && disk.owned != false {
-						// Wrapped in a VStack on purpose. A grouped Form derives a row's
-						// LABEL from its leading Text and lays the rest out as that row's
-						// VALUE — and a TextField in a value slot takes no focus and shows
-						// no I-beam. Nesting the row one level down hides that shape, which
-						// is why the SSH alias field (also VStack-wrapped) is typeable and
-						// two earlier attempts here were not.
-						VStack(alignment: .leading, spacing: 4) {
-							HStack(spacing: 6) {
-								// The label yields first: in a 250pt inspector this row is
-								// tight, and a squeezed-to-nothing field is a field nobody
-								// can click (measured: 80pt requested, 46pt granted).
-								Text("Grow by")
-									.lineLimit(1)
-									.layoutPriority(-1)
-								Spacer(minLength: 4)
-								// The sign is fixed, not typed: this only ever adds.
-								Text("+")
-									.foregroundStyle(.secondary)
-								// Typed like the Memory field (ByteSize): "8g", "512m",
-								// "8 GB" — a stepper offers one fixed increment at best.
-								TextField("8 GB", text: $growText)
-									.frame(minWidth: 64, idealWidth: 80, maxWidth: 90)
-									.layoutPriority(1)
-									.onChange(of: growText) {
-										// Permissive while typing; parsed on apply.
-										let filtered = String(growText
-											.filter { "0123456789.,kmgbKMGB ".contains($0) }
-											.prefix(12))
-										if filtered != growText { growText = filtered }
-									}
-									.onSubmit { grow(disk) }
-									// Growing needs the VM stopped, so say that by being
-									// unavailable (the row's tooltip explains why) instead
-									// of taking input the Apply button will refuse.
-									.disabled(vm.state.isRunning)
+						LabeledContent("Grow") {
+							HStack {
+								Stepper("+\(growGB) GB", value: $growGB, in: 0...256, step: 8)
 								Button("Apply") { grow(disk) }
-									.disabled(!canGrow)
-							}
-							// A typed amount is ambiguous on its own (a bare number is
-							// BYTES), so the result is spelled out before Apply is pressed.
-							if let added = growBytes, let current = disk.sizeBytes {
-								Text(fitsFreeSpace
-									? "New size: \(byteText(current + added))"
-									: "Larger than the \(byteText(freeBytes ?? 0)) free here.")
-									.font(.caption)
-									.foregroundStyle(fitsFreeSpace
-										? AnyShapeStyle(.secondary)
-										: AnyShapeStyle(MachmanColors.warning))
+									.disabled(growGB == 0 || vm.state.isRunning)
 							}
 						}
 						.help(vm.state.isRunning
@@ -155,37 +112,12 @@ struct DiskInspector: View {
 		disk.path.map { ($0 as NSString).lastPathComponent } ?? disk.id
 	}
 
-	// How much to add, in the Memory field's vocabulary: "8g", "512m", "8 GB" — and a bare
-	// number is bytes, which is why the row spells the resulting size out. A leading "+"
-	// is dropped first: ByteSize.parse takes digits only, and "grow by" invites one.
-	private var growBytes: UInt64? {
-		let typed = growText.trimmingCharacters(in: .whitespaces)
-			.drop { $0 == "+" }
-		guard let parsed = ByteSize.parse(String(typed)), parsed > 0 else { return nil }
-		return parsed
-	}
-
-	private var freeBytes: UInt64? { viewModel.capabilities?.freeDiskBytes }
-
-	// A sparse raw only claims what it uses, but growing past the free space still fails
-	// the moment the guest fills it — better refused here than half-written later.
-	private var fitsFreeSpace: Bool {
-		guard let growBytes, let freeBytes else { return true }
-		return growBytes <= freeBytes
-	}
-
-	private var canGrow: Bool {
-		growBytes != nil && fitsFreeSpace && !vm.state.isRunning
-	}
-
-	private func byteText(_ bytes: UInt64) -> String {
-		ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-	}
-
 	private func grow(_ disk: DiskInfo) {
-		guard canGrow, let current = disk.sizeBytes, let added = growBytes else { return }
-		viewModel.resizeDisk(vm.name, diskID: diskID, sizeBytes: current + added)
-		growText = ""
+		guard let current = disk.sizeBytes else { return }
+		viewModel.resizeDisk(
+			vm.name, diskID: diskID,
+			sizeBytes: current + UInt64(growGB) << 30)
+		growGB = 0
 	}
 
 	private func remove(_ disk: DiskInfo) {
