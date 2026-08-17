@@ -1,0 +1,72 @@
+//
+//  GuestSetupConfig.swift
+//  MachmanCore
+//
+//  Persisted guest-setup state (wire 1.0.7): what the unified installer's report taught
+//  us. Absent from disk until the installer is first used (conditional encode) — and part
+//  of why 1.0.7 is the version floor: an older daemon's config rewrite drops the keys it
+//  does not know. Statuses and vocabularies are plain strings (the reverseState lesson);
+//  the per-feature/console/automount entries persist the MachmanAPI DTOs directly — they
+//  are coder-agnostic value types with tolerant decodes, so a mirror would be one more
+//  lockstep site carrying nothing.
+//
+
+import Foundation
+import MachmanAPI
+
+struct GuestSetupConfig: Codable, Equatable {
+	// A report is on file and the last run did not uninstall.
+	var installed: Bool?
+	var guestOS: String?
+	var guestOSFamily: String?
+	var guestOSVersion: String?
+	var guestInit: String?
+	var lastReportAt: Date?          // stamped by the host at ingestion
+	var scriptVersion: Int?          // the script version that produced the report
+	var lastRunStatus: String?
+	var lastRunNote: String?
+	var lastTransport: String?
+	var errors: [GuestSetupError] = []
+	var features: [GuestFeatureInfo] = []
+	var consoles: [GuestConsoleInfo] = []
+	var automounts: [GuestAutomountInfo] = []
+
+	init() {}
+
+	private enum CodingKeys: String, CodingKey {
+		case installed
+		case guestOS
+		case guestOSFamily
+		case guestOSVersion
+		case guestInit
+		case lastReportAt
+		case scriptVersion
+		case lastRunStatus
+		case lastRunNote
+		case lastTransport
+		case errors
+		case features
+		case consoles
+		case automounts
+	}
+
+	// Tolerant decode: every field optional-or-defaulted so future additions round-trip.
+	init(from decoder: any Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.installed = try c.decodeIfPresent(Bool.self, forKey: .installed)
+		self.guestOS = try c.decodeIfPresent(String.self, forKey: .guestOS)
+		self.guestOSFamily = try c.decodeIfPresent(String.self, forKey: .guestOSFamily)
+		self.guestOSVersion = try c.decodeIfPresent(String.self, forKey: .guestOSVersion)
+		self.guestInit = try c.decodeIfPresent(String.self, forKey: .guestInit)
+		self.lastReportAt = try c.decodeIfPresent(Date.self, forKey: .lastReportAt)
+		self.scriptVersion = try c.decodeIfPresent(Int.self, forKey: .scriptVersion)
+		self.lastRunStatus = try c.decodeIfPresent(String.self, forKey: .lastRunStatus)
+		self.lastRunNote = try c.decodeIfPresent(String.self, forKey: .lastRunNote)
+		self.lastTransport = try c.decodeIfPresent(String.self, forKey: .lastTransport)
+		self.errors = try c.decodeIfPresent([GuestSetupError].self, forKey: .errors) ?? []
+		self.features = try c.decodeIfPresent([GuestFeatureInfo].self, forKey: .features) ?? []
+		self.consoles = try c.decodeIfPresent([GuestConsoleInfo].self, forKey: .consoles) ?? []
+		self.automounts =
+			try c.decodeIfPresent([GuestAutomountInfo].self, forKey: .automounts) ?? []
+	}
+}

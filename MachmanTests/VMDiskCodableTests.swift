@@ -73,6 +73,86 @@ struct VMDiskCodableTests {
 		}
 	}
 
+	@Test func mountKindDefaultsPinsAndPreservesUnknowns() throws {
+		// Legacy mounts (no kind) decode as virtiofs.
+		let legacy = try JSONDecoder().decode(HostMountPoint.self,
+			from: Data(#"{"path":"/Users/x/share","tag":"share"}"#.utf8))
+		#expect(legacy.kind == MountKind.virtiofs)
+		// A chosen kind survives the round trip.
+		let sshfs = HostMountPoint(path: "/Users/x/docs", tag: "docs", kind: MountKind.sshfs)
+		let back = try JSONDecoder().decode(
+			HostMountPoint.self, from: try JSONEncoder().encode(sshfs))
+		#expect(back.kind == MountKind.sshfs)
+		// A future kind written by a newer daemon survives this one's load/save verbatim.
+		let future = try JSONDecoder().decode(HostMountPoint.self,
+			from: Data(#"{"path":"/x","tag":"t","kind":"teleport"}"#.utf8))
+		let rewritten = String(
+			decoding: try JSONEncoder().encode(future), as: UTF8.self)
+		#expect(rewritten.contains(#""kind":"teleport""#))
+	}
+
+	@Test func legacyInstallerDevicesMigrateToOneGuestSetup() throws {
+		try VMTestDir.withRedirectedDir {
+			let dir = "\(machmanVMDir)/installer-migrate"
+			try FileManager.default.createDirectory(
+				atPath: dir, withIntermediateDirectories: true)
+			// A 1.0.6 config: both installers attached, the console one disabled.
+			let legacy = """
+			{"name":"installer-migrate","memorySize":2048,"cpuCount":2,
+			"created":100000,"macAddress":"aa:bb:cc:dd:ee:ff",
+			"devices":[{"kind":"consoleLoginInstaller","enabled":false},
+			{"kind":"network"},{"kind":"sshInstaller","enabled":true}]}
+			"""
+			try Data(legacy.utf8).write(to: URL(fileURLWithPath: "\(dir)/config"))
+
+			let config = try VMConfig.load(name: "installer-migrate")
+			let kinds = config.devices.map(\.kind)
+			#expect(kinds == ["guestSetup", "network"])   // first legacy position, deduped
+			#expect(config.devices.first?.enabled == true)   // enabled if either was
+			// The migration persisted: the file no longer carries the legacy kinds.
+			let bytes = try Data(contentsOf: URL(fileURLWithPath: "\(dir)/config"))
+			let text = String(decoding: bytes, as: UTF8.self)
+			#expect(!text.contains("sshInstaller"))
+			#expect(!text.contains("consoleLoginInstaller"))
+			#expect(text.contains("guestSetup"))
+		}
+	}
+
+	@Test func setupConfigPersistsConditionally() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "setup-state")
+			let config = try VMConfig(name: "setup-state", memorySize: 2048, cpuCount: 2)
+			// Absent until first used: a fresh config carries no setup key at all.
+			var bytes = try Data(contentsOf: URL(fileURLWithPath: config.configPath()))
+			#expect(!String(decoding: bytes, as: UTF8.self).contains(#""setup""#))
+
+			var state = GuestSetupConfig()
+			state.installed = true
+			state.guestOS = "debian"
+			state.guestInit = "systemd"
+			state.scriptVersion = 3
+			state.errors = [GuestSetupError(step: "sshd", message: "could not enable")]
+			state.features = [GuestFeatureInfo(
+				id: GuestFeature.console, available: true, configured: true,
+				detail: "hvc0")]
+			state.consoles = [GuestConsoleInfo(device: "hvc0", login: "active")]
+			state.automounts = [GuestAutomountInfo(
+				kind: MountKind.virtiofs, target: "host-share",
+				path: "/mnt/machman/share")]
+			config.setup = state
+			try config.saveVMConfig()
+
+			let back = try VMConfig.load(name: "setup-state")
+			#expect(back.setup == state)
+			// Unknown future keys inside setup are ignored, not fatal.
+			bytes = try Data(contentsOf: URL(fileURLWithPath: config.configPath()))
+			let patched = String(decoding: bytes, as: UTF8.self).replacingOccurrences(
+				of: #""installed":true"#, with: #""installed":true,"futureKey":1"#)
+			try Data(patched.utf8).write(to: URL(fileURLWithPath: config.configPath()))
+			#expect(try VMConfig.load(name: "setup-state").setup?.installed == true)
+		}
+	}
+
 	@Test func newFieldsDefaultAndRoundTrip() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "fields")

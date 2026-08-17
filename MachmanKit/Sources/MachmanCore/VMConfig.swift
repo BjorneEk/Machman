@@ -26,6 +26,10 @@ struct HostMountPoint: Codable, Identifiable {
 	var safe: Bool = true
 	// 1.0.4: disabled mounts stay configured but are not shared at the next start.
 	var enabled: Bool = true
+	// 1.0.7: how the mount reaches the guest — MountKind.virtiofs rides the share device,
+	// MountKind.sshfs is mounted by the guest over its SSH link. Plain string on disk (the
+	// GuestDevice.kind lesson): a newer daemon's value survives this one's load/save.
+	var kind: String = MountKind.virtiofs
 
 	// id must persist: removeMount matches on it, so a regenerated id breaks mount removal
 	// after any daemon restart or registry reload.
@@ -36,11 +40,14 @@ struct HostMountPoint: Codable, Identifiable {
 		self.tag = try container.decode(String.self, forKey: .tag)
 		self.safe = try container.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 		self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+		self.kind = try container.decodeIfPresent(String.self, forKey: .kind)
+			?? MountKind.virtiofs
 	}
 
-	init (path: String, tag: String) {
+	init (path: String, tag: String, kind: String = MountKind.virtiofs) {
 		self.path = path
 		self.tag = tag
+		self.kind = kind
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -49,6 +56,7 @@ struct HostMountPoint: Codable, Identifiable {
 		case tag
 		case safe
 		case enabled
+		case kind
 	}
 }
 
@@ -171,6 +179,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	var kernelOverrides: [String: KernelOverrideConfig] = [:]
 	// SSH autoconfiguration state (1.0.5). nil until first used; encoded only when present.
 	var ssh: SSHConfig?
+	// Guest-setup installer state (1.0.7). nil until first used; encoded only when present.
+	var setup: GuestSetupConfig?
 
 	// The framework caps a VM at 10 virtio serial-port devices; console + uart share that budget.
 	static let maxSerialPorts = 10
@@ -197,8 +207,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		let data = try Data(contentsOf: fileURL)
 		let config = try JSONDecoder().decode(VMConfig.self, from: data)
 		config.name = name
+		var needsSave = false
 		if config.macAddress == nil {
 			config.macAddress = VZMACAddress.randomLocallyAdministered().string
+			needsSave = true
+		}
+		// Migration (1.0.7): the two legacy installer devices collapse into one guestSetup.
+		if config.migrateLegacyInstallerDevices() {
+			needsSave = true
+		}
+		if needsSave {
 			try config.saveVMConfig()
 		}
 		return config
@@ -223,6 +241,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		case nestedVirtualization
 		case kernelOverrides
 		case ssh
+		case setup
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
@@ -270,6 +289,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		self.kernelOverrides = try c.decodeIfPresent(
 			[String: KernelOverrideConfig].self, forKey: .kernelOverrides) ?? [:]
 		self.ssh = try c.decodeIfPresent(SSHConfig.self, forKey: .ssh)
+		self.setup = try c.decodeIfPresent(GuestSetupConfig.self, forKey: .setup)
 	}
 
 	func encode(to encoder: any Encoder) throws {
@@ -294,6 +314,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			try c.encode(kernelOverrides, forKey: .kernelOverrides)
 		}
 		try c.encodeIfPresent(ssh, forKey: .ssh)
+		try c.encodeIfPresent(setup, forKey: .setup)
 	}
 
 	func getDisks() -> [VMDisk] {

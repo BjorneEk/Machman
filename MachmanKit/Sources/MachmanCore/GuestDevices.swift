@@ -74,6 +74,25 @@ extension VMConfig {
 		"\(file.role.rawValue)/\(file.tag)/\(file.fileName)"
 	}
 
+	// Migration (1.0.7): consoleLoginInstaller + sshInstaller collapse into one guestSetup
+	// device — enabled if either was, at the first one's position. Called from load(name:),
+	// which saves when this returns true (the VMDisk migrate-on-load precedent).
+	func migrateLegacyInstallerDevices() -> Bool {
+		let legacy = [
+			DeviceKind.consoleLoginInstaller.rawValue, DeviceKind.sshInstaller.rawValue,
+		]
+		guard devices.contains(where: { legacy.contains($0.kind) }) else { return false }
+		let enabled = devices.contains { legacy.contains($0.kind) && $0.enabled }
+		let position = devices.firstIndex { legacy.contains($0.kind) } ?? devices.count
+		devices.removeAll { legacy.contains($0.kind) }
+		if !devices.contains(where: { $0.kind == DeviceKind.guestSetup.rawValue }) {
+			var unified = GuestDevice(kind: .guestSetup)
+			unified.enabled = enabled
+			devices.insert(unified, at: min(position, devices.count))
+		}
+		return true
+	}
+
 	// MARK: - Device mutations (vm.device.*)
 
 	func addDevice(_ device: GuestDevice) throws {

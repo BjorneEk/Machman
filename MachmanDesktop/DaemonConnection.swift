@@ -161,7 +161,10 @@ final class DaemonConnection: ObservableObject {
 	// 1.0.6: the ssh config grew again (alias, last address, run status, sshfs capability)
 	// and payloads moved to <vmdir>/share — an older daemon drops the new keys on its next
 	// rewrite and regenerates payloads in the old place.
-	static let oldestCompatibleDaemonVersion = "1.0.6"
+	// 1.0.7: the two installer devices collapse into guestSetup (configs migrate on load —
+	// an older daemon neither understands the migrated kind nor keeps the new setup and
+	// mount-kind keys through its rewrite), and mounts gained kind.
+	static let oldestCompatibleDaemonVersion = "1.0.7"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
