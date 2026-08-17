@@ -114,7 +114,7 @@ struct GuestReport {
 			}
 	}
 
-	// CONSOLE_<n>=<device> <login> [auto] [external] [kernel]
+	// CONSOLE_<n>=<device> <login> [auto] [external] [kernel|kernel-next]
 	private func consoles() -> [GuestConsoleInfo] {
 		numbered("CONSOLE_").compactMap { value in
 			let words = value.split(separator: " ").map(String.init)
@@ -127,6 +127,7 @@ struct GuestReport {
 			return GuestConsoleInfo(
 				device: words[0], login: login,
 				kernelConsole: flags.contains("kernel") ? true : nil,
+				kernelConsolePending: flags.contains("kernel-next") ? true : nil,
 				external: flags.contains("external") ? true : nil)
 		}
 	}

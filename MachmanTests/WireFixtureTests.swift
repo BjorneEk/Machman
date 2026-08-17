@@ -560,6 +560,10 @@ struct WireFixtureTests {
 		#expect(try encode(GuestConsoleInfo(
 			device: "hvc1", login: "configured", external: true))
 			== #"{"device":"hvc1","external":true,"login":"configured"}"#)
+		// kernelConsolePending: configured but not rebooted into yet.
+		#expect(try encode(GuestConsoleInfo(
+			device: "hvc1", login: "active", kernelConsolePending: true))
+			== #"{"device":"hvc1","kernelConsolePending":true,"login":"active"}"#)
 		#expect(encoded.contains(#""automounts":[{"kind":"virtiofs","#
 			+ #""path":"/mnt/machman/share","target":"host-share"}]"#))
 		#expect(try decode(GuestSetupInfo.self, encoded) == full)

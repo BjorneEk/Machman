@@ -219,7 +219,9 @@ struct GuestSetupHelpSheet: View {
 		optionRow("-y, --yes", "never ask; take the defaults")
 		optionRow("--user <name>", "set SSH up for this user")
 		optionRow("--consoles \"…\"", "logins on exactly these consoles")
-		optionRow("--kernel-console", "send kernel boot messages to a console")
+		optionRow("--kernel-console", "send kernel boot messages to a console — EDITS THE "
+			+ "BOOT LOADER, so it is flag-only, keeps the display on tty0, and backs up "
+			+ "grub.cfg; test in a safe run first")
 		optionRow("--two-way", "also configure guest → host SSH")
 		optionRow("--sshfs", "install sshfs (implies --two-way)")
 		optionRow("--automount-virtiofs", "mount the share at boot")

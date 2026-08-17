@@ -162,7 +162,7 @@ struct GuestReportTests {
 				FEATURE_console=available
 				FEATURE_kernelConsole=unavailable no known bootloader tool on this guest
 				CONSOLE_1=hvc0 active auto kernel
-				CONSOLE_2=hvc1 configured external
+				CONSOLE_2=hvc1 configured external kernel-next
 				AUTOMOUNT_1=virtiofs host-share /mnt/machman/share
 				ERROR_1=console: /dev/hvc1 is not present — skipped
 				""").apply(to: vm, stampedAt: stamp)
@@ -185,6 +185,8 @@ struct GuestReportTests {
 			#expect(setup?.consoles.first?.external == nil)
 			#expect(setup?.consoles.last?.login == "configured")
 			#expect(setup?.consoles.last?.external == true)
+			#expect(setup?.consoles.last?.kernelConsolePending == true)
+			#expect(setup?.consoles.last?.kernelConsole == nil)
 			#expect(setup?.automounts
 				== [GuestAutomountInfo(
 					kind: "virtiofs", target: "host-share", path: "/mnt/machman/share")])

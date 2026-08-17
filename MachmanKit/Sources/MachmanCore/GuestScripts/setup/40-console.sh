@@ -544,6 +544,12 @@ console_report() {
 		esac
 		if has_word "$_cr_dev" "$CMDLINE_CONSOLES"; then
 			_cr_out="$_cr_out kernel"
+		else
+			# Configured-but-not-rebooted kernel console: the chip shows "(next boot)".
+			_cr_pend="$KC_DEVICE_DONE"
+			[ -z "$_cr_pend" ] && _cr_pend="$(kernelconsole_pending_device)"
+			[ -z "$_cr_pend" ] && _cr_pend="${ST_KERNEL_CONSOLE:-}"
+			[ "$_cr_pend" = "$_cr_dev" ] && _cr_out="$_cr_out kernel-next"
 		fi
 		printf 'CONSOLE_%s=%s\n' "$_cr_i" "$_cr_out"
 		_cr_i=$((_cr_i + 1))

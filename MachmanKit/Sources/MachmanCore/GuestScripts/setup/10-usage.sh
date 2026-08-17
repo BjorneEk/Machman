@@ -12,7 +12,11 @@ Who
 What                     (default: ask per feature; every --x has a --no-x)
   --console              login prompts on this VM's consoles
   --consoles "<list>"    exactly these console devices (e.g. "hvc0 hvc1")
-  --kernel-console[=dev] send kernel boot messages to a console (default: the first)
+  --kernel-console[=dev] send kernel boot messages to a console (default: the first).
+                         WARNING: EDITS THE BOOT LOADER. Never offered interactively —
+                         only this flag enables it. The display is kept on tty0 and
+                         grub.cfg is backed up, but treat it as a reachable-for-repair
+                         change: test in a Machman safe run first.
   --ssh                  Mac -> guest SSH (enable sshd, install the Mac's key)
   --two-way              also configure guest -> host SSH   (--one-way skips it)
   --sshfs                install sshfs in the guest (implies --two-way)

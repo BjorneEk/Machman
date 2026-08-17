@@ -86,8 +86,14 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("cu.virtio"))
 		#expect(s.contains(#"echo "ttyV$1.0""#))
 		#expect(s.contains(#"echo "hvc$1""#))
-		// Kernel console: grubby first (BLS), then the /etc/default/grub tools; sd-boot
-		// and UKI report manual instead of blind edits; direct-kernel boots skip.
+		// Kernel console: FLAG-ONLY (it edits the boot loader — the usage text warns and
+		// the menu never offers it), always keeps the display on tty0, backs up grub.cfg,
+		// and reports a pending state until the reboot makes it active.
+		#expect(s.contains("EDITS THE BOOT LOADER"))
+		#expect(s.contains("console=tty0"))
+		#expect(s.contains("grub.cfg.machman-backup"))
+		#expect(s.contains("kernel-next"))
+		#expect(s.contains("pending reboot"))
 		#expect(s.contains("grubby --update-kernel=ALL --args="))
 		#expect(s.contains("GRUB_CMDLINE_LINUX_DEFAULT"))
 		#expect(s.contains("update-grub"))

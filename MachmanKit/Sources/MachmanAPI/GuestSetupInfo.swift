@@ -81,16 +81,21 @@ public struct GuestConsoleInfo: Codable, Sendable, Equatable, Identifiable {
 	public var device: String        // "hvc0", "ttyV0.0", "cu.virtio"
 	public var login: String
 	public var kernelConsole: Bool?
+	// The kernel console is CONFIGURED for this device but the guest has not rebooted
+	// into it yet (kernelConsole reflects the running kernel only).
+	public var kernelConsolePending: Bool?
 	public var external: Bool?
 
 	public var id: String { device }
 
 	public init(
-		device: String, login: String, kernelConsole: Bool? = nil, external: Bool? = nil
+		device: String, login: String, kernelConsole: Bool? = nil,
+		kernelConsolePending: Bool? = nil, external: Bool? = nil
 	) {
 		self.device = device
 		self.login = login
 		self.kernelConsole = kernelConsole
+		self.kernelConsolePending = kernelConsolePending
 		self.external = external
 	}
 
@@ -99,6 +104,8 @@ public struct GuestConsoleInfo: Codable, Sendable, Equatable, Identifiable {
 		self.device = try c.decode(String.self, forKey: .device)
 		self.login = try c.decodeIfPresent(String.self, forKey: .login) ?? "none"
 		self.kernelConsole = try c.decodeIfPresent(Bool.self, forKey: .kernelConsole)
+		self.kernelConsolePending =
+			try c.decodeIfPresent(Bool.self, forKey: .kernelConsolePending)
 		self.external = try c.decodeIfPresent(Bool.self, forKey: .external)
 	}
 }

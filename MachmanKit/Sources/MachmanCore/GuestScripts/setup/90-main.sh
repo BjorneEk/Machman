@@ -84,6 +84,9 @@ _mm_menu=""
 _mm_marks=""
 _mm_i=0
 for _mm_f in $FEATURES; do
+	# Kernel console is FLAG-ONLY: it edits the boot loader, so the menu never offers
+	# it — the plan shows its state, and --kernel-console selects it explicitly below.
+	[ "$_mm_f" = kernelconsole ] && continue
 	_mm_avail="$(eval "printf '%s' \"\$avail_$_mm_f\"")"
 	[ "$_mm_avail" = 1 ] || continue
 	AVAILABLE_FEATURES="$AVAILABLE_FEATURES $_mm_f"
@@ -125,6 +128,15 @@ for _mm_f in $AVAILABLE_FEATURES; do
 	esac
 done
 SELECTED_FEATURES="${SELECTED_FEATURES# }"
+# The flag-only feature: an explicit --kernel-console joins the run here.
+if [ "${want_kernelconsole:-}" = 1 ]; then
+	if [ "$avail_kernelconsole" = 1 ]; then
+		SELECTED_FEATURES="$SELECTED_FEATURES kernelconsole"
+		SELECTED_FEATURES="${SELECTED_FEATURES# }"
+	else
+		warn "--kernel-console: $reason_kernelconsole"
+	fi
+fi
 [ -n "$SELECTED_FEATURES" ] || die 3 "nothing selected — nothing to do."
 
 # Dependencies: sshfs work rides the guest -> host link. Selecting the tool or the
@@ -165,9 +177,12 @@ plan_line "payload" "$PAYLOAD_DIR (over $TRANSPORT)"
 for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_plan"
 done
+# The flag-only feature's state, always visible even when it is not in the run.
+kernelconsole_status_line
 # Configured features that were NOT selected: named, so nothing is silently ambiguous.
 _mm_left=""
 for _mm_f in $FEATURES; do
+	[ "$_mm_f" = kernelconsole ] && continue   # it has its own status line above
 	feature_selected "$_mm_f" && continue
 	_mm_avail="$(eval "printf '%s' \"\$avail_$_mm_f\"")"
 	[ "$_mm_avail" = 1 ] || continue

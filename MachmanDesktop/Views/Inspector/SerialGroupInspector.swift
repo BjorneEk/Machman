@@ -41,6 +41,10 @@ struct SerialGroupInspector: View {
 								Text("kernel")
 									.font(.caption2)
 									.foregroundStyle(.tertiary)
+							} else if reportedInfo(for: port)?.kernelConsolePending == true {
+								Text("kernel (next boot)")
+									.font(.caption2)
+									.foregroundStyle(.tertiary)
 							}
 						}
 					}
