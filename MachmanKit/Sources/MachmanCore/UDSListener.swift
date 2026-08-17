@@ -80,8 +80,14 @@ final class UDSListener {
 		unlink(path)
 	}
 
-	// For tests that need to simulate a kill: drop the socket without the cleanup shutdown does.
-	var fileDescriptorForTesting: Int32 { fd }
+	// For tests that need to simulate a kill: drop the socket but keep the file, exactly
+	// what SIGKILL leaves behind. The source is cancelled first — a bare close() would free
+	// the fd NUMBER under a still-armed source, which then watches whatever unrelated
+	// socket a parallel test binds to that number (a real in-suite flake).
+	func simulateKillForTesting() {
+		source.cancel()
+		close(fd)
+	}
 
 	// Whether something is actually accepting on this socket. The file existing means nothing:
 	// only an orderly shutdown removes it, so anything killed leaves one behind.

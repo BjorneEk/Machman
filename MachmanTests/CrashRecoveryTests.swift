@@ -29,7 +29,7 @@ struct CrashRecoveryTests {
 		let path = NSTemporaryDirectory() + "mm-stale-\(UUID().uuidString).sock"
 		let first = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
 		// Simulate SIGKILL: drop the listener without shutdown(), leaving the file behind.
-		close(first.fileDescriptorForTesting)
+		first.simulateKillForTesting()
 		#expect(FileManager.default.fileExists(atPath: path))
 
 		let second = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
