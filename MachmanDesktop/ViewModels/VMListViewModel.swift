@@ -706,6 +706,16 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	func setMountKind(_ name: String, mountID: String, kind: String) {
+		Task { [weak self] in
+			do {
+				_ = try await self?.api.setMountKind(vm: name, mountID: mountID, kind: kind)
+			} catch {
+				self?.present(error, while: "Changing a mount's kind")
+			}
+		}
+	}
+
 	// The file's path changes with its tag — repoint a selection that was on the old path.
 	func renameKernelTag(_ name: String, path: String, tag: String) {
 		let fileName = (path as NSString).lastPathComponent

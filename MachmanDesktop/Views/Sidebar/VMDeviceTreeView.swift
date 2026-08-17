@@ -313,6 +313,20 @@ struct VMDeviceTreeView: View {
 						.lineLimit(1)
 						.help("\(mount.path) — guest tag “\(mount.tag)”")
 					Spacer()
+					// Trailing badges (the disks' externalReference pattern): how the
+					// mount travels, and whether the guest mounts it at boot.
+					if mount.effectiveKind == MountKind.sshfs {
+						Image(systemName: MachmanSymbols.mountSSHFS)
+							.font(.system(size: 9))
+							.foregroundStyle(.tertiary)
+							.help("sshfs — the guest mounts this over its SSH link")
+					}
+					if mount.automounted == true {
+						Image(systemName: MachmanSymbols.automounted)
+							.font(.system(size: 9))
+							.foregroundStyle(.tertiary)
+							.help("Mounted at boot by Guest Setup")
+					}
 				}
 				.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
 				.font(.system(size: theme.metrics.rowFontSize))

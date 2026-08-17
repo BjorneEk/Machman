@@ -157,11 +157,31 @@ struct MountInspector: View {
 						.onSubmit { commitTag(mount) }
 						.onAppear { draftTag = mount.tag }
 						.onChange(of: mount.tag) { draftTag = mount.tag }
-						.help("The virtiofs tag guests use to mount this folder "
+						.help("The name guests see this folder under "
 							+ "(applies at the next boot)")
 					PathRow(label: "Host path", path: mount.path) {
 						NSWorkspace.shared.activateFileViewerSelecting(
 							[URL(fileURLWithPath: mount.path)])
+					}
+					// macOS guests have no kind choice: the share automounts, and sshfs
+					// would need macFUSE (the daemon refuses it too).
+					if vm.boot.mode != .macOS {
+						Picker("Kind", selection: Binding(
+							get: { mount.effectiveKind },
+							set: { viewModel.setMountKind(
+								vm.name, mountID: mountID, kind: $0) })) {
+							Text("virtiofs").tag(MountKind.virtiofs)
+							Text("sshfs").tag(MountKind.sshfs)
+						}
+						.help("virtiofs rides the share device; sshfs is mounted by the "
+							+ "guest over its SSH link (no driver needed)")
+						if mount.effectiveKind == MountKind.sshfs,
+							vm.ssh?.sshfsAvailable != true {
+							Text("The guest hasn't reported sshfs yet — run the Guest "
+								+ "Setup script.")
+								.font(.caption2)
+								.foregroundStyle(.tertiary)
+						}
 					}
 					Toggle("Attach in safe runs", isOn: Binding(
 						get: { mount.safe },
@@ -171,10 +191,22 @@ struct MountInspector: View {
 						set: { viewModel.setEnabled(vm.name, mounts: [mountID: $0]) }))
 				}
 				Section("Mounting from the Guest") {
-					// One virtiofs device carries every mount, each a subdirectory named
-					// by its tag. macOS guests get the automount tag (the share appears
-					// on its own); other guests mount "host-share" by hand.
-					if vm.boot.mode == .macOS {
+					if mount.automounted == true {
+						Label("Mounted at boot by Guest Setup.",
+							systemImage: MachmanSymbols.automounted)
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					}
+					if mount.effectiveKind == MountKind.sshfs {
+						Text("The guest mounts this folder itself, at "
+							+ "“\(GuestPaths.sshfsMountPoint(name: mount.tag))”, over its "
+							+ "SSH link — approve guest → Mac access in the SSH section.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.fixedSize(horizontal: false, vertical: true)
+					} else if vm.boot.mode == .macOS {
+						// One virtiofs device carries every mount, each a subdirectory
+						// named by its tag; macOS automounts the share on its own.
 						Text("This VM's mounts automount in the guest — each is a folder "
 							+ "inside the “My Shared Files” volume (macOS 13+).")
 							.font(.caption)
@@ -187,9 +219,9 @@ struct MountInspector: View {
 								+ "com.apple.virtio-fs.automount ~/shared",
 							command: "/Volumes/My Shared Files/\(mount.tag)")
 					} else {
-						Text("All mounts ride one virtiofs device tagged “\(GuestPaths.shareTag)”. "
-							+ "Mount it once — this folder is the “\(mount.tag)” "
-							+ "subdirectory inside it.")
+						Text("All virtiofs mounts ride one device tagged "
+							+ "“\(GuestPaths.shareTag)”. Mount it once — this folder is the "
+							+ "“\(mount.tag)” subdirectory inside it.")
 							.font(.caption)
 							.foregroundStyle(.secondary)
 							.fixedSize(horizontal: false, vertical: true)
@@ -198,7 +230,8 @@ struct MountInspector: View {
 							requirement: "virtiofs is built into kernels ≥ 5.4 "
 								+ "(CONFIG_VIRTIO_FS); no extra packages.",
 							command: GuestPaths.mountShareCommand)
-						Text("FreeBSD guests cannot mount virtiofs shares — no driver.")
+						Text("No virtiofs driver (FreeBSD, OpenBSD)? Switch the kind to "
+							+ "sshfs instead.")
 							.font(.caption)
 							.foregroundStyle(.tertiary)
 					}
