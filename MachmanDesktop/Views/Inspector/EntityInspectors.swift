@@ -55,27 +55,31 @@ struct DiskInspector: View {
 				}
 				Section("Actions") {
 					if disk.type == .storage && disk.owned != false {
-						LabeledContent("Grow by") {
-							HStack {
-								// Typed like the Memory field (ByteSize): "8g", "512m",
-								// "8 GB" — a stepper could only offer one fixed increment.
-								// Bordered on purpose: a plain field in a value position
-								// reads as a label, and this one is meant to be typed in.
-								TextField("8 GB", text: $growText)
-									.frame(width: 110)
-									.onChange(of: growText) {
-										// Permissive while typing; parsed on apply. "+" is
-										// tolerated (people write "+8 GB") and dropped
-										// before parsing.
-										let filtered = String(growText
-											.filter { "+0123456789.,kmgbKMGB ".contains($0) }
-											.prefix(12))
-										if filtered != growText { growText = filtered }
-									}
-									.onSubmit { grow(disk) }
-								Button("Apply") { grow(disk) }
-									.disabled(!canGrow)
-							}
+						// A plain row, NOT LabeledContent: a grouped Form treats
+						// LabeledContent's content as a value, and a TextField nested in
+						// there (rather than being its direct child, like Memory and the
+						// display size) never takes focus — which is exactly how this
+						// field ended up looking editable without being it.
+						HStack(spacing: 6) {
+							Text("Grow by")
+							Spacer()
+							// The sign is fixed, not typed: this only ever adds.
+							Text("+")
+								.foregroundStyle(.secondary)
+							// Typed like the Memory field (ByteSize): "8g", "512m", "8 GB"
+							// — a stepper could only offer one fixed increment.
+							TextField("8 GB", text: $growText)
+								.frame(width: 90)
+								.onChange(of: growText) {
+									// Permissive while typing; parsed on apply.
+									let filtered = String(growText
+										.filter { "0123456789.,kmgbKMGB ".contains($0) }
+										.prefix(12))
+									if filtered != growText { growText = filtered }
+								}
+								.onSubmit { grow(disk) }
+							Button("Apply") { grow(disk) }
+								.disabled(!canGrow)
 						}
 						.help(vm.state.isRunning
 							? "Stop the VM to grow its disks" : "Grow-only; shrink refuses")
