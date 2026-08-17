@@ -403,7 +403,8 @@ struct RosettaInspector: View {
 				}
 				LabeledContent("Mount tag", value: "rosetta")
 			}
-			Section("Guest Setup") {
+			// "Guest Commands", not "Guest Setup" — that name belongs to the installer.
+			Section("Guest Commands") {
 				VStack(alignment: .leading, spacing: 6) {
 					Text("Mount the share, then register the binfmt handler:")
 						.font(.caption)

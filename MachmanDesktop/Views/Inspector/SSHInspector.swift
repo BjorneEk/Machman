@@ -36,7 +36,7 @@ struct NetworkSSHSection: View {
 	@State private var aliasDraft = ""
 
 	private var setupAttached: Bool {
-		(vm.devices ?? []).contains { $0.kind == .sshInstaller }
+		(vm.devices ?? []).contains { $0.kind == .guestSetup }
 	}
 	// Served, never derived: the VM can be named something else in ~/.ssh.
 	private var alias: String { vm.ssh?.alias ?? "\(vm.name).machman" }
@@ -54,13 +54,13 @@ struct NetworkSSHSection: View {
 	var body: some View {
 		Section("SSH") {
 			if vm.ssh == nil && !setupAttached {
-				Text("Add the SSH Setup installer to reach this VM over SSH — it enables "
-					+ "sshd in the guest and exchanges keys with this Mac.")
+				Text("Add the Guest Setup installer to reach this VM over SSH — its "
+					+ "script enables sshd and exchanges keys with this Mac.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
-				Button("Add SSH Setup") {
-					viewModel.addDevice(vm.name, kind: .sshInstaller)
+				Button("Add Guest Setup") {
+					viewModel.addDevice(vm.name, kind: .guestSetup)
 				}
 			} else {
 				statusRows
@@ -209,63 +209,18 @@ struct NetworkSSHSection: View {
 	}
 }
 
+// The SSH half only (1.0.7): switches, keys and access. The installer, its status and
+// its run commands live in the Guest Setup inspector — this one never mentions them
+// beyond the pointer shown while nothing is set up yet.
 struct SSHInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
-	@State private var showGuide = false
 	@State private var resetConfirm = false
-
-	private var macGuest: Bool { vm.boot.mode == .macOS }
-	private var device: DeviceInfo? {
-		(vm.devices ?? []).first { $0.kind == .sshInstaller }
-	}
 
 	var body: some View {
 		Form {
-			// Reachability and switches first — what someone opening this is usually
-			// after; the setup half is below it.
 			NetworkSSHSection(viewModel: viewModel, vm: vm)
-			// Inspector text rule: nothing longer than one sentence — details live in
-			// the Setup Guide sheet, never here.
-			Section("Setup Script") {
-				Text("Serves a script the guest runs once to enable SSH and exchange "
-					+ "keys with this Mac.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-				if let at = vm.ssh?.lastReportAt {
-					LabeledContent("Last run") {
-						HStack(spacing: 5) {
-							if let status = vm.ssh?.lastRunStatus, status != "ok" {
-								Image(systemName: MachmanSymbols.warning)
-									.foregroundStyle(MachmanColors.warning)
-								Text(status)
-							}
-							Text(at.formatted(date: .abbreviated, time: .shortened))
-						}
-					}
-					// The script says what it could not finish; this is that sentence.
-					if let note = vm.ssh?.lastRunNote,
-						vm.ssh?.lastRunStatus != "ok" {
-						Text(note)
-							.font(.caption)
-							.foregroundStyle(.secondary)
-							.fixedSize(horizontal: false, vertical: true)
-					}
-					if let os = vm.ssh?.guestOS, let user = vm.ssh?.guestUser {
-						let version = vm.ssh?.guestOSVersion.map { " \($0)" } ?? ""
-						Text("\(user) on \(os)\(version)")
-							.font(.system(.caption, design: .monospaced))
-							.foregroundStyle(.secondary)
-					}
-					if vm.ssh?.sshfsAvailable != nil {
-						LabeledContent("sshfs") { Text(sshfsSummary) }
-					}
-				} else {
-					Text("No report yet — the guest hasn't run the script.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				}
+			Section("Keys") {
 				if let identity = vm.ssh?.identityFilePath,
 					let pub = try? String(contentsOfFile: identity + ".pub",
 						encoding: .utf8) {
@@ -275,19 +230,8 @@ struct SSHInspector: View {
 							tooltip: "Copy this Mac's public key")
 					}
 				}
-			}
-			Section("Guest Setup") {
-				VStack(alignment: .leading, spacing: 6) {
-					Text(macGuest
-						? "Run in the guest's Terminal (the share automounts, macOS 13+):"
-						: "Run in the guest (Linux; FreeBSD cannot mount the share — "
-							+ "see the guide):")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-						.fixedSize(horizontal: false, vertical: true)
-					CommandBlock(macGuest
-						? SSHSetupInfo.runCommand : SSHSetupInfo.mountAndRunCommand)
-					GuideButton(isPresented: $showGuide)
+				if vm.ssh?.sshfsAvailable != nil {
+					LabeledContent("sshfs") { Text(sshfsSummary) }
 				}
 			}
 			Section {
@@ -300,13 +244,6 @@ struct SSHInspector: View {
 							+ "approvals — the guest keeps what the script installed.")
 					}
 			}
-			if let device {
-				DeviceImplementationSection(vm: vm, device: device)
-				DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .sshInstaller)
-			}
-		}
-		.sheet(isPresented: $showGuide) {
-			GuestSetupHelpSheet(vm: vm)
 		}
 	}
 
