@@ -175,8 +175,9 @@ struct DeviceConfigTests {
 			// Switching kinds moves it in and out of the share.
 			try vm.setMountKind(id: vm.mountPoints[1].id.uuidString, kind: MountKind.virtiofs)
 			let after = vm.directoryShareDeviceConfig(mainTag: "host-share")
-			#expect(((after.share as? VZMultipleDirectoryShare)?.directories ?? [:])
-				.keys.contains("docs"))
+			let afterDirectories =
+				(after.share as? VZMultipleDirectoryShare)?.directories ?? [:]
+			#expect(afterDirectories.keys.contains("docs"))
 		}
 	}
 
