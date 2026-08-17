@@ -35,7 +35,7 @@ R_KEY=""             # key_read result
 # Styling defaults so `set -u` is safe before (and without) ui_detect.
 C_RESET=""; C_DIM=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""
 G_OK="[ok]"; G_RUN="[..]"; G_WARN="[!!]"; G_ERR="[xx]"
-G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"
+G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"; G_SEP="-"
 ESC="$(printf '\033')"
 CR="$(printf '\r')"
 
@@ -106,9 +106,10 @@ ui_detect() {
 	fi
 	if [ "$UI_UNICODE" -eq 1 ]; then
 		G_OK="✓"; G_RUN="→"; G_WARN="!"; G_ERR="✗"; G_PTR="❯"; G_ON="◉"; G_OFF="○"
+		G_SEP="·"
 	else
 		G_OK="[ok]"; G_RUN="[..]"; G_WARN="[!!]"; G_ERR="[xx]"
-		G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"
+		G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"; G_SEP="-"
 	fi
 
 	# Where interactive answers come from: the controlling terminal if there is one (so a
@@ -310,7 +311,8 @@ ask_choice() {
 	say ""
 	_ac_i=1
 	for _ac_item in "$@"; do
-		printf '  %s) %s\n' "$_ac_i" "$_ac_item"
+		# Items may be "title<TAB>note" pairs (the arrow menus' format): flatten here.
+		printf '  %s) %s\n' "$_ac_i" "$(printf '%s' "$_ac_item" | tr '	' ' ')"
 		_ac_i=$((_ac_i + 1))
 	done
 	say ""
@@ -396,24 +398,72 @@ key_read() {
 # ------------------------------------------------------------------------ arrow menus ----
 
 # menu_draw <highlight> <marks or "-"> <items…>  (marks: comma list of ON indexes)
+# Items are "title<TAB>note" pairs (the note is optional). Titles pad to one shared
+# column so the notes align; notes are dim and clipped to the terminal so a row never
+# wraps (the redraw's cursor math counts one line per item). Marks color by state —
+# green on, dim off — unmarked titles are dim, and the cursor row is bold with a cyan
+# pointer.
 menu_draw() {
 	_md_hi="$1"; _md_marks="$2"; shift 2
+	_md_w=0
+	for _md_it in "$@"; do
+		_md_t="${_md_it%%	*}"
+		[ "${#_md_t}" -gt "$_md_w" ] && _md_w="${#_md_t}"
+	done
+	[ "$_md_w" -gt 30 ] && _md_w=30
 	_md_i=1
 	for _md_it in "$@"; do
 		printf '\r\033[K'
-		_md_mark=""
+		_md_t="${_md_it%%	*}"
+		_md_note=""
+		case "$_md_it" in
+		*"	"*) _md_note="${_md_it#*	}" ;;
+		esac
+		_md_on=0
 		if [ "$_md_marks" != "-" ]; then
 			case ",$_md_marks," in
-			*",$_md_i,"*) _md_mark="$G_ON " ;;
-			*) _md_mark="$G_OFF " ;;
+			*",$_md_i,"*) _md_on=1 ;;
 			esac
 		fi
-		if [ "$_md_i" -eq "$_md_hi" ]; then
-			printf '  %s%s %s%s%s\n' "${C_BOLD}${C_CYAN}" "$G_PTR" "$_md_mark" "$_md_it" \
-				"$C_RESET"
-		else
-			printf '    %s%s%s%s\n' "$C_DIM" "$_md_mark" "$_md_it" "$C_RESET"
+		_md_mark=""
+		if [ "$_md_marks" != "-" ]; then
+			if [ "$_md_on" -eq 1 ]; then
+				_md_mark="${C_GREEN}${G_ON}${C_RESET} "
+			else
+				_md_mark="${C_DIM}${G_OFF}${C_RESET} "
+			fi
 		fi
+		if [ "$_md_i" -eq "$_md_hi" ]; then
+			_md_pre="  ${C_BOLD}${C_CYAN}${G_PTR}${C_RESET} "
+			_md_title="${C_BOLD}${_md_t}${C_RESET}"
+		elif [ "$_md_marks" != "-" ] && [ "$_md_on" -eq 0 ]; then
+			_md_pre="    "
+			_md_title="${C_DIM}${_md_t}${C_RESET}"
+		else
+			_md_pre="    "
+			_md_title="$_md_t"
+		fi
+		_md_tail=""
+		if [ -n "$_md_note" ]; then
+			_md_room=$((UI_COLS - 8 - _md_w))
+			if [ "$_md_room" -lt 8 ]; then
+				_md_note=""
+			elif [ "${#_md_note}" -gt "$_md_room" ]; then
+				_md_note="$(printf '%s' "$_md_note" \
+					| awk -v n="$_md_room" '{ print substr($0, 1, n) }')"
+			fi
+		fi
+		if [ -n "$_md_note" ]; then
+			_md_k=$((_md_w - ${#_md_t} + 2))
+			[ "$_md_k" -lt 1 ] && _md_k=1
+			_md_sp=""
+			while [ "$_md_k" -gt 0 ]; do
+				_md_sp="$_md_sp "
+				_md_k=$((_md_k - 1))
+			done
+			_md_tail="${_md_sp}${C_DIM}${_md_note}${C_RESET}"
+		fi
+		printf '%s%s%s%s\n' "$_md_pre" "$_md_mark" "$_md_title" "$_md_tail"
 		_md_i=$((_md_i + 1))
 	done
 	return 0
@@ -511,9 +561,10 @@ menu_multi() {
 		say ""
 		_mm_i=1
 		for _mm_it in "$@"; do
+			_mm_flat="$(printf '%s' "$_mm_it" | tr '	' ' ')"
 			case ",$_mm_marks," in
-			*",$_mm_i,"*) printf '  %s) %s %s\n' "$_mm_i" "$G_ON" "$_mm_it" ;;
-			*) printf '  %s) %s %s\n' "$_mm_i" "$G_OFF" "$_mm_it" ;;
+			*",$_mm_i,"*) printf '  %s) %s %s\n' "$_mm_i" "$G_ON" "$_mm_flat" ;;
+			*) printf '  %s) %s %s\n' "$_mm_i" "$G_OFF" "$_mm_flat" ;;
 			esac
 			_mm_i=$((_mm_i + 1))
 		done

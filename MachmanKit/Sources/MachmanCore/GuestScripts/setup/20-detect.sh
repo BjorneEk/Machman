@@ -278,8 +278,15 @@ detect_user() {
 		if [ -n "$_du_users" ]; then
 			_du_users="$_du_users
 root"
-			menu_select "Which user should Machman set up SSH for?" "$_du_users" 1
-			U="$R_ITEM"
+			# "name<TAB>home" pairs: the menu aligns the homes as dim notes.
+			_du_menu=""
+			for _du_u in $_du_users; do
+				_du_menu="$_du_menu$_du_u	$(home_of "$_du_u")
+"
+			done
+			_du_menu="$(printf '%s' "$_du_menu")"
+			menu_select "Which user should Machman set up SSH for?" "$_du_menu" 1
+			U="${R_ITEM%%	*}"
 		elif [ "$INTERACTIVE" -eq 1 ]; then
 			U=root
 			say "This guest has no regular user account — setting SSH up for root."

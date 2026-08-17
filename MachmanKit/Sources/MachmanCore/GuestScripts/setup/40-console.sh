@@ -158,9 +158,9 @@ console_is_configured() {
 # The one-line annotation for the feature menu: the worst case first.
 console_menu_note() {
 	_cmn_foreign=""
+	_cmn_ours=""
 	_cmn_todo=0
 	_cmn_auto=0
-	_cmn_ours=0
 	for _cmn_dev in $CONSOLE_DEVICES; do
 		case "$(console_login_state "$_cmn_dev")" in
 		active-auto) _cmn_auto=$((_cmn_auto + 1)) ;;
@@ -168,21 +168,30 @@ console_menu_note() {
 			if [ "$(console_ownership "$_cmn_dev")" = foreign ]; then
 				_cmn_foreign="$_cmn_foreign $_cmn_dev"
 			else
-				_cmn_ours=$((_cmn_ours + 1))
+				_cmn_ours="$_cmn_ours $_cmn_dev"
 			fi
 			;;
 		*) _cmn_todo=$((_cmn_todo + 1)) ;;
 		esac
 	done
+	# Per-state segments, so mixed truths read whole: "hvc0 managed · 1 to set up".
+	_cmn_out=""
+	[ -n "$_cmn_ours" ] && _cmn_out="${_cmn_ours# } managed"
 	if [ -n "$_cmn_foreign" ]; then
-		echo "${_cmn_foreign# } configured outside Machman — adopt or report"
-	elif [ "$_cmn_todo" -gt 0 ]; then
-		echo "set up logins"
-	elif [ "$_cmn_ours" -gt 0 ]; then
-		echo "managed by Machman — verify"
-	else
-		echo "automatic (systemd) — nothing to do"
+		_cmn_f="${_cmn_foreign# } configured outside Machman — adopt or report"
+		_cmn_out="${_cmn_out:+$_cmn_out $G_SEP }$_cmn_f"
 	fi
+	if [ "$_cmn_todo" -gt 0 ]; then
+		_cmn_out="${_cmn_out:+$_cmn_out $G_SEP }$_cmn_todo to set up"
+	fi
+	if [ -z "$_cmn_out" ]; then
+		if [ "$_cmn_auto" -gt 0 ]; then
+			_cmn_out="automatic (systemd) — nothing to do"
+		else
+			_cmn_out="set up logins"
+		fi
+	fi
+	echo "$_cmn_out"
 	return 0
 }
 
@@ -199,16 +208,16 @@ console_menu_default() {
 console_menu_lines() {
 	for _cml_dev in $CONSOLE_DEVICES; do
 		case "$(console_login_state "$_cml_dev")" in
-		active-auto) echo "$_cml_dev   login active (automatic)" ;;
+		active-auto) echo "$_cml_dev	login active (automatic)" ;;
 		active|configured)
 			if [ "$(console_ownership "$_cml_dev")" = foreign ]; then
-				echo "$_cml_dev   configured outside Machman — adopt or report"
+				echo "$_cml_dev	configured outside Machman — adopt or report"
 			else
-				echo "$_cml_dev   managed by Machman — verify"
+				echo "$_cml_dev	managed by Machman — verify"
 			fi
 			;;
-		missing) echo "$_cml_dev   device not present in this guest" ;;
-		*) echo "$_cml_dev   no login — set up" ;;
+		missing) echo "$_cml_dev	device not present in this guest" ;;
+		*) echo "$_cml_dev	no login — set up" ;;
 		esac
 	done
 	return 0

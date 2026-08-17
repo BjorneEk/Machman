@@ -108,7 +108,7 @@ for _mm_f in $FEATURES; do
 	[ "$_mm_avail" = 1 ] || continue
 	AVAILABLE_FEATURES="$AVAILABLE_FEATURES $_mm_f"
 	_mm_i=$((_mm_i + 1))
-	_mm_menu="$_mm_menu$(printf '%s   %s' "$(feature_title "$_mm_f")" \
+	_mm_menu="$_mm_menu$(printf '%s	%s' "$(feature_title "$_mm_f")" \
 		"$("${_mm_f}_menu_note")")
 "
 	_mm_want="$(eval "printf '%s' \"\$want_$_mm_f\"")"
