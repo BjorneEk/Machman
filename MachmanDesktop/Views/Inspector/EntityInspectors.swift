@@ -19,7 +19,7 @@ struct DiskInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let diskID: String
-	@State private var growGB = 0
+	@State private var growText = ""
 	@State private var draftName = ""
 
 	var body: some View {
@@ -57,13 +57,37 @@ struct DiskInspector: View {
 					if disk.type == .storage && disk.owned != false {
 						LabeledContent("Grow") {
 							HStack {
-								Stepper("+\(growGB) GB", value: $growGB, in: 0...256, step: 8)
+								// Typed like the Memory field (ByteSize): "8g", "512m",
+								// "8 GB" — a stepper could only offer one fixed increment.
+								TextField("+8 GB", text: $growText)
+									.textFieldStyle(.plain)
+									.multilineTextAlignment(.trailing)
+									.frame(width: 90)
+									.onChange(of: growText) {
+										// Permissive while typing; parsed on apply.
+										let filtered = String(growText
+											.filter { "0123456789.,kmgbKMGB ".contains($0) }
+											.prefix(12))
+										if filtered != growText { growText = filtered }
+									}
+									.onSubmit { grow(disk) }
 								Button("Apply") { grow(disk) }
-									.disabled(growGB == 0 || vm.state.isRunning)
+									.disabled(!canGrow)
 							}
 						}
 						.help(vm.state.isRunning
 							? "Stop the VM to grow its disks" : "Grow-only; shrink refuses")
+						// A typed amount is ambiguous on its own (a bare number is BYTES),
+						// so the result is spelled out before Apply is pressed.
+						if let added = growBytes, let current = disk.sizeBytes {
+							Text(fitsFreeSpace
+								? "New size: \(byteText(current + added))"
+								: "Larger than the \(byteText(freeBytes ?? 0)) free on this Mac.")
+								.font(.caption)
+								.foregroundStyle(fitsFreeSpace
+									? AnyShapeStyle(.secondary)
+									: AnyShapeStyle(MachmanColors.warning))
+						}
 					}
 					HStack(spacing: 6) {
 						if disk.owned == false {
@@ -112,12 +136,34 @@ struct DiskInspector: View {
 		disk.path.map { ($0 as NSString).lastPathComponent } ?? disk.id
 	}
 
+	// How much to add, in the Memory field's vocabulary: "8g", "512m", "8 GB" — and a bare
+	// number is bytes, which is why the row spells the resulting size out.
+	private var growBytes: UInt64? {
+		guard let parsed = ByteSize.parse(growText), parsed > 0 else { return nil }
+		return parsed
+	}
+
+	private var freeBytes: UInt64? { viewModel.capabilities?.freeDiskBytes }
+
+	// A sparse raw only claims what it uses, but growing past the free space still fails
+	// the moment the guest fills it — better refused here than half-written later.
+	private var fitsFreeSpace: Bool {
+		guard let growBytes, let freeBytes else { return true }
+		return growBytes <= freeBytes
+	}
+
+	private var canGrow: Bool {
+		growBytes != nil && fitsFreeSpace && !vm.state.isRunning
+	}
+
+	private func byteText(_ bytes: UInt64) -> String {
+		ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+	}
+
 	private func grow(_ disk: DiskInfo) {
-		guard let current = disk.sizeBytes else { return }
-		viewModel.resizeDisk(
-			vm.name, diskID: diskID,
-			sizeBytes: current + UInt64(growGB) << 30)
-		growGB = 0
+		guard canGrow, let current = disk.sizeBytes, let added = growBytes else { return }
+		viewModel.resizeDisk(vm.name, diskID: diskID, sizeBytes: current + added)
+		growText = ""
 	}
 
 	private func remove(_ disk: DiskInfo) {
