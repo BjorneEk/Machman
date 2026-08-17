@@ -36,6 +36,24 @@ struct EmbeddedScriptTests {
 		}
 	}
 
+	// The unified installer is assembled from modules; a forgotten Package.swift entry or
+	// a doubled part must fail here, never in a guest.
+	@Test func assembledGuestSetupIsWhole() {
+		let text = GuestSetupScript.assembled.text
+		#expect(text.hasPrefix("#!/bin/sh"))
+		#expect(GuestSetupScript.assembled.version == 3)
+		#expect(text.contains(GuestInstallerWriter.environmentFileName))
+		for part in GuestSetupScript.parts {
+			let marker = GuestSetupScript.marker(for: part.name)
+			let hits = text.components(separatedBy: marker).count - 1
+			#expect(hits == 1, "\(part.name) marker appears \(hits) times")
+		}
+		// Exactly one shebang LINE and one version declaration survive assembly (the
+		// boot-script writers legitimately carry "#!/bin/sh" inside printf strings).
+		#expect(!text.contains("\n#!/bin/sh\n"))
+		#expect(text.components(separatedBy: "\nSCRIPT_VERSION=").count == 2)
+	}
+
 	// Guests run these under dash, busybox ash, FreeBSD sh, OpenBSD ksh and bash-as-sh.
 	// We cannot install those here, but three local parsers with different heritage
 	// (bash in POSIX mode, and ksh93, which is strict where bash is forgiving) catch the
@@ -50,6 +68,7 @@ struct EmbeddedScriptTests {
 		if let library = SSHSetupInstaller.sharedLibrary {
 			sources.append(("machman-lib.sh", library))
 		}
+		sources.append(("guest-setup (assembled)", GuestSetupScript.assembled))
 		for (name, script) in sources {
 			let url = FileManager.default.temporaryDirectory
 				.appendingPathComponent("machman-\(UUID().uuidString)-\(name)")

@@ -43,6 +43,50 @@ struct EmbeddedScript {
 	private static let versionKey = "SCRIPT_VERSION="
 }
 
+// The unified guest-setup installer, assembled from its modules at payload-write time —
+// the same concatenation GuestScripts/assemble.sh does for the shellcheck/docker dev
+// loop. Order IS the program: prelude (shebang + env bootstrap), the library, usage,
+// args, shared detection, state, one module per feature, the report writer, the driver.
+// SPM's embedInCode mangles the ordering digits out of the identifiers (00-prelude.sh →
+// _0_prelude_sh); the table restores the readable names and pins the order.
+enum GuestSetupScript {
+	static let parts: [(name: String, bytes: [UInt8])] = [
+		("00-prelude", PackageResources._0_prelude_sh),
+		("05-lib", PackageResources._5_lib_sh),
+		("10-usage", PackageResources._0_usage_sh),
+		("15-args", PackageResources._5_args_sh),
+		("20-detect", PackageResources._0_detect_sh),
+		("30-state", PackageResources._0_state_sh),
+		("40-console", PackageResources._0_console_sh),
+		("45-kernel-console", PackageResources._5_kernel_console_sh),
+		("50-ssh", PackageResources._0_ssh_sh),
+		("52-reverse", PackageResources._2_reverse_sh),
+		("55-sshfs", PackageResources._5_sshfs_sh),
+		("60-automount-virtiofs", PackageResources._0_automount_virtiofs_sh),
+		("65-automount-sshfs", PackageResources._5_automount_sshfs_sh),
+		("80-report", PackageResources._0_report_sh),
+		("90-main", PackageResources._0_main_sh),
+	]
+
+	// Every part announces itself with this marker near its top; the tests assert each
+	// appears exactly once in the assembly, so a forgotten Package.swift entry or a
+	// doubled module fails in CI, never in a guest.
+	static func marker(for name: String) -> String {
+		"# === machman-setup: \(name) ==="
+	}
+
+	static var assembled: EmbeddedScript {
+		var text = ""
+		for part in parts {
+			text += String(decoding: part.bytes, as: UTF8.self)
+			if !text.hasSuffix("\n") {
+				text += "\n"
+			}
+		}
+		return EmbeddedScript(text: text)
+	}
+}
+
 // One generated installer payload. Implementors declare what they are; the mechanics of
 // writing them live in GuestInstallerWriter, so a new installer is a name, an env, and
 // (optionally) some files to ship beside the script.

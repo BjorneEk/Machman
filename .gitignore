@@ -41,3 +41,6 @@ docs/local/
 
 # Coverage artifact xcodebuild drops in the CWD
 default.profraw
+
+# Guest-setup script dev-loop output (assemble.sh)
+MachmanKit/Sources/MachmanCore/GuestScripts/dist/

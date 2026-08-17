@@ -32,10 +32,32 @@ let package = Package(
 		.target(
 			name: "MachmanCore",
 			dependencies: ["MachmanAPI", "MachmanClient"],
+			exclude: [
+				"GuestScripts/assemble.sh",   // the dev-loop assembler, not a payload
+				"GuestScripts/dist",          // its (gitignored) output
+			],
 			resources: [
 				.embedInCode("GuestScripts/ssh-setup.sh"),
 				.embedInCode("GuestScripts/console-login.sh"),
 				.embedInCode("GuestScripts/machman-lib.sh"),
+				// The unified installer, one module per concern; EmbeddedScript.assembled
+				// concatenates them in this order at payload-write time (assemble.sh is the
+				// same concatenation for the shellcheck/docker dev loop).
+				.embedInCode("GuestScripts/setup/00-prelude.sh"),
+				.embedInCode("GuestScripts/setup/05-lib.sh"),
+				.embedInCode("GuestScripts/setup/10-usage.sh"),
+				.embedInCode("GuestScripts/setup/15-args.sh"),
+				.embedInCode("GuestScripts/setup/20-detect.sh"),
+				.embedInCode("GuestScripts/setup/30-state.sh"),
+				.embedInCode("GuestScripts/setup/40-console.sh"),
+				.embedInCode("GuestScripts/setup/45-kernel-console.sh"),
+				.embedInCode("GuestScripts/setup/50-ssh.sh"),
+				.embedInCode("GuestScripts/setup/52-reverse.sh"),
+				.embedInCode("GuestScripts/setup/55-sshfs.sh"),
+				.embedInCode("GuestScripts/setup/60-automount-virtiofs.sh"),
+				.embedInCode("GuestScripts/setup/65-automount-sshfs.sh"),
+				.embedInCode("GuestScripts/setup/80-report.sh"),
+				.embedInCode("GuestScripts/setup/90-main.sh"),
 			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
