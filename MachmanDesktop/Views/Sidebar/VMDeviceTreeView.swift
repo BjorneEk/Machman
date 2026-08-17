@@ -347,8 +347,10 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var serialGroup: some View {
 		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
+		// Selectable (the SSH-group pattern): the group inspector lists every interface
+		// with the login state the guest-setup script reported.
 		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count) {
+			count: ports.count, selectable: true) {
 			// Search matches the display name AND the raw guest device (hvc0 finds
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {

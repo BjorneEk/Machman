@@ -28,6 +28,8 @@ struct InspectorView: View {
 					KernelParentInspector(viewModel: viewModel, vm: vm)
 				case .group("SSH"):
 					SSHInspector(viewModel: viewModel, vm: vm)
+				case .group("Serial"):
+					SerialGroupInspector(viewModel: viewModel, vm: vm)
 				case .kernel(let path):
 					KernelEntryInspector(viewModel: viewModel, vm: vm, path: path)
 				case .initramfs(let path):
