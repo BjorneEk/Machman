@@ -471,6 +471,13 @@ final class VMListViewModel: ObservableObject {
 	}
 
 	func select(name: String?) {
+		// The tree shows ONE VM, so its selection dies with the VM it was made in.
+		// Clearing here (not only in the tree's own onChange) covers switches that pass
+		// through nil — delete unmounts the tree, and the remount's onAppear would
+		// otherwise restore the dead VM's nodes into the next VM's tree.
+		if name != selectedName {
+			treeSelection = []
+		}
 		selectedName = name
 		vmName = name ?? ""
 		previews.setVisible(name.map { [$0] } ?? [])
