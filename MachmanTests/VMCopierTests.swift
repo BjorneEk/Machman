@@ -347,6 +347,63 @@ struct VMCopierTests {
 		#expect(stayURL.path == "/isos/outside.iso")  // external references stay put
 	}
 
+	// C1: owned kernel paths embed the source directory; the copy must re-point them (both
+	// the draft and the live boot payload) while external kernel paths stay put.
+	@Test func ownedKernelPathsFollowTheCopy() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		try FileManager.default.createDirectory(
+			atPath: src + "/kernels/kernel/v1", withIntermediateDirectories: true)
+		try Data("kern".utf8)
+			.write(to: URL(fileURLWithPath: src + "/kernels/kernel/v1/vmlinuz"))
+		let settings = LinuxKernelBoot(
+			kernelPath: src + "/kernels/kernel/v1/vmlinuz",
+			initialRamdiskPath: "/outside/initrd.img", commandLine: "console=hvc0")
+		let config = try loadConfig(src)
+		config.kernelSettings = settings
+		config.boot = .linuxKernel(settings)
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup"))
+		let copied = try loadConfig(dst)
+		#expect(copied.kernelSettings?.kernelPath == dst + "/kernels/kernel/v1/vmlinuz")
+		#expect(copied.kernelSettings?.initialRamdiskPath == "/outside/initrd.img")
+		guard case .linuxKernel(let live) = copied.boot else {
+			Issue.record("expected a kernel boot")
+			return
+		}
+		#expect(live.kernelPath == dst + "/kernels/kernel/v1/vmlinuz")
+		#expect(FileManager.default.fileExists(atPath: dst + "/kernels/kernel/v1/vmlinuz"))
+	}
+
+	// The shadow flavor of the same rule: an impersonating copy points at ITS kernels, so a
+	// later promotion only ever re-points within its own directory.
+	@Test func shadowKernelPathsPointIntoTheShadow() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		try FileManager.default.createDirectory(
+			atPath: src + "/kernels/initramfs/v1", withIntermediateDirectories: true)
+		try Data("rd".utf8)
+			.write(to: URL(fileURLWithPath: src + "/kernels/initramfs/v1/initrd.img"))
+		let settings = LinuxKernelBoot(
+			kernelPath: "/outside/vmlinuz",
+			initialRamdiskPath: src + "/kernels/initramfs/v1/initrd.img", commandLine: "")
+		let config = try loadConfig(src)
+		config.kernelSettings = settings
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, identity: .impersonate))
+		let copied = try loadConfig(dst)
+		#expect(copied.kernelSettings?.kernelPath == "/outside/vmlinuz")
+		#expect(copied.kernelSettings?.initialRamdiskPath
+			== dst + "/kernels/initramfs/v1/initrd.img")
+	}
+
 	@Test func progressReportsMonotonicallyToTotal() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }

@@ -544,6 +544,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try fileManager.moveItem(
 			at: URL(fileURLWithPath: "\(machmanVMDir)/\(oldName)"),
 			to: URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)"))
+		rewriteOwnedKernelPaths(
+			fromDir: "\(machmanVMDir)/\(oldName)", toDir: "\(machmanVMDir)/\(newName)")
 		try saveVMConfig()
 	}
 
@@ -670,6 +672,30 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			kernelsDir: kernelsDirPath(),
 			kernelPath: kernelSettings?.kernelPath,
 			initrdPath: kernelSettings?.initialRamdiskPath)
+	}
+
+	// Owned kernel paths are absolute and embed the VM directory, so every operation that
+	// MOVES that directory (rename, copy, safe-run shadowing, promotion) must re-point them
+	// or the config keeps booting the old location's files. External paths (never under the
+	// old directory) stay put, like referenced disks. No save — callers batch it into theirs.
+	func rewriteOwnedKernelPaths(fromDir oldDir: String, toDir newDir: String) {
+		guard var settings = kernelSettings else { return }
+		func moved(_ path: String?) -> String? {
+			guard let path, path.hasPrefix(oldDir + "/") else { return nil }
+			return newDir + String(path.dropFirst(oldDir.count))
+		}
+		var changed = false
+		if let path = moved(settings.kernelPath) {
+			settings.kernelPath = path
+			changed = true
+		}
+		if let path = moved(settings.initialRamdiskPath) {
+			settings.initialRamdiskPath = path
+			changed = true
+		}
+		guard changed else { return }
+		kernelSettings = settings
+		if isKernelBoot { boot = .linuxKernel(settings) }
 	}
 
 	// After deleting an owned kernel file, clear any kernel field that pointed at it.

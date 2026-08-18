@@ -87,6 +87,40 @@ struct PromoteRestrictedVMTests {
 		}
 	}
 
+	// C1: the shadow's owned kernel paths point into the run root, which promotion moves
+	// (then deletes) — the promoted config must point into the library.
+	@Test @MainActor func promotionRepointsOwnedKernelPaths() throws {
+		try VMTestDir.withRedirectedDir {
+			let (registry, library) = try makeSafeHost()
+			defer { try? FileManager.default.removeItem(atPath: library) }
+			let vm = try #require(registry.vm(named: "alpha"))
+			let kernelDir = machmanVMDir + "/alpha/kernels/kernel/v1"
+			try FileManager.default.createDirectory(
+				atPath: kernelDir, withIntermediateDirectories: true)
+			try Data("kern".utf8).write(to: URL(fileURLWithPath: kernelDir + "/vmlinuz"))
+			let settings = LinuxKernelBoot(
+				kernelPath: kernelDir + "/vmlinuz", initialRamdiskPath: nil,
+				commandLine: "console=hvc0")
+			vm.config.kernelSettings = settings
+			vm.config.boot = .linuxKernel(settings)
+			try vm.config.saveVMConfig()
+
+			_ = try registry.promoteRestrictedVM(to: "kept")
+
+			let moved = library + "/kept/kernels/kernel/v1/vmlinuz"
+			let saved = try JSONDecoder().decode(
+				VMConfig.self,
+				from: Data(contentsOf: URL(fileURLWithPath: library + "/kept/config")))
+			#expect(saved.kernelSettings?.kernelPath == moved)
+			guard case .linuxKernel(let live) = saved.boot else {
+				Issue.record("expected a kernel boot")
+				return
+			}
+			#expect(live.kernelPath == moved)
+			#expect(FileManager.default.fileExists(atPath: moved))
+		}
+	}
+
 	@Test @MainActor func promotionRefusals() throws {
 		// No promotion library (an unsafe or launchd vmhost): refused.
 		try VMTestDir.withRedirectedDir {

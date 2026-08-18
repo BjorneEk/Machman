@@ -54,6 +54,37 @@ struct KernelSettingsTests {
 		}
 	}
 
+	// C1: a rename moves the directory the owned kernel paths embed — they must follow, in
+	// the draft AND the live boot payload, while external paths stay put.
+	@Test func renameRepointsOwnedKernelPaths() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "before")
+			let cfg = try VMConfig(name: "before", memorySize: 2048, cpuCount: 2)
+			let kernelDir = machmanVMDir + "/before/kernels/kernel/v1"
+			try FileManager.default.createDirectory(
+				atPath: kernelDir, withIntermediateDirectories: true)
+			try Data("kern".utf8).write(to: URL(fileURLWithPath: kernelDir + "/vmlinuz"))
+			let settings = LinuxKernelBoot(
+				kernelPath: kernelDir + "/vmlinuz",
+				initialRamdiskPath: "/outside/initrd", commandLine: "console=hvc0")
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(settings)
+
+			try cfg.rename(to: "after")
+
+			let moved = machmanVMDir + "/after/kernels/kernel/v1/vmlinuz"
+			let reloaded = try VMConfig.load(name: "after")
+			#expect(reloaded.kernelSettings?.kernelPath == moved)
+			#expect(reloaded.kernelSettings?.initialRamdiskPath == "/outside/initrd")
+			guard case .linuxKernel(let live) = reloaded.boot else {
+				Issue.record("expected a kernel boot")
+				return
+			}
+			#expect(live.kernelPath == moved)
+			#expect(FileManager.default.fileExists(atPath: moved))
+		}
+	}
+
 	@Test func installedMacOSRefusesKernelBootToggle() throws {
 		try VMTestDir.withRedirectedDir {
 			let name = "locked-vm"

@@ -205,6 +205,12 @@ enum VMCopier {
 		if let included = request.includedMountIDs {
 			config.mountPoints.removeAll { !included.contains($0.id.uuidString) }
 		}
+		// Owned kernel/initramfs references are absolute — re-point them at the copies the
+		// sidecar walk brought along, or the new VM keeps booting the SOURCE's files (and
+		// dies with them). Both identities: a shadow must be self-contained too, so that
+		// promotion only ever re-points within its own directory.
+		config.rewriteOwnedKernelPaths(
+			fromDir: src, toDir: request.destinationParent + "/" + request.newName)
 		if request.regenerateMAC {
 			config.macAddress = VZMACAddress.randomLocallyAdministered().string
 		}

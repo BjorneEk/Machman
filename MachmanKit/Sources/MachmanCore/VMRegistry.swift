@@ -330,6 +330,10 @@ public final class VMRegistry {
 		presenter.rekey(from: oldName, to: newName)
 		vm.config.created = Date()
 		vm.config.totalRuntimeSeconds = 0
+		// The directory just moved out of the run root — re-point the owned kernel
+		// references or the promoted VM boots from a directory the sweep deletes.
+		vm.config.rewriteOwnedKernelPaths(
+			fromDir: runRoot + "/" + oldName, toDir: destination)
 		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
 		if case .macOS = vm.config.boot {
 			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")
