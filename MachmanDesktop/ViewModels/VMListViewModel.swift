@@ -184,6 +184,11 @@ final class VMListViewModel: ObservableObject {
 				terminals.dropController(vm: vm.name, ref: ref)
 			}
 		}
+		// Torn tabs live in their windows, not the canvas — reconcile them too (T6): a
+		// torn tab whose VM or port left the list gets a close order its own window
+		// resolves (dismissWindow is a view environment action; models can only post).
+		hasRefreshedList = true
+		reconcileTornTabs(list: list)
 		operationsStore.primeInstallPhases(for: list)
 		diffStatesAndToast(list)
 		diffSSHAndToast(list)
@@ -1200,6 +1205,27 @@ final class VMListViewModel: ObservableObject {
 		case .terminal(let ref): return .serial(ref)
 		case .ssh(let ref): return .sshSession(ref)
 		}
+	}
+
+	// Guards the torn-tab reconcile against the pre-first-list window: at launch the list
+	// is empty until the first refresh, and closing restored windows against it would be
+	// wrong. Per-connection state, like everything else on this view model.
+	private var hasRefreshedList = false
+
+	// A torn window calls this as it appears — restores can land between refreshes, and
+	// its payload may already be stale.
+	func reconcileTornTabs() {
+		guard hasRefreshedList else { return }
+		reconcileTornTabs(list: store.vms)
+	}
+
+	private func reconcileTornTabs(list: [VMInfo]) {
+		let registry = TornTabRegistry.shared
+		var next: [TornTab: TornTabRegistry.Order] = [:]
+		for torn in registry.open where torn.isStale(in: list) {
+			next[torn] = .close
+		}
+		if registry.orders != next { registry.orders = next }
 	}
 
 	func cycleTab(forward: Bool) {

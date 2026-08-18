@@ -24,11 +24,33 @@ struct TornTab: Codable, Hashable {
 // registry beats threading one more store through every init.
 @MainActor
 final class TornTabRegistry: ObservableObject {
+	// An instruction for one open torn window, posted by the view model (the list-refresh
+	// reconcile) and resolved by the window itself — dismissWindow is a view environment
+	// action nothing else can call. The window consumes its order as it acts, so a stale
+	// order can never re-fire against a future window with the same payload.
+	enum Order: Equatable {
+		case close   // the tab's backing VM or port is gone — the window's teardown is real
+	}
+
 	static let shared = TornTabRegistry()
 	@Published var open: Set<TornTab> = []
+	@Published var orders: [TornTab: Order] = [:]
 
 	func isOpen(vm: String, tab: VMPaneTab) -> Bool {
 		open.contains(TornTab(vm: vm, tab: tab))
+	}
+}
+
+extension TornTab {
+	// The list-refresh reconcile rule, mirroring the canvas's: a VM that left the list takes
+	// all its tabs with it; a terminal whose port left the VM goes too. SSH sessions are
+	// local processes (nothing in the list backs them) and config follows the VM — for both,
+	// only the VM vanishing invalidates the tab.
+	func isStale(in list: [VMInfo]) -> Bool {
+		guard let vm = list.first(where: { $0.name == self.vm }) else { return true }
+		guard case .terminal(let ref) = tab else { return false }
+		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
+		return !ports.contains { SerialPortRef($0) == ref }
 	}
 }
 
@@ -36,6 +58,8 @@ struct TornTabWindowView: View {
 	@ObservedObject var connection: DaemonConnection
 	@ObservedObject var profiles: TerminalProfileStore
 	let payload: TornTab
+	@ObservedObject private var tornTabs = TornTabRegistry.shared
+	@Environment(\.dismiss) private var dismiss
 	@State private var showInspector = false
 
 	var body: some View {
@@ -74,7 +98,15 @@ struct TornTabWindowView: View {
 			// Deferred: the registry is @Published; inserting mid-view-update warns.
 			DispatchQueue.main.async {
 				TornTabRegistry.shared.open.insert(payload)
+				// A restored window can appear AFTER the last list refresh — reconcile
+				// now so a payload whose VM/port is already gone gets its order at once,
+				// and resolve it here in case onChange's baseline already included it.
+				connection.viewModel?.reconcileTornTabs()
+				resolve(TornTabRegistry.shared.orders[payload])
 			}
+		}
+		.onChange(of: tornTabs.orders[payload]) { _, order in
+			resolve(order)
 		}
 		// The OUTER view disappears only when the window closes (branch flips inside keep
 		// it mounted) — closing the window closes the tab, tearing down its terminal.
@@ -94,6 +126,20 @@ struct TornTabWindowView: View {
 				}
 				viewModel?.tabClosed(payload.tab, vm: payload.vm)
 			}
+		}
+	}
+
+	// Act on the view model's order for this window. Consume first: acting closes the
+	// window, and a lingering order must not re-fire against a future window that
+	// reopens the same payload.
+	private func resolve(_ order: TornTabRegistry.Order?) {
+		guard let order else { return }
+		tornTabs.orders[payload] = nil
+		switch order {
+		case .close:
+			// The window's onDisappear is the teardown: controller, registry entry, and
+			// (via the tabClosed funnel) the tree selection.
+			dismiss()
 		}
 	}
 
