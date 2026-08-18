@@ -110,7 +110,14 @@ public final class MachmanServer {
 			return
 		}
 		guard let method = RPCMethod(rawValue: methodName), method != .event else {
-			send(client, RPCErrorReply(id: peek.id, error: RPCErrorBody(
+			// JSON-RPC 2.0: a notification (no id) is never answered, even one naming an
+			// unknown method — log it instead so the client mistake stays visible.
+			guard let id = peek.id else {
+				MachmanLogger.log(.passiveWarning,
+					"dropped notification for unknown method '\(methodName)'")
+				return
+			}
+			send(client, RPCErrorReply(id: id, error: RPCErrorBody(
 				code: JSONRPC.methodNotFound, message: "unknown method '\(methodName)'")))
 			return
 		}

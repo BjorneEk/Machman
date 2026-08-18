@@ -24,6 +24,8 @@ file is reclaimed.
 Newline-delimited JSON-RPC 2.0: one JSON object per line, UTF-8, no raw newlines inside a
 message. Requests carry an `id` (number or string); the daemon's event notifications carry
 none. Void results are `{}`; a "nothing to return" result (e.g. no preview) is `null`.
+A client line without an `id` is a notification and is never answered — not even with
+method-not-found (1.0.8; older daemons wrongly replied with `"id":null`).
 
 ```
 --> {"jsonrpc":"2.0","id":1,"method":"machman.hello","params":{"client":"my-tui"}}
