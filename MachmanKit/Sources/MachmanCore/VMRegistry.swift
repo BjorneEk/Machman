@@ -263,7 +263,7 @@ public final class VMRegistry {
 		guard ports.indices.contains(index), ports[index].logging.mode != .disabled else {
 			return nil
 		}
-		return vm.config.configFilePath(file: "serial-\(kind.rawValue)\(index).log")
+		return vm.config.serialLogURL(kind: kind, index: index).path
 	}
 
 	func retuneSerialLogging(

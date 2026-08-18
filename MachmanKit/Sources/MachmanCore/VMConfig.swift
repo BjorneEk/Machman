@@ -595,6 +595,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		}
 		consolePorts.removeLast()
 		try saveVMConfig()
+		removeSerialLog(kind: .console, index: consolePorts.count)
 	}
 
 	func addUartPort() throws {
@@ -609,6 +610,21 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		}
 		uartPorts.removeLast()
 		try saveVMConfig()
+		removeSerialLog(kind: .uart, index: uartPorts.count)
+	}
+
+	// The per-port log file, derived one way for every consumer: the bridge writes it, the
+	// registry reports it, and port removal deletes it.
+	func serialLogURL(kind: SerialPortKind, index: Int) -> URL {
+		localURL(file: "serial-\(kind.rawValue)\(index).log")
+	}
+
+	// Ports only remove from the end, so the dropped index is exactly the new count — its
+	// log dies with it, and a port added later at the same index starts fresh. Best-effort:
+	// removal happens while the VM is stopped (add/remove refuse while hosted), so nothing
+	// holds the file open, but a failed unlink must not fail the config edit.
+	private func removeSerialLog(kind: SerialPortKind, index: Int) {
+		try? FileManager.default.removeItem(at: serialLogURL(kind: kind, index: index))
 	}
 
 	func setSerialLogging(kind: SerialPortKind, index: Int, config: SerialLogConfig) throws {

@@ -51,6 +51,28 @@ struct SerialConfigTests {
 		}
 	}
 
+	// D5: a removed port takes its log file with it, so a port added later at the same
+	// index starts fresh instead of inheriting the dead port's history.
+	@Test func removingAPortRemovesItsLog() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("delta")
+			try vm.addUartPort()   // console0 exists by default
+			let consoleLog = vm.serialLogURL(kind: .console, index: 0)
+			let uartLog = vm.serialLogURL(kind: .uart, index: 0)
+			try Data("console history".utf8).write(to: consoleLog)
+			try Data("uart history".utf8).write(to: uartLog)
+
+			try vm.removeLastUartPort()
+			#expect(!FileManager.default.fileExists(atPath: uartLog.path))
+			#expect(FileManager.default.fileExists(atPath: consoleLog.path))  // sibling stays
+
+			try vm.removeLastConsolePort()
+			#expect(!FileManager.default.fileExists(atPath: consoleLog.path))
+			try vm.addConsolePort()
+			#expect(!FileManager.default.fileExists(atPath: consoleLog.path))
+		}
+	}
+
 	@Test func intentionalZeroStaysZero() throws {
 		try VMTestDir.withRedirectedDir {
 			let vm = try makeVM("gamma")

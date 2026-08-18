@@ -214,7 +214,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 				socketPath: MachmanPaths.serialSocketPath(
 					vm: config.name, kind: wire.kind.rawValue, index: wire.index,
 					runtimeDir: runtimeDir),
-				logURL: config.localURL(file: "serial-\(wire.kind.rawValue)\(wire.index).log"),
+				logURL: config.serialLogURL(kind: wire.kind, index: wire.index),
 				logConfig: logging, toGuest: wire.toGuest, fromGuest: wire.fromGuest)
 			bridge.start()
 			serialBridges.append(bridge)
