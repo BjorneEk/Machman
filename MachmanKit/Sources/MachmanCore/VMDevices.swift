@@ -313,8 +313,12 @@ extension VMConfig {
 			// Any guest: read-only payload beside a writable report drop-box, both riding
 			// the one share device (reserved names; readOnly is per-directory). A writable
 			// script would let any guest process swap it before the admin sudo-runs it.
+			// The directories are ALWAYS registered — serving decides their content, so
+			// the toggle never needs live device changes (vm.setup.serve fills in place).
 			do {
-				let (payload, report) = try GuestSetupInstaller.writePayload(for: self)
+				let (payload, report) = try servesSetupPayload
+					? GuestSetupInstaller.writePayload(for: self)
+					: GuestSetupInstaller.ensurePayloadDirectories(for: self)
 				extraShares[GuestSetupInstaller.directoryName] =
 					VZSharedDirectory(url: payload, readOnly: true)
 				extraShares[GuestSetupInstaller.reportDirectoryName] =

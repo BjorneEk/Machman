@@ -378,6 +378,35 @@ struct GuestSetupInstallerTests {
 		}
 	}
 
+	// Serving is a question of CONTENT: the two reserved dirs are registered whatever
+	// the state, so a non-serving start mounts an empty pair and toggling on later
+	// fills in place with no device changes.
+	@Test @MainActor func nonServingStartsMountEmptyDirectories() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "serving")
+			let vm = try VMConfig(name: "serving", memorySize: 1 << 30, cpuCount: 2)
+			let fm = FileManager.default
+
+			// Installed guest, no reinstall requested: dirs exist, both EMPTY.
+			var state = GuestSetupConfig()
+			state.installed = true
+			vm.setup = state
+			#expect(!vm.servesSetupPayload)
+			let (payload, report) = try GuestSetupInstaller.ensurePayloadDirectories(for: vm)
+			#expect(fm.fileExists(atPath: payload.path))
+			#expect(fm.fileExists(atPath: report.path))
+			#expect(try fm.contentsOfDirectory(atPath: payload.path).isEmpty)
+
+			// The reinstall request flips the rule, and the fill lands in place.
+			vm.setup?.reinstallRequested = true
+			#expect(vm.servesSetupPayload)
+			_ = try GuestSetupInstaller.writePayload(for: vm)
+			#expect(fm.fileExists(
+				atPath: payload.appendingPathComponent(
+					GuestSetupInstallerInfo.scriptName).path))
+		}
+	}
+
 	// clears the current AND superseded directory names.
 	@Test @MainActor func payloadsAreEphemeral() throws {
 		try VMTestDir.withRedirectedDir {

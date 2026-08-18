@@ -601,6 +601,13 @@ struct WireFixtureTests {
 		let legacy = encoded.replacingOccurrences(
 			of: #","setup":{"guestOS":"debian","installed":true}"#, with: "")
 		#expect(try decode(VMInfo.self, legacy).setup == nil)
+
+		// 1.0.7: the persisted reinstall request rides along (additive; nil-omission
+		// proven by the fixture above).
+		let served = GuestSetupInfo(installed: true, reinstallRequested: true)
+		let servedExpected = #"{"installed":true,"reinstallRequested":true}"#
+		#expect(try encode(served) == servedExpected)
+		#expect(try decode(GuestSetupInfo.self, servedExpected) == served)
 	}
 
 	@Test func mountKindRoundTrip() throws {

@@ -139,11 +139,20 @@ struct VMDiskCodableTests {
 			state.automounts = [GuestAutomountInfo(
 				kind: MountKind.virtiofs, target: "host-share",
 				path: "/mnt/machman/share")]
+			state.reinstallRequested = true
 			config.setup = state
 			try config.saveVMConfig()
 
 			let back = try VMConfig.load(name: "setup-state")
 			#expect(back.setup == state)
+			#expect(back.setup?.reinstallRequested == true)
+
+			// THE serve rule: fresh guests always serve; installed guests only on request.
+			#expect(back.servesSetupPayload)          // installed + requested
+			back.setup?.reinstallRequested = nil
+			#expect(!back.servesSetupPayload)         // installed, no request
+			back.setup = nil
+			#expect(back.servesSetupPayload)          // never installed
 			// Unknown future keys inside setup are ignored, not fatal.
 			bytes = try Data(contentsOf: URL(fileURLWithPath: config.configPath()))
 			let patched = String(decoding: bytes, as: UTF8.self).replacingOccurrences(

@@ -142,6 +142,9 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 	public var features: [GuestFeatureInfo]?
 	public var consoles: [GuestConsoleInfo]?
 	public var automounts: [GuestAutomountInfo]?
+	// The user asked for a reinstall/update: the installer is served again
+	// (vm.setup.serve; additive 1.0.7). nil = false.
+	public var reinstallRequested: Bool?
 
 	public init(
 		installed: Bool? = nil,
@@ -150,7 +153,8 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		currentScriptVersion: Int? = nil, lastRunStatus: String? = nil,
 		lastRunNote: String? = nil, lastTransport: String? = nil,
 		errors: [GuestSetupError]? = nil, features: [GuestFeatureInfo]? = nil,
-		consoles: [GuestConsoleInfo]? = nil, automounts: [GuestAutomountInfo]? = nil
+		consoles: [GuestConsoleInfo]? = nil, automounts: [GuestAutomountInfo]? = nil,
+		reinstallRequested: Bool? = nil
 	) {
 		self.installed = installed
 		self.guestOS = guestOS
@@ -167,6 +171,7 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		self.features = features
 		self.consoles = consoles
 		self.automounts = automounts
+		self.reinstallRequested = reinstallRequested
 	}
 
 	// Tolerant decode; encode stays synthesized so nil optionals are omitted.
@@ -189,5 +194,7 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		self.consoles = try c.decodeIfPresent([GuestConsoleInfo].self, forKey: .consoles)
 		self.automounts =
 			try c.decodeIfPresent([GuestAutomountInfo].self, forKey: .automounts)
+		self.reinstallRequested =
+			try c.decodeIfPresent(Bool.self, forKey: .reinstallRequested)
 	}
 }

@@ -93,9 +93,30 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 		SSHSetupInfo.reportDirectoryName,
 	]
 
+	// The two reserved share directories, created EMPTY (superseded/legacy names swept).
+	// The VZ share registers these once at start whatever the serve state — serving is a
+	// question of content, so toggling never needs live device changes and a non-serving
+	// guest mounts an empty pair.
+	@discardableResult
+	static func ensurePayloadDirectories(
+		for config: VMConfig
+	) throws -> (payload: URL, report: URL) {
+		let fm = FileManager.default
+		let report = reportDirectoryURL(for: config)
+		try fm.createDirectory(at: report, withIntermediateDirectories: true)
+		let payload = GuestInstallerWriter.payloadDirectory(named: directoryName, for: config)
+		try fm.createDirectory(at: payload, withIntermediateDirectories: true)
+		GuestInstallerWriter.removeLegacyPayload(named: reportDirectoryName, for: config)
+		for name in supersededDirectoryNames {
+			try? fm.removeItem(at: GuestInstallerWriter.payloadDirectory(
+				named: name, for: config))
+		}
+		return (payload, report)
+	}
+
 	// Writes <vmdir>/share/GuestSetup/ (script 0755 + machman.env + mounts.list + public
 	// keys) and the empty writable <vmdir>/share/GuestReport/; returns both. Regenerated
-	// at every assembly.
+	// at every assembly that SERVES (VMConfig.servesSetupPayload).
 	@discardableResult
 	static func writePayload(for config: VMConfig) throws -> (payload: URL, report: URL) {
 		let marker = try SSHSetupInstaller.marker(for: config)
@@ -106,14 +127,7 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			config.ssh = state
 			try config.saveVMConfig()
 		}
-		let fm = FileManager.default
-		let report = reportDirectoryURL(for: config)
-		try fm.createDirectory(at: report, withIntermediateDirectories: true)
-		GuestInstallerWriter.removeLegacyPayload(named: reportDirectoryName, for: config)
-		for name in supersededDirectoryNames {
-			try? fm.removeItem(at: GuestInstallerWriter.payloadDirectory(
-				named: name, for: config))
-		}
+		let (_, report) = try ensurePayloadDirectories(for: config)
 		let payload = try GuestInstallerWriter.write(Self.self, for: config)
 		// The alias (and so the pin's key) can have changed while the VM was stopped.
 		SSHSetupInstaller.writeKnownHosts(for: config)

@@ -30,6 +30,9 @@ struct GuestSetupConfig: Codable, Equatable {
 	var features: [GuestFeatureInfo] = []
 	var consoles: [GuestConsoleInfo] = []
 	var automounts: [GuestAutomountInfo] = []
+	// The user asked for a reinstall/update: serve the installer again (vm.setup.serve).
+	// nil = false; only meaningful once installed — fresh guests always serve.
+	var reinstallRequested: Bool?
 
 	init() {}
 
@@ -48,6 +51,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		case features
 		case consoles
 		case automounts
+		case reinstallRequested
 	}
 
 	// Tolerant decode: every field optional-or-defaulted so future additions round-trip.
@@ -68,6 +72,17 @@ struct GuestSetupConfig: Codable, Equatable {
 		self.consoles = try c.decodeIfPresent([GuestConsoleInfo].self, forKey: .consoles) ?? []
 		self.automounts =
 			try c.decodeIfPresent([GuestAutomountInfo].self, forKey: .automounts) ?? []
+		self.reinstallRequested =
+			try c.decodeIfPresent(Bool.self, forKey: .reinstallRequested)
+	}
+}
+
+extension VMConfig {
+	// THE serve rule, one place: fresh guests always serve the installer; an installed
+	// guest serves only while a reinstall/update is requested. Off, the share carries
+	// two empty reserved dirs — mountable, nothing inside.
+	var servesSetupPayload: Bool {
+		setup?.installed != true || setup?.reinstallRequested == true
 	}
 }
 

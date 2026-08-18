@@ -837,7 +837,8 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
-		// Routed to the vmhost while running: the serve-forced flag lives on the runtime.
+		// Routed to the vmhost while running: it owns the config there AND does the
+		// live fill when serving turns on.
 		try await target(name).setSetupServed(vm: name, serve: serve)
 	}
 

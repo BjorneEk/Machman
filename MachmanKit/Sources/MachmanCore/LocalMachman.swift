@@ -628,16 +628,16 @@ public final class LocalMachman: MachmanControlling {
 
 	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
 		let vm = try lookup(name)
-		vm.runtime?.servePayloadForced = serve
-		if serve {
-			// The install surface opened: a running VM gets the payload back right now;
-			// a stopped one writes it at the next start anyway.
-			if vm.runtime != nil {
-				_ = try GuestSetupInstaller.writePayload(for: vm.config)
-			}
-		} else if vm.config.setup?.installed == true {
-			// Installed and the surface closed: nothing should linger in the share.
-			GuestSetupInstaller.removePayload(for: vm.config)
+		// The persisted choice (only meaningful once installed — fresh guests always
+		// serve). ON fills the pre-registered share dirs live; OFF is deferred by
+		// design: content, if any, leaves with the run (teardown's removePayload) —
+		// never yanked from under a running guest.
+		if vm.config.setup != nil, vm.config.setup?.reinstallRequested != serve {
+			vm.config.setup?.reinstallRequested = serve
+			try vm.config.saveVMConfig()
+		}
+		if serve, vm.runtime != nil {
+			_ = try GuestSetupInstaller.writePayload(for: vm.config)
 		}
 		registry.events.emit(.setupChanged(vm: name))
 		return info(for: vm)
@@ -964,7 +964,8 @@ public final class LocalMachman: MachmanControlling {
 				errors: state.errors.isEmpty ? nil : state.errors,
 				features: state.features.isEmpty ? nil : state.features,
 				consoles: state.consoles.isEmpty ? nil : state.consoles,
-				automounts: state.automounts.isEmpty ? nil : state.automounts)
+				automounts: state.automounts.isEmpty ? nil : state.automounts,
+				reinstallRequested: state.reinstallRequested)
 		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
 		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.

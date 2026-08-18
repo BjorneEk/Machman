@@ -63,10 +63,10 @@ struct GuestSetupInspector: View {
 			// share already automounted (and how) or merely available. Installed and
 			// collapsed, the ephemeral-payload lifecycle line returns.
 			if installed && !allowReinstall {
-				// Payloads are ephemeral: served while the VM runs, regenerated at start.
+				// Not serving: the reserved dirs ride the share EMPTY (content only
+				// while installing — the toggle below brings it back).
 				LabeledContent("Payload") {
-					Text(vm.state.isRunning
-						? "served in the share" : "appears at boot — start the VM")
+					Text("not served — the share stays clean")
 						.foregroundStyle(.secondary)
 				}
 			} else {
@@ -237,12 +237,27 @@ struct GuestSetupInspector: View {
 				setupCommands
 				GuideButton(isPresented: $showGuide)
 			}
+			// The serve boundary, stated where it is decided: on = filled live, off =
+			// content leaves with the run (never yanked from under the guest).
+			if installed, vm.state.isRunning {
+				Text(allowReinstall
+					? "Serving — the installer is in the share."
+					: "Not serving — clears at shutdown if present.")
+					.font(.caption)
+					.foregroundStyle(.tertiary)
+			}
 		}
-		// The toggle is a real serve switch: ON rewrites the payload into the share
-		// (live for a running VM), OFF removes it — the share stays clean once
-		// installed, appearing only around boots for the report-refresh hook.
+		// The toggle mirrors the PERSISTED reinstallRequested (vm.setup.serve): synced
+		// from the DTO so it survives inspector rebuilds and app restarts, pushed only
+		// on real changes so the sync can never echo.
+		.onAppear { allowReinstall = setup?.reinstallRequested == true }
+		.onChange(of: setup?.reinstallRequested) { _, served in
+			allowReinstall = served == true
+		}
 		.onChange(of: allowReinstall) { _, serve in
-			viewModel.setSetupServed(vm.name, serve: serve)
+			if serve != (setup?.reinstallRequested == true) {
+				viewModel.setSetupServed(vm.name, serve: serve)
+			}
 		}
 	}
 

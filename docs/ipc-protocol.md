@@ -97,7 +97,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.ssh.refresh` | `{name}` | `{}` (1.0.5+; re-runs guest address discovery now; daemon-only — a vmhost refuses with `invalidState`) |
 | `vm.ssh.reset` | `{name}` | `VMInfo` (1.0.5+; forgets all SSH state: config, the per-VM keypair, payload/report dirs, and host-side artifacts; refused during safe runs) |
 | `vm.setup.reset` | `{name}` | `VMInfo` (1.0.7+; forgets the guest-setup report state (`setup` + the report drop-box); the guest keeps what the script installed — SSH state has its own reset) |
-| `vm.setup.serve` | `{name, serve}` | `VMInfo` (1.0.7+, additive; whether the share serves the installer payload NOW — on: written live for a running VM (the install surface is open), off: an installed guest's payload is removed at once and each boot's fresh copy vanishes after its report is ingested, so the share stays clean between installs; never-installed guests always serve) |
+| `vm.setup.serve` | `{name, serve}` | `VMInfo` (1.0.7+, additive; persists `setup.reinstallRequested` — an installed guest serves the installer only while it is set. ON fills the pre-registered share dirs live for a running VM; OFF is deferred: content leaves with the run (teardown), never mid-run, and a start with serving off registers the two reserved dirs EMPTY. Never-installed guests always serve) |
 | `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
@@ -162,8 +162,9 @@ recognize.
 guestInit?, lastReportAt?, scriptVersion?, currentScriptVersion?, lastRunStatus?,
 lastRunNote?, lastTransport?, errors?: [{step, message}], features?: [{id, available,
 reason?, configured, detail?}], consoles?: [{device, login, kernelConsole?}],
-automounts?: [{kind, target, path}]}` — the unified installer's report, absent when the
-installer was never used (or from an older daemon). Feature `id`s are plain strings
+automounts?: [{kind, target, path}], reinstallRequested?}` — the unified installer's
+report, absent when the installer was never used (or from an older daemon).
+`reinstallRequested` (additive) mirrors `vm.setup.serve`. Feature `id`s are plain strings
 (`console, kernelConsole, ssh, reverseSSH, sshfs, virtiofsAutomount, sshfsAutomount` —
 render unknown ids verbatim), `login` is `active|active-auto|configured|none|missing`,
 and automount `kind` is a mount kind. `currentScriptVersion` is the script version the
