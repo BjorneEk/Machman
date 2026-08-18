@@ -31,6 +31,8 @@ R_INDEX=0            # ask_choice / menu_select result
 R_ITEM=""
 R_MARKS=""           # menu_multi result: comma list of ON indexes
 R_KEY=""             # key_read result
+R_MOUNT_WHAT=""      # sshfsauto_entry results: source and mountpoint, two slots —
+R_MOUNT_WHERE=""     # host paths carry spaces, so they are never packed into one
 
 # Styling defaults so `set -u` is safe before (and without) ui_detect.
 C_RESET=""; C_DIM=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""

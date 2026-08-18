@@ -15,6 +15,7 @@ ST_KERNEL_CONSOLE=""
 ST_KERNEL_CONSOLE_METHOD=""
 ST_SSH_USER=""
 ST_AUTOMOUNT_SSHFS=""      # space-separated mount names
+ST_MOUNTPOINT=""           # where sshfs automounts land — report-only reconstructs with it
 ST_LAST_STATUS=""          # ok|partial from the last real run — --report-only keeps it
 
 state_paths() {
@@ -50,6 +51,7 @@ read_state() {
 	ST_KERNEL_CONSOLE_METHOD="$(state_get KERNEL_CONSOLE_METHOD)"
 	ST_SSH_USER="$(state_get SSH_USER)"
 	ST_AUTOMOUNT_SSHFS="$(state_get AUTOMOUNT_SSHFS)"
+	ST_MOUNTPOINT="$(state_get MOUNTPOINT)"
 	ST_LAST_STATUS="$(state_get LAST_STATUS)"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
@@ -85,6 +87,7 @@ write_state() {
 		[ -n "$KC_METHOD_DONE" ] && printf "KERNEL_CONSOLE_METHOD='%s'\n" "$KC_METHOD_DONE"
 		[ -n "$U" ] && printf "SSH_USER='%s'\n" "$U"
 		[ -n "$SSHFSAUTO_DONE" ] && printf "AUTOMOUNT_SSHFS='%s'\n" "$SSHFSAUTO_DONE"
+		[ -n "$SSHFSAUTO_DONE" ] && printf "MOUNTPOINT='%s'\n" "$MOUNTPOINT"
 		:
 	} > "$STATE_FILE.tmp"
 	mv "$STATE_FILE.tmp" "$STATE_FILE"

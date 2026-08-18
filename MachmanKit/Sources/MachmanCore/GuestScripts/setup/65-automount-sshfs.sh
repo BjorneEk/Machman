@@ -125,20 +125,24 @@ sshfsauto_options() {
 	printf '%s' "$_so_opts"
 }
 
-# sshfsauto_entry <name> → R_ITEM = "<what> <where>" (unescaped), empty when unknown
+# sshfsauto_entry <name> → R_MOUNT_WHAT (source) + R_MOUNT_WHERE (mountpoint), both
+# unescaped and empty when unknown. Two globals, never one packed string: host paths
+# carry spaces as a rule (the share lives under "Application Support"), so any
+# re-split downstream would truncate the source at the first one.
 sshfsauto_entry() {
+	R_MOUNT_WHAT=""
+	R_MOUNT_WHERE=""
 	if [ "$1" = "@share" ]; then
-		R_ITEM="$HOST_USER@$GATEWAY:$SHARE_HOST_PATH $SHARE_ROOT"
+		R_MOUNT_WHAT="$HOST_USER@$GATEWAY:$SHARE_HOST_PATH"
+		R_MOUNT_WHERE="$SHARE_ROOT"
 		return 0
 	fi
 	_se_tab="$(printf '\t')"
 	_se_path="$(printf '%s\n' "$MOUNTS_SSHFS" \
 		| awk -F "$_se_tab" -v n="$1" '$1 == n { print $2; exit }')"
-	if [ -z "$_se_path" ]; then
-		R_ITEM=""
-		return 0
-	fi
-	R_ITEM="$HOST_USER@$GATEWAY:$_se_path $MOUNTPOINT/$1"
+	[ -z "$_se_path" ] && return 0
+	R_MOUNT_WHAT="$HOST_USER@$GATEWAY:$_se_path"
+	R_MOUNT_WHERE="$MOUNTPOINT/$1"
 	return 0
 }
 
@@ -153,9 +157,9 @@ sshfsauto_act() {
 	_sa_script=""
 	for _sa_name in $SSHFSAUTO_SELECTED; do
 		sshfsauto_entry "$_sa_name"
-		[ -n "$R_ITEM" ] || continue
-		_sa_what="${R_ITEM%% *}"
-		_sa_where="${R_ITEM#* }"
+		[ -n "$R_MOUNT_WHAT" ] || continue
+		_sa_what="$R_MOUNT_WHAT"
+		_sa_where="$R_MOUNT_WHERE"
 		mkdir -p "$_sa_where" 2>/dev/null || {
 			step_failed automount-sshfs "could not create $_sa_where" \
 				"Create it yourself and re-run."

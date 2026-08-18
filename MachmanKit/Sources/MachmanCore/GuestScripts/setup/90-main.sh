@@ -61,7 +61,7 @@ if [ "$REPORT_ONLY" -eq 1 ]; then
 	fi
 	for _mm_n in $ST_AUTOMOUNT_SSHFS; do
 		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
-}sshfs	$_mm_n	$MOUNT_ROOT/$_mm_n"
+}sshfs	$_mm_n	${ST_MOUNTPOINT:-$MOUNT_ROOT}/$_mm_n"
 	done
 	write_report
 	[ "$QUIET" -eq 1 ] || ok "refreshed Machman's report"

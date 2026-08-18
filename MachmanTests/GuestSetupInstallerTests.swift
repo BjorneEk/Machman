@@ -109,6 +109,12 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains(#"sed 's/ /\\040/g'"#))
 		#expect(s.contains("/etc/local.d/machman-sshfs.start"))
 		#expect(s.contains("/etc/rc.local"))
+		// Source and mountpoint travel as TWO results — host paths carry spaces (the
+		// share lives under "Application Support"), so a packed pair split on the first
+		// space truncated every such source.
+		#expect(s.contains("R_MOUNT_WHAT"))
+		#expect(s.contains("R_MOUNT_WHERE"))
+		#expect(!s.contains(#"${R_ITEM%% *}"#))
 		// The connected-terminal rules: a pseudo-terminal trusts the client terminal —
 		// keyed on the tty NAME, which survives doas/sudo stripping LANG and SSH_*.
 		#expect(s.contains("/dev/pts/"))
