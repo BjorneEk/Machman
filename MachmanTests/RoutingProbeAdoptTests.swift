@@ -75,4 +75,53 @@ struct RoutingProbeAdoptTests {
 		#expect(!FileManager.default.fileExists(atPath: socketPath))   // leftover reclaimed
 		#expect(routing.hostedNames.isEmpty)
 	}
+
+	// D1: delete's running-check must not stop at the in-memory hosted map — a vmhost the
+	// daemon never adopted (launch-agent start, socket appeared after adoption ran) still
+	// owns the VM's directory. A live socket refuses; a dead leftover file does not.
+	@Test @MainActor func deleteRefusesWhileAnUnadoptedVMHostOwnsTheSocket() async throws {
+		let routing = try makeRouting()
+		let socketPath = NSTemporaryDirectory()
+			+ "mm-unadopted-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let listener = try UDSListener(
+			path: socketPath, queue: DispatchQueue(label: "mm-unadopted-accept")) { fd in
+				close(fd)
+			}
+
+		do {
+			try routing.refuseUnadoptedHost("alpha", "deleting it", socketPath: socketPath)
+			Issue.record("expected invalidState while the socket is live")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message.contains("still running"))
+		}
+
+		// SIGKILL leftover: the file exists but nothing listens — no refusal.
+		listener.simulateKillForTesting()
+		#expect(throws: Never.self) {
+			try routing.refuseUnadoptedHost("alpha", "deleting it", socketPath: socketPath)
+		}
+		unlink(socketPath)
+	}
+
+	// D1's second blind spot: the startup payload sweep must skip VMs whose socket answers
+	// even though the hosted map has never heard of them.
+	@Test @MainActor func payloadSweepSparesLiveUnadoptedHosts() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			let cfg = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+			try cfg.saveVMConfig()
+			let routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			let payload = GuestInstallerWriter.payloadDirectory(
+				named: GuestSetupInstallerInfo.directoryName, for: cfg)
+			try FileManager.default.createDirectory(
+				at: payload, withIntermediateDirectories: true)
+
+			routing.sweepGuestPayloads(isSocketLive: { _ in true })
+			#expect(FileManager.default.fileExists(atPath: payload.path))
+
+			routing.sweepGuestPayloads(isSocketLive: { _ in false })
+			#expect(!FileManager.default.fileExists(atPath: payload.path))
+		}
+	}
 }

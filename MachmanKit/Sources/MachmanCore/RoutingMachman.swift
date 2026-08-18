@@ -170,7 +170,15 @@ public final class RoutingMachman: MachmanControlling {
 	// by definition. Hosted VMs are skipped: the daemon never writes (or removes) a
 	// directory a vmhost is serving.
 	public func sweepGuestPayloads() {
+		sweepGuestPayloads(isSocketLive: { UDSListener.isLive(path: $0) })
+	}
+
+	func sweepGuestPayloads(isSocketLive: (String) -> Bool) {
 		for vm in registry.list() where hosted[vm.name] == nil {
+			// An unadopted vmhost (a launch agent racing daemon startup, or one whose
+			// socket appeared after adoption ran) may be serving this payload right now —
+			// the socket is the truth, not the hosted map.
+			guard !isSocketLive(Self.hostSocketPath(for: vm.name)) else { continue }
 			GuestSetupInstaller.removePayload(for: vm.config)
 		}
 	}
@@ -503,6 +511,21 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
+	// The hosted map only knows vmhosts this daemon spawned or adopted at its startup. A
+	// launch-agent vmhost that bound its socket later is invisible to it — the VM lists as
+	// stopped while a live guest runs from the directory. For destruction, the socket is
+	// the truth (same probe launchAgents.remove gates its bootout on): refuse, and let the
+	// next start — or the next daemon — adopt the host. The socket path is injectable so
+	// tests can bind a stub listener (probeAdoptAndStart seam pattern).
+	func refuseUnadoptedHost(_ name: String, _ action: String, socketPath: String? = nil) throws {
+		let path = socketPath ?? Self.hostSocketPath(for: name)
+		guard !UDSListener.isLive(path: path) else {
+			throw MachmanError(
+				code: .invalidState,
+				message: "a vmhost is still running \(name) — stop it before \(action)")
+		}
+	}
+
 	// MARK: - MachmanControlling
 
 	public func hostCapabilities() async throws -> HostCapabilities {
@@ -560,6 +583,7 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func deleteVM(named name: String) async throws {
 		try refuseWhileHosted(name, "deleting it")
+		try refuseUnadoptedHost(name, "deleting it")
 		// Capture the marker BEFORE the identity file dies with the VM dir.
 		let sshMarker = existingSSHMarker(name)
 		try await local.deleteVM(named: name)
