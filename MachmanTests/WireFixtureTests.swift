@@ -614,5 +614,15 @@ struct WireFixtureTests {
 		#expect(legacy.kind == nil)
 		#expect(legacy.effectiveKind == MountKind.virtiofs)
 		#expect(legacy.automounted == nil)
+		#expect(legacy.automountedAt == nil)
+		// 1.0.7: the guest directory an automounted mount lands at (additive).
+		let landed = MountInfo(
+			id: "m", path: "/x", tag: "docs", kind: MountKind.sshfs,
+			automounted: true, automountedAt: "/mnt/machman/mounts/docs")
+		let landedExpected =
+			#"{"automounted":true,"automountedAt":"/mnt/machman/mounts/docs","#
+			+ #""id":"m","kind":"sshfs","path":"/x","safe":true,"tag":"docs"}"#
+		#expect(try encode(landed) == landedExpected)
+		#expect(try decode(MountInfo.self, landedExpected) == landed)
 	}
 }

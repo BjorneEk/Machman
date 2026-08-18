@@ -107,7 +107,8 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
 [{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe, owned?, enabled?}],
-mounts: [{id, path, tag, safe, enabled?, kind?, automounted?}], boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
+mounts: [{id, path, tag, safe, enabled?, kind?, automounted?, automountedAt?}],
+boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
@@ -168,7 +169,10 @@ and automount `kind` is a mount kind. `currentScriptVersion` is the script versi
 serving app ships (server-resolved) — greater than `scriptVersion` means a re-run
 updates the guest. `mounts[].kind` (1.0.7+, `"virtiofs"` when absent) says how a mount
 reaches the guest; `mounts[].automounted` reflects the report (the one share automount
-covers every virtiofs mount; sshfs mounts match by tag).
+covers every virtiofs mount; sshfs mounts match by tag), and `mounts[].automountedAt`
+(additive) is the guest directory it lands at. `consolePorts[].guestName` (additive) is
+the device name the GUEST reported for the port via the setup run (`ttyV0.0`, `hvc0`) —
+`guestDevice` stays the boot-mode guess; clients should prefer `guestName` when present.
 
 Absent `devices` = an older daemon: the effective set is the implied per-boot default
 (mac guests: keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network;

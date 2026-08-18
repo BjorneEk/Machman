@@ -192,15 +192,20 @@ struct MountInspector: View {
 				}
 				Section("Mounting from the Guest") {
 					if mount.automounted == true {
-						Label("Mounted at boot by Guest Setup.",
-							systemImage: MachmanSymbols.automounted)
-							.font(.caption)
-							.foregroundStyle(.secondary)
+						LabeledContent {
+							Text(mount.automountedAt ?? "at boot")
+								.font(.system(.caption, design: .monospaced))
+								.foregroundStyle(.secondary)
+								.textSelection(.enabled)
+						} label: {
+							Label("Automount", systemImage: MachmanSymbols.automounted)
+						}
 					}
 					if mount.effectiveKind == MountKind.sshfs {
-						Text("The guest mounts this folder itself, at "
-							+ "“\(GuestPaths.sshfsMountPoint(name: mount.tag))”, over its "
-							+ "SSH link — approve guest → Mac access in the SSH section.")
+						let guestDir = mount.automountedAt
+							?? GuestPaths.sshfsMountPoint(name: mount.tag)
+						Text("The guest mounts this folder itself, at “\(guestDir)”, over "
+							+ "its SSH link — approve guest → Mac access in the SSH section.")
 							.font(.caption)
 							.foregroundStyle(.secondary)
 							.fixedSize(horizontal: false, vertical: true)

@@ -800,6 +800,32 @@ public final class LocalMachman: MachmanControlling {
 		return vm
 	}
 
+	// The served mounts. automounted comes from the guest's setup report: the ONE share
+	// automount covers every virtiofs mount (they are its tag subdirectories, so the
+	// guest directory is the share's path + tag); sshfs mounts match their own record by
+	// tag and land at its reported path. Internal static seam — tests reach the matching
+	// rules without the async surface (VMTestDir redirects are sync-only by design).
+	static func mountInfos(for config: VMConfig) -> [MountInfo] {
+		let automounts = config.setup?.automounts ?? []
+		let shareAutomount = automounts.first { $0.kind == MountKind.virtiofs }
+		return config.mountPoints.map { mount in
+			let automountedAt: String?
+			if mount.kind == MountKind.sshfs {
+				automountedAt = automounts.first {
+					$0.kind == MountKind.sshfs && $0.target == mount.tag
+				}?.path
+			} else {
+				automountedAt = shareAutomount.map { $0.path + "/" + mount.tag }
+			}
+			return MountInfo(
+				id: mount.id.uuidString, path: mount.path, tag: mount.tag, safe: mount.safe,
+				enabled: mount.enabled ? nil : false,
+				kind: mount.kind == MountKind.virtiofs ? nil : mount.kind,
+				automounted: automountedAt != nil ? true : nil,
+				automountedAt: automountedAt)
+		}
+	}
+
 	private func info(for vm: VirtualMachine) -> VMInfo {
 		let config = vm.config
 		// enabled rides tri-state: nil = enabled (the wire's old-daemon meaning), false pins.
@@ -826,25 +852,7 @@ public final class LocalMachman: MachmanControlling {
 					enabled: enabledFlag(disk.enabled))
 			}
 		}
-		// automounted comes from the guest's setup report: the ONE share automount covers
-		// every virtiofs mount (they are its subdirectories); sshfs mounts match by tag.
-		let automounts = config.setup?.automounts ?? []
-		let shareAutomounted = automounts.contains { $0.kind == MountKind.virtiofs }
-		let mounts = config.mountPoints.map { mount -> MountInfo in
-			let automounted: Bool?
-			if mount.kind == MountKind.sshfs {
-				automounted = automounts.contains {
-					$0.kind == MountKind.sshfs && $0.target == mount.tag
-				} ? true : nil
-			} else {
-				automounted = shareAutomounted ? true : nil
-			}
-			return MountInfo(
-				id: mount.id.uuidString, path: mount.path, tag: mount.tag, safe: mount.safe,
-				enabled: enabledFlag(mount.enabled),
-				kind: mount.kind == MountKind.virtiofs ? nil : mount.kind,
-				automounted: automounted)
-		}
+		let mounts = Self.mountInfos(for: config)
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		func serialPorts(_ kind: SerialPortKind, _ ports: [SerialPort]) -> [SerialPortInfo] {
 			let uartIssue = kind == .uart ? VMConfig.uartUnavailability() : nil

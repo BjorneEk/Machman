@@ -327,6 +327,45 @@ struct GuestSetupInstallerTests {
 	// Payloads are ephemeral (1.0.7): attach on a STOPPED VM defers to the next start —
 	// the eager write exists only for attach-on-a-running-VM (the sshfs bootstrap). The
 	// two pre-1.0.7 kinds map onto guestSetup instead of refusing, and removePayload
+	// Every virtiofs mount rides the ONE automounted share (its tag subdirectory);
+	// sshfs mounts match their own automount record by tag. The served automountedAt
+	// carries the guest directory either way.
+	@Test @MainActor func servedMountsSayWhereTheyAutomount() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "automounts")
+			let config = try VMConfig(name: "automounts", memorySize: 1 << 30, cpuCount: 2)
+			try config.addMountPoint(HostMountPoint(
+				path: "/Users/x/Media", tag: "media", kind: MountKind.virtiofs))
+			try config.addMountPoint(HostMountPoint(
+				path: "/Users/x/My Docs", tag: "docs", kind: MountKind.sshfs))
+			try config.addMountPoint(HostMountPoint(
+				path: "/Users/x/Other", tag: "other", kind: MountKind.sshfs))
+			var state = GuestSetupConfig()
+			state.installed = true
+			state.automounts = [
+				GuestAutomountInfo(
+					kind: MountKind.virtiofs, target: "host-share",
+					path: "/mnt/machman/share"),
+				GuestAutomountInfo(
+					kind: MountKind.sshfs, target: "docs",
+					path: "/mnt/machman/mounts/docs"),
+			]
+			config.setup = state
+
+			let mounts = LocalMachman.mountInfos(for: config)
+			let media = try #require(mounts.first { $0.tag == "media" })
+			#expect(media.automounted == true)
+			#expect(media.automountedAt == "/mnt/machman/share/media")
+			let docs = try #require(mounts.first { $0.tag == "docs" })
+			#expect(docs.automounted == true)
+			#expect(docs.automountedAt == "/mnt/machman/mounts/docs")
+			// No record for this one: not automounted, no claimed directory.
+			let other = try #require(mounts.first { $0.tag == "other" })
+			#expect(other.automounted == nil)
+			#expect(other.automountedAt == nil)
+		}
+	}
+
 	// clears the current AND superseded directory names.
 	@Test @MainActor func payloadsAreEphemeral() throws {
 		try VMTestDir.withRedirectedDir {

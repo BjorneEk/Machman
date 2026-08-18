@@ -325,7 +325,8 @@ struct VMDeviceTreeView: View {
 						Image(systemName: MachmanSymbols.automounted)
 							.font(.system(size: 9))
 							.foregroundStyle(.tertiary)
-							.help("Mounted at boot by Guest Setup")
+							.help(mount.automountedAt.map { "Mounts at boot at \($0)" }
+								?? "Mounted at boot by Guest Setup")
 					}
 				}
 				.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)

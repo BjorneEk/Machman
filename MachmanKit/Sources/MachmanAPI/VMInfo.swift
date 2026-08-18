@@ -175,10 +175,13 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 	// Whether the guest-setup script configured this mount to attach at boot (from the
 	// setup report; nil = unknown/older daemon).
 	public var automounted: Bool?
+	// 1.0.7: where an automounted mount lands in the guest (sshfs: its own mountpoint;
+	// virtiofs: its subdirectory of the one share). nil when not automounted or unknown.
+	public var automountedAt: String?
 
 	public init(
 		id: String, path: String, tag: String, safe: Bool = true, enabled: Bool? = nil,
-		kind: String? = nil, automounted: Bool? = nil
+		kind: String? = nil, automounted: Bool? = nil, automountedAt: String? = nil
 	) {
 		self.id = id
 		self.path = path
@@ -187,6 +190,7 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 		self.enabled = enabled
 		self.kind = kind
 		self.automounted = automounted
+		self.automountedAt = automountedAt
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -198,6 +202,7 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
 		self.kind = try c.decodeIfPresent(String.self, forKey: .kind)
 		self.automounted = try c.decodeIfPresent(Bool.self, forKey: .automounted)
+		self.automountedAt = try c.decodeIfPresent(String.self, forKey: .automountedAt)
 	}
 
 	public var isEnabled: Bool { enabled ?? true }
