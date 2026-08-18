@@ -30,6 +30,10 @@ final class TornTabRegistry: ObservableObject {
 	// order can never re-fire against a future window with the same payload.
 	enum Order: Equatable {
 		case close   // the tab's backing VM or port is gone — the window's teardown is real
+		// The VM was renamed: swap to a window keyed by the new name. The controllers were
+		// already re-keyed by the rename migration, so the successor window ADOPTS the live
+		// session — the old window's teardown under the old key is a deliberate no-op.
+		case reopen(as: TornTab)
 	}
 
 	static let shared = TornTabRegistry()
@@ -60,6 +64,7 @@ struct TornTabWindowView: View {
 	let payload: TornTab
 	@ObservedObject private var tornTabs = TornTabRegistry.shared
 	@Environment(\.dismiss) private var dismiss
+	@Environment(\.openWindow) private var openWindow
 	@State private var showInspector = false
 
 	var body: some View {
@@ -140,6 +145,12 @@ struct TornTabWindowView: View {
 			// The window's onDisappear is the teardown: controller, registry entry, and
 			// (via the tabClosed funnel) the tree selection.
 			dismiss()
+		case .reopen(let next):
+			// The tear-off swap shape: this window's mount must be gone before the
+			// successor adopts the re-keyed controller — the newest mount wins the
+			// terminal. onDisappear's drop under the old key is a no-op by design.
+			dismiss()
+			DispatchQueue.main.async { openWindow(id: "torn-tab", value: next) }
 		}
 	}
 

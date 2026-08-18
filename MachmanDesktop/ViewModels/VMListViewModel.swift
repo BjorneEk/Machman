@@ -620,6 +620,16 @@ final class VMListViewModel: ObservableObject {
 			previews.renameVM(from: oldName, to: newName)
 			await reload()
 			select(name: newName)
+			// Torn windows cannot re-key their birth payload — swap them (T3): each
+			// old-named window is ordered to reopen as the new name, adopting the live
+			// controller the migration above re-keyed. Posted AFTER reload: the
+			// reconcile's staleness pass just marked these payloads close (old name gone
+			// from the fresh list), and this overwrite lands in the same main-actor job,
+			// before any window can act on it.
+			let registry = TornTabRegistry.shared
+			for torn in registry.open where torn.vm == oldName {
+				registry.orders[torn] = .reopen(as: TornTab(vm: newName, tab: torn.tab))
+			}
 			return true
 		} catch {
 			present(error, while: "Renaming \(oldName)")
@@ -1222,7 +1232,12 @@ final class VMListViewModel: ObservableObject {
 	private func reconcileTornTabs(list: [VMInfo]) {
 		let registry = TornTabRegistry.shared
 		var next: [TornTab: TornTabRegistry.Order] = [:]
-		for torn in registry.open where torn.isStale(in: list) {
+		// Pending rename swaps survive recomputes until their window acts — the old-named
+		// payload IS stale in the fresh list, and that must not degrade a swap to a close.
+		for (torn, order) in registry.orders {
+			if case .reopen = order, registry.open.contains(torn) { next[torn] = order }
+		}
+		for torn in registry.open where next[torn] == nil && torn.isStale(in: list) {
 			next[torn] = .close
 		}
 		if registry.orders != next { registry.orders = next }
