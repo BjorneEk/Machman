@@ -105,9 +105,10 @@ remove_state() {
 # ------------------------------------------------------------------------ mounts.list ----
 
 # kind<TAB>name<TAB>hostpath per line. Consumed by the automount features; missing file
-# just means no mounts (older payloads, mount-less VMs).
+# just means no mounts (older payloads, mount-less VMs). Names carry spaces (the host
+# allows them), so every list of names stays newline- or tab-separated — never packed
+# into one space-joined word list.
 MOUNTS_SSHFS=""            # newline-separated "name<TAB>hostpath"
-MOUNTS_SSHFS_NAMES=""      # space-separated names, for menus and the state file
 
 read_mounts_list() {
 	[ -r "$MOUNTS_LIST" ] || return 0
@@ -122,11 +123,10 @@ read_mounts_list() {
 				MOUNTS_SSHFS="$MOUNTS_SSHFS
 $_rml_name$_rml_tab$_rml_path"
 			fi
-			MOUNTS_SSHFS_NAMES="$MOUNTS_SSHFS_NAMES $_rml_name"
 			;;
 		esac
 	done < "$MOUNTS_LIST"
-	MOUNTS_SSHFS_NAMES="${MOUNTS_SSHFS_NAMES# }"
-	verbose detect "sshfs mounts=[${MOUNTS_SSHFS_NAMES:-none}]"
+	verbose detect "sshfs mounts=[$(printf '%s' "$MOUNTS_SSHFS" \
+		| awk -F "$_rml_tab" '{ print $1 }' | tr '\n' ' ')]"
 	return 0
 }

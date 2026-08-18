@@ -19,7 +19,9 @@ sshfsauto_is_configured() {
 }
 
 sshfsauto_menu_note() {
-	_smn_count="$(printf '%s\n' "$MOUNTS_SSHFS_NAMES" | wc -w | tr -d ' ')"
+	_smn_count=0
+	[ -n "$MOUNTS_SSHFS" ] \
+		&& _smn_count="$(printf '%s\n' "$MOUNTS_SSHFS" | wc -l | tr -d ' ')"
 	if sshfsauto_configured; then
 		echo "configured — verify"
 	elif [ "$_smn_count" -gt 0 ]; then
@@ -41,12 +43,15 @@ sshfsauto_configured() {
 			&& grep -q "fuse.sshfs" /etc/fstab 2>/dev/null; }
 }
 
+# "name<TAB>note" lines (the menus' format); the name half may itself carry spaces, so
+# consumers cut at the TAB, never at whitespace.
 sshfsauto_items() {
+	_si_tab="$(printf '\t')"
 	[ "$VIRTIOFS_OK" -eq 0 ] && [ "$OS_FAMILY" != darwin ] \
-		&& echo "@share   the Machman share (installers + reports)"
-	for _si_name in $MOUNTS_SSHFS_NAMES; do
-		echo "$_si_name"
-	done
+		&& printf '@share%sthe Machman share (installers + reports)\n' "$_si_tab"
+	[ -n "$MOUNTS_SSHFS" ] \
+		&& printf '%s\n' "$MOUNTS_SSHFS" | awk -F "$_si_tab" '{ print $1 }'
+	return 0
 }
 
 sshfsauto_available() {
@@ -71,9 +76,13 @@ sshfsauto_available() {
 sshfsauto_decide() {
 	SSHFSAUTO_SELECTED=""
 	_sd_items="$(sshfsauto_items)"
-	_sd_count="$(printf '%s\n' "$_sd_items" | sed '/^$/d' | wc -l | tr -d ' ')"
+	_sd_tab="$(printf '\t')"
+	# Names cut at the item's TAB, never at whitespace: mount names carry spaces, and a
+	# word-split name misses sshfsauto_entry's lookup. Selection stays newline-separated.
+	_sd_names="$(printf '%s\n' "$_sd_items" | sed '/^$/d' | awk -F "$_sd_tab" '{ print $1 }')"
+	_sd_count="$(printf '%s\n' "$_sd_names" | sed '/^$/d' | wc -l | tr -d ' ')"
 	if [ "$_sd_count" = 1 ]; then
-		SSHFSAUTO_SELECTED="$(printf '%s\n' "$_sd_items" | awk '{ print $1; exit }')"
+		SSHFSAUTO_SELECTED="$_sd_names"
 	else
 		_sd_marks=""
 		_sd_i=1
@@ -83,16 +92,25 @@ sshfsauto_decide() {
 			_sd_i=$((_sd_i + 1))
 		done
 		menu_multi "Mount which host folders at boot (over sshfs)?" "$_sd_items" "$_sd_marks"
+		_sd_old_ifs="$IFS"
+		IFS='
+'
+		# shellcheck disable=SC2086
+		set -- $_sd_names
+		IFS="$_sd_old_ifs"
 		_sd_i=1
-		for _sd_first in $(printf '%s\n' "$_sd_items" | awk '{ print $1 }'); do
+		for _sd_name in "$@"; do
 			case ",$R_MARKS," in
-			*",$_sd_i,"*) SSHFSAUTO_SELECTED="$SSHFSAUTO_SELECTED $_sd_first" ;;
+			*",$_sd_i,"*)
+				SSHFSAUTO_SELECTED="${SSHFSAUTO_SELECTED:+$SSHFSAUTO_SELECTED
+}$_sd_name"
+				;;
 			esac
 			_sd_i=$((_sd_i + 1))
 		done
-		SSHFSAUTO_SELECTED="${SSHFSAUTO_SELECTED# }"
 	fi
-	SSHFSAUTO_PLAN="${SSHFSAUTO_SELECTED:-none} (as $U, needs guest -> host approval)"
+	_sd_disp="$(printf '%s' "${SSHFSAUTO_SELECTED:-none}" | tr '\n' ',' | sed 's/,/, /g')"
+	SSHFSAUTO_PLAN="$_sd_disp (as $U, needs guest -> host approval)"
 	if [ "$INIT" != systemd ]; then
 		SSHFSAUTO_PLAN="$SSHFSAUTO_PLAN, boot-script fallback"
 	fi
@@ -152,7 +170,8 @@ sshfsauto_entry() {
 sshfsauto_act() {
 	[ -n "$SSHFSAUTO_SELECTED" ] || return 0
 	if [ "$DRY_RUN" -eq 1 ]; then
-		acting "would configure boot mounts for: $SSHFSAUTO_SELECTED"
+		acting "would configure boot mounts for: $(printf '%s' "$SSHFSAUTO_SELECTED" \
+			| tr '\n' ',' | sed 's/,/, /g')"
 		return 0
 	fi
 	_sa_opts="$(sshfsauto_options)"
@@ -161,9 +180,20 @@ sshfsauto_act() {
 	_sa_bin="$(command -v sshfs 2>/dev/null || echo sshfs)"
 	_sa_fstab=""
 	_sa_script=""
-	for _sa_name in $SSHFSAUTO_SELECTED; do
+	_sa_old_ifs="$IFS"
+	IFS='
+'
+	# shellcheck disable=SC2086
+	set -- $SSHFSAUTO_SELECTED
+	IFS="$_sa_old_ifs"
+	for _sa_name in "$@"; do
 		sshfsauto_entry "$_sa_name"
-		[ -n "$R_MOUNT_WHAT" ] || continue
+		[ -n "$R_MOUNT_WHAT" ] || {
+			step_failed automount-sshfs \
+				"no sshfs mount named \"$_sa_name\" on this VM — skipped" \
+				"Check the VM's mounts in Machman, then re-run."
+			continue
+		}
 		_sa_what="$R_MOUNT_WHAT"
 		_sa_where="$R_MOUNT_WHERE"
 		mkdir -p "$_sa_where" 2>/dev/null || {
