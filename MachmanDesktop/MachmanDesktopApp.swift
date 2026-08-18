@@ -35,6 +35,11 @@ struct MachmanDesktopApp: App {
 		return nil
 	}
 
+	// A start already sent but not yet visible in vm.state disables the item like running.
+	private func startDisabled(_ viewModel: VMListViewModel, _ vm: VMInfo) -> Bool {
+		vm.state.isRunning || viewModel.isInstalling(vm) || viewModel.isStartPending(vm.name)
+	}
+
 	var body: some Scene {
 		WindowGroup {
 			ThemedRoot(store: themeStore) {
@@ -110,12 +115,12 @@ struct MachmanDesktopApp: App {
 							viewModel.startPolicyDriven(vm)
 						}
 						.keyboardShortcut("r")
-						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+						.disabled(startDisabled(viewModel, vm))
 						Button("Start \(vm.name) Safe") {
 							viewModel.startPolicyDriven(vm, safeOverride: true)
 						}
 						.keyboardShortcut("r", modifiers: [.shift, .command])
-						.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+						.disabled(startDisabled(viewModel, vm))
 						Divider()
 					}
 					ForEach(viewModel.vms) { vm in
@@ -127,19 +132,19 @@ struct MachmanDesktopApp: App {
 							}) {
 								Label("Start", systemImage: MachmanSymbols.start)
 							}
-							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+							.disabled(startDisabled(viewModel, vm))
 							Button(action: {
 								viewModel.startVM(vm.name, headless: true, safe: false)
 							}) {
 								Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 							}
-							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+							.disabled(startDisabled(viewModel, vm))
 							Button(action: {
 								viewModel.startVM(vm.name, safe: true)
 							}) {
 								Label("Start Safe", systemImage: MachmanSymbols.safe)
 							}
-							.disabled(vm.state.isRunning || viewModel.isInstalling(vm))
+							.disabled(startDisabled(viewModel, vm))
 						}
 					}
 				}
@@ -361,19 +366,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 	@objc private func toggleVM(_ sender: NSMenuItem) {
 		guard let name = sender.representedObject as? String,
-			let store = Self.connection?.vmStore,
-			let api = store.api else { return }
-		let running = store.vms.first { $0.name == name }?.state.isRunning == true
-		Task {
-			do {
-				if running {
-					try await api.stop(vm: name, mode: .soft)
-				} else {
-					try await api.start(vm: name, options: StartOptions())
-				}
-			} catch {
-				MachmanLogger.log(.interactionError, "dock action failed: \(error)")
-			}
+			let viewModel = Self.connection?.viewModel else { return }
+		let running = viewModel.vms.first { $0.name == name }?.state.isRunning == true
+		// Through the view model, not the raw api: startVM carries the pending-start
+		// guard (no double-fire in the pre-event window) and surfaces errors.
+		if running {
+			viewModel.stopVM(name, mode: .soft)
+		} else {
+			viewModel.startVM(name)
 		}
 	}
 }

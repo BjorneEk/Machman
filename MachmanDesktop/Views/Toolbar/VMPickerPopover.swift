@@ -139,7 +139,8 @@ private struct VMPickerRow: View {
 	// plain toolbar Start is the only policy-following affordance.
 	@ViewBuilder
 	private var quickActions: some View {
-		if !vm.state.isRunning && !viewModel.isInstalling(vm) {
+		if !vm.state.isRunning && !viewModel.isInstalling(vm)
+			&& !viewModel.isStartPending(vm.name) {
 			Button("Start") { viewModel.startVM(vm.name, safe: false) }
 			Button("Start Safe") { viewModel.startVM(vm.name, safe: true) }
 		}

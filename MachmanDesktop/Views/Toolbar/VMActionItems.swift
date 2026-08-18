@@ -58,21 +58,26 @@ struct StartStopGroup: View {
 		Group {
 			switch vm.state {
 			case .stopped, .error, .unknown:
-				ControlGroup {
-					Button {
-						viewModel.startPolicyDriven(vm)
-					} label: {
-						Image(systemName: MachmanSymbols.start)
+				// The click set pendingStarts synchronously; the state event is seconds out.
+				if viewModel.isStartPending(vm.name) {
+					transition("Starting…")
+				} else {
+					ControlGroup {
+						Button {
+							viewModel.startPolicyDriven(vm)
+						} label: {
+							Image(systemName: MachmanSymbols.start)
+						}
+						.help(startHelp)
+						Button {
+							viewModel.startPolicyDriven(vm, safeOverride: true)
+						} label: {
+							SafeStartGlyph(size: 12)
+						}
+						.help("Start Safe — run on a discardable shadow")
 					}
-					.help(startHelp)
-					Button {
-						viewModel.startPolicyDriven(vm, safeOverride: true)
-					} label: {
-						SafeStartGlyph(size: 12)
-					}
-					.help("Start Safe — run on a discardable shadow")
+					.disabled(viewModel.isInstalling(vm))
 				}
-				.disabled(viewModel.isInstalling(vm))
 			case .starting:
 				transition("Starting…")
 			case .stopping:

@@ -94,6 +94,11 @@ final class VMListViewModel: ObservableObject {
 	@Published var pendingKernelDelete: PendingKernelDelete?
 	@Published var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
 	@Published private(set) var copyInFlight = false
+	// vm.state flips to .starting only when the vmhost's first event lands — 0.5–2 s after
+	// the click — so every start affordance would happily double-fire into the daemon in
+	// that window. Set synchronously on click, cleared when the request settled and a
+	// fresh list was fetched (copyInFlight's shape, per-VM).
+	@Published private(set) var pendingStarts: Set<String> = []
 	@Published var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
 	@Published private(set) var safeSaveInFlight = false
 	// Bottom-right transient toasts (engine warnings/errors, confirmations). Lifetime is
@@ -490,12 +495,22 @@ final class VMListViewModel: ObservableObject {
 		startVM(vm.name, headless: !policy.windowed, safe: safeOverride ?? policy.safe)
 	}
 
+	func isStartPending(_ name: String) -> Bool {
+		pendingStarts.contains(name)
+	}
+
 	func startVM(_ name: String, headless: Bool = false, force: Bool = false, safe: Bool = false) {
+		guard !pendingStarts.contains(name) else { return }
+		pendingStarts.insert(name)
 		Task { [weak self] in
+			defer { self?.pendingStarts.remove(name) }
 			do {
 				try await self?.api.start(
 					vm: name,
 					options: StartOptions(openWindow: !headless, force: force, safe: safe))
+				// A fresh list before the flag drops, so the affordances flip straight
+				// from pending to the running controls, never through a stale Start.
+				await self?.reload()
 			} catch let error as MachmanError where error.code == .macConflict {
 				// Not a dead end: the same start succeeds with force, so offer it.
 				self?.pendingForceStart = PendingForceStart(
