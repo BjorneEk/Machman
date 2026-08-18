@@ -641,7 +641,10 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func removeDisk(vm name: String, diskID: String) async throws {
-		try await target(name).removeDisk(vm: name, diskID: diskID)
+		// Unlinking the backing file under a live VZ attachment is unsafe — stop first
+		// (the guest would keep a ghost disk until shutdown, then the data is gone).
+		try refuseWhileHosted(name, "removing its disks")
+		try await local.removeDisk(vm: name, diskID: diskID)
 	}
 
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {

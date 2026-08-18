@@ -164,7 +164,10 @@ final class DaemonConnection: ObservableObject {
 	// 1.0.7: the two installer devices collapse into guestSetup (configs migrate on load —
 	// an older daemon neither understands the migrated kind nor keeps the new setup and
 	// mount-kind keys through its rewrite), and mounts gained kind.
-	static let oldestCompatibleDaemonVersion = "1.0.7"
+	// 1.0.8: wire hygiene — vm.disk.remove refuses while the VM runs (an older daemon
+	// still unlinks the live attachment's backing file), notifications are never answered
+	// (JSON-RPC 2.0), and the closed wire enums decode unknown values tolerantly.
+	static let oldestCompatibleDaemonVersion = "1.0.8"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
