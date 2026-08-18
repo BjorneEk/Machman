@@ -39,7 +39,8 @@ How
   -q, --quiet            only the summary and errors
   -h, --help             this text
       --version          print the script version
-      --uninstall        remove everything this script installed
+      --uninstall        remove this script's configuration; a few shared system
+                         pieces deliberately stay, and the uninstall names them
 
 Exit codes: 0 done, 3 refused before touching anything, 4 partial (see the report),
 1 a step failed, 64 bad usage.

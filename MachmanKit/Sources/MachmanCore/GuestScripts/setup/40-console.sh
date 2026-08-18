@@ -622,6 +622,11 @@ console_uninstall() {
 		strip_block /etc/ttys
 		restore_superseded /etc/ttys
 		kill -HUP 1 2>/dev/null || true
+		# Deliberate keep, disclosed: un-listing virtio_console would take away the
+		# console devices — possibly the very one this uninstall is being read on.
+		if sysrc -n kld_list 2>/dev/null | grep -q virtio_console; then
+			note "kld_list keeps virtio_console (the console devices stay) — 'sysrc kld_list-=virtio_console' reverts it."
+		fi
 		;;
 	runit)
 		for _cu_sv in /etc/sv/agetty-*; do

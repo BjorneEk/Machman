@@ -8,7 +8,7 @@
 #   sh install.sh                interactive — asks only what it cannot work out
 #   sh install.sh -n             print the plan and change nothing
 #   sh install.sh -y --ssh       unattended
-#   sh install.sh --uninstall    remove everything it installed
+#   sh install.sh --uninstall    remove its configuration (it names what stays)
 #
 # It is allowed not to succeed. It is not allowed to fail without saying why: every
 # feature is probed before it is offered, every action is a named step, and whatever

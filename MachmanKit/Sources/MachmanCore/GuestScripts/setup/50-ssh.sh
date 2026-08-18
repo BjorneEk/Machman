@@ -379,5 +379,11 @@ ssh_uninstall() {
 		mv "$_su_tmp" /etc/nixos/configuration.nix
 		note "removed the Machman line from configuration.nix — run 'nixos-rebuild switch'."
 	fi
+	# Deliberate keep, disclosed: sshd stays (this uninstall may be running over it),
+	# and with it openSUSE's permanent firewall opening for ssh.
+	if [ "$OS_FAMILY" = suse ] && have firewall-cmd \
+		&& firewall-cmd --permanent --query-service=ssh >/dev/null 2>&1; then
+		note "the firewall keeps ssh open (sshd stays) — 'firewall-cmd --permanent --remove-service=ssh' reverts it."
+	fi
 	return 0
 }

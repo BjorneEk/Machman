@@ -166,6 +166,16 @@ sshfs_report() {
 
 sshfs_uninstall() {
 	# The package and the sysctl stay: both may serve the user beyond Machman, and v2
-	# never removed them either.
+	# never removed them either. The kld_list entry stays with the package — sshfs
+	# without a boot-loaded fusefs just breaks mysteriously on the next reboot. All
+	# deliberate keeps are DISCLOSED here, with their one-line reverts.
+	if [ "$OS_FAMILY" = freebsd ]; then
+		if sysrc -n kld_list 2>/dev/null | grep -q fusefs; then
+			note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
+		fi
+		if [ "$(sysctl -n vfs.usermount 2>/dev/null || true)" = 1 ]; then
+			note "vfs.usermount=1 stays — 'sysctl vfs.usermount=0' plus its /etc/sysctl.conf line revert it."
+		fi
+	fi
 	return 0
 }
