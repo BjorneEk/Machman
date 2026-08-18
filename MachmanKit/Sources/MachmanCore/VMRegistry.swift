@@ -334,11 +334,18 @@ public final class VMRegistry {
 		// references or the promoted VM boots from a directory the sweep deletes.
 		vm.config.rewriteOwnedKernelPaths(
 			fromDir: runRoot + "/" + oldName, toDir: destination)
+		// Fresh machine, fresh ssh instance identity, the vm.copy rule: the alias still
+		// belongs to the source VM, the lease follows the source's MAC, and the reverse
+		// grant is labeled with the source's marker.
+		vm.config.ssh?.resetInstanceIdentity()
 		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
 		if case .macOS = vm.config.boot {
 			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")
 		}
 		try vm.config.regenerateMACAddress()   // the one save, at the new path
+		// With the pin reset this just drops the traveled known_hosts, which was keyed to
+		// the source's alias; the next guest report re-pins under the new alias.
+		SSHSetupInstaller.writeKnownHosts(for: vm.config)
 		try? FileManager.default.removeItem(atPath: runRoot)   // now-empty run root + marker
 		promotionLibrary = nil
 		return vm

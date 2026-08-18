@@ -404,6 +404,84 @@ struct VMCopierTests {
 			== dst + "/kernels/initramfs/v1/initrd.img")
 	}
 
+	// C2/C3/C4/C8: a fresh copy resets the ssh INSTANCE identity (alias, lease, pin,
+	// reverse grant, marker) while the user's switch and the disk-derived facts travel.
+	@Test func freshCopyResetsSSHInstanceIdentity() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		try FileManager.default.createDirectory(
+			atPath: src + "/ssh", withIntermediateDirectories: true)
+		try Data("key".utf8).write(to: URL(fileURLWithPath: src + "/ssh/id_ed25519"))
+		try Data("pin".utf8).write(to: URL(fileURLWithPath: src + "/ssh/known_hosts"))
+		let config = try loadConfig(src)
+		var ssh = SSHConfig()
+		ssh.integrationEnabled = true
+		ssh.guestUser = "gustaf"
+		ssh.guestOS = "debian"
+		ssh.guestHostname = "src-box"
+		ssh.guestHostKey = "ssh-ed25519 AAAA src"
+		ssh.lastAddress = "192.168.64.9"
+		ssh.alias = "dev"
+		ssh.reversePublicKey = "ssh-ed25519 BBBB guest"
+		ssh.reverseState = SSHInfo.ReverseState.approved.rawValue
+		ssh.marker = "machman-cafe"
+		ssh.sshfsAvailable = true
+		ssh.lastRunStatus = "ok"
+		config.ssh = ssh
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup"))
+		let copied = try #require(try loadConfig(dst).ssh)
+		#expect(copied.alias == nil)
+		#expect(copied.lastAddress == nil)
+		#expect(copied.guestHostname == nil)
+		#expect(copied.guestHostKey == nil)
+		#expect(copied.reversePublicKey == nil)
+		#expect(copied.reverseStateValue == .none)
+		#expect(copied.marker == nil)
+		#expect(copied.integrationEnabled == true)
+		#expect(copied.guestUser == "gustaf")
+		#expect(copied.guestOS == "debian")
+		#expect(copied.sshfsAvailable == true)
+		#expect(copied.lastRunStatus == "ok")
+		// The alias-keyed pin file is dropped; the keypair travels (self-heals by marker).
+		#expect(!FileManager.default.fileExists(atPath: dst + "/ssh/known_hosts"))
+		#expect(FileManager.default.fileExists(atPath: dst + "/ssh/id_ed25519"))
+	}
+
+	// The shadow IS the VM: its ssh state and pin travel verbatim.
+	@Test func shadowCarriesSSHVerbatim() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		try FileManager.default.createDirectory(
+			atPath: src + "/ssh", withIntermediateDirectories: true)
+		try Data("pin".utf8).write(to: URL(fileURLWithPath: src + "/ssh/known_hosts"))
+		let config = try loadConfig(src)
+		var ssh = SSHConfig()
+		ssh.integrationEnabled = true
+		ssh.alias = "dev"
+		ssh.lastAddress = "192.168.64.9"
+		ssh.guestHostKey = "ssh-ed25519 AAAA src"
+		ssh.reverseState = SSHInfo.ReverseState.approved.rawValue
+		ssh.marker = "machman-cafe"
+		config.ssh = ssh
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, identity: .impersonate))
+		let copied = try #require(try loadConfig(dst).ssh)
+		#expect(copied.alias == "dev")
+		#expect(copied.lastAddress == "192.168.64.9")
+		#expect(copied.guestHostKey == "ssh-ed25519 AAAA src")
+		#expect(copied.reverseStateValue == .approved)
+		#expect(copied.marker == "machman-cafe")
+		#expect(FileManager.default.fileExists(atPath: dst + "/ssh/known_hosts"))
+	}
+
 	@Test func progressReportsMonotonicallyToTotal() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }

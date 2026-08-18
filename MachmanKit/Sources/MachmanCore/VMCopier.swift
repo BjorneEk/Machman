@@ -214,13 +214,20 @@ enum VMCopier {
 		if request.regenerateMAC {
 			config.macAddress = VZMACAddress.randomLocallyAdministered().string
 		}
-		// A fresh copy is a new VM: no run history. An impersonating shadow keeps the real
-		// VM's history — it presents AS that VM, and the copy-back at stop relies on the
-		// totals starting from the real values.
+		// A fresh copy is a new VM: no run history, and no ssh INSTANCE identity — the
+		// alias, lease, pinned host key, reverse grant and cached marker all name the
+		// source's ~/.ssh footprint (carrying them makes `ssh <copy>` land in the source).
+		// An impersonating shadow keeps both — it presents AS that VM, and the copy-back at
+		// stop relies on the totals starting from the real values.
 		if case .fresh = request.identity {
 			config.created = Date()
 			config.lastRan = nil
 			config.totalRuntimeSeconds = 0
+			config.ssh?.resetInstanceIdentity()
+			// The traveled per-VM known_hosts is keyed to the source's alias (HostKeyAlias)
+			// — with the alias and pin reset it could only ever mismatch. The keypair beside
+			// it stays: ensureKeypair re-mints it on marker drift.
+			try? fm.removeItem(atPath: staging + "/ssh/known_hosts")
 		}
 		// In both modes autostart must be an explicit opt-in: an inherited flag would
 		// install a launch agent nobody asked for (a promoted shadow becomes a real VM).

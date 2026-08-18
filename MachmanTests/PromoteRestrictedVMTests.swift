@@ -121,6 +121,50 @@ struct PromoteRestrictedVMTests {
 		}
 	}
 
+	// C2/C3/C4/C8 at the promotion seam: the shadow carried the source's ssh block
+	// verbatim; becoming a new VM resets the instance identity, the vm.copy rule.
+	@Test @MainActor func promotionResetsSSHInstanceIdentity() throws {
+		try VMTestDir.withRedirectedDir {
+			let (registry, library) = try makeSafeHost()
+			defer { try? FileManager.default.removeItem(atPath: library) }
+			let vm = try #require(registry.vm(named: "alpha"))
+			var ssh = SSHConfig()
+			ssh.integrationEnabled = true
+			ssh.guestUser = "gustaf"
+			ssh.alias = "dev"
+			ssh.lastAddress = "192.168.64.9"
+			ssh.guestHostname = "src-box"
+			ssh.guestHostKey = "ssh-ed25519 AAAA src"
+			ssh.reversePublicKey = "ssh-ed25519 BBBB guest"
+			ssh.reverseState = SSHInfo.ReverseState.approved.rawValue
+			ssh.marker = "machman-cafe"
+			vm.config.ssh = ssh
+			try vm.config.saveVMConfig()
+			let sshDir = machmanVMDir + "/alpha/ssh"
+			try FileManager.default.createDirectory(
+				atPath: sshDir, withIntermediateDirectories: true)
+			try Data("pin".utf8).write(to: URL(fileURLWithPath: sshDir + "/known_hosts"))
+
+			_ = try registry.promoteRestrictedVM(to: "kept")
+
+			let saved = try JSONDecoder().decode(
+				VMConfig.self,
+				from: Data(contentsOf: URL(fileURLWithPath: library + "/kept/config")))
+			let kept = try #require(saved.ssh)
+			#expect(kept.alias == nil)
+			#expect(kept.lastAddress == nil)
+			#expect(kept.guestHostname == nil)
+			#expect(kept.guestHostKey == nil)
+			#expect(kept.reversePublicKey == nil)
+			#expect(kept.reverseStateValue == .none)
+			#expect(kept.marker == nil)
+			#expect(kept.integrationEnabled == true)
+			#expect(kept.guestUser == "gustaf")
+			#expect(!FileManager.default
+				.fileExists(atPath: library + "/kept/ssh/known_hosts"))
+		}
+	}
+
 	@Test @MainActor func promotionRefusals() throws {
 		// No promotion library (an unsafe or launchd vmhost): refused.
 		try VMTestDir.withRedirectedDir {
