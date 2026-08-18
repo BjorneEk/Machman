@@ -115,6 +115,14 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("R_MOUNT_WHAT"))
 		#expect(s.contains("R_MOUNT_WHERE"))
 		#expect(!s.contains(#"${R_ITEM%% *}"#))
+		// nofail/_netdev are fstab words — a raw sshfs command hands them to libfuse,
+		// which refuses the whole mount (measured). They live on the fstab line only;
+		// boot scripts embed the absolute sshfs path (FreeBSD's rc PATH lacks
+		// /usr/local/bin) and BatchMode so a refused key fails fast, never prompts.
+		#expect(s.contains("noauto,x-systemd.automount,nofail,_netdev,"))
+		#expect(s.contains("BatchMode=yes"))
+		#expect(!s.contains("ServerAliveCountMax=3,nofail"))
+		#expect(s.contains(#"command -v sshfs"#))
 		// The connected-terminal rules: a pseudo-terminal trusts the client terminal —
 		// keyed on the tty NAME, which survives doas/sudo stripping LANG and SSH_*.
 		#expect(s.contains("/dev/pts/"))

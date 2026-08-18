@@ -111,9 +111,12 @@ fstab_escape() {
 
 # The sshfs mount options, shared by the fstab and boot-script paths. Everything ssh
 # needs rides -o (sshfs forwards unknown options), so root can mount with the USER's
-# identity and pinned host key.
+# identity and pinned host key. ONLY ssh/sshfs-valid options here: nofail/_netdev are
+# fstab words for mount(8)/systemd — a raw sshfs command hands them to libfuse, which
+# refuses the whole mount ("fuse: unknown option", measured) — the fstab path appends
+# them itself. BatchMode keeps a failed key auth from waiting on a prompt at boot.
 sshfsauto_options() {
-	_so_opts="reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,nofail,_netdev"
+	_so_opts="reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,BatchMode=yes"
 	_so_opts="$_so_opts,IdentityFile=$HOME_DIR/.ssh/machman_host"
 	if [ -r "$HOME_DIR/.ssh/machman_known_hosts" ]; then
 		_so_opts="$_so_opts,UserKnownHostsFile=$HOME_DIR/.ssh/machman_known_hosts"
@@ -153,6 +156,9 @@ sshfsauto_act() {
 		return 0
 	fi
 	_sa_opts="$(sshfsauto_options)"
+	# The boot scripts run with the init's PATH — FreeBSD's rc has no /usr/local/bin,
+	# where sshfs lives — so the resolved absolute path is embedded at install time.
+	_sa_bin="$(command -v sshfs 2>/dev/null || echo sshfs)"
 	_sa_fstab=""
 	_sa_script=""
 	for _sa_name in $SSHFSAUTO_SELECTED; do
@@ -168,10 +174,10 @@ sshfsauto_act() {
 		chown "$U:$GROUP" "$_sa_where" 2>/dev/null || true
 		if [ "$INIT" = systemd ]; then
 			_sa_fstab="$_sa_fstab$(fstab_escape "$_sa_what") $(fstab_escape "$_sa_where")"
-			_sa_fstab="$_sa_fstab fuse.sshfs noauto,x-systemd.automount,$_sa_opts 0 0
+			_sa_fstab="$_sa_fstab fuse.sshfs noauto,x-systemd.automount,nofail,_netdev,$_sa_opts 0 0
 "
 		else
-			_sa_script="${_sa_script}sshfs -o $_sa_opts '$_sa_what' '$_sa_where' || true
+			_sa_script="${_sa_script}$_sa_bin -o $_sa_opts '$_sa_what' '$_sa_where' || true
 "
 		fi
 		SSHFSAUTO_DONE="$SSHFSAUTO_DONE $_sa_name"
