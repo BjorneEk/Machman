@@ -21,10 +21,18 @@ public enum SerialGuestOS: String, Codable, Sendable {
 }
 
 // Which family a serial port belongs to. Console = virtio console (needs a virtio driver in the
-// guest); uart = PL011 (drivable by bare-metal / minimal kernels).
+// guest); uart = PL011 (drivable by bare-metal / minimal kernels). Tolerant decode (1.0.8): an
+// unrecognized future family degrades to .unknown instead of failing the whole vm.list decode;
+// the daemon rejects .unknown in requests.
 public enum SerialPortKind: String, Codable, Sendable, Equatable {
 	case console
 	case uart
+	case unknown   // decode fallback only; never encode it
+
+	public init(from decoder: Decoder) throws {
+		let raw = try decoder.singleValueContainer().decode(String.self)
+		self = SerialPortKind(rawValue: raw) ?? .unknown
+	}
 
 	// The guest device name for the index-th port of this kind. Linux console ports enumerate
 	// hvc0, hvc1…; FreeBSD sees each (single-port) virtio-console device as ttyV<unit>.0 once
@@ -43,6 +51,10 @@ public enum SerialPortKind: String, Codable, Sendable, Equatable {
 			return "ttyAMA\(index)"
 		case (.uart, .freebsd):
 			return "ttyu\(index)"
+		case (.unknown, _):
+			// A future family this build can't name; the wire's guestDevice field is
+			// what real payloads carry.
+			return "serial\(index)"
 		}
 	}
 

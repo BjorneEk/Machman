@@ -297,6 +297,8 @@ struct VMInspector: View {
 					Task { _ = await viewModel.setKernelBoot(vm.name, enabled: true) }
 				case .efi:
 					Task { _ = await viewModel.setKernelBoot(vm.name, enabled: false) }
+				case .unknown:
+					break   // decode fallback only — the picker never offers it
 				}
 			})
 	}

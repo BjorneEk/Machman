@@ -48,12 +48,13 @@ struct GuestSetupHelpSheet: View {
 	private static let textSize: CGFloat = 15.5
 	private static let smallSize: CGFloat = 13
 
-	// macOS guests never see the Linux/BSD paths; a kernel boot IS Linux.
+	// macOS guests never see the Linux/BSD paths; a kernel boot IS Linux. An unknown mode
+	// proves nothing, like EFI.
 	private var tabs: [GuestTab] {
 		switch vm.boot.mode {
 		case .macOS: return [.macOS, .info]
 		case .linuxKernel: return [.linux, .info]
-		case .efi: return [.linux, .bsd, .info]
+		case .efi, .unknown: return [.linux, .bsd, .info]
 		}
 	}
 

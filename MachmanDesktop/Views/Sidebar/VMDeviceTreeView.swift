@@ -1098,6 +1098,7 @@ struct VMDeviceTreeView: View {
 		case .storage: return MachmanSymbols.diskStorage
 		case .image: return MachmanSymbols.diskImage
 		case .iso: return MachmanSymbols.diskISO
+		case .unknown: return MachmanSymbols.help
 		}
 	}
 

@@ -104,6 +104,7 @@ extension BootInfo.Mode {
 		case .efi: return "EFI"
 		case .linuxKernel: return "Kernel boot"
 		case .macOS: return "macOS"
+		case .unknown: return "Unknown"
 		}
 	}
 }
@@ -145,6 +146,8 @@ public struct BootGlyph: View {
 			TuxIcon(size: size + 2)
 		case .efi:
 			Image(systemName: MachmanSymbols.bootEFI).font(.system(size: size))
+		case .unknown:
+			Image(systemName: MachmanSymbols.help).font(.system(size: size))
 		}
 	}
 }

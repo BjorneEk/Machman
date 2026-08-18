@@ -282,7 +282,7 @@ struct GuestSetupInspector: View {
 			CommandBlock(shareAutomounted
 				? GuestSetupInstallerInfo.runCommand()
 				: GuestSetupInstallerInfo.mountAndRunCommand)
-		case .efi:
+		case .efi, .unknown:
 			DisclosureGroup("Linux") {
 				VStack(alignment: .leading, spacing: 6) {
 					Text(shareAutomounted

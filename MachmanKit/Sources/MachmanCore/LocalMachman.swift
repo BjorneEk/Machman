@@ -233,6 +233,8 @@ public final class LocalMachman: MachmanControlling {
 				throw MachmanError(code: .invalidArgument, message: "image disk requires a path")
 			}
 			try vm.config.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: path))))
+		case .unknown:
+			throw MachmanError(code: .invalidArgument, message: "unknown disk type")
 		}
 		registry.events.emit(.listChanged)
 	}
@@ -383,6 +385,9 @@ public final class LocalMachman: MachmanControlling {
 	public func promoteKernelFile(
 		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
+		guard role != .unknown else {
+			throw MachmanError(code: .invalidArgument, message: "unknown kernel role")
+		}
 		let vm = try lookup(name)
 		let kernelsDir = vm.config.kernelsDirPath()
 		// Copies can be tens of MiB — detach so the main actor doesn't freeze. Indeterminate
@@ -407,6 +412,7 @@ public final class LocalMachman: MachmanControlling {
 		switch role {
 		case .kernel: updated.kernelPath = dest
 		case .initramfs: updated.initialRamdiskPath = dest
+		case .unknown: break   // rejected on entry above
 		}
 		try vm.config.updateKernelSettings(updated)
 		registry.events.emit(.listChanged)

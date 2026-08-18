@@ -204,7 +204,11 @@ safe-mode policy (clone-vs-attach for disks, omit-vs-mount for mounts); `safeRun
 while a safe run impersonates the VM.
 
 `state`: `stopped|starting|running|stopping|paused|error` — treat unknown strings as a state
-you don't recognize, not an error. Dates are ISO 8601. New optional fields may appear at any
+you don't recognize, not an error. The same tolerance applies to every closed string set in
+this document (1.0.8) — `disks[].type`, `boot.mode`, `macInstallState.kind`,
+`ownedKernels[].role`, serial-port `kind`, …: new values may appear as the daemon grows, so
+render them as "unknown", never fail the payload. The daemon rejects values it doesn't know
+in requests with `invalidArgument`. Dates are ISO 8601. New optional fields may appear at any
 time; absent fields you rely on mean an older daemon.
 
 `InstallPhase`: `{kind: idle|resolving|downloading|installing|installed|failed|interrupted,

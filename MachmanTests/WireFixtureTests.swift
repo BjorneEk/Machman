@@ -191,6 +191,21 @@ struct WireFixtureTests {
 		// macConflict's raw value is wire contract from 3.5 on.
 		#expect(try decode(MachmanError.self, #"{"code":"macConflict","message":"m"}"#).code
 			== .macConflict)
+
+		// 1.0.8: the last five closed enums decode unknown values to .unknown instead of
+		// failing the whole payload (the daemon rejects .unknown in requests).
+		#expect(try decode(DiskInfo.self, #"{"id":"d","type":"nvme"}"#).type == .unknown)
+		#expect(try decode(BootInfo.self, #"{"mode":"hypervisor"}"#).mode == .unknown)
+		#expect(try decode(MacInstallState.self, #"{"kind":"verifying"}"#).kind == .unknown)
+		#expect(try decode(OwnedKernelFile.self,
+			#"{"fileName":"f","path":"/p","role":"dtb","tag":"t"}"#).role == .unknown)
+		#expect(try decode(SerialPortInfo.self,
+			#"{"guestDevice":"tty16550.0","index":0,"kind":"pl16550"}"#).kind == .unknown)
+		// The A1 scenario: one future value anywhere no longer fails the entire vm.list.
+		let vmJSON = #"{"boot":{"mode":"efi"},"cpuCount":1,"created":"2023-11-14T22:13:20Z","#
+			+ #""disks":[{"id":"d","type":"nvme"}],"memoryBytes":1024,"mounts":[],"#
+			+ #""name":"Deb","state":"running"}"#
+		#expect(try decode(VMInfo.self, vmJSON).disks.first?.type == .unknown)
 	}
 
 	@Test func startOptionsDefaultsOnDecode() throws {

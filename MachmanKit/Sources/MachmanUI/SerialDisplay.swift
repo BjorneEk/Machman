@@ -16,9 +16,12 @@ import MachmanAPI
 public extension SerialPortKind {
 	func displayName(guestIndex: Int, mode: BootInfo.Mode) -> String {
 		switch (self, mode) {
-		case (.console, .efi):
+		case (.unknown, _):
+			// A future port family; like EFI, nothing is proven — stay neutral.
+			return "Serial \(guestIndex)"
+		case (.console, .efi), (.console, .unknown):
 			return "Console \(guestIndex)"
-		case (.uart, .efi), (.uart, .macOS):
+		case (.uart, .efi), (.uart, .macOS), (.uart, .unknown):
 			return "UART \(guestIndex)"
 		case (.console, .linuxKernel), (.console, .macOS), (.uart, .linuxKernel):
 			return guestDevice(index: guestIndex, os: mode == .macOS ? .macOS : .linux)
@@ -36,11 +39,13 @@ public extension SerialPortInfo {
 	}
 
 	// The inspector spelling: a known name (or a mode that proves the OS) earns the
-	// /dev/ prefix; an EFI port nobody has reported stays the neutral display name —
-	// EFI guarantees no OS, so no device path is claimed.
+	// /dev/ prefix; an EFI (or unknown-mode) port nobody has reported stays the neutral
+	// display name — neither proves an OS, so no device path is claimed.
 	func deviceLabel(mode: BootInfo.Mode) -> String {
 		if let guestName { return "/dev/" + guestName }
-		if mode == .efi { return kind.displayName(guestIndex: guestIndex ?? index, mode: mode) }
+		if mode == .efi || mode == .unknown {
+			return kind.displayName(guestIndex: guestIndex ?? index, mode: mode)
+		}
 		return "/dev/" + guestDevice
 	}
 }

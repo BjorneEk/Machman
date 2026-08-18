@@ -105,10 +105,18 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	}
 }
 
+// Tolerant decode (1.0.8): an unrecognized future type degrades to .unknown instead of
+// failing the whole vm.list decode. The daemon rejects .unknown in requests.
 public enum DiskType: String, Codable, Sendable, Equatable {
 	case storage   // a named raw image created and stored inside the VM directory
 	case image     // an existing disk image referenced by path
 	case iso       // a read-only installer/live image attached as USB mass storage
+	case unknown   // decode fallback only; never encode it
+
+	public init(from decoder: Decoder) throws {
+		let raw = try decoder.singleValueContainer().decode(String.self)
+		self = DiskType(rawValue: raw) ?? .unknown
+	}
 }
 
 public struct DiskInfo: Codable, Sendable, Equatable, Identifiable {
@@ -211,10 +219,18 @@ public struct MountInfo: Codable, Sendable, Equatable, Identifiable {
 }
 
 public struct BootInfo: Codable, Sendable, Equatable {
+	// Tolerant decode (1.0.8): an unrecognized future mode degrades to .unknown — clients
+	// treat it like .efi (it proves nothing about the guest OS).
 	public enum Mode: String, Codable, Sendable {
 		case efi
 		case linuxKernel
 		case macOS
+		case unknown   // decode fallback only; never encode it
+
+		public init(from decoder: Decoder) throws {
+			let raw = try decoder.singleValueContainer().decode(String.self)
+			self = Mode(rawValue: raw) ?? .unknown
+		}
 	}
 
 	public var mode: Mode
@@ -244,11 +260,19 @@ public struct BootInfo: Codable, Sendable, Equatable {
 }
 
 public struct MacInstallState: Codable, Sendable, Equatable {
+	// Tolerant decode (1.0.8): an unrecognized future kind degrades to .unknown, which
+	// clients render as nothing special.
 	public enum Kind: String, Codable, Sendable {
 		case installing
 		case installed
 		case failed
 		case interrupted   // persisted "installing" with no live install session
+		case unknown       // decode fallback only; never encode it
+
+		public init(from decoder: Decoder) throws {
+			let raw = try decoder.singleValueContainer().decode(String.self)
+			self = Kind(rawValue: raw) ?? .unknown
+		}
 	}
 
 	public var kind: Kind
@@ -260,10 +284,17 @@ public struct MacInstallState: Codable, Sendable, Equatable {
 	}
 }
 
-// Which kernel-boot file a promote/delete targets.
+// Which kernel-boot file a promote/delete targets. Tolerant decode (1.0.8): an unrecognized
+// future role degrades to .unknown; the daemon rejects .unknown in requests.
 public enum KernelRole: String, Codable, Sendable, Equatable {
 	case kernel
 	case initramfs
+	case unknown   // decode fallback only; never encode it
+
+	public init(from decoder: Decoder) throws {
+		let raw = try decoder.singleValueContainer().decode(String.self)
+		self = KernelRole(rawValue: raw) ?? .unknown
+	}
 }
 
 // An owned kernel/initramfs file: a copy living at <vm>/kernels/<role>/<tag>/<fileName>. The tag

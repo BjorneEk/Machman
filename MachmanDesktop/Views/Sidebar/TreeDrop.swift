@@ -92,6 +92,8 @@ enum TreeDropValidator {
 				return .valid("Add \(name)\(suffix) to Kernel")
 			case .initramfs:
 				return .valid("Add \(name)\(suffix) to Initramfs")
+			case .unknown:
+				return .invalid("Unknown kernel role")
 			}
 		}
 	}

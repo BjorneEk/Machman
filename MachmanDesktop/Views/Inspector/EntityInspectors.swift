@@ -105,6 +105,7 @@ struct DiskInspector: View {
 		case .storage: return "Owned storage"
 		case .image: return disk.owned == false ? "Referenced disk image" : "Disk image"
 		case .iso: return "ISO (read-only USB storage)"
+		case .unknown: return "Unknown disk type"
 		}
 	}
 

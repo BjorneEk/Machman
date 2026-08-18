@@ -365,6 +365,8 @@ final class StubMachman: MachmanControlling {
 			}
 			ports[index].logging = config
 			vm.uartPorts = ports
+		case .unknown:
+			throw MachmanError(code: .invalidArgument, message: "unknown serial port kind")
 		}
 		vms[name] = vm
 		emit(.listChanged)

@@ -446,6 +446,9 @@ final class VMListViewModel: ObservableObject {
 		case .installing, .interrupted:
 			// No live session known client-side means a past install was cut short.
 			return InstallPhase(kind: .interrupted)
+		case .unknown:
+			// A newer daemon's state this build can't name — claim nothing.
+			return InstallPhase(kind: .idle)
 		}
 	}
 
@@ -1274,6 +1277,7 @@ final class VMListViewModel: ObservableObject {
 		switch role {
 		case .kernel: settings.kernelPath = path ?? ""
 		case .initramfs: settings.initrdPath = path
+		case .unknown: return   // decode fallback only — the tree never builds it
 		}
 		updateKernelSettings(vm.name, settings)
 	}

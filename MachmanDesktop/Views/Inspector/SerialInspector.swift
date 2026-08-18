@@ -215,13 +215,15 @@ struct SerialInspector: View {
 				setupGuideButton
 			} else {
 				switch (kind, vm.boot.mode) {
-				case (.console, .efi):
+				case (.console, .efi), (.console, .unknown):
 					deviceRow("Linux", os: .linux)
 					deviceRow("FreeBSD", os: .freebsd)
 					setupGuideButton
 				case (.console, .macOS):
 					deviceRow("macOS", os: .macOS)
 					setupGuideButton
+				case (.unknown, _):
+					EmptyView()
 				case (.console, .linuxKernel), (.uart, _):
 					deviceRow("Linux", os: .linux)
 					Text(setupNote)
@@ -276,6 +278,8 @@ struct SerialInspector: View {
 		case (.uart, true):
 			return "On a macOS guest the PL011 is the kernel debug UART; it needs reduced "
 				+ "security in the guest (boot-args serial=3) and has no userland device."
+		case (.unknown, _):
+			return ""   // unknown kinds never reach the caption branch
 		}
 	}
 }

@@ -623,6 +623,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 				throw MachmanError(code: .notFound, message: "no UART port \(index) on \(name)")
 			}
 			uartPorts[index].logging = config
+		case .unknown:
+			throw MachmanError(code: .invalidArgument, message: "unknown serial port kind")
 		}
 		try saveVMConfig()
 	}
