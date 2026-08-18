@@ -96,14 +96,17 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		// The shadow sweep runs strictly AFTER adoption: adoption is what re-hosts a
 		// surviving safe vmhost, and only then can a run root be matched to its socket peer
 		// (everything unmatched is garbage). Agents heal after adoption too, so bootout
-		// gating sees every live host.
-		Task {
+		// gating sees every live host. The server parks requests until all of it is done:
+		// before adoption a surviving vmhost's VM lists as stopped, so an early vm.stop
+		// would "succeed" doing nothing and an early vm.delete would remove the directory
+		// under a live guest (hello and daemon.retire still answer — see holdRequests).
+		Daemon.server.holdRequests(until: Task {
 			await Daemon.api.adoptExistingHosts()
 			Daemon.api.sweepSafeRuns()
 			Daemon.api.sweepGuestPayloads()
 			Daemon.api.healLaunchAgents()
 			Daemon.registry.sweepCopyStaging()
-		}
+		})
 	}
 
 	// The launch-side skew prompt: a newly launched MachmanAgent that finds an OLDER build serving

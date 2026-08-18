@@ -18,6 +18,14 @@ public final class MachmanServer {
 	private let acceptQueue = DispatchQueue(label: "machman.server.accept")
 	private var listener: UDSListener?
 	private var connections: [Int32: Client] = [:]
+	// Startup-reconciliation gate: while set and unfinished, requests park before dispatch.
+	// The socket must be claimed FIRST (it is the daemon mutex), but the engine's view is
+	// wrong until adoption completes — a surviving vmhost's VM lists as stopped, vm.stop
+	// "succeeds" doing nothing, vm.delete removes the directory under a live guest. A
+	// reconnect-looping client lands requests in that gap routinely after a daemon
+	// upgrade. hello and daemon.retire stay ungated: the version handshake and the
+	// replace-older takeover must answer even if reconciliation wedges on a stuck vmhost.
+	private var readyGate: Task<Void, Never>?
 
 	private final class Client {
 		let connection: UDSConnection
@@ -48,6 +56,13 @@ public final class MachmanServer {
 			}
 		}
 		MachmanLogger.log(.log, "serving \(socketPath)")
+	}
+
+	// Call right after start(), in the same synchronous stretch: accepted connections
+	// dispatch onto the main actor, so nothing can slip past a gate set before the current
+	// block returns.
+	public func holdRequests(until task: Task<Void, Never>) {
+		readyGate = task
 	}
 
 	public func stop() {
@@ -100,6 +115,9 @@ public final class MachmanServer {
 			return
 		}
 		guard let id = peek.id else { return }   // client notifications: nothing to do
+		if method != .hello, method != .daemonRetire {
+			await readyGate?.value
+		}
 
 		do {
 			switch method {
