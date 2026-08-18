@@ -868,7 +868,10 @@ struct VMDeviceTreeView: View {
 		if file.owned {
 			Divider()
 			Button("Delete…", role: .destructive) {
-				viewModel.deleteKernel(vm.name, path: file.id)
+				let fileName = (vm.boot.ownedKernels ?? [])
+					.first(where: { $0.path == file.id })?.fileName
+					?? (file.id as NSString).lastPathComponent
+				viewModel.requestDeleteKernel(vm.name, path: file.id, fileName: fileName)
 			}
 		}
 	}
