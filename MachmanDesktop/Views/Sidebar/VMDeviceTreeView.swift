@@ -464,6 +464,13 @@ struct VMDeviceTreeView: View {
 	}
 
 	private func closeSSHSession(_ ref: SSHSessionRef) {
+		// closeTerminal's torn branch: a torn-off tab IS its window — close that, and its
+		// teardown ends the ssh process and drops the registry entry. Killing the process
+		// in place would leave a zombie tree row over a wrong-message window.
+		if isTorn(.ssh(ref)) {
+			dismissWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .ssh(ref)))
+			return
+		}
 		sessions.dropSSHController(vm: vm.name, ref: ref)
 		mutateCanvas { $0.close(.ssh(ref)) }
 		viewModel.tabClosed(.ssh(ref), vm: vm.name)
