@@ -207,7 +207,11 @@ sshfsauto_act() {
 			_sa_fstab="$_sa_fstab fuse.sshfs noauto,x-systemd.automount,nofail,_netdev,$_sa_opts 0 0
 "
 		else
-			_sa_script="${_sa_script}$_sa_bin -o $_sa_opts '$_sa_what' '$_sa_where' || true
+			# sh_quote, not bare '%s': source and mountpoint carry user text (VM names,
+			# host paths) — one apostrophe in a bare-quoted word breaks the whole
+			# generated rc script and can abort the rest of boot-local processing.
+			_sa_script="${_sa_script}$(sh_quote "$_sa_bin") -o $(sh_quote "$_sa_opts")"
+			_sa_script="$_sa_script $(sh_quote "$_sa_what") $(sh_quote "$_sa_where") || true
 "
 		fi
 		SSHFSAUTO_DONE="$SSHFSAUTO_DONE $_sa_name"

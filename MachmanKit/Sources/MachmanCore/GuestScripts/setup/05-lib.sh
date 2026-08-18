@@ -145,6 +145,13 @@ have() {
 	command -v "$1" >/dev/null 2>&1
 }
 
+# sh_quote <value> — the value as ONE sh word for embedding in generated scripts.
+# Plain '%s' breaks on the first apostrophe (VM names and host paths are user text);
+# closing, escaping and reopening ('\'') survives any content.
+sh_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
 wrap() {
 	if have fold; then
 		printf '%s\n' "$1" | fold -s -w "$((UI_COLS - 2))"
