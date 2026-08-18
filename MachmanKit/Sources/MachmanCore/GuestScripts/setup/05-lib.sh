@@ -234,8 +234,12 @@ run() {
 	if _run_out="$("$@" 2>&1)"; then
 		[ -n "$_run_out" ] && verbose out "$_run_out"
 		return 0
+	else
+		# Captured INSIDE the else arm: after `fi`, $? is the if-statement's own status,
+		# which POSIX defines as 0 when no branch ran — reading it there turns every
+		# failure into success and disarms all `run … || step_failed` callers.
+		_run_code=$?
 	fi
-	_run_code=$?
 	R_ERROR="$(printf '%s' "$_run_out" | tail -n 1)"
 	return "$_run_code"
 }
