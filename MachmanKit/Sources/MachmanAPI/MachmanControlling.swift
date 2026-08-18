@@ -112,6 +112,13 @@ public protocol MachmanControlling: AnyObject {
 	// The guest keeps what the script installed; SSH state has its own reset.
 	func resetSetup(vm name: String) async throws -> VMInfo
 
+	// Whether the share serves the installer payload right now (additive, 1.0.7). ON
+	// forces it (the install surface is open — write it live for a running VM); OFF
+	// removes an installed guest's payload immediately and lets each boot's copy vanish
+	// once its report is ingested, so the share stays clean between installs. Fresh
+	// (never-installed) guests always serve.
+	func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo
+
 	// MARK: Operations (1.0.4)
 	// Live long-running operations, for progress-card resync after reconnect (events have no
 	// replay). Terminal states linger briefly; op.cancel cancels a running one.

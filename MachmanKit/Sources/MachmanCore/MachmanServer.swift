@@ -296,6 +296,9 @@ public final class MachmanServer {
 			case .setupReset:
 				let p: RPCParams.Name = try params(line)
 				reply(client, id, try await api.resetSetup(vm: p.name))
+			case .setupServe:
+				let p: RPCParams.SetupServe = try params(line)
+				reply(client, id, try await api.setSetupServed(vm: p.name, serve: p.serve))
 			case .hostOperations:
 				reply(client, id, try await api.operations())
 			case .operationCancel:

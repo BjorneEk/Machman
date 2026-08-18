@@ -626,6 +626,23 @@ public final class LocalMachman: MachmanControlling {
 		return info(for: vm)
 	}
 
+	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
+		let vm = try lookup(name)
+		vm.runtime?.servePayloadForced = serve
+		if serve {
+			// The install surface opened: a running VM gets the payload back right now;
+			// a stopped one writes it at the next start anyway.
+			if vm.runtime != nil {
+				_ = try GuestSetupInstaller.writePayload(for: vm.config)
+			}
+		} else if vm.config.setup?.installed == true {
+			// Installed and the surface closed: nothing should linger in the share.
+			GuestSetupInstaller.removePayload(for: vm.config)
+		}
+		registry.events.emit(.setupChanged(vm: name))
+		return info(for: vm)
+	}
+
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {

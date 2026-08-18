@@ -836,6 +836,11 @@ public final class RoutingMachman: MachmanControlling {
 		try await target(name).resetSetup(vm: name)
 	}
 
+	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
+		// Routed to the vmhost while running: the serve-forced flag lives on the runtime.
+		try await target(name).setSetupServed(vm: name, serve: serve)
+	}
+
 	// The marker labeling this VM's host-side artifacts — a read-only derivation from
 	// the identity file, safe against the stale-while-hosted registry copy (paths only).
 	private func existingSSHMarker(_ name: String) -> String? {

@@ -63,6 +63,7 @@ public enum RPCMethod: String, Sendable {
 	// 1.0.7: the unified guest-setup installer + mount transport kinds.
 	case mountSetKind = "vm.mount.setKind"
 	case setupReset = "vm.setup.reset"
+	case setupServe = "vm.setup.serve"
 	case hostOperations = "host.operations"
 	case operationCancel = "op.cancel"
 	case installRosetta = "host.installRosetta"
@@ -340,6 +341,19 @@ public enum RPCParams {
 		public init(name: String, device: DeviceInfo) {
 			self.name = name
 			self.device = device
+		}
+	}
+
+	// vm.setup.serve: whether the share serves the installer payload right now. Serving
+	// is forced while the user has the install surface open; off, an installed guest's
+	// payload is removed after each boot report so the share stays clean.
+	public struct SetupServe: Codable, Equatable, Sendable {
+		public var name: String
+		public var serve: Bool
+
+		public init(name: String, serve: Bool) {
+			self.name = name
+			self.serve = serve
 		}
 	}
 

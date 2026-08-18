@@ -238,6 +238,12 @@ struct GuestSetupInspector: View {
 				GuideButton(isPresented: $showGuide)
 			}
 		}
+		// The toggle is a real serve switch: ON rewrites the payload into the share
+		// (live for a running VM), OFF removes it — the share stays clean once
+		// installed, appearing only around boots for the report-refresh hook.
+		.onChange(of: allowReinstall) { _, serve in
+			viewModel.setSetupServed(vm.name, serve: serve)
+		}
 	}
 
 	// The share automounts (either transport): mounting instructions would contradict

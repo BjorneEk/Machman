@@ -194,6 +194,11 @@ final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		return vm
 	}
+	var served: [String: Bool] = [:]
+	func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
+		served[name] = serve
+		return try get(name)
+	}
 	func resetSetup(vm name: String) async throws -> VMInfo {
 		var vm = try get(name)
 		vm.setup = nil
@@ -482,6 +487,13 @@ struct LoopbackTests {
 		#expect(switched.mounts.last?.kind == MountKind.sshfs)
 
 		#expect(try await client.vm(named: "Debian").setup?.installed == true)
+
+		// vm.setup.serve rides the wire with its flag intact, both ways.
+		_ = try await client.setSetupServed(vm: "Debian", serve: false)
+		#expect(stub.served["Debian"] == false)
+		_ = try await client.setSetupServed(vm: "Debian", serve: true)
+		#expect(stub.served["Debian"] == true)
+
 		let cleared = try await client.resetSetup(vm: "Debian")
 		#expect(cleared.setup == nil)
 	}

@@ -247,6 +247,12 @@ public final class RemoteMachman: MachmanControlling {
 			expecting: VMInfo.self)
 	}
 
+	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
+		try await connection.call(
+			.setupServe, RPCParams.SetupServe(name: name, serve: serve),
+			expecting: VMInfo.self)
+	}
+
 	public func resetSetup(vm name: String) async throws -> VMInfo {
 		try await connection.call(
 			.setupReset, RPCParams.Name(name: name), expecting: VMInfo.self)

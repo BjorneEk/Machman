@@ -179,6 +179,11 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		}
 	}
 
+	// The install surface is open in a client: keep serving the payload (vm.setup.serve).
+	// Off (the default at start), an installed guest's payload lives only from start
+	// until its boot report lands — long enough for the refresh hook, then gone.
+	var servePayloadForced = false
+
 	private func pollSSHReport() {
 		let path = GuestSetupInstaller.reportFilePath(for: config)
 		guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
@@ -194,6 +199,12 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 			}
 			if changes.setup {
 				events.emit(.setupChanged(vm: config.name))
+			}
+			// Report ingested: an installed guest is done with the payload — remove it
+			// so the share stays clean (nothing to re-ingest; it regenerates at the
+			// next start for the boot hook, or on demand via vm.setup.serve).
+			if config.setup?.installed == true, !servePayloadForced {
+				GuestSetupInstaller.removePayload(for: config)
 			}
 		} catch {
 			MachmanLogger.log(.passiveError,

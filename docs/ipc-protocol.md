@@ -97,6 +97,7 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 | `vm.ssh.refresh` | `{name}` | `{}` (1.0.5+; re-runs guest address discovery now; daemon-only — a vmhost refuses with `invalidState`) |
 | `vm.ssh.reset` | `{name}` | `VMInfo` (1.0.5+; forgets all SSH state: config, the per-VM keypair, payload/report dirs, and host-side artifacts; refused during safe runs) |
 | `vm.setup.reset` | `{name}` | `VMInfo` (1.0.7+; forgets the guest-setup report state (`setup` + the report drop-box); the guest keeps what the script installed — SSH state has its own reset) |
+| `vm.setup.serve` | `{name, serve}` | `VMInfo` (1.0.7+, additive; whether the share serves the installer payload NOW — on: written live for a running VM (the install surface is open), off: an installed guest's payload is removed at once and each boot's fresh copy vanishes after its report is ingested, so the share stays clean between installs; never-installed guests always serve) |
 | `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
@@ -256,7 +257,7 @@ configs migrate on load, so an older daemon neither understands the migrated kin
 keeps the new `setup` sub-object and per-mount `kind` through its rewrite, and it would
 regenerate the superseded `LoginInstaller`/`SSHSetup`/`SSHReport` payload dirs beside the
 new `GuestSetup`/`GuestReport` ones. Hence the floor bump. Wire-wise everything above
-remains additive under `apiVersion` 1 (`vm.mount.setKind`, `vm.setup.reset`,
+remains additive under `apiVersion` 1 (`vm.mount.setKind`, `vm.setup.reset`, `vm.setup.serve`,
 `setupChanged`, `VMInfo.setup`, `mounts[].kind/automounted`).
 
 Payload directories are EPHEMERAL (1.0.7): written at VM start (and on attaching the

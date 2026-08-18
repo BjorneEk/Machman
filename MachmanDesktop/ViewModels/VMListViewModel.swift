@@ -1000,6 +1000,14 @@ final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// The Allow-reinstall toggle made real: serving on demand, clean share otherwise.
+	func setSetupServed(_ name: String, serve: Bool) {
+		Task { [weak self] in
+			do { _ = try await self?.api.setSetupServed(vm: name, serve: serve) }
+			catch { self?.present(error, while: "Updating the setup payload") }
+		}
+	}
+
 	// Batch enable/disable everything in the tree selection that carries the flag
 	// (multi-select context menus + the multi-selection inspector).
 	func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
