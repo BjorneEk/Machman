@@ -197,7 +197,7 @@ report_hook_install() {
 		systemctl daemon-reload >/dev/null 2>&1 || true
 		systemctl enable machman-report.service >/dev/null 2>&1 || true
 		;;
-	openrc|inittab)
+	openrc)
 		mkdir -p /etc/local.d
 		{
 			printf '#!/bin/sh\n# %s\n' "$MARKER"
@@ -206,6 +206,12 @@ report_hook_install() {
 		} > /etc/local.d/machman-report.start
 		chmod 755 /etc/local.d/machman-report.start
 		have rc-update && rc-update add local default >/dev/null 2>&1
+		;;
+	inittab|sysv|runit|openbsd-rc)
+		# /etc/local.d is openrc's mechanism — nothing executes it under these inits.
+		# They all run /etc/rc.local (sysvinit via the distro's rc.local service, Void's
+		# runit stage, OpenBSD's rc), so the hook lands there.
+		report_hook_rc_local "$_rh_script"
 		;;
 	freebsd-rc)
 		# REQUIRE: local orders after /etc/rc.d/local, which runs /etc/rc.local — where
@@ -251,10 +257,33 @@ report_hook_install() {
 			>/dev/null 2>&1 || true
 		;;
 	*)
+		note "no boot-time report refresh under init '$INIT' — reports update on re-runs only."
 		return 0
 		;;
 	esac
 	verbose report "boot refresh hook installed ($INIT)"
+	return 0
+}
+
+# The shared-file arm: a marker block in /etc/rc.local. The marker carries a "-report"
+# suffix so it never collides with the sshfs automounts' block, which strip_blocks the
+# PLAIN marker over this same file — and the block must not `exit`: rc.local is shared,
+# later lines still have to run. The settle sleep and the -r guard mirror the FreeBSD
+# hook: the share this script lives on may be mounted by an earlier rc.local line.
+report_hook_rc_local() {
+	if [ ! -f /etc/rc.local ]; then
+		printf '#!/bin/sh\n' > /etc/rc.local
+		chmod 755 /etc/rc.local
+	fi
+	# Pre-fix runs on sysvinit wrote openrc's file here; it was never executed — retire it.
+	rm -f /etc/local.d/machman-report.start 2>/dev/null || true
+	( MARKER="$MARKER-report"; strip_block /etc/rc.local )
+	{
+		printf '# BEGIN %s-report\n' "$MARKER"
+		printf '(sleep 5; [ -r "%s" ] && /bin/sh "%s" --report-only -q) >/dev/null 2>&1 &\n' \
+			"$1" "$1"
+		printf '# END %s-report\n' "$MARKER"
+	} >> /etc/rc.local
 	return 0
 }
 
@@ -263,6 +292,9 @@ report_hook_uninstall() {
 		/etc/systemd/system/multi-user.target.wants/machman-report.service \
 		/etc/local.d/machman-report.start \
 		/usr/local/etc/rc.d/machman_report 2>/dev/null || true
+	if [ -f /etc/rc.local ]; then
+		( MARKER="$MARKER-report"; strip_block /etc/rc.local )
+	fi
 	have systemctl && systemctl daemon-reload >/dev/null 2>&1
 	if [ -f /Library/LaunchDaemons/com.machman.report.plist ]; then
 		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
