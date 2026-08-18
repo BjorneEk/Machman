@@ -167,7 +167,10 @@ final class DaemonConnection: ObservableObject {
 	// 1.0.8: wire hygiene — vm.disk.remove refuses while the VM runs (an older daemon
 	// still unlinks the live attachment's backing file), notifications are never answered
 	// (JSON-RPC 2.0), and the closed wire enums decode unknown values tolerantly.
-	static let oldestCompatibleDaemonVersion = "1.0.8"
+	// 1.0.9: vm.disk.promote refuses while the VM runs (an older daemon still copies the
+	// image under the live attachment's writes and rewires the config beneath it, so the
+	// next boot silently switches disks).
+	static let oldestCompatibleDaemonVersion = "1.0.9"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer

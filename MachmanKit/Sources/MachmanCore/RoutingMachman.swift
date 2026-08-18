@@ -647,12 +647,19 @@ public final class RoutingMachman: MachmanControlling {
 		try await local.removeDisk(vm: name, diskID: diskID)
 	}
 
+	// Import proxies deliberately: it is addDisk with a copy in front — the source is an
+	// external file no attachment references, the owned image is NEW, and the config
+	// addition is the hosted vmhost's to make (next-boot effect, like addDisk/addMount).
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
 		try await target(name).importDisk(vm: name, path: path)
 	}
 
+	// Refused while hosted, not proxied or deferred: the copy reads an image the live VZ
+	// attachment holds open read-write (torn owned copy — copyVM's refusal reason), and the
+	// config rewire under that attachment makes the next boot silently switch disks.
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
-		try await target(name).promoteDisk(vm: name, diskID: diskID)
+		try refuseWhileHosted(name, "promoting its disks")
+		return try await local.promoteDisk(vm: name, diskID: diskID)
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
