@@ -228,6 +228,10 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("ConditionPathExists="))
 		#expect(s.contains("/etc/local.d/machman-report.start"))
 		#expect(s.contains("com.machman.report"))
+		// FreeBSD rides its own rc.d script, ordered AFTER /etc/rc.local (the sshfs
+		// mounts) — never an rc.local line, whose marker block strip would clobber it.
+		#expect(s.contains("/usr/local/etc/rc.d/machman_report"))
+		#expect(s.contains("REQUIRE: local"))
 		// A probe run describes the LAST real run's outcome, not its own.
 		#expect(s.contains(#"_wr_status="${ST_LAST_STATUS:-ok}""#))
 		#expect(s.contains("refreshed Machman's report"))

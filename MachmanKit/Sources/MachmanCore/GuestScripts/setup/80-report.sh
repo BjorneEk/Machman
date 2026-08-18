@@ -175,8 +175,9 @@ write_report() {
 # A tiny per-init hook re-runs this script with --report-only at boot, so states a run
 # could only promise ("configured", "pending reboot") flip to what the guest actually
 # does once it reboots. The payload is regenerated at every VM start and gone when the
-# VM is off, so the hook no-ops unless Machman is serving the share. rc-style inits
-# (FreeBSD/OpenBSD) are skipped: no virtiofs share mounts there at boot anyway.
+# VM is off, so the hook no-ops unless Machman is serving the share. FreeBSD gets its
+# own rc.d script — NOT an /etc/rc.local line: the sshfs boot mounts own a marker block
+# there and both sides strip_block the whole file, so they would clobber each other.
 
 report_hook_install() {
 	[ "$DRY_RUN" -eq 1 ] && return 0
@@ -205,6 +206,30 @@ report_hook_install() {
 		} > /etc/local.d/machman-report.start
 		chmod 755 /etc/local.d/machman-report.start
 		have rc-update && rc-update add local default >/dev/null 2>&1
+		;;
+	freebsd-rc)
+		# REQUIRE: local orders after /etc/rc.d/local, which runs /etc/rc.local — where
+		# the sshfs automounts connect — so the share is mounted before the probe. The
+		# grace sleep covers the mount settling; the guard makes any miss a silent no-op.
+		{
+			printf '#!/bin/sh\n'
+			printf '# %s — Machman guest report refresh\n' "$MARKER"
+			printf '# PROVIDE: machman_report\n'
+			printf '# REQUIRE: local\n'
+			printf '\n. /etc/rc.subr\n\n'
+			printf 'name=machman_report\n'
+			printf 'rcvar=machman_report_enable\n'
+			printf 'start_cmd="machman_report_start"\n'
+			printf 'stop_cmd=":"\n\n'
+			printf 'machman_report_start() {\n'
+			printf '\t(sleep 5; [ -r "%s" ] && /bin/sh "%s" --report-only -q) &\n' \
+				"$_rh_script" "$_rh_script"
+			printf '}\n\n'
+			printf 'load_rc_config $name\n'
+			printf ': ${machman_report_enable:=YES}\n'
+			printf 'run_rc_command "$1"\n'
+		} > /usr/local/etc/rc.d/machman_report
+		chmod 755 /usr/local/etc/rc.d/machman_report
 		;;
 	launchd)
 		{
@@ -236,7 +261,8 @@ report_hook_install() {
 report_hook_uninstall() {
 	rm -f /etc/systemd/system/machman-report.service \
 		/etc/systemd/system/multi-user.target.wants/machman-report.service \
-		/etc/local.d/machman-report.start 2>/dev/null || true
+		/etc/local.d/machman-report.start \
+		/usr/local/etc/rc.d/machman_report 2>/dev/null || true
 	have systemctl && systemctl daemon-reload >/dev/null 2>&1
 	if [ -f /Library/LaunchDaemons/com.machman.report.plist ]; then
 		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
