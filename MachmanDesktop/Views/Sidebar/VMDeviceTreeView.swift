@@ -56,6 +56,7 @@ struct VMDeviceTreeView: View {
 	]
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
+	@Environment(\.dismissWindow) private var dismissWindow
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -1074,6 +1075,14 @@ struct VMDeviceTreeView: View {
 	}
 
 	private func closeTerminal(_ ref: SerialPortRef) {
+		// A torn-off tab IS its window — close that, and its teardown drops the
+		// controller. Dropping the controller in place would strand the window on its
+		// connecting spinner: ensureController only runs from onAppear, which an
+		// in-place branch flip never re-fires.
+		if isTorn(.terminal(ref)) {
+			dismissWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .terminal(ref)))
+			return
+		}
 		sessions.dropController(vm: vm.name, ref: ref)
 		mutateCanvas { $0.close(.terminal(ref)) }
 		viewModel.tabClosed(.terminal(ref), vm: vm.name)
