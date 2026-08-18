@@ -242,13 +242,20 @@ public final class RoutingMachman: MachmanControlling {
 
 	// Sockets are only unlinked on an orderly exit, so anything killed leaves one behind — and a
 	// leftover for a VM since renamed or deleted would never be probed by adoption, which only
-	// looks at VMs that still exist. Sweep the whole runtime dir instead.
+	// looks at VMs that still exist. Sweep the whole runtime dir instead: control sockets
+	// (vm-*.sock) and the per-port serial data-plane sockets (tty-*.sock) a crashed vmhost
+	// leaves beside them. The dir is injectable so tests can sweep a scratch dir.
 	private func pruneDeadHostSockets() {
-		let dir = machmanRuntimeDir
+		pruneDeadHostSockets(dir: machmanRuntimeDir)
+	}
+
+	func pruneDeadHostSockets(dir: String) {
 		guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
 			return
 		}
-		for entry in entries where entry.hasPrefix("vm-") && entry.hasSuffix(".sock") {
+		let vmhostPrefixes = ["vm-", "tty-"]
+		for entry in entries
+			where entry.hasSuffix(".sock") && vmhostPrefixes.contains(where: entry.hasPrefix) {
 			let path = dir + "/" + entry
 			guard !UDSListener.isLive(path: path) else { continue }
 			unlink(path)

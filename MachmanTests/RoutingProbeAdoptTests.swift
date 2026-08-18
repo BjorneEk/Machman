@@ -104,6 +104,32 @@ struct RoutingProbeAdoptTests {
 		unlink(socketPath)
 	}
 
+	// D6: the stale-socket sweep also matches the serial data-plane sockets (tty-*.sock) a
+	// crashed vmhost leaves beside its control socket — and only ever removes dead ones.
+	@Test @MainActor func socketPruneCoversSerialSockets() throws {
+		let routing = try makeRouting()
+		let fm = FileManager.default
+		let dir = NSTemporaryDirectory()
+			+ "mm-prune-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? fm.removeItem(atPath: dir) }
+		fm.createFile(atPath: dir + "/vm-dead0000.sock", contents: nil)
+		fm.createFile(atPath: dir + "/tty-dead0000.sock", contents: nil)
+		fm.createFile(atPath: dir + "/machman.sock", contents: nil)  // the daemon's own
+		let livePath = dir + "/tty-live0000.sock"
+		let listener = try UDSListener(
+			path: livePath, queue: DispatchQueue(label: "mm-prune-accept")) { fd in
+				close(fd)
+			}
+
+		routing.pruneDeadHostSockets(dir: dir)
+		#expect(!fm.fileExists(atPath: dir + "/vm-dead0000.sock"))
+		#expect(!fm.fileExists(atPath: dir + "/tty-dead0000.sock"))
+		#expect(fm.fileExists(atPath: dir + "/machman.sock"))
+		#expect(fm.fileExists(atPath: livePath))
+		listener.simulateKillForTesting()
+	}
+
 	// D1's second blind spot: the startup leftover sweep must skip VMs whose socket answers
 	// even though the hosted map has never heard of them. Covers all three leftovers it
 	// removes: the served payload, a crash-abandoned disk-import staging file (D3), and a
