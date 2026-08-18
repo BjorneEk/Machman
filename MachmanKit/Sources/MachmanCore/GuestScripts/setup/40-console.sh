@@ -116,6 +116,15 @@ console_ownership() {
 	return 0
 }
 
+# Any expected console device already in /dev — the driver is unmistakably present
+# (covers kernels with virtio_console compiled in, which kldstat's file list misses).
+console_any_device_present() {
+	for _cdp_dev in $CONSOLE_DEVICES; do
+		[ -e "/dev/$_cdp_dev" ] && return 0
+	done
+	return 1
+}
+
 console_available() {
 	avail_console=0
 	reason_console=""
@@ -129,10 +138,15 @@ console_available() {
 		return 0
 		;;
 	freebsd)
-		# The device only exists once virtio_console.ko is loaded; loading is part of
-		# the act, so availability is about the loader, not the device.
+		# Loading is part of the ACT (console_act does it, reported): this probe must
+		# not touch the loader — kldload -n means skip-if-loaded, not dry-run, so it
+		# mutated on --dry-run and on every boot-hook --report-only pass, and misread
+		# EPERM as "no driver" when probing non-root. Present = already loaded, a
+		# console device attached, or the module on disk.
 		if ! kldstat 2>/dev/null | grep -q virtio_console \
-			&& ! kldload -n virtio_console 2>/dev/null; then
+			&& ! console_any_device_present \
+			&& [ ! -f /boot/kernel/virtio_console.ko ] \
+			&& [ ! -f /boot/modules/virtio_console.ko ]; then
 			reason_console="no virtio_console driver in this FreeBSD"
 			return 0
 		fi
