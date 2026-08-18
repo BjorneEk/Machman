@@ -115,6 +115,51 @@ struct DiskImportTests {
 		#expect(FileManager.default.fileExists(atPath: vmDir + "/boot-2.iso"))
 	}
 
+	// D3: a copy that dies after writing bytes must not leave a partial file — not under
+	// the final name, not under the staged one. The injected transfer simulates the
+	// mid-copy failure a single APFS volume cannot produce (clonefile is atomic).
+	@Test func failedCopyLeavesNoPartialFile() throws {
+		let dir = try makeDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let vmDir = dir + "/vm"
+		try FileManager.default.createDirectory(atPath: vmDir, withIntermediateDirectories: true)
+		let src = dir + "/big.img"
+		try Data(repeating: 0xEE, count: 1024).write(to: URL(fileURLWithPath: src))
+
+		#expect(throws: MachmanError.self) {
+			try DiskImport.stagedCopy(
+				src: src, dst: vmDir + "/big.raw", vmDir: vmDir,
+				transfer: { _, staging in
+					try Data("partial".utf8).write(to: URL(fileURLWithPath: staging))
+					throw MachmanError(code: .ioFailure, message: "disk full")
+				})
+		}
+		#expect(try FileManager.default.contentsOfDirectory(atPath: vmDir).isEmpty)
+
+		// The cancel path travels the same staging: nothing stays behind either.
+		#expect(throws: MachmanError.self) {
+			try DiskImport.importFile(
+				src: src, vmDir: vmDir, takenStorageNames: [], isCancelled: { true })
+		}
+		#expect(try FileManager.default.contentsOfDirectory(atPath: vmDir).isEmpty)
+	}
+
+	// D3: crash leftovers (no in-process cleanup ran) are recognized by prefix and swept;
+	// owned disk files are untouched.
+	@Test func sweepRemovesOnlyStagedLeftovers() throws {
+		let dir = try makeDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let vmDir = dir + "/vm"
+		try FileManager.default.createDirectory(atPath: vmDir, withIntermediateDirectories: true)
+		let staged = vmDir + "/" + DiskImport.stagingPrefix + "dead-import"
+		try Data("partial".utf8).write(to: URL(fileURLWithPath: staged))
+		try Data(repeating: 1, count: 512).write(to: URL(fileURLWithPath: vmDir + "/data.raw"))
+
+		DiskImport.sweepStaleStaging(vmDir: vmDir)
+		#expect(!FileManager.default.fileExists(atPath: staged))
+		#expect(FileManager.default.fileExists(atPath: vmDir + "/data.raw"))
+	}
+
 	@Test @MainActor func replaceDiskSwapsInPlaceAndDeleteRespectsResidency() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "alpha")

@@ -104,9 +104,10 @@ struct RoutingProbeAdoptTests {
 		unlink(socketPath)
 	}
 
-	// D1's second blind spot: the startup payload sweep must skip VMs whose socket answers
-	// even though the hosted map has never heard of them.
-	@Test @MainActor func payloadSweepSparesLiveUnadoptedHosts() throws {
+	// D1's second blind spot: the startup leftover sweep must skip VMs whose socket answers
+	// even though the hosted map has never heard of them. Covers both leftovers it removes:
+	// the served payload and a crash-abandoned disk-import staging file (D3).
+	@Test @MainActor func leftoverSweepSparesLiveUnadoptedHosts() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "alpha")
 			let cfg = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
@@ -116,12 +117,16 @@ struct RoutingProbeAdoptTests {
 				named: GuestSetupInstallerInfo.directoryName, for: cfg)
 			try FileManager.default.createDirectory(
 				at: payload, withIntermediateDirectories: true)
+			let staging = cfg.vmDirPath() + "/" + DiskImport.stagingPrefix + "leftover"
+			try Data("partial".utf8).write(to: URL(fileURLWithPath: staging))
 
-			routing.sweepGuestPayloads(isSocketLive: { _ in true })
+			routing.sweepStoppedVMLeftovers(isSocketLive: { _ in true })
 			#expect(FileManager.default.fileExists(atPath: payload.path))
+			#expect(FileManager.default.fileExists(atPath: staging))
 
-			routing.sweepGuestPayloads(isSocketLive: { _ in false })
+			routing.sweepStoppedVMLeftovers(isSocketLive: { _ in false })
 			#expect(!FileManager.default.fileExists(atPath: payload.path))
+			#expect(!FileManager.default.fileExists(atPath: staging))
 		}
 	}
 }

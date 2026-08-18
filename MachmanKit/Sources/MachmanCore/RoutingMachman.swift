@@ -165,21 +165,24 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// Runs at daemon startup, after adoptExistingHosts (same ordering reason as
-	// sweepSafeRuns): payloads are ephemeral — served while a VM runs, regenerated at
-	// start — so whatever a crash-killed vmhost left behind for a NON-hosted VM is stale
-	// by definition. Hosted VMs are skipped: the daemon never writes (or removes) a
-	// directory a vmhost is serving.
-	public func sweepGuestPayloads() {
-		sweepGuestPayloads(isSocketLive: { UDSListener.isLive(path: $0) })
+	// sweepSafeRuns): whatever a crash-killed process left behind in a NON-hosted VM's
+	// directory is stale by definition — payloads are ephemeral (regenerated at start),
+	// and a disk-import staging file belongs to an operation that died with its process
+	// (none can be in flight here: requests are held until this sweep finishes). Hosted
+	// VMs are skipped: the daemon never writes (or removes) inside a directory a vmhost
+	// is serving.
+	public func sweepStoppedVMLeftovers() {
+		sweepStoppedVMLeftovers(isSocketLive: { UDSListener.isLive(path: $0) })
 	}
 
-	func sweepGuestPayloads(isSocketLive: (String) -> Bool) {
+	func sweepStoppedVMLeftovers(isSocketLive: (String) -> Bool) {
 		for vm in registry.list() where hosted[vm.name] == nil {
 			// An unadopted vmhost (a launch agent racing daemon startup, or one whose
-			// socket appeared after adoption ran) may be serving this payload right now —
-			// the socket is the truth, not the hosted map.
+			// socket appeared after adoption ran) may be serving this directory right
+			// now — the socket is the truth, not the hosted map.
 			guard !isSocketLive(Self.hostSocketPath(for: vm.name)) else { continue }
 			GuestSetupInstaller.removePayload(for: vm.config)
+			DiskImport.sweepStaleStaging(vmDir: vm.config.vmDirPath())
 		}
 	}
 

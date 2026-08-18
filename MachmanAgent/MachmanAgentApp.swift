@@ -103,7 +103,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		Daemon.server.holdRequests(until: Task {
 			await Daemon.api.adoptExistingHosts()
 			Daemon.api.sweepSafeRuns()
-			Daemon.api.sweepGuestPayloads()
+			Daemon.api.sweepStoppedVMLeftovers()
 			Daemon.api.healLaunchAgents()
 			Daemon.registry.sweepCopyStaging()
 		})

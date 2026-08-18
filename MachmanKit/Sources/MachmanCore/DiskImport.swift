@@ -36,6 +36,8 @@ enum DiskFormat: Equatable {
 }
 
 enum DiskImport {
+	static let stagingPrefix = ".machman-import-"
+
 	// Copies src into vmDir as an owned disk file and returns the entry to attach:
 	// raw → .storage(<derived>, size) as <derived>.raw; iso → .iso(<vmDir>/<basename>).
 	// Both are backup-excluded (VM-owned now). Throws typed errors for qcow, unreadable
@@ -73,9 +75,9 @@ enum DiskImport {
 			}
 			let name = VMCopier.storageName(for: URL(fileURLWithPath: src), taken: taken)
 			let dst = vmDir + "/\(name).raw"
-			try FileTransfer.copy(
-				src: src, dst: dst, progress: progress, isCancelled: isCancelled)
-			excludeFromBackup(path: dst)
+			try stagedCopy(
+				src: src, dst: dst, vmDir: vmDir,
+				progress: progress, isCancelled: isCancelled)
 			return VMDisk(kind: .storage(name, size))
 		case .iso:
 			let base = URL(fileURLWithPath: src).lastPathComponent
@@ -88,10 +90,51 @@ enum DiskImport {
 				n += 1
 			}
 			let dst = vmDir + "/" + fileName
-			try FileTransfer.copy(
-				src: src, dst: dst, progress: progress, isCancelled: isCancelled)
-			excludeFromBackup(path: dst)
+			try stagedCopy(
+				src: src, dst: dst, vmDir: vmDir,
+				progress: progress, isCancelled: isCancelled)
 			return VMDisk(kind: .iso(URL(fileURLWithPath: dst)))
+		}
+	}
+
+	// Copy via a hidden staged sibling and rename into place: a throw or cancel mid-copy
+	// never leaves a partial file under the final name, and a crash leaves only a staged
+	// name sweepStaleStaging recognizes. The transfer is injectable because the real
+	// failure-after-partial-write cannot be reproduced on one APFS volume (clonefile is
+	// atomic there); default is the clone-first engine.
+	nonisolated static func stagedCopy(
+		src: String, dst: String, vmDir: String,
+		progress: (@Sendable (UInt64, UInt64) -> Void)? = nil,
+		isCancelled: (@Sendable () -> Bool)? = nil,
+		transfer: ((String, String) throws -> Void)? = nil
+	) throws {
+		let fm = FileManager.default
+		let staging = vmDir + "/" + stagingPrefix + UUID().uuidString
+		do {
+			if let transfer {
+				try transfer(src, staging)
+			} else {
+				try FileTransfer.copy(
+					src: src, dst: staging, progress: progress, isCancelled: isCancelled)
+			}
+			excludeFromBackup(path: staging)   // owned now; the attribute rides the rename
+			try fm.moveItem(atPath: staging, toPath: dst)
+		} catch {
+			try? fm.removeItem(atPath: staging)
+			throw error
+		}
+	}
+
+	// Crash cleanup for the staged copies (throw and cancel clean up in-process): remove
+	// abandoned staging files. Callers guard liveness — nothing may be importing into
+	// vmDir when this runs (the daemon sweeps at startup, before any request dispatches,
+	// and skips every VM whose vmhost socket answers).
+	nonisolated static func sweepStaleStaging(vmDir: String) {
+		let fm = FileManager.default
+		for entry in (try? fm.contentsOfDirectory(atPath: vmDir)) ?? []
+			where entry.hasPrefix(stagingPrefix) {
+			try? fm.removeItem(atPath: vmDir + "/" + entry)
+			MachmanLogger.log(.log, "removed interrupted disk-import staging \(entry)")
 		}
 	}
 }
