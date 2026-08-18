@@ -61,6 +61,8 @@ struct RoutingPendingStartTests {
 			("regenerateMAC", { _ = try await routing.regenerateMAC(vm: "pending-alpha") }),
 			("resizeDisk", { _ = try await routing.resizeDisk(
 				vm: "pending-alpha", diskID: "storage:disk", sizeBytes: 1) }),
+			("removeDisk", { try await routing.removeDisk(
+				vm: "pending-alpha", diskID: "storage:disk") }),
 			("consoleAdd", { try await routing.addConsolePort(vm: "pending-alpha") }),
 			("installStart", { try await routing.startMacInstall(
 				vm: "pending-alpha", source: .latest) }),
