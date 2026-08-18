@@ -47,11 +47,20 @@ struct KernelStoreTests {
 			#expect(!FileManager.default.fileExists(atPath: dest))
 			#expect(cfg.kernelSettings?.kernelPath == "")
 			#expect(cfg.ownedKernelFiles().map(\.role) == [.initramfs])
+			// D10: the emptied tag and role dirs went with the file — but not the kernels
+			// dir, which still holds the initramfs file.
+			#expect(!FileManager.default.fileExists(
+				atPath: cfg.kernelsDirPath() + "/kernel"))
+			#expect(FileManager.default.fileExists(atPath: cfg.kernelsDirPath()))
 
 			// Deleting a path outside the store refuses.
 			#expect(throws: MachmanError.self) {
 				try KernelStore.delete(path: "/etc/hosts", kernelsDir: cfg.kernelsDirPath())
 			}
+
+			// D10: the last owned file takes the kernels dir itself with it.
+			try KernelStore.delete(path: initDest, kernelsDir: cfg.kernelsDirPath())
+			#expect(!FileManager.default.fileExists(atPath: cfg.kernelsDirPath()))
 		}
 	}
 

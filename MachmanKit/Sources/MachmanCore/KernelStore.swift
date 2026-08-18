@@ -138,7 +138,8 @@ enum KernelStore {
 		return newPath
 	}
 
-	// Remove an owned file (and its now-empty tag dir). Refuses paths outside the kernels dir.
+	// Remove an owned file and every container dir it empties — tag dir, role dir, and the
+	// kernels dir itself when the last file leaves. Refuses paths outside the kernels dir.
 	static func delete(path: String, kernelsDir: String) throws {
 		guard isOwned(path, kernelsDir: kernelsDir) else {
 			throw MachmanError(
@@ -148,9 +149,13 @@ enum KernelStore {
 		if fm.fileExists(atPath: path) {
 			try fm.removeItem(atPath: path)
 		}
-		let tagDir = (path as NSString).deletingLastPathComponent
-		if let contents = try? fm.contentsOfDirectory(atPath: tagDir), contents.isEmpty {
-			try? fm.removeItem(atPath: tagDir)
+		// Walk up from the file's dir, stopping at the first level that still holds
+		// something; legacy-layout files (no role level) just make fewer hops.
+		var dir = (path as NSString).deletingLastPathComponent
+		while dir.hasPrefix(kernelsDir) {
+			guard removeEmptyDirectory(dir) else { break }
+			if dir == kernelsDir { break }
+			dir = (dir as NSString).deletingLastPathComponent
 		}
 	}
 }

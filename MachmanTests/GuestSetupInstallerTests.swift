@@ -435,10 +435,11 @@ struct GuestSetupInstallerTests {
 			_ = try GuestSetupInstaller.writePayload(for: vm.config)
 			#expect(!fm.fileExists(atPath: legacy.path))
 
-			// Teardown/sweep call this: the served dirs are gone, the share dir stays.
+			// Teardown/sweep call this: the served dirs go, and the emptied share root
+			// goes with them (D10 — the next assembly recreates it).
 			GuestSetupInstaller.removePayload(for: vm.config)
 			#expect(!fm.fileExists(atPath: scriptPath))
-			#expect(fm.fileExists(atPath: GuestInstallerWriter.payloadRoot(for: vm.config).path))
+			#expect(!fm.fileExists(atPath: GuestInstallerWriter.payloadRoot(for: vm.config).path))
 		}
 	}
 

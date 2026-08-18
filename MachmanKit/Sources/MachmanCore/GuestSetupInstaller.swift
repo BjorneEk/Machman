@@ -135,7 +135,8 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 	}
 
 	// Drop the share dirs from disk: the device was removed, or vm.setup.reset wiped the
-	// report state. Keys and config.ssh/config.setup are the caller's business.
+	// report state. Keys and config.ssh/config.setup are the caller's business. The share
+	// root goes with its last payload (the next assembly recreates it).
 	static func removePayload(for config: VMConfig) {
 		let fm = FileManager.default
 		for name in [directoryName, reportDirectoryName] + supersededDirectoryNames {
@@ -143,5 +144,6 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 				named: name, for: config))
 			GuestInstallerWriter.removeLegacyPayload(named: name, for: config)
 		}
+		removeEmptyDirectory(GuestInstallerWriter.payloadRoot(for: config).path)
 	}
 }

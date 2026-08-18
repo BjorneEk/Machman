@@ -77,6 +77,9 @@ public struct SSHHostConfigWriter {
 			try setIncludeLine(present: false)
 			try? fm.removeItem(at: managedConfig)
 			try? fm.removeItem(at: knownHosts)
+			// The managed dir holds only those two files; when the last SSH VM goes,
+			// nothing of Machman's should outlive it in ~/.ssh.
+			removeEmptyDirectory(managedDir.path)
 			return
 		}
 		try fm.createDirectory(at: managedDir, withIntermediateDirectories: true)

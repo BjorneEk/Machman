@@ -48,6 +48,20 @@ func ensureDirectory(_ path: String) -> Bool {
 	}
 }
 
+// ensureDirectory's counterpart for container dirs (share/, kernels/, ~/.ssh/machman/):
+// they have no reason to outlive their contents, but a dir holding ANYTHING unexpected is
+// left alone. Reports whether the directory is gone (a missing one already is).
+@discardableResult
+func removeEmptyDirectory(_ path: String) -> Bool {
+	let fm = FileManager.default
+	guard let contents = try? fm.contentsOfDirectory(atPath: path) else {
+		return !fm.fileExists(atPath: path)
+	}
+	guard contents.isEmpty else { return false }
+	try? fm.removeItem(atPath: path)
+	return !fm.fileExists(atPath: path)
+}
+
 // Time Machine must not copy VM disks: they are large, rewritten constantly, and worthless in a
 // half-captured state. Applied when a disk is created AND on every registry scan, because every
 // image that exists today predates this call and would otherwise never be marked.

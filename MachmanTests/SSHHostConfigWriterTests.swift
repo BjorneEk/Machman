@@ -137,6 +137,21 @@ struct SSHHostConfigWriterTests {
 		#expect(!text.contains(SSHHostConfigWriter.includeLine))
 	}
 
+	// D10: when the last SSH VM goes, the managed dir goes too — nothing of Machman's
+	// outlives its content in ~/.ssh (the surrounding .ssh dir is not ours to touch).
+	@Test func lastEntryLeavingRemovesTheManagedDir() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let writer = SSHHostConfigWriter(sshDir: root)
+		try writer.apply(entries: [entry()])
+		let managedDir = root.appendingPathComponent("machman")
+		#expect(FileManager.default.fileExists(atPath: managedDir.path))
+
+		try writer.apply(entries: [])
+		#expect(!FileManager.default.fileExists(atPath: managedDir.path))
+		#expect(FileManager.default.fileExists(atPath: root.path))
+	}
+
 	@Test func missingHostKeyFallsBackToAcceptNew() throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }
