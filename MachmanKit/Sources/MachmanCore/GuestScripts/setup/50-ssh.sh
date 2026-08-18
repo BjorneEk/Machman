@@ -377,6 +377,8 @@ ssh_uninstall() {
 		_su_tmp="/etc/nixos/configuration.nix.machman-tmp"
 		grep -v "# $MARKER" /etc/nixos/configuration.nix > "$_su_tmp"
 		mv "$_su_tmp" /etc/nixos/configuration.nix
+		# The strip IS the restore — the install-time backup has nothing left in it.
+		rm -f /etc/nixos/configuration.nix.machman-backup
 		note "removed the Machman line from configuration.nix — run 'nixos-rebuild switch'."
 	fi
 	# Deliberate keep, disclosed: sshd stays (this uninstall may be running over it),

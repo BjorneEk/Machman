@@ -256,15 +256,30 @@ kernelconsole_uninstall() {
 		if [ -f /etc/default/grub ] && grep -q "# $MARKER\$" /etc/default/grub; then
 			grep -v "# $MARKER\$" /etc/default/grub > /etc/default/grub.machman-tmp
 			mv /etc/default/grub.machman-tmp /etc/default/grub
-			kernelconsole_backup_cfg
+			# No fresh backup here: install's backup holds the last pre-Machman
+			# config, and overwriting it with the Machman-era one (what this used to
+			# do) would leave a failed rebuild with nothing worth restoring.
+			_kcu_ok=0
 			if have update-grub; then
-				run_live "rebuilding the GRUB config" update-grub || true
+				if run_live "rebuilding the GRUB config" update-grub; then
+					_kcu_ok=1
+				fi
 			elif have grub-mkconfig; then
-				run_live "rebuilding the GRUB config" \
-					grub-mkconfig -o /boot/grub/grub.cfg || true
+				if run_live "rebuilding the GRUB config" \
+					grub-mkconfig -o /boot/grub/grub.cfg; then
+					_kcu_ok=1
+				fi
 			elif have grub2-mkconfig; then
-				run_live "rebuilding the GRUB config" \
-					grub2-mkconfig -o /boot/grub2/grub.cfg || true
+				if run_live "rebuilding the GRUB config" \
+					grub2-mkconfig -o /boot/grub2/grub.cfg; then
+					_kcu_ok=1
+				fi
+			fi
+			# The rebuild IS the restore: once it succeeds the backups have nothing
+			# left to restore, so they go too; a failed rebuild keeps them.
+			if [ "$_kcu_ok" -eq 1 ]; then
+				rm -f /boot/grub/grub.cfg.machman-backup \
+					/boot/grub2/grub.cfg.machman-backup
 			fi
 		fi
 		;;

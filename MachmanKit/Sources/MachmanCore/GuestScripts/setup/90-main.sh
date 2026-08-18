@@ -29,6 +29,45 @@ feature_selected() {
 	has_word "$1" "$SELECTED_FEATURES"
 }
 
+# Unmount one machman mount if it is mounted (best-effort, reported), then remove its
+# now-emptied directory — rmdir only, so a dir holding anything stays.
+uninstall_release_dir() {
+	[ -d "$1" ] || return 0
+	if mount 2>/dev/null | grep -qF " $1 "; then
+		if run "unmounting $1" umount "$1"; then
+			ok "unmounted $1"
+		else
+			warn "could not unmount $1 — unmount it yourself (its boot entry is gone)."
+		fi
+	fi
+	rmdir "$1" 2>/dev/null || true
+	return 0
+}
+
+# The uninstall's last pass: stripping fstab/boot entries leaves live mounts and their
+# dirs behind. Runs AFTER the report is written (the share may be the transport under
+# this very script), releases exactly what the state file says this script mounts, and
+# drops the mount root it created once it empties.
+uninstall_unmount_and_prune() {
+	_uup_root="${ST_MOUNTPOINT:-$MOUNTPOINT}"
+	for _uup_n in $ST_AUTOMOUNT_SSHFS; do
+		[ "$_uup_n" = "@share" ] && continue
+		uninstall_release_dir "$_uup_root/$_uup_n"
+	done
+	[ -n "$_uup_root" ] && rmdir "$_uup_root" 2>/dev/null || true
+	if state_was_configured vfsauto || has_word "@share" "$ST_AUTOMOUNT_SSHFS"; then
+		case "$PAYLOAD_DIR" in
+		"$SHARE_ROOT"/*)
+			note "the share stays mounted while this script runs from it; nothing remounts it after a reboot."
+			;;
+		*)
+			uninstall_release_dir "$SHARE_ROOT"
+			;;
+		esac
+	fi
+	return 0
+}
+
 # ------------------------------------------------------------------------- detection ----
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -83,8 +122,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
 	# The shared fstab block (virtiofs + sshfs automounts) strips once, here.
 	[ -f /etc/fstab ] && strip_block /etc/fstab
 	report_hook_uninstall
-	remove_state
 	write_report uninstalled
+	uninstall_unmount_and_prune
+	remove_state
 	ok "Machman's guest configuration is gone."
 	note "Installed packages and the SSH server stay — remove them yourself if unwanted."
 	exit 0
