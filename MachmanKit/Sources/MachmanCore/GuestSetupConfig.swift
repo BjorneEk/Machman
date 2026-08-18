@@ -77,6 +77,9 @@ extension VMConfig {
 	// it regenerates empty at the next assembly while the device stays attached.
 	func resetSetup() throws {
 		setup = nil
+		// Forgetting the guest includes the device names it reported for the ports.
+		for index in consolePorts.indices { consolePorts[index].guestName = nil }
+		for index in uartPorts.indices { uartPorts[index].guestName = nil }
 		try? FileManager.default.removeItem(
 			at: GuestInstallerWriter.payloadDirectory(
 				named: GuestSetupInstallerInfo.reportDirectoryName, for: self))

@@ -29,8 +29,19 @@ public extension SerialPortKind {
 public extension SerialPortInfo {
 	// guestIndex is the enabled-compacted number the guest sees; an older daemon doesn't
 	// send it — fall back to the config index (its guestDevice is config-indexed anyway).
+	// A guest-reported name beats every convention: once the setup run has SEEN the
+	// device, "Console 0" becomes "ttyV0.0" — no OS guessing.
 	func displayName(mode: BootInfo.Mode) -> String {
-		kind.displayName(guestIndex: guestIndex ?? index, mode: mode)
+		guestName ?? kind.displayName(guestIndex: guestIndex ?? index, mode: mode)
+	}
+
+	// The inspector spelling: a known name (or a mode that proves the OS) earns the
+	// /dev/ prefix; an EFI port nobody has reported stays the neutral display name —
+	// EFI guarantees no OS, so no device path is claimed.
+	func deviceLabel(mode: BootInfo.Mode) -> String {
+		if let guestName { return "/dev/" + guestName }
+		if mode == .efi { return kind.displayName(guestIndex: guestIndex ?? index, mode: mode) }
+		return "/dev/" + guestDevice
 	}
 }
 

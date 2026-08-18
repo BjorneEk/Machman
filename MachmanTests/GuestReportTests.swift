@@ -221,6 +221,51 @@ struct GuestReportTests {
 
 	// The reported host key is pinned where the in-app session tabs look for it — under
 	// the VM's alias, so the app never has to touch the user's own known_hosts.
+	// CONSOLE_N lines arrive in the guest's enabled-compacted order; the k-th reported
+	// name becomes the k-th ENABLED port's guestName — the guest's own word replaces the
+	// boot-mode guess (EFI + FreeBSD reported ttyV0.0 while the daemon said hvc0).
+	@Test @MainActor func applyNamesThePortsTheGuestReported() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "portnames")
+			let vm = try VMConfig(name: "portnames", memorySize: 1 << 30, cpuCount: 2)
+			try vm.addConsolePort()
+			try vm.addConsolePort()
+			try vm.addConsolePort()
+			vm.consolePorts[0].enabled = false   // disabled: invisible to the guest
+			#expect(try GuestReport.parse("""
+				SCRIPT_VERSION=3
+				CONSOLE_1=ttyV0.0 active
+				CONSOLE_2=ttyV1.0 none
+				""").apply(to: vm, stampedAt: Date()).setup)
+			#expect(vm.consolePorts[0].guestName == nil)
+			#expect(vm.consolePorts[1].guestName == "ttyV0.0")
+			#expect(vm.consolePorts[2].guestName == "ttyV1.0")
+
+			// Same report again: nothing changes, nothing fires.
+			#expect(!(try GuestReport.parse("""
+				SCRIPT_VERSION=3
+				CONSOLE_1=ttyV0.0 active
+				CONSOLE_2=ttyV1.0 none
+				""").apply(to: vm, stampedAt: Date()).any))
+
+			// A shorter report never blanks a name — absence isn't denial.
+			#expect(try GuestReport.parse("""
+				SCRIPT_VERSION=3
+				CONSOLE_1=ttyV0.0 configured
+				""").apply(to: vm, stampedAt: Date()).setup)
+			#expect(vm.consolePorts[2].guestName == "ttyV1.0")
+
+			// The names persist with the config.
+			let reloaded = try VMConfig.load(name: "portnames")
+			#expect(reloaded.consolePorts[1].guestName == "ttyV0.0")
+
+			// Uninstalled: the guest forgot Machman; its names go with it.
+			#expect(try GuestReport.parse("UNINSTALLED=1")
+				.apply(to: vm, stampedAt: Date()).setup)
+			#expect(vm.consolePorts.allSatisfy { $0.guestName == nil })
+		}
+	}
+
 	@Test @MainActor func reportedHostKeyIsPinnedUnderTheAlias() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "sshpin")

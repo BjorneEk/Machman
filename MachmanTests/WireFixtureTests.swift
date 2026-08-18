@@ -102,6 +102,16 @@ struct WireFixtureTests {
 		#expect(try encode(indexed) == indexedExpected)
 		#expect(try decode(SerialPortInfo.self, indexedExpected) == indexed)
 
+		// 1.0.7: the guest-reported device name (additive; nil-omission proven above).
+		let named = SerialPortInfo(
+			kind: .console, index: 0, guestDevice: "hvc0", logging: SerialLogConfig(),
+			guestIndex: 0, guestName: "ttyV0.0")
+		let namedExpected =
+			#"{"guestDevice":"hvc0","guestIndex":0,"guestName":"ttyV0.0","index":0,"#
+			+ #""kind":"console","logging":{"mode":"resetOnBoot"}}"#
+		#expect(try encode(named) == namedExpected)
+		#expect(try decode(SerialPortInfo.self, namedExpected) == named)
+
 		// A uart the host can't attach carries its reason; nil socket/mmio stay omitted.
 		let gated = SerialPortInfo(
 			kind: .uart, index: 0, guestDevice: "ttyAMA0", logging: SerialLogConfig(),

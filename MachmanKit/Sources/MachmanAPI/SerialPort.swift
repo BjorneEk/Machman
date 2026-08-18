@@ -121,6 +121,10 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 	// them at the next boot (`index` is the config position). nil = older daemon — fall back
 	// to `index`.
 	public var guestIndex: Int?
+	// 1.0.7: the device name the GUEST itself reported for this port (a setup run found
+	// it: "ttyV0.0", "hvc0", …). nil until then — guestDevice above stays the boot-mode
+	// guess, this is the truth once the guest has spoken.
+	public var guestName: String?
 
 	public var id: String { "\(kind.rawValue)\(index)" }
 
@@ -128,7 +132,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		kind: SerialPortKind, index: Int, guestDevice: String, logging: SerialLogConfig,
 		socketPath: String? = nil, logPath: String? = nil, mmioBase: String? = nil,
 		irq: Int? = nil, unavailable: SerialPortUnavailability? = nil, enabled: Bool? = nil,
-		guestIndex: Int? = nil
+		guestIndex: Int? = nil, guestName: String? = nil
 	) {
 		self.kind = kind
 		self.index = index
@@ -141,6 +145,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.unavailable = unavailable
 		self.enabled = enabled
 		self.guestIndex = guestIndex
+		self.guestName = guestName
 	}
 
 	public init(from decoder: Decoder) throws {
@@ -157,6 +162,7 @@ public struct SerialPortInfo: Codable, Sendable, Equatable, Identifiable {
 		self.unavailable = try c.decodeIfPresent(SerialPortUnavailability.self, forKey: .unavailable)
 		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
 		self.guestIndex = try c.decodeIfPresent(Int.self, forKey: .guestIndex)
+		self.guestName = try c.decodeIfPresent(String.self, forKey: .guestName)
 	}
 
 	public var isEnabled: Bool { enabled ?? true }

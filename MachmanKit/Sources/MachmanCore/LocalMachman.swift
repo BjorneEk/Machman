@@ -868,7 +868,8 @@ public final class LocalMachman: MachmanControlling {
 					mmioBase: nil, irq: nil,   // uart mmio/irq: filled once platform info exists
 					unavailable: uartIssue,
 					enabled: enabledFlag(port.enabled),
-					guestIndex: guestIndex)
+					guestIndex: guestIndex,
+					guestName: port.guestName)
 			}
 		}
 		// Persisted SSH half plus the paths and names clients must not derive themselves;

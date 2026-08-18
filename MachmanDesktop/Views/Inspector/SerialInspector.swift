@@ -202,24 +202,33 @@ struct SerialInspector: View {
 	// MARK: - Guest device / platform
 
 	// Device rows match the boot mode: a kernel boot IS Linux, a macOS guest is macOS, and
-	// an EFI guest can boot anything — show the plausible conventions. Consoles on EFI and
-	// macOS get the Setup Guide sheet instead of a cramped caption.
+	// an EFI guest can boot anything — show the plausible conventions UNTIL the guest has
+	// reported the real name, which then replaces the speculation with one row. Consoles
+	// on EFI and macOS get the Setup Guide sheet instead of a cramped caption.
 	private var guestDeviceSection: some View {
 		Section("Guest Device") {
-			switch (kind, vm.boot.mode) {
-			case (.console, .efi):
-				deviceRow("Linux", os: .linux)
-				deviceRow("FreeBSD", os: .freebsd)
+			if let name = port?.guestName {
+				LabeledContent(vm.setup?.guestOS ?? "Reported") {
+					Text("/dev/" + name)
+						.font(.system(.callout, design: .monospaced))
+				}
 				setupGuideButton
-			case (.console, .macOS):
-				deviceRow("macOS", os: .macOS)
-				setupGuideButton
-			case (.console, .linuxKernel), (.uart, _):
-				deviceRow("Linux", os: .linux)
-				Text(setupNote)
-					.font(.caption)
-					.foregroundColor(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
+			} else {
+				switch (kind, vm.boot.mode) {
+				case (.console, .efi):
+					deviceRow("Linux", os: .linux)
+					deviceRow("FreeBSD", os: .freebsd)
+					setupGuideButton
+				case (.console, .macOS):
+					deviceRow("macOS", os: .macOS)
+					setupGuideButton
+				case (.console, .linuxKernel), (.uart, _):
+					deviceRow("Linux", os: .linux)
+					Text(setupNote)
+						.font(.caption)
+						.foregroundColor(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
+				}
 			}
 		}
 	}

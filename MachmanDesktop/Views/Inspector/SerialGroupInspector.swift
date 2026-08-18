@@ -35,7 +35,7 @@ struct SerialGroupInspector: View {
 							.foregroundStyle(port.unavailable == nil ? .secondary : .tertiary)
 					} label: {
 						HStack(spacing: 5) {
-							Text("/dev/" + port.guestDevice)
+							Text(port.deviceLabel(mode: vm.boot.mode))
 								.font(.system(.callout, design: .monospaced))
 							if reportedInfo(for: port)?.kernelConsole == true {
 								Text("kernel")
@@ -60,10 +60,17 @@ struct SerialGroupInspector: View {
 		}
 	}
 
-	// The report keys interfaces by the name the GUEST saw at run time; ports renumber
-	// compactly, so match on guestDevice.
+	// CONSOLE_N report lines are emitted in the guest's enabled-compacted order — the
+	// same numbering guestIndex carries — so the join is positional. (Matching on the
+	// baked guestDevice broke on EFI: the daemon guessed hvc0 while a FreeBSD guest
+	// reported ttyV0.0.) Name-equality stays as the older-daemon fallback.
 	private func reportedInfo(for port: SerialPortInfo) -> GuestConsoleInfo? {
-		reported.first { $0.device == port.guestDevice }
+		// The guest only ever saw enabled ports; a disabled port's config-position
+		// guestIndex could collide with an enabled port's compacted one.
+		guard port.kind == .console, port.isEnabled else { return nil }
+		let position = port.guestIndex ?? port.index
+		if reported.indices.contains(position) { return reported[position] }
+		return reported.first { $0.device == port.guestDevice }
 	}
 
 	private func summary(for port: SerialPortInfo) -> String {

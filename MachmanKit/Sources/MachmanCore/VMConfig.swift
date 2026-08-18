@@ -128,6 +128,9 @@ struct SerialPort: Codable, Equatable {
 	// 1.0.4: disabled ports stay configured but are not attached at the next start (guest
 	// names renumber, same as removing the port).
 	var enabled: Bool = true
+	// 1.0.7: the device name the GUEST reported for this port (ttyV0.0, hvc0, …) — nil
+	// until a setup run finds one. EFI proves no OS, so this is never guessed here.
+	var guestName: String?
 
 	init(logging: SerialLogConfig = SerialLogConfig()) {
 		self.logging = logging
@@ -139,11 +142,13 @@ struct SerialPort: Codable, Equatable {
 		self.logging = try c.decodeIfPresent(SerialLogConfig.self, forKey: .logging)
 			?? SerialLogConfig()
 		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+		self.guestName = try c.decodeIfPresent(String.self, forKey: .guestName)
 	}
 
 	private enum CodingKeys: String, CodingKey {
 		case logging
 		case enabled
+		case guestName
 	}
 }
 

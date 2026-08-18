@@ -242,6 +242,12 @@ struct GuestReport {
 					changes.setup = true
 				}
 			}
+			// Uninstalled = the guest forgot Machman; the names it gave go with it.
+			for index in config.consolePorts.indices
+				where config.consolePorts[index].guestName != nil {
+				config.consolePorts[index].guestName = nil
+				changes.setup = true
+			}
 		} else if isV3 {
 			var setup = config.setup ?? GuestSetupConfig()
 			let before = setup
@@ -271,6 +277,24 @@ struct GuestReport {
 				setup.lastReportAt = stampedAt
 				config.setup = setup
 				changes.setup = true
+			}
+			// The guest's own device names become the ports' names. CONSOLE_N lines are
+			// emitted in enabled-compacted order — exactly the numbering the guest sees —
+			// so the k-th reported console names the k-th ENABLED port. A shorter report
+			// never blanks an existing name: a name is identity, absence isn't denial.
+			// Tracked separately from the snapshot so the save + event still fire when
+			// the setup content is byte-equal (a re-read of an already-ingested report
+			// on a build that only now persists names).
+			let reported = setup.consoles
+			var enabledSeen = 0
+			for index in config.consolePorts.indices where config.consolePorts[index].enabled {
+				defer { enabledSeen += 1 }
+				guard enabledSeen < reported.count else { break }
+				let name = reported[enabledSeen].device
+				if !name.isEmpty, config.consolePorts[index].guestName != name {
+					config.consolePorts[index].guestName = name
+					changes.setup = true
+				}
 			}
 		}
 

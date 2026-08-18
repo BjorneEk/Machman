@@ -369,6 +369,7 @@ struct VMDeviceTreeView: View {
 			// "Console 0" on an EFI VM).
 			ForEach(ports.filter {
 				matches($0.displayName(mode: vm.boot.mode)) || matches($0.guestDevice)
+					|| matches($0.guestName)
 			}) { port in
 				serialRow(port)
 			}
