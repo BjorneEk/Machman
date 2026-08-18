@@ -136,11 +136,27 @@ struct GuestSetupHelpSheet: View {
 
 	// MARK: - Linux (steps only)
 
+	// What the guest already does on its own — steps skip what the last setup run
+	// configured (the share automount, the guest → host key).
+	private var shareAutomount: GuestAutomountInfo? {
+		(vm.setup?.automounts ?? []).first {
+			$0.kind == MountKind.virtiofs
+				|| ($0.kind == MountKind.sshfs && $0.target == "@share")
+		}
+	}
+	private var reverseApproved: Bool { vm.ssh?.reverseState == .approved }
+
 	@ViewBuilder
 	private var linuxSteps: some View {
 		step(1, "Add (+) → Installers → Guest Setup, then boot the guest.")
-		step(2, "Mount the share and run the script:")
-		command(GuestPaths.mountShareCommand + " && " + GuestSetupInstallerInfo.runCommand())
+		if let auto = shareAutomount {
+			step(2, "The share automounts (\(auto.kind)) at \(auto.path) — run the script:")
+			command(GuestSetupInstallerInfo.runCommand())
+		} else {
+			step(2, "Mount the share and run the script:")
+			command(GuestPaths.mountShareCommand + " && "
+				+ GuestSetupInstallerInfo.runCommand())
+		}
 		note("It asks per feature — console logins, kernel boot output, SSH, boot "
 			+ "automounts — and re-running it later reconfigures.")
 		step(3, "Undo it later:")
@@ -171,6 +187,21 @@ struct GuestSetupHelpSheet: View {
 
 	@ViewBuilder
 	private var bsdSteps: some View {
+		if let auto = shareAutomount {
+			intro("This guest automounts the share over \(auto.kind) at boot — no "
+				+ "bootstrap needed while that holds.")
+			step(1, "Start the VM — the share appears at \(auto.path).")
+			step(2, "Run the installer:")
+			command(GuestSetupInstallerInfo.runCommand())
+			step(3, "Undo it later:")
+			command(GuestSetupInstallerInfo.runCommand() + " --uninstall")
+		} else {
+			bsdBootstrapSteps
+		}
+	}
+
+	@ViewBuilder
+	private var bsdBootstrapSteps: some View {
 		intro("FreeBSD and OpenBSD have no virtiofs driver, so the setup folder is mounted "
 			+ "over SSH instead — then the same script runs.")
 		step(1, "Start the VM — the payload is generated fresh at boot and served only "
@@ -181,10 +212,20 @@ struct GuestSetupHelpSheet: View {
 		note("OpenBSD: pkg_add sshfs-fuse — and skip step 4; fuse is already in its kernel.")
 		step(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
 		command("kldstat -q -m fusefs || kldload fusefs")
-		step(5, "Mount Machman's setup folder. This asks for your Mac account password — "
-			+ "once, because keys are what the script is about to set up:")
-		command("mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
-			+ "\(mountPoint) -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
+		if reverseApproved, let guestUser = vm.ssh?.guestUser {
+			// Root resolves ~root/.ssh/config, so the user's 'mac' alias rides in via -F
+			// (it carries the key and the pinned host key too — no password, no prompt).
+			step(5, "Mount Machman's setup folder — this guest's key is approved, so the "
+				+ "'mac' alias works without a password:")
+			command("doas mkdir -p \(mountPoint) && doas sshfs "
+				+ "-F /home/\(guestUser)/.ssh/config mac:'\(sharePath)' \(mountPoint) "
+				+ "-o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
+		} else {
+			step(5, "Mount Machman's setup folder. This asks for your Mac account "
+				+ "password — once, because keys are what the script is about to set up:")
+			command("mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
+				+ "\(mountPoint) -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
+		}
 		note("Same folder Linux mounts over virtiofs, same path — so step 6 is the same "
 			+ "command on every guest.")
 		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {

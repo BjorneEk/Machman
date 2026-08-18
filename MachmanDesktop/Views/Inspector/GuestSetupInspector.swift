@@ -59,11 +59,20 @@ struct GuestSetupInspector: View {
 	private var statusSection: some View {
 		Section("Status") {
 			LabeledContent("Install status") { statusLabel }
-			// Payloads are ephemeral: served while the VM runs, regenerated at start.
-			LabeledContent("Payload") {
-				Text(vm.state.isRunning
-					? "served in the share" : "appears at boot — start the VM")
-					.foregroundStyle(.secondary)
+			// While setup is (re)installable the row says what a run will find — the
+			// share already automounted (and how) or merely available. Installed and
+			// collapsed, the ephemeral-payload lifecycle line returns.
+			if installed && !allowReinstall {
+				// Payloads are ephemeral: served while the VM runs, regenerated at start.
+				LabeledContent("Payload") {
+					Text(vm.state.isRunning
+						? "served in the share" : "appears at boot — start the VM")
+						.foregroundStyle(.secondary)
+				}
+			} else {
+				LabeledContent("Share") {
+					Text(shareTransport).foregroundStyle(.secondary)
+				}
 			}
 			if let setup, installed {
 				if let os = setup.guestOS {
@@ -101,6 +110,19 @@ struct GuestSetupInspector: View {
 					.foregroundStyle(.secondary)
 			}
 		}
+	}
+
+	// What carries the share into the guest: "virtiofs auto" / "sshfs auto" when the
+	// guest automounts it, else "available" — served, mount by hand.
+	private var shareTransport: String {
+		let automounts = setup?.automounts ?? []
+		if automounts.contains(where: { $0.kind == MountKind.virtiofs }) {
+			return "virtiofs auto"
+		}
+		if automounts.contains(where: { $0.kind == MountKind.sshfs && $0.target == "@share" }) {
+			return "sshfs auto"
+		}
+		return "available"
 	}
 
 	private var statusLabel: some View {
@@ -218,6 +240,10 @@ struct GuestSetupInspector: View {
 		}
 	}
 
+	// The share automounts (either transport): mounting instructions would contradict
+	// the Share row above, so the run command stands alone.
+	private var shareAutomounted: Bool { shareTransport != "available" }
+
 	@ViewBuilder
 	private var setupCommands: some View {
 		switch vm.boot.mode {
@@ -227,24 +253,34 @@ struct GuestSetupInspector: View {
 				.foregroundStyle(.secondary)
 			CommandBlock(GuestSetupInstallerInfo.runCommand)
 		case .linuxKernel:
-			Text("Run in the guest (mounts the share, then the installer):")
+			Text(shareAutomounted
+				? "Run in the guest (the share automounts):"
+				: "Run in the guest (mounts the share, then the installer):")
 				.font(.caption)
 				.foregroundStyle(.secondary)
-			CommandBlock(GuestSetupInstallerInfo.mountAndRunCommand)
+			CommandBlock(shareAutomounted
+				? GuestSetupInstallerInfo.runCommand()
+				: GuestSetupInstallerInfo.mountAndRunCommand)
 		case .efi:
 			DisclosureGroup("Linux") {
 				VStack(alignment: .leading, spacing: 6) {
-					Text("Mounts the share, then runs the installer:")
+					Text(shareAutomounted
+						? "The share automounts — run the installer:"
+						: "Mounts the share, then runs the installer:")
 						.font(.caption)
 						.foregroundStyle(.secondary)
-					CommandBlock(GuestSetupInstallerInfo.mountAndRunCommand)
+					CommandBlock(shareAutomounted
+						? GuestSetupInstallerInfo.runCommand()
+						: GuestSetupInstallerInfo.mountAndRunCommand)
 				}
 				.padding(.vertical, 2)
 			}
 			DisclosureGroup("FreeBSD / OpenBSD") {
 				VStack(alignment: .leading, spacing: 6) {
-					Text("No virtiofs driver — the guide shows the one-time sshfs "
-						+ "bootstrap; afterwards the same run command applies.")
+					Text(shareAutomounted
+						? "The share automounts over ssh — run the installer:"
+						: "No virtiofs driver — the guide shows the one-time sshfs "
+							+ "bootstrap; afterwards the same run command applies.")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
