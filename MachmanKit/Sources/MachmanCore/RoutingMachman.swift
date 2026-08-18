@@ -214,19 +214,35 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// Stop every hosted VM (quit path): optionally ask guests first, then force stragglers,
-	// and wait for the hosts to drain.
+	// and wait for the hosts to drain. Every per-host stop is bounded: a vmhost that stopped
+	// answering fails its call after the deadline, is logged, and is LEFT RUNNING (the quit
+	// prompt's leave-VMs-running semantics; the next daemon re-adopts it) — one wedged host
+	// must never make the daemon unquittable by stalling the terminate reply (E5).
 	public func stopAllHosted(softFirst: Bool, graceSeconds: Double) async {
+		let stopDeadline = Duration.seconds(15)
 		if softFirst {
-			for name in Array(hosted.keys) {
-				try? await stop(vm: name, mode: .soft)
+			for (name, host) in hosted {
+				guard hosted[name] != nil else { continue }   // exited during the loop
+				do {
+					try await host.client.stop(vm: name, mode: .soft, deadline: stopDeadline)
+				} catch {
+					MachmanLogger.log(.passiveError,
+						"quit: soft stop of \(name) failed (\(error)) — leaving it running")
+				}
 			}
 			let deadline = Date().addingTimeInterval(graceSeconds)
 			while Date() < deadline, !hosted.isEmpty {
 				try? await Task.sleep(for: .milliseconds(500))
 			}
 		}
-		for name in Array(hosted.keys) {
-			try? await stop(vm: name, mode: .force)
+		for (name, host) in hosted {
+			guard hosted[name] != nil else { continue }
+			do {
+				try await host.client.stop(vm: name, mode: .force, deadline: stopDeadline)
+			} catch {
+				MachmanLogger.log(.passiveError,
+					"quit: force stop of \(name) failed (\(error)) — leaving it running")
+			}
 		}
 		let deadline = Date().addingTimeInterval(10)
 		while Date() < deadline, !hosted.isEmpty {
@@ -332,6 +348,10 @@ public final class RoutingMachman: MachmanControlling {
 		let hostID = identity.id
 		return try await RemoteMachman(
 			socketPath: identity.socketPath, clientName: "machman-agent-router",
+			// Tight: spawnHost retries this in a loop and adoption runs it per socket while
+			// the server parks requests — a vmhost that accepts but never answers hello must
+			// fail fast, not add 30 s per attempt.
+			helloDeadline: .seconds(10),
 			onDisconnect: { [weak self] in
 				Task { @MainActor [weak self] in
 					self?.hostGone(id: hostID)

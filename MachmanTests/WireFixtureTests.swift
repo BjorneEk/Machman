@@ -191,6 +191,9 @@ struct WireFixtureTests {
 		// macConflict's raw value is wire contract from 3.5 on.
 		#expect(try decode(MachmanError.self, #"{"code":"macConflict","message":"m"}"#).code
 			== .macConflict)
+		// timeout is additive (1.0.9): pre-timeout clients fall back to internalError above.
+		#expect(try decode(MachmanError.self, #"{"code":"timeout","message":"m"}"#).code
+			== .timeout)
 
 		// 1.0.8: the last five closed enums decode unknown values to .unknown instead of
 		// failing the whole payload (the daemon rejects .unknown in requests).

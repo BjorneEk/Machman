@@ -25,13 +25,27 @@ public actor RPCConnection {
 		}
 	}
 
+	// Every call is bounded (E5): a peer that accepted the connection but stopped answering
+	// must fail THAT call, not park it forever — an unbounded wait wedges the daemon's quit
+	// path and every client's in-flight guard behind one hung vmhost.
+	public static let defaultCallDeadline: Duration = .seconds(30)
+	// For calls that legitimately run long: forwarded boots, shadow builds, and whole-disk
+	// byte copies (cross-volume copy/import/promote/safe-save, Rosetta download). Generous
+	// on purpose — the deadline exists to break wedges, never to cut off honest work.
+	public static let slowCallDeadline: Duration = .seconds(3600)
+
+	private struct PendingCall {
+		let continuation: CheckedContinuation<Data, Error>
+		let timer: Task<Void, Never>
+	}
+
 	private let fd: Int32
 	// The pid on the other end of the socket, captured once at connect. The daemon's
 	// safe-run sweep matches it against shadow markers — exact peer identity with no wire
 	// change. nil only if the getsockopt fails.
 	public nonisolated let peerPID: Int32?
 	private var nextID = 1
-	private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
+	private var pending: [Int: PendingCall] = [:]
 	private var eventSubscribers: [UUID: AsyncStream<VMEvent>.Continuation] = [:]
 	private var closed = false
 	// Fired once when the connection dies (EOF, write failure) — after pending calls fail.
@@ -106,16 +120,19 @@ public actor RPCConnection {
 	// MARK: - Calls
 
 	public func call<P: Codable, R: Codable>(
-		_ method: RPCMethod, _ params: P?, expecting: R.Type
+		_ method: RPCMethod, _ params: P?, expecting: R.Type,
+		deadline: Duration = RPCConnection.defaultCallDeadline
 	) async throws -> R {
-		let line = try await roundTrip(method, params)
+		let line = try await roundTrip(method, params, deadline: deadline)
 		if let failure = try? MachmanWire.decoder().decode(RPCErrorReply.self, from: line) {
 			throw failure.error.machmanError
 		}
 		return try MachmanWire.decoder().decode(RPCResult<R>.self, from: line).result
 	}
 
-	private func roundTrip<P: Codable>(_ method: RPCMethod, _ params: P?) async throws -> Data {
+	private func roundTrip<P: Codable>(
+		_ method: RPCMethod, _ params: P?, deadline: Duration
+	) async throws -> Data {
 		guard !closed else { throw ConnectionError.disconnected }
 		let id = nextID
 		nextID += 1
@@ -125,9 +142,36 @@ public actor RPCConnection {
 			teardown()
 			throw ConnectionError.disconnected
 		}
-		return try await withCheckedThrowingContinuation { continuation in
-			pending[id] = continuation
+		// The wait is bounded, and cancelling the calling task abandons it. Both fail ONLY
+		// this call: the connection stays up and nothing is torn down — a slow peer is not a
+		// dead peer, and escalating here would be destructive (hostGone deletes safe-run
+		// state). If the reply arrives later, dispatch drops it as an unknown id.
+		return try await withTaskCancellationHandler {
+			try await withCheckedThrowingContinuation { continuation in
+				let timer = Task { [weak self] in
+					try? await Task.sleep(for: deadline)
+					guard !Task.isCancelled else { return }
+					await self?.expire(id: id, method: method, deadline: deadline)
+				}
+				pending[id] = PendingCall(continuation: continuation, timer: timer)
+			}
+		} onCancel: {
+			Task { await self.abandon(id: id) }
 		}
+	}
+
+	private func expire(id: Int, method: RPCMethod, deadline: Duration) {
+		guard let call = pending.removeValue(forKey: id) else { return }
+		call.continuation.resume(throwing: MachmanError(
+			code: .timeout,
+			message: "no reply to \(method.rawValue) after "
+				+ "\(deadline.components.seconds)s — the serving process may be hung"))
+	}
+
+	private func abandon(id: Int) {
+		guard let call = pending.removeValue(forKey: id) else { return }
+		call.timer.cancel()
+		call.continuation.resume(throwing: CancellationError())
 	}
 
 	private func writeLine(_ data: Data) -> Bool {
@@ -162,9 +206,12 @@ public actor RPCConnection {
 			}
 			return
 		}
-		if case .number(let id)? = peek.id, let continuation = pending.removeValue(forKey: id) {
+		if case .number(let id)? = peek.id, let call = pending.removeValue(forKey: id) {
 			// The raw line goes back; the typed caller decodes result or error itself.
-			continuation.resume(returning: line)
+			// A reply whose id is no longer pending (timed out, cancelled) falls through
+			// here and is dropped — abandoning a call must tolerate its late answer.
+			call.timer.cancel()
+			call.continuation.resume(returning: line)
 		}
 	}
 
@@ -190,8 +237,9 @@ public actor RPCConnection {
 		guard !closed else { return }
 		closed = true
 		close(fd)
-		for continuation in pending.values {
-			continuation.resume(throwing: ConnectionError.disconnected)
+		for call in pending.values {
+			call.timer.cancel()
+			call.continuation.resume(throwing: ConnectionError.disconnected)
 		}
 		pending.removeAll()
 		for continuation in eventSubscribers.values {

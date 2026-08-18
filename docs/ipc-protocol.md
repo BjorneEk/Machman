@@ -34,6 +34,14 @@ method-not-found (1.0.8; older daemons wrongly replied with `"id":null`).
 
 Clients should send `machman.hello` first and check `apiVersion` (currently `1`).
 
+Requests carry **client-side deadlines**: nothing on the wire expresses one, but every caller
+should bound its wait and abandon the id on expiry (the Swift client defaults to 30 s, with
+generous bounds for boot/copy-class calls). Abandoning is unilateral and safe by protocol
+rule: a response whose id is no longer awaited is silently dropped, so a late reply from a
+slow server is never misdelivered. A deadline expiring says nothing about the server — the
+call may still complete server-side (watch events for the outcome); clients must not treat a
+timeout as a dead connection.
+
 ### Errors
 
 ```
@@ -43,7 +51,9 @@ Clients should send `machman.hello` first and check `apiVersion` (currently `1`)
 Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not found,
 -32602 invalid params) plus `-32000` for application errors. `data.machmanCode` is one of:
 `notFound`, `alreadyExists`, `invalidState`, `macConflict`, `invalidArgument`,
-`ioFailure`, `virtualizationFailure`, `installFailure`, `internalError`.
+`ioFailure`, `virtualizationFailure`, `installFailure`, `internalError`, `timeout`
+(1.0.9+: the daemon's own bounded call to a vmhost got no reply — the vmhost is left
+alone; unknown codes decode as `internalError`, so the list is additively extensible).
 
 ## Methods
 

@@ -16,14 +16,25 @@ public final class RemoteMachman: MachmanControlling {
 	public var peerPID: Int32? { connection.peerPID }
 
 	// Connects, performs the hello handshake, and refuses on api-version mismatch.
+	// helloDeadline: the daemon's spawn/adopt retry loops pass a tight bound so a vmhost
+	// that accepts but never answers cannot wedge them (E5).
 	public init(
 		socketPath: String = MachmanPaths.daemonSocketPath(),
 		clientName: String,
+		helloDeadline: Duration = RPCConnection.defaultCallDeadline,
 		onDisconnect: @escaping @Sendable () -> Void = {}
 	) async throws {
 		connection = try RPCConnection(socketPath: socketPath, onDisconnect: onDisconnect)
-		hello = try await connection.call(
-			.hello, RPCParams.Hello(client: clientName), expecting: RPCResults.Hello.self)
+		do {
+			hello = try await connection.call(
+				.hello, RPCParams.Hello(client: clientName),
+				expecting: RPCResults.Hello.self, deadline: helloDeadline)
+		} catch {
+			// A hello timeout leaves the socket open — close it, or every retry in the
+			// daemon's connect loops leaks an fd and a reader thread.
+			await connection.disconnect()
+			throw error
+		}
 		guard hello.apiVersion == MachmanProtocol.apiVersion else {
 			await connection.disconnect()
 			throw MachmanError(
@@ -37,8 +48,12 @@ public final class RemoteMachman: MachmanControlling {
 		await connection.disconnect()
 	}
 
-	private func void<P: Codable>(_ method: RPCMethod, _ params: P?) async throws {
-		_ = try await connection.call(method, params, expecting: RPCEmpty.self)
+	private func void<P: Codable>(
+		_ method: RPCMethod, _ params: P?,
+		deadline: Duration = RPCConnection.defaultCallDeadline
+	) async throws {
+		_ = try await connection.call(method, params, expecting: RPCEmpty.self,
+			deadline: deadline)
 	}
 
 	// MARK: - MachmanControlling
@@ -72,11 +87,12 @@ public final class RemoteMachman: MachmanControlling {
 	public func copyVM(
 		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
 	) async throws -> VMInfo {
+		// A cross-volume copy is a real byte copy — bounded generously, not at the default.
 		try await connection.call(
 			.vmCopy,
 			RPCParams.Copy(
 				name: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC),
-			expecting: VMInfo.self)
+			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
 	}
 
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {
@@ -101,15 +117,16 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
+		// Copies the external image into VM ownership — byte-copy class, like vm.copy.
 		try await connection.call(
 			.diskImport, RPCParams.ImportDisk(name: name, path: path),
-			expecting: VMInfo.self)
+			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
 	}
 
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
 		try await connection.call(
 			.diskPromote, RPCParams.RemoveDisk(name: name, diskID: diskID),
-			expecting: VMInfo.self)
+			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
@@ -276,7 +293,9 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func installRosetta() async throws {
-		try await void(.installRosetta, RPCEmpty?.none)
+		// Downloads from Apple behind the scenes — slow-class, not the 30 s default.
+		try await void(.installRosetta, RPCEmpty?.none,
+			deadline: RPCConnection.slowCallDeadline)
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
@@ -300,11 +319,20 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func start(vm name: String, options: StartOptions) async throws {
-		try await void(.start, RPCParams.Start(name: name, options: options))
+		// Covers the daemon's whole start: spawn + forwarded boot, and for safe runs a
+		// shadow build that byte-copies external images — slow-class by construction.
+		try await void(.start, RPCParams.Start(name: name, options: options),
+			deadline: RPCConnection.slowCallDeadline)
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {
-		try await void(.stop, RPCParams.Stop(name: name, mode: mode))
+		try await stop(vm: name, mode: mode, deadline: RPCConnection.defaultCallDeadline)
+	}
+
+	// Deadline seam (not on MachmanControlling): the daemon's quit path bounds each hosted
+	// stop tighter than the default so one wedged vmhost cannot stall the terminate reply.
+	public func stop(vm name: String, mode: StopMode, deadline: Duration) async throws {
+		try await void(.stop, RPCParams.Stop(name: name, mode: mode), deadline: deadline)
 	}
 
 	public func openWindow(vm name: String) async throws {
@@ -336,9 +364,10 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		// Shadow promotion can copy across volumes (the engine's own caveat) — slow-class.
 		try await connection.call(
 			.safeSave, RPCParams.Rename(name: name, newName: newName),
-			expecting: VMInfo.self)
+			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
 	}
 
 	public func retire() async throws {
