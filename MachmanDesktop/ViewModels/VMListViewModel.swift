@@ -1176,6 +1176,22 @@ final class VMListViewModel: ObservableObject {
 
 	// MARK: - Canvas commands (menu shortcuts)
 
+	// Opening rides on selection CHANGE (the tree's only channel), so a row left selected
+	// after its tab closed is a dead end — clicking it again cannot re-fire. Every path
+	// that takes a tab off a canvas (close, tear-off, torn-window close) reports here.
+	func tabClosed(_ tab: VMPaneTab, vm: String) {
+		guard vm == selectedName else { return }
+		treeSelection.remove(Self.treeNode(for: tab))
+	}
+
+	private static func treeNode(for tab: VMPaneTab) -> SidebarNode {
+		switch tab {
+		case .config: return .vmRoot
+		case .terminal(let ref): return .serial(ref)
+		case .ssh(let ref): return .sshSession(ref)
+		}
+	}
+
 	func cycleTab(forward: Bool) {
 		guard let name = selectedName else { return }
 		var canvas = canvases.canvas(for: name)
@@ -1201,6 +1217,7 @@ final class VMListViewModel: ObservableObject {
 		}
 		canvas.close(tab)
 		canvases.setCanvas(canvas, for: name)
+		tabClosed(tab, vm: name)
 		return true
 	}
 

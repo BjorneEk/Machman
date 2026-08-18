@@ -250,6 +250,7 @@ struct VMCanvasView: View {
 			sessions.dropSSHController(vm: vm.name, ref: ref)
 		}
 		mutate { $0.close(tab) }
+		viewModel.tabClosed(tab, vm: vm.name)
 	}
 
 	private func closeOthers(than tab: VMPaneTab, in pane: CanvasPane) {
@@ -265,6 +266,7 @@ struct VMCanvasView: View {
 	// alive, and the outgoing mount's last update takes it back.
 	private func tearOff(_ tab: VMPaneTab) {
 		mutate { $0.close(tab) }
+		viewModel.tabClosed(tab, vm: vm.name)   // next row click focuses the window
 		let payload = TornTab(vm: vm.name, tab: tab)
 		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
 	}

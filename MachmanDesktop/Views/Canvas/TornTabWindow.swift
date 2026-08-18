@@ -80,7 +80,8 @@ struct TornTabWindowView: View {
 		// it mounted) — closing the window closes the tab, tearing down its terminal.
 		// Deferred like the insert: both stores are @Published, and onDisappear runs
 		// mid-view-update.
-		.onDisappear { [payload, terminals = connection.terminals] in
+		.onDisappear { [payload, terminals = connection.terminals,
+			viewModel = connection.viewModel] in
 			DispatchQueue.main.async {
 				TornTabRegistry.shared.open.remove(payload)
 				if case .terminal(let ref) = payload.tab {
@@ -91,6 +92,7 @@ struct TornTabWindowView: View {
 					// tab: closing this window ends the ssh process.
 					terminals.dropSSHController(vm: payload.vm, ref: ref)
 				}
+				viewModel?.tabClosed(payload.tab, vm: payload.vm)
 			}
 		}
 	}

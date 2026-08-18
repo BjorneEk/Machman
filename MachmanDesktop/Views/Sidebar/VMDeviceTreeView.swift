@@ -465,6 +465,7 @@ struct VMDeviceTreeView: View {
 	private func closeSSHSession(_ ref: SSHSessionRef) {
 		sessions.dropSSHController(vm: vm.name, ref: ref)
 		mutateCanvas { $0.close(.ssh(ref)) }
+		viewModel.tabClosed(.ssh(ref), vm: vm.name)
 	}
 
 	// Move a tab out of the canvas into its own window (or focus the window it already
@@ -477,6 +478,7 @@ struct VMDeviceTreeView: View {
 			return
 		}
 		mutateCanvas { $0.close(tab) }
+		viewModel.tabClosed(tab, vm: vm.name)   // next row click focuses the window
 		let payload = TornTab(vm: vm.name, tab: tab)
 		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
 	}
@@ -1074,6 +1076,7 @@ struct VMDeviceTreeView: View {
 	private func closeTerminal(_ ref: SerialPortRef) {
 		sessions.dropController(vm: vm.name, ref: ref)
 		mutateCanvas { $0.close(.terminal(ref)) }
+		viewModel.tabClosed(.terminal(ref), vm: vm.name)
 	}
 
 	// MARK: - Helpers
