@@ -77,6 +77,16 @@ public final class RoutingMachman: MachmanControlling {
 	}
 	private var hosted: [String: HostedVM] = [:]   // keyed by VM name
 
+	// The start-window reservation. `hosted[name]` is written only after the NSWorkspace
+	// launch, the connect poll, and (for safe runs) a possibly minutes-long shadow build —
+	// so a guard that reads only `hosted` has a window where a booting VM looks idle: a
+	// second start would adopt-then-kill the half-spawned host, a delete would remove the
+	// directory under it, and a concurrent purgeDeadShadows would eat the in-flight shadow
+	// build. A name lives in here from start()'s first line until the start completed or
+	// failed; main-actor confinement makes the check-then-insert atomic. Internal (not
+	// private) as a test seam — tests reserve a name to exercise the guards.
+	var pendingStarts: Set<String> = []
+
 	public init(
 		registry: VMRegistry, daemonVersion: String,
 		launchAgents: LaunchAgentManager? = nil,
@@ -168,7 +178,10 @@ public final class RoutingMachman: MachmanControlling {
 	// Belt for the sweep: any start clears provably dead shadow leftovers for this VM, so a
 	// later daemon restart cannot misread them against the new run. Never touches a
 	// live-pid run root — a live pid means some vmhost owns the name's socket, and the
-	// probe/hosted guards arbitrate that.
+	// probe/hosted guards arbitrate that. A pid-NIL root can be an in-flight safe start's
+	// shadow build (marker written, pid stamped only after the spawn) — safe to purge here
+	// solely because the only caller is start(), which runs under the pendingStarts
+	// reservation: a second start of the same name is refused before it can reach this.
 	func purgeDeadShadows(for name: String, isPidAlive: (Int32) -> Bool = SafeRun.defaultPidAlive) {
 		let fm = FileManager.default
 		guard let entries = try? fm.contentsOfDirectory(atPath: machmanSafeDir) else { return }
@@ -477,9 +490,16 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// Whole-VM edits the framework fixes at start refuse rather than proxy while hosted.
+	// A pending start counts as hosted: the vmhost is (or is about to be) reading the very
+	// files these operations move, and its markRan whole-file save would silently revert
+	// any daemon-side edit that slipped through the spawn window.
 	private func refuseWhileHosted(_ name: String, _ action: String) throws {
 		guard hosted[name] == nil else {
 			throw MachmanError(code: .invalidState, message: "stop \(name) before \(action)")
+		}
+		guard !pendingStarts.contains(name) else {
+			throw MachmanError(
+				code: .invalidState, message: "\(name) is starting — wait before \(action)")
 		}
 	}
 
@@ -539,9 +559,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func deleteVM(named name: String) async throws {
-		guard hosted[name] == nil else {
-			throw MachmanError(code: .invalidState, message: "stop \(name) before deleting it")
-		}
+		try refuseWhileHosted(name, "deleting it")
 		// Capture the marker BEFORE the identity file dies with the VM dir.
 		let sshMarker = existingSSHMarker(name)
 		try await local.deleteVM(named: name)
@@ -553,9 +571,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func renameVM(named name: String, to newName: String) async throws {
-		guard hosted[name] == nil else {
-			throw MachmanError(code: .invalidState, message: "stop \(name) before renaming it")
-		}
+		try refuseWhileHosted(name, "renaming it")
 		try await local.renameVM(named: name, to: newName)
 		// The managed ssh alias is name-keyed; regeneration re-keys the block (the
 		// marker — and with it the reverse authorized_keys label — never changes).
@@ -584,9 +600,7 @@ public final class RoutingMachman: MachmanControlling {
 		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
 	) async throws -> VMInfo {
 		// Cloning images under an active writer produces torn copies.
-		guard hosted[name] == nil else {
-			throw MachmanError(code: .invalidState, message: "stop \(name) before copying it")
-		}
+		try refuseWhileHosted(name, "copying it")
 		return try await local.copyVM(
 			vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC)
 	}
@@ -594,10 +608,7 @@ public final class RoutingMachman: MachmanControlling {
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
 	// tracking captures macInUse at spawn — a mid-run change would desynchronize both.
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {
-		guard hosted[name] == nil else {
-			throw MachmanError(
-				code: .invalidState, message: "stop \(name) before regenerating its MAC")
-		}
+		try refuseWhileHosted(name, "regenerating its MAC")
 		return try await local.regenerateMAC(vm: name)
 	}
 
@@ -964,6 +975,9 @@ public final class RoutingMachman: MachmanControlling {
 		guard hosted[name] == nil else {
 			throw MachmanError(code: .invalidState, message: "\(name) is already running")
 		}
+		guard !pendingStarts.contains(name) else {
+			throw MachmanError(code: .invalidState, message: "\(name) is already starting")
+		}
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
 		}
@@ -972,6 +986,10 @@ public final class RoutingMachman: MachmanControlling {
 				code: .invalidState,
 				message: "(\(name)) cannot start while macOS is installing")
 		}
+		// Reserved before the first await; the defer releases on every exit, success or
+		// throw. Everything below (probe, spawn, shadow build) runs under this claim.
+		pendingStarts.insert(name)
+		defer { pendingStarts.remove(name) }
 		purgeDeadShadows(for: name)
 		// A live vmhost may already own this VM's socket — launchd autostart, or a spawn
 		// whose daemon died before forwarding start. Adopt it instead of racing it with a
@@ -1194,10 +1212,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {
-		guard hosted[name] == nil else {
-			throw MachmanError(
-				code: .invalidState, message: "Stop the VM before installing macOS")
-		}
+		try refuseWhileHosted(name, "installing macOS")
 		try await local.startMacInstall(vm: name, source: source)
 	}
 
