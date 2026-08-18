@@ -136,8 +136,18 @@ reverse_report() {
 }
 
 reverse_uninstall() {
-	[ -f "$HOME_DIR/.ssh/config" ] && strip_block "$HOME_DIR/.ssh/config"
-	rm -f "$HOME_DIR/.ssh/machman_host" "$HOME_DIR/.ssh/machman_host.pub" \
-		"$HOME_DIR/.ssh/machman_known_hosts"
+	# The same multi-user rule as ssh_uninstall: the keypair lives where install put it,
+	# not where detect_user points today. Only OUR key comes off (the marker comment
+	# names it) — a foreign-marker keypair belongs to another Machman VM.
+	for _ru_u in $(ssh_touched_users); do
+		_ru_h="$(home_of "$_ru_u")"
+		[ -n "$_ru_h" ] || continue
+		[ -f "$_ru_h/.ssh/config" ] && strip_block "$_ru_h/.ssh/config"
+		if grep -qF "$MARKER-reverse" "$_ru_h/.ssh/machman_host.pub" 2>/dev/null; then
+			rm -f "$_ru_h/.ssh/machman_host" "$_ru_h/.ssh/machman_host.pub" \
+				"$_ru_h/.ssh/machman_known_hosts"
+			ok "removed the guest -> host key from $_ru_u"
+		fi
+	done
 	return 0
 }

@@ -40,6 +40,20 @@ ssh_detect() {
 	return 0
 }
 
+# Every user whose home an install may have touched: today's pick, the state file's
+# record, the candidate scan, and root. Deduplicated, one per line — the uninstall
+# sweeps ALL of them, because install can leave keys behind for more than one user.
+ssh_touched_users() {
+	_stu_seen=""
+	for _stu_u in "$U" "$ST_SSH_USER" $(candidate_users) root; do
+		[ -n "$_stu_u" ] || continue
+		if has_word "$_stu_u" "$_stu_seen"; then continue; fi
+		_stu_seen="$_stu_seen $_stu_u"
+		printf '%s\n' "$_stu_u"
+	done
+	return 0
+}
+
 ssh_is_configured() {
 	[ -n "$SSH_INSTALLED_USER" ]
 }
@@ -341,14 +355,23 @@ ssh_report() {
 }
 
 ssh_uninstall() {
-	_su_ak="$HOME_DIR/.ssh/authorized_keys"
-	if [ -f "$_su_ak" ]; then
+	# Install can leave the key for more than one user (the "keeps the key too" branch),
+	# and detect_user's pick today need not be who install picked — strip the marker line
+	# from EVERY touched home, never just $U's.
+	for _su_u in $(ssh_touched_users); do
+		_su_h="$(home_of "$_su_u")"
+		[ -n "$_su_h" ] || continue
+		_su_ak="$_su_h/.ssh/authorized_keys"
+		[ -f "$_su_ak" ] || continue
+		grep -qF "$MARKER" "$_su_ak" || continue
 		_su_tmp="$_su_ak.machman-tmp"
 		grep -vF "$MARKER" "$_su_ak" > "$_su_tmp" || true
 		mv "$_su_tmp" "$_su_ak"
-		chown "$U:$GROUP" "$_su_ak"
+		chown "$_su_u:$(id -gn "$_su_u" 2>/dev/null || echo "$_su_u")" "$_su_ak" \
+			2>/dev/null || true
 		chmod 600 "$_su_ak"
-	fi
+		ok "removed the Mac's key from $_su_u"
+	done
 	if [ "$OS_FAMILY" = nixos ] && [ -f /etc/nixos/configuration.nix ] \
 		&& grep -q "# $MARKER" /etc/nixos/configuration.nix; then
 		_su_tmp="/etc/nixos/configuration.nix.machman-tmp"
