@@ -167,8 +167,9 @@ public final class RoutingMachman: MachmanControlling {
 	// Runs at daemon startup, after adoptExistingHosts (same ordering reason as
 	// sweepSafeRuns): whatever a crash-killed process left behind in a NON-hosted VM's
 	// directory is stale by definition — payloads are ephemeral (regenerated at start),
-	// and a disk-import staging file belongs to an operation that died with its process
-	// (none can be in flight here: requests are held until this sweep finishes). Hosted
+	// and a disk-import staging file or a downloaded restore image belongs to an
+	// operation that died with its process (none can be in flight here: requests are
+	// held until this sweep finishes, and installs only ever run in the daemon). Hosted
 	// VMs are skipped: the daemon never writes (or removes) inside a directory a vmhost
 	// is serving.
 	public func sweepStoppedVMLeftovers() {
@@ -183,6 +184,11 @@ public final class RoutingMachman: MachmanControlling {
 			guard !isSocketLive(Self.hostSocketPath(for: vm.name)) else { continue }
 			GuestSetupInstaller.removePayload(for: vm.config)
 			DiskImport.sweepStaleStaging(vmDir: vm.config.vmDirPath())
+			let ipsw = vm.config.configFilePath(file: MacInstaller.restoreImageFileName)
+			if FileManager.default.fileExists(atPath: ipsw) {
+				try? FileManager.default.removeItem(atPath: ipsw)
+				MachmanLogger.log(.log, "removed abandoned restore image for \(vm.name)")
+			}
 		}
 	}
 

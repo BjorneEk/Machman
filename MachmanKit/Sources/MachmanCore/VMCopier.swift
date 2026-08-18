@@ -53,7 +53,9 @@ enum VMCopier {
 
 	// Never travel: config is re-encoded; restore.ipsw is an install artifact that only
 	// survives crashes.
-	private static let alwaysSkipped: Set<String> = ["config", "restore.ipsw"]
+	private static let alwaysSkipped: Set<String> = [
+		"config", MacInstaller.restoreImageFileName,
+	]
 
 	// A fresh copy also drops the identity files: vm_identifier is lazily recreated on boot,
 	// mac_machine_id is minted below (the installer is its only other creator — omitting it

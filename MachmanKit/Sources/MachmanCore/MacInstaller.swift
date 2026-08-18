@@ -14,6 +14,11 @@ import Virtualization
 
 @MainActor
 final class MacInstaller {
+	// The downloaded image's holding name inside the VM dir — install input only, removed
+	// by the in-process defer; anything found between installs is crash residue (the
+	// startup sweep and the copier's skip list both key off this name).
+	nonisolated static let restoreImageFileName = "restore.ipsw"
+
 	enum Source {
 		case localIPSW(URL)
 		case latestSupported
@@ -189,7 +194,8 @@ final class MacInstaller {
 
 	private func downloadAndLoad(
 		from remote: URL, expectedSize: Int64? = nil) async throws -> (VZMacOSRestoreImage, URL) {
-		let localURL = URL(fileURLWithPath: config.configFilePath(file: "restore.ipsw"))
+		let localURL = URL(
+			fileURLWithPath: config.configFilePath(file: Self.restoreImageFileName))
 		try await download(from: remote, to: localURL)
 		do {
 			if let expectedSize = expectedSize {

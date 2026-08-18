@@ -105,8 +105,9 @@ struct RoutingProbeAdoptTests {
 	}
 
 	// D1's second blind spot: the startup leftover sweep must skip VMs whose socket answers
-	// even though the hosted map has never heard of them. Covers both leftovers it removes:
-	// the served payload and a crash-abandoned disk-import staging file (D3).
+	// even though the hosted map has never heard of them. Covers all three leftovers it
+	// removes: the served payload, a crash-abandoned disk-import staging file (D3), and a
+	// crash-abandoned downloaded restore image (D4).
 	@Test @MainActor func leftoverSweepSparesLiveUnadoptedHosts() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "alpha")
@@ -119,14 +120,18 @@ struct RoutingProbeAdoptTests {
 				at: payload, withIntermediateDirectories: true)
 			let staging = cfg.vmDirPath() + "/" + DiskImport.stagingPrefix + "leftover"
 			try Data("partial".utf8).write(to: URL(fileURLWithPath: staging))
+			let ipsw = cfg.configFilePath(file: MacInstaller.restoreImageFileName)
+			try Data("ipsw".utf8).write(to: URL(fileURLWithPath: ipsw))
 
 			routing.sweepStoppedVMLeftovers(isSocketLive: { _ in true })
 			#expect(FileManager.default.fileExists(atPath: payload.path))
 			#expect(FileManager.default.fileExists(atPath: staging))
+			#expect(FileManager.default.fileExists(atPath: ipsw))
 
 			routing.sweepStoppedVMLeftovers(isSocketLive: { _ in false })
 			#expect(!FileManager.default.fileExists(atPath: payload.path))
 			#expect(!FileManager.default.fileExists(atPath: staging))
+			#expect(!FileManager.default.fileExists(atPath: ipsw))
 		}
 	}
 }
