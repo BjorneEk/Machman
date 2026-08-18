@@ -333,13 +333,35 @@ console_act_systemd() {
 	return 0
 }
 
+# Which init PARSES /etc/inittab picks the line format — never which getty binary exists:
+# busybox init reads the id field as a device under /dev/ (a sysvinit-style "T0:" id makes
+# it respawn-loop on /dev/T0), sysvinit reads it as a free label. PID 1 tells the truth;
+# /sbin/init is the fallback for the no-/proc edge.
+console_inittab_is_busybox() {
+	_cib_exe="$(readlink /proc/1/exe 2>/dev/null)" || _cib_exe=""
+	[ -n "$_cib_exe" ] || { _cib_exe="$(readlink /sbin/init 2>/dev/null)" || _cib_exe=""; }
+	case "$_cib_exe" in
+	*busybox*) return 0 ;;
+	esac
+	return 1
+}
+
 console_act_inittab() {
 	if [ "$DRY_RUN" -eq 1 ]; then
 		acting "would add a getty line for $1 to /etc/inittab"
 		return 0
 	fi
-	if have agetty; then
-		_cai_line="T${2}:2345:respawn:$(command -v agetty) -L $1 115200 vt100"
+	if console_inittab_is_busybox; then
+		# busybox: the id field IS the device; agetty still serves the login when present.
+		if have agetty; then
+			_cai_line="$1::respawn:$(command -v agetty) -L $1 115200 vt100"
+		else
+			_cai_line="$1::respawn:/sbin/getty 38400 $1"
+		fi
+	elif have agetty; then
+		# sysvinit wants a unique 1-4 char id; M<n> stays clear of the distros' own
+		# T0/T1 serial entries.
+		_cai_line="M${2}:2345:respawn:$(command -v agetty) -L $1 115200 vt100"
 	else
 		_cai_line="$1::respawn:/sbin/getty 38400 $1"
 	fi
