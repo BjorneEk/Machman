@@ -27,10 +27,15 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	private var sshReportMtime: Date?
 	// Called exactly once, after the VZ machine is gone (guest stop, forced stop, or crash).
 	var onTeardown: (() -> Void)?
+	// This run's system key capture: starts as the display device's default, then only the
+	// VM window's menu and hotkeys change it — never written back to the config. Lives here,
+	// not on the window, so it survives Close Window/reopen and dies with the run.
+	var systemKeyCapture: SystemKeyCapture
 
 	init(config: VMConfig, events: EventBus) {
 		self.config = config
 		self.events = events
+		self.systemKeyCapture = config.systemKeyCaptureDefault
 		super.init()
 	}
 

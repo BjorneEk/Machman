@@ -33,12 +33,14 @@ struct VirtualMachineView: NSViewRepresentable {
 
 struct VMView: View {
 	var vm: VZVirtualMachine
-	init(vm: VZVirtualMachine) {
+	var onCreate: ((VZVirtualMachineView) -> Void)?
+	init(vm: VZVirtualMachine, onCreate: ((VZVirtualMachineView) -> Void)? = nil) {
 		self.vm = vm
+		self.onCreate = onCreate
 	}
 
 	var body: some View {
-		VirtualMachineView(virtualMachine: vm)
+		VirtualMachineView(virtualMachine: vm, onCreate: onCreate)
 	}
 }
 

@@ -30,6 +30,9 @@ public enum VMHostBootstrap {
 		// The VM window flips this process to a real app (Dock icon, menus) while a window is
 		// open — a per-VM app the user can ⌘-Tab to — and back to accessory when it closes.
 		registry.presenter.managesActivationPolicy = true
+		// …and the window's system key capture, whose hotkeys, menus and full-screen chrome
+		// are all process-wide — per VM only because this process is.
+		registry.presenter.managesKeyCapture = true
 		guard registry.vm(named: vmName) != nil else {
 			MachmanLogger.log(.passiveError, "no VM named '\(vmName)' in \(dataDir)")
 			exit(64)

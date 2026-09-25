@@ -44,6 +44,14 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	// the menu-bar agent's LSUIElement — and there it is provably inert anyway: since the
 	// vmhost split the daemon never runs a VM, so its presenter never opens a window.
 	var managesActivationPolicy = false
+	// vmhost-only as well: system key capture (KeyCapture.swift) — its hotkeys, menus and
+	// full-screen chrome are process-wide, so only a one-VM process may own them.
+	var managesKeyCapture = false
+	// Injected by the registry: the run's capture mode (VMRuntime) — nil once not running.
+	var captureMode: ((String) -> SystemKeyCapture?)?
+	var setCaptureMode: ((String, SystemKeyCapture) -> Void)?
+	// Keyed by window, not name: safeSave renames the VM under an open window.
+	private var keyCaptures: [ObjectIdentifier: KeyCaptureController] = [:]
 
 	func openWindow(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
@@ -63,7 +71,12 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		)
 		window.center()
 		window.title = name
-		window.contentView = NSHostingView(rootView: VMView(vm: vz))
+		// Weak: the controller holds the window, and this closure lives inside its content.
+		let capture = managesKeyCapture ? makeKeyCapture(for: window) : nil
+		let content = VMView(vm: vz, onCreate: { [weak capture] view in
+			capture?.attach(view)
+		})
+		window.contentView = NSHostingView(rootView: content)
 		window.makeKeyAndOrderFront(nil)
 		window.isReleasedWhenClosed = false
 		window.delegate = self
@@ -99,10 +112,53 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		guard let window = windows[name] else { return }
 		window.delegate = nil
 		windows[name] = nil
+		keyCaptures.removeValue(forKey: ObjectIdentifier(window))?.tearDown()
 		if managesActivationPolicy, windows.isEmpty {
 			NSApp.setActivationPolicy(.accessory)
 		}
 		onWindowChanged?()
+	}
+
+	// MARK: - System key capture
+
+	private func makeKeyCapture(for window: NSWindow) -> KeyCaptureController {
+		let controller = KeyCaptureController(
+			window: window,
+			mode: { [weak self, weak window] in
+				guard let self, let window, let name = self.name(of: window) else { return .off }
+				return self.captureMode?(name) ?? .off
+			},
+			setMode: { [weak self, weak window] mode in
+				guard let self, let window, let name = self.name(of: window) else { return }
+				self.setCaptureMode?(name, mode)
+			})
+		keyCaptures[ObjectIdentifier(window)] = controller
+		return controller
+	}
+
+	private func name(of window: NSWindow) -> String? {
+		windows.first { $0.value === window }?.key
+	}
+
+	private func keyCapture(_ notification: Notification) -> KeyCaptureController? {
+		guard let window = notification.object as? NSWindow else { return nil }
+		return keyCaptures[ObjectIdentifier(window)]
+	}
+
+	func windowDidBecomeKey(_ notification: Notification) {
+		keyCapture(notification)?.windowDidBecomeKey()
+	}
+
+	func windowDidEnterFullScreen(_ notification: Notification) {
+		keyCapture(notification)?.windowDidEnterFullScreen()
+	}
+
+	func windowWillExitFullScreen(_ notification: Notification) {
+		keyCapture(notification)?.windowWillExitFullScreen()
+	}
+
+	func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+		keyCaptures[ObjectIdentifier(window)]?.windowDidFailToEnterFullScreen()
 	}
 
 	// MARK: - Close prompt

@@ -95,6 +95,12 @@ public final class VMRegistry {
 		presenter.onWindowChanged = { [weak self] in
 			self?.events.emit(.listChanged)
 		}
+		presenter.captureMode = { [weak self] name in
+			self?.vms[name]?.runtime?.systemKeyCapture
+		}
+		presenter.setCaptureMode = { [weak self] name, mode in
+			self?.vms[name]?.runtime?.systemKeyCapture = mode
+		}
 		presenter.onCaptureFailed = { [weak self] failure in
 			switch failure {
 			case .windowNotFound(let id):
