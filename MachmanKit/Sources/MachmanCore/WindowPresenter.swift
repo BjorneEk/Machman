@@ -183,6 +183,15 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		return keyCaptures.count == 1 ? keyCaptures.values.first : nil
 	}
 
+	// VMHostApplication's key interceptor: a key event belongs to the VM window it is for.
+	func interceptKey(_ event: NSEvent) -> Bool {
+		guard let window = event.window ?? NSApp.keyWindow,
+			let capture = keyCaptures[ObjectIdentifier(window)] else {
+			return false
+		}
+		return capture.interceptKey(event)
+	}
+
 	@objc func selectCaptureMode(_ sender: NSMenuItem) {
 		guard let raw = sender.representedObject as? String,
 			let mode = SystemKeyCapture(rawValue: raw) else {

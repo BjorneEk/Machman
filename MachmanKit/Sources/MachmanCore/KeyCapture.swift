@@ -14,6 +14,23 @@ import SwiftUI
 import Virtualization
 import MachmanAPI
 
+// The vmhost's application object. VZVirtualMachineView runs its own local key monitor
+// (its _keyEventMonitor ivar) that swallows every key while the view has focus — a monitor
+// of ours never saw the reserved chords (2026-09-26), and neither did menu key equivalents.
+// AppKit dispatches local monitors from inside NSApplication.sendEvent, so an override that
+// acts before calling super comes first.
+final class VMHostApplication: NSApplication {
+	// true = the event was Machman's and is consumed.
+	var keyInterceptor: (@MainActor (NSEvent) -> Bool)?
+
+	override func sendEvent(_ event: NSEvent) {
+		if event.type == .keyDown || event.type == .keyUp, keyInterceptor?(event) == true {
+			return
+		}
+		super.sendEvent(event)
+	}
+}
+
 // The decisions, pure so they are testable without a window or a VM.
 enum KeyCapturePolicy {
 	// VZ additionally honors capture only while its view is first responder in the key
@@ -176,7 +193,9 @@ final class KeyCaptureController {
 	private(set) var inFullScreen = false
 	private(set) var isCapturing = false
 	private var loggedMode: SystemKeyCapture?
-	private var keyMonitor: Any?
+	// The key of a chord we consumed: its key-up is consumed too, so the guest never sees a
+	// release without a press.
+	private var consumedKeyCode: UInt16?
 	// Main-menu shortcuts parked while capturing, so ⌘Q/⌘W reach the guest too.
 	private var parkedKeyEquivalents: [(NSMenuItem, String, NSEvent.ModifierFlags)] = []
 
@@ -187,7 +206,6 @@ final class KeyCaptureController {
 		self.window = window
 		self.readMode = mode
 		self.writeMode = setMode
-		installKeyMonitor()
 	}
 
 	var mode: SystemKeyCapture { readMode() }
@@ -243,36 +261,32 @@ final class KeyCaptureController {
 		refresh(cause: "full screen failed")
 	}
 
-	// The window is going away: never leave a dangling capture, monitor or parked menu.
+	// The window is going away: never leave a dangling capture or parked menu.
 	func tearDown() {
 		view?.capturesSystemKeys = false
 		isCapturing = false
 		restoreKeyEquivalents()
-		if let keyMonitor {
-			NSEvent.removeMonitor(keyMonitor)
-		}
-		keyMonitor = nil
 	}
 
-	// A local monitor sees each key event inside NSApplication.sendEvent, before the window,
-	// its VZ view or the menus do — so the reserved chords stay Machman's even while VZ
-	// captures. Held keys are swallowed without repeating the action.
-	private func installKeyMonitor() {
-		keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-			MainActor.assumeIsolated {
-				guard let self, event.window === self.window,
-					let key = KeyCapturePolicy.reservedKey(
-						characters: event.charactersIgnoringModifiers,
-						modifiers: event.modifierFlags)
-				else {
-					return event
-				}
-				if !event.isARepeat {
-					self.perform(key)
-				}
-				return nil
-			}
+	// Called from VMHostApplication.sendEvent for this window's key events, ahead of VZ's own
+	// monitor and the menus. Returns true when the event was a reserved chord (or its
+	// release) and is consumed; held keys are consumed without repeating the action.
+	func interceptKey(_ event: NSEvent) -> Bool {
+		if event.type == .keyUp {
+			guard event.keyCode == consumedKeyCode else { return false }
+			consumedKeyCode = nil
+			return true
 		}
+		guard let key = KeyCapturePolicy.reservedKey(
+			characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags)
+		else {
+			return false
+		}
+		consumedKeyCode = event.keyCode
+		if !event.isARepeat {
+			perform(key)
+		}
+		return true
 	}
 
 	private func perform(_ key: KeyCapturePolicy.ReservedKey) {

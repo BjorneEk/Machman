@@ -21,7 +21,9 @@ public enum VMHostBootstrap {
 	) -> Never {
 		machmanVMDir = dataDir
 
-		let app = NSApplication.shared
+		// The first NSApp access, so the shared application IS the subclass: its sendEvent
+		// is the only place the reserved chords can beat VZ's own key monitor.
+		let app = VMHostApplication.shared
 		app.setActivationPolicy(.accessory)
 
 		// library is passed only for safe runs (dataDir = the shadow run root then); it is
@@ -33,6 +35,9 @@ public enum VMHostBootstrap {
 		// …and the window's system key capture, whose hotkeys, menus and full-screen chrome
 		// are all process-wide — per VM only because this process is.
 		registry.presenter.managesKeyCapture = true
+		(app as? VMHostApplication)?.keyInterceptor = { [weak presenter = registry.presenter] in
+			presenter?.interceptKey($0) ?? false
+		}
 		guard registry.vm(named: vmName) != nil else {
 			MachmanLogger.log(.passiveError, "no VM named '\(vmName)' in \(dataDir)")
 			exit(64)
