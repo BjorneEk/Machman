@@ -34,13 +34,23 @@ struct VirtualMachineView: NSViewRepresentable {
 struct VMView: View {
 	var vm: VZVirtualMachine
 	var onCreate: ((VZVirtualMachineView) -> Void)?
-	init(vm: VZVirtualMachine, onCreate: ((VZVirtualMachineView) -> Void)? = nil) {
+	var captureStatus: KeyCaptureStatus?
+	init(
+		vm: VZVirtualMachine, onCreate: ((VZVirtualMachineView) -> Void)? = nil,
+		captureStatus: KeyCaptureStatus? = nil
+	) {
 		self.vm = vm
 		self.onCreate = onCreate
+		self.captureStatus = captureStatus
 	}
 
 	var body: some View {
 		VirtualMachineView(virtualMachine: vm, onCreate: onCreate)
+			.overlay(alignment: .top) {
+				if let captureStatus {
+					KeyCaptureToast(status: captureStatus)
+				}
+			}
 	}
 }
 

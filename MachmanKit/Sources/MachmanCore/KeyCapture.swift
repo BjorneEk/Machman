@@ -10,6 +10,7 @@
 //
 
 import AppKit
+import SwiftUI
 import Virtualization
 import MachmanAPI
 
@@ -123,11 +124,50 @@ enum KeyCaptureMenu {
 	}
 }
 
+// A short message over the VM display whenever capture flips — in full screen the hidden
+// menu bar leaves no other sign of where the keys go.
+@MainActor
+final class KeyCaptureStatus: ObservableObject {
+	@Published private(set) var message: String?
+	private var hideTask: Task<Void, Never>?
+
+	func show(_ message: String) {
+		self.message = message
+		hideTask?.cancel()
+		hideTask = Task { [weak self] in
+			try? await Task.sleep(for: .seconds(2.5))
+			guard !Task.isCancelled else { return }
+			self?.message = nil
+		}
+	}
+}
+
+struct KeyCaptureToast: View {
+	@ObservedObject var status: KeyCaptureStatus
+
+	var body: some View {
+		ZStack {
+			if let message = status.message {
+				Text(message)
+					.font(.system(size: 13, weight: .medium))
+					.padding(.horizontal, 14)
+					.padding(.vertical, 7)
+					.background(.regularMaterial, in: Capsule())
+					.padding(.top, 12)
+					.transition(.opacity)
+			}
+		}
+		.animation(.easeInOut(duration: 0.2), value: status.message)
+		.allowsHitTesting(false)
+	}
+}
+
 // One per VM window. Owns nothing about the run: the mode is read and written through the
 // presenter, which resolves the window's CURRENT VM name (safeSave renames mid-run).
 @MainActor
 final class KeyCaptureController {
 	let window: NSWindow
+	let status = KeyCaptureStatus()
 	private weak var view: VZVirtualMachineView?
 	private let readMode: () -> SystemKeyCapture
 	private let writeMode: (SystemKeyCapture) -> Void
@@ -286,12 +326,16 @@ final class KeyCaptureController {
 		} else {
 			restoreKeyEquivalents()
 		}
-		guard capturing != isCapturing || mode != loggedMode else { return }
+		let flipped = capturing != isCapturing
+		guard flipped || mode != loggedMode else { return }
 		isCapturing = capturing
 		loggedMode = mode
 		MachmanLogger.log(.log, "key capture: \(window.title) mode=\(mode.rawValue) "
 			+ "capturing=\(capturing) (\(cause))")
 		applyFullScreenChrome(capturing: capturing)
+		if flipped {
+			status.show(capturing ? "System keys → guest · ⌃⌥⌘K releases" : "System keys → Mac")
+		}
 	}
 
 	// A capture change INSIDE full screen swaps the Dock/menu-bar options live. Only between

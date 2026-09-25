@@ -73,9 +73,9 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		window.title = name
 		// Weak: the controller holds the window, and this closure lives inside its content.
 		let capture = managesKeyCapture ? makeKeyCapture(for: window) : nil
-		let content = VMView(vm: vz, onCreate: { [weak capture] view in
-			capture?.attach(view)
-		})
+		let content = VMView(
+			vm: vz, onCreate: { [weak capture] view in capture?.attach(view) },
+			captureStatus: capture?.status)
 		window.contentView = NSHostingView(rootView: content)
 		window.makeKeyAndOrderFront(nil)
 		window.isReleasedWhenClosed = false
