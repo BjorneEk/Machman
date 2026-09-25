@@ -83,4 +83,49 @@ struct KeyCapturePolicyTests {
 				characters: $0.keyEquivalent, modifiers: $0.keyEquivalentModifierMask)
 		} == .toggleCapture)
 	}
+
+	// AppKit's documented presentation-option rules — an invalid set raises, which would
+	// take the vmhost (and its VM) down, so every output must satisfy all of them.
+	private func isValid(_ o: NSApplication.PresentationOptions) -> Bool {
+		let dock: NSApplication.PresentationOptions = [.autoHideDock, .hideDock]
+		let needsDock: NSApplication.PresentationOptions = [
+			.disableProcessSwitching, .disableForceQuit, .disableSessionTermination,
+			.disableMenuBarTransparency,
+		]
+		if o.contains(dock) || o.contains([.autoHideMenuBar, .hideMenuBar]) { return false }
+		if o.contains(.hideMenuBar), !o.contains(.hideDock) { return false }
+		if o.contains(.autoHideMenuBar), o.isDisjoint(with: dock) { return false }
+		if !o.isDisjoint(with: needsDock), o.isDisjoint(with: dock) { return false }
+		if o.contains(.autoHideToolbar), !o.contains([.fullScreen, .autoHideMenuBar]) {
+			return false
+		}
+		return true
+	}
+
+	@Test func fullScreenOptionsStayValidBothWays() {
+		let appKitDefault: NSApplication.PresentationOptions =
+			[.fullScreen, .autoHideDock, .autoHideMenuBar]
+		let bases: [NSApplication.PresentationOptions] = [
+			appKitDefault,
+			appKitDefault.union(.autoHideToolbar),
+			appKitDefault.union(.disableMenuBarTransparency),
+			[.fullScreen, .hideDock, .hideMenuBar],   // our own capturing set, released
+		]
+		for base in bases {
+			let hidden = KeyCapturePolicy.fullScreenOptions(base, capturing: true)
+			#expect(isValid(hidden), "capturing from \(base.rawValue)")
+			#expect(hidden.contains([.fullScreen, .hideDock, .hideMenuBar]))
+
+			let shown = KeyCapturePolicy.fullScreenOptions(base, capturing: false)
+			#expect(isValid(shown), "released from \(base.rawValue)")
+			#expect(shown.contains([.fullScreen, .autoHideDock, .autoHideMenuBar]))
+
+			// Live toggling back and forth never drifts from those two sets.
+			let again = KeyCapturePolicy.fullScreenOptions(shown, capturing: true)
+			#expect(again == hidden.subtracting(.autoHideToolbar))
+		}
+		// Released from AppKit's own default is exactly that default.
+		#expect(KeyCapturePolicy.fullScreenOptions(appKitDefault, capturing: false)
+			== appKitDefault)
+	}
 }

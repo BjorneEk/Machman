@@ -157,6 +157,18 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		keyCapture(notification)?.windowWillExitFullScreen()
 	}
 
+	func windowDidExitFullScreen(_ notification: Notification) {
+		keyCapture(notification)?.windowDidExitFullScreen()
+	}
+
+	func window(
+		_ window: NSWindow,
+		willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
+	) -> NSApplication.PresentationOptions {
+		keyCaptures[ObjectIdentifier(window)]?
+			.fullScreenPresentationOptions(proposed: proposedOptions) ?? proposedOptions
+	}
+
 	func windowDidFailToEnterFullScreen(_ window: NSWindow) {
 		keyCaptures[ObjectIdentifier(window)]?.windowDidFailToEnterFullScreen()
 	}

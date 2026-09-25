@@ -35,6 +35,26 @@ enum KeyCapturePolicy {
 		return fullScreen ? .fullScreen : .always
 	}
 
+	// Full-screen chrome: while capturing, the host Dock and menu bar are HIDDEN so they never
+	// slide in over the guest's own; otherwise they auto-hide (the AppKit default). An invalid
+	// combination makes AppKit raise — which would take the vmhost and its VM down — so this
+	// only ever swaps the Dock/menu-bar flags and keeps the documented rules: hideMenuBar
+	// needs hideDock, and autoHideToolbar needs autoHideMenuBar.
+	static func fullScreenOptions(
+		_ base: NSApplication.PresentationOptions, capturing: Bool
+	) -> NSApplication.PresentationOptions {
+		var options = base
+		options.subtract([.autoHideDock, .hideDock, .autoHideMenuBar, .hideMenuBar])
+		if capturing {
+			options.subtract(.autoHideToolbar)
+			options.formUnion([.hideDock, .hideMenuBar])
+		} else {
+			options.formUnion([.autoHideDock, .autoHideMenuBar])
+		}
+		options.insert(.fullScreen)
+		return options
+	}
+
 	// The keys Machman keeps for itself, captured or not: ⌃⌥⌘ + a letter, a chord no system
 	// shortcut uses. Matched on characters (like menu key equivalents, so it follows the
 	// keyboard layout) with exactly ⌃⌥⌘ held — Shift makes it a different chord.
@@ -151,6 +171,15 @@ final class KeyCaptureController {
 		focusView()
 	}
 
+	// What the window enters full screen with: hidden Dock and menu bar if this run captures
+	// there, the proposal untouched otherwise.
+	func fullScreenPresentationOptions(
+		proposed: NSApplication.PresentationOptions
+	) -> NSApplication.PresentationOptions {
+		KeyCapturePolicy.isCapturing(mode: mode, fullScreen: true)
+			? KeyCapturePolicy.fullScreenOptions(proposed, capturing: true) : proposed
+	}
+
 	func windowDidEnterFullScreen() {
 		inFullScreen = true
 		focusView()
@@ -160,6 +189,13 @@ final class KeyCaptureController {
 	func windowWillExitFullScreen() {
 		inFullScreen = false
 		refresh(cause: "leaving full screen")
+	}
+
+	// Belt: full screen is over, so no hidden-Dock/menu-bar option may outlive it.
+	func windowDidExitFullScreen() {
+		if !NSApp.presentationOptions.isEmpty {
+			NSApp.presentationOptions = []
+		}
 	}
 
 	func windowDidFailToEnterFullScreen() {
@@ -255,5 +291,19 @@ final class KeyCaptureController {
 		loggedMode = mode
 		MachmanLogger.log(.log, "key capture: \(window.title) mode=\(mode.rawValue) "
 			+ "capturing=\(capturing) (\(cause))")
+		applyFullScreenChrome(capturing: capturing)
+	}
+
+	// A capture change INSIDE full screen swaps the Dock/menu-bar options live. Only between
+	// didEnter and willExit (inFullScreen) and only while AppKit itself reports full screen —
+	// never mid-transition, where AppKit owns the options.
+	private func applyFullScreenChrome(capturing: Bool) {
+		let current = NSApp.presentationOptions
+		guard inFullScreen, current.contains(.fullScreen) else { return }
+		let options = KeyCapturePolicy.fullScreenOptions(current, capturing: capturing)
+		guard options != current else { return }
+		NSApp.presentationOptions = options
+		MachmanLogger.log(.log, "key capture: \(window.title) full-screen chrome "
+			+ (capturing ? "hidden" : "auto-hide"))
 	}
 }
