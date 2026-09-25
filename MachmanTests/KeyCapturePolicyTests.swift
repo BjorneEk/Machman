@@ -1,4 +1,5 @@
 import Testing
+import AppKit
 import MachmanAPI
 @testable import MachmanCore
 
@@ -43,5 +44,43 @@ struct KeyCapturePolicyTests {
 			let back = KeyCapturePolicy.toggled(mode: off, fullScreen: fullScreen)
 			#expect(KeyCapturePolicy.isCapturing(mode: back, fullScreen: fullScreen))
 		}
+	}
+
+	// ⌃⌥⌘K / ⌃⌥⌘F stay Machman's: exactly ⌃⌥⌘ (caps lock and fn don't matter), any case.
+	@Test func reservedKeysNeedExactlyControlOptionCommand() {
+		let chord: NSEvent.ModifierFlags = [.control, .option, .command]
+		#expect(KeyCapturePolicy.reservedKey(characters: "k", modifiers: chord)
+			== .toggleCapture)
+		#expect(KeyCapturePolicy.reservedKey(characters: "f", modifiers: chord)
+			== .toggleFullScreen)
+		#expect(KeyCapturePolicy.reservedKey(characters: "K", modifiers: chord)
+			== .toggleCapture)
+		#expect(KeyCapturePolicy.reservedKey(
+			characters: "k", modifiers: chord.union([.capsLock, .function]))
+			== .toggleCapture)
+
+		#expect(KeyCapturePolicy.reservedKey(
+			characters: "k", modifiers: chord.union(.shift)) == nil)
+		#expect(KeyCapturePolicy.reservedKey(characters: "k", modifiers: .command) == nil)
+		#expect(KeyCapturePolicy.reservedKey(
+			characters: "f", modifiers: [.control, .command]) == nil)   // ⌃⌘F: guest's
+		#expect(KeyCapturePolicy.reservedKey(characters: "q", modifiers: chord) == nil)
+		#expect(KeyCapturePolicy.reservedKey(characters: nil, modifiers: chord) == nil)
+	}
+
+	// The menus show the same chords the monitor matches — one source for both.
+	@Test @MainActor func menuItemsCarryTheReservedChords() {
+		let fullScreen = KeyCaptureMenu.fullScreenItem()
+		#expect(KeyCapturePolicy.reservedKey(
+			characters: fullScreen.keyEquivalent,
+			modifiers: fullScreen.keyEquivalentModifierMask) == .toggleFullScreen)
+		let keyboard = KeyCaptureMenu.keyboardMenuItem(target: WindowPresenter())
+		let toggle = keyboard.submenu?.items.first {
+			$0.action == #selector(WindowPresenter.toggleCapture(_:))
+		}
+		#expect(toggle.map {
+			KeyCapturePolicy.reservedKey(
+				characters: $0.keyEquivalent, modifiers: $0.keyEquivalentModifierMask)
+		} == .toggleCapture)
 	}
 }

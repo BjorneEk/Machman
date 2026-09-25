@@ -161,6 +161,28 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		keyCaptures[ObjectIdentifier(window)]?.windowDidFailToEnterFullScreen()
 	}
 
+	// The Keyboard menu acts on the VM window in front (a vmhost has just the one).
+	private var activeKeyCapture: KeyCaptureController? {
+		for window in [NSApp.keyWindow, NSApp.mainWindow].compactMap({ $0 }) {
+			if let capture = keyCaptures[ObjectIdentifier(window)] {
+				return capture
+			}
+		}
+		return keyCaptures.count == 1 ? keyCaptures.values.first : nil
+	}
+
+	@objc func selectCaptureMode(_ sender: NSMenuItem) {
+		guard let raw = sender.representedObject as? String,
+			let mode = SystemKeyCapture(rawValue: raw) else {
+			return
+		}
+		activeKeyCapture?.setMode(mode, cause: "menu")
+	}
+
+	@objc func toggleCapture(_ sender: Any?) {
+		activeKeyCapture?.toggle(cause: "menu")
+	}
+
 	// MARK: - Close prompt
 
 	func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -281,5 +303,22 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		let hint = CGPreflightScreenCaptureAccess() ? "" : " (this process preflights as denied)"
 		MachmanLogger.log(.passiveWarning, "preview capture failed: \(key)\(hint)")
 		onCaptureFailed?(failure)
+	}
+}
+
+// Check marks for the Keyboard menu: the run's mode, and whether capture is on right now.
+extension WindowPresenter: NSMenuItemValidation {
+	func validateMenuItem(_ item: NSMenuItem) -> Bool {
+		guard let capture = activeKeyCapture else { return false }
+		switch item.action {
+		case #selector(selectCaptureMode(_:)):
+			let selected = item.representedObject as? String == capture.mode.rawValue
+			item.state = selected ? .on : .off
+		case #selector(toggleCapture(_:)):
+			item.state = capture.isCapturing ? .on : .off
+		default:
+			break
+		}
+		return true
 	}
 }

@@ -54,7 +54,8 @@ public enum VMHostBootstrap {
 			presenter: registry.presenter, server: server)
 		Self.appDelegate = delegate   // app.delegate is unowned — something must own it
 		app.delegate = delegate
-		app.mainMenu = buildMainMenu(vmName: vmName, delegate: delegate)
+		app.mainMenu = buildMainMenu(
+			vmName: vmName, delegate: delegate, presenter: registry.presenter)
 
 		let lifecycle = Lifecycle()
 		// Exit when the VM stops (after having run). The idle backstop covers a spawn whose
@@ -130,7 +131,9 @@ public enum VMHostBootstrap {
 	// macOS may render the bold app-menu title from the bundle's display name; the items and
 	// the window title carry the VM name regardless.
 	@MainActor
-	private static func buildMainMenu(vmName: String, delegate: VMHostAppDelegate) -> NSMenu {
+	private static func buildMainMenu(
+		vmName: String, delegate: VMHostAppDelegate, presenter: WindowPresenter
+	) -> NSMenu {
 		let main = NSMenu()
 
 		let appItem = NSMenuItem()
@@ -150,6 +153,10 @@ public enum VMHostBootstrap {
 		viewMenu.addItem(NSMenuItem(
 			title: "Close Window",
 			action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+		viewMenu.addItem(.separator())
+		viewMenu.addItem(KeyCaptureMenu.fullScreenItem())
+
+		main.addItem(KeyCaptureMenu.keyboardMenuItem(target: presenter))
 
 		let stopItem = NSMenuItem()
 		main.addItem(stopItem)
