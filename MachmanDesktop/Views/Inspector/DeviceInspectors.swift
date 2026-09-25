@@ -211,6 +211,13 @@ struct GraphicsInspector: View {
 							.frame(width: 70)
 					}
 				}
+				Picker("Capture system keys", selection: captureBinding) {
+					Text("Off").tag(SystemKeyCapture.off)
+					Text("Always").tag(SystemKeyCapture.always)
+					Text("Full screen only").tag(SystemKeyCapture.fullScreen)
+				}
+				.help("Sends shortcuts like ⌘Space and ⌘Tab to the guest; ⌃⌥⌘K toggles it "
+					+ "while running.")
 				Text("Auto sizes from the host screen at start. Changes apply at the "
 					+ "next boot.")
 					.font(.caption)
@@ -272,6 +279,17 @@ struct GraphicsInspector: View {
 			set: { value in
 				var updated = device
 				updated.displayPixelsPerInch = value.map { max(40, min(300, $0)) }
+				viewModel.updateDevice(vm.name, device: updated)
+			})
+	}
+
+	// The default a run starts with (the run's own value lives in the VM window's menu).
+	private var captureBinding: Binding<SystemKeyCapture> {
+		Binding(
+			get: { device.systemKeyCapture ?? .off },
+			set: { value in
+				var updated = device
+				updated.systemKeyCapture = value
 				viewModel.updateDevice(vm.name, device: updated)
 			})
 	}
