@@ -295,6 +295,22 @@ struct WireFixtureTests {
 		#expect(legacy.enabled)
 	}
 
+	// 1.0.10: the display's system-key-capture default pins when set (nil stays omitted —
+	// the fixtures above), and an unknown future mode degrades to .unknown, not a failure.
+	@Test func systemKeyCaptureFixture() throws {
+		let graphics = DeviceInfo(kind: .graphics, systemKeyCapture: .fullScreen)
+		let expected = #"{"enabled":true,"kind":"graphics","systemKeyCapture":"fullScreen"}"#
+		#expect(try encode(graphics) == expected)
+		#expect(try decode(DeviceInfo.self, expected) == graphics)
+		#expect(try encode(DeviceInfo(kind: .graphics, systemKeyCapture: .always))
+			== #"{"enabled":true,"kind":"graphics","systemKeyCapture":"always"}"#)
+		#expect(try encode(DeviceInfo(kind: .graphics, systemKeyCapture: .off))
+			== #"{"enabled":true,"kind":"graphics","systemKeyCapture":"off"}"#)
+		let future = try decode(
+			DeviceInfo.self, #"{"kind":"graphics","systemKeyCapture":"whenFocused"}"#)
+		#expect(future.systemKeyCapture == .unknown)
+	}
+
 	@Test func vmInfoDevicesRoundTrip() throws {
 		var info = VMInfo(
 			name: "Debian", state: .stopped,

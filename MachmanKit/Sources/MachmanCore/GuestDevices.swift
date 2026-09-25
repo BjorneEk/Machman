@@ -19,10 +19,16 @@ struct GuestDevice: Codable, Equatable, Identifiable {
 	var displayWidthPixels: Int?
 	var displayHeightPixels: Int?
 	var displayPixelsPerInch: Int?
+	// Raw on disk (the kind precedent): a NEWER daemon's future mode survives this daemon's
+	// load/save cycle verbatim. Read through systemKeyCaptureMode.
+	var systemKeyCapture: String?
 	var sharesClipboard: Bool?
 
 	var id: String { kind }
 	var deviceKind: DeviceKind { DeviceKind(rawValue: kind) ?? .unknown }
+	var systemKeyCaptureMode: SystemKeyCapture? {
+		systemKeyCapture.map { SystemKeyCapture(rawValue: $0) ?? .unknown }
+	}
 
 	init(kind: DeviceKind) {
 		self.kind = kind.rawValue
@@ -34,6 +40,7 @@ struct GuestDevice: Codable, Equatable, Identifiable {
 		case displayWidthPixels
 		case displayHeightPixels
 		case displayPixelsPerInch
+		case systemKeyCapture
 		case sharesClipboard
 	}
 
@@ -47,6 +54,7 @@ struct GuestDevice: Codable, Equatable, Identifiable {
 			try c.decodeIfPresent(Int.self, forKey: .displayHeightPixels)
 		self.displayPixelsPerInch =
 			try c.decodeIfPresent(Int.self, forKey: .displayPixelsPerInch)
+		self.systemKeyCapture = try c.decodeIfPresent(String.self, forKey: .systemKeyCapture)
 		self.sharesClipboard = try c.decodeIfPresent(Bool.self, forKey: .sharesClipboard)
 	}
 }
@@ -66,6 +74,13 @@ extension VMConfig {
 	static func impliedDevices(for boot: BootConfig) -> [GuestDevice] {
 		let macGuest = if case .macOS = boot { true } else { false }
 		return ImpliedDevices.kinds(macGuest: macGuest).map(GuestDevice.init)
+	}
+
+	// The system-key-capture mode a run starts with: the display device's default, off when
+	// unset, unknown (a newer daemon's mode), or there is no display device at all.
+	var systemKeyCaptureDefault: SystemKeyCapture {
+		let mode = devices.first { $0.deviceKind == .graphics }?.systemKeyCaptureMode ?? .off
+		return mode == .unknown ? .off : mode
 	}
 
 	// The wire addresses kernel overrides by absolute file path; the config keys them by the

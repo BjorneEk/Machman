@@ -524,19 +524,30 @@ public final class LocalMachman: MachmanControlling {
 	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
 		let vm = try lookup(name)
 		try Self.validateDeviceSettings(device)
-		guard vm.config.devices.contains(where: { $0.deviceKind == device.kind }) else {
+		guard let stored = vm.config.devices.first(where: { $0.deviceKind == device.kind })
+		else {
 			throw MachmanError(
 				code: .notFound, message: "no \(device.kind.rawValue) device on \(name)")
 		}
+		try vm.config.updateDevice(Self.guestDevice(from: device, replacing: stored))
+		registry.events.emit(.listChanged)
+		return info(for: vm)
+	}
+
+	// The wire → config half of vm.device.update: every setting is taken from the request,
+	// except a .unknown capture mode — an older client echoing back a newer daemon's mode it
+	// could not read — which keeps what is stored rather than letting the echo erase it.
+	nonisolated static func guestDevice(from device: DeviceInfo, replacing stored: GuestDevice)
+		-> GuestDevice {
 		var updated = GuestDevice(kind: device.kind)
 		updated.enabled = device.enabled
 		updated.displayWidthPixels = device.displayWidthPixels
 		updated.displayHeightPixels = device.displayHeightPixels
 		updated.displayPixelsPerInch = device.displayPixelsPerInch
+		updated.systemKeyCapture = device.systemKeyCapture == .unknown
+			? stored.systemKeyCapture : device.systemKeyCapture?.rawValue
 		updated.sharesClipboard = device.sharesClipboard
-		try vm.config.updateDevice(updated)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
+		return updated
 	}
 
 	// Add-time validation keeps impossible configs out of the start path (which would only
@@ -982,6 +993,7 @@ public final class LocalMachman: MachmanControlling {
 				displayWidthPixels: device.displayWidthPixels,
 				displayHeightPixels: device.displayHeightPixels,
 				displayPixelsPerInch: device.displayPixelsPerInch,
+				systemKeyCapture: device.systemKeyCaptureMode,
 				sharesClipboard: device.sharesClipboard,
 				unavailable: Self.deviceUnavailability(device.deviceKind, macGuest: macGuest))
 		}

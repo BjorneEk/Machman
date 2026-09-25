@@ -194,6 +194,22 @@ public struct UnavailabilityInfo: Codable, Sendable, Equatable {
 	}
 }
 
+// Whether the VM window sends system shortcuts (⌘Space, ⌘Tab, Mission Control…) to the guest
+// instead of the host (1.0.10). The display device's value is the DEFAULT a run starts with;
+// the run's own value lives in the vmhost and never writes back. Tolerant decode: an
+// unrecognized future mode degrades to .unknown (treated as off) instead of failing.
+public enum SystemKeyCapture: String, Codable, Sendable, Equatable {
+	case off
+	case always
+	case fullScreen    // only while the VM window is full screen
+	case unknown       // decode fallback only; never encode it
+
+	public init(from decoder: Decoder) throws {
+		let raw = try decoder.singleValueContainer().decode(String.self)
+		self = SystemKeyCapture(rawValue: raw) ?? .unknown
+	}
+}
+
 // A guest device as served over the API. Settings are flat optionals (only meaningful for
 // some kinds); `unavailable` is computed by the daemon per host and never persisted.
 public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
@@ -204,6 +220,7 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 	public var displayWidthPixels: Int?      // graphics
 	public var displayHeightPixels: Int?     // graphics
 	public var displayPixelsPerInch: Int?    // graphics, macOS guests
+	public var systemKeyCapture: SystemKeyCapture?   // graphics (1.0.10); nil = off
 	public var sharesClipboard: Bool?        // clipboard
 	public var unavailable: UnavailabilityInfo?
 
@@ -212,14 +229,15 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 	public init(
 		kind: DeviceKind, enabled: Bool = true,
 		displayWidthPixels: Int? = nil, displayHeightPixels: Int? = nil,
-		displayPixelsPerInch: Int? = nil, sharesClipboard: Bool? = nil,
-		unavailable: UnavailabilityInfo? = nil
+		displayPixelsPerInch: Int? = nil, systemKeyCapture: SystemKeyCapture? = nil,
+		sharesClipboard: Bool? = nil, unavailable: UnavailabilityInfo? = nil
 	) {
 		self.kind = kind
 		self.enabled = enabled
 		self.displayWidthPixels = displayWidthPixels
 		self.displayHeightPixels = displayHeightPixels
 		self.displayPixelsPerInch = displayPixelsPerInch
+		self.systemKeyCapture = systemKeyCapture
 		self.sharesClipboard = sharesClipboard
 		self.unavailable = unavailable
 	}
@@ -233,6 +251,8 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 			try c.decodeIfPresent(Int.self, forKey: .displayHeightPixels)
 		self.displayPixelsPerInch =
 			try c.decodeIfPresent(Int.self, forKey: .displayPixelsPerInch)
+		self.systemKeyCapture =
+			try c.decodeIfPresent(SystemKeyCapture.self, forKey: .systemKeyCapture)
 		self.sharesClipboard = try c.decodeIfPresent(Bool.self, forKey: .sharesClipboard)
 		self.unavailable = try c.decodeIfPresent(UnavailabilityInfo.self, forKey: .unavailable)
 	}

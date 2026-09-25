@@ -104,6 +104,57 @@ struct DeviceConfigTests {
 		}
 	}
 
+	// 1.0.10: the display's system-key-capture default persists raw, so a newer daemon's
+	// future mode survives this daemon's load/save; the run default reads it as off.
+	@Test func systemKeyCapturePersistsAndDefaults() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("keys")
+			#expect(vm.systemKeyCaptureDefault == .off)   // unset
+			let index = vm.devices.firstIndex { $0.deviceKind == .graphics }!
+			vm.devices[index].systemKeyCapture = SystemKeyCapture.fullScreen.rawValue
+			try vm.saveVMConfig()
+			let reloaded = try VMConfig.load(name: "keys")
+			#expect(reloaded.systemKeyCaptureDefault == .fullScreen)
+
+			try rewriteJSON("keys") { obj in
+				var devices = obj["devices"] as! [[String: Any]]
+				let i = devices.firstIndex { $0["kind"] as? String == "graphics" }!
+				devices[i]["systemKeyCapture"] = "whenFocused"
+				obj["devices"] = devices
+			}
+			let future = try VMConfig.load(name: "keys")
+			#expect(future.systemKeyCaptureDefault == .off)
+			#expect(future.devices[index].systemKeyCaptureMode == .unknown)
+			try future.saveVMConfig()
+			let again = try VMConfig.load(name: "keys")
+			#expect(again.devices[index].systemKeyCapture == "whenFocused")
+
+			// No display device at all: nothing to capture for, so off.
+			again.devices.removeAll { $0.deviceKind == .graphics }
+			#expect(again.systemKeyCaptureDefault == .off)
+		}
+	}
+
+	// vm.device.update takes the mode from the request — except an older client's .unknown
+	// echo of a mode it could not read, which keeps the stored value instead of erasing it.
+	@Test func systemKeyCaptureUpdateKeepsUnknown() {
+		var stored = GuestDevice(kind: .graphics)
+		stored.systemKeyCapture = "whenFocused"
+		stored.displayWidthPixels = 1920
+
+		let echo = LocalMachman.guestDevice(
+			from: DeviceInfo(kind: .graphics, systemKeyCapture: .unknown), replacing: stored)
+		#expect(echo.systemKeyCapture == "whenFocused")
+		#expect(echo.displayWidthPixels == nil)   // everything else follows the request
+
+		let set = LocalMachman.guestDevice(
+			from: DeviceInfo(kind: .graphics, systemKeyCapture: .always), replacing: stored)
+		#expect(set.systemKeyCapture == "always")
+		let cleared = LocalMachman.guestDevice(
+			from: DeviceInfo(kind: .graphics), replacing: stored)
+		#expect(cleared.systemKeyCapture == nil)
+	}
+
 	@Test func enabledFlagsPersistOnDisksMountsSerial() throws {
 		try VMTestDir.withRedirectedDir {
 			let vm = try makeVM("flags")

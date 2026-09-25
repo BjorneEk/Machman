@@ -128,7 +128,8 @@ overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 devices?, nestedVirtualization?, ssh?, setup?}`.
 
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
-displayHeightPixels?, displayPixelsPerInch?, sharesClipboard?, unavailable?}`; kinds:
+displayHeightPixels?, displayPixelsPerInch?, systemKeyCapture?, sharesClipboard?,
+unavailable?}`; kinds:
 `keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network, clipboard,
 entropy, rosetta, consoleLoginInstaller, sshInstaller, guestSetup` (treat unknown kinds
 as a device you don't recognize). One device per kind. `guestSetup` (1.0.7+, any boot
@@ -144,6 +145,11 @@ virtiofs, or sshfs of `ssh.setupSharePath` where there is no driver, same path e
 way); sshfs-kind host folders land under `/mnt/machman/mounts`, and the script's own
 state lives at `/var/lib/machman/state.env` (Linux) or `/var/db/machman/state.env`
 (BSDs, macOS).
+
+`systemKeyCapture` (1.0.10+, graphics) is `"off"|"always"|"fullScreen"` (absent = off;
+treat unknown values as off): the mode a run STARTS with for sending system shortcuts
+(⌘Space, ⌘Tab…) to the guest. The run's own value lives in the VM's window (its menu and
+⌃⌥⌘K) and is not on the wire.
 
 `ssh` (1.0.5+) is `{configured?, guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
 reverseState: "none"|"pending"|"approved"|"denied", reversePublicKey?, integrationEnabled?,

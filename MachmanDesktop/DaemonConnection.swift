@@ -170,7 +170,9 @@ final class DaemonConnection: ObservableObject {
 	// 1.0.9: vm.disk.promote refuses while the VM runs (an older daemon still copies the
 	// image under the live attachment's writes and rewires the config beneath it, so the
 	// next boot silently switches disks).
-	static let oldestCompatibleDaemonVersion = "1.0.9"
+	// 1.0.10: the display device gained systemKeyCapture — an older daemon drops it on its
+	// next rewrite, and its vmhosts would never apply it.
+	static let oldestCompatibleDaemonVersion = "1.0.10"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
