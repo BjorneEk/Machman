@@ -98,8 +98,8 @@ let package = Package(
 			path: "Tests/MachmanTestSupport",
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
-		// StubMachman (an in-memory MachmanControlling). Deliberately NOT linked to the guard:
-		// the render tool builds its scenes from it outside any test run.
+		// StubMachman (an in-memory MachmanControlling) + sample DTOs. Deliberately NOT linked
+		// to the guard: the render tool builds its scenes from it outside any test run.
 		.target(
 			name: "MachmanFixtures",
 			dependencies: ["MachmanAPI"],
@@ -127,6 +127,14 @@ let package = Package(
 		.testTarget(
 			name: "MachmanUITests",
 			dependencies: ["MachmanAPI", "MachmanUI", "MachmanTestSupport"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		.testTarget(
+			name: "MachmanDesktopCoreTests",
+			dependencies: [
+				"MachmanAPI", "MachmanUI", "MachmanDesktopCore", "MachmanFixtures",
+				"MachmanTestSupport",
+			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 	]
