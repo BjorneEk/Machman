@@ -82,6 +82,12 @@ enum RenderCommand {
 						chrome: scene.chrome, panels: scene.panels?(context) ?? [])
 					let file = "\(scene.name)@\(width.map { "\(Int($0))" } ?? "fit")"
 						+ "-\(dark ? "dark" : "light").png"
+					// Never expected; if it happens, stop before another scene can.
+					if Offscreen.reachedScreen() {
+						Console.err("MachmanRender: stopping at \(file): a window reached "
+							+ "the screen or the app became active")
+						return 1
+					}
 					guard let rendered else {
 						Console.err("FAILED \(file)")
 						failures += 1

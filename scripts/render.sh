@@ -10,7 +10,7 @@
 # throwaway sandbox — its own suite id, data dir and fake home, removed on exit — so a run
 # can never read or write the .dev or Release libraries, defaults or ~/Library. The tool
 # draws into windows that are never ordered on screen, under a prohibited activation policy:
-# no window, no Dock icon, no focus change, no daemon.
+# nothing on screen, no Dock icon, no focus change, no daemon; it stops if a scene breaks that.
 #
 # Fidelity: layout and text are the app's; colours nearly so. Switch and checkbox "on" states
 # lack the accent fill. Glass and materials draw in their Reduce Transparency form (opaque,

@@ -8,9 +8,12 @@
 //  AppKit-backed pieces (text fields, pickers, lists) draw as themselves. ImageRenderer
 //  draws grouped Forms blank and AppKit controls as placeholders (lane 0b). SwiftTerm
 //  terminals are drawn again on their own (see redrawTerminals).
-//  The window is deferred (never gets a window-server window at all) and never ordered.
+//  The window is deferred and never ordered, so it never reaches the screen. The one
+//  window-server window a run does own is TextInputUI's cursor helper (TUINSWindow), made
+//  once per process by the first NSTextView (a TextEditor) and never ordered either.
 //
-//  Nothing here orders a window, makes one key, activates the app, or runs NSApp.
+//  Nothing here orders a window, makes one key, activates the app, or runs NSApp;
+//  reachedScreen() checks that after every scene.
 //
 
 import AppKit
@@ -95,6 +98,15 @@ enum Offscreen {
 		}
 		view.layoutSubtreeIfNeeded()
 		view.displayIfNeeded()
+	}
+
+	// The standing proof: no window of this process on screen, and the app never active.
+	static func reachedScreen() -> Bool {
+		let pid = ProcessInfo.processInfo.processIdentifier
+		let onScreen = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+			as? [[String: Any]] ?? []
+		return NSApp.isActive
+			|| onScreen.contains { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
 	}
 
 	// Run the main run loop until `done` or the timeout (async work the scenes wait on).
