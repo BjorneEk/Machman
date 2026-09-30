@@ -77,17 +77,19 @@ enum RenderCommand {
 			for width in widths.map({ $0.map { Optional($0) } }) ?? scene.widths {
 				for dark in schemes {
 					let context = SceneContext(vms: scene.vms())
-					let rendered = Offscreen.png(
-						scene.make(context), width: width, height: scene.height, dark: dark,
-						chrome: scene.chrome, panels: scene.panels?(context) ?? [])
 					let file = "\(scene.name)@\(width.map { "\(Int($0))" } ?? "fit")"
 						+ "-\(dark ? "dark" : "light").png"
-					// Never expected; if it happens, stop before another scene can.
-					if Offscreen.reachedScreen() {
-						Console.err("MachmanRender: stopping at \(file): a window reached "
-							+ "the screen or the app became active")
-						return 1
+					// Never expected; if it happens, stop before another scene can. png() checks
+					// while its window exists; this catches what outlives the scene.
+					let rendered: (data: Data, size: CGSize)?
+					do {
+						rendered = try Offscreen.png(
+							scene.make(context), width: width, height: scene.height, dark: dark,
+							chrome: scene.chrome, panels: scene.panels?(context) ?? [])
+					} catch {
+						return stop(at: file)
 					}
+					if Offscreen.reachedScreen() { return stop(at: file) }
 					guard let rendered else {
 						Console.err("FAILED \(file)")
 						failures += 1
@@ -105,6 +107,12 @@ enum RenderCommand {
 			}
 		}
 		return failures == 0 ? 0 : 1
+	}
+
+	private static func stop(at file: String) -> Int32 {
+		Console.err("MachmanRender: stopping at \(file): a window became visible or reached "
+			+ "the screen, or the app became active")
+		return 1
 	}
 
 	private static func fail(_ why: String) -> Int32 {

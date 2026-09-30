@@ -12,8 +12,11 @@
 //  window-server window a run does own is TextInputUI's cursor helper (TUINSWindow), made
 //  once per process by the first NSTextView (a TextEditor) and never ordered either.
 //
-//  Nothing here orders a window, makes one key, activates the app, or runs NSApp;
-//  reachedScreen() checks that after every scene.
+//  Nothing here orders a window, makes one key, activates the app, or runs NSApp. png()
+//  checks that before it closes its window, while the window and anything a scene ordered
+//  with it (a sheet, a popover, a child window) still exist, and throws ReachedScreen if any
+//  window of the process is visible or on screen, or the app is active; RenderCommand checks
+//  again after every scene, for activation and for windows that outlive a scene.
 //
 
 import AppKit
@@ -27,11 +30,14 @@ enum Offscreen {
 		case window     // titled + unified toolbar: the theme frame is drawn too
 	}
 
-	// width/height nil = the view's fitting size on that axis.
+	// A window of the process was visible or on screen, or the app was active: the run stops.
+	struct ReachedScreen: Error {}
+
+	// width/height nil = the view's fitting size on that axis; nil result = a failed render.
 	static func png(
 		_ view: AnyView, width: CGFloat?, height: CGFloat?, dark: Bool,
 		chrome: Chrome = .none, panels: [AnyView] = [], scale: CGFloat = 2
-	) -> (data: Data, size: CGSize)? {
+	) throws -> (data: Data, size: CGSize)? {
 		// Liquid Glass (glassEffect) never draws under cacheDisplay: its platter goes missing
 		// and its adaptive foreground turns dark on dark. Reduce Transparency switches
 		// MachmanGlassSurface to its opaque form, a surface the app really draws, so toasts,
@@ -70,6 +76,15 @@ enum Offscreen {
 
 		// Window chrome lives in the theme frame, above the content view.
 		let target: NSView = chrome == .window ? (host.superview ?? host) : host
+		let drawn = try capture(target, chrome: chrome, panels: panels, dark: dark, scale: scale)
+		// Before the deferred close: a window ordered for this scene is still there to see.
+		if reachedScreen() { throw ReachedScreen() }
+		return drawn
+	}
+
+	private static func capture(
+		_ target: NSView, chrome: Chrome, panels: [AnyView], dark: Bool, scale: CGFloat
+	) throws -> (data: Data, size: CGSize)? {
 		if chrome == .window { hideToolbarGlass(in: target) }
 		let bounds = target.bounds
 		let pixelsWide = Int(bounds.width * scale), pixelsHigh = Int(bounds.height * scale)
@@ -83,7 +98,7 @@ enum Offscreen {
 		target.cacheDisplay(in: bounds, to: rep)
 		redrawTerminals(in: target, into: rep)
 		if !panels.isEmpty {
-			paintPanels(panels, over: target, into: rep, dark: dark, scale: scale)
+			try paintPanels(panels, over: target, into: rep, dark: dark, scale: scale)
 		}
 		guard let data = rep.representation(using: .png, properties: [:]) else { return nil }
 		return (data, bounds.size)
@@ -100,12 +115,15 @@ enum Offscreen {
 		view.displayIfNeeded()
 	}
 
-	// The standing proof: no window of this process on screen, and the app never active.
+	// The standing proof: no window of this process visible (AppKit's view, which also sees a
+	// sheet or popover the moment it is ordered) or on screen (the window server's), and the
+	// app never active.
 	static func reachedScreen() -> Bool {
 		let pid = ProcessInfo.processInfo.processIdentifier
 		let onScreen = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
 			as? [[String: Any]] ?? []
 		return NSApp.isActive
+			|| NSApp.windows.contains { $0.isVisible }
 			|| onScreen.contains { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
 	}
 
@@ -139,7 +157,7 @@ extension Offscreen {
 	static func paintPanels(
 		_ panels: [AnyView], over root: NSView, into rep: NSBitmapImageRep, dark: Bool,
 		scale: CGFloat
-	) {
+	) throws {
 		guard let glassClass = NSClassFromString("NSGlassEffectView") else { return }
 		var found: [NSView] = []
 		func walk(_ v: NSView) {
@@ -151,8 +169,9 @@ extension Offscreen {
 		guard let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return }
 		NSGraphicsContext.saveGraphicsState()
 		NSGraphicsContext.current = ctx
+		defer { NSGraphicsContext.restoreGraphicsState() }
 		for (rect, panel) in zip(rects, panels) {
-			guard let drawn = png(
+			guard let drawn = try png(
 				panel, width: rect.width, height: rect.height, dark: dark, scale: scale),
 				let image = NSImage(data: drawn.data)
 			else { continue }
@@ -175,7 +194,6 @@ extension Offscreen {
 			image.addRepresentation(itemRep)
 			image.draw(in: rect)
 		}
-		NSGraphicsContext.restoreGraphicsState()
 	}
 }
 
