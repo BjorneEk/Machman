@@ -12,6 +12,8 @@
 //    MACHMAN_DATA_DIR   an absolute path containing <token>      library + safe-run root
 //    CFFIXED_USER_HOME  an absolute path containing <token>      NSHomeDirectory() et al.
 //
+//  TestEnvironment.swift re-checks this contract as a backstop; keep the two in step.
+//
 //  stderr, not MachmanLogger: this runs before Swift does, and in test tooling only.
 //
 

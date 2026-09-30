@@ -7,9 +7,10 @@
 //  from NSTemporaryDirectory()/FileManager.temporaryDirectory, which is the real per-user
 //  temp dir and outlives a crashed run. Everything below is removed when the run ends.
 //
-//  The first touch of ANY member validates the whole contract — the one guard.c checks — and
-//  fatalErrors on a violation, so a guard that is ever unlinked or neutered still fails
-//  closed before a test can write outside the run's sandbox. Keep the two in step.
+//  The first touch of any sandbox member (suiteID, token, dataDir, homeDir, scratch) validates
+//  the whole contract — the one guard.c checks — and fatalErrors on a violation, so a guard
+//  that is ever unlinked or neutered still fails closed before a test can write outside the
+//  run's sandbox. Keep the two in step.
 //
 
 import Foundation
