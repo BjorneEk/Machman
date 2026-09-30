@@ -7,8 +7,9 @@
 //  server-resolved inside the VM directory, device sets are ImpliedDevices', and serial
 //  ports are named by SerialPortKind.guestDevice. Absolute dates (created, report stamps) are
 //  fixed; the ones views turn into elapsed time (lastRan → uptime or "last ran", an
-//  operation's startedAt → its ETA) are set relative to now, so that text reads as it would
-//  live (seconds still differ between runs).
+//  operation's startedAt → its ETA) are set relative to `now`, one instant per process, so
+//  that text reads as it would live (seconds still differ between runs) and two builds of a
+//  sample stay equal within a run.
 //  Tests and render scenes both start here; a lane that needs a new state (a new DTO field)
 //  adds a builder here rather than inventing one inline.
 //
@@ -18,6 +19,8 @@ import MachmanAPI
 
 public enum Samples {
 	public static let epoch = Date(timeIntervalSince1970: 1_780_000_000)
+	// Taken once, on first use: the base of every now-relative date below.
+	public static let now = Date()
 	public static let vmsRoot = "/Users/demo/Library/Application Support/"
 		+ "com.gustaffranzen.Machman/VMs"
 	// Console sockets of running samples: under /var/empty (root-owned, read-only, empty), so
@@ -37,7 +40,7 @@ public enum Samples {
 	) -> VMInfo {
 		let running = state.isRunning
 		return VMInfo(
-			name: name, state: state, created: epoch, lastRan: Date().addingTimeInterval(-3_600),
+			name: name, state: state, created: epoch, lastRan: now.addingTimeInterval(-3_600),
 			cpuCount: 4, memoryBytes: 4 << 30, macAddress: "5e:2c:7a:10:44:01",
 			disks: [
 				DiskInfo(
@@ -165,7 +168,7 @@ public enum Samples {
 			id: "op-1", kind: OperationInfo.Kind.copyVM, vm: vm,
 			label: "Copying system.raw…", fraction: 0.42,
 			completedBytes: 13 << 30, totalBytes: 32 << 30,
-			startedAt: Date().addingTimeInterval(-90))
+			startedAt: now.addingTimeInterval(-90))
 	}
 }
 
