@@ -7,5 +7,7 @@
 //
 
 enum SceneRegistry {
-	static let all: [RenderScene] = InspectorScenes.all
+	static let all: [RenderScene] =
+		InspectorScenes.all + PopoverScenes.all + WindowScenes.all + SettingsScenes.all
+			+ OverlayScenes.all
 }

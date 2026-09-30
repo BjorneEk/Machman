@@ -16,7 +16,13 @@ struct VMPickerPopover: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@Environment(\.dismiss) private var dismiss
 	@State private var query = ""
-	@State private var choosingTemplate = false
+	@State private var choosingTemplate: Bool
+
+	// `templates` opens straight on the New VM template chooser (render scenes).
+	init(viewModel: VMListViewModel, templates: Bool = false) {
+		self.viewModel = viewModel
+		_choosingTemplate = State(initialValue: templates)
+	}
 
 	private var filtered: [VMInfo] {
 		query.isEmpty

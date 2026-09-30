@@ -54,4 +54,20 @@ final class SceneContext {
 	func vm(_ name: String) -> VMInfo {
 		viewModel.vms.first { $0.name == name }!
 	}
+
+	// What TornTabWindowView takes in place of the app's DaemonConnection.
+	var connection: SceneConnection { SceneConnection(self) }
+}
+
+// A scene's stand-in for the app's connection (TornTabConnection): the context's view model
+// (never nil: a scene is never mid-reconnect) and its terminal sessions.
+@MainActor
+final class SceneConnection: TornTabConnection {
+	let viewModel: VMListViewModel?
+	let terminals: TerminalSessions
+
+	init(_ context: SceneContext) {
+		viewModel = context.viewModel
+		terminals = context.terminals
+	}
 }

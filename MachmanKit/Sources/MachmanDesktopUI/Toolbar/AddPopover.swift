@@ -37,9 +37,16 @@ struct AddPopover: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	@Environment(\.dismiss) private var dismiss
-	@State private var addingNewDisk = false
+	@State private var addingNewDisk: Bool
 
 	private let columns = [GridItem(.adaptive(minimum: 64), spacing: 2)]
+
+	// `newDisk` opens straight on the New Disk form (render scenes).
+	init(viewModel: VMListViewModel, vm: VMInfo, newDisk: Bool = false) {
+		self.viewModel = viewModel
+		self.vm = vm
+		_addingNewDisk = State(initialValue: newDisk)
+	}
 
 	var body: some View {
 		Group {
