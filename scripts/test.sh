@@ -50,13 +50,17 @@ trap cleanup EXIT
 if [[ "$mode" == selfcheck ]]; then
 	failures=0
 	# expect_refusal <label> [VAR=value ...]: a run with ONLY those variables must be refused.
+	# The filter matches no test: if the guard is dead, the run starts (and FAILs below) but
+	# executes nothing — a dead guard must never run the suite against the .dev paths or the
+	# real home, which is exactly what several of these environments would point it at.
 	expect_refusal() {
 		local label="$1"
 		shift
 		local out
 		if out="$(env -i PATH="$PATH" HOME="$HOME" "$@" \
-			swift test --skip-build --disable-xctest --package-path "$pkg" 2>&1)"; then
-			echo "FAIL  $label: the tests ran"
+			swift test --skip-build --disable-xctest --package-path "$pkg" \
+			--filter __machman_guard_selfcheck__ 2>&1)"; then
+			echo "FAIL  $label: the test process started, the guard did not refuse it"
 			failures=$((failures + 1))
 		elif grep -q "MachmanTestGuard: refusing" <<<"$out"; then
 			echo "ok    $label"
@@ -75,8 +79,9 @@ if [[ "$mode" == selfcheck ]]; then
 		MACHMAN_SUITE_ID=com.gustaffranzen.Machman MACHMAN_DATA_DIR="$data" \
 		CFFIXED_USER_HOME="$home"
 	expect_refusal "no data dir" MACHMAN_SUITE_ID="$suite" CFFIXED_USER_HOME="$home"
+	# /var/empty: neither the real home nor writable, so no run can leak into it.
 	expect_refusal "data dir without the run token" MACHMAN_SUITE_ID="$suite" \
-		MACHMAN_DATA_DIR="$HOME/Library/Application Support/x" CFFIXED_USER_HOME="$home"
+		MACHMAN_DATA_DIR=/var/empty/x CFFIXED_USER_HOME="$home"
 	expect_refusal "no fake home" MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$data"
 	exit "$failures"
 fi
