@@ -19,6 +19,7 @@ struct PTYProcessStreamTests {
 		func append(_ d: Data) { lock.lock(); data.append(d); lock.unlock() }
 		func markClosed() { lock.lock(); closed = true; lock.unlock() }
 		var received: Data { lock.lock(); defer { lock.unlock() }; return data }
+		var text: String { String(decoding: received, as: UTF8.self) }
 		var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
 	}
 
@@ -67,6 +68,35 @@ struct PTYProcessStreamTests {
 		#expect(String(decoding: sink.received, as: UTF8.self)
 			.contains("TERM=xterm-machman-test"))
 		stream.stop()
+	}
+
+	// P20: ssh redraws on SIGWINCH alone, and TIOCSWINSZ signals the pty's FOREGROUND process
+	// group — which exists only once the pty is the child's controlling terminal. Foundation's
+	// Process hands the child the pty as stdio but no setsid/TIOCSCTTY, so today nobody is
+	// signalled. Known-failing until the stream spawns through forkpty/login_tty (lane 2f);
+	// the moment that lands, withKnownIssue itself fails ("not recorded"): delete the wrapper.
+	@Test @MainActor func resizeDeliversSIGWINCHToTheChild() async throws {
+		await withKnownIssue(
+			"P20: the pty is not the child's controlling terminal, so a resize signals no one"
+		) {
+			let stream = PTYProcessStream(
+				executablePath: "/bin/sh",
+				arguments: ["-c", "trap 'echo GOT_WINCH' WINCH; echo READY; "
+					+ "while :; do sleep 0.05; done"])
+			let sink = Sink()
+			stream.onData = { sink.append($0) }
+			defer { stream.stop() }
+			#expect(stream.connect())
+			for _ in 0..<250 where !sink.text.contains("READY") {
+				try await Task.sleep(for: .milliseconds(20))
+			}
+			#expect(sink.text.contains("READY"))   // the trap is installed before the resize
+			stream.setWindowSize(cols: 100, rows: 30)
+			for _ in 0..<100 where !sink.text.contains("GOT_WINCH") {
+				try await Task.sleep(for: .milliseconds(20))
+			}
+			#expect(sink.text.contains("GOT_WINCH"))
+		}
 	}
 
 	@Test func windowSizeAndSendAreSafeBeforeConnect() {
