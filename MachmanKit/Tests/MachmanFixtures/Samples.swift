@@ -17,6 +17,9 @@ public enum Samples {
 	public static let epoch = Date(timeIntervalSince1970: 1_780_000_000)
 	public static let vmsRoot = "/Users/demo/Library/Application Support/"
 		+ "com.gustaffranzen.Machman/VMs"
+	// Console sockets of running samples: under /var/empty (root-owned, read-only, empty), so
+	// no process can ever create one there and a terminal that connects fails with ENOENT.
+	public static let sockets = "/var/empty/machman-sample"
 
 	public static let capabilities = HostCapabilities(
 		maxCPUCount: 10, minMemoryBytes: 512 << 20, maxMemoryBytes: 24 << 30,
@@ -59,7 +62,7 @@ public enum Samples {
 					kind: .console, index: 0,
 					guestDevice: SerialPortKind.console.guestDevice(index: 0, os: .linux),
 					logging: SerialLogConfig(),
-					socketPath: running ? "/tmp/machman-sample/\(name)-console0.sock" : nil,
+					socketPath: running ? "\(sockets)/\(name)-console0.sock" : nil,
 					guestIndex: 0, guestName: "hvc0"),
 			],
 			uartPorts: [],
