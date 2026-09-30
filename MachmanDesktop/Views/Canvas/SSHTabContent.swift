@@ -70,7 +70,7 @@ struct SSHTabContent: View {
 	var adoptOnly = false
 
 	var body: some View {
-		if let controller = sessions.sshController(vm: vm.name, ref: ref) {
+		if let controller = sessions.sshTerminal(vm: vm.name, ref: ref) {
 			SSHSessionSurface(
 				controller: controller,
 				guestIsReachable: vm.ssh?.reachability == .ready,

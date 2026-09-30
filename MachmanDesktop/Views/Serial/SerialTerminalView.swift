@@ -150,6 +150,26 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }
 
+// In an extension, not the class declaration: a conformance there would infer the protocol's
+// @MainActor onto the whole class.
+extension SerialTerminalController: TerminalController {}
+
+extension TerminalSessions {
+	// The app's registry: every terminal tab gets a SwiftTerm-backed controller.
+	static func swiftTerm() -> TerminalSessions {
+		TerminalSessions { SerialTerminalController(profile: $0) }
+	}
+
+	// The SwiftTerm controllers behind a tab, for the views that host their TerminalView.
+	func serialTerminal(vm: String, ref: SerialPortRef) -> SerialTerminalController? {
+		controller(vm: vm, ref: ref) as? SerialTerminalController
+	}
+
+	func sshTerminal(vm: String, ref: SSHSessionRef) -> SerialTerminalController? {
+		sshController(vm: vm, ref: ref) as? SerialTerminalController
+	}
+}
+
 // Live-resize throttle. Every size change makes SwiftTerm resize + reflow its ENTIRE
 // populated scrollback (Buffer.resize iterates lines.count, then reflowWider/Narrower
 // rewraps — and profiles default to 500k lines), so per-frame resizing during a window

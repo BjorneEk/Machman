@@ -23,7 +23,7 @@ struct TerminalTabContent: View {
 	var body: some View {
 		if let socket = socketPath {
 			Group {
-				if let controller = sessions.controller(vm: vm.name, ref: ref) {
+				if let controller = sessions.serialTerminal(vm: vm.name, ref: ref) {
 					SerialTerminalHost(controller: controller)
 						.id(ObjectIdentifier(controller))   // swap the view on reloadTab
 						.frame(maxWidth: .infinity, maxHeight: .infinity)

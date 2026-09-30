@@ -9,10 +9,8 @@
 //
 
 import Foundation
-import AppKit
 import SwiftUI
 import Combine
-import UniformTypeIdentifiers
 import MachmanUI
 import MachmanAPI
 
@@ -56,6 +54,8 @@ final class VMListViewModel: ObservableObject {
 	let terminals: TerminalSessions
 	// Per-VM canvas layouts (app-scoped, injected): which tabs are open in which panes.
 	let canvases: CanvasStateStore
+	// Which torn-off tabs have windows, and the orders the list reconcile posts to them.
+	let tornTabs: TornTabRegistry
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published var showInfoPanel = false
@@ -121,9 +121,11 @@ final class VMListViewModel: ObservableObject {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
 	}
 
+	// `tornTabs` defaults to the app's shared registry; tests pass their own.
 	init(
 		api: MachmanControlling, store: VMStore, operations: OperationsStore,
-		terminals: TerminalSessions, previews: PreviewService, canvases: CanvasStateStore
+		terminals: TerminalSessions, previews: PreviewService, canvases: CanvasStateStore,
+		tornTabs: TornTabRegistry? = nil
 	) {
 		self.api = api
 		self.store = store
@@ -131,6 +133,7 @@ final class VMListViewModel: ObservableObject {
 		self.terminals = terminals
 		self.previews = previews
 		self.canvases = canvases
+		self.tornTabs = tornTabs ?? .shared
 		// Views observe this object, not the stores — forward their changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
@@ -626,7 +629,7 @@ final class VMListViewModel: ObservableObject {
 			// reconcile's staleness pass just marked these payloads close (old name gone
 			// from the fresh list), and this overwrite lands in the same main-actor job,
 			// before any window can act on it.
-			let registry = TornTabRegistry.shared
+			let registry = tornTabs
 			for torn in registry.open where torn.vm == oldName {
 				registry.orders[torn] = .reopen(as: TornTab(vm: newName, tab: torn.tab))
 			}
@@ -1163,7 +1166,7 @@ final class VMListViewModel: ObservableObject {
 
 	// The terminal on the selected VM's active canvas tab (nil on the config tab or with no
 	// selection) — drives File → Save Terminal.
-	var activeTerminalController: SerialTerminalController? {
+	var activeTerminalController: (any TerminalController)? {
 		guard let name = selectedName else { return nil }
 		switch canvases.canvas(for: name).activeTab {
 		case .terminal(let ref):
@@ -1230,7 +1233,7 @@ final class VMListViewModel: ObservableObject {
 	}
 
 	private func reconcileTornTabs(list: [VMInfo]) {
-		let registry = TornTabRegistry.shared
+		let registry = tornTabs
 		var next: [TornTab: TornTabRegistry.Order] = [:]
 		// Pending rename swaps survive recomputes until their window acts — the old-named
 		// payload IS stale in the fresh list, and that must not degrade a swap to a close.
@@ -1270,21 +1273,6 @@ final class VMListViewModel: ObservableObject {
 		canvases.setCanvas(canvas, for: name)
 		tabClosed(tab, vm: name)
 		return true
-	}
-
-	// Save the on-screen terminal transcript. Used by File → Save Terminal.
-	func saveActiveTerminalTranscript() {
-		guard let terminal = activeTerminalController else { return }
-		let panel = NSSavePanel()
-		panel.nameFieldStringValue = "terminal.log"
-		panel.allowedContentTypes = [.plainText]
-		if panel.runModal() == .OK, let url = panel.url {
-			do {
-				try terminal.transcript().write(to: url)
-			} catch {
-				present(error, while: "Saving the terminal log")
-			}
-		}
 	}
 
 	func setSerialLogging(

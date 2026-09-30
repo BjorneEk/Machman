@@ -14,19 +14,6 @@ import AppKit
 import MachmanUI
 import MachmanAPI
 
-// Stable identity for every selectable row in the tree (multi-select + context menus).
-enum SidebarNode: Hashable {
-	case vmRoot
-	case group(String)
-	case disk(String)            // DiskInfo.id
-	case mount(String)           // MountInfo.id
-	case serial(SerialPortRef)
-	case device(DeviceKind)
-	case kernel(String)          // OwnedKernelFile.id (path)
-	case initramfs(String)
-	case sshSession(SSHSessionRef)   // an OPEN ephemeral session tab (no device behind it)
-}
-
 struct VMDeviceTreeView: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var sessions: TerminalSessions

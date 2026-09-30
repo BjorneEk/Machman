@@ -2,11 +2,12 @@
 //  TerminalSessions.swift
 //  MachmanDesktop
 //
-//  The live SwiftTerm controllers behind terminal tabs, keyed (vm, port). Pure controller
+//  The live terminal controllers behind terminal tabs, keyed (vm, port). Pure controller
 //  lifecycle — WHICH tabs exist and which is active lives in CanvasStateStore (the canvas
 //  layout); this registry only creates, connects, reloads, and tears down terminals on
 //  demand. App-scoped, so controllers (and their transcripts) survive VM navigation and
-//  daemon reconnects; a controller lives exactly as long as its tab is open.
+//  daemon reconnects; a controller lives exactly as long as its tab is open. Controllers come
+//  from an injected factory (the app's is SwiftTerm-backed, tests' record their calls).
 //
 
 import Foundation
@@ -17,12 +18,17 @@ import MachmanUI
 final class TerminalSessions: ObservableObject {
 	// Not published per-keystroke: views observe each controller's own @Published
 	// `connected`; objectWillChange fires when a controller appears or disappears.
-	private var controllers: [String: [SerialPortRef: SerialTerminalController]] = [:]
+	private var controllers: [String: [SerialPortRef: any TerminalController]] = [:]
 	// Tabs whose controller is being created on a deferred runloop turn (so the spinner
 	// shows and we don't schedule creation twice).
 	private var creating: Set<String> = []
+	private let makeController: @MainActor (TerminalProfile) -> any TerminalController
 
-	func controller(vm: String, ref: SerialPortRef) -> SerialTerminalController? {
+	init(makeController: @escaping @MainActor (TerminalProfile) -> any TerminalController) {
+		self.makeController = makeController
+	}
+
+	func controller(vm: String, ref: SerialPortRef) -> (any TerminalController)? {
 		controllers[vm]?[ref]
 	}
 
@@ -46,7 +52,7 @@ final class TerminalSessions: ObservableObject {
 			guard let self else { return }
 			self.creating.remove(key)
 			guard stillWanted() else { return }
-			let c = SerialTerminalController(profile: profile)
+			let c = makeController(profile)
 			self.controllers[vm, default: [:]][ref] = c
 			if let path = socketPath { c.connect(path: path) }
 			self.objectWillChange.send()   // swap the spinner for the terminal
@@ -68,7 +74,7 @@ final class TerminalSessions: ObservableObject {
 		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile
 	) {
 		controllers[vm]?[ref]?.disconnect()
-		let c = SerialTerminalController(profile: profile)
+		let c = makeController(profile)
 		controllers[vm, default: [:]][ref] = c
 		if let path = socketPath { c.connect(path: path) }
 		objectWillChange.send()
@@ -88,7 +94,7 @@ final class TerminalSessions: ObservableObject {
 
 	// Same deferred-creation shape as the serial tabs, but the transport is a PTY-spawned
 	// /usr/bin/ssh, and it is one-shot: a dead session never reconnects — open a new tab.
-	private var sshControllers: [String: [SSHSessionRef: SerialTerminalController]] = [:]
+	private var sshControllers: [String: [SSHSessionRef: any TerminalController]] = [:]
 	// Display metadata: the ref's title is only the birth name ("Session N") — renames
 	// live here so tab identity (Hashable ref) never changes; startedAt drives duration.
 	private struct SSHSessionMeta {
@@ -98,7 +104,7 @@ final class TerminalSessions: ObservableObject {
 	}
 	private var sshMeta: [String: [SSHSessionRef: SSHSessionMeta]] = [:]
 
-	func sshController(vm: String, ref: SSHSessionRef) -> SerialTerminalController? {
+	func sshController(vm: String, ref: SSHSessionRef) -> (any TerminalController)? {
 		sshControllers[vm]?[ref]
 	}
 
@@ -144,7 +150,7 @@ final class TerminalSessions: ObservableObject {
 			guard let self else { return }
 			self.creating.remove(key)
 			guard stillWanted() else { return }
-			let c = SerialTerminalController(profile: profile)
+			let c = makeController(profile)
 			self.sshControllers[vm, default: [:]][ref] = c
 			if self.sshMeta[vm]?[ref] == nil {
 				self.sshMeta[vm, default: [:]][ref] =

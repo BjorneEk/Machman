@@ -36,7 +36,7 @@ final class DaemonConnection: ObservableObject {
 	let operationsStore = OperationsStore()
 	// Not api-bound (nothing to re-attach): open terminal tabs + their live SwiftTerm
 	// controllers, kept out of the per-connection teardown so transcripts survive it.
-	let terminals = TerminalSessions()
+	let terminals = TerminalSessions.swiftTerm()
 	// Per-VM canvas layouts (panes/tabs/fractions), persisted to disk by the store itself.
 	let canvases = CanvasStateStore()
 	let previews: PreviewService
