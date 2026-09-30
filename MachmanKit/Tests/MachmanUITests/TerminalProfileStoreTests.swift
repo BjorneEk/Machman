@@ -1,12 +1,13 @@
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanUI
 
 @MainActor
 struct TerminalProfileStoreTests {
 	private func tempURL() -> URL {
-		FileManager.default.temporaryDirectory
+		TestEnvironment.scratchURL
 			.appendingPathComponent("tps-\(UUID().uuidString)")
 			.appendingPathComponent("TerminalProfiles.json")
 	}

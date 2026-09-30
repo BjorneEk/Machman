@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanUI
 
@@ -12,7 +13,7 @@ struct CanvasStateStoreTests {
 	private let tty0 = SerialPortRef(kind: .uart, index: 0)
 
 	private func tempURL() -> URL {
-		FileManager.default.temporaryDirectory
+		TestEnvironment.scratchURL
 			.appendingPathComponent("canvas-store-\(UUID().uuidString).json")
 	}
 

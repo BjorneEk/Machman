@@ -1,15 +1,13 @@
 //
 //  PTYProcessStreamTests.swift
-//  MachmanTests
+//  MachmanUITests
 //
 //  The PTY-backed byte stream behind the SSH tabs, exercised with plain system binaries
-//  (/bin/cat, /usr/bin/true) — no ssh, no network. First @testable import of the app
-//  target in this suite (the stream lives in MachmanDesktop, beside the serial client).
+//  (/bin/cat, /usr/bin/true, /bin/sh) — no ssh, no network.
 //
 
 import Testing
 import Foundation
-@testable import MachmanDesktop
 import MachmanUI
 
 struct PTYProcessStreamTests {

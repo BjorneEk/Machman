@@ -1,6 +1,6 @@
 //
 //  TornTabReconcileTests.swift
-//  MachmanTests
+//  MachmanUITests
 //
 //  The torn-tab staleness rule behind the list-refresh reconcile (T6): which torn windows
 //  a fresh VM list invalidates. Pure value rules — the dismissal itself is SwiftUI glue,
@@ -11,7 +11,6 @@ import Testing
 import Foundation
 import MachmanAPI
 import MachmanUI
-@testable import MachmanDesktop
 
 @MainActor
 struct TornTabReconcileTests {
