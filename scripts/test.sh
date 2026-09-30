@@ -33,6 +33,9 @@ mkdir -p "$root/data" "$root/home"
 cleanup() {
 	# Every path below derives from the token minted above; do nothing on any surprise.
 	[[ "$root" == /tmp/mmt.* && "$suite" == com.gustaffranzen.Machman.test-* ]] || return 0
+	# Best effort: under set -e the first failing rm would skip every later sweep and turn a
+	# green run into exit 1 — the script exits with the tests' own status, not cleanup's.
+	set +e
 	local temp
 	temp="$(getconf DARWIN_USER_TEMP_DIR)"
 	rm -rf "$root"
