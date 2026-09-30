@@ -15,6 +15,7 @@ import MachmanAPI
 import MachmanUI
 import MachmanClient
 import MachmanDesktopCore
+import MachmanDesktopUI
 
 @MainActor
 final class DaemonConnection: ObservableObject {
@@ -256,3 +257,6 @@ final class DaemonConnection: ObservableObject {
 			"no \(Self.daemonBundleID) embedded in this app or known to Launch Services")
 	}
 }
+
+// Torn-off tab windows follow the connection: its view model and terminal sessions.
+extension DaemonConnection: TornTabConnection {}

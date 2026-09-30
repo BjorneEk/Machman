@@ -11,7 +11,7 @@
 		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
 		AA10000000000000000000C8 /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B8 /* MachmanUI */; };
 		AA10000000000000000000C9 /* MachmanDesktopCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B9 /* MachmanDesktopCore */; };
-		AA10000000000000000000D3 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000D2 /* SwiftTerm */; };
+		AA10000000000000000000CA /* MachmanDesktopUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000BA /* MachmanDesktopUI */; };
 		BB200000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000A /* MachmanAPI */; };
 		BB200000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000B /* MachmanCore */; };
 		BB200000000000000000000F /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000E /* MachmanUI */; };
@@ -104,7 +104,7 @@
 				AA10000000000000000000C7 /* MachmanClient in Frameworks */,
 				AA10000000000000000000C8 /* MachmanUI in Frameworks */,
 				AA10000000000000000000C9 /* MachmanDesktopCore in Frameworks */,
-				AA10000000000000000000D3 /* SwiftTerm in Frameworks */,
+				AA10000000000000000000CA /* MachmanDesktopUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -187,7 +187,7 @@
 				AA10000000000000000000B7 /* MachmanClient */,
 				AA10000000000000000000B8 /* MachmanUI */,
 				AA10000000000000000000B9 /* MachmanDesktopCore */,
-				AA10000000000000000000D2 /* SwiftTerm */,
+				AA10000000000000000000BA /* MachmanDesktopUI */,
 			);
 			productName = MachmanDesktop;
 			productReference = 4F8935D62D956D5000E2B811 /* MachmanDesktop.app */;
@@ -274,7 +274,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA10000000000000000000A1 /* XCLocalSwiftPackageReference "MachmanKit" */,
-				AA10000000000000000000D1 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4F8935D72D956D5000E2B811 /* Products */;
@@ -682,17 +681,6 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		AA10000000000000000000D1 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.9.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
 		AA10000000000000000000B1 /* MachmanAPI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -710,10 +698,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanDesktopCore;
 		};
-		AA10000000000000000000D2 /* SwiftTerm */ = {
+		AA10000000000000000000BA /* MachmanDesktopUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = AA10000000000000000000D1 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
+			productName = MachmanDesktopUI;
 		};
 		BB200000000000000000000A /* MachmanAPI */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -4,8 +4,8 @@
 //
 //  What TerminalSessions needs from a live terminal: its connection lifecycle, live profile
 //  changes and its transcript — nothing about how it is drawn. The app's SwiftTerm-backed
-//  SerialTerminalController (SerialTerminalView.swift) conforms; the session registry makes
-//  them through an injected factory, so tests drive tab lifecycles with a recording fake.
+//  SerialTerminalController (MachmanDesktopUI) conforms; the session registry makes them
+//  through an injected factory, so tests drive tab lifecycles with a recording fake.
 //
 
 import Foundation

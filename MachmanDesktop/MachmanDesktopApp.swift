@@ -14,6 +14,7 @@ import MachmanUI
 import Cocoa
 import MachmanAPI
 import MachmanDesktopCore
+import MachmanDesktopUI
 
 @main
 struct MachmanDesktopApp: App {
@@ -268,45 +269,6 @@ struct MachmanDesktopApp: App {
 				SettingsRootView(profiles: profiles)
 			}
 		}
-	}
-}
-
-// The resolved theme as an observed object: recomputed on EVERY defaults write in the
-// process (UserDefaults.didChangeNotification), published only when it actually changed.
-// ObservableObject invalidation is unconditional — unlike App/scene-level @AppStorage,
-// which does not reliably re-render scene content — so Settings edits apply instantly.
-@MainActor
-final class ThemeStore: ObservableObject {
-	@Published private(set) var theme = MachmanTheme.fromDefaults()
-	private var observer: NSObjectProtocol?
-
-	init() {
-		observer = NotificationCenter.default.addObserver(
-			forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-		) { [weak self] _ in
-			MainActor.assumeIsolated { self?.refresh() }
-		}
-	}
-
-	private func refresh() {
-		let resolved = MachmanTheme.fromDefaults()
-		if resolved != theme {
-			theme = resolved
-		}
-	}
-}
-
-// Window-level theme application: environment for MachmanUI, the color scheme, and the
-// accent tint.
-private struct ThemedRoot<Content: View>: View {
-	@ObservedObject var store: ThemeStore
-	@ViewBuilder var content: Content
-
-	var body: some View {
-		content
-			.environment(\.machmanTheme, store.theme)
-			.preferredColorScheme(store.theme.scheme.colorScheme)
-			.tint(store.theme.accent.color)
 	}
 }
 

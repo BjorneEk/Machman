@@ -9,6 +9,7 @@ import PackageDescription
 //   MachmanCore  the VM engine behind the protocol.
 //   MachmanDesktopCore  the desktop's view models and stores (no views, no windows): what the
 //                headless view-model tests drive. Never MachmanCore or Virtualization.
+//   MachmanDesktopUI    the desktop's SwiftUI views; the app target is a thin shell over it.
 //
 let package = Package(
 	name: "MachmanKit",
@@ -19,6 +20,12 @@ let package = Package(
 		.library(name: "MachmanClient", targets: ["MachmanClient"]),
 		.library(name: "MachmanUI", targets: ["MachmanUI"]),
 		.library(name: "MachmanDesktopCore", targets: ["MachmanDesktopCore"]),
+		.library(name: "MachmanDesktopUI", targets: ["MachmanDesktopUI"]),
+	],
+	dependencies: [
+		// The desktop's terminal emulator (MachmanDesktopUI only). Pinned in Package.resolved
+		// to the version the Xcode workspace resolves.
+		.package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.9.0"),
 	],
 	targets: [
 		.target(
@@ -76,12 +83,22 @@ let package = Package(
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 		// The desktop client's logic: view models + stores over MachmanControlling. Anything
-		// that talks to the window server, the pasteboard, panels or NSWorkspace lives with the
-		// views, so every type here runs headless under swift test. Never MachmanCore or
-		// Virtualization; MachmanClient is allowed if connection logic ever moves in.
+		// that talks to the window server, the pasteboard, panels or NSWorkspace lives in
+		// MachmanDesktopUI (or the app), so every type here runs headless under swift test.
+		// Never MachmanCore or Virtualization; MachmanClient is allowed if connection logic
+		// ever moves in.
 		.target(
 			name: "MachmanDesktopCore",
 			dependencies: ["MachmanAPI", "MachmanUI"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		// The desktop's views and SwiftTerm hosting. Only the app's entry points are public.
+		.target(
+			name: "MachmanDesktopUI",
+			dependencies: [
+				"MachmanAPI", "MachmanUI", "MachmanDesktopCore",
+				.product(name: "SwiftTerm", package: "SwiftTerm"),
+			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 

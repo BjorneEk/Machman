@@ -5,7 +5,7 @@
 //  The shared add routing behind the toolbar "+" popover, the sidebar tree's context menus,
 //  Finder drops and paste: every disk file funnels through the copy-or-reference question
 //  (the engine's magic sniff is the real format gate), folders become mounts. The pickers
-//  that feed it (NSOpenPanel) extend this type beside the views (AddFlows+Panels.swift).
+//  that feed it (NSOpenPanel) extend this type in MachmanDesktopUI (AddFlows+Panels.swift).
 //
 
 import Foundation

@@ -5,7 +5,7 @@
 //  Copyable tree entities: a disk, kernel, or initramfs file (by path) or a mount (path +
 //  tag). Pasting into a VM funnels through the same flows as every other entry point (disk
 //  copy-or-reference, kernel promote, mount re-share). The general-pasteboard I/O lives
-//  beside the views (EntityClipboard+Pasteboard.swift).
+//  beside the views (EntityClipboard+Pasteboard.swift in MachmanDesktopUI).
 //
 
 import Foundation
