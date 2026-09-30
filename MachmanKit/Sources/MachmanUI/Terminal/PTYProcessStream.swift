@@ -1,6 +1,6 @@
 //
 //  PTYProcessStream.swift
-//  MachmanDesktop
+//  MachmanUI
 //
 //  A TerminalByteStream backed by a local process on a PTY — the transport behind the
 //  ephemeral SSH tabs. Owns the PTY pair, mirrors SerialTerminalConnection's read-source
@@ -10,7 +10,7 @@
 
 import Foundation
 
-final class PTYProcessStream: TerminalByteStream {
+public final class PTYProcessStream: TerminalByteStream {
 	private let executablePath: String
 	private let arguments: [String]
 	private let environmentOverrides: [String: String]
@@ -21,12 +21,12 @@ final class PTYProcessStream: TerminalByteStream {
 	private var transcript = Data()
 	private static let transcriptCap = 8 << 20
 
-	var onData: ((Data) -> Void)?
-	var onClose: (() -> Void)?
+	public var onData: ((Data) -> Void)?
+	public var onClose: (() -> Void)?
 
 	// environmentOverrides ride on top of the app's environment — a GUI app carries no
 	// TERM, and without one ssh advertises TERM=dumb to the guest.
-	init(
+	public init(
 		executablePath: String, arguments: [String],
 		environmentOverrides: [String: String] = [:]
 	) {
@@ -35,7 +35,7 @@ final class PTYProcessStream: TerminalByteStream {
 		self.environmentOverrides = environmentOverrides
 	}
 
-	func connect() -> Bool {
+	public func connect() -> Bool {
 		var parent: Int32 = -1
 		var child: Int32 = -1
 		guard openpty(&parent, &child, nil, nil, nil) == 0 else { return false }
@@ -89,7 +89,7 @@ final class PTYProcessStream: TerminalByteStream {
 		onClose?()
 	}
 
-	func send(_ data: Data) {
+	public func send(_ data: Data) {
 		guard parentFD >= 0 else { return }
 		data.withUnsafeBytes { raw in
 			guard let base = raw.baseAddress else { return }
@@ -101,7 +101,7 @@ final class PTYProcessStream: TerminalByteStream {
 		}
 	}
 
-	func stop() {
+	public func stop() {
 		readSource?.cancel()
 		readSource = nil
 		if parentFD >= 0 { close(parentFD); parentFD = -1 }
@@ -112,7 +112,7 @@ final class PTYProcessStream: TerminalByteStream {
 		}
 	}
 
-	func setWindowSize(cols: Int, rows: Int) {
+	public func setWindowSize(cols: Int, rows: Int) {
 		guard parentFD >= 0, cols > 0, rows > 0 else { return }
 		var size = winsize(
 			ws_row: UInt16(clamping: rows), ws_col: UInt16(clamping: cols),
@@ -120,7 +120,7 @@ final class PTYProcessStream: TerminalByteStream {
 		_ = ioctl(parentFD, TIOCSWINSZ, &size)
 	}
 
-	func transcriptData() -> Data {
+	public func transcriptData() -> Data {
 		transcriptLock.lock()
 		defer { transcriptLock.unlock() }
 		return transcript
