@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import MachmanFixtures
 import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
