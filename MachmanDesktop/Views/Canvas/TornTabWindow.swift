@@ -12,12 +12,6 @@ import SwiftUI
 import MachmanUI
 import MachmanAPI
 
-// What a torn-off window shows: one VM's config tab or one of its terminals.
-struct TornTab: Codable, Hashable {
-	var vm: String
-	var tab: VMPaneTab
-}
-
 // Which torn tabs currently have a window — the double-mount guard: opening a torn tab
 // from the tree/canvas FOCUSES its window (openWindow dedups by value) instead of
 // mounting the same TerminalView a second time. Pure window bookkeeping, so a shared
@@ -42,19 +36,6 @@ final class TornTabRegistry: ObservableObject {
 
 	func isOpen(vm: String, tab: VMPaneTab) -> Bool {
 		open.contains(TornTab(vm: vm, tab: tab))
-	}
-}
-
-extension TornTab {
-	// The list-refresh reconcile rule, mirroring the canvas's: a VM that left the list takes
-	// all its tabs with it; a terminal whose port left the VM goes too. SSH sessions are
-	// local processes (nothing in the list backs them) and config follows the VM — for both,
-	// only the VM vanishing invalidates the tab.
-	func isStale(in list: [VMInfo]) -> Bool {
-		guard let vm = list.first(where: { $0.name == self.vm }) else { return true }
-		guard case .terminal(let ref) = tab else { return false }
-		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
-		return !ports.contains { SerialPortRef($0) == ref }
 	}
 }
 
