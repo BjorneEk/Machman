@@ -6,6 +6,9 @@
 //  stores attached, a VMListViewModel over them, terminal sessions making fakes, and the
 //  persisted stores in the run's scratch space. `await DesktopHarness.make(...)` returns
 //  once the first list has landed and the first VM is selected — the app's launch state.
+//  One difference, on purpose: PreviewService is built but not attached. Attached, it polls
+//  stub.preview every 4 s for the selected running VM, dropping "preview" into stub.calls at
+//  arbitrary points; a preview test attaches it itself (`h.previews.attach(api: h.stub)`).
 //
 
 import Foundation

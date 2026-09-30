@@ -5,7 +5,9 @@
 //  The state a scene draws from, built the way DaemonConnection builds the app's: stores
 //  attached to a StubMachman serving sample VMs, a VMListViewModel over them, SwiftTerm
 //  terminal sessions, and profile/canvas stores persisting into the render sandbox. Fresh
-//  per scene, so no scene sees another's selection or tabs.
+//  per scene, so no scene sees another's selection or tabs. PreviewService is left
+//  unattached, as in DesktopHarness: no 4 s preview polling behind a still picture. A scene
+//  that needs a VM's frame sets `previews.images.images[name]` itself.
 //
 
 import Foundation
