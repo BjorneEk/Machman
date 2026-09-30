@@ -9,7 +9,8 @@ import PackageDescription
 //   MachmanCore  the VM engine behind the protocol.
 //   MachmanDesktopCore  the desktop's view models and stores (no views, no windows): what the
 //                headless view-model tests drive. Never MachmanCore or Virtualization.
-//   MachmanDesktopUI    the desktop's SwiftUI views; the app target is a thin shell over it.
+//   MachmanDesktopUI    the desktop's SwiftUI views; the app target is a thin shell over it,
+//                and Tools/MachmanRender draws its views to PNG offscreen.
 //
 let package = Package(
 	name: "MachmanKit",
@@ -92,13 +93,25 @@ let package = Package(
 			dependencies: ["MachmanAPI", "MachmanUI"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
-		// The desktop's views and SwiftTerm hosting. Only the app's entry points are public.
+		// The desktop's views and SwiftTerm hosting. Only the app's entry points are public;
+		// the render tool reaches the rest through @testable import (debug builds only).
 		.target(
 			name: "MachmanDesktopUI",
 			dependencies: [
 				"MachmanAPI", "MachmanUI", "MachmanDesktopCore",
 				.product(name: "SwiftTerm", package: "SwiftTerm"),
 			],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		// scripts/render.sh: draws named scenes of desktop views to PNG in never-ordered
+		// windows — no Dock icon, no focus, no daemon. Not a product; never shipped.
+		.executableTarget(
+			name: "MachmanRender",
+			dependencies: [
+				"MachmanAPI", "MachmanUI", "MachmanDesktopCore", "MachmanDesktopUI",
+				"MachmanFixtures",
+			],
+			path: "Tools/MachmanRender",
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 
