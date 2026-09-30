@@ -72,5 +72,24 @@ let package = Package(
 			dependencies: ["MachmanAPI"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
+
+		// MARK: Tests — headless, run through scripts/test.sh (never `swift test` by hand).
+		//
+		// MachmanTestGuard: a load-time constructor that refuses to start a test process outside
+		// a per-run sandbox, so no run can resolve the .dev or Release Machman paths.
+		// MachmanTestSupport: the sandbox's paths for tests (scratch dir, suite id, fake home).
+		// Every test target depends on the support target, which links the guard.
+		.target(name: "MachmanTestGuard", path: "Tests/MachmanTestGuard"),
+		.target(
+			name: "MachmanTestSupport",
+			dependencies: ["MachmanTestGuard"],
+			path: "Tests/MachmanTestSupport",
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		.testTarget(
+			name: "MachmanAPITests",
+			dependencies: ["MachmanAPI", "MachmanTestSupport"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
 	]
 )
