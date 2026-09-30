@@ -79,10 +79,13 @@ struct PTYProcessStreamTests {
 		await withKnownIssue(
 			"P20: the pty is not the child's controlling terminal, so a resize signals no one"
 		) {
+			// The loop ends with its parent: the child leads its own process group, so if the
+			// test process dies without stream.stop() (a crash, a timeout kill, ^C of the
+			// runner) nothing else would ever stop it — it would fork sleep 20x/s for good.
 			let stream = PTYProcessStream(
 				executablePath: "/bin/sh",
 				arguments: ["-c", "trap 'echo GOT_WINCH' WINCH; echo READY; "
-					+ "while :; do sleep 0.05; done"])
+					+ "while kill -0 $PPID 2>/dev/null; do sleep 0.05; done"])
 			let sink = Sink()
 			stream.onData = { sink.append($0) }
 			defer { stream.stop() }
