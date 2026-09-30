@@ -33,11 +33,17 @@ suite="com.gustaffranzen.Machman.render-$token"
 mkdir -p "$root/data" "$root/home"
 
 cleanup() {
+	# Every path below derives from the token minted above; do nothing on any surprise.
 	[[ "$root" == */machman-render.* && "$suite" == com.gustaffranzen.Machman.render-* ]] \
 		|| return 0
+	# Best effort, as in test.sh: one failing rm must not skip the sweeps after it.
 	set +e
 	rm -rf "$root"
-	rm -rf "$(getconf DARWIN_USER_TEMP_DIR)$suite"
+	rm -rf "$(getconf DARWIN_USER_TEMP_DIR)$suite"            # MachmanPaths.runtimeDir
+	# Nothing lands here today (scenes pass their stores explicit URLs); a future scene
+	# that builds a default-URL store would, under the render suite.
+	rm -rf "$HOME/Library/Application Support/$suite"          # defaultDataDir in the real home
+	rm -f "$HOME/Library/Preferences/$suite"*.plist            # any defaults domain under the suite
 }
 trap cleanup EXIT
 
