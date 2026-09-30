@@ -5,7 +5,10 @@
 //  Sample VMs built only from MachmanAPI DTOs, shaped like what the daemon serves: disk ids
 //  follow VMDisk.id ("storage:<name>", "iso:<url>", "url:<url>"), storage paths are
 //  server-resolved inside the VM directory, device sets are ImpliedDevices', and serial
-//  ports are named by SerialPortKind.guestDevice. Dates are fixed so renders are stable.
+//  ports are named by SerialPortKind.guestDevice. Absolute dates (created, report stamps) are
+//  fixed; the ones views turn into elapsed time (lastRan → uptime or "last ran", an
+//  operation's startedAt → its ETA) are set relative to now, so that text reads as it would
+//  live (seconds still differ between runs).
 //  Tests and render scenes both start here; a lane that needs a new state (a new DTO field)
 //  adds a builder here rather than inventing one inline.
 //
@@ -34,7 +37,7 @@ public enum Samples {
 	) -> VMInfo {
 		let running = state.isRunning
 		return VMInfo(
-			name: name, state: state, created: epoch, lastRan: epoch.addingTimeInterval(86_400),
+			name: name, state: state, created: epoch, lastRan: Date().addingTimeInterval(-3_600),
 			cpuCount: 4, memoryBytes: 4 << 30, macAddress: "5e:2c:7a:10:44:01",
 			disks: [
 				DiskInfo(
@@ -156,12 +159,13 @@ public enum Samples {
 		]
 	}
 
-	// A running copy operation, as the corner progress card shows it.
+	// A running copy operation, as the corner progress card shows it: 13 of 32 GB in 90 s.
 	public static func copyOperation(vm: String = "Debian") -> OperationInfo {
 		OperationInfo(
 			id: "op-1", kind: OperationInfo.Kind.copyVM, vm: vm,
 			label: "Copying system.raw…", fraction: 0.42,
-			completedBytes: 13 << 30, totalBytes: 32 << 30, startedAt: epoch)
+			completedBytes: 13 << 30, totalBytes: 32 << 30,
+			startedAt: Date().addingTimeInterval(-90))
 	}
 }
 
