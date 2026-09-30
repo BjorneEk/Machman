@@ -8,9 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		AA10000000000000000000C1 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B1 /* MachmanAPI */; };
-		AA10000000000000000000C2 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B2 /* MachmanAPI */; };
-		AA10000000000000000000C4 /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B4 /* MachmanCore */; };
-		AA10000000000000000000C5 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B5 /* MachmanClient */; };
 		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
 		AA10000000000000000000C8 /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B8 /* MachmanUI */; };
 		AA10000000000000000000D3 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000D2 /* SwiftTerm */; };
@@ -24,13 +21,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		4F8935E82D956D5100E2B811 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4F8935D52D956D5000E2B811;
-			remoteInfo = MachmanDesktop;
-		};
 		BB2000000000000000000020 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4F8935CE2D956D5000E2B811 /* Project object */;
@@ -81,7 +71,6 @@
 
 /* Begin PBXFileReference section */
 		4F8935D62D956D5000E2B811 /* MachmanDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachmanDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		4F8935E72D956D5100E2B811 /* MachmanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MachmanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F8936052D956DA600E2B811 /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
 		BB20000000000000000000F1 /* MachmanAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachmanAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC3000000000000000000001 /* MachmanVMHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MachmanVMHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -91,11 +80,6 @@
 		4F8935D82D956D5000E2B811 /* MachmanDesktop */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MachmanDesktop;
-			sourceTree = "<group>";
-		};
-		4F8935EA2D956D5100E2B811 /* MachmanTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MachmanTests;
 			sourceTree = "<group>";
 		};
 		BB2000000000000000000002 /* MachmanAgent */ = {
@@ -119,16 +103,6 @@
 				AA10000000000000000000C7 /* MachmanClient in Frameworks */,
 				AA10000000000000000000C8 /* MachmanUI in Frameworks */,
 				AA10000000000000000000D3 /* SwiftTerm in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4F8935E42D956D5100E2B811 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				AA10000000000000000000C2 /* MachmanAPI in Frameworks */,
-				AA10000000000000000000C4 /* MachmanCore in Frameworks */,
-				AA10000000000000000000C5 /* MachmanClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -160,7 +134,6 @@
 				4F8935D82D956D5000E2B811 /* MachmanDesktop */,
 				BB2000000000000000000002 /* MachmanAgent */,
 				CC3000000000000000000002 /* MachmanVMHost */,
-				4F8935EA2D956D5100E2B811 /* MachmanTests */,
 				4F8936042D956DA600E2B811 /* Frameworks */,
 				4F8935D72D956D5000E2B811 /* Products */,
 			);
@@ -172,7 +145,6 @@
 				4F8935D62D956D5000E2B811 /* MachmanDesktop.app */,
 				BB20000000000000000000F1 /* MachmanAgent.app */,
 				CC3000000000000000000001 /* MachmanVMHost.app */,
-				4F8935E72D956D5100E2B811 /* MachmanTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -217,32 +189,6 @@
 			productName = MachmanDesktop;
 			productReference = 4F8935D62D956D5000E2B811 /* MachmanDesktop.app */;
 			productType = "com.apple.product-type.application";
-		};
-		4F8935E62D956D5100E2B811 /* MachmanTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 4F8935FE2D956D5100E2B811 /* Build configuration list for PBXNativeTarget "MachmanTests" */;
-			buildPhases = (
-				4F8935E32D956D5100E2B811 /* Sources */,
-				4F8935E42D956D5100E2B811 /* Frameworks */,
-				4F8935E52D956D5100E2B811 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				4F8935E92D956D5100E2B811 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				4F8935EA2D956D5100E2B811 /* MachmanTests */,
-			);
-			name = MachmanTests;
-			packageProductDependencies = (
-				AA10000000000000000000B2 /* MachmanAPI */,
-				AA10000000000000000000B4 /* MachmanCore */,
-				AA10000000000000000000B5 /* MachmanClient */,
-			);
-			productName = MachmanTests;
-			productReference = 4F8935E72D956D5100E2B811 /* MachmanTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		BB2000000000000000000003 /* MachmanAgent */ = {
 			isa = PBXNativeTarget;
@@ -306,10 +252,6 @@
 					4F8935D52D956D5000E2B811 = {
 						CreatedOnToolsVersion = 16.2;
 					};
-					4F8935E62D956D5100E2B811 = {
-						CreatedOnToolsVersion = 16.2;
-						TestTargetID = 4F8935D52D956D5000E2B811;
-					};
 					BB2000000000000000000003 = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -339,20 +281,12 @@
 				4F8935D52D956D5000E2B811 /* MachmanDesktop */,
 				BB2000000000000000000003 /* MachmanAgent */,
 				CC3000000000000000000003 /* MachmanVMHost */,
-				4F8935E62D956D5100E2B811 /* MachmanTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		4F8935D42D956D5000E2B811 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4F8935E52D956D5100E2B811 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -376,13 +310,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4F8935E32D956D5100E2B811 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		BB2000000000000000000004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -400,11 +327,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		4F8935E92D956D5100E2B811 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 4F8935D52D956D5000E2B811 /* MachmanDesktop */;
-			targetProxy = 4F8935E82D956D5100E2B811 /* PBXContainerItemProxy */;
-		};
 		BB2000000000000000000021 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = BB2000000000000000000003 /* MachmanAgent */;
@@ -607,40 +529,6 @@
 			};
 			name = Release;
 		};
-		4F8935FF2D956D5100E2B811 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SCVV5634LZ;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(MACHMAN_SUITE_ID).tests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MachmanDesktop.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MachmanDesktop";
-			};
-			name = Debug;
-		};
-		4F8936002D956D5100E2B811 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SCVV5634LZ;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(MACHMAN_SUITE_ID).tests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MachmanDesktop.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MachmanDesktop";
-			};
-			name = Release;
-		};
 		BB2000000000000000000007 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -764,15 +652,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4F8935FE2D956D5100E2B811 /* Build configuration list for PBXNativeTarget "MachmanTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				4F8935FF2D956D5100E2B811 /* Debug */,
-				4F8936002D956D5100E2B811 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		BB2000000000000000000009 /* Build configuration list for PBXNativeTarget "MachmanAgent" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -815,18 +694,6 @@
 		AA10000000000000000000B1 /* MachmanAPI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanAPI;
-		};
-		AA10000000000000000000B2 /* MachmanAPI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MachmanAPI;
-		};
-		AA10000000000000000000B4 /* MachmanCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MachmanCore;
-		};
-		AA10000000000000000000B5 /* MachmanClient */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MachmanClient;
 		};
 		AA10000000000000000000B7 /* MachmanClient */ = {
 			isa = XCSwiftPackageProductDependency;
