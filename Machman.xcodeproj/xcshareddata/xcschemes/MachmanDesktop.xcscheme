@@ -41,17 +41,6 @@
                ReferencedContainer = "container:Machman.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4F8935F02D956D5100E2B811"
-               BuildableName = "MachmanUITests.xctest"
-               BlueprintName = "MachmanUITests"
-               ReferencedContainer = "container:Machman.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
