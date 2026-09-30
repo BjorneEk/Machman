@@ -109,7 +109,7 @@ let package = Package(
 			name: "MachmanRender",
 			dependencies: [
 				"MachmanAPI", "MachmanUI", "MachmanDesktopCore", "MachmanDesktopUI",
-				"MachmanFixtures",
+				"MachmanFixtures", .product(name: "SwiftTerm", package: "SwiftTerm"),
 			],
 			path: "Tools/MachmanRender",
 			swiftSettings: [.swiftLanguageMode(.v5)]

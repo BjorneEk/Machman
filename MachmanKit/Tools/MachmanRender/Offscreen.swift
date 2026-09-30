@@ -5,14 +5,16 @@
 //  Draws a SwiftUI view to PNG without showing it. The view is hosted in an NSHostingView
 //  inside a window that is never ordered on screen, laid out, given a few run-loop turns to
 //  settle (onAppear work, deferred main-queue hops), then drawn with cacheDisplay — so
-//  AppKit-backed pieces (text fields, pickers, lists, SwiftTerm's text) draw as themselves.
-//  ImageRenderer draws grouped Forms blank and AppKit controls as placeholders (lane 0b).
+//  AppKit-backed pieces (text fields, pickers, lists) draw as themselves. ImageRenderer
+//  draws grouped Forms blank and AppKit controls as placeholders (lane 0b). SwiftTerm
+//  terminals are drawn again on their own (see redrawTerminals).
 //  The window is deferred (never gets a window-server window at all) and never ordered.
 //
 //  Nothing here orders a window, makes one key, activates the app, or runs NSApp.
 //
 
 import AppKit
+import SwiftTerm
 import SwiftUI
 
 @MainActor
@@ -69,6 +71,7 @@ enum Offscreen {
 		}
 		rep.size = bounds.size
 		target.cacheDisplay(in: bounds, to: rep)
+		redrawTerminals(in: target, into: rep)
 		if !panels.isEmpty {
 			paintPanels(panels, over: target, into: rep, dark: dark, scale: scale)
 		}
@@ -156,6 +159,43 @@ extension Offscreen {
 			image.draw(in: rect)
 		}
 		NSGraphicsContext.restoreGraphicsState()
+	}
+}
+
+extension Offscreen {
+	// A SwiftTerm TerminalView clears its rect to transparent and keeps its background colour
+	// in a layer property, which cacheDisplay never draws — so drawn with the rest of the
+	// view tree its background is a hole, and its glyphs can go missing as well (in the light
+	// scheme every one did). Drawn into a bitmap of its own it comes out whole: paint each
+	// visible terminal back in at its place, over its layer's background colour.
+	static func redrawTerminals(in root: NSView, into rep: NSBitmapImageRep) {
+		var found: [TerminalView] = []
+		func walk(_ v: NSView) {
+			if let terminal = v as? TerminalView { found.append(terminal); return }
+			v.subviews.forEach(walk)
+		}
+		walk(root)
+		guard !found.isEmpty, let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return }
+		NSGraphicsContext.saveGraphicsState()
+		NSGraphicsContext.current = ctx
+		defer { NSGraphicsContext.restoreGraphicsState() }
+		for terminal in found where !terminal.isHiddenOrHasHiddenAncestor {
+			let visible = terminal.visibleRect
+			guard !visible.isEmpty,
+				let own = terminal.bitmapImageRepForCachingDisplay(in: visible)
+			else { continue }
+			terminal.cacheDisplay(in: visible, to: own)
+			var rect = terminal.convert(visible, to: root)
+			// The bitmap's context is unflipped; a hosting view is flipped.
+			if root.isFlipped { rect.origin.y = root.bounds.height - rect.maxY }
+			if let background = terminal.layer?.backgroundColor {
+				ctx.cgContext.setFillColor(background)
+				ctx.cgContext.fill(rect)
+			}
+			let image = NSImage(size: visible.size)
+			image.addRepresentation(own)
+			image.draw(in: rect)
+		}
 	}
 }
 
