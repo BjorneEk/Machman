@@ -47,6 +47,11 @@ enum Offscreen {
 		let window = NSWindow(
 			contentRect: initial, styleMask: style, backing: .buffered, defer: true)
 		window.isReleasedWhenClosed = false
+		// Every return, early ones included, takes the view out and closes the window.
+		defer {
+			window.contentView = nil
+			window.close()
+		}
 		window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
 		if chrome == .window {
 			window.toolbarStyle = .unified
@@ -73,18 +78,13 @@ enum Offscreen {
 				bitmapDataPlanes: nil, pixelsWide: pixelsWide, pixelsHigh: pixelsHigh,
 				bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
 				colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
-		else {
-			window.contentView = nil
-			return nil
-		}
+		else { return nil }
 		rep.size = bounds.size
 		target.cacheDisplay(in: bounds, to: rep)
 		redrawTerminals(in: target, into: rep)
 		if !panels.isEmpty {
 			paintPanels(panels, over: target, into: rep, dark: dark, scale: scale)
 		}
-		window.contentView = nil
-		window.close()
 		guard let data = rep.representation(using: .png, properties: [:]) else { return nil }
 		return (data, bounds.size)
 	}
