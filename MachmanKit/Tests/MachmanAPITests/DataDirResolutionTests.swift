@@ -1,14 +1,17 @@
 import Testing
 import Foundation
 import MachmanAPI
-@testable import MachmanCore
+import MachmanTestSupport
 
 // Path resolution is what keeps a development build off the production VM library — there is no
 // runtime guard any more, so these tests are the guard.
 struct DataDirResolutionTests {
+	// Each defaults domain is an ABSOLUTE PATH inside the run's scratch dir (CFPreferences takes
+	// an absolute application id as a plist location), so nothing lands in the real
+	// ~/Library/Preferences and none of these can be a real Machman domain.
 	private func makeDefaults(_ name: String, dataDir: String? = nil) -> UserDefaults {
-		let defaults = UserDefaults(suiteName: name)!
-		defaults.removePersistentDomain(forName: name)
+		let defaults = UserDefaults(
+			suiteName: TestEnvironment.scratch + "defaults-\(name)-\(UUID().uuidString)")!
 		if let dataDir = dataDir {
 			defaults.set(dataDir, forKey: "MachmanDataDir")
 		}
@@ -24,7 +27,6 @@ struct DataDirResolutionTests {
 
 	@Test func envOverrideWinsOverDefaults() {
 		let defaults = makeDefaults("machman-test-datadir-env", dataDir: "/tmp/from-defaults")
-		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-env") }
 		let dir = MachmanPaths.dataDir(
 			env: ["MACHMAN_DATA_DIR": "/tmp/from-env"], defaults: defaults)
 		#expect(dir == "/tmp/from-env")
@@ -32,14 +34,12 @@ struct DataDirResolutionTests {
 
 	@Test func defaultsUsedWhenEnvAbsent() {
 		let defaults = makeDefaults("machman-test-datadir-defaults", dataDir: "/tmp/from-defaults")
-		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-defaults") }
 		let dir = MachmanPaths.dataDir(env: [:], defaults: defaults)
 		#expect(dir == "/tmp/from-defaults")
 	}
 
 	@Test func emptyValuesAreTreatedAsUnset() {
 		let defaults = makeDefaults("machman-test-datadir-empty", dataDir: "")
-		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-empty") }
 		let dir = MachmanPaths.dataDir(
 			env: ["MACHMAN_DATA_DIR": "", "MACHMAN_SUITE_ID": "com.example.suite"],
 			defaults: defaults)
@@ -48,7 +48,6 @@ struct DataDirResolutionTests {
 
 	@Test func fallsBackToApplicationSupportUnderSuiteID() {
 		let defaults = makeDefaults("machman-test-datadir-fallback")
-		defer { defaults.removePersistentDomain(forName: "machman-test-datadir-fallback") }
 		let dir = MachmanPaths.dataDir(
 			env: ["MACHMAN_SUITE_ID": "com.example.suite"], defaults: defaults)
 		#expect(dir == appSupport + "/com.example.suite")
