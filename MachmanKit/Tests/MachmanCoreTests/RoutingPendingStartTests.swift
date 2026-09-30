@@ -29,6 +29,7 @@ struct RoutingPendingStartTests {
 				try cfg.saveVMConfig()
 			}
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }   // a test never finds (or launches) a real vmhost
 		}
 		return routing
 	}

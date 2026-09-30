@@ -87,6 +87,11 @@ public final class RoutingMachman: MachmanControlling {
 	// private) as a test seam — tests reserve a name to exercise the guards.
 	var pendingStarts: Set<String> = []
 
+	// Where the vmhost app lives. Internal test seam: a test that reaches spawnHost pins this
+	// to nil, so it fails at "not found" on every machine instead of depending on where the
+	// test binary happens to sit (a located MachmanVMHost.app would be LAUNCHED).
+	var locateVMHost: () -> VMHostLocation? = { VMHostLocator.locate() }
+
 	public init(
 		registry: VMRegistry, daemonVersion: String,
 		launchAgents: LaunchAgentManager? = nil,
@@ -287,7 +292,7 @@ public final class RoutingMachman: MachmanControlling {
 		identity: HostIdentity, dataDir: String, extraArguments: [String] = []
 	) async throws -> HostedVM {
 		let name = identity.name
-		guard let vmhost = VMHostLocator.locate() else {
+		guard let vmhost = locateVMHost() else {
 			throw MachmanError(
 				code: .internalError,
 				message: "MachmanVMHost.app not found (embedded or beside "
