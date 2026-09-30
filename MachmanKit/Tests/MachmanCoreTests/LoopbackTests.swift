@@ -502,7 +502,8 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func wireRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch + "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.scratch
+			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
