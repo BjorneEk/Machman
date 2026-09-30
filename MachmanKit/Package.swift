@@ -91,5 +91,10 @@ let package = Package(
 			dependencies: ["MachmanAPI", "MachmanTestSupport"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
+		.testTarget(
+			name: "MachmanClientTests",
+			dependencies: ["MachmanAPI", "MachmanClient", "MachmanTestSupport"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
 	]
 )

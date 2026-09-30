@@ -9,6 +9,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 
@@ -23,7 +24,7 @@ private final class SilentServer: @unchecked Sendable {
 	private var buffer = Data()
 
 	init() throws {
-		socketPath = NSTemporaryDirectory()
+		socketPath = TestEnvironment.scratch
 			+ "mm-silent-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		listenFD = socket(AF_UNIX, SOCK_STREAM, 0)
 		var addr = sockaddr_un()
