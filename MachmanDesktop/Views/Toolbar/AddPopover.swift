@@ -13,6 +13,7 @@ import SwiftUI
 import AppKit
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct AddButton: View {
 	@ObservedObject var viewModel: VMListViewModel

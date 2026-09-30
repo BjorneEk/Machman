@@ -9,6 +9,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct SafeSaveSheet: View {
 	let vm: VMInfo

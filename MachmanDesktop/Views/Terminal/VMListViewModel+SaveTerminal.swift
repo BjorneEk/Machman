@@ -7,6 +7,7 @@
 
 import AppKit
 import UniformTypeIdentifiers
+import MachmanDesktopCore
 
 extension VMListViewModel {
 	// Save the on-screen terminal transcript. Used by File → Save Terminal.

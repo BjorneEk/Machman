@@ -11,6 +11,7 @@ import SwiftUI
 import AppKit
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct InspectorView: View {
 	@ObservedObject var viewModel: VMListViewModel

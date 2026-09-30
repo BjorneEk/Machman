@@ -16,6 +16,7 @@ import SwiftUI
 import AppKit
 import SwiftTerm
 import MachmanUI
+import MachmanDesktopCore
 
 final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDelegate {
 	let terminalView: TerminalView

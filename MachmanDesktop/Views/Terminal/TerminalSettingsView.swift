@@ -12,6 +12,7 @@
 import SwiftUI
 import AppKit
 import MachmanUI
+import MachmanDesktopCore
 
 struct TerminalSettingsView: View {
 	@ObservedObject var store: TerminalProfileStore

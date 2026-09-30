@@ -8,6 +8,7 @@
 
 import SwiftTerm
 import MachmanUI
+import MachmanDesktopCore
 
 extension SwiftTerm.Color {
 	// SwiftTerm.Color is 16-bit-per-channel; its red8/green8/blue8 initializer scales 8-bit input.

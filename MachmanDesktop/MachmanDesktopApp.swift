@@ -13,6 +13,7 @@ import SwiftUI
 import MachmanUI
 import Cocoa
 import MachmanAPI
+import MachmanDesktopCore
 
 @main
 struct MachmanDesktopApp: App {

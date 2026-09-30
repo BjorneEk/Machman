@@ -12,6 +12,7 @@ import SwiftUI
 import AppKit
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 // MARK: - Disk --------------------------------------------------------------------------------
 

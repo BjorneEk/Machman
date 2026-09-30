@@ -10,6 +10,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct CopyVMSheet: View {
 	let vm: VMInfo

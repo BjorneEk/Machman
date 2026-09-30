@@ -1,6 +1,6 @@
 //
 //  OperationsStore.swift
-//  MachmanDesktop
+//  MachmanDesktopCore
 //
 //  App-scoped store of long-running work: the daemon's OperationInfo registry mirror and the
 //  per-VM macOS install phases. Owns its own event stream (installPhaseChanged +
@@ -13,15 +13,17 @@ import Foundation
 import MachmanAPI
 
 @MainActor
-final class OperationsStore: ObservableObject {
-	@Published private(set) var operations: [OperationInfo] = []
-	@Published private(set) var installPhases: [String: InstallPhase] = [:]
+public final class OperationsStore: ObservableObject {
+	@Published public private(set) var operations: [OperationInfo] = []
+	@Published public private(set) var installPhases: [String: InstallPhase] = [:]
 	private var api: MachmanControlling?
 	private var eventTask: Task<Void, Never>?
 	// macOS VMs whose install phase is being fetched (dedupes re-triggered primes).
 	private var phasePrimesInFlight: Set<String> = []
 
-	func attach(api: MachmanControlling) {
+	public init() {}
+
+	public func attach(api: MachmanControlling) {
 		detach()
 		self.api = api
 		eventTask = Task { [weak self] in
@@ -34,7 +36,7 @@ final class OperationsStore: ObservableObject {
 		}
 	}
 
-	func detach() {
+	public func detach() {
 		eventTask?.cancel()
 		eventTask = nil
 		api = nil
@@ -44,7 +46,7 @@ final class OperationsStore: ObservableObject {
 	// Prime phases for VMs the daemon reports mid-install: only a live install session
 	// serves real progress; every other macInstallState derives its phase client-side
 	// (VMListViewModel.installPhase(for:)) without a fetch — so no per-VM N+1 on reload.
-	func primeInstallPhases(for vms: [VMInfo]) {
+	public func primeInstallPhases(for vms: [VMInfo]) {
 		guard let api else { return }
 		for vm in vms where vm.boot.macInstallState?.kind == .installing
 			&& installPhases[vm.name] == nil && !phasePrimesInFlight.contains(vm.name) {

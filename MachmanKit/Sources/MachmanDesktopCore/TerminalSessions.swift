@@ -1,6 +1,6 @@
 //
 //  TerminalSessions.swift
-//  MachmanDesktop
+//  MachmanDesktopCore
 //
 //  The live terminal controllers behind terminal tabs, keyed (vm, port). Pure controller
 //  lifecycle — WHICH tabs exist and which is active lives in CanvasStateStore (the canvas
@@ -15,7 +15,7 @@ import MachmanAPI
 import MachmanUI
 
 @MainActor
-final class TerminalSessions: ObservableObject {
+public final class TerminalSessions: ObservableObject {
 	// Not published per-keystroke: views observe each controller's own @Published
 	// `connected`; objectWillChange fires when a controller appears or disappears.
 	private var controllers: [String: [SerialPortRef: any TerminalController]] = [:]
@@ -24,11 +24,11 @@ final class TerminalSessions: ObservableObject {
 	private var creating: Set<String> = []
 	private let makeController: @MainActor (TerminalProfile) -> any TerminalController
 
-	init(makeController: @escaping @MainActor (TerminalProfile) -> any TerminalController) {
+	public init(makeController: @escaping @MainActor (TerminalProfile) -> any TerminalController) {
 		self.makeController = makeController
 	}
 
-	func controller(vm: String, ref: SerialPortRef) -> (any TerminalController)? {
+	public func controller(vm: String, ref: SerialPortRef) -> (any TerminalController)? {
 		controllers[vm]?[ref]
 	}
 
@@ -37,7 +37,7 @@ final class TerminalSessions: ObservableObject {
 	// (AppKit view creation is main-thread-bound — deferral, not backgrounding, but the
 	// click stays instant). `stillWanted` re-checks on that turn: the tab may have closed.
 	// Idempotent per tab; also (re)connects an existing controller whose socket reappeared.
-	func ensureController(
+	public func ensureController(
 		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile,
 		stillWanted: @escaping @MainActor () -> Bool = { true }
 	) {
@@ -60,7 +60,7 @@ final class TerminalSessions: ObservableObject {
 	}
 
 	// Tear down a tab's controller: tab closed, port removed, or VM deleted.
-	func dropController(vm: String, ref: SerialPortRef) {
+	public func dropController(vm: String, ref: SerialPortRef) {
 		guard let c = controllers[vm]?[ref] else { return }
 		c.disconnect()
 		controllers[vm]?[ref] = nil
@@ -70,7 +70,7 @@ final class TerminalSessions: ObservableObject {
 	// Recreate a tab's controller with the current profile — the "Reload" action, needed
 	// when a startup-only setting (scrollback/convertEol/termName/cursor/tabWidth) changed.
 	// The caller re-`.id()`s the host so the new view is shown.
-	func reloadTab(
+	public func reloadTab(
 		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile
 	) {
 		controllers[vm]?[ref]?.disconnect()
@@ -82,7 +82,7 @@ final class TerminalSessions: ObservableObject {
 
 	// Re-apply live profile settings to every open controller (profile edited). Covers
 	// hidden VMs too, so an edit is reflected everywhere at once.
-	func reapplyLiveProfiles(_ store: TerminalProfileStore) {
+	public func reapplyLiveProfiles(_ store: TerminalProfileStore) {
 		for (vm, byRef) in controllers {
 			for (ref, c) in byRef {
 				c.applyLive(store.profile(vm: vm, ref: ref))
@@ -104,19 +104,19 @@ final class TerminalSessions: ObservableObject {
 	}
 	private var sshMeta: [String: [SSHSessionRef: SSHSessionMeta]] = [:]
 
-	func sshController(vm: String, ref: SSHSessionRef) -> (any TerminalController)? {
+	public func sshController(vm: String, ref: SSHSessionRef) -> (any TerminalController)? {
 		sshControllers[vm]?[ref]
 	}
 
-	func sshSessionName(vm: String, ref: SSHSessionRef) -> String {
+	public func sshSessionName(vm: String, ref: SSHSessionRef) -> String {
 		sshMeta[vm]?[ref]?.name ?? ref.title
 	}
 
-	func sshSessionStart(vm: String, ref: SSHSessionRef) -> Date? {
+	public func sshSessionStart(vm: String, ref: SSHSessionRef) -> Date? {
 		sshMeta[vm]?[ref]?.startedAt
 	}
 
-	func renameSSHSession(vm: String, ref: SSHSessionRef, to name: String) {
+	public func renameSSHSession(vm: String, ref: SSHSessionRef, to name: String) {
 		let trimmed = name.trimmingCharacters(in: .whitespaces)
 		guard !trimmed.isEmpty else { return }
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
@@ -124,21 +124,23 @@ final class TerminalSessions: ObservableObject {
 		objectWillChange.send()
 	}
 
-	func sshSessionProfileID(vm: String, ref: SSHSessionRef) -> UUID? {
+	public func sshSessionProfileID(vm: String, ref: SSHSessionRef) -> UUID? {
 		sshMeta[vm]?[ref]?.profileID
 	}
 
 	// Live-apply a profile to one session (font/colors/behaviour) and remember the pick.
 	// Startup-only settings can't change on a live remote session — they apply to the
 	// NEXT session; there is deliberately no ssh "reload".
-	func applySSHProfile(vm: String, ref: SSHSessionRef, id: UUID, profile: TerminalProfile) {
+	public func applySSHProfile(
+		vm: String, ref: SSHSessionRef, id: UUID, profile: TerminalProfile
+	) {
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
 			name: ref.title, startedAt: Date())].profileID = id
 		sshControllers[vm]?[ref]?.applyLive(profile)
 		objectWillChange.send()
 	}
 
-	func ensureSSHController(
+	public func ensureSSHController(
 		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile,
 		stillWanted: @escaping @MainActor () -> Bool = { true }
 	) {
@@ -167,7 +169,7 @@ final class TerminalSessions: ObservableObject {
 	// Re-attach a dead session to a fresh ssh process on the SAME controller, so the tab
 	// keeps its identity, its name and — the point — its scrollback. A live session is
 	// left alone; the caller decides whether the guest is worth reconnecting to.
-	func reconnectSSHSession(
+	public func reconnectSSHSession(
 		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile
 	) {
 		guard let controller = sshControllers[vm]?[ref], !controller.connected else { return }
@@ -178,7 +180,7 @@ final class TerminalSessions: ObservableObject {
 		objectWillChange.send()
 	}
 
-	func dropSSHController(vm: String, ref: SSHSessionRef) {
+	public func dropSSHController(vm: String, ref: SSHSessionRef) {
 		sshMeta[vm]?[ref] = nil
 		guard let c = sshControllers[vm]?[ref] else { return }
 		c.disconnect()
@@ -188,7 +190,7 @@ final class TerminalSessions: ObservableObject {
 
 	// Drop every controller of VMs that no longer exist. Per-port pruning is the canvas
 	// reconcile's job — it reports removed refs into dropController.
-	func reconcile(vms: [VMInfo]) {
+	public func reconcile(vms: [VMInfo]) {
 		let names = Set(vms.map(\.name))
 		for vm in Array(controllers.keys) where !names.contains(vm) {
 			controllers[vm]?.values.forEach { $0.disconnect() }
@@ -203,7 +205,7 @@ final class TerminalSessions: ObservableObject {
 
 	// Migrate a VM's controllers on rename, so open terminals survive it. (A live SSH
 	// process is unaffected by the rename; its argv already resolved.)
-	func renameVM(from old: String, to new: String) {
+	public func renameVM(from old: String, to new: String) {
 		if let c = controllers[old] {
 			controllers[new] = c
 			controllers[old] = nil

@@ -12,6 +12,7 @@ import SwiftUI
 import CryptoKit
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 // OpenSSH-style fingerprint of a public-key line ("SHA256:…") for approval dialogs.
 private func sshKeyFingerprint(_ keyLine: String) -> String? {

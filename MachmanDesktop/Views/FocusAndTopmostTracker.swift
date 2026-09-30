@@ -9,6 +9,7 @@
 
 import SwiftUI
 import AppKit
+import MachmanDesktopCore
 
 struct FocusAndTopmostTracker: NSViewRepresentable {
 	let onChange: (Bool) -> Void

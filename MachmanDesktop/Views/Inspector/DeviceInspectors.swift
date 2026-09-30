@@ -12,6 +12,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 // Router for the device kinds: dedicated inspectors where there are settings, the generic
 // info inspector everywhere else.

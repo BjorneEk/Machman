@@ -12,6 +12,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct GuestSetupInspector: View {
 	@ObservedObject var viewModel: VMListViewModel

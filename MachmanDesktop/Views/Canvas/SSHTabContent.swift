@@ -11,6 +11,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 // argv for /usr/bin/ssh from daemon-served state — self-contained (-i + IdentitiesOnly),
 // deliberately independent of the ~/.ssh integration so tabs work without consent.

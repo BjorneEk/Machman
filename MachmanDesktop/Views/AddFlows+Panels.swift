@@ -9,6 +9,7 @@
 
 import AppKit
 import MachmanAPI
+import MachmanDesktopCore
 
 @MainActor
 extension AddFlows {

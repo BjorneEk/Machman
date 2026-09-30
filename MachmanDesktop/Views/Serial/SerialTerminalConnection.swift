@@ -10,6 +10,7 @@
 
 import Foundation
 import MachmanUI
+import MachmanDesktopCore
 
 final class SerialTerminalConnection: TerminalByteStream {
 	private let path: String

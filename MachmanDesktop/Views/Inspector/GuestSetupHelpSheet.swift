@@ -16,6 +16,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct GuestSetupHelpSheet: View {
 	let vm: VMInfo

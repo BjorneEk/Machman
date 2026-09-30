@@ -1,29 +1,29 @@
 //
 //  EntityClipboard.swift
-//  MachmanDesktop
+//  MachmanDesktopCore
 //
 //  Copyable tree entities: a disk, kernel, or initramfs file (by path) or a mount (path +
 //  tag). Pasting into a VM funnels through the same flows as every other entry point (disk
 //  copy-or-reference, kernel promote, mount re-share). The general-pasteboard I/O lives
-//  beside the views (Views/EntityClipboard+Pasteboard.swift).
+//  beside the views (EntityClipboard+Pasteboard.swift).
 //
 
 import Foundation
 import MachmanAPI
 
-struct EntityClipboard: Codable {
-	enum Kind: String, Codable {
+public struct EntityClipboard: Codable {
+	public enum Kind: String, Codable {
 		case disk
 		case kernel
 		case initramfs
 		case mount
 	}
 
-	var kind: Kind
-	var path: String
-	var tag: String?
+	public var kind: Kind
+	public var path: String
+	public var tag: String?
 
-	init(kind: Kind, path: String, tag: String? = nil) {
+	public init(kind: Kind, path: String, tag: String? = nil) {
 		self.kind = kind
 		self.path = path
 		self.tag = tag
@@ -31,7 +31,7 @@ struct EntityClipboard: Codable {
 
 	// MARK: - Paste routing
 
-	var fileName: String { (path as NSString).lastPathComponent }
+	public var fileName: String { (path as NSString).lastPathComponent }
 
 	private var defaultTag: String {
 		URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
@@ -39,7 +39,7 @@ struct EntityClipboard: Codable {
 
 	// Paste this entity into a VM: the same funnels as picker/drop entry points.
 	@MainActor
-	func paste(into vm: String, viewModel: VMListViewModel) {
+	public func paste(into vm: String, viewModel: VMListViewModel) {
 		switch kind {
 		case .disk:
 			AddFlows.askDiskReferenceOrCopy(

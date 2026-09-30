@@ -1,6 +1,6 @@
 //
 //  VMStore.swift
-//  MachmanDesktop
+//  MachmanDesktopCore
 //
 //  App-scoped source of truth for the VM list and host capabilities. Owns its own event
 //  subscription (the transport fans events out per subscriber): stateChanged patches the row
@@ -13,15 +13,17 @@ import Foundation
 import MachmanAPI
 
 @MainActor
-final class VMStore: ObservableObject {
-	@Published private(set) var vms: [VMInfo] = []
-	@Published private(set) var capabilities: HostCapabilities?
-	private(set) var api: MachmanControlling?
+public final class VMStore: ObservableObject {
+	@Published public private(set) var vms: [VMInfo] = []
+	@Published public private(set) var capabilities: HostCapabilities?
+	public private(set) var api: MachmanControlling?
 	private var eventTask: Task<Void, Never>?
+
+	public init() {}
 
 	// Wire the store to a (re)connection: subscribe first, then load, so no change between
 	// the two is missed. The pump is serial — a reload finishes before the next event.
-	func attach(api: MachmanControlling) {
+	public func attach(api: MachmanControlling) {
 		detach()
 		self.api = api
 		eventTask = Task { [weak self] in
@@ -34,13 +36,13 @@ final class VMStore: ObservableObject {
 		}
 	}
 
-	func detach() {
+	public func detach() {
 		eventTask?.cancel()
 		eventTask = nil
 		api = nil
 	}
 
-	func reload() async {
+	public func reload() async {
 		guard let api else { return }
 		if let list = try? await api.listVMs() {
 			vms = list
@@ -52,7 +54,7 @@ final class VMStore: ObservableObject {
 
 	// Capabilities are fetched once per connection; sheets showing live figures (free disk
 	// space) refresh explicitly so the number isn't sessions old.
-	func refreshCapabilities() async {
+	public func refreshCapabilities() async {
 		guard let api else { return }
 		if let caps = try? await api.hostCapabilities() {
 			capabilities = caps

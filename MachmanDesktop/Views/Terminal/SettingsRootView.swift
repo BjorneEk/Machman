@@ -8,6 +8,7 @@
 
 import SwiftUI
 import MachmanUI
+import MachmanDesktopCore
 
 struct SettingsRootView: View {
 	@ObservedObject var profiles: TerminalProfileStore

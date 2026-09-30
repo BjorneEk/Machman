@@ -15,6 +15,7 @@ import SwiftUI
 import AppKit
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 private let dividerWidth: CGFloat = 9
 

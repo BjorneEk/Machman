@@ -13,6 +13,7 @@ import SwiftUI
 import AppKit
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct VMDeviceTreeView: View {
 	@ObservedObject var viewModel: VMListViewModel

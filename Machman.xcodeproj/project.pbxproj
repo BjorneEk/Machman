@@ -10,6 +10,7 @@
 		AA10000000000000000000C1 /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B1 /* MachmanAPI */; };
 		AA10000000000000000000C7 /* MachmanClient in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B7 /* MachmanClient */; };
 		AA10000000000000000000C8 /* MachmanUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B8 /* MachmanUI */; };
+		AA10000000000000000000C9 /* MachmanDesktopCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000B9 /* MachmanDesktopCore */; };
 		AA10000000000000000000D3 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000000000000000000D2 /* SwiftTerm */; };
 		BB200000000000000000000C /* MachmanAPI in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000A /* MachmanAPI */; };
 		BB200000000000000000000D /* MachmanCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB200000000000000000000B /* MachmanCore */; };
@@ -102,6 +103,7 @@
 				AA10000000000000000000C1 /* MachmanAPI in Frameworks */,
 				AA10000000000000000000C7 /* MachmanClient in Frameworks */,
 				AA10000000000000000000C8 /* MachmanUI in Frameworks */,
+				AA10000000000000000000C9 /* MachmanDesktopCore in Frameworks */,
 				AA10000000000000000000D3 /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -184,6 +186,7 @@
 				AA10000000000000000000B1 /* MachmanAPI */,
 				AA10000000000000000000B7 /* MachmanClient */,
 				AA10000000000000000000B8 /* MachmanUI */,
+				AA10000000000000000000B9 /* MachmanDesktopCore */,
 				AA10000000000000000000D2 /* SwiftTerm */,
 			);
 			productName = MachmanDesktop;
@@ -702,6 +705,10 @@
 		AA10000000000000000000B8 /* MachmanUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MachmanUI;
+		};
+		AA10000000000000000000B9 /* MachmanDesktopCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MachmanDesktopCore;
 		};
 		AA10000000000000000000D2 /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;

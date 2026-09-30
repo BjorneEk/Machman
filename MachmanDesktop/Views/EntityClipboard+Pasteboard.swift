@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import MachmanDesktopCore
 
 extension EntityClipboard {
 	static let pasteboardType = NSPasteboard.PasteboardType(

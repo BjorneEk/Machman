@@ -1,6 +1,6 @@
 //
 //  TerminalController.swift
-//  MachmanDesktop
+//  MachmanDesktopCore
 //
 //  What TerminalSessions needs from a live terminal: its connection lifecycle, live profile
 //  changes and its transcript — nothing about how it is drawn. The app's SwiftTerm-backed
@@ -12,7 +12,7 @@ import Foundation
 import MachmanUI
 
 @MainActor
-protocol TerminalController: AnyObject {
+public protocol TerminalController: AnyObject {
 	var connected: Bool { get }
 	// The startup-only settings baked in at creation (a Reload applies changed ones).
 	var startupSignature: TerminalStartupSignature { get }

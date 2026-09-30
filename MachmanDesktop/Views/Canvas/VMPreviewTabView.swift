@@ -12,6 +12,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct VMPreviewTabView: View {
 	let vm: VMInfo

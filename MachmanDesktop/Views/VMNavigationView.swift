@@ -8,6 +8,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel

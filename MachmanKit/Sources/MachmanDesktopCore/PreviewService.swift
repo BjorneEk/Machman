@@ -1,6 +1,6 @@
 //
 //  PreviewService.swift
-//  MachmanDesktop
+//  MachmanDesktopCore
 //
 //  App-scoped preview polling: one ~4s loop per visible running VM, writing frames into the
 //  isolated PreviewStore (only the small PreviewView re-renders per frame — see PreviewStore).
@@ -14,9 +14,9 @@ import AppKit
 import MachmanAPI
 
 @MainActor
-final class PreviewService: ObservableObject {
+public final class PreviewService: ObservableObject {
 	// Views observe the store directly; the service itself publishes nothing per frame.
-	let images = PreviewStore()
+	public let images = PreviewStore()
 	private let store: VMStore
 	private var api: MachmanControlling?
 	private var eventTask: Task<Void, Never>?
@@ -25,11 +25,11 @@ final class PreviewService: ObservableObject {
 	private var focused = true
 	private let interval: Double = 4
 
-	init(store: VMStore) {
+	public init(store: VMStore) {
 		self.store = store
 	}
 
-	func attach(api: MachmanControlling) {
+	public func attach(api: MachmanControlling) {
 		detach()
 		self.api = api
 		eventTask = Task { [weak self] in
@@ -45,7 +45,7 @@ final class PreviewService: ObservableObject {
 		restartAll()
 	}
 
-	func detach() {
+	public func detach() {
 		eventTask?.cancel()
 		eventTask = nil
 		api = nil
@@ -54,7 +54,7 @@ final class PreviewService: ObservableObject {
 
 	// Which VMs' previews are on screen. Adding starts a loop, removing stops one; an
 	// unchanged set is a no-op (running loops keep their cadence).
-	func setVisible(_ names: Set<String>) {
+	public func setVisible(_ names: Set<String>) {
 		guard names != visible else { return }
 		let stale = visible.subtracting(names)
 		let added = names.subtracting(visible)
@@ -63,14 +63,14 @@ final class PreviewService: ObservableObject {
 		for name in added { restart(name) }
 	}
 
-	func setFocused(_ focused: Bool) {
+	public func setFocused(_ focused: Bool) {
 		guard focused != self.focused else { return }
 		self.focused = focused
 		restartAll()
 	}
 
 	// Keep the last frame under the new name so the preview doesn't blank on rename.
-	func renameVM(from old: String, to new: String) {
+	public func renameVM(from old: String, to new: String) {
 		if let image = images.images.removeValue(forKey: old) {
 			images.images[new] = image
 		}

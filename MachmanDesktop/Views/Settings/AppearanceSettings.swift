@@ -9,6 +9,7 @@
 
 import SwiftUI
 import MachmanUI
+import MachmanDesktopCore
 
 // One place for the persisted keys; MachmanTheme.fromDefaults() is what windows inject.
 enum ThemeKeys {

@@ -6,7 +6,9 @@ import PackageDescription
 //   MachmanAPI   the wire contract: DTOs + MachmanControlling + canonical JSON coding.
 //                Imports Foundation ONLY — never Virtualization or AppKit. Everything a
 //                client (GUI, CLI, non-Swift) needs to talk to the daemon, nothing more.
-//   MachmanCore  (added in a later step) the VM engine behind the protocol.
+//   MachmanCore  the VM engine behind the protocol.
+//   MachmanDesktopCore  the desktop's view models and stores (no views, no windows): what the
+//                headless view-model tests drive. Never MachmanCore or Virtualization.
 //
 let package = Package(
 	name: "MachmanKit",
@@ -16,6 +18,7 @@ let package = Package(
 		.library(name: "MachmanCore", targets: ["MachmanCore"]),
 		.library(name: "MachmanClient", targets: ["MachmanClient"]),
 		.library(name: "MachmanUI", targets: ["MachmanUI"]),
+		.library(name: "MachmanDesktopCore", targets: ["MachmanDesktopCore"]),
 	],
 	targets: [
 		.target(
@@ -70,6 +73,15 @@ let package = Package(
 		.target(
 			name: "MachmanUI",
 			dependencies: ["MachmanAPI"],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
+		// The desktop client's logic: view models + stores over MachmanControlling. Anything
+		// that talks to the window server, the pasteboard, panels or NSWorkspace lives with the
+		// views, so every type here runs headless under swift test. Never MachmanCore or
+		// Virtualization; MachmanClient is allowed if connection logic ever moves in.
+		.target(
+			name: "MachmanDesktopCore",
+			dependencies: ["MachmanAPI", "MachmanUI"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 

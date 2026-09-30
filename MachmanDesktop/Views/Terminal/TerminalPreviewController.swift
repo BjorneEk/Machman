@@ -12,6 +12,7 @@
 import SwiftUI
 import SwiftTerm
 import MachmanUI
+import MachmanDesktopCore
 
 final class TerminalPreviewController: ObservableObject {
 	@Published private(set) var controller: SerialTerminalController

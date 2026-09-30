@@ -10,6 +10,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 // Native toggle-style button. While the VM is down it shows (and locks to) the default
 // start mode; while running it opens/closes the VM window.

@@ -11,6 +11,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct NotificationOverlay: View {
 	@ObservedObject var viewModel: VMListViewModel

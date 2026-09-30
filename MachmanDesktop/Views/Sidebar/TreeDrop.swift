@@ -16,6 +16,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 // What a drag currently targets and what we know about its payload.
 struct TreeDragPreview: Equatable {

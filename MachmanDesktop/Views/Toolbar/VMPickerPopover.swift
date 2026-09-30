@@ -10,6 +10,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct VMPickerPopover: View {
 	@ObservedObject var viewModel: VMListViewModel

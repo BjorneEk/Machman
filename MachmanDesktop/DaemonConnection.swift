@@ -14,6 +14,7 @@ import ServiceManagement
 import MachmanAPI
 import MachmanUI
 import MachmanClient
+import MachmanDesktopCore
 
 @MainActor
 final class DaemonConnection: ObservableObject {

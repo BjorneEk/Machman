@@ -11,6 +11,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 extension VMInfo {
 	// Whether the VM would boot with a display. nil devices = a pre-1.0.4 daemon, where

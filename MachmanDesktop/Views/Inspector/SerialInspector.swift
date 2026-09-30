@@ -12,6 +12,7 @@
 import SwiftUI
 import MachmanUI
 import MachmanAPI
+import MachmanDesktopCore
 
 struct SerialInspector: View {
 	let vm: VMInfo
