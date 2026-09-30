@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanTestSupport
 @testable import MachmanCore
 
 // A force quit, a crash, or a power loss all skip every cleanup path the code has. What survives
@@ -10,7 +11,7 @@ struct CrashRecoveryTests {
 	// MARK: - Sockets
 
 	@Test func aSocketFileWithNothingBehindItIsNotLive() throws {
-		let path = NSTemporaryDirectory() + "mm-dead-\(UUID().uuidString).sock"
+		let path = TestEnvironment.scratch + "mm-dead-\(UUID().uuidString).sock"
 		FileManager.default.createFile(atPath: path, contents: Data())
 		defer { try? FileManager.default.removeItem(atPath: path) }
 		// Exactly what a killed daemon leaves: the file, with no listener.
@@ -18,7 +19,7 @@ struct CrashRecoveryTests {
 	}
 
 	@Test func aLiveListenerIsDetected() throws {
-		let path = NSTemporaryDirectory() + "mm-live-\(UUID().uuidString).sock"
+		let path = TestEnvironment.scratch + "mm-live-\(UUID().uuidString).sock"
 		let listener = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
 		defer { listener.shutdown() }
 		#expect(UDSListener.isLive(path: path) == true)
@@ -26,7 +27,7 @@ struct CrashRecoveryTests {
 
 	// The important half: a leftover file must not permanently block the socket.
 	@Test func aStaleSocketIsReclaimedRatherThanRefused() throws {
-		let path = NSTemporaryDirectory() + "mm-stale-\(UUID().uuidString).sock"
+		let path = TestEnvironment.scratch + "mm-stale-\(UUID().uuidString).sock"
 		let first = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
 		// Simulate SIGKILL: drop the listener without shutdown(), leaving the file behind.
 		first.simulateKillForTesting()
@@ -38,7 +39,7 @@ struct CrashRecoveryTests {
 	}
 
 	@Test func aSecondLiveListenerIsRefused() throws {
-		let path = NSTemporaryDirectory() + "mm-dup-\(UUID().uuidString).sock"
+		let path = TestEnvironment.scratch + "mm-dup-\(UUID().uuidString).sock"
 		let first = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
 		defer { first.shutdown() }
 		#expect(throws: UDSError.self) {

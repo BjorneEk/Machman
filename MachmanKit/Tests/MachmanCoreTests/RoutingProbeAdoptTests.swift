@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
@@ -29,7 +30,7 @@ struct RoutingProbeAdoptTests {
 
 	@Test @MainActor func startAdoptsALiveHostAndForwardsTheStart() async throws {
 		let routing = try makeRouting()
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-probe-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha")
@@ -46,7 +47,7 @@ struct RoutingProbeAdoptTests {
 
 	@Test @MainActor func adoptOfARunningHostToleratesInvalidState() async throws {
 		let routing = try makeRouting()
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-probe2-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
@@ -65,7 +66,7 @@ struct RoutingProbeAdoptTests {
 
 	@Test @MainActor func deadSocketIsReclaimedAndNotAdopted() async throws {
 		let routing = try makeRouting()
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-dead-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		FileManager.default.createFile(atPath: socketPath, contents: nil)
 
@@ -81,7 +82,7 @@ struct RoutingProbeAdoptTests {
 	// owns the VM's directory. A live socket refuses; a dead leftover file does not.
 	@Test @MainActor func deleteRefusesWhileAnUnadoptedVMHostOwnsTheSocket() async throws {
 		let routing = try makeRouting()
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-unadopted-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let listener = try UDSListener(
 			path: socketPath, queue: DispatchQueue(label: "mm-unadopted-accept")) { fd in
@@ -109,7 +110,7 @@ struct RoutingProbeAdoptTests {
 	@Test @MainActor func socketPruneCoversSerialSockets() throws {
 		let routing = try makeRouting()
 		let fm = FileManager.default
-		let dir = NSTemporaryDirectory()
+		let dir = TestEnvironment.scratch
 			+ "mm-prune-\(getpid())-\(UInt32.random(in: 0..<99999))"
 		try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		defer { try? fm.removeItem(atPath: dir) }

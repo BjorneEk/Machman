@@ -9,12 +9,13 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct SSHHostConfigWriterTests {
 
 	private func makeRoot() throws -> URL {
-		let root = FileManager.default.temporaryDirectory
+		let root = TestEnvironment.scratchURL
 			.appendingPathComponent("machman-sshdir-\(UUID().uuidString)")
 		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 		return root

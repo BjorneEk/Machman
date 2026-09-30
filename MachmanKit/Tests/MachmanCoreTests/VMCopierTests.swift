@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import MachmanTestSupport
 import Testing
 import Virtualization
 import MachmanAPI
@@ -15,7 +16,7 @@ import MachmanAPI
 
 struct VMCopierTests {
 	private func makeLibrary() throws -> String {
-		let dir = NSTemporaryDirectory() + "vmcopier-\(UUID().uuidString)"
+		let dir = TestEnvironment.scratch + "vmcopier-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		return dir
 	}

@@ -12,6 +12,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
@@ -85,7 +86,7 @@ struct RoutingPendingStartTests {
 		let mac = "aa:bb:cc:77:11:22"
 		let routing = try makeRouting(names: ["pending-alpha", "pending-beta"], mac: mac)
 
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-pend-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["pending-alpha"] = StubMachman.makeInfo("pending-alpha", state: .running)

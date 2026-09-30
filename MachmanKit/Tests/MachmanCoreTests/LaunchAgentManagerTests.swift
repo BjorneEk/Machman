@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 @testable import MachmanCore
 
@@ -59,7 +60,7 @@ struct LaunchAgentManagerTests {
 	}
 
 	@Test func installRemoveRoundTrip() throws {
-		let tmp = NSTemporaryDirectory() + "machman-agents-\(UUID().uuidString)"
+		let tmp = TestEnvironment.scratch + "machman-agents-\(UUID().uuidString)"
 		defer { try? FileManager.default.removeItem(atPath: tmp) }
 		let manager = makeManager(agentsDir: tmp)
 
@@ -75,7 +76,7 @@ struct LaunchAgentManagerTests {
 	}
 
 	@Test func installIfChangedRewritesOnlyOnDrift() throws {
-		let tmp = NSTemporaryDirectory() + "machman-agents-\(UUID().uuidString)"
+		let tmp = TestEnvironment.scratch + "machman-agents-\(UUID().uuidString)"
 		defer { try? FileManager.default.removeItem(atPath: tmp) }
 
 		let manager = makeManager(agentsDir: tmp)

@@ -11,6 +11,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
@@ -86,7 +87,7 @@ struct SafeRunTests {
 	}
 
 	@Test func markerRoundTripsAndToleratesGarbage() throws {
-		let runRoot = NSTemporaryDirectory() + "safe-marker-\(UUID().uuidString)"
+		let runRoot = TestEnvironment.scratch + "safe-marker-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(
 			atPath: runRoot, withIntermediateDirectories: true)
 		defer { try? FileManager.default.removeItem(atPath: runRoot) }
@@ -103,7 +104,7 @@ struct SafeRunTests {
 	}
 
 	@Test func absorbShadowHistoryCopiesBackMonotonically() throws {
-		let dir = NSTemporaryDirectory() + "safe-absorb-\(UUID().uuidString)"
+		let dir = TestEnvironment.scratch + "safe-absorb-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		defer { try? FileManager.default.removeItem(atPath: dir) }
 		let realPath = dir + "/real-config"
@@ -168,7 +169,7 @@ struct SafeRunTests {
 	}
 
 	@Test @MainActor func peerPIDIsTheServingProcess() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-peer-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
@@ -195,12 +196,12 @@ struct SafeRunTests {
 	@Test @MainActor func hostGoneDiscardsTheShadow() async throws {
 		let routing = try makeRouting()
 		// Test-owned absolute path: hostGone reads identity.shadowRoot, never the globals.
-		let shadowRoot = NSTemporaryDirectory() + "safe-run-\(UUID().uuidString)"
+		let shadowRoot = TestEnvironment.scratch + "safe-run-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(
 			atPath: shadowRoot, withIntermediateDirectories: true)
 		defer { try? FileManager.default.removeItem(atPath: shadowRoot) }
 
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-shadow-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
@@ -226,7 +227,7 @@ struct SafeRunTests {
 		let routing = try makeRouting()
 		// Adopt a live in-process host for alpha FIRST (async, outside the lock): its
 		// socket peer is this test process.
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-sweep-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
@@ -298,7 +299,7 @@ struct SafeRunTests {
 			_ = try await routing.safeSave(vm: "alpha", to: "kept")
 		}
 
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-save-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("alpha", state: .running)
@@ -340,7 +341,7 @@ struct SafeRunTests {
 
 	@Test @MainActor func setStartPolicyRefusedWhileSafeHosted() async throws {
 		let routing = try makeRouting()
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-pol-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
@@ -365,7 +366,7 @@ struct SafeRunTests {
 
 	@Test @MainActor func safeHostsOverlaySafeRunOnTheWire() async throws {
 		let routing = try makeRouting()
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-overlay-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)

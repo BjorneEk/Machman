@@ -9,12 +9,13 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 @testable import MachmanCore
 
 struct DiskImportTests {
 	private func makeDir() throws -> String {
-		let dir = NSTemporaryDirectory() + "diskimport-\(UUID().uuidString)"
+		let dir = TestEnvironment.scratch + "diskimport-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		return dir
 	}

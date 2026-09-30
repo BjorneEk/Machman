@@ -9,6 +9,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
@@ -33,7 +34,7 @@ struct MacConflictTests {
 		let mac = "aa:bb:cc:00:11:22"
 		let routing = try makeRouting(sharedMAC: mac)
 
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-conflict-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
@@ -62,7 +63,7 @@ struct MacConflictTests {
 		let mac = "aa:bb:cc:00:33:44"
 		let routing = try makeRouting(sharedMAC: mac)
 
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-force-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)

@@ -6,12 +6,13 @@
 //
 
 import Foundation
+import MachmanTestSupport
 import Testing
 @testable import MachmanCore
 
 struct VMHostLocatorTests {
 	private func makeTree() throws -> URL {
-		let root = URL(fileURLWithPath: NSTemporaryDirectory())
+		let root = URL(fileURLWithPath: TestEnvironment.scratch)
 			.appendingPathComponent("locator-\(UUID().uuidString)")
 		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 		return root

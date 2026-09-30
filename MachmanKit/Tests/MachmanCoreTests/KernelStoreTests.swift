@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 @testable import MachmanCore
 
@@ -12,7 +13,7 @@ struct KernelStoreTests {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "k")
 			let cfg = try VMConfig(name: "k", memorySize: 1 << 30, cpuCount: 2)
-			let src = NSTemporaryDirectory() + "ktest-\(UUID().uuidString).bin"
+			let src = TestEnvironment.scratch + "ktest-\(UUID().uuidString).bin"
 			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
 			defer { try? FileManager.default.removeItem(atPath: src) }
 			let base = (src as NSString).lastPathComponent
@@ -98,7 +99,7 @@ struct KernelStoreTests {
 			try VMConfig.createNewVMDirectory(name: "j2")
 			let cfg = try VMConfig(name: "j2", memorySize: 1 << 30, cpuCount: 2)
 			let fm = FileManager.default
-			let src = NSTemporaryDirectory() + "k-\(UUID().uuidString).bin"
+			let src = TestEnvironment.scratch + "k-\(UUID().uuidString).bin"
 			try Data("K".utf8).write(to: URL(fileURLWithPath: src))
 			defer { try? fm.removeItem(atPath: src) }
 			_ = try KernelStore.promote(

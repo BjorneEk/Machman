@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct ServerNotificationTests {
@@ -40,7 +41,7 @@ struct ServerNotificationTests {
 	}
 
 	@Test func notificationsAreNeverAnswered() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-notif-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let server = try await MainActor.run {
 			let server = MachmanServer(

@@ -1,4 +1,5 @@
 import Foundation
+import MachmanTestSupport
 @testable import MachmanCore
 
 // machmanVMDir is a shared global and Swift Testing runs suites in parallel, so any test that
@@ -13,7 +14,13 @@ enum VMTestDir {
 		defer { lock.unlock() }
 		let original = machmanVMDir
 		let originalSafe = machmanSafeDir
-		let tmp = NSTemporaryDirectory() + "machman-test-\(UUID().uuidString)"
+		// Backstop behind MachmanTestGuard: the lazily resolved globals must sit inside this
+		// run's sandbox before anything is swapped (a test never sees a real library).
+		precondition(
+			original.hasPrefix(TestEnvironment.dataDir)
+				&& originalSafe.hasPrefix(TestEnvironment.dataDir),
+			"machmanVMDir/machmanSafeDir resolved outside the test sandbox: \(original)")
+		let tmp = TestEnvironment.scratch + "vmdir-\(UUID().uuidString)"
 		machmanVMDir = tmp
 		// Both globals swap under the ONE lock, so no test can sweep another's shadows —
 		// or worse, the real safe dir.

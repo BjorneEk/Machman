@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
@@ -21,7 +22,7 @@ struct ServerReadyGateTests {
 	}
 
 	@Test @MainActor func requestsParkUntilTheGateOpensButHelloAndRetireAnswer() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-gate-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -57,7 +58,7 @@ struct ServerReadyGateTests {
 	}
 
 	@Test @MainActor func aFinishedGateAddsNoHold() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-gate2-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")

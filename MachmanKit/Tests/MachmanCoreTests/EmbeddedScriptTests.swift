@@ -12,6 +12,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct EmbeddedScriptTests {
@@ -44,7 +45,7 @@ struct EmbeddedScriptTests {
 			("/bin/bash", ["--posix", "-n"]),
 			("/bin/ksh", ["-n"]),
 		]
-		let url = FileManager.default.temporaryDirectory
+		let url = TestEnvironment.scratchURL
 			.appendingPathComponent("machman-\(UUID().uuidString)-guest-setup.sh")
 		try GuestSetupScript.assembled.text.write(to: url, atomically: true, encoding: .utf8)
 		defer { try? FileManager.default.removeItem(at: url) }

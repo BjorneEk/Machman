@@ -8,6 +8,7 @@
 
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 @testable import MachmanCore
 
@@ -34,7 +35,7 @@ struct GuestReportTests {
 	@Test func oversizedValuesAndFilesAreRefused() {
 		let huge = String(repeating: "x", count: GuestReport.maxValueLength + 1)
 		#expect(GuestReport.parse("USER=\(huge)").values["USER"] == nil)
-		let dir = FileManager.default.temporaryDirectory
+		let dir = TestEnvironment.scratchURL
 			.appendingPathComponent("machman-report-\(UUID().uuidString)")
 		try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 		defer { try? FileManager.default.removeItem(at: dir) }

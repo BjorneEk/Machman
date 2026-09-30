@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
@@ -451,7 +452,7 @@ final class StubMachman: MachmanControlling {
 struct LoopbackTests {
 
 	@Test @MainActor func sshSetRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -471,7 +472,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func mountKindAndSetupResetRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("Debian")
@@ -501,7 +502,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func wireRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory() + "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.scratch + "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
@@ -559,7 +560,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func regenerateMACRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-mac-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -575,7 +576,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func serialPortsRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-ser-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -620,7 +621,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func kernelPromoteRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-krn-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -641,7 +642,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func setStartPolicyRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-pol-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -657,7 +658,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func copyRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-copy-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -682,7 +683,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func setSafetyRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-safe-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("Debian")
@@ -707,7 +708,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func diskImportAndPromoteRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-imp-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("Debian")
@@ -737,7 +738,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func safeSaveRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-save-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		var running = StubMachman.makeInfo("Debian", state: .running)
@@ -764,7 +765,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func retireRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-ret-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
@@ -778,7 +779,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func engineErrorsKeepTheirCode() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-err-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
@@ -801,7 +802,8 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func largeResponsesSurviveTheSocket() async throws {
-		let socketPath = NSTemporaryDirectory() + "mm-big-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.scratch
+			+ "mm-big-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian", state: .running)
 		// 2 MiB of noise ≈ a real VM-window JPEG after base64 — far beyond the socket
@@ -820,7 +822,8 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func secondDaemonIsRefused() async throws {
-		let socketPath = NSTemporaryDirectory() + "mm-dup-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.scratch
+			+ "mm-dup-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
 		try server.start()
@@ -835,7 +838,7 @@ struct LoopbackTests {
 	// The 1.0.4 additions dispatch end to end: devices, enabled, overrides, resize,
 	// operations, templates, nested-virt.
 	@Test @MainActor func devicesAndOperationsRoundTrip() async throws {
-		let socketPath = NSTemporaryDirectory()
+		let socketPath = TestEnvironment.scratch
 			+ "mm-dev-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		var seeded = StubMachman.makeInfo("Debian")

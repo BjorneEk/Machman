@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import MachmanTestSupport
 import MachmanAPI
 @testable import MachmanCore
 
@@ -12,7 +13,7 @@ import MachmanAPI
 struct SerialPortBridgeTests {
 
 	private func tempPath(_ tag: String, _ ext: String) -> String {
-		NSTemporaryDirectory() + "mm-\(tag)-\(getpid())-\(UInt32.random(in: 0..<99999)).\(ext)"
+		TestEnvironment.scratch + "mm-\(tag)-\(getpid())-\(UInt32.random(in: 0..<99999)).\(ext)"
 	}
 
 	private func makeBridge(
