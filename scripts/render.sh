@@ -12,6 +12,13 @@
 # draws into windows that are never ordered on screen, under a prohibited activation policy:
 # no window, no Dock icon, no focus change, no daemon.
 #
+# Fidelity: layout and text are the app's; colours nearly so. Switch and checkbox "on" states
+# lack the accent fill. Glass and materials draw in their Reduce Transparency form (opaque,
+# hairline edge); capsule outlines get a short tick at each end. In window.* scenes the split
+# view's glass columns are flat composites of the real column views, the traffic lights are
+# hidden and a 1 px line marks the inspector edge. Alerts, confirmation dialogs and open/save
+# panels cannot render. Text follows the locale ("34,36 GB").
+#
 set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"

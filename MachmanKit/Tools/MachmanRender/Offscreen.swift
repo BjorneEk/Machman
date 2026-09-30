@@ -29,7 +29,12 @@ enum Offscreen {
 		_ view: AnyView, width: CGFloat?, height: CGFloat?, dark: Bool,
 		chrome: Chrome = .none, panels: [AnyView] = [], scale: CGFloat = 2
 	) -> (data: Data, size: CGSize)? {
+		// Liquid Glass (glassEffect) never draws under cacheDisplay: its platter goes missing
+		// and its adaptive foreground turns dark on dark. Reduce Transparency switches
+		// MachmanGlassSurface to its opaque form, a surface the app really draws, so toasts,
+		// cards and the VM indicator keep their true text and state colours.
 		let root = view
+			.environment(\._accessibilityReduceTransparency, true)
 			.background(Color(nsColor: .windowBackgroundColor))
 		let host = NSHostingView(rootView: root)
 		let initial = NSRect(x: 0, y: 0, width: width ?? 1200, height: height ?? 2400)
