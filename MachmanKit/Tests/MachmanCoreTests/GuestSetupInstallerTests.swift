@@ -16,6 +16,7 @@
 
 import Testing
 import Foundation
+import SystemConfiguration
 import MachmanAPI
 @testable import MachmanCore
 
@@ -254,6 +255,18 @@ struct GuestSetupInstallerTests {
 		// (unserved once installed, elsewhere on macOS), so no payload dir name is baked in.
 		#expect(s.contains(#"REPORT_COPY="$STATE_DIR/report.sh""#))
 		#expect(!s.contains("/GuestSetup/"))
+	}
+
+	// E29: the Mac's name for the guest's "ssh mac" line comes from the dynamic store —
+	// the computer name, no lookup — never Host.current(), which can block on DNS on a
+	// VM's start path. (Both agree here: this pins the source, the grep pins the rest.)
+	@Test @MainActor func hostNameComesFromTheDynamicStore() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "hostname")
+			let vm = try VMConfig(name: "hostname", memorySize: 1 << 30, cpuCount: 2)
+			let computerName = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? ""
+			#expect(try GuestSetupInstaller.environment(for: vm)["HOST_NAME"] == computerName)
+		}
 	}
 
 	// S27: macOS guests mount the share at "My Shared Files", not the Linux share root.

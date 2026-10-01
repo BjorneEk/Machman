@@ -52,7 +52,9 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			"CONSOLE_COUNT": String(config.consolePorts.filter(\.enabled).count),
 			"UART_COUNT": String(config.uartPorts.filter(\.enabled).count),
 			"HOST_USER": NSUserName(),
-			"HOST_NAME": Host.current().localizedName ?? "",
+			// The computer name, from the dynamic store with no lookup: Foundation's Host
+			// resolves names and can block on DNS on this start path.
+			"HOST_NAME": SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "",
 			"HOST_LOCAL": localHost.map { $0 + ".local" } ?? "",
 		]
 	}
