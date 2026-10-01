@@ -167,6 +167,29 @@ struct SerialConfigTests {
 		}
 	}
 
+	// The limit applies to what enters: a larger cap the port already holds (a script wrote
+	// it) comes back unchanged when a client edits the mode, and that edit goes through.
+	@Test func setLoggingKeepsAStoredOversizedCap() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("legacycap")
+			let legacy = UInt64(1) << 40
+			vm.consolePorts[0].logging = SerialLogConfig(mode: .continuous, maxBytes: legacy)
+			try vm.saveVMConfig()
+
+			try vm.setSerialLogging(
+				kind: .console, index: 0,
+				config: SerialLogConfig(mode: .resetOnBoot, maxBytes: legacy))
+			#expect(try VMConfig.load(name: "legacycap").consolePorts[0].logging
+				== SerialLogConfig(mode: .resetOnBoot, maxBytes: legacy))
+			// A different oversized cap is still refused.
+			#expect(throws: MachmanError.self) {
+				try vm.setSerialLogging(
+					kind: .console, index: 0,
+					config: SerialLogConfig(mode: .resetOnBoot, maxBytes: legacy + 1))
+			}
+		}
+	}
+
 	// macOS 26.6.1 gated the private PL011/16550 serial devices behind the
 	// com.apple.private.virtualization entitlement (the helper traps decoding them at start for an
 	// unentitled host). The gate must reject exactly [26.6.1, ∞) — a wrong boundary either crashes

@@ -689,25 +689,30 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	static let serialLogMaxBytesLimit: UInt64 = 1 << 30
 
 	func setSerialLogging(kind: SerialPortKind, index: Int, config: SerialLogConfig) throws {
-		if let cap = config.maxBytes, cap > Self.serialLogMaxBytesLimit {
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "a serial log can be capped at 1 GB at most — omit maxBytes for no cap")
-		}
+		let ports: ReferenceWritableKeyPath<VMConfig, [SerialPort]>
 		switch kind {
 		case .console:
 			guard consolePorts.indices.contains(index) else {
 				throw MachmanError(code: .notFound, message: "no console port \(index) on \(name)")
 			}
-			consolePorts[index].logging = config
+			ports = \.consolePorts
 		case .uart:
 			guard uartPorts.indices.contains(index) else {
 				throw MachmanError(code: .notFound, message: "no UART port \(index) on \(name)")
 			}
-			uartPorts[index].logging = config
+			ports = \.uartPorts
 		case .unknown:
 			throw MachmanError(code: .invalidArgument, message: "unknown serial port kind")
 		}
+		// Checked as a cap enters: a larger one the port already holds (written by a script)
+		// keeps working, and clients send it back unchanged with every other logging edit.
+		if let cap = config.maxBytes, cap > Self.serialLogMaxBytesLimit,
+			cap != self[keyPath: ports][index].logging.maxBytes {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "a serial log can be capped at 1 GB at most — omit maxBytes for no cap")
+		}
+		self[keyPath: ports][index].logging = config
 		try saveVMConfig()
 	}
 
