@@ -139,10 +139,11 @@ final class UDSConnection {
 		source.setEventHandler { [weak self] in
 			self?.readAvailable()
 		}
-		source.setCancelHandler { [weak self] in
-			guard let self = self else { return }
-			close(self.fd)
-			self.onClose?()
+		// The descriptor is captured by value: it must close even when the connection object
+		// is already gone (a weak-self guard leaked it then).
+		source.setCancelHandler { [weak self, fd] in
+			close(fd)
+			self?.onClose?()
 		}
 	}
 
@@ -199,9 +200,11 @@ final class UDSConnection {
 		}
 	}
 
+	// Strong capture on purpose: the server's stop() drops its last reference right after
+	// this call, and the source must still be cancelled (closing the descriptor) first.
 	func shutdown() {
-		queue.async { [weak self] in
-			self?.shutdownLocked()
+		queue.async {
+			self.shutdownLocked()
 		}
 	}
 

@@ -17,7 +17,12 @@ public final class MachmanServer {
 	private let daemonVersion: String
 	private let acceptQueue = DispatchQueue(label: "machman.server.accept")
 	private var listener: UDSListener?
-	private var connections: [Int32: Client] = [:]
+	// Keyed by a per-accept counter, never by descriptor: a closed descriptor's number is
+	// handed out again at once, and a connection's cleanup reaches the main actor only after
+	// its descriptor closed — an fd key let that stale cleanup remove (and mute) the newer
+	// client holding the same number (E13). The dict is each Client's only owner.
+	private var connections: [Int: Client] = [:]
+	private var nextConnectionID = 0
 	// Startup-reconciliation gate: while set and unfinished, requests park before dispatch.
 	// The socket must be claimed FIRST (it is the daemon mutex), but the engine's view is
 	// wrong until adoption completes — a surviving vmhost's VM lists as stopped, vm.stop
@@ -75,19 +80,28 @@ public final class MachmanServer {
 		connections.removeAll()
 	}
 
-	private func accept(_ fd: Int32) {
+	// Test seams: the live connection count, and the Client objects (for lifetime checks).
+	var connectionCount: Int { connections.count }
+	func clientsForTesting() -> [AnyObject] { Array(connections.values) }
+
+	// Internal so tests can hand in one end of a socketpair.
+	func accept(_ fd: Int32) {
 		let connection = UDSConnection(fd: fd)
 		let client = Client(connection: connection)
-		connections[fd] = client
-		connection.onLine = { [weak self] line in
+		let id = nextConnectionID
+		nextConnectionID += 1
+		connections[id] = client
+		// Weak client: the connection holds this closure and the Client holds the
+		// connection, so a strong capture kept every closed client alive for good.
+		connection.onLine = { [weak self, weak client] line in
 			Task { @MainActor [weak self] in
+				guard let client else { return }
 				await self?.handle(line: line, client: client)
 			}
 		}
 		connection.onClose = { [weak self] in
 			Task { @MainActor [weak self] in
-				self?.connections[fd]?.eventTask?.cancel()
-				self?.connections[fd] = nil
+				self?.connections.removeValue(forKey: id)?.eventTask?.cancel()
 			}
 		}
 		connection.start()
