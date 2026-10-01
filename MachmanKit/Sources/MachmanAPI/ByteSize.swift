@@ -32,15 +32,27 @@ public enum ByteSize {
 	private static let mib: UInt64 = 1024 * 1024
 	private static let gib: UInt64 = 1024 * 1024 * 1024
 
-	// "8" = 8 BYTES (no prefix means exact bytes — clear and consistent); "8g"/"8G"/"8gb" =
-	// 8 GiB; "512m"; "2048k". Units are binary. Decimals are accepted with any unit
-	// ("1.5g" = 1536 MiB). All whitespace is ignored, so a formatted "8 GB" parses back.
-	// nil for anything else.
-	public static func parse(_ input: String) -> UInt64? {
+	// What a number with no unit means: bytes in the memory field, GB in a size field
+	// (decision 14). Binary, like every unit here.
+	public enum Unit: UInt64, Sendable {
+		case byte = 1
+		case kibibyte = 1_024
+		case mebibyte = 1_048_576
+		case gibibyte = 1_073_741_824
+	}
+
+	// "8" = 8 of `bareUnit` — BYTES by default (no prefix means exact bytes — clear and
+	// consistent); "8g"/"8G"/"8gb" = 8 GiB; "512m"; "2048k"; "8b" = 8 bytes whatever the
+	// bare unit. Units are binary. Decimals are accepted with any unit ("1.5g" = 1536 MiB).
+	// All whitespace is ignored, so a formatted "8 GB" parses back. nil for anything else.
+	public static func parse(_ input: String, bareUnit: Unit = .byte) -> UInt64? {
 		var s = input.lowercased().filter { $0 != " " && $0 != "\t" }
 		guard !s.isEmpty else { return nil }
-		if s.hasSuffix("b") { s = String(s.dropLast()) }
-		var multiplier: Double = 1
+		var multiplier = Double(bareUnit.rawValue)
+		if s.hasSuffix("b") {
+			s = String(s.dropLast())
+			multiplier = 1
+		}
 		if let unit = s.last, "kmg".contains(unit) {
 			switch unit {
 			case "k": multiplier = Double(kib)

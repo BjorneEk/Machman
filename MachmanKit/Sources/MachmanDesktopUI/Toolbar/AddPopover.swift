@@ -38,28 +38,33 @@ struct AddPopover: View {
 	let vm: VMInfo
 	@Environment(\.dismiss) private var dismiss
 	@State private var addingNewDisk: Bool
+	private let diskName: String
+	private let diskSize: String
 
 	private let columns = [GridItem(.adaptive(minimum: 64), spacing: 2)]
 
-	// `newDisk` opens straight on the New Disk form (render scenes).
-	init(viewModel: VMListViewModel, vm: VMInfo, newDisk: Bool = false) {
+	// `newDisk` opens straight on the New Disk form, `diskName`/`diskSize` pre-fill it
+	// (render scenes).
+	init(
+		viewModel: VMListViewModel, vm: VMInfo, newDisk: Bool = false,
+		diskName: String = "", diskSize: String = ""
+	) {
 		self.viewModel = viewModel
 		self.vm = vm
 		_addingNewDisk = State(initialValue: newDisk)
+		self.diskName = diskName
+		self.diskSize = diskSize
 	}
 
 	var body: some View {
 		Group {
 			if addingNewDisk {
 				NewDiskForm(
-					freeGB: viewModel.capabilities.map { ByteSize.toGB($0.freeDiskBytes) },
+					viewModel: viewModel, vm: vm, name: diskName, sizeText: diskSize,
 					back: {
 						withAnimation(.snappy(duration: 0.18)) { addingNewDisk = false }
 					},
-					create: { name, sizeBytes in
-						viewModel.addDisk(vm.name, .storage(name: name, sizeBytes: sizeBytes))
-						dismiss()
-					})
+					created: { dismiss() })
 			} else {
 				tiles
 			}
@@ -185,17 +190,32 @@ struct AddPopover: View {
 	}
 }
 
-// Inline "New Disk" form: name + size in GB, capped at the host's free space figure.
+// Inline "New Disk" form: name + size in GB (decimals fine), capped at the host's free
+// space figure. A disabled Create always says why — once anything is typed; the untouched
+// form's placeholders say what to enter.
 private struct NewDiskForm: View {
-	let freeGB: Int?
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
 	let back: () -> Void
-	let create: (String, UInt64) -> Void
-	@State private var name = ""
-	@State private var sizeText = ""
+	let created: () -> Void
+	@State private var name: String
+	@State private var sizeText: String
 
-	private var sizeGB: Int { Int(sizeText.filter(\.isNumber)) ?? 0 }
-	private var valid: Bool {
-		!name.isEmpty && sizeGB > 0 && sizeGB <= (freeGB ?? Int.max)
+	init(
+		viewModel: VMListViewModel, vm: VMInfo, name: String, sizeText: String,
+		back: @escaping () -> Void, created: @escaping () -> Void
+	) {
+		self.viewModel = viewModel
+		self.vm = vm
+		self.back = back
+		self.created = created
+		_name = State(initialValue: name)
+		_sizeText = State(initialValue: sizeText)
+	}
+
+	private var freeGB: Int? { viewModel.capabilities.map { ByteSize.toGB($0.freeDiskBytes) } }
+	private var problem: String? {
+		viewModel.newDiskProblem(on: vm, name: name, sizeText: sizeText)
 	}
 
 	var body: some View {
@@ -218,13 +238,18 @@ private struct NewDiskForm: View {
 					.textFieldStyle(.roundedBorder)
 				TextField("Size in GB\(freeGB.map { " (max \($0))" } ?? "")", text: $sizeText)
 					.textFieldStyle(.roundedBorder)
+				if let problem, !(name.isEmpty && sizeText.isEmpty) {
+					FieldProblem(problem)
+				}
 				HStack {
 					Spacer()
 					Button("Create") {
-						create(name, ByteSize.fromGB(sizeGB))
+						if viewModel.createDisk(on: vm, name: name, sizeText: sizeText) {
+							created()
+						}
 					}
 					.keyboardShortcut(.defaultAction)
-					.disabled(!valid)
+					.disabled(problem != nil)
 				}
 			}
 			.padding(10)

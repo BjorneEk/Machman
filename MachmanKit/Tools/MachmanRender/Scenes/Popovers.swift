@@ -38,6 +38,27 @@ enum PopoverScenes {
 		RenderScene("popover.add.new-disk", "AddPopover's New Disk form") { ctx in
 			AnyView(AddPopover(viewModel: ctx.viewModel, vm: ctx.vm, newDisk: true))
 		},
+		RenderScene(
+			"popover.add.new-disk.taken", "New Disk form, a name the VM already uses"
+		) { ctx in
+			AnyView(AddPopover(
+				viewModel: ctx.viewModel, vm: ctx.vm, newDisk: true,
+				diskName: "system", diskSize: "64"))
+		},
+		RenderScene(
+			"popover.add.new-disk.bad-size", "New Disk form, a size it can't read"
+		) { ctx in
+			AnyView(AddPopover(
+				viewModel: ctx.viewModel, vm: ctx.vm, newDisk: true,
+				diskName: "data", diskSize: "lots"))
+		},
+		RenderScene(
+			"popover.add.new-disk.decimal", "New Disk form, a decimal size in GB"
+		) { ctx in
+			AnyView(AddPopover(
+				viewModel: ctx.viewModel, vm: ctx.vm, newDisk: true,
+				diskName: "data", diskSize: "1.5"))
+		},
 		RenderScene("popover.vm-picker", "VMPickerPopover, every row state") { ctx in
 			AnyView(VMPickerPopover(viewModel: ctx.viewModel))
 		},
