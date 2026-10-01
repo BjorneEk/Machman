@@ -1720,6 +1720,9 @@ public final class RoutingMachman: MachmanControlling {
 		host.identity.name = newName
 		host.identity.isSafe = false
 		host.identity.shadowRoot = nil   // the vmhost moved + deleted the run root itself
+		// The host's reply is its answer for the promoted VM: a stall right after this serves
+		// that, never an answer still naming the original.
+		host.lastAnswer = info
 		hosted[name] = nil
 		hosted[newName] = host
 		do {

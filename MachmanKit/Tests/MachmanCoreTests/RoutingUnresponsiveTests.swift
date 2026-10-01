@@ -150,6 +150,23 @@ struct RoutingUnresponsiveTests {
 		#expect(alpha.state == .running)
 	}
 
+	// safeSave re-keys the host under the new name; a stall right after it serves the host's
+	// answer for the promoted VM, never the last answer that still names the original.
+	@Test @MainActor func aSafeSavedHostStallsUnderItsNewName() async throws {
+		let rig = try await makeRig()
+		defer { finish(rig) }
+		rig.routing.hostForTesting("alpha")?.identity.isSafe = true
+		rig.alpha.vms["alpha"]?.safeRun = true
+		_ = try await rig.routing.listVMs()   // the last answer names alpha
+		_ = try await rig.routing.safeSave(vm: "alpha", to: "gamma")
+		rig.alpha.stalled = ["vm"]
+
+		let gamma = try await rig.routing.vm(named: "gamma")
+		#expect(gamma.unresponsive == true)
+		#expect(gamma.name == "gamma")   // before: "alpha", a second row for the original
+		#expect(gamma.state == .running)
+	}
+
 	@Test @MainActor func operationsSkipAStalledHost() async throws {
 		let rig = try await makeRig()
 		defer { finish(rig) }
