@@ -17,6 +17,29 @@ struct StartPolicyTests {
 		#expect(h.stub.starts.first?.options == StartOptions(openWindow: false, safe: false))
 	}
 
+	// The Run submenu's Start Headless used to send safe: false whatever the policy.
+	@Test func explicitHeadlessKeepsAPolicysSafety() async {
+		var vm = Samples.linux("Alpine")
+		vm.startPolicy = StartPolicy(windowed: true, safe: true)
+		let h = await DesktopHarness.make([vm])
+		h.viewModel.startPolicyDriven(vm, .headless)
+		#expect(await eventually { h.stub.starts.count == 1 })
+		#expect(h.stub.starts.first?.options == StartOptions(openWindow: false, safe: true))
+	}
+
+	// Every affordance funnels into startPolicyDriven, so an install blocks them all.
+	@Test func aStartDuringAnInstallIsNotSent() async throws {
+		let h = await DesktopHarness.make()
+		let sequoia = try #require(h.viewModel.vms.first { $0.name == "Sequoia" })
+		h.stub.emit(.installPhaseChanged(vm: "Sequoia", phase: InstallPhase(kind: .installing)))
+		#expect(await eventually { h.viewModel.isInstalling(sequoia) })
+		#expect(!h.viewModel.canStart(sequoia))
+		h.viewModel.startPolicyDriven(sequoia)
+		#expect(!h.viewModel.isStartPending("Sequoia"))
+		try await Task.sleep(for: .milliseconds(50))
+		#expect(h.stub.starts.isEmpty)
+	}
+
 	@Test func aMacConflictOffersTheForcedRetry() async {
 		let vm = Samples.linux("Alpine")
 		let h = await DesktopHarness.make([vm])

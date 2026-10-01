@@ -40,11 +40,6 @@ struct MachmanDesktopApp: App {
 		return nil
 	}
 
-	// A start already sent but not yet visible in vm.state disables the item like running.
-	private func startDisabled(_ viewModel: VMListViewModel, _ vm: VMInfo) -> Bool {
-		vm.state.isRunning || viewModel.isInstalling(vm) || viewModel.isStartPending(vm.name)
-	}
-
 	var body: some Scene {
 		WindowGroup {
 			ThemedRoot(store: themeStore) {
@@ -124,36 +119,36 @@ struct MachmanDesktopApp: App {
 							viewModel.startPolicyDriven(vm)
 						}
 						.keyboardShortcut("r")
-						.disabled(startDisabled(viewModel, vm))
+						.disabled(!viewModel.canStart(vm))
 						Button("Start \(vm.name) Safe") {
-							viewModel.startPolicyDriven(vm, safeOverride: true)
+							viewModel.startPolicyDriven(vm, .safe)
 						}
 						.keyboardShortcut("r", modifiers: [.shift, .command])
-						.disabled(startDisabled(viewModel, vm))
+						.disabled(!viewModel.canStart(vm))
 						Divider()
 					}
 					ForEach(viewModel.vms) { vm in
 						Menu(vm.name) {
-							// Explicit items force their EXACT mode — window AND safety;
-							// only the plain toolbar Run follows the policy checkboxes.
+							// A named item overrides only what it names; the rest follows the
+							// policy (decision 7).
 							Button(action: {
-								viewModel.startVM(vm.name, safe: false)
+								viewModel.startPolicyDriven(vm)
 							}) {
 								Label("Start", systemImage: MachmanSymbols.start)
 							}
-							.disabled(startDisabled(viewModel, vm))
+							.disabled(!viewModel.canStart(vm))
 							Button(action: {
-								viewModel.startVM(vm.name, headless: true, safe: false)
+								viewModel.startPolicyDriven(vm, .headless)
 							}) {
 								Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 							}
-							.disabled(startDisabled(viewModel, vm))
+							.disabled(!viewModel.canStart(vm))
 							Button(action: {
-								viewModel.startVM(vm.name, safe: true)
+								viewModel.startPolicyDriven(vm, .safe)
 							}) {
 								Label("Start Safe", systemImage: MachmanSymbols.safe)
 							}
-							.disabled(startDisabled(viewModel, vm))
+							.disabled(!viewModel.canStart(vm))
 						}
 					}
 				}
@@ -319,33 +314,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 		}
 	}
 
-	// Dock menu: one start/stop toggle per VM, states at a glance.
+	// Dock menu: one start/stop toggle per VM, states at a glance. The items and their
+	// enabled state come from the view model's Dock rule (dimmed while reconnecting and
+	// during a macOS install).
 	func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-		guard let vms = Self.connection?.vmStore.vms, !vms.isEmpty else { return nil }
+		guard let connection = Self.connection, !connection.vmStore.vms.isEmpty else {
+			return nil
+		}
 		let menu = NSMenu()
-		for vm in vms {
-			let running = vm.state.isRunning
+		menu.autoenablesItems = false
+		let entries = VMListViewModel.dockMenuItems(
+			vms: connection.vmStore.vms, viewModel: connection.viewModel)
+		for entry in entries {
 			let item = NSMenuItem(
-				title: running ? "Shut Down \(vm.name)" : "Start \(vm.name)",
-				action: #selector(toggleVM(_:)), keyEquivalent: "")
+				title: entry.title, action: #selector(toggleVM(_:)), keyEquivalent: "")
 			item.target = self
-			item.representedObject = vm.name
-			item.state = running ? .on : .off
+			item.representedObject = entry.vm
+			item.state = entry.running ? .on : .off
+			item.isEnabled = entry.enabled
 			menu.addItem(item)
 		}
 		return menu
 	}
 
+	// Through the view model, not the raw api: a start follows the VM's start policy and
+	// carries the pending-start guard; failures surface as alerts.
 	@objc private func toggleVM(_ sender: NSMenuItem) {
-		guard let name = sender.representedObject as? String,
-			let viewModel = Self.connection?.viewModel else { return }
-		let running = viewModel.vms.first { $0.name == name }?.state.isRunning == true
-		// Through the view model, not the raw api: startVM carries the pending-start
-		// guard (no double-fire in the pre-event window) and surfaces errors.
-		if running {
-			viewModel.stopVM(name, mode: .soft)
-		} else {
-			viewModel.startVM(name)
-		}
+		guard let name = sender.representedObject as? String else { return }
+		Self.connection?.viewModel?.performDockItem(vm: name)
 	}
 }

@@ -50,11 +50,13 @@ final class MenuBarModel: ObservableObject {
 		}
 	}
 
-	func start(_ name: String, headless: Bool = false, safe: Bool = false) {
+	// The desktop's start rule (StartIntent): the policy, overridden only where named.
+	func start(_ vm: VMInfo, _ intent: StartIntent) {
+		let name = vm.name
+		let options = vm.startOptions(intent)
 		Task {
 			do {
-				try await api.start(
-					vm: name, options: StartOptions(openWindow: !headless, safe: safe))
+				try await api.start(vm: name, options: options)
 			} catch {
 				MachmanLogger.log(.interactionError, "start \(name): \(error.localizedDescription)")
 			}
@@ -90,28 +92,22 @@ struct MenuBarView: View {
 	var body: some View {
 		ForEach(model.vms) { vm in
 			Menu {
+				// Start follows the VM's start policy (window AND safety); Start Headless and
+				// Start Safe override only what they name (decision 7).
 				Button {
-					// Start follows the WINDOW policy but is explicitly unsafe — safety in
-					// this menu is chosen by item, never by the checkbox.
-					model.start(
-						vm.name,
-						headless: !(vm.startPolicy ?? StartPolicy()).windowed,
-						safe: false)
+					model.start(vm, .plain)
 				} label: {
 					Label("Start", systemImage: MachmanSymbols.start)
 				}
 				.disabled(vm.state.isRunning)
 				Button {
-					model.start(vm.name, headless: true, safe: false)
+					model.start(vm, .headless)
 				} label: {
 					Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 				}
 				.disabled(vm.state.isRunning)
 				Button {
-					model.start(
-						vm.name,
-						headless: !(vm.startPolicy ?? StartPolicy()).windowed,
-						safe: true)
+					model.start(vm, .safe)
 				} label: {
 					Label("Start Safe", systemImage: MachmanSymbols.safe)
 				}

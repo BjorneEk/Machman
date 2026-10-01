@@ -71,13 +71,13 @@ struct StartStopGroup: View {
 						}
 						.help(startHelp)
 						Button {
-							viewModel.startPolicyDriven(vm, safeOverride: true)
+							viewModel.startPolicyDriven(vm, .safe)
 						} label: {
 							SafeStartGlyph(size: 12)
 						}
 						.help("Start Safe — run on a discardable shadow")
 					}
-					.disabled(viewModel.isInstalling(vm))
+					.disabled(!viewModel.canStart(vm))
 				}
 			case .starting:
 				transition("Starting…")

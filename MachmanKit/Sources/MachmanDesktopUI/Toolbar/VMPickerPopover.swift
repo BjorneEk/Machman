@@ -146,14 +146,12 @@ private struct VMPickerRow: View {
 		.onHover { hovering = $0 }
 	}
 
-	// Explicit items force their exact safety mode (window mode follows the policy); the
-	// plain toolbar Start is the only policy-following affordance.
+	// Start follows the VM's start policy; Start Safe overrides only safety (decision 7).
 	@ViewBuilder
 	private var quickActions: some View {
-		if !vm.state.isRunning && !viewModel.isInstalling(vm)
-			&& !viewModel.isStartPending(vm.name) {
-			Button("Start") { viewModel.startVM(vm.name, safe: false) }
-			Button("Start Safe") { viewModel.startVM(vm.name, safe: true) }
+		if viewModel.canStart(vm) {
+			Button("Start") { viewModel.startPolicyDriven(vm) }
+			Button("Start Safe") { viewModel.startPolicyDriven(vm, .safe) }
 		}
 		if vm.state.isRunning {
 			Button("Shut Down") { viewModel.stopVM(vm.name, mode: .soft) }

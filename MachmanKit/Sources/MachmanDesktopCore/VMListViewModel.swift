@@ -569,19 +569,13 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// The plain Start affordance honors the VM's start policy; explicit menu items force
-	// only their WINDOW mode (safe applies everywhere — silently dropping safety would be
-	// the one surprise worse than none). nil policy = old daemon defaults. safeOverride
-	// forces safety on top of the policy's window mode (the toolbar's Start Safe).
-	public func startPolicyDriven(_ vm: VMInfo, safeOverride: Bool? = nil) {
-		let policy = vm.startPolicy ?? StartPolicy()
-		startVM(vm.name, headless: !policy.windowed, safe: safeOverride ?? policy.safe)
-	}
-
 	public func isStartPending(_ name: String) -> Bool {
 		pendingStarts.contains(name)
 	}
 
+	// The low-level start with exact options. Affordances never call it: they go through
+	// startPolicyDriven (VMListViewModel+Start.swift), which applies the VM's start policy.
+	// Only the MAC-conflict retry, which repeats a refused start with force, needs it.
 	public func startVM(
 		_ name: String, headless: Bool = false, force: Bool = false, safe: Bool = false
 	) {
