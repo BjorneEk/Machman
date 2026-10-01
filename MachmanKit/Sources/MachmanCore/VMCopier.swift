@@ -71,6 +71,20 @@ enum VMCopier {
 		}
 	}
 
+	// The source's serial session output (C9): the per-port logs VMConfig.serialLogURL names
+	// "serial-<kind><index>.log", and the pre-1.0.3 file-backed "console.log". A fresh copy
+	// starts with none; a shadow keeps them — an append-mode log goes on where the VM's left.
+	static func isSerialLog(_ entry: String) -> Bool {
+		if entry == "console.log" { return true }
+		for kind in [SerialPortKind.console, .uart] {
+			let prefix = "serial-\(kind.rawValue)"
+			guard entry.hasPrefix(prefix), entry.hasSuffix(".log") else { continue }
+			let index = entry.dropFirst(prefix.count).dropLast(".log".count)
+			if !index.isEmpty, index.allSatisfy({ $0.isASCII && $0.isNumber }) { return true }
+		}
+		return false
+	}
+
 	// Returns the destination directory path.
 	@discardableResult
 	nonisolated static func copy(_ request: VMCopyRequest) throws -> String {
@@ -179,6 +193,7 @@ enum VMCopier {
 		for entry in try fm.contentsOfDirectory(atPath: src).sorted() {
 			if skipped.contains(entry) { continue }
 			if entry.hasSuffix(".raw") && !clonedRaws.contains(entry) { continue }
+			if case .fresh = request.identity, isSerialLog(entry) { continue }
 			guard let size = travelSize(atPath: src + "/" + entry) else {
 				MachmanLogger.log(.log,
 					"copying \(config.name): left out \(entry) (not a file or folder)")

@@ -234,6 +234,32 @@ struct VMCopierTests {
 		#expect(reports.values.map(\.0) == reports.values.map(\.0).sorted())
 	}
 
+	// C9: serial session output is the source's; a fresh copy starts without it, a shadow
+	// keeps it (the VM's own log, which an append-mode port continues).
+	@Test func serialLogsStayWithTheSource() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let logs = ["serial-console0.log", "serial-uart1.log", "console.log"]
+		var files = Dictionary(uniqueKeysWithValues: logs.map { ($0, Data("boot".utf8)) })
+		files["serial-notes.log"] = Data("mine".utf8)
+		let src = try makeSourceVM(in: library, extraFiles: files)
+		let fm = FileManager.default
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup"))
+		for log in logs {
+			#expect(!fm.fileExists(atPath: dst + "/" + log), "\(log)")
+		}
+		#expect(fm.fileExists(atPath: dst + "/serial-notes.log"))   // not a port's log
+
+		let shadow = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, identity: .impersonate))
+		for log in logs {
+			#expect(fm.fileExists(atPath: shadow + "/" + log), "\(log)")
+		}
+	}
+
 	@Test func macOSGuestGetsAFreshMachineID() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }
