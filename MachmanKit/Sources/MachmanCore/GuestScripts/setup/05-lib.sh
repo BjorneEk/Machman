@@ -670,14 +670,17 @@ menu_multi() {
 #     (set -C) by the very open that writes it, then renamed over the target;
 #   * the old file's owner (chown -h) and mode: rw bits through the umask at creation,
 #     x/setuid/sticky by chmod, and only in a directory no other user can rename names in;
+#   * read through one open: an edit opens the file once and, where /dev/fd shows what a
+#     descriptor holds (Linux, macOS), refuses unless that is the file it checked — a link
+#     swapped in after the check would have root copy what it can read into the user's file;
 #   * an empty result empties the file instead of failing: filters are awk or sed, which
 #     exit 0 whatever they keep (grep -v exits 1 when nothing is left).
 # Paths are absolute. A refusal or failure returns 1 with R_ERROR set and the target
 # untouched; the caller decides between step_failed, a warning and giving up. Two races
-# stay open, as POSIX sh cannot close them without dropping privileges: a link swapped in
-# between the not-a-link check and the read makes root copy what it can read into that
-# user's own file, and a link to a directory swapped in just before the rename receives
-# the new file there, under its inert dot-and-tilde name.
+# stay open, as POSIX sh cannot close them without dropping privileges: that swap where
+# /dev/fd cannot show it (FreeBSD's fdescfs numbers its own nodes), and a link to a
+# directory swapped in just before the rename, which receives the new file there, under
+# its inert dot-and-tilde name.
 
 # rewrite_file [-m <mode>] [-o <user:group>] <file> <filter> [args…] — the file becomes
 # what <filter> prints when fed the file; -m/-o set the result's mode/owner instead.
@@ -734,6 +737,7 @@ _rf_reason() { # <code> <path>
 	12) printf '%s is a symbolic link' "$2" ;;
 	13) printf '%s is not a regular file' "$2" ;;
 	14) printf '%s has other hard links' "$2" ;;
+	16) printf '%s changed while it was being edited' "$2" ;;
 	*) printf 'could not write %s' "$2" ;;
 	esac
 }
@@ -763,8 +767,8 @@ _rf_in_dir() {
 	elif [ -e "./$_rf_name" ]; then
 		[ -f "./$_rf_name" ] || exit 13
 		# Numeric, and every field ahead of the name: spaces in it never shift one.
-		read -r _rf_perm _rf_links _rf_uid _rf_gid _rf_rest <<EOF
-$(ls -ln "./$_rf_name")
+		read -r _rf_ino _rf_perm _rf_links _rf_uid _rf_gid _rf_rest <<EOF
+$(ls -lni "./$_rf_name")
 EOF
 		# An edit would split a hard link (the other name keeps the old text); a whole
 		# new file replaces this name only, by design.
@@ -808,7 +812,16 @@ EOF
 	if [ "$_rf_op" = write ]; then
 		( umask "$_rf_umask" && set -C && "$@" > "$_rf_tmp" ) || { rm -f "$_rf_tmp"; exit 15; }
 	else
-		( umask "$_rf_umask" && set -C && "$@" < "./$_rf_name" > "$_rf_tmp" ) \
+		# One open, checked against the file checked above before anything reads it.
+		command exec 8< "./$_rf_name" || exit 13
+		if _rf_fd_shows_files; then
+			read -r _rf_oino _rf_operm _rf_olinks _rf_ouid _rf_ogid _rf_rest <<EOF
+$(ls -lniL /dev/fd/7 7<&8 2>/dev/null)
+EOF
+			[ "${_rf_oino:-} ${_rf_ouid:-} ${_rf_ogid:-}" = "$_rf_ino $_rf_uid $_rf_gid" ] \
+				|| exit 16
+		fi
+		( umask "$_rf_umask" && set -C && "$@" <&8 > "$_rf_tmp" ) \
 			|| { rm -f "$_rf_tmp"; exit 15; }
 	fi
 	if [ -n "$_rf_fown" ]; then
@@ -829,6 +842,17 @@ EOF
 	[ -L "./$_rf_name" ] && rm -f "./$_rf_name"
 	mv -f "$_rf_tmp" "./$_rf_name" || { rm -f "$_rf_tmp"; exit 15; }
 	exit 0
+}
+
+# Whether /dev/fd shows the file a descriptor has open rather than a node of its own: an
+# open "/" must look like "/" (inode, owner, group). Only the edit's read checks this, so
+# where it fails that read goes unverified, as before. The descriptor is handed to ls on a
+# fresh number: ksh-line shells close the ones exec opened when they run a command, and a
+# descriptor duplicated onto itself (8<&8) keeps that flag.
+_rf_fd_shows_files() {
+	_rf_fs_root="$(ls -lnid / 2>/dev/null | awk '{ print $1, $4, $5 }')"
+	[ -n "$_rf_fs_root" ] && [ "$_rf_fs_root" = "$( (command exec 9< / \
+		&& ls -lniLd /dev/fd/7 7<&9) 2>/dev/null | awk '{ print $1, $4, $5 }')" ]
 }
 
 # Filters: stdin to stdout, exit 0 whatever they keep.

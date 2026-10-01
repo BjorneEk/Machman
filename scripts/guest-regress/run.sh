@@ -136,6 +136,8 @@ printf 'ssh-ed25519 AAAA_REGRESSION_BLOB %s regression-vm\n' "$M" > "$P/GuestSet
 printf 'sshfs\tprojects\t/Users/g/Projects\nsshfs\tdocs\t/Users/g/My Docs\n' \
 	> "$P/GuestSetup/mounts.list"
 cp "$HERE/lib.sh" "$HERE"/suites/*.sh "$P/regress/"
+# The file-edit helpers on their own, for suites that drive them directly.
+cp "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/setup/05-lib.sh" "$P/regress/"
 # A read-only stand-in for /nix/store, mounted into every container (the nixos suite links
 # /etc/fstab and /etc/systemd/system into it, as NixOS does).
 mkdir -p "$TMP/store/systemd-system"

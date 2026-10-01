@@ -3,7 +3,7 @@
 # owner and mode. Every victim is a root-owned file or directory under /etc.
 # CHECKS: SSH_TMP_LINK SSH_UNMARKED_KEPT SSH_CONFIG_KEPT UNINSTALL_KEPT_LINK
 # CHECKS: AUTHKEYS_TMP_LINK AUTHKEYS_KEPT SSH_DIR_LINK AUTHKEYS_LINK REVERSE_KEY_LINK
-# CHECKS: KNOWN_HOSTS_LINK MOUNT_DIR_LINK REPORT_TMP_LINK
+# CHECKS: KNOWN_HOSTS_LINK MOUNT_DIR_LINK REPORT_TMP_LINK EDIT_LINK_SWAP
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -143,4 +143,31 @@ ln -s /etc/machman-victim-report /mnt/machman/share/GuestReport/report.env.tmp
 $SH "$S" --report-only -q >/tmp/ro.log 2>&1
 if intact /etc/machman-victim-report; then R REPORT_TMP_LINK pass; else
 	R REPORT_TMP_LINK fail; meta /etc/machman-victim-report; fi
+
+# A user swaps their file for a link to a root-only one after the edit's not-a-link check
+# (inside the temp-name od call, which runs in that window): the edit reads through one
+# open checked against the checked file, so it refuses instead of copying the victim in.
+mkuser swp
+mkdir -p /home/swp/.ssh
+printf 'mine\n# BEGIN %s\nours\n# END %s\n' "$NEW" "$NEW" > /home/swp/.ssh/config
+chown -R swp /home/swp/.ssh
+victim /etc/machman-victim-swap
+cat > /tmp/swap.sh <<EOF
+set -eu
+. /mnt/machman/share/regress/05-lib.sh
+MARKER='$NEW'
+od() {
+	rm -f /home/swp/.ssh/config && ln -s /etc/machman-victim-swap /home/swp/.ssh/config
+	chown -h swp /home/swp/.ssh/config
+	command od "\$@"
+}
+strip_block /home/swp/.ssh/config && echo copied || echo "kept: \$R_ERROR"
+EOF
+swap_out="$($SH /tmp/swap.sh 2>&1)"
+if intact /etc/machman-victim-swap && [ -L /home/swp/.ssh/config ] \
+	&& [ "$swap_out" = "kept: /home/swp/.ssh/config changed while it was being edited" ]; then
+	R EDIT_LINK_SWAP pass
+else
+	R EDIT_LINK_SWAP fail; printf '%s\n' "$swap_out"; ls -ln /home/swp/.ssh
+fi
 exit 0

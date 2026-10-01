@@ -108,6 +108,33 @@ struct GuestScriptLibTests {
 		}
 	}
 
+	// S20: the file's owner swaps it for a link to a file only root may read after the
+	// not-a-link check (here inside the temp-name od call, which runs in that window). The
+	// edit reads through one open checked against the checked file, so it refuses instead of
+	// copying the other file into the owner's. Proven where /dev/fd shows open files (macOS
+	// here, Linux in scripts/guest-regress).
+	@Test func aLinkSwappedInAfterTheCheckIsNeverRead() throws {
+		for shell in Self.shells {
+			let r = try run("""
+				echo secret > "$D/victim"
+				printf 'mine\\n# BEGIN %s\\nours\\n# END %s\\n' "$MARKER" "$MARKER" > "$D/config"
+				od() {
+					rm -f "$D/config" && ln -s "$D/victim" "$D/config"
+					command od "$@"
+				}
+				_rf_fd_shows_files && echo "fd check on"
+				strip_block "$D/config" && echo "copied" || echo "kept: $R_ERROR"
+				[ -L "$D/config" ] && echo "still a link"
+				cat "$D/victim"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasPrefix("fd check on\n"), "\(shell): \(r.out)")
+			#expect(r.out.contains("/config changed while it was being edited\n"),
+				"\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("still a link\nsecret\n"), "\(shell): \(r.out)")
+		}
+	}
+
 	// S20: a file without our block is not ours — not even rewritten in place, and a link
 	// to one is no refusal either.
 	@Test func filesWithoutTheMarkerAreLeftAlone() throws {
