@@ -29,9 +29,8 @@ struct SafeSaveSheet: View {
 		VStack(alignment: .leading, spacing: 12) {
 			Label("Save \(vm.name)'s safe run as a new VM", systemImage: MachmanSymbols.safe)
 				.font(.headline)
-			Text("The running copy becomes its own VM without interrupting it — "
-				+ "\(vm.name) stays untouched and shows as stopped. The new VM gets a "
-				+ "fresh MAC address on its next boot.")
+			Text("The running copy becomes a new VM without stopping, and \(vm.name) stays as "
+				+ "it was.")
 				.font(.caption)
 				.foregroundColor(.secondary)
 				.fixedSize(horizontal: false, vertical: true)
@@ -57,6 +56,7 @@ struct SafeSaveSheet: View {
 				}
 				.keyboardShortcut(.defaultAction)
 				.disabled(viewModel.safeSaveInFlight || problem != nil)
+				.help("The new VM gets a fresh MAC address on its next boot")
 			}
 		}
 		.padding(20)
