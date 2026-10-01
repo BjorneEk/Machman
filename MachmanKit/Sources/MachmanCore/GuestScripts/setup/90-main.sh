@@ -50,7 +50,12 @@ uninstall_release_dir() {
 # drops the mount root it created once it empties.
 uninstall_unmount_and_prune() {
 	_uup_root="${ST_MOUNTPOINT:-$MOUNTPOINT}"
-	for _uup_n in $ST_AUTOMOUNT_SSHFS; do
+	# Mount names are host text: never globbed against the working directory.
+	set -f
+	# shellcheck disable=SC2086
+	set -- $ST_AUTOMOUNT_SSHFS
+	set +f
+	for _uup_n in "$@"; do
 		[ "$_uup_n" = "@share" ] && continue
 		uninstall_release_dir "$_uup_root/$_uup_n"
 	done
@@ -98,7 +103,12 @@ if [ "$REPORT_ONLY" -eq 1 ]; then
 	if vfsauto_configured || vfsauto_foreign; then
 		AUTOMOUNT_LINES="virtiofs	$SHARE_TAG	$SHARE_ROOT"
 	fi
-	for _mm_n in $ST_AUTOMOUNT_SSHFS; do
+	# Mount names are host text: never globbed against the working directory.
+	set -f
+	# shellcheck disable=SC2086
+	set -- $ST_AUTOMOUNT_SSHFS
+	set +f
+	for _mm_n in "$@"; do
 		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
 }sshfs	$_mm_n	${ST_MOUNTPOINT:-$MOUNT_ROOT}/$_mm_n"
 	done

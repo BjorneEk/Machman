@@ -225,6 +225,19 @@ struct GuestScriptLibTests {
 		}
 	}
 
+	// D17: mount names are host text; "*.txt" stays "*.txt" beside a.txt.
+	@Test func itemListsAreNeverGlobbed() throws {
+		for shell in Self.shells {
+			let r = try run("""
+				touch "$D/a.txt"
+				INTERACTIVE=0
+				ask_choice "pick" '*.txt' 1
+				printf '%s\\n' "$R_ITEM"
+				""", under: shell)
+			#expect(r.out == "*.txt\n", "\(shell): \(r.out)")
+		}
+	}
+
 	// fstab escapes survive the body (no awk -v escape processing), and a file without a
 	// final newline does not glue its last line to our block.
 	@Test func blockBodiesArriveVerbatim() throws {

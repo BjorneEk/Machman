@@ -96,7 +96,9 @@ sshfsauto_decide() {
 		IFS='
 '
 		# shellcheck disable=SC2086
+		set -f
 		set -- $_sd_names
+		set +f
 		IFS="$_sd_old_ifs"
 		_sd_i=1
 		for _sd_name in "$@"; do
@@ -184,7 +186,9 @@ sshfsauto_act() {
 	IFS='
 '
 	# shellcheck disable=SC2086
+	set -f
 	set -- $SSHFSAUTO_SELECTED
+	set +f
 	IFS="$_sa_old_ifs"
 	for _sa_name in "$@"; do
 		sshfsauto_entry "$_sa_name"

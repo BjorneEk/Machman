@@ -319,7 +319,9 @@ ask_choice() {
 	IFS='
 '
 	# shellcheck disable=SC2086
+	set -f
 	set -- $_ac_items
+	set +f
 	IFS="$_ac_old_ifs"
 	_ac_count=$#
 	[ "$_ac_count" -gt 0 ] || die 3 "nothing to choose from for: $1"
@@ -517,7 +519,9 @@ menu_select() {
 	IFS='
 '
 	# shellcheck disable=SC2086
+	set -f
 	set -- $2
+	set +f
 	IFS="$_ms_old_ifs"
 	_ms_n=$#
 	[ "$_ms_n" -gt 0 ] || die 3 "nothing to choose from for: $_ms_q"
@@ -574,7 +578,9 @@ menu_multi() {
 	IFS='
 '
 	# shellcheck disable=SC2086
+	set -f
 	set -- $_mm_items
+	set +f
 	IFS="$_mm_old_ifs"
 	_mm_n=$#
 	[ "$_mm_n" -gt 0 ] || { R_MARKS="$_mm_marks"; return 0; }
