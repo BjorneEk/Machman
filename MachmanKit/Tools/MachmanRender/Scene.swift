@@ -7,7 +7,10 @@
 //  SceneContext (sample VMs over StubMachman). Scenes live in Scenes/<area>.swift and are
 //  listed in SceneRegistry — adding one is one entry there, nothing else. A scene never
 //  writes UserDefaults.standard or an @AppStorage key: that domain lives in the real home
-//  and every run shares it (see RenderSandbox).
+//  and every run shares it (see RenderSandbox). Nor does it open an SSH tab through
+//  SSHTabContent with a sample that sets ssh.identityFilePath: that spawns /usr/bin/ssh, which
+//  ignores the fake home (real ~/.ssh/known_hosts, a real connect). Hand SSHSessionSurface a
+//  never-connected controller instead.
 //
 
 import SwiftUI

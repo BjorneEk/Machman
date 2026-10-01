@@ -8,8 +8,9 @@
 //  ports are named by SerialPortKind.guestDevice. Absolute dates (created, report stamps) are
 //  fixed; the ones views turn into elapsed time (lastRan → uptime or "last ran", an
 //  operation's startedAt → its ETA) are set relative to `now`, one instant per process, so
-//  that text reads as it would live (seconds still differ between runs) and two builds of a
-//  sample stay equal within a run.
+//  that text reads as it would live and two builds of a sample stay equal within a run. In a
+//  render sweep `now` is the run's first sample, so later scenes read minutes older than the
+//  same scene rendered alone: compare elapsed-time text only within one run.
 //  Tests and render scenes both start here; a lane that needs a new state (a new DTO field)
 //  adds a builder here rather than inventing one inline.
 //

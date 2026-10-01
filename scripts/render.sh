@@ -46,8 +46,8 @@ cleanup() {
 	set +e
 	rm -rf "$root"
 	rm -rf "$(getconf DARWIN_USER_TEMP_DIR)$suite"            # MachmanPaths.runtimeDir
-	# Nothing lands here today (scenes pass their stores explicit URLs); a future scene
-	# that builds a default-URL store would, under the render suite.
+	# Belt and braces: default-URL stores resolve under the fake home (CFFIXED_USER_HOME), so
+	# nothing lands here. Preferences do: cfprefsd writes suite domains to the real home.
 	rm -rf "$HOME/Library/Application Support/$suite"          # defaultDataDir in the real home
 	rm -f "$HOME/Library/Preferences/$suite"*.plist            # any defaults domain under the suite
 }
