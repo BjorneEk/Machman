@@ -87,4 +87,12 @@ struct CommandTargetTests {
 		#expect(target.vm?.name == "Debian")
 		#expect(target.terminal == nil)
 	}
+
+	// File ▸ New VM… (⌘N) asks the toolbar picker for its template page.
+	@Test func requestNewVMRaisesTheChooserFlag() async {
+		let h = await DesktopHarness.make()
+		#expect(!h.viewModel.newVMChooserRequested)
+		h.viewModel.requestNewVM()
+		#expect(h.viewModel.newVMChooserRequested)
+	}
 }

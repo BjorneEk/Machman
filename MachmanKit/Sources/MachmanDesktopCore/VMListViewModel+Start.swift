@@ -26,6 +26,13 @@ extension VMListViewModel {
 		!vm.state.isRunning && !isInstalling(vm) && !isStartPending(vm.name)
 	}
 
+	// MARK: - New VM
+
+	// New VM… (⌘N) opens the same template chooser as the picker's own New VM… row.
+	public func requestNewVM() {
+		newVMChooserRequested = true
+	}
+
 	// MARK: - Dock menu
 
 	// One Dock item per VM: Shut Down while it runs, Start otherwise. The list is the

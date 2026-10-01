@@ -127,6 +127,9 @@ public final class VMListViewModel: ObservableObject {
 	// fresh list was fetched (copyInFlight's shape, per-VM).
 	@Published public private(set) var pendingStarts: Set<String> = []
 	@Published public var safeSaveRequest: VMInfo?      // non-nil presents SafeSaveSheet
+	// File ▸ New VM… asks the main window's toolbar picker to open on its template page;
+	// the picker clears it as it opens (VMIndicatorCluster).
+	@Published public var newVMChooserRequested = false
 	@Published public private(set) var safeSaveInFlight = false
 	// Bottom-right transient toasts (engine warnings/errors, confirmations). Lifetime is
 	// the user's setting; transfers show as progress cards from OperationsStore instead.

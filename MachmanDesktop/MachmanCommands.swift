@@ -220,16 +220,14 @@ struct MachmanCommands: Commands {
 
 	@ViewBuilder
 	private func fileItems(_ viewModel: VMListViewModel, target: CommandTarget) -> some View {
+		// The toolbar picker's template page (Blank / Default / macOS) on the main window.
 		Button(action: {
-			Task {
-				if let name = await viewModel.createVM() {
-					selection = name
-					viewModel.select(name: name)
-				}
-			}
+			openWindow(id: "main")
+			viewModel.requestNewVM()
 		}) {
-			Label("New VM", systemImage: MachmanSymbols.add)
+			Label("New VM…", systemImage: MachmanSymbols.add)
 		}
+		.keyboardShortcut("n")
 		Button(action: {
 			guard let vm = target.vm else { return }
 			showMainIfNeeded(target)

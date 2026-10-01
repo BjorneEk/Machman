@@ -19,6 +19,8 @@ struct VMIndicatorCluster: View {
 	// (it is the ONLY way to switch VMs — the sidebar shows one VM's device tree).
 	let vm: VMInfo?
 	@State private var pickerShown = false
+	// Opens the picker on its New VM template page (File ▸ New VM…).
+	@State private var pickerTemplates = false
 	@State private var hovering = false
 
 	var body: some View {
@@ -60,8 +62,30 @@ struct VMIndicatorCluster: View {
 		.onHover { hovering = $0 }
 		.help("Switch VM")
 		.popover(isPresented: $pickerShown, arrowEdge: .bottom) {
-			VMPickerPopover(viewModel: viewModel)
+			VMPickerPopover(viewModel: viewModel, templates: pickerTemplates)
 		}
+		// File ▸ New VM… (⌘N): open on the template page. A request made while the main
+		// window was closed is picked up when it reappears; deferred, because the request
+		// is cleared (published) as the chooser opens.
+		.onChange(of: viewModel.newVMChooserRequested) { _, requested in
+			if requested { DispatchQueue.main.async { showChooser() } }
+		}
+		.onAppear {
+			if viewModel.newVMChooserRequested {
+				DispatchQueue.main.async { showChooser() }
+			}
+		}
+		// The next ordinary open shows the VM list again.
+		.onChange(of: pickerShown) { _, shown in
+			if !shown { pickerTemplates = false }
+		}
+	}
+
+	private func showChooser() {
+		guard viewModel.newVMChooserRequested else { return }
+		viewModel.newVMChooserRequested = false
+		pickerTemplates = true
+		pickerShown = true
 	}
 }
 
