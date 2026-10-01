@@ -24,7 +24,7 @@ public final class StubMachman: MachmanControlling {
 	// One-shot scripted failures by base name: the next call of that method throws.
 	private var failures: [String: Error] = [:]
 	// Base names whose calls park while listed: a stalled vmhost (E20). They answer once
-	// removed, or after a minute. Honored by vm(named:), operations() and preview.
+	// removed, or after a minute. Honored by vm(named:), operations(), preview and safeSave.
 	public var stalled: Set<String> = []
 
 	public init() {}
@@ -550,6 +550,7 @@ public final class StubMachman: MachmanControlling {
 	public var safeSaveKeepsOriginal = false
 	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
 		try gate()
+		await stallWhileScripted("safeSave")
 		var vm = try get(name)
 		guard vm.safeRun == true else {
 			throw MachmanError(

@@ -71,6 +71,8 @@ public final class VMRegistry {
 	// which is what makes safeSave refusable outside a daemon-spawned safe run; cleared
 	// after use so a run promotes at most once.
 	private var promotionLibrary: String?
+	// Called after a successful promotion (old name, new name): the vmhost moves its socket.
+	var onPromoted: ((_ from: String, _ to: String) -> Void)?
 	// Save as New VM's one move primitive: renamex_np(RENAME_EXCL) — atomic, same volume
 	// only (EXDEV otherwise), and never over an existing entry (plain rename(2) silently
 	// replaces an empty directory). Returns 0 or the errno. A test seam.
@@ -411,6 +413,7 @@ public final class VMRegistry {
 		if let warning = DirectDiskMove.handOverWarning(moves, original: oldName, saved: newName) {
 			events.emit(.log(vm: newName, level: .warning, message: warning))
 		}
+		onPromoted?(oldName, newName)
 		return vm
 	}
 

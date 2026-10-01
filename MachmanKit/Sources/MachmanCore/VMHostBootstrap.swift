@@ -13,6 +13,28 @@ import AppKit
 import MachmanAPI
 
 public enum VMHostBootstrap {
+	// Save as New VM renames the VM: its vmhost then answers on the saved VM's name-derived
+	// socket, where daemons and launch agents look for a VM's host (E27) — on the original's,
+	// a daemon restart adopted the run as the original. Only a host launched on such a path
+	// moves (every daemon spawn and launch agent uses one); a failed move keeps the run on
+	// the original's socket, and adoption still finds it by asking whom it serves.
+	@MainActor
+	static func followPromotions(
+		of registry: VMRegistry, server: MachmanServer, launchedOn socketPath: String
+	) {
+		let dir = (socketPath as NSString).deletingLastPathComponent
+		registry.onPromoted = { [weak server] from, to in
+			guard let server,
+				socketPath == MachmanPaths.vmSocketPath(vm: from, runtimeDir: dir) else { return }
+			do {
+				try server.relocate(to: MachmanPaths.vmSocketPath(vm: to, runtimeDir: dir))
+			} catch {
+				MachmanLogger.log(.passiveError,
+					"\(to) still answers on \(from)'s socket: \(error)")
+			}
+		}
+	}
+
 	// Never returns: hands the thread to NSApplication.run().
 	@MainActor
 	public static func run(
@@ -51,6 +73,7 @@ public enum VMHostBootstrap {
 			MachmanLogger.log(.passiveError, "cannot serve \(socketPath): \(error)")
 			exit(65)
 		}
+		followPromotions(of: registry, server: server, launchedOn: socketPath)
 
 		// The delegate follows the registry's CURRENT name — safeSave promotion renames the
 		// VM mid-run, and quit/stop must act on the live name, not the launch capture.

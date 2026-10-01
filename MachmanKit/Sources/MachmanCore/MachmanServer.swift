@@ -13,7 +13,7 @@ import MachmanAPI
 @MainActor
 public final class MachmanServer {
 	private let api: MachmanControlling
-	private let socketPath: String
+	private var socketPath: String   // var: relocate(to:)
 	private let daemonVersion: String
 	private let acceptQueue = DispatchQueue(label: "machman.server.accept")
 	private var listener: UDSListener?
@@ -61,6 +61,18 @@ public final class MachmanServer {
 			}
 		}
 		MachmanLogger.log(.log, "serving \(socketPath)")
+	}
+
+	// Keeps serving, at a new path: a vmhost's socket follows its VM's new name at Save as
+	// New VM, since daemons and launch agents find a vmhost by its VM's name (E27).
+	// Connected clients stay connected.
+	public func relocate(to newPath: String) throws {
+		guard let listener else {
+			throw MachmanError(code: .invalidState, message: "not serving \(socketPath)")
+		}
+		try listener.move(to: newPath)
+		socketPath = newPath
+		MachmanLogger.log(.log, "serving \(newPath)")
 	}
 
 	// Call right after start(), in the same synchronous stretch: accepted connections

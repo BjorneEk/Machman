@@ -30,9 +30,13 @@ public enum UDSError: Error, CustomStringConvertible {
 
 final class UDSListener {
 	private let fd: Int32
+	private let queue: DispatchQueue
 	private let source: DispatchSourceRead
 	private let keepAliveTimer: DispatchSourceTimer
-	private let path: String
+	// Where the socket is served. Confined to `queue`: move(to:) renames it (Save as New VM)
+	// while the keep-alive timer touches the current path.
+	private var path: String
+	private var reportedMissing = false
 
 	// How often a served socket's timestamps are refreshed against the temp cleaner (see the
 	// timer below) — the control sockets here and the serial data-plane sockets alike.
@@ -45,6 +49,7 @@ final class UDSListener {
 		onAccept: @escaping (Int32) -> Void
 	) throws {
 		self.path = path
+		self.queue = queue
 		var addr = try Self.makeAddr(path)
 
 		// A leftover socket file: connect-probe it. A live daemon accepts (refuse to start);
@@ -92,23 +97,40 @@ final class UDSListener {
 		// machman.sock lets a second daemon bind. tmux defends its socket the same way.
 		keepAliveTimer = DispatchSource.makeTimerSource(queue: queue)
 		keepAliveTimer.schedule(deadline: .now() + keepAlive, repeating: keepAlive)
-		var reportedMissing = false
-		keepAliveTimer.setEventHandler { [path] in
-			guard !Self.touch(path), !reportedMissing,
+		keepAliveTimer.setEventHandler { [weak self] in
+			guard let self else { return }
+			let path = self.path
+			guard !Self.touch(path), !self.reportedMissing,
 				!FileManager.default.fileExists(atPath: path) else { return }
 			// Never rebound: a second daemon may own the path by now.
-			reportedMissing = true
+			self.reportedMissing = true
 			MachmanLogger.log(.passiveError,
 				"\(path) was removed — new clients cannot reach this process until it restarts")
 		}
 		keepAliveTimer.resume()
 	}
 
+	// Serves the same bound socket at a new path (a vmhost whose VM was saved as a new VM,
+	// E27). Probe-proven on Darwin: a listening socket follows a rename, accepted connections
+	// keep delivering, and a dead leftover at the destination is replaced — a live one never
+	// is. Synchronous on `queue`; accept handlers never wait on their caller, so it can't
+	// deadlock.
+	func move(to newPath: String) throws {
+		_ = try Self.makeAddr(newPath)   // the sun_path ceiling, as at bind
+		try queue.sync {
+			guard newPath != path else { return }
+			guard !Self.isLive(path: newPath) else { throw UDSError.alreadyRunning(newPath) }
+			guard rename(path, newPath) == 0 else { throw UDSError.systemError("rename", errno) }
+			path = newPath
+			reportedMissing = false
+		}
+	}
+
 	func shutdown() {
 		keepAliveTimer.cancel()
 		source.cancel()
 		close(fd)
-		unlink(path)
+		unlink(queue.sync { path })   // closing never unlinks: the CURRENT path goes
 	}
 
 	// For tests that need to simulate a kill: drop the socket but keep the file, exactly

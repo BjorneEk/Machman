@@ -31,11 +31,12 @@ public final class RoutingMachman: MachmanControlling {
 
 	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
 	// recomputed: hostGone unlinks identity.socketPath and closures capture identity.id, so
-	// both survive any future re-keying of `hosted` (safe mode re-keys on save-as-new).
+	// both survive any re-keying of `hosted` (safe mode re-keys on save-as-new, and re-points
+	// socketPath when the vmhost moved its socket to the saved VM's path).
 	struct HostIdentity {
 		let id: UUID
 		var name: String
-		let socketPath: String
+		var socketPath: String
 		var isSafe = false           // inert until safe mode (phase 6)
 		var shadowRoot: String?      // inert until safe mode (phase 6)
 		// The MAC the guest is actually using — captured at spawn from the config, at adopt
@@ -1861,10 +1862,16 @@ public final class RoutingMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is not running in safe mode")
 		}
-		guard registry.vm(named: newName) == nil, hosted[newName] == nil else {
+		guard registry.vm(named: newName) == nil, hosted[newName] == nil,
+			!pendingStarts.contains(newName) else {
 			throw MachmanError(
 				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
 		}
+		// The new name is claimed while the save is in flight: the vmhost serves at the new
+		// name's socket before it replies, and nothing may start or late-adopt it there
+		// meanwhile (residence says starting).
+		reserveStart(newName, mac: nil)
+		defer { releaseStart(newName) }
 		// The vmhost moves the files (single writer); the daemon re-keys its view after.
 		let info = try await host.client.safeSave(vm: name, to: newName)
 		return finishSafeSave(host, from: name, to: newName, reply: info)
@@ -1875,9 +1882,23 @@ public final class RoutingMachman: MachmanControlling {
 	func finishSafeSave(
 		_ host: HostedVM, from name: String, to newName: String, reply info: VMInfo
 	) -> VMInfo {
-		// The host keeps its socket (stored path — the 1.2 rule) and its live MAC. Keeping
-		// macInUse is deliberate: starting the ORIGINAL now trips macConflict until the
-		// promoted VM reboots onto its fresh MAC.
+		guard hosted[name] === host else {
+			// The run ended while it saved: the saved VM is on disk, stopped.
+			_ = try? registry.adoptFromDisk(name: newName)
+			registry.reload(name: name)
+			registry.events.emit(.listChanged)
+			var stopped = info
+			stopped.state = .stopped
+			return stopped
+		}
+		// The host keeps its live MAC. Keeping macInUse is deliberate: starting the ORIGINAL
+		// now trips macConflict until the promoted VM reboots onto its fresh MAC. Its socket
+		// moved to the saved VM's path before the reply — unless it is an older vmhost, which
+		// keeps answering on the original's (adoption copes with both).
+		let moved = hostSocketPath(for: newName)
+		if moved != host.identity.socketPath, UDSListener.isLive(path: moved) {
+			host.identity.socketPath = moved
+		}
 		host.identity.name = newName
 		host.identity.isSafe = false
 		host.identity.shadowRoot = nil   // the vmhost moved + deleted the run root itself

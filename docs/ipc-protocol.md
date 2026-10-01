@@ -345,7 +345,8 @@ against the socket peer) and reset on host reboot.
 
 Every running VM lives in its own `MachmanVMHost` process, which serves this same protocol on
 `$TMPDIR/<suite>/vm-<hash>.sock` (hashed because a VM name may be any length); MachmanAgent proxies
-per-VM operations to it and re-emits its events.
+per-VM operations to it and re-emits its events. The hash is of the VM's CURRENT name: after
+`vm.safeSave` the run answers on the saved VM's path.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
 daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them. A dropped
