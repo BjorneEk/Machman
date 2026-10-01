@@ -108,7 +108,7 @@ struct VMCanvasView: View {
 		DispatchQueue.main.async { [weak canvases] in
 			guard let canvases,
 				canvases.canvas(for: name).allOpenTabs.isEmpty,
-				!TornTabRegistry.shared.isOpen(vm: name, tab: .config) else { return }
+				!viewModel.tornTabs.isOpen(vm: name, tab: .config) else { return }
 			var canvas = canvases.canvas(for: name)
 			canvas.open(.config)
 			canvases.setCanvas(canvas, for: name)
@@ -492,8 +492,11 @@ struct VMCanvasView: View {
 			Text("Click the VM, a console, or a UART in the sidebar to open it here.")
 				.font(.callout)
 				.foregroundStyle(.tertiary)
+			// The configuration may live in a torn window: focus that, never a second copy.
 			Button {
-				mutate { $0.open(.config) }
+				if let torn = viewModel.revealTab(.config, vm: vm.name) {
+					openWindow(id: "torn-tab", value: torn)
+				}
 			} label: {
 				Label("Open \(vm.name)", systemImage: MachmanSymbols.tabConfig)
 			}

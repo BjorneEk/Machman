@@ -49,6 +49,24 @@ extension VMListViewModel {
 		viewModel?.tabClosed(tab, vm: vm)
 	}
 
+	// Show a tab: a torn-off one keeps its single mount, so its payload comes back for the
+	// caller to focus that window (openWindow is a view action; torn windows dedupe by
+	// value); anything else opens or focuses in the canvas and nil comes back. Session rows
+	// exist only for open sessions, so an ssh tab is activated, never opened anew.
+	public func revealTab(_ tab: VMPaneTab, vm: String) -> TornTab? {
+		let torn = TornTab(vm: vm, tab: tab)
+		if tornTabs.open.contains(torn) { return torn }
+		var canvas = canvases.canvas(for: vm)
+		switch tab {
+		case .config, .terminal:
+			canvas.open(tab)
+		case .ssh:
+			canvas.activate(tab)
+		}
+		canvases.setCanvas(canvas, for: vm)
+		return nil
+	}
+
 	// True when a tab was closed (⌘W falls back to closing the window otherwise).
 	@discardableResult
 	public func closeActiveTab() -> Bool {

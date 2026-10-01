@@ -909,12 +909,7 @@ struct VMDeviceTreeView: View {
 	private func openNode(_ node: SidebarNode) {
 		switch node {
 		case .vmRoot:
-			// A torn-off tab keeps its single mount: focus its window instead.
-			if TornTabRegistry.shared.isOpen(vm: vm.name, tab: .config) {
-				openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .config))
-				return
-			}
-			mutateCanvas { $0.open(.config) }
+			reveal(.config)
 		case .serial(let ref):
 			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 			guard let port = ports.first(where: { SerialPortRef($0) == ref }),
@@ -923,11 +918,7 @@ struct VMDeviceTreeView: View {
 		case .sshSession(let ref):
 			// Rows exist only for OPEN sessions — selecting one focuses wherever it
 			// lives: its canvas tab, or the window it was torn into.
-			if isTorn(.ssh(ref)) {
-				openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .ssh(ref)))
-				return
-			}
-			mutateCanvas { $0.activate(.ssh(ref)) }
+			reveal(.ssh(ref))
 		default:
 			break
 		}
@@ -1031,14 +1022,16 @@ struct VMDeviceTreeView: View {
 		canvases.setCanvas(c, for: vm.name)
 	}
 
+	// Instant: just record the tab. The canvas builds + connects the terminal lazily.
 	private func openTerminal(_ ref: SerialPortRef) {
-		// A torn-off tab keeps its single mount: focus its window instead.
-		if TornTabRegistry.shared.isOpen(vm: vm.name, tab: .terminal(ref)) {
-			openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .terminal(ref)))
-			return
+		reveal(.terminal(ref))
+	}
+
+	// A torn-off tab keeps its single mount: focus its window instead of the canvas.
+	private func reveal(_ tab: VMPaneTab) {
+		if let torn = viewModel.revealTab(tab, vm: vm.name) {
+			openWindow(id: "torn-tab", value: torn)
 		}
-		// Instant: just record the tab. The canvas builds + connects the terminal lazily.
-		mutateCanvas { $0.open(.terminal(ref)) }
 	}
 
 	// MARK: - Helpers
