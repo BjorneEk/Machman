@@ -59,6 +59,20 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 (1.0.9+: the daemon's own bounded call to a vmhost got no reply — the vmhost is left
 alone; unknown codes decode as `internalError`, so the list is additively extensible).
 
+### Names
+
+Every method that takes a new name checks it where it enters (`invalidArgument` with a
+one-sentence reason; `alreadyExists` for a taken name). Names stored before a rule existed
+keep working — nothing is rejected at load.
+
+- VM, disk and mount names and kernel tags: not empty, no `/`, no leading `.`, no control
+  characters (tab, line break …), at most 255 UTF-8 bytes (disk names 251: the file adds
+  `.raw`).
+- Mount tags also exclude `: \ * ? | < >` (Virtualization's shared-folder rule) and the
+  reserved payload names (`alreadyExists`).
+- Disk names and tags are trimmed. VM names with leading or trailing spaces are refused
+  (clients trim): the daemon keys on the name as sent.
+
 ## Methods
 
 | Method | Params | Result |
@@ -69,15 +83,15 @@ alone; unknown codes decode as `internalError`, so the list is additively extens
 | `vm.get` | `{name}` | `VMInfo` |
 | `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set (no disk), `"mac"` = mac-guest device set minus trackpad; absent = same as `"default"`) |
 | `vm.delete` | `{name}` | `{}` (refused while running/installing) |
-| `vm.rename` | `{name, newName}` | `{}` (refused while running) |
-| `vm.copy` | `{name, newName?, diskIDs?, regenerateMAC?}` | `VMInfo` (refused while running; diskIDs = writable disks to carry, absent = all; regenerateMAC defaults true; the copy gets fresh machine identity and autostart off) |
+| `vm.rename` | `{name, newName}` | `{}` (refused while running; `newName` follows the name rules) |
+| `vm.copy` | `{name, newName?, diskIDs?, regenerateMAC?}` | `VMInfo` (refused while running; `newName` follows the name rules; diskIDs = writable disks to carry, absent = all; regenerateMAC defaults true; the copy gets fresh machine identity and autostart off) |
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?, nestedVirtualization?}` | `{}` (clamped to host + boot floors; nested virt is 1.0.4+, EFI/kernel boots on supporting hardware — skipped with a warning event otherwise) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
-| `vm.disk.add` | `{name, disk: NewDisk}` | `{}` |
+| `vm.disk.add` | `{name, disk: NewDisk}` | `{}` (a storage disk's name follows the name rules and must be new to the VM — an existing disk or file is never replaced; `sizeBytes` is a positive multiple of 512) |
 | `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected) |
 | `vm.disk.import` | `{name, path}` | `VMInfo` (copies the file INTO the VM as an owned disk; format by magic bytes — ISO9660 → iso, qcow2 refused, else raw storage validated as a non-empty 512-multiple; emits `copyProgress`) |
 | `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`; emits `copyProgress`) |
-| `vm.mount.add` | `{name, path, tag, kind?}` | `{}` (`kind` (1.0.7+): `"virtiofs"` (default) rides the share device, `"sshfs"` is mounted by the guest over its SSH link; sshfs refused for macOS guests) |
+| `vm.mount.add` | `{name, path, tag, kind?}` | `{}` (`tag` follows the mount-tag rules; `kind` (1.0.7+): `"virtiofs"` (default) rides the share device, `"sshfs"` is mounted by the guest over its SSH link; sshfs refused for macOS guests) |
 | `vm.mount.remove` | `{name, mountID}` | `{}` |
 | `vm.console.add` | `{name}` | `{}` (appends a virtio console port, guest `/dev/hvcN`; refused while running) |
 | `vm.console.remove` | `{name}` | `{}` (pops the last console port; refused while running) |
@@ -86,13 +100,13 @@ alone; unknown codes decode as `internalError`, so the list is additively extens
 | `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs, appending to this boot's log — only a run's first open empties a `resetOnBoot` file; `maxBytes` above 1073741824 (1 GiB) → `invalidArgument`) |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
-| `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, tag}` | `VMInfo` (copies the file into `<vm>/kernels/<role>/<tag>/` as owned and points the role's field at it) |
-| `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — a path under `<vm>/kernels` — and clears any field referencing it) |
+| `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, tag}` | `VMInfo` (copies the file into `<vm>/kernels/<role>/<tag>/` as owned and points the role's field at it; `tag` follows the name rules) |
+| `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — `path` must name one of the VM's listed owned files once `..` is resolved, else `notFound` — and clears any field referencing it) |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
 | `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, `force: true` overrides; `safe: true` runs a discardable shadow copy — see Safe runs below) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
-| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; refused unless the VM is safe-hosted, or when newName is taken) |
+| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules) |
 | `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
@@ -105,11 +119,11 @@ alone; unknown codes decode as `internalError`, so the list is additively extens
 | `vm.setEnabled` | `{name, disks?: {id: bool}, mounts?: {id: bool}, console?: {"<index>": bool}, uart?: {"<index>": bool}}` | `{}` (1.0.4+; `vm.setSafety` twin — unknown ids/indices refuse the whole batch; disabling a serial port renumbers later guest names, same as removing it) |
 | `vm.kernel.setOverride` | `{name, path, commandLine?, overrideEnabled?}` | `VMInfo` (1.0.4+; per-owned-kernel-file cmdline override — replaces the VM command line while that file is active and the override is enabled; nil fields unchanged; dropped when the file is deleted) |
 | `vm.disk.resize` | `{name, diskID, sizeBytes}` | `VMInfo` (1.0.4+; grow-only, owned storage disks, refused while running) |
-| `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; refused while running) |
-| `vm.mount.setTag` | `{name, mountID, tag}` | `VMInfo` (1.0.4+; next-boot effect, tag must be unique on the VM) |
+| `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; `newName` follows the name rules; refused while running) |
+| `vm.mount.setTag` | `{name, mountID, tag}` | `VMInfo` (1.0.4+; next-boot effect, tag must be unique on the VM and follow the mount-tag rules) |
 | `vm.mount.setKind` | `{name, mountID, kind}` | `VMInfo` (1.0.7+; next-boot effect; `"virtiofs"`\|`"sshfs"`, sshfs refused for macOS guests) |
-| `vm.kernel.rename` | `{name, path, tag}` | `VMInfo` (1.0.4+; owned kernel/initramfs files — the file moves to the new tag dir, kernel-boot references and the command-line override migrate; refused while running) |
-| `vm.ssh.set` | `{name, integrationEnabled?, reverseApproved?, alias?}` | `VMInfo` (1.0.5+; nil fields unchanged; `alias` (1.0.6+) renames the ~/.ssh entry and an EMPTY alias resets it to `<vm>.machman` (validated as an ssh_config Host name and refused when another VM already answers to it); approving reverse access requires a reported reverse key, and `reverseApproved: false` DENIES it (1.0.6+: the key stays on file, nothing is installed, and the state only returns to `pending` when the guest reports a different key); refused with `invalidState` during safe runs — host-side ~/.ssh effects must not track a discardable shadow) |
+| `vm.kernel.rename` | `{name, path, tag}` | `VMInfo` (1.0.4+; owned kernel/initramfs files — the file moves to the new tag dir, kernel-boot references and the command-line override migrate; `tag` follows the name rules; refused while running) |
+| `vm.ssh.set` | `{name, integrationEnabled?, reverseApproved?, alias?}` | `VMInfo` (1.0.5+; nil fields unchanged; `alias` (1.0.6+) renames the ~/.ssh entry and an EMPTY alias resets it to the default — the mapped `<vm>.machman`, see `SSHInfo.alias` (validated as an ssh_config Host name and refused when another VM already answers to it); approving reverse access requires a reported reverse key, and `reverseApproved: false` DENIES it (1.0.6+: the key stays on file, nothing is installed, and the state only returns to `pending` when the guest reports a different key); refused with `invalidState` during safe runs — host-side ~/.ssh effects must not track a discardable shadow) |
 | `vm.ssh.refresh` | `{name}` | `{}` (1.0.5+; re-runs guest address discovery now; daemon-only — a vmhost refuses with `invalidState`) |
 | `vm.ssh.reset` | `{name}` | `VMInfo` (1.0.5+; forgets all SSH state: config, the per-VM keypair, payload/report dirs, and host-side artifacts; refused during safe runs) |
 | `vm.setup.reset` | `{name}` | `VMInfo` (1.0.7+; forgets the guest-setup report state (`setup` + the report drop-box); the guest keeps what the script installed — SSH state has its own reset) |
@@ -182,7 +196,10 @@ guest reached the payload, and `sshfs*` whether the guest can mount host folders
 (usable only once `reverseState` is `approved` — compute that, don't cache it).
 `alias`, `identityFilePath`, `knownHostsPath`, `setupSharePath` and `hostUser` are
 server-resolved (clients must not derive library paths or naming policy): `alias` is the
-effective `~/.ssh` name, `<vm>.machman` unless the VM's config overrides it, and
+effective `~/.ssh` name: the VM's own if set, otherwise the VM name mapped into the alias
+charset plus `.machman` (`dev copy` → `dev-copy.machman`). When that default is already
+another VM's alias, the VM taking the name stores a numbered one (`dev-copy-2.machman`),
+which no other VM's change moves.
 `setupSharePath` is the directory a guest without a virtiofs driver sshfs-mounts to reach
 the payload. `address`/`addressSource`/`hostAddressForGuest`/`reachability*`/`readySince`
 are a daemon overlay (like `safeRun`), present only while the VM runs — `reachability`
