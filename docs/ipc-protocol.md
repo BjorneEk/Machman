@@ -83,7 +83,7 @@ keep working — nothing is rejected at load.
 | `vm.list` | — | `[VMInfo]` |
 | `vm.get` | `{name}` | `VMInfo` |
 | `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set (no disk), `"mac"` = mac-guest device set minus trackpad; absent = same as `"default"`) |
-| `vm.delete` | `{name}` | `{}` (refused while running/installing) |
+| `vm.delete` | `{name}` | `{}` (refused while running/installing; a guest→Mac key that can't be removed from `~/.ssh/authorized_keys` is reported as a warning `log` event) |
 | `vm.rename` | `{name, newName}` | `{}` (refused while running; `newName` follows the name rules) |
 | `vm.copy` | `{name, newName?, diskIDs?, mountIDs?, regenerateMAC?}` | `VMInfo` (refused while running; `newName` follows the name rules; diskIDs = writable disks to carry, absent = all; mountIDs = mounts to carry by `MountInfo.id`, absent = all (wave 2; older daemons ignore it and carry all); regenerateMAC defaults true; the copy gets fresh machine identity, autostart off, no serial logs and no ssh keypair, serves guest setup at its first boot like a new guest, and a not-yet-installed Mac copies as `failed` "Duplicated before macOS was installed") |
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?, nestedVirtualization?}` | `{}` (clamped to host + boot floors; nested virt is 1.0.4+, EFI/kernel boots on supporting hardware — skipped with a warning event otherwise) |

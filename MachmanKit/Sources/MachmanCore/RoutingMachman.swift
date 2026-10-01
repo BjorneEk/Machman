@@ -939,10 +939,26 @@ public final class RoutingMachman: MachmanControlling {
 		let sshMarker = existingSSHMarker(name)
 		try await local.deleteVM(named: name)
 		launchAgents?.remove(vm: name, canBootout: true)
-		if let writer = sshHostConfig, let sshMarker {
-			try? writer.setReverseKey(nil, marker: sshMarker, vmName: name)
+		if let sshMarker {
+			revokeReverseKey(marker: sshMarker, vmName: name)
 		}
 		scheduleSSHHostConfigWrite()
+	}
+
+	// A deleted VM's guest→Mac grant leaves ~/.ssh/authorized_keys. Best-effort by nature —
+	// the VM is gone, and the key's private half with it — but never silent (D11): a line
+	// that stays is logged and shown, with what to remove by hand.
+	func revokeReverseKey(marker: String, vmName name: String) {
+		guard let writer = sshHostConfig else { return }
+		do {
+			try writer.setReverseKey(nil, marker: marker, vmName: name)
+		} catch {
+			MachmanLogger.log(.passiveWarning, "revoking \(name)'s reverse key: \(error)")
+			registry.events.emit(.log(
+				vm: name, level: .warning,
+				message: "Couldn't remove the guest's key from ~/.ssh/authorized_keys — "
+					+ "delete the line ending in machman:\(marker):\(name)"))
+		}
 	}
 
 	public func renameVM(named name: String, to newName: String) async throws {
