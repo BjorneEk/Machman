@@ -41,6 +41,13 @@ enum WindowScenes {
 			profiles: ctx.profiles, daemonVersion: "1.0.10"))
 	}
 
+	// Two SSH sessions with fixed identities: SSHSessionRef lives in MachmanUI, which the
+	// fixtures can't import, so the scene file holds them.
+	static let canvasSession = SSHSessionRef(
+		id: UUID(uuidString: "5C3E1A7B-0D2F-4E61-9A8B-7C6D5E4F3A21")!, title: "Session 1")
+	static let restoredSession = SSHSessionRef(
+		id: UUID(uuidString: "8F1D2C3B-4A5E-4F60-8B7A-6C5D4E3F2A10")!, title: "Session 2")
+
 	static let all: [RenderScene] = [
 		RenderScene(
 			"window.main", "VMNavigationView, inspector open",
@@ -98,6 +105,20 @@ enum WindowScenes {
 			height: 1000
 		) { ctx in
 			ctx.viewModel.select(name: "Kernel Lab")
+			return tree(ctx)
+		},
+		// A live session in the canvas, and a torn session window the system restored after a
+		// relaunch: no controller behind it, so it is not an open session (T20).
+		RenderScene(
+			"sidebar.tree.ssh-sessions",
+			"VMDeviceTreeView, a canvas SSH session and a torn session restored after relaunch",
+			widths: [270], height: 760
+		) { ctx in
+			var canvas = ctx.canvases.canvas(for: "Debian")
+			canvas.open(.ssh(canvasSession))
+			ctx.canvases.setCanvas(canvas, for: "Debian")
+			ctx.terminals.renameSSHSession(vm: "Debian", ref: canvasSession, to: "Session 1")
+			ctx.tornTabs.open.insert(TornTab(vm: "Debian", tab: .ssh(restoredSession)))
 			return tree(ctx)
 		},
 		RenderScene(

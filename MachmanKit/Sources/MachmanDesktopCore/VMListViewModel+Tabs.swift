@@ -85,6 +85,44 @@ extension VMListViewModel {
 		}
 	}
 
+	// MARK: - SSH sessions
+
+	// The VM's open sessions: its canvas's ssh tabs in order, then the sessions torn into
+	// their own windows. A torn window counts only while its controller lives — a window
+	// the system restored after a relaunch holds none (sessions die with the app), so it
+	// is a notice, not a session (T20).
+	public func openSSHSessions(vm: String) -> [SSHSessionRef] {
+		var refs = canvases.canvas(for: vm).allOpenTabs.compactMap { tab -> SSHSessionRef? in
+			if case .ssh(let ref) = tab { return ref }
+			return nil
+		}
+		let torn = tornTabs.open
+			.compactMap { torn -> SSHSessionRef? in
+				guard torn.vm == vm, case .ssh(let ref) = torn.tab,
+					terminals.sshController(vm: vm, ref: ref) != nil else { return nil }
+				return ref
+			}
+			.sorted { ($0.title, $0.id.uuidString) < ($1.title, $1.id.uuidString) }
+		for ref in torn where !refs.contains(ref) {
+			refs.append(ref)
+		}
+		return refs
+	}
+
+	// "Session N": the next number above every open session's current name, torn ones
+	// included, so a new tab never repeats a name still showing in a window.
+	public func nextSSHSessionTitle(vm: String) -> String {
+		let prefix = "Session "
+		let taken = openSSHSessions(vm: vm).compactMap { ref -> Int? in
+			let name = terminals.sshSessionName(vm: vm, ref: ref)
+			guard name.hasPrefix(prefix) else { return nil }
+			return Int(name.dropFirst(prefix.count))
+		}
+		return prefix + String((taken.max() ?? 0) + 1)
+	}
+
+	// MARK: - Cycling
+
 	public func cycleTab(forward: Bool) {
 		guard let name = selectedName else { return }
 		var canvas = canvases.canvas(for: name)

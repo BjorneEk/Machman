@@ -20,8 +20,9 @@ struct VMDeviceTreeView: View {
 	@ObservedObject var sessions: TerminalSessions
 	@ObservedObject var canvases: CanvasStateStore
 	// Torn-off windows are open tabs too — the tree observes them so a detached terminal
-	// keeps its row (and its way back).
-	@ObservedObject private var tornTabs = TornTabRegistry.shared
+	// keeps its row (and its way back). The view model's registry: the app's shared one, a
+	// scene's own in renders.
+	@ObservedObject private var tornTabs: TornTabRegistry
 	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var renamingRoot = false
@@ -51,6 +52,7 @@ struct VMDeviceTreeView: View {
 		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil
 	) {
 		self.viewModel = viewModel
+		_tornTabs = ObservedObject(wrappedValue: viewModel.tornTabs)
 		self.sessions = sessions
 		self.canvases = canvases
 		self.profiles = profiles
@@ -390,9 +392,9 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var sshGroup: some View {
 		if sshSectionVisible {
-			// Canvas tabs AND torn-off windows: a detached session is still open, and
+			// Canvas tabs AND live torn-off windows: a detached session is still open, and
 			// dropping it from this list would leave no way back to its window.
-			let open = openSSHSessions
+			let open = viewModel.openSSHSessions(vm: vm.name)
 			group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
 				title: "SSH", count: open.count, selectable: true, menu: {
 				// The + accessory's reliable twin — List group labels can swallow clicks.
@@ -409,21 +411,6 @@ struct VMDeviceTreeView: View {
 				}
 			}
 		}
-	}
-
-	// Open sessions: the canvas's tabs plus any torn into their own window.
-	private var openSSHSessions: [SSHSessionRef] {
-		var refs = canvases.canvas(for: vm.name).allOpenTabs
-			.compactMap { tab -> SSHSessionRef? in
-				if case .ssh(let ref) = tab { return ref }
-				return nil
-			}
-		for torn in tornTabs.open where torn.vm == vm.name {
-			if case .ssh(let ref) = torn.tab, !refs.contains(ref) {
-				refs.append(ref)
-			}
-		}
-		return refs
 	}
 
 	private func isTorn(_ tab: VMPaneTab) -> Bool {
@@ -548,14 +535,7 @@ struct VMDeviceTreeView: View {
 
 	private func openSSHSession() {
 		guard SSHCommand.arguments(for: vm) != nil else { return }
-		// "Session N": next number above every open session's current name.
-		let taken = canvases.canvas(for: vm.name).allOpenTabs.compactMap { tab -> Int? in
-			guard case .ssh(let ref) = tab else { return nil }
-			let name = sessions.sshSessionName(vm: vm.name, ref: ref)
-			guard name.hasPrefix("Session ") else { return nil }
-			return Int(name.dropFirst("Session ".count))
-		}
-		let ref = SSHSessionRef(title: "Session \((taken.max() ?? 0) + 1)")
+		let ref = SSHSessionRef(title: viewModel.nextSSHSessionTitle(vm: vm.name))
 		mutateCanvas { $0.open(.ssh(ref)) }
 	}
 
