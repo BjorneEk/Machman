@@ -11,6 +11,7 @@
 import Testing
 import Foundation
 import MachmanAPI
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct DiskReferenceTests {
@@ -95,6 +96,58 @@ struct DiskReferenceTests {
 			let registry = try makePair(referencing: machmanVMDir + "/kept 2/data.raw")
 			try registry.delete(try #require(registry.vm(named: "kept")))
 			#expect(registry.vm(named: "kept") == nil)
+		}
+	}
+
+	// C5's start guard: no second writer of one disk file, whoever owns it.
+	@Test @MainActor func sharedWritableDisksBlockASecondWriter() throws {
+		try VMTestDir.withRedirectedDir {
+			let registry = try makePair()
+			let routing = RoutingMachman(registry: registry, daemonVersion: "test")
+			routing.reserveStart("kept", mac: nil)   // kept is starting
+
+			let error = try #require(throws: MachmanError.self) {
+				try routing.checkSharedDisks(name: "alpha")
+			}
+			#expect(error.code == .invalidState)
+			#expect(error.message
+				== "kept is running with data.raw attached — stop kept before starting alpha")
+			routing.releaseStart("kept")
+			try routing.checkSharedDisks(name: "alpha")
+
+			// A disabled shared disk and a shared iso attach nothing writable.
+			let alpha = try #require(registry.vm(named: "alpha"))
+			alpha.config.disks[0].enabled = false
+			let iso = VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/shared.iso")))
+			alpha.config.disks.append(iso)
+			try #require(registry.vm(named: "kept")).config.disks.append(iso)
+			routing.reserveStart("kept", mac: nil)
+			try routing.checkSharedDisks(name: "alpha")
+		}
+	}
+
+	// The whole start refuses before it spawns anything, force or not. Both VMs name one
+	// scratch image, so nothing below depends on the redirected library.
+	@Test @MainActor func startRefusesASharedDiskEvenWithForce() async throws {
+		let image = TestEnvironment.scratch + "shared-\(UUID().uuidString).img"
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			for name in ["alpha", "kept"] {
+				try VMConfig.createNewVMDirectory(name: name)
+				let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+				try cfg.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: image))))
+			}
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+		}
+		routing.locateVMHost = { nil }
+		routing.reserveStart("kept", mac: nil)
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions(force: true))
+			Issue.record("expected a refusal")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message.contains("stop kept before starting alpha"))
 		}
 	}
 }

@@ -30,6 +30,18 @@ extension VMConfig {
 		return paths.filter { !$0.isEmpty }
 	}
 
+	// The files a start attaches writable: enabled storage raws and fromUrl images (isos
+	// attach read-only), standardized for comparison.
+	var writableDiskFiles: Set<String> {
+		Set(disks.filter(\.enabled).compactMap { disk -> String? in
+			switch disk.kind {
+			case .storage(let name, _): return configFilePath(file: "\(name).raw")
+			case .fromUrl(let url): return url.path
+			case .iso: return nil
+			}
+		}.map { ($0 as NSString).standardizingPath })
+	}
+
 	// The file a disk entry owns — deleteDisk's rule: a storage raw, or an iso inside the
 	// VM's folder. nil for a reference, whose removal only disconnects it.
 	func ownedFile(of disk: VMDisk) -> String? {

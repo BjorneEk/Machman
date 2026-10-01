@@ -1426,6 +1426,7 @@ public final class RoutingMachman: MachmanControlling {
 			return
 		}
 		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
+		try checkSharedDisks(name: name)
 		if options.safe {
 			try await startSafe(vm: vm, name: name, options: options)
 			return
@@ -1478,6 +1479,25 @@ public final class RoutingMachman: MachmanControlling {
 				code: .macConflict,
 				message: "\(name) uses MAC \(mac), which '\(other)' is starting with — one of "
 					+ "them would lose networking. Wait for it, regenerate a MAC, or force start.")
+		}
+	}
+
+	// No second writer of one disk file (C5): a VM saved from a safe run owns disks its
+	// original references, and any VM may attach another's image. Running and starting VMs
+	// count; isos (read-only) and disabled disks do not. `force` does NOT override it — lost
+	// networking recovers, a disk written by two VMs does not. A hosted VM's daemon copy can
+	// be stale and a safe run's real config names files its shadow cloned: both only ever
+	// over-refuse. Internal for tests.
+	func checkSharedDisks(name: String) throws {
+		guard let mine = registry.vm(named: name)?.config.writableDiskFiles, !mine.isEmpty
+		else { return }
+		for other in Set(hosted.keys).union(pendingStarts).subtracting([name]).sorted() {
+			guard let theirs = registry.vm(named: other)?.config.writableDiskFiles,
+				let file = mine.intersection(theirs).sorted().first else { continue }
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(other) is running with \((file as NSString).lastPathComponent) "
+					+ "attached — stop \(other) before starting \(name)")
 		}
 	}
 
@@ -1647,6 +1667,7 @@ public final class RoutingMachman: MachmanControlling {
 						+ "normally, or wait up to 3 minutes to start it safe")
 			}
 			try checkMACConflict(name: name, mac: mac, options: options)
+			try checkSharedDisks(name: name)
 		}
 		var forwarded = options
 		forwarded.safe = false
