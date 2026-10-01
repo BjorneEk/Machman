@@ -83,13 +83,13 @@ keep working — nothing is rejected at load.
 | `vm.list` | — | `[VMInfo]` |
 | `vm.get` | `{name}` | `VMInfo` |
 | `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set (no disk), `"mac"` = mac-guest device set minus trackpad; absent = same as `"default"`) |
-| `vm.delete` | `{name}` | `{}` (refused while running/installing; a guest→Mac key that can't be removed from `~/.ssh/authorized_keys` is reported as a warning `log` event) |
-| `vm.rename` | `{name, newName}` | `{}` (refused while running/installing; `newName` follows the name rules) |
+| `vm.delete` | `{name}` | `{}` (refused while running/installing, or while another VM uses a file in this VM's folder; a guest→Mac key that can't be removed from `~/.ssh/authorized_keys` is reported as a warning `log` event) |
+| `vm.rename` | `{name, newName}` | `{}` (refused while running/installing, or while another VM uses a file in this VM's folder; `newName` follows the name rules) |
 | `vm.copy` | `{name, newName?, diskIDs?, mountIDs?, regenerateMAC?}` | `VMInfo` (refused while running; `newName` follows the name rules; diskIDs = writable disks to carry, absent = all; mountIDs = mounts to carry by `MountInfo.id`, absent = all (wave 2; older daemons ignore it and carry all); regenerateMAC defaults true; the copy gets fresh machine identity, autostart off, no serial logs and no ssh keypair, serves guest setup at its first boot like a new guest, and a not-yet-installed Mac copies as `failed` "Duplicated before macOS was installed") |
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?, nestedVirtualization?}` | `{}` (clamped to host + boot floors; nested virt is 1.0.4+, EFI/kernel boots on supporting hardware — skipped with a warning event otherwise) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
 | `vm.disk.add` | `{name, disk: NewDisk}` | `{}` (a storage disk's name follows the name rules and must be new to the VM — an existing disk or file is never replaced; `sizeBytes` is a positive multiple of 512) |
-| `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected) |
+| `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected; `invalidState` while another VM uses the owned file) |
 | `vm.disk.import` | `{name, path}` | `VMInfo` (copies the file INTO the VM as an owned disk; format by magic bytes — ISO9660 → iso, qcow2 refused, else raw storage validated as a non-empty 512-multiple; emits `copyProgress`) |
 | `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`; emits `copyProgress`) |
 | `vm.mount.add` | `{name, path, tag, kind?}` | `{}` (`tag` follows the mount-tag rules; `kind` (1.0.7+): `"virtiofs"` (default) rides the share device, `"sshfs"` is mounted by the guest over its SSH link; sshfs refused for macOS guests) |
@@ -120,7 +120,7 @@ keep working — nothing is rejected at load.
 | `vm.setEnabled` | `{name, disks?: {id: bool}, mounts?: {id: bool}, console?: {"<index>": bool}, uart?: {"<index>": bool}}` | `{}` (1.0.4+; `vm.setSafety` twin — unknown ids/indices refuse the whole batch; disabling a serial port renumbers later guest names, same as removing it) |
 | `vm.kernel.setOverride` | `{name, path, commandLine?, overrideEnabled?}` | `VMInfo` (1.0.4+; per-owned-kernel-file cmdline override — replaces the VM command line while that file is active and the override is enabled; nil fields unchanged; dropped when the file is deleted) |
 | `vm.disk.resize` | `{name, diskID, sizeBytes}` | `VMInfo` (1.0.4+; grow-only, owned storage disks, refused while running) |
-| `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; `newName` follows the name rules; refused while running) |
+| `vm.disk.rename` | `{name, diskID, newName}` | `VMInfo` (1.0.4+; owned storage disks — the backing file moves and the name-derived disk id changes; `newName` follows the name rules; refused while running, or while another VM uses the file) |
 | `vm.mount.setTag` | `{name, mountID, tag}` | `VMInfo` (1.0.4+; next-boot effect, tag must be unique on the VM and follow the mount-tag rules) |
 | `vm.mount.setKind` | `{name, mountID, kind}` | `VMInfo` (1.0.7+; next-boot effect; `"virtiofs"`\|`"sshfs"`, sshfs refused for macOS guests) |
 | `vm.kernel.rename` | `{name, path, tag}` | `VMInfo` (1.0.4+; owned kernel/initramfs files — the file moves to the new tag dir, kernel-boot references and the command-line override migrate; `tag` follows the name rules; refused while running) |

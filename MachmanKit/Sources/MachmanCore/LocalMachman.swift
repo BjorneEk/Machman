@@ -255,7 +255,7 @@ public final class LocalMachman: MachmanControlling {
 		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
 			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
 		}
-		try vm.config.deleteDisk(disk: disk)
+		try registry.removeDisk(disk, from: vm)
 		registry.events.emit(.listChanged)
 	}
 
@@ -437,7 +437,7 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidState, message: "stop \(name) before renaming its disks")
 		}
-		try vm.config.renameStorageDisk(id: diskID, to: newName)
+		try registry.renameStorageDisk(id: diskID, of: vm, to: newName)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}

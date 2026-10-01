@@ -459,6 +459,10 @@ public final class VMRegistry {
 			throw MachmanError(
 				code: .invalidState, message: "wait for the macOS install to finish first")
 		}
+		// Another VM's disk may live in this folder (C5).
+		if let ref = foreignReference(to: vm.config.vmDirPath(), excluding: name) {
+			throw foreignUseRefusal(ref, owner: name)
+		}
 		do {
 			try VMConfig.deleteVMDirectory(name: name)
 		} catch {
@@ -496,6 +500,10 @@ public final class VMRegistry {
 		guard !(installSessions[oldName]?.isInstalling ?? false) else {
 			throw MachmanError(
 				code: .invalidState, message: "wait for the macOS install to finish first")
+		}
+		// …and so would another VM whose disk lives in it (C5).
+		if let ref = foreignReference(to: vm.config.vmDirPath(), excluding: oldName) {
+			throw foreignUseRefusal(ref, owner: oldName)
 		}
 		try vm.config.rename(to: newName)
 		vms[oldName] = nil
