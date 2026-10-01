@@ -40,7 +40,8 @@ struct MenuRulesTests {
 		#expect(!Samples.linux("Debian").canAddGuestSetup)
 		#expect(Samples.macOS("Sequoia").canAddGuestSetup)
 		var disabled = Samples.macOS("Sequoia")
-		disabled.devices = (disabled.devices ?? []) + [DeviceInfo(kind: .guestSetup, enabled: false)]
+		disabled.devices = (disabled.devices ?? [])
+			+ [DeviceInfo(kind: .guestSetup, enabled: false)]
 		#expect(!disabled.canAddGuestSetup)
 	}
 
