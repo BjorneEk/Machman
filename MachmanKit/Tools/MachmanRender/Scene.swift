@@ -5,7 +5,9 @@
 //  A named, reproducible picture of one desktop view: the widths it is drawn at, its height
 //  (fixed or fitted), window chrome or none, and a builder that makes the view from a fresh
 //  SceneContext (sample VMs over StubMachman). Scenes live in Scenes/<area>.swift and are
-//  listed in SceneRegistry — adding one is one entry there, nothing else.
+//  listed in SceneRegistry — adding one is one entry there, nothing else. A scene never
+//  writes UserDefaults.standard or an @AppStorage key: that domain lives in the real home
+//  and every run shares it (see RenderSandbox).
 //
 
 import SwiftUI

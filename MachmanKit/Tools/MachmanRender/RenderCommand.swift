@@ -106,6 +106,15 @@ enum RenderCommand {
 				}
 			}
 		}
+		// A scene wrote the real home's defaults (see RenderSandbox): fail here, where the
+		// writer ran, rather than only in the next run's refusal.
+		let leftovers = RenderSandbox.standardDomainKeys()
+		if !leftovers.isEmpty {
+			Console.err("MachmanRender: a scene wrote \(leftovers.joined(separator: ", ")) to "
+				+ "the real home's '\(RenderSandbox.standardDomain)' defaults domain; scenes "
+				+ "must not write UserDefaults.standard")
+			return 1
+		}
 		return failures == 0 ? 0 : 1
 	}
 

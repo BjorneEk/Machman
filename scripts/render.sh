@@ -8,7 +8,11 @@
 #
 # Builds the tool (debug: it reaches the views through @testable import), then runs it in a
 # throwaway sandbox — its own suite id, data dir and fake home, removed on exit — so a run
-# can never read or write the .dev or Release libraries, defaults or ~/Library. The tool
+# can never read or write the .dev or Release libraries or files under the real ~/Library.
+# Defaults are the exception: cfprefsd serves them from the real home, so the tool's own
+# domain (MachmanRender, which @AppStorage reads) is shared by every run. The tool refuses to
+# start while it holds anything and fails a run that leaves something there; scenes never
+# write UserDefaults.standard, and nobody runs `defaults write MachmanRender`. The tool
 # draws into windows that are never ordered on screen, under a prohibited activation policy:
 # nothing on screen, no Dock icon, no focus change, no daemon; it stops if a scene breaks that.
 #
