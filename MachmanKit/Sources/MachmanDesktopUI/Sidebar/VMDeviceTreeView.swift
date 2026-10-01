@@ -476,17 +476,12 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var installerGroup: some View {
 		let installers = (vm.devices ?? []).filter(\.kind.isInstaller)
-		let macGuest = vm.boot.mode == .macOS
+		// The unified Guest Setup (the legacy Console Login / SSH Setup kinds migrate to it).
 		group(.group("Installers"), symbol: MachmanSymbols.installerGroup,
 			title: "Installers", count: installers.count, menu: {
-			if macGuest, !installers.contains(where: { $0.kind == .consoleLoginInstaller }) {
-				Button("Add Console Login") {
-					viewModel.addDevice(vm.name, kind: .consoleLoginInstaller)
-				}
-			}
-			if !installers.contains(where: { $0.kind == .sshInstaller }) {
-				Button("Add SSH Setup") {
-					viewModel.addDevice(vm.name, kind: .sshInstaller)
+			if vm.canAddGuestSetup {
+				Button("Add Guest Setup") {
+					viewModel.addDevice(vm.name, kind: .guestSetup)
 				}
 			}
 		}) {

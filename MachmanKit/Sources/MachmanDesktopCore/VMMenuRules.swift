@@ -44,6 +44,12 @@ public enum StoppedOnly: CaseIterable, Sendable {
 }
 
 extension VMInfo {
+	// The one guest installer (H10) fits any boot mode. Present but disabled still counts
+	// as attached — re-enable it instead (AddPopover's rule too).
+	public var canAddGuestSetup: Bool {
+		!(devices ?? []).contains { $0.kind == .guestSetup }
+	}
+
 	// Why the daemon would refuse the action now, or nil when it is offered. A starting,
 	// stopping or paused VM is hosted too, and one whose vmhost stopped answering may still
 	// be (the daemon refuses while it can't tell).

@@ -35,6 +35,15 @@ struct MenuRulesTests {
 		}
 	}
 
+	// H10: the installers menu offers the unified Guest Setup, once.
+	@Test func guestSetupIsOfferedOnlyWhenAbsent() {
+		#expect(!Samples.linux("Debian").canAddGuestSetup)
+		#expect(Samples.macOS("Sequoia").canAddGuestSetup)
+		var disabled = Samples.macOS("Sequoia")
+		disabled.devices = (disabled.devices ?? []) + [DeviceInfo(kind: .guestSetup, enabled: false)]
+		#expect(!disabled.canAddGuestSetup)
+	}
+
 	// Decision 16: a tooltip is one short sentence.
 	@Test func reasonsAreOneShortSentence() {
 		for action in StoppedOnly.allCases {
