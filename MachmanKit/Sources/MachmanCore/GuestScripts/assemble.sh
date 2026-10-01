@@ -1,16 +1,19 @@
 #!/bin/sh
-# Dev-loop assembler: the same concatenation EmbeddedScript.assembled does in Swift,
-# for shellcheck and the docker harness. Output: GuestScripts/dist/install.sh (gitignored).
+# Dev-loop assembler: the same concatenation GuestSetupScript.assembled does in Swift, for
+# shellcheck and the docker harness — byte for byte (EmbeddedScriptTests holds it there),
+# so a line number in the output is the guest's line number. Each part is followed by a
+# newline only when it lacks a final one.
+#   sh assemble.sh [output]      default GuestScripts/dist/install.sh (gitignored)
 set -eu
 
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-OUT="$HERE/dist/install.sh"
-mkdir -p "$HERE/dist"
+OUT="${1:-$HERE/dist/install.sh}"
+mkdir -p "$(dirname -- "$OUT")"
 
 : > "$OUT"
 for part in "$HERE"/setup/[0-9][0-9]-*.sh; do
 	cat "$part" >> "$OUT"
-	printf '\n' >> "$OUT"
+	[ -z "$(tail -c 1 "$part")" ] || printf '\n' >> "$OUT"
 done
 chmod 755 "$OUT"
 

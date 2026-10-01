@@ -35,6 +35,38 @@ struct EmbeddedScriptTests {
 		#expect(text.components(separatedBy: "\nSCRIPT_VERSION=").count == 2)
 	}
 
+	// S16: the dev-loop assembler (scripts/guest-regress, shellcheck) builds exactly the bytes
+	// the app ships, so a line number from dist/install.sh is the guest's line number — and
+	// both take the same modules: a part missing from Package.swift fails here.
+	@Test func assembleShMatchesTheSwiftAssembly() throws {
+		let here = URL(fileURLWithPath: #filePath)
+		let assembler = here.deletingLastPathComponent()
+			.appendingPathComponent("../../Sources/MachmanCore/GuestScripts/assemble.sh")
+			.standardizedFileURL
+		let out = TestEnvironment.scratchURL
+			.appendingPathComponent("assemble-\(UUID().uuidString)/install.sh")
+		let process = Process()
+		process.executableURL = URL(fileURLWithPath: "/bin/sh")
+		process.arguments = [assembler.path, out.path]
+		process.standardInput = FileHandle.nullDevice
+		process.standardOutput = FileHandle.nullDevice
+		process.standardError = FileHandle.nullDevice
+		try process.run()
+		process.waitUntilExit()
+		#expect(process.terminationStatus == 0)
+		let shipped = Data(GuestSetupScript.assembled.text.utf8)
+		let assembled = try Data(contentsOf: out)
+		#expect(assembled == shipped, """
+			assemble.sh: \(assembled.count) bytes, the app: \(shipped.count) bytes
+			""")
+		let setup = assembler.deletingLastPathComponent().appendingPathComponent("setup")
+		let modules = try FileManager.default.contentsOfDirectory(atPath: setup.path)
+			.filter { $0.range(of: #"^[0-9]{2}-.*\.sh$"#, options: .regularExpression) != nil }
+			.map { String($0.dropLast(3)) }
+			.sorted()
+		#expect(modules == GuestSetupScript.parts.map(\.name))
+	}
+
 	// Guests run this under dash, busybox ash, FreeBSD sh, OpenBSD ksh and bash-as-sh.
 	// We cannot install those here, but three local parsers with different heritage
 	// (bash in POSIX mode, and ksh93, which is strict where bash is forgiving) catch the
