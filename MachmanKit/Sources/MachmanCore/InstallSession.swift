@@ -12,9 +12,15 @@ import MachmanAPI
 
 @MainActor
 final class InstallSession {
+	// What drives one install. Production runs the real MacInstaller; tests inject a runner
+	// that never reaches Virtualization (an install starts by loading a restore image).
+	typealias Runner = @MainActor (MacInstaller, MacInstaller.Source) async throws -> Void
+	static let runInstaller: Runner = { try await $0.install(source: $1) }
+
 	let config: VMConfig
 	private let events: EventBus
 	private let isVMRunning: () -> Bool
+	private let run: Runner
 	private var installer: MacInstaller?
 	private var version = "macOS"
 
@@ -32,10 +38,14 @@ final class InstallSession {
 
 	var isInstalling: Bool { installer != nil }
 
-	init(config: VMConfig, events: EventBus, isVMRunning: @escaping () -> Bool) {
+	init(
+		config: VMConfig, events: EventBus, isVMRunning: @escaping () -> Bool,
+		run: @escaping Runner = InstallSession.runInstaller
+	) {
 		self.config = config
 		self.events = events
 		self.isVMRunning = isVMRunning
+		self.run = run
 		self.phase = Self.phase(for: config.boot, hasActiveInstall: false)
 	}
 
@@ -65,7 +75,11 @@ final class InstallSession {
 	}
 
 	func startInstall(source: InstallSource) throws {
-		guard installer == nil else { return }
+		// A second start used to answer success while the first install kept running (E15b).
+		guard installer == nil else {
+			throw MachmanError(
+				code: .invalidState, message: "macOS is already installing on \(config.name)")
+		}
 		guard !isVMRunning() else {
 			// Two live VZ VMs would contend for the same disk images.
 			phase = InstallPhase(kind: .failed, message: "Stop the VM before installing macOS")
@@ -110,7 +124,7 @@ final class InstallSession {
 			message: "Starting macOS install for \(config.name)"))
 		Task {
 			do {
-				try await installer.install(source: installerSource)
+				try await self.run(installer, installerSource)
 				self.phase = InstallPhase(kind: .installed)
 				self.events.emit(.log(
 					vm: self.config.name, level: .message,

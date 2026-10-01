@@ -60,6 +60,8 @@ public final class VMRegistry {
 	// Sessions live here (not in a view) so a running install keeps its phase and progress
 	// when the user navigates away, and a second install of the same VM can't start.
 	private var installSessions: [String: InstallSession] = [:]
+	// What new install sessions run — a test seam; production installs through MacInstaller.
+	var installRunner: InstallSession.Runner = InstallSession.runInstaller
 	// Non-nil in a vmhost process: this registry manages exactly that one VM.
 	// var: safeSave promotion re-keys the vmhost to the saved VM's name. Internal read —
 	// the bootstrap's lifecycle watcher and quit delegate follow it instead of a stale
@@ -468,6 +470,11 @@ public final class VMRegistry {
 		guard vm.runtime == nil else {
 			throw MachmanError(code: .invalidState, message: "stop \(oldName) before renaming it")
 		}
+		// The installer writes into the folder the rename would move (E15b).
+		guard !(installSessions[oldName]?.isInstalling ?? false) else {
+			throw MachmanError(
+				code: .invalidState, message: "wait for the macOS install to finish first")
+		}
 		try vm.config.rename(to: newName)
 		vms[oldName] = nil
 		vms[newName] = vm
@@ -485,7 +492,8 @@ public final class VMRegistry {
 		}
 		let session = InstallSession(
 			config: vm.config, events: events,
-			isVMRunning: { [weak vm] in vm?.state.isRunning ?? false })
+			isVMRunning: { [weak vm] in vm?.state.isRunning ?? false },
+			run: installRunner)
 		installSessions[vm.config.name] = session
 		return session
 	}

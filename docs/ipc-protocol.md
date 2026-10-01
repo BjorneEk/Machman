@@ -84,7 +84,7 @@ keep working — nothing is rejected at load.
 | `vm.get` | `{name}` | `VMInfo` |
 | `vm.create` | `{template?}` (optional params, 1.0.4+) | `VMInfo` (auto-named `new-VM<n>`; template `"blank"` = no devices, `"default"` = implied EFI device set (no disk), `"mac"` = mac-guest device set minus trackpad; absent = same as `"default"`) |
 | `vm.delete` | `{name}` | `{}` (refused while running/installing; a guest→Mac key that can't be removed from `~/.ssh/authorized_keys` is reported as a warning `log` event) |
-| `vm.rename` | `{name, newName}` | `{}` (refused while running; `newName` follows the name rules) |
+| `vm.rename` | `{name, newName}` | `{}` (refused while running/installing; `newName` follows the name rules) |
 | `vm.copy` | `{name, newName?, diskIDs?, mountIDs?, regenerateMAC?}` | `VMInfo` (refused while running; `newName` follows the name rules; diskIDs = writable disks to carry, absent = all; mountIDs = mounts to carry by `MountInfo.id`, absent = all (wave 2; older daemons ignore it and carry all); regenerateMAC defaults true; the copy gets fresh machine identity, autostart off, no serial logs and no ssh keypair, serves guest setup at its first boot like a new guest, and a not-yet-installed Mac copies as `failed` "Duplicated before macOS was installed") |
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?, nestedVirtualization?}` | `{}` (clamped to host + boot floors; nested virt is 1.0.4+, EFI/kernel boots on supporting hardware — skipped with a warning event otherwise) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
@@ -111,7 +111,7 @@ keep working — nothing is rejected at load.
 | `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
-| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` (refused with `invalidState` once macOS is installed; a retry after a failed or cancelled install starts over) |
+| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` (refused with `invalidState` once macOS is installed or while that VM's install is already running; a retry after a failed or cancelled install starts over) |
 | `vm.install.cancel` | `{name}` | `{}` |
 | `vm.install.phase` | `{name}` | `InstallPhase` |
 | `vm.device.add` | `{name, kind}` | `VMInfo` (1.0.4+; one device per kind; kind validity depends on boot mode — trackpad needs macOS, clipboard/rosetta refuse macOS; takes effect next boot) |
