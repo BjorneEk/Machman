@@ -33,8 +33,8 @@ How
   -y, --yes              never ask; take the defaults shown by --dry-run
   -n, --dry-run          print the plan and exit; change nothing
       --report-only      probe and refresh Machman's report; change nothing else.
-                         A boot hook installed with the setup runs this at every
-                         boot, so "next boot" states flip once the guest reboots.
+                         The setup keeps a copy of itself in the guest that runs
+                         this at every boot.
   -v, --verbose          narrate every decision and command
   -q, --quiet            only the summary and errors
   -h, --help             this text

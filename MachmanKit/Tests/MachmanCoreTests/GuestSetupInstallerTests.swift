@@ -212,8 +212,9 @@ struct GuestSetupInstallerTests {
 		#expect(!s.contains(".machman-tmp"))
 		#expect(s.contains("--uninstall [--user <name>]"))
 		// The report lands in the writable sibling, addressed payload-relatively (the
-		// directory name itself comes from machman.env).
-		#expect(s.contains(#"REPORT_DIR="$PAYLOAD_DIR/../$REPORT_DIR_NAME""#))
+		// directory name itself comes from machman.env) — or, for the boot-time copy, where
+		// its own machman.env says.
+		#expect(s.contains(#"REPORT_DIR="${BOOT_REPORT_DIR:-$PAYLOAD_DIR/../$REPORT_DIR_NAME}""#))
 		// The script owns its version; Swift reads it back rather than declaring a twin.
 		#expect(GuestSetupInstaller.script.version == 4)
 		#expect(GuestSetupInstaller.scriptVersion == GuestSetupInstaller.script.version)
@@ -249,6 +250,23 @@ struct GuestSetupInstallerTests {
 		// A probe run describes the LAST real run's outcome, not its own.
 		#expect(s.contains(#"_wr_status="${ST_LAST_STATUS:-ok}""#))
 		#expect(s.contains("refreshed Machman's report"))
+		// S27/S12: every hook runs the guest's own copy beside the state, never the share
+		// (unserved once installed, elsewhere on macOS), so no payload dir name is baked in.
+		#expect(s.contains(#"REPORT_COPY="$STATE_DIR/report.sh""#))
+		#expect(!s.contains("/GuestSetup/"))
+	}
+
+	// S27: macOS guests mount the share at "My Shared Files", not the Linux share root.
+	@Test @MainActor func macOSGuestsGetTheirShareRoot() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "sharemac")
+			let vm = try VMConfig(name: "sharemac", memorySize: 1 << 30, cpuCount: 2)
+			#expect(try GuestSetupInstaller.environment(for: vm)["SHARE_ROOT"] == GuestPaths.share)
+			vm.boot = .macOS(MacOSBoot(
+				installState: .installed, minimumCPUCount: 2, minimumMemorySize: 1 << 30))
+			#expect(try GuestSetupInstaller.environment(for: vm)["SHARE_ROOT"]
+				== GuestPaths.macOSAutomount)
+		}
 	}
 
 	// A cloned guest disk (and a copied VM directory) carries the SOURCE's marker on

@@ -38,7 +38,8 @@ case "$init" in
 sysv|inittab|runit) R RCLOCAL_INIT pass ;;
 *) R RCLOCAL_INIT "fail ($init)"; tail -n 5 /tmp/run1.log ;;
 esac
-if grep -q "^# BEGIN $NEW-report\$" /etc/rc.local && grep -q "^# BEGIN $NEW\$" /etc/rc.local
+if grep -q "^# BEGIN $NEW-report\$" /etc/rc.local && grep -q "^# BEGIN $NEW\$" /etc/rc.local \
+	&& grep -q '/var/lib/machman/report\.sh' /etc/rc.local && ! grep -q GuestSetup /etc/rc.local
 then R RCLOCAL_HOOK pass; else R RCLOCAL_HOOK fail; cat -n /etc/rc.local; fi
 etcsum /etc > /tmp/sum-1
 $SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
@@ -62,10 +63,11 @@ if [ -x /etc/init.d/rc.local ]; then
 else
 	sh -c '[ -x /etc/rc.local ] && /etc/rc.local' >/tmp/rclocal-run.log 2>&1   # runit stage 2
 fi
-# Its report refresh fires 5 s later in the background: let it finish, or it rewrites the
-# report under the runs below. (rc[.]local: grep's own command line must not match.)
+# Its report refresh runs in the background (the guest's own copy, report.sh): let it
+# finish, or it rewrites the report under the runs below. ([.]: grep's own command line
+# must not match.)
 n=0
-while grep -qs 'rc[.]local' /proc/[0-9]*/cmdline && [ "$n" -lt 60 ]; do
+while grep -qsE 'rc[.]local|report[.]sh' /proc/[0-9]*/cmdline && [ "$n" -lt 60 ]; do
 	sleep 1
 	n=$((n + 1))
 done

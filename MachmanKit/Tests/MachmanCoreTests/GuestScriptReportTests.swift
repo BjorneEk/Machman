@@ -77,6 +77,63 @@ struct GuestScriptReportTests {
 		}
 	}
 
+	// S27: the boot-time copy reports where its machman.env says (the share's drop-box, as
+	// the setup run resolved it) and does nothing else: any other run is refused. The
+	// share's own copy, without that line, reports beside its payload as before.
+	@Test func bootCopyIsReportOnly() throws {
+		let env = ["BOOT_REPORT_DIR": "/mnt/machman/share/GuestReport"]
+		for shell in GuestScriptHarness.shells {
+			let copy = try GuestScriptHarness.run(#"echo "$REPORT_DIR""#, under: shell,
+				env: env, args: ["--report-only"])
+			#expect(copy.status == 0, "\(shell): \(copy.out)")
+			#expect(copy.out == "/mnt/machman/share/GuestReport\n", "\(shell): \(copy.out)")
+			let refused = try GuestScriptHarness.run("echo ran", under: shell,
+				env: env, args: ["-y", "--ssh"])
+			#expect(refused.status == 3, "\(shell): \(refused.out)")
+			#expect(refused.out.contains("Machman's boot-time report copy"), "\(shell)")
+			#expect(!refused.out.contains("ran"), "\(shell): \(refused.out)")
+			let share = try GuestScriptHarness.run(#"echo "${REPORT_DIR##*/}""#, under: shell,
+				args: ["-y", "--ssh"])
+			#expect(share.out == "GuestReport\n", "\(shell): \(share.out)")
+		}
+	}
+
+	// S27: the hook's copy lives beside the state — the script itself (root-only), its
+	// machman.env plus where reports go, and the files it reads — and macOS's launchd hook
+	// runs it, loaded at the next boot (never racing this run's own report).
+	@Test func bootCopyInstallsBesideTheState() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				state_paths() { STATE_DIR="$D/state"; STATE_FILE="$STATE_DIR/state.env"; }
+				state_paths
+				LAUNCHD_DIR="$D/LaunchDaemons"
+				mkdir -p "$LAUNCHD_DIR"
+				INIT=launchd
+				OS_FAMILY=darwin
+				launchctl() { printf '%s\n' "$*" >> "$D/launchctl.log"; }
+				printf 'ssh-ed25519 AAAA host\n' > "$PAYLOAD_DIR/host_key.pub"
+				report_hook_install
+				ls -ln "$D/state" | awk 'NR > 1 { print substr($1, 1, 10), $NF }'
+				cmp -s "$D/state/report.sh" "$0" && echo "the copy is the script"
+				tail -n 1 "$D/state/machman.env" | sed "s|$D|D|"
+				grep -c "<string>$D/state/report.sh</string>" \
+					"$LAUNCHD_DIR/com.machman.report.plist"
+				cat "$D/launchctl.log"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				-rw-r--r-- host_key.pub
+				-rw------- machman.env
+				-rwx------ report.sh
+				the copy is the script
+				BOOT_REPORT_DIR='D/GuestReport'
+				1
+				bootout system/com.machman.report
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// S36: a note (a repair made, a boot refresh that will not run) is reported as NOTE_<n>,
 	// after the errors, and is no error: a clean run's report carries no ERROR_ line.
 	@Test func reportNotesTravelAsNotes() throws {

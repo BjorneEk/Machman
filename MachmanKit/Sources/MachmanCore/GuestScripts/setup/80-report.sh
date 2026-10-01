@@ -230,10 +230,13 @@ write_report() {
 # ---------------------------------------------------------------- boot-time refresh ----
 # A tiny per-init hook re-runs this script with --report-only at boot, so states a run
 # could only promise ("configured", "pending reboot") flip to what the guest actually
-# does once it reboots. The payload is regenerated at every VM start and gone when the
-# VM is off, so the hook no-ops unless Machman is serving the share. FreeBSD gets its
-# own rc.d script — NOT an /etc/rc.local line: the sshfs boot mounts own a marker block
-# there and both sides strip_block the whole file, so they would clobber each other.
+# does once it reboots. It runs the guest's OWN copy of the script, kept beside the state
+# (report_copy_install), never the share's: an installed guest is not served the payload,
+# and macOS mounts the share elsewhere. FreeBSD gets its own rc.d script — NOT an
+# /etc/rc.local line: the sshfs boot mounts own a marker block there and both sides
+# strip_block the whole file, so they would clobber each other.
+
+REPORT_COPY=""             # the boot-time copy, once report_copy_install wrote it
 
 report_hook_install() {
 	[ "$DRY_RUN" -eq 1 ] && return 0
@@ -243,43 +246,54 @@ report_hook_install() {
 			"no boot-time report refresh on NixOS — the report updates when this script runs"
 		return 0
 	fi
-	_rh_script="$SHARE_ROOT/GuestSetup/$(basename "$0")"
+	case "$INIT" in
+	systemd|openrc|inittab|sysv|runit|openbsd-rc|netbsd-rc|freebsd-rc|launchd) ;;
+	*)
+		report_note report-refresh \
+			"no boot-time report refresh under init '$INIT' — reports update on re-runs only"
+		return 0
+		;;
+	esac
+	if ! report_copy_install; then
+		report_note report-refresh "no boot-time report refresh: $R_ERROR"
+		return 0
+	fi
+	_rh_copy="$(sh_quote "$REPORT_COPY")"
 	case "$INIT" in
 	systemd)
-		{
+		report_hook_file /etc/systemd/system/machman-report.service 644 "$(
 			printf '# %s\n' "$MARKER"
 			printf '[Unit]\n'
 			printf 'Description=Machman guest report refresh\n'
-			printf 'ConditionPathExists=%s\n' "$_rh_script"
+			printf 'ConditionPathExists=%s\n' "$REPORT_COPY"
 			printf 'After=local-fs.target network.target\n'
 			printf '\n[Service]\nType=oneshot\n'
-			printf 'ExecStart=/bin/sh %s --report-only -q\n' "$_rh_script"
-			printf '\n[Install]\nWantedBy=multi-user.target\n'
-		} > /etc/systemd/system/machman-report.service
+			printf 'ExecStart=/bin/sh %s --report-only -q\n' "$REPORT_COPY"
+			printf '\n[Install]\nWantedBy=multi-user.target'
+		)" || return 0
 		systemctl daemon-reload >/dev/null 2>&1 || true
 		systemctl enable machman-report.service >/dev/null 2>&1 || true
 		;;
 	openrc)
 		mkdir -p /etc/local.d
-		{
+		report_hook_file /etc/local.d/machman-report.start 755 "$(
 			printf '#!/bin/sh\n# %s\n' "$MARKER"
-			printf '[ -r "%s" ] || exit 0\n' "$_rh_script"
-			printf 'sh "%s" --report-only -q >/dev/null 2>&1 &\n' "$_rh_script"
-		} > /etc/local.d/machman-report.start
-		chmod 755 /etc/local.d/machman-report.start
+			printf '[ -r %s ] || exit 0\n' "$_rh_copy"
+			printf '/bin/sh %s --report-only -q >/dev/null 2>&1 &' "$_rh_copy"
+		)" || return 0
 		have rc-update && rc-update add local default >/dev/null 2>&1
 		;;
 	inittab|sysv|runit|openbsd-rc|netbsd-rc)
 		# /etc/local.d is openrc's mechanism — nothing executes it under these inits.
 		# They all run /etc/rc.local (sysvinit via the distro's rc.local service, Void's
 		# runit stage, OpenBSD's rc, NetBSD's rc.d/local), so the hook lands there.
-		report_hook_rc_local "$_rh_script"
+		report_hook_rc_local "$_rh_copy"
 		;;
 	freebsd-rc)
 		# REQUIRE: local orders after /etc/rc.d/local, which runs /etc/rc.local — where
-		# the sshfs automounts connect — so the share is mounted before the probe. The
-		# grace sleep covers the mount settling; the guard makes any miss a silent no-op.
-		{
+		# the sshfs automounts connect. The grace sleep covers the mount settling.
+		mkdir -p /usr/local/etc/rc.d
+		report_hook_file /usr/local/etc/rc.d/machman_report 755 "$(
 			printf '#!/bin/sh\n'
 			printf '# %s — Machman guest report refresh\n' "$MARKER"
 			printf '# PROVIDE: machman_report\n'
@@ -290,17 +304,19 @@ report_hook_install() {
 			printf 'start_cmd="machman_report_start"\n'
 			printf 'stop_cmd=":"\n\n'
 			printf 'machman_report_start() {\n'
-			printf '\t(sleep 5; [ -r "%s" ] && /bin/sh "%s" --report-only -q) &\n' \
-				"$_rh_script" "$_rh_script"
+			printf '\t(sleep 5; [ -r %s ] && /bin/sh %s --report-only -q) &\n' \
+				"$_rh_copy" "$_rh_copy"
 			printf '}\n\n'
 			printf 'load_rc_config $name\n'
 			printf ': ${machman_report_enable:=YES}\n'
-			printf 'run_rc_command "$1"\n'
-		} > /usr/local/etc/rc.d/machman_report
-		chmod 755 /usr/local/etc/rc.d/machman_report
+			printf 'run_rc_command "$1"'
+		)" || return 0
 		;;
 	launchd)
-		{
+		# Loaded at the next boot, never now: it would race this run's own report. One an
+		# older run loaded (pointing at the share) goes now.
+		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
+		report_hook_file "$LAUNCHD_DIR/com.machman.report.plist" 644 "$(
 			printf '<?xml version="1.0" encoding="UTF-8"?>\n'
 			printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
 			printf ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
@@ -308,23 +324,60 @@ report_hook_install() {
 			printf '<key>Label</key><string>com.machman.report</string>\n'
 			printf '<!-- %s -->\n' "$MARKER"
 			printf '<key>ProgramArguments</key><array>\n'
-			printf '<string>/bin/sh</string><string>%s</string>\n' "$_rh_script"
+			printf '<string>/bin/sh</string><string>%s</string>\n' "$REPORT_COPY"
 			printf '<string>--report-only</string><string>-q</string>\n'
 			printf '</array>\n'
 			printf '<key>RunAtLoad</key><true/>\n'
-			printf '</dict></plist>\n'
-		} > /Library/LaunchDaemons/com.machman.report.plist
-		chmod 644 /Library/LaunchDaemons/com.machman.report.plist
-		launchctl bootstrap system /Library/LaunchDaemons/com.machman.report.plist \
-			>/dev/null 2>&1 || true
-		;;
-	*)
-		report_note report-refresh \
-			"no boot-time report refresh under init '$INIT' — reports update on re-runs only"
-		return 0
+			printf '</dict></plist>'
+		)" || return 0
 		;;
 	esac
 	verbose report "boot refresh hook installed ($INIT)"
+	return 0
+}
+
+# report_hook_file <path> <mode> <content> — a hook file written whole (never through a
+# link); a failure is the report's note, and the hook is not installed. 1 then.
+report_hook_file() {
+	if ! write_file -m "$2" "$1" <<EOF
+$3
+EOF
+	then
+		report_note report-refresh "no boot-time report refresh: $R_ERROR"
+		return 1
+	fi
+	return 0
+}
+
+# The boot-time copy (decision 11): this script, its machman.env and the files it reads,
+# root-only beside the state, so the hook never needs the share's payload. Its machman.env
+# adds BOOT_REPORT_DIR — the share's drop-box as this run resolved it — which also locks
+# the copy to --report-only. A mounts.list the payload no longer ships goes. 1 with
+# R_ERROR when any of it cannot be written.
+report_copy_install() {
+	REPORT_COPY="$STATE_DIR/report.sh"
+	R_ERROR=""
+	if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
+		R_ERROR="could not create $STATE_DIR"
+		return 1
+	fi
+	if [ ! -r "$PAYLOAD_DIR/${0##*/}" ]; then
+		R_ERROR="cannot read $PAYLOAD_DIR/${0##*/} to copy it"
+		return 1
+	fi
+	write_file -m 700 "$REPORT_COPY" < "$PAYLOAD_DIR/${0##*/}" || return 1
+	write_file -m 600 "$STATE_DIR/machman.env" <<EOF || return 1
+$(cat "$PAYLOAD_DIR/machman.env")
+BOOT_REPORT_DIR=$(sh_quote "$REPORT_DIR")
+EOF
+	if [ -r "$PAYLOAD_DIR/host_key.pub" ]; then
+		write_file -m 644 "$STATE_DIR/host_key.pub" < "$PAYLOAD_DIR/host_key.pub" || return 1
+	fi
+	if [ -r "$MOUNTS_LIST" ]; then
+		write_file -m 644 "$STATE_DIR/mounts.list" < "$MOUNTS_LIST" || return 1
+	else
+		rm -f "$STATE_DIR/mounts.list"
+	fi
 	return 0
 }
 
@@ -332,7 +385,8 @@ report_hook_install() {
 # suffix so it never collides with the sshfs automounts' block, which strip_blocks the
 # PLAIN marker over this same file — and the block must not `exit`: rc.local is shared,
 # later lines still have to run. The settle sleep and the -r guard mirror the FreeBSD
-# hook: the share this script lives on may be mounted by an earlier rc.local line.
+# hook: the share the report goes to may be mounted by an earlier rc.local line.
+# report_hook_rc_local <the copy's path, sh-quoted>
 report_hook_rc_local() {
 	# Pre-fix runs on sysvinit wrote openrc's file here; it was never executed — retire it.
 	rm -f /etc/local.d/machman-report.start 2>/dev/null || true
@@ -342,7 +396,7 @@ report_hook_rc_local() {
 		return 0
 	fi
 	if ! rc_local_put "$MARKER-report" "$(printf \
-		'(sleep 5; [ -r "%s" ] && /bin/sh "%s" --report-only -q) >/dev/null 2>&1 &' \
+		'(sleep 5; [ -r %s ] && /bin/sh %s --report-only -q) >/dev/null 2>&1 &' \
 		"$1" "$1")"; then
 		report_note report-refresh "no boot-time report refresh: $R_ERROR"
 		return 0
@@ -387,15 +441,18 @@ report_hook_uninstall() {
 		/etc/systemd/system/multi-user.target.wants/machman-report.service \
 		/etc/local.d/machman-report.start \
 		/usr/local/etc/rc.d/machman_report 2>/dev/null || true
+	# The boot-time copy beside the state (remove_state then takes the emptied dir).
+	rm -f "$STATE_DIR/report.sh" "$STATE_DIR/machman.env" "$STATE_DIR/host_key.pub" \
+		"$STATE_DIR/mounts.list" 2>/dev/null || true
 	strip_block /etc/rc.local "$MARKER-report" || uninstall_kept
 	# A systemctl without systemd as PID 1 (sysvinit with systemd installed) fails: nothing
 	# to reload then, and no reason to abort the uninstall.
 	if have systemctl; then
 		systemctl daemon-reload >/dev/null 2>&1 || true
 	fi
-	if [ -f /Library/LaunchDaemons/com.machman.report.plist ]; then
+	if [ -f "$LAUNCHD_DIR/com.machman.report.plist" ]; then
 		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
-		rm -f /Library/LaunchDaemons/com.machman.report.plist
+		rm -f "$LAUNCHD_DIR/com.machman.report.plist"
 	fi
 	return 0
 }

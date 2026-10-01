@@ -364,10 +364,14 @@ detect_sshd() {
 	return 0
 }
 
-# How this payload reached the guest. sshfs means the BSD bootstrap: the user mounted the
-# share over SSH by hand, which is itself proof that sshfs works here.
+# How the share reached the guest — probed at the report drop-box, which shares the
+# payload's mount in a run from the share and is the share's for the boot-time copy (whose
+# own dir is local). sshfs means the BSD bootstrap: the user mounted the share over SSH by
+# hand, which is itself proof that sshfs works here.
 detect_transport() {
-	_dt_dev="$(df -P "$PAYLOAD_DIR" 2>/dev/null | awk 'NR == 2 { print $1 }' || true)"
+	_dt_where="$PAYLOAD_DIR"
+	[ -d "$REPORT_DIR" ] && _dt_where="$REPORT_DIR"
+	_dt_dev="$(df -P "$_dt_where" 2>/dev/null | awk 'NR == 2 { print $1 }' || true)"
 	case "$_dt_dev" in
 	*@*:*) TRANSPORT=sshfs ;;
 	*)

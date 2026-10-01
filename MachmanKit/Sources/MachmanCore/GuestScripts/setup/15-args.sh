@@ -85,6 +85,12 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
+# The boot-time copy reports and does nothing else (a root copy that could reconfigure the
+# guest is more than a boot hook needs): changes are runs from the share's install.sh.
+if [ -n "$BOOT_REPORT_DIR" ] && [ "$REPORT_ONLY" -ne 1 ]; then
+	die 3 "this is Machman's boot-time report copy — it only refreshes the report." \
+		"Run install.sh from the Machman share to change anything."
+fi
 # Where sshfs host folders would mount. Machman owns the path (GuestPaths) and hands it
 # over in machman.env, so the guide, the app and this script cannot disagree about it.
 [ -n "$MOUNTPOINT" ] || MOUNTPOINT="$MOUNT_ROOT"

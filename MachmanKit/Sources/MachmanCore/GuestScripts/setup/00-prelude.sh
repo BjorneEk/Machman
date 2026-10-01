@@ -28,10 +28,13 @@ if [ ! -r "$PAYLOAD_DIR/machman.env" ]; then
 	echo "share, not install.sh on its own." >&2
 	exit 3
 fi
+# Set only by the boot-time copy's own machman.env (report_copy_install): where its
+# reports go — the share's drop-box — and that it may only report.
+BOOT_REPORT_DIR=""
 # VM_NAME, MARKER, REPORT_DIR_NAME, MOUNT_ROOT, SHARE_ROOT, SHARE_TAG, SHARE_HOST_PATH,
 # BOOT_MODE, CONSOLE_COUNT, UART_COUNT, HOST_USER, HOST_NAME, HOST_LOCAL
 . "$PAYLOAD_DIR/machman.env"
-REPORT_DIR="$PAYLOAD_DIR/../$REPORT_DIR_NAME"
+REPORT_DIR="${BOOT_REPORT_DIR:-$PAYLOAD_DIR/../$REPORT_DIR_NAME}"
 # Resolved when it exists, so everything the user sees is a real path.
 if _resolved="$(CDPATH= cd -- "$REPORT_DIR" 2>/dev/null && pwd)"; then
 	REPORT_DIR="$_resolved"

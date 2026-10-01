@@ -168,7 +168,8 @@ are reserved mount tags. Guests mount the share at `/mnt/machman/share` (1.0.6+ 
 virtiofs, or sshfs of `ssh.setupSharePath` where there is no driver, same path either
 way); sshfs-kind host folders land under `/mnt/machman/mounts`, and the script's own
 state lives at `/var/lib/machman/state.env` (Linux) or `/var/db/machman/state.env`
-(BSDs, macOS).
+(BSDs, macOS), beside the copy of the script that refreshes the report at every boot
+without reading the share.
 
 `systemKeyCapture` (1.0.10+, graphics) is `"off"|"always"|"fullScreen"` (absent = off;
 treat unknown values as off): the mode a run STARTS with for sending system shortcuts

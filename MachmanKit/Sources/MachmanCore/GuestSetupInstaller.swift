@@ -43,7 +43,8 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			"MARKER": try SSHSetupInstaller.marker(for: config),
 			"REPORT_DIR_NAME": reportDirectoryName,
 			"MOUNT_ROOT": GuestPaths.mounts,
-			"SHARE_ROOT": GuestPaths.share,
+			// Where the guest mounts the share: macOS automounts it under My Shared Files.
+			"SHARE_ROOT": bootMode == "macos" ? GuestPaths.macOSAutomount : GuestPaths.share,
 			"SHARE_TAG": GuestPaths.shareTag,
 			"SHARE_HOST_PATH": GuestInstallerWriter.payloadRoot(for: config).path,
 			"BOOT_MODE": bootMode,

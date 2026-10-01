@@ -3,7 +3,7 @@
 # source's marker on every machman artifact).
 # CHECKS: CLONE_NOTE CLONE_SWEPT CLONE_REVERSE REPORT_SSH SSHFS_SPACE SSHFS_BOOT_OPTS
 # CHECKS: IDEMPOTENT_ALPINE HOOK_INSTALLED FSTAB_VERIFY_ALPINE REPORT_ONLY_CLEAN HOOK_REMOVED
-# CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE
+# CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL
 . /mnt/machman/share/regress/lib.sh
 # Machman markers are always 12 hex chars — the sweep matches exactly that shape.
 OLD=machman-0ddc105e9999
@@ -80,6 +80,25 @@ if [ "$N" != "$O" ] && cmp -s /tmp/sum-2 /tmp/sum-3 \
 	R REPORT_ONLY_CLEAN pass
 else
 	R REPORT_ONLY_CLEAN fail
+fi
+
+# S27: the local.d hook runs the guest's own copy (in the background), which refreshes the
+# report with the installer unserved (GuestSetup moved away).
+HOOK=/etc/local.d/machman-report.start
+mv /mnt/machman/share/GuestSetup /mnt/machman/share/GuestSetup.unserved
+rm -f "$REPORT"
+sh "$HOOK"
+n=0
+while { [ ! -f "$REPORT" ] || pgrep -f 'report[.]sh' >/dev/null; } && [ "$n" -lt 30 ]; do
+	sleep 1
+	n=$((n + 1))
+done
+mv /mnt/machman/share/GuestSetup.unserved /mnt/machman/share/GuestSetup
+if grep -q '/var/lib/machman/report.sh' "$HOOK" && ! grep -q GuestSetup "$HOOK" \
+	&& grep -q '^STATUS=' "$REPORT" 2>/dev/null; then
+	R BOOT_HOOK_LOCAL pass
+else
+	R BOOT_HOOK_LOCAL fail; cat "$HOOK"; ls -l /var/lib/machman
 fi
 
 $SH "$S" --uninstall -y >/tmp/unin.log 2>&1
