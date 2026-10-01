@@ -824,9 +824,9 @@ public final class VMListViewModel: ObservableObject {
 		diskAddQueue.enqueue(PendingDiskAdd(vm: vm, urls: urls))
 	}
 
-	// A batch copies one file after another: the engine picks each copy's name when it
-	// starts, so two copies running at once could pick the same one. A failed file gets its
-	// own alert and the rest carry on.
+	// A batch copies one file after another: one disk-heavy copy at a time, and a daemon from
+	// before wave 2 picked each name when its copy started. A failed file gets its own
+	// alert and the rest carry on.
 	public func importDisks(_ name: String, paths: [String]) {
 		Task { [weak self] in
 			for path in paths {

@@ -42,10 +42,13 @@ enum DiskImport {
 	// raw → .storage(<derived>, size) as <derived>.raw; iso → .iso(<vmDir>/<basename>).
 	// Both are backup-excluded (VM-owned now). Throws typed errors for qcow, unreadable
 	// files, and misaligned raw images (VZ would reject those at boot with an opaque error).
+	// Names are derived when the copy LANDS (stagedCopy), against the directory as it is
+	// then. `transfer` is stagedCopy's test seam.
 	nonisolated static func importFile(
 		src: String, vmDir: String, takenStorageNames: Set<String>,
 		progress: (@Sendable (UInt64, UInt64) -> Void)? = nil,
-		isCancelled: (@Sendable () -> Bool)? = nil
+		isCancelled: (@Sendable () -> Bool)? = nil,
+		transfer: ((String, String) throws -> Void)? = nil
 	) throws -> VMDisk {
 		let fm = FileManager.default
 		guard fm.fileExists(atPath: src) else {
@@ -68,32 +71,38 @@ enum DiskImport {
 					message: "raw disk images must be a non-empty multiple of 512 bytes "
 						+ "(\(src) is \(size))")
 			}
-			var taken = takenStorageNames
-			for entry in (try? fm.contentsOfDirectory(atPath: vmDir)) ?? []
-				where entry.hasSuffix(".raw") {
-				taken.insert(String(entry.dropLast(4)))
-			}
-			let name = VMCopier.storageName(for: URL(fileURLWithPath: src), taken: taken)
-			let dst = vmDir + "/\(name).raw"
-			try stagedCopy(
-				src: src, dst: dst, vmDir: vmDir,
-				progress: progress, isCancelled: isCancelled)
-			return VMDisk(kind: .storage(name, size))
+			let placed = try stagedCopy(
+				src: src, vmDir: vmDir,
+				name: {
+					var taken = takenStorageNames
+					for entry in (try? fm.contentsOfDirectory(atPath: vmDir)) ?? []
+						where entry.hasSuffix(".raw") {
+						taken.insert(String(entry.dropLast(4)))
+					}
+					return VMCopier.storageName(for: URL(fileURLWithPath: src), taken: taken)
+						+ ".raw"
+				},
+				progress: progress, isCancelled: isCancelled, transfer: transfer)
+			return VMDisk(kind: .storage(String(placed.dropLast(".raw".count)), size))
 		case .iso:
 			let base = URL(fileURLWithPath: src).lastPathComponent
-			var fileName = base
-			var n = 2
-			while fm.fileExists(atPath: vmDir + "/" + fileName) {
-				let stem = URL(fileURLWithPath: base).deletingPathExtension().lastPathComponent
-				let ext = URL(fileURLWithPath: base).pathExtension
-				fileName = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
-				n += 1
-			}
-			let dst = vmDir + "/" + fileName
-			try stagedCopy(
-				src: src, dst: dst, vmDir: vmDir,
-				progress: progress, isCancelled: isCancelled)
-			return VMDisk(kind: .iso(URL(fileURLWithPath: dst)))
+			let placed = try stagedCopy(
+				src: src, vmDir: vmDir,
+				name: {
+					// lstat, not fileExists: a dangling link still holds its name.
+					var fileName = base
+					var n = 2
+					while (try? fm.attributesOfItem(atPath: vmDir + "/" + fileName)) != nil {
+						let stem = URL(fileURLWithPath: base).deletingPathExtension()
+							.lastPathComponent
+						let ext = URL(fileURLWithPath: base).pathExtension
+						fileName = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
+						n += 1
+					}
+					return fileName
+				},
+				progress: progress, isCancelled: isCancelled, transfer: transfer)
+			return VMDisk(kind: .iso(URL(fileURLWithPath: vmDir + "/" + placed)))
 		}
 	}
 
@@ -101,13 +110,16 @@ enum DiskImport {
 	// never leaves a partial file under the final name, and a crash leaves only a staged
 	// name sweepStaleStaging recognizes. The transfer is injectable because the real
 	// failure-after-partial-write cannot be reproduced on one APFS volume (clonefile is
-	// atomic there); default is the clone-first engine.
+	// atomic there); default is the clone-first engine. Returns the file name it landed
+	// under: `name` derives one against the directory as it is when the copy lands, and
+	// again whenever another import or a new disk took it meanwhile (D18).
+	@discardableResult
 	nonisolated static func stagedCopy(
-		src: String, dst: String, vmDir: String,
+		src: String, vmDir: String, name: () -> String,
 		progress: (@Sendable (UInt64, UInt64) -> Void)? = nil,
 		isCancelled: (@Sendable () -> Bool)? = nil,
 		transfer: ((String, String) throws -> Void)? = nil
-	) throws {
+	) throws -> String {
 		let fm = FileManager.default
 		let staging = vmDir + "/" + stagingPrefix + UUID().uuidString
 		do {
@@ -118,10 +130,42 @@ enum DiskImport {
 					src: src, dst: staging, progress: progress, isCancelled: isCancelled)
 			}
 			excludeFromBackup(path: staging)   // owned now; the attribute rides the rename
-			try fm.moveItem(atPath: staging, toPath: dst)
+			for _ in 0..<maxPlacementAttempts {
+				let fileName = name()
+				if try placeExclusively(staging, at: vmDir + "/" + fileName) {
+					return fileName
+				}
+			}
+			throw MachmanError(
+				code: .alreadyExists, message: "no free name for the imported disk in \(vmDir)")
 		} catch {
 			try? fm.removeItem(atPath: staging)
 			throw error
+		}
+	}
+
+	// Each lost race re-derives a name past the one it lost; this only bounds a directory
+	// that keeps producing new files.
+	static let maxPlacementAttempts = 64
+
+	// Renames staging to path unless path exists (RENAME_EXCL: atomic, never replaces);
+	// false = the name is taken. A volume without RENAME_EXCL (ENOTSUP/EINVAL — some
+	// network and FAT-family file systems) checks, then moves: the window is back there only.
+	nonisolated static func placeExclusively(_ staging: String, at path: String) throws -> Bool {
+		if renamex_np(staging, path, UInt32(RENAME_EXCL)) == 0 { return true }
+		let code = errno
+		switch code {
+		case EEXIST:
+			return false
+		case ENOTSUP, EINVAL:
+			let fm = FileManager.default
+			guard (try? fm.attributesOfItem(atPath: path)) == nil else { return false }
+			try fm.moveItem(atPath: staging, toPath: path)
+			return true
+		default:
+			throw MachmanError(
+				code: .ioFailure,
+				message: "placing \(path): \(String(cString: strerror(code)))")
 		}
 	}
 

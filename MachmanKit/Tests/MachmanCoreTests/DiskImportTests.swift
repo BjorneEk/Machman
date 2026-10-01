@@ -129,7 +129,7 @@ struct DiskImportTests {
 
 		#expect(throws: MachmanError.self) {
 			try DiskImport.stagedCopy(
-				src: src, dst: vmDir + "/big.raw", vmDir: vmDir,
+				src: src, vmDir: vmDir, name: { "big.raw" },
 				transfer: { _, staging in
 					try Data("partial".utf8).write(to: URL(fileURLWithPath: staging))
 					throw MachmanError(code: .ioFailure, message: "disk full")
@@ -143,6 +143,63 @@ struct DiskImportTests {
 				src: src, vmDir: vmDir, takenStorageNames: [], isCancelled: { true })
 		}
 		#expect(try FileManager.default.contentsOfDirectory(atPath: vmDir).isEmpty)
+	}
+
+	// D18: the name is derived when the copy lands. Another import of a same-named file (or
+	// a new disk) that took it meanwhile no longer fails this one after the whole copy — it
+	// re-derives past it, and the file that won keeps its bytes.
+	@Test func aNameTakenDuringTheCopyIsDerivedAgain() throws {
+		let dir = try makeDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let vmDir = dir + "/vm"
+		try FileManager.default.createDirectory(atPath: vmDir, withIntermediateDirectories: true)
+		let src = dir + "/data.img"
+		try Data(repeating: 0xCD, count: 1024).write(to: URL(fileURLWithPath: src))
+		try writeISO(at: dir + "/boot.iso")
+		let landsFirst: (String) -> (String, String) throws -> Void = { winner in
+			{ from, staging in
+				try Data("winner".utf8).write(to: URL(fileURLWithPath: vmDir + "/" + winner))
+				try FileManager.default.copyItem(atPath: from, toPath: staging)
+			}
+		}
+
+		let raw = try DiskImport.importFile(
+			src: src, vmDir: vmDir, takenStorageNames: [], transfer: landsFirst("data.raw"))
+		guard case .storage(let name, _) = raw.kind else {
+			Issue.record("expected a storage entry")
+			return
+		}
+		#expect(name == "data-2")
+		#expect(try Data(contentsOf: URL(fileURLWithPath: vmDir + "/data-2.raw"))
+			== Data(repeating: 0xCD, count: 1024))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: vmDir + "/data.raw"))
+			== Data("winner".utf8))
+
+		let iso = try DiskImport.importFile(
+			src: dir + "/boot.iso", vmDir: vmDir, takenStorageNames: [],
+			transfer: landsFirst("boot.iso"))
+		guard case .iso(let url) = iso.kind else {
+			Issue.record("expected an iso entry")
+			return
+		}
+		#expect(url.path == vmDir + "/boot-2.iso")
+		#expect(try Data(contentsOf: URL(fileURLWithPath: vmDir + "/boot.iso"))
+			== Data("winner".utf8))
+		let leftovers = try FileManager.default.contentsOfDirectory(atPath: vmDir)
+			.filter { $0.hasPrefix(DiskImport.stagingPrefix) }
+		#expect(leftovers.isEmpty)
+	}
+
+	// The exclusive placement itself: a taken name is reported, never replaced.
+	@Test func placementNeverReplaces() throws {
+		let dir = try makeDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		try Data("staged".utf8).write(to: URL(fileURLWithPath: dir + "/staged"))
+		try Data("taken".utf8).write(to: URL(fileURLWithPath: dir + "/taken"))
+		#expect(try !DiskImport.placeExclusively(dir + "/staged", at: dir + "/taken"))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dir + "/taken")) == Data("taken".utf8))
+		#expect(try DiskImport.placeExclusively(dir + "/staged", at: dir + "/free"))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dir + "/free")) == Data("staged".utf8))
 	}
 
 	// D3: crash leftovers (no in-process cleanup ran) are recognized by prefix and swept;
