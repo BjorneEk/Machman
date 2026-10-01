@@ -15,6 +15,7 @@ public protocol TerminalByteStream: AnyObject {
 	// Called on the main queue when the stream ends (socket closed, process exited).
 	var onClose: (() -> Void)? { get set }
 	func connect() -> Bool
+	// Never blocks: a peer that stopped reading queues input (bounded), not the caller.
 	func send(_ data: Data)
 	func stop()
 	func transcriptData() -> Data

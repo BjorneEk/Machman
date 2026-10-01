@@ -3,9 +3,10 @@
 //  MachmanUI
 //
 //  A TerminalByteStream backed by a local process on a PTY — the transport behind the
-//  ephemeral SSH tabs. Owns the PTY pair, mirrors SerialTerminalConnection's read-source
-//  + bounded-transcript shape, forwards window sizes via TIOCSWINSZ, and reports child
-//  exit as onClose (exactly once, whether the process quit or the fd hit EOF first).
+//  ephemeral SSH tabs. The descriptor side (reads, non-blocking sends, the transcript) is the
+//  shared TerminalFDChannel; window sizes go to the pty via TIOCSWINSZ. Reports the session's
+//  end as onClose exactly once, after the child's last output, whether the process quit or
+//  the pty hung up first; an explicit stop() reports nothing.
 //
 
 import Foundation
@@ -15,12 +16,8 @@ public final class PTYProcessStream: TerminalByteStream {
 	private let arguments: [String]
 	private let environmentOverrides: [String: String]
 	private var process: Process?
-	private var parentFD: Int32 = -1
-	private var readSource: DispatchSourceRead?
-	private let transcriptLock = NSLock()
-	// The output's last transcriptCap bytes; chunked, so trimming the head really frees it.
-	private var transcript = ByteChunkQueue()
-	private static let transcriptCap = 8 << 20
+	private var channel: TerminalFDChannel?
+	private var finished = false
 
 	public var onData: ((Data) -> Void)?
 	public var onClose: (() -> Void)?
@@ -36,7 +33,9 @@ public final class PTYProcessStream: TerminalByteStream {
 		self.environmentOverrides = environmentOverrides
 	}
 
+	// One process per stream: a second connect() is refused.
 	public func connect() -> Bool {
+		guard process == nil, !finished else { return false }
 		var parent: Int32 = -1
 		var child: Int32 = -1
 		guard openpty(&parent, &child, nil, nil, nil) == 0 else { return false }
@@ -51,89 +50,65 @@ public final class PTYProcessStream: TerminalByteStream {
 		p.standardInput = childHandle
 		p.standardOutput = childHandle
 		p.standardError = childHandle
-		p.terminationHandler = { [weak self] _ in
-			DispatchQueue.main.async { self?.finish() }
+		let channel = TerminalFDChannel(fd: parent, label: "pty")
+		// The child is gone: hand over what it printed last, then end.
+		p.terminationHandler = { [weak channel] _ in
+			DispatchQueue.main.async { channel?.drainAndEnd() }
 		}
 		do {
 			try p.run()
 		} catch {
-			close(parent)
+			channel.close()   // owns the parent end now
 			close(child)
 			return false
 		}
 		close(child)   // the child's end lives inside the spawned process now
 		process = p
-		parentFD = parent
-		let source = DispatchSource.makeReadSource(fileDescriptor: parent, queue: .global())
-		source.setEventHandler { [weak self] in
-			guard let self = self else { return }
-			var buf = [UInt8](repeating: 0, count: 8192)
-			let n = read(self.parentFD, &buf, buf.count)
-			if n > 0 {
-				let data = Data(buf[0..<n])
-				self.appendTranscript(data)
-				DispatchQueue.main.async { self.onData?(data) }
-			} else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
-				DispatchQueue.main.async { self.finish() }
-			}
-		}
-		readSource = source
-		source.resume()
+		self.channel = channel
+		channel.start(
+			onData: { [weak self] data in
+				guard let self, !self.finished else { return }
+				self.onData?(data)
+			},
+			onEnd: { [weak self] in self?.finish() })
 		return true
 	}
 
-	// The single close path (main queue): first caller wins — termination handler and
-	// fd EOF both funnel here.
+	// The single end path (main queue): the pty hung up, or the child exited and its last
+	// output was delivered.
 	private func finish() {
-		guard process != nil else { return }
-		stop()
+		guard !finished else { return }
+		finished = true
+		if let p = process, p.isRunning { p.terminate() }
 		onClose?()
 	}
 
 	public func send(_ data: Data) {
-		guard parentFD >= 0 else { return }
-		data.withUnsafeBytes { raw in
-			guard let base = raw.baseAddress else { return }
-			var off = 0
-			while off < data.count {
-				let n = write(parentFD, base + off, data.count - off)
-				if n > 0 { off += n } else if n < 0 && errno == EINTR { continue } else { break }
-			}
-		}
+		channel?.send(data)
 	}
 
 	public func stop() {
-		readSource?.cancel()
-		readSource = nil
-		if parentFD >= 0 { close(parentFD); parentFD = -1 }
+		finished = true
+		channel?.close()
 		if let p = process {
-			process = nil
 			p.terminationHandler = nil   // no late callback after an explicit stop
 			if p.isRunning { p.terminate() }
 		}
 	}
 
 	public func setWindowSize(cols: Int, rows: Int) {
-		guard parentFD >= 0, cols > 0, rows > 0 else { return }
-		var size = winsize(
+		guard cols > 0, rows > 0 else { return }
+		let size = winsize(
 			ws_row: UInt16(clamping: rows), ws_col: UInt16(clamping: cols),
 			ws_xpixel: 0, ws_ypixel: 0)
-		_ = ioctl(parentFD, TIOCSWINSZ, &size)
+		channel?.perform { fd in
+			var value = size
+			_ = ioctl(fd, TIOCSWINSZ, &value)
+		}
 	}
 
 	public func transcriptData() -> Data {
-		transcriptLock.lock()
-		defer { transcriptLock.unlock() }
-		return transcript.joined()
-	}
-
-	private func appendTranscript(_ data: Data) {
-		transcriptLock.lock()
-		transcript.append(data)
-		if transcript.count > Self.transcriptCap {
-			transcript.removeFirst(transcript.count - Self.transcriptCap)
-		}
-		transcriptLock.unlock()
+		channel?.transcriptData() ?? Data()
 	}
 
 	deinit { stop() }

@@ -4,20 +4,16 @@
 //
 //  A raw client for a serial port's data-plane unix socket. The desktop opens the vmhost's
 //  per-port socket directly (its path comes from SerialPortInfo.socketPath) — the daemon never
-//  proxies the byte stream. Reads on a background thread and delivers to the main actor; also
-//  keeps a bounded transcript so the terminal view can be saved to a file.
+//  proxies the byte stream. The descriptor side (reads off the main thread, non-blocking
+//  sends, the bounded transcript for "save to file") is the shared TerminalFDChannel.
 //
 
 import Foundation
 
 public final class SerialTerminalConnection: TerminalByteStream {
 	private let path: String
-	private var fd: Int32 = -1
-	private var readSource: DispatchSourceRead?
-	private let transcriptLock = NSLock()
-	// The output's last transcriptCap bytes; chunked, so trimming the head really frees it.
-	private var transcript = ByteChunkQueue()
-	private static let transcriptCap = 8 << 20   // 8 MiB of scrollback for "save to file"
+	private var channel: TerminalFDChannel?
+	private var stopped = false
 
 	// Called on the main queue with each chunk of guest output.
 	public var onData: ((Data) -> Void)?
@@ -28,7 +24,9 @@ public final class SerialTerminalConnection: TerminalByteStream {
 		self.path = path
 	}
 
+	// One connection per stream: a second connect() is refused.
 	public func connect() -> Bool {
+		guard channel == nil, !stopped else { return false }
 		let s = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard s >= 0 else { return false }
 		var addr = sockaddr_un()
@@ -44,57 +42,38 @@ public final class SerialTerminalConnection: TerminalByteStream {
 			}
 		}
 		guard ok == 0 else { close(s); return false }
-		fd = s
-		let source = DispatchSource.makeReadSource(fileDescriptor: s, queue: .global())
-		source.setEventHandler { [weak self] in
-			guard let self = self else { return }
-			var buf = [UInt8](repeating: 0, count: 8192)
-			let n = read(self.fd, &buf, buf.count)
-			if n > 0 {
-				let data = Data(buf[0..<n])
-				self.appendTranscript(data)
-				DispatchQueue.main.async { self.onData?(data) }
-			} else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
-				self.stop()
-				DispatchQueue.main.async { self.onClose?() }
-			}
-		}
-		readSource = source
-		source.resume()
+		// A keystroke racing the vmhost's exit fails with EPIPE instead of killing the app.
+		var on: Int32 = 1
+		_ = setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+		let channel = TerminalFDChannel(fd: s, label: "serial")
+		self.channel = channel
+		channel.start(
+			onData: { [weak self] data in
+				guard let self, !self.stopped else { return }
+				self.onData?(data)
+			},
+			onEnd: { [weak self] in
+				guard let self, !self.stopped else { return }
+				self.onClose?()
+			})
 		return true
 	}
 
 	public func send(_ data: Data) {
-		guard fd >= 0 else { return }
-		data.withUnsafeBytes { raw in
-			guard let base = raw.baseAddress else { return }
-			var off = 0
-			while off < data.count {
-				let n = write(fd, base + off, data.count - off)
-				if n > 0 { off += n } else if n < 0 && errno == EINTR { continue } else { break }
-			}
-		}
+		channel?.send(data)
 	}
 
 	public func stop() {
-		readSource?.cancel()
-		readSource = nil
-		if fd >= 0 { close(fd); fd = -1 }
+		stopped = true
+		channel?.close()
 	}
 
 	public func transcriptData() -> Data {
-		transcriptLock.lock(); defer { transcriptLock.unlock() }
-		return transcript.joined()
+		channel?.transcriptData() ?? Data()
 	}
 
-	private func appendTranscript(_ data: Data) {
-		transcriptLock.lock()
-		transcript.append(data)
-		if transcript.count > Self.transcriptCap {
-			transcript.removeFirst(transcript.count - Self.transcriptCap)
-		}
-		transcriptLock.unlock()
-	}
+	// Test seam: the socket while connected.
+	var descriptor: Int32? { channel?.descriptor }
 
-	deinit { stop() }
+	deinit { channel?.close() }
 }
