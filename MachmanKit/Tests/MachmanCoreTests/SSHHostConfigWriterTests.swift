@@ -215,6 +215,40 @@ struct SSHHostConfigWriterTests {
 		#expect(try String(contentsOf: ak, encoding: .utf8) == "ssh-ed25519 USERKEY mine\n")
 	}
 
+	// C17: a VM named dev"x put IdentityFile "/vms/dev"x/…" into the file, and OpenSSH
+	// refused it — for every host. Quotes and backslashes are escaped, % is doubled (the
+	// path options expand %-tokens), and a line break can't be carried at all.
+	@Test(.enabled(if: OpenSSHConfigCheck.available))
+	func pathsWithQuotesAndPercentSignsStayParseable() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let writer = SSHHostConfigWriter(sshDir: root)
+		try writer.apply(entries: [
+			entry(name: "dev\"x 50%", identity: "/vms/dev\"x 50%/ssh/id_ed25519")])
+		let managed = root.appendingPathComponent("machman/config")
+		let text = try String(contentsOf: managed, encoding: .utf8)
+		#expect(text.contains(#"IdentityFile "/vms/dev\"x 50%%/ssh/id_ed25519""#))
+
+		let vm = try OpenSSHConfigCheck.resolve(config: managed, host: "dev-x-50.machman")
+		#expect(vm.status == 0, "\(vm.output)")
+		#expect(vm.output.contains(#"identityfile /vms/dev"x 50%%/ssh/id_ed25519"#))
+		let other = try OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
+		#expect(other.status == 0, "\(other.output)")
+	}
+
+	@Test func aPathWithALineBreakDropsTheEntry() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let writer = SSHHostConfigWriter(sshDir: root)
+		try writer.apply(entries: [entry(name: "a\nb", identity: "/vms/a\nb/id")])
+		#expect(!FileManager.default.fileExists(
+			atPath: root.appendingPathComponent("machman/config").path))
+
+		try writer.setReverseKey("ssh-ed25519 AAAA g", marker: "machman-abc", vmName: "a\nb")
+		#expect(try String(contentsOf: root.appendingPathComponent("authorized_keys"),
+			encoding: .utf8) == "ssh-ed25519 AAAA g machman:machman-abc:a-b\n")
+	}
+
 	@Test func authorizedKeysSurgeryIsExactMatch() throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }

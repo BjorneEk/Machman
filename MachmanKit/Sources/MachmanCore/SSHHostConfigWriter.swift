@@ -81,6 +81,14 @@ public struct SSHHostConfigWriter {
 			if !SSHAliasRule.isWellFormed(entry.alias) {
 				entry.alias = SSHAliasRule.defaultAlias(for: entry.name)
 			}
+			// A VM directory path the file can't carry (a line break in a legacy VM name)
+			// would end the line early and inject the rest as config.
+			if let identity = entry.identityFilePath,
+				Self.quoted(identity, expandsTokens: true) == nil {
+				MachmanLogger.log(.log,
+					"\(entry.name): its key path can't be written into ~/.ssh — skipped")
+				return nil
+			}
 			// Guest-reported values are claims (S22): only an IP literal is ever a HostName,
 			// whether it comes from discovery, the report or the previous file.
 			guard let address = [entry.address, previous[entry.alias]]
@@ -105,6 +113,10 @@ public struct SSHHostConfigWriter {
 			removeEmptyDirectory(managedDir.path)
 			return
 		}
+		guard let knownHostsValue = Self.quoted(knownHosts.path, expandsTokens: true) else {
+			throw MachmanError(
+				code: .ioFailure, message: "The ~/.ssh path can't be written into an ssh config")
+		}
 		try fm.createDirectory(at: managedDir, withIntermediateDirectories: true)
 		try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: managedDir.path)
 		var config = [
@@ -123,15 +135,17 @@ public struct SSHHostConfigWriter {
 			if let user = entry.user, GuestValueRule.isUserName(user) {
 				config.append("\tUser \(user)")
 			}
-			if let identity = entry.identityFilePath {
-				config.append("\tIdentityFile \"\(identity)\"")
+			if let identity = entry.identityFilePath.flatMap({
+				Self.quoted($0, expandsTokens: true)
+			}) {
+				config.append("\tIdentityFile \(identity)")
 				config.append("\tIdentitiesOnly yes")
 			}
 			// Alias-keyed pinning: the recorded host key stays valid however often the
 			// NAT lease moves. No key reported yet (NixOS partial reports) → accept-new
 			// rather than bricking the alias.
 			config.append("\tHostKeyAlias \(alias)")
-			config.append("\tUserKnownHostsFile \"\(knownHosts.path)\"")
+			config.append("\tUserKnownHostsFile \(knownHostsValue)")
 			if let hostKey = entry.hostKey, GuestValueRule.isPublicKeyLine(hostKey) {
 				config.append("\tStrictHostKeyChecking yes")
 				let fields = hostKey.split(separator: " ")
@@ -144,6 +158,21 @@ public struct SSHHostConfigWriter {
 		try write(config.joined(separator: "\n") + "\n", to: managedConfig)
 		try write(pins.joined(separator: "\n") + (pins.isEmpty ? "" : "\n"), to: knownHosts)
 		try setIncludeLine(present: true)
+	}
+
+	// A path as one quoted ssh_config argument. OpenSSH's quoted-argument parser takes \"
+	// and \\ inside quotes, so a VM named dev"x no longer ends the argument early (which
+	// made ssh refuse the whole file). IdentityFile and UserKnownHostsFile expand %-tokens,
+	// so a literal % doubles. nil for control characters: no quoting carries a line break.
+	static func quoted(_ value: String, expandsTokens: Bool) -> String? {
+		guard !NameRule.hasControlCharacters(value) else { return nil }
+		var escaped = value
+			.replacingOccurrences(of: "\\", with: "\\\\")
+			.replacingOccurrences(of: "\"", with: "\\\"")
+		if expandsTokens {
+			escaped = escaped.replacingOccurrences(of: "%", with: "%%")
+		}
+		return "\"" + escaped + "\""
 	}
 
 	// HostName values from the current managed file, keyed by alias — the fallback that
@@ -211,7 +240,12 @@ public struct SSHHostConfigWriter {
 					code: .invalidArgument,
 					message: "The guest's reverse key isn't a public-key line")
 			}
-			lines.append("\(trimmed) \(label):\(vmName)")
+			// The label rides the key's comment: a legacy VM name with a line break must not
+			// split it into a second line.
+			let labelName = vmName.unicodeScalars.map {
+				NameRule.hasControlCharacters(String($0)) ? "-" : String($0)
+			}.joined()
+			lines.append("\(trimmed) \(label):\(labelName)")
 		} else if existing.isEmpty {
 			return   // nothing to remove, don't create the file
 		}
