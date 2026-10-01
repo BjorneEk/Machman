@@ -110,12 +110,17 @@ public final class StubMachman: MachmanControlling {
 		vms[newName] = vm
 		emit(.listChanged)
 	}
+	// vm.copy requests with what they asked to carry, in order.
+	public private(set) var copies: [(vm: String, diskIDs: [String]?, mountIDs: [String]?)] = []
 	public func copyVM(
-		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+		vm name: String, newName: String?, diskIDs: [String]?, mountIDs: [String]?,
+		regenerateMAC: Bool
 	) async throws -> VMInfo {
 		try gate()
+		copies.append((name, diskIDs, mountIDs))
 		var copy = try get(name)
 		copy.name = newName ?? "\(name) copy"
+		if let mountIDs { copy.mounts.removeAll { !mountIDs.contains($0.id) } }
 		guard vms[copy.name] == nil else {
 			throw MachmanError(
 				code: .alreadyExists, message: "a VM named '\(copy.name)' already exists")

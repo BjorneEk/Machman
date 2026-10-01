@@ -972,12 +972,14 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func copyVM(
-		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+		vm name: String, newName: String?, diskIDs: [String]?, mountIDs: [String]?,
+		regenerateMAC: Bool
 	) async throws -> VMInfo {
 		// Cloning images under an active writer produces torn copies.
 		try requireStopped(name, "copying it")
 		return try await local.copyVM(
-			vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC)
+			vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
+			regenerateMAC: regenerateMAC)
 	}
 
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict

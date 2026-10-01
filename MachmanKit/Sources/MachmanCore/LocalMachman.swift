@@ -111,7 +111,8 @@ public final class LocalMachman: MachmanControlling {
 	}
 
 	public func copyVM(
-		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+		vm name: String, newName: String?, diskIDs: [String]?, mountIDs: [String]?,
+		regenerateMAC: Bool
 	) async throws -> VMInfo {
 		let vm = try lookup(name)
 		guard !vm.state.isRunning else {
@@ -128,41 +129,25 @@ public final class LocalMachman: MachmanControlling {
 		} else {
 			target = registry.uniqueName(base: "\(name) copy")
 		}
-		let included = diskIDs.map(Set.init)
-		var policies: [String: VMCopyRequest.DiskPolicy] = [:]
-		for disk in vm.config.disks {
-			switch disk.kind {
-			case .storage:
-				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .clone : .omit
-			case .fromUrl:
-				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .reference : .omit
-			case .iso:
-				policies[disk.id] = .reference   // read-only references always travel
-			}
-		}
-		let guestKind: VMCopyRequest.GuestKind = {
-			if case .macOS = vm.config.boot { return .macOS }
-			return .generic
-		}()
 		let events = registry.events
 		let center = operationCenter
 		let cancelFlag = CancelFlag()
 		let opID = center.begin(
 			kind: OperationInfo.Kind.copyVM, vm: target,
 			label: "Copying \(name) → \(target)", cancel: { cancelFlag.set() })
-		let request = VMCopyRequest(
-			sourceDir: machmanVMDir + "/" + name, destinationParent: machmanVMDir,
-			newName: target, diskPolicies: policies, includedMountIDs: nil,
-			regenerateMAC: regenerateMAC, guestKind: guestKind,
-			progress: { copied, total in
-				Task { @MainActor in
-					events.emit(.copyProgress(vm: target, copiedBytes: copied, totalBytes: total))
-					center.update(
-						opID, fraction: total > 0 ? Double(copied) / Double(total) : nil,
-						completedBytes: Int64(copied), totalBytes: Int64(total))
-				}
-			},
-			isCancelled: { cancelFlag.get() })
+		var request = Self.copyRequest(
+			from: vm.config, sourceDir: machmanVMDir + "/" + name,
+			destinationParent: machmanVMDir, newName: target, diskIDs: diskIDs,
+			mountIDs: mountIDs, regenerateMAC: regenerateMAC)
+		request.progress = { copied, total in
+			Task { @MainActor in
+				events.emit(.copyProgress(vm: target, copiedBytes: copied, totalBytes: total))
+				center.update(
+					opID, fraction: total > 0 ? Double(copied) / Double(total) : nil,
+					completedBytes: Int64(copied), totalBytes: Int64(total))
+			}
+		}
+		request.isCancelled = { cancelFlag.get() }
 		// Synchronous file work would freeze the main actor for the whole clone — detach it.
 		// The staging rename inside the copier arbitrates any name minted while we waited.
 		do {
@@ -179,6 +164,35 @@ public final class LocalMachman: MachmanControlling {
 		}
 		center.finish(opID, state: OperationInfo.State.succeeded)
 		return info(for: try registry.adoptFromDisk(name: target))
+	}
+
+	// What vm.copy hands the copier, as a sync seam (tests pin it without the async shell):
+	// writable disks by diskIDs (nil = all; storage clones, image references), ISOs always
+	// by reference, mounts by mountIDs (nil = all), and the guest kind from the boot mode.
+	static func copyRequest(
+		from config: VMConfig, sourceDir: String, destinationParent: String, newName: String,
+		diskIDs: [String]?, mountIDs: [String]?, regenerateMAC: Bool
+	) -> VMCopyRequest {
+		let included = diskIDs.map(Set.init)
+		var policies: [String: VMCopyRequest.DiskPolicy] = [:]
+		for disk in config.disks {
+			switch disk.kind {
+			case .storage:
+				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .clone : .omit
+			case .fromUrl:
+				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .reference : .omit
+			case .iso:
+				policies[disk.id] = .reference   // read-only references always travel
+			}
+		}
+		let guestKind: VMCopyRequest.GuestKind = {
+			if case .macOS = config.boot { return .macOS }
+			return .generic
+		}()
+		return VMCopyRequest(
+			sourceDir: sourceDir, destinationParent: destinationParent, newName: newName,
+			diskPolicies: policies, includedMountIDs: mountIDs.map(Set.init),
+			regenerateMAC: regenerateMAC, guestKind: guestKind)
 	}
 
 	// MARK: - Configuration

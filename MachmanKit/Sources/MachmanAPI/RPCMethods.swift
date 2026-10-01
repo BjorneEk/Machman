@@ -104,12 +104,19 @@ public enum RPCParams {
 		public var name: String
 		public var newName: String?
 		public var diskIDs: [String]?
+		// Wave 2 (additive): the mounts to carry, by MountInfo.id; absent = every mount. An
+		// older daemon ignores the key and carries every mount.
+		public var mountIDs: [String]?
 		public var regenerateMAC: Bool?
 
-		public init(name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool?) {
+		public init(
+			name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool?,
+			mountIDs: [String]? = nil
+		) {
 			self.name = name
 			self.newName = newName
 			self.diskIDs = diskIDs
+			self.mountIDs = mountIDs
 			self.regenerateMAC = regenerateMAC
 		}
 	}

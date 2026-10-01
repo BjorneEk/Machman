@@ -175,7 +175,7 @@ public final class MachmanServer {
 				// Absent regenerateMAC means TRUE: a duplicate silently keeping its MAC would
 				// walk straight into the macConflict refusal.
 				reply(client, id, try await api.copyVM(
-					vm: p.name, newName: p.newName, diskIDs: p.diskIDs,
+					vm: p.name, newName: p.newName, diskIDs: p.diskIDs, mountIDs: p.mountIDs,
 					regenerateMAC: p.regenerateMAC ?? true))
 			case .setHardware:
 				let p: RPCParams.SetHardware = try params(line)

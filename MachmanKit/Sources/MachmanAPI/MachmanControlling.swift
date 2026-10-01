@@ -27,9 +27,11 @@ public protocol MachmanControlling: AnyObject {
 	func deleteVM(named name: String) async throws
 	func renameVM(named name: String, to newName: String) async throws
 	// Duplicate a stopped VM. diskIDs = writable disks to carry (nil = all); ISOs always
-	// travel by reference; the copy gets fresh machine identity and autostart off.
+	// travel by reference; mountIDs = mounts to carry (nil = all); the copy gets fresh
+	// machine identity and autostart off.
 	func copyVM(
-		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+		vm name: String, newName: String?, diskIDs: [String]?, mountIDs: [String]?,
+		regenerateMAC: Bool
 	) async throws -> VMInfo
 
 	// MARK: Configuration
@@ -167,4 +169,15 @@ public protocol MachmanControlling: AnyObject {
 	// MARK: Events
 	// Every call returns a fresh stream carrying all events from subscription time on.
 	func events() async -> AsyncStream<VMEvent>
+}
+
+extension MachmanControlling {
+	// vm.copy before the mount choice: every mount travels.
+	public func copyVM(
+		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+	) async throws -> VMInfo {
+		try await copyVM(
+			vm: name, newName: newName, diskIDs: diskIDs, mountIDs: nil,
+			regenerateMAC: regenerateMAC)
+	}
 }

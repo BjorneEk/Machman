@@ -119,13 +119,15 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func copyVM(
-		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
+		vm name: String, newName: String?, diskIDs: [String]?, mountIDs: [String]?,
+		regenerateMAC: Bool
 	) async throws -> VMInfo {
 		// A cross-volume copy is a real byte copy — bounded generously, not at the default.
 		try await connection.call(
 			.vmCopy,
 			RPCParams.Copy(
-				name: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC),
+				name: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC,
+				mountIDs: mountIDs),
 			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
 	}
 
