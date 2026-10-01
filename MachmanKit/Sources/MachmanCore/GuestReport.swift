@@ -8,9 +8,10 @@
 //  named section prefixes), garbage-tolerant — and apply() treats values as claims, not
 //  truth (the daemon's own discovery cross-checks the address; host keys only pin the
 //  guest's own identity). The claims that reach ~/.ssh — user, address, host and reverse
-//  keys — are shape-checked first (GuestValueRule): a refused value leaves the stored one. Ingested by the process that owns the config (the vmhost while
-//  running); the HOST stamps the ingestion time. Two halves: the SSH keys the v2 script
-//  already wrote (applied into config.ssh, byte-compatible), and the v3 setup sections
+//  keys — are shape-checked first (GuestValueRule): a refused value leaves the stored one.
+//  Ingested by the process that owns the config (the vmhost while running); the HOST
+//  stamps the ingestion time. Two halves: the SSH keys the v2 script already wrote
+//  (applied into config.ssh, byte-compatible), and the v3 setup sections
 //  (FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_) applied into config.setup as a whole snapshot.
 //
 
