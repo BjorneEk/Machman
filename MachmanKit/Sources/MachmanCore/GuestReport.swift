@@ -190,6 +190,18 @@ struct GuestReport {
 	// .any false = nothing changed (identical report re-read).
 	@discardableResult
 	func apply(to config: VMConfig, stampedAt: Date) throws -> Changes {
+		// PR4/C7: every script writes the MARKER of the identity it was served for. A report
+		// naming another identity is not this VM's — a source VM's crash leftover, or a
+		// cloned guest's boot hook still running the source's script — and must not restamp
+		// this VM's hostname, host key or address. Only a MISMATCH drops it: no script omits
+		// the key, and the marker is no secret (it rides machman.env into a guest-writable
+		// share), so this is a provenance check, not a trust boundary.
+		if let reported = values["MARKER"], !reported.isEmpty,
+			reported != SSHSetupInstaller.existingMarker(for: config) {
+			MachmanLogger.log(.log,
+				"\(config.name): ignored a guest report written for another VM (\(reported))")
+			return Changes()
+		}
 		var changes = Changes()
 		var state = config.ssh ?? SSHConfig()
 		let beforeSSH = state
