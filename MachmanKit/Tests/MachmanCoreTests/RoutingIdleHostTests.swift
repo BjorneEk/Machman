@@ -159,6 +159,27 @@ struct RoutingIdleHostTests {
 		#expect(rig.stub.starts.isEmpty)
 	}
 
+	// A host adopted while it missed its deadline has no reply to learn the run from, and a
+	// VM already running sends no running event. A later answer showing it running must
+	// count: once that VM stops, a start waits the exit out instead of being forwarded.
+	@Test @MainActor func aRunningAnswerAfterAdoptionCountsAsARun() async throws {
+		let rig = try await adoptStub(try makeRouting(), state: .running)
+		defer { rig.server.stop() }
+		#expect(rig.routing.hostForTesting("alpha")?.sawRun == false)   // as a timed-out reply
+		_ = try await rig.routing.listVMs()
+		#expect(rig.routing.hostForTesting("alpha")?.sawRun == true)
+		rig.stub.vms["alpha"]?.state = .stopped   // the VM stops; its host is exiting
+
+		do {
+			try await rig.routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message.contains("still shutting down"))
+		}
+		#expect(rig.stub.starts.isEmpty)   // before: forwarded to the exiting host
+	}
+
 	@Test @MainActor func aHostThatExitsDuringTheGraceIsReplaced() async throws {
 		let rig = try await adoptStub(try makeRouting(), state: .stopped)
 		rig.routing.hostForTesting("alpha")?.sawRun = true

@@ -800,7 +800,8 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// One bounded vm.get to a host, recorded: an answer becomes its last answer and clears
-	// a stall mark, a missed deadline sets one.
+	// a stall mark, a missed deadline sets one. A running answer also proves the host ran:
+	// one adopted while it missed its deadline never sees a running event for that run.
 	private func probe(_ host: HostedVM) async -> ProbeResult {
 		let result: ProbeResult
 		do {
@@ -816,6 +817,7 @@ public final class RoutingMachman: MachmanControlling {
 		switch result {
 		case .answered(let info):
 			host.lastAnswer = info
+			if info.state.isRunning { host.sawRun = true }
 			markResponsive(host)
 		case .stalled:
 			markUnresponsive(host)
