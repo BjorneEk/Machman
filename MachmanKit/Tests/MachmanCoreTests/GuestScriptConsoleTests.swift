@@ -69,6 +69,80 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// MARK: - runit (S18)
+
+	// Void's stock agetty-<dev> runs the shared agetty-generic script through a link: it is
+	// enabled by a link of its own, never written; a device Void ships no service for gets
+	// a Machman-named one.
+	@Test func runitStockServicesAreLinkedNeverWritten() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				RUNIT_SV_DIR="$D/sv"
+				RUNIT_SERVICE_DIR="$D/service"
+				mkdir -p "$RUNIT_SV_DIR/agetty-generic" "$RUNIT_SV_DIR/agetty-hvc0" \
+					"$RUNIT_SERVICE_DIR"
+				printf '#!/bin/sh\ntty=${PWD##*-}\n' > "$RUNIT_SV_DIR/agetty-generic/run"
+				ln -s ../agetty-generic/run "$RUNIT_SV_DIR/agetty-hvc0/run"
+				agetty() { :; }
+				console_act_runit hvc0
+				console_act_runit hvc1
+				console_act_runit hvc1
+				cat "$RUNIT_SV_DIR/agetty-generic/run"
+				readlink "$RUNIT_SV_DIR/agetty-hvc0/run"
+				readlink "$RUNIT_SERVICE_DIR/agetty-hvc0" | sed "s|$D|D|"
+				readlink "$RUNIT_SERVICE_DIR/machman-agetty-hvc1" | sed "s|$D|D|"
+				ls -ln "$RUNIT_SV_DIR/machman-agetty-hvc1/run" | cut -c1-10
+				cat "$RUNIT_SV_DIR/machman-agetty-hvc1/run"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("""
+				#!/bin/sh
+				tty=${PWD##*-}
+				../agetty-generic/run
+				D/sv/agetty-hvc0
+				D/sv/machman-agetty-hvc1
+				-rwxr-xr-x
+				#!/bin/sh
+				# \(GuestScriptHarness.marker)
+				exec agetty -L hvc1 115200 vt100
+
+				"""), "\(shell): \(r.out)")
+		}
+	}
+
+	// An older Machman's write through such a link (here a cloned disk's source VM's) left
+	// the shared script carrying a marker: the run names Void's own repair and never
+	// rewrites the script; the uninstall leaves it too and ends partial.
+	@Test func runitDamageIsNamedNeverRewritten() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				RUNIT_SV_DIR="$D/sv"
+				RUNIT_SERVICE_DIR="$D/service"
+				mkdir -p "$RUNIT_SV_DIR/agetty-generic" "$RUNIT_SERVICE_DIR"
+				printf '#!/bin/sh\n# machman-0ddc105e9999\nexec agetty hvc0 115200 vt100\n' \
+					> "$RUNIT_SV_DIR/agetty-generic/run"
+				cp "$RUNIT_SV_DIR/agetty-generic/run" "$D/generic.before"
+				GETTY_MECH=runit
+				CONSOLE_SELECTED=""
+				console_runit_damaged && echo damaged
+				console_act
+				console_uninstall
+				printf '%s|%s\n' "$FAILED_STEPS" "$UNINSTALL_KEPT"
+				printf '%s\n' "$ERR_LINES" | sed "s|$D|D|"
+				cmp -s "$D/generic.before" "$RUNIT_SV_DIR/agetty-generic/run" && echo kept
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasPrefix("damaged\n"), "\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("""
+				console|1
+				console: an older Machman overwrote Void's shared getty script \
+				(D/sv/agetty-generic/run) — restore it with 'xbps-install -f runit-void'
+				kept
+
+				"""), "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - inittab / ttys blocks (S21)
 
 	// A guest inittab with one Machman-managed login (busybox format) beside its own.

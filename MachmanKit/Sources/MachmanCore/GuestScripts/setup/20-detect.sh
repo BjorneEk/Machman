@@ -26,6 +26,8 @@ GUEST_HOST_KEY=""
 REVERSE_PUBKEY=""
 VIRTIOFS_OK=0
 LAUNCHD_DIR=/Library/LaunchDaemons   # macOS: the console logins' and boot hook's plists
+RUNIT_SV_DIR=/etc/sv                 # runit: the service definitions…
+RUNIT_SERVICE_DIR=/var/service       # …and the links that enable them
 BOOTLOADER="none"          # grubby | update-grub | grub-mkconfig | grub2-mkconfig |
                            # systemd-boot | kernel-cmdline | none
 CMDLINE_CONSOLES=""        # console= devices from /proc/cmdline, space-separated
@@ -469,7 +471,14 @@ getty_persistent_on() {
 			|| grep -q "^[^#]*getty.*[^a-zA-Z0-9]$1\$" /etc/inittab 2>/dev/null
 		;;
 	runit)
-		[ -e "/var/service/agetty-$1" ] || [ -e "/etc/runit/runsvdir/default/agetty-$1" ]
+		# Void's own agetty-<dev>, or the Machman-named one where Void ships none.
+		for _gpo_sv in "agetty-$1" "machman-agetty-$1"; do
+			if [ -e "$RUNIT_SERVICE_DIR/$_gpo_sv" ] \
+				|| [ -e "/etc/runit/runsvdir/default/$_gpo_sv" ]; then
+				return 0
+			fi
+		done
+		return 1
 		;;
 	freebsd-rc)
 		grep -q "^$1[[:space:]]" /etc/ttys 2>/dev/null \

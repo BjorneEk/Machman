@@ -66,7 +66,7 @@ distro() {
 		PREP="$PREP util-linux fuse-sshfs diffutils findutils"
 		PREP="$PREP && ln -sfn default /etc/runit/runsvdir/current"
 		PREP="$PREP && ln -sfn /etc/runit/runsvdir/current /var/service"
-		SUITES="rclocal files" ;;
+		SUITES="rclocal files runit" ;;
 	devuan)
 		IMAGE=devuan/devuan:excalibur
 		PLATFORM=linux/amd64

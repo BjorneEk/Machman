@@ -102,7 +102,12 @@ console_ownership() {
 		fi
 		;;
 	runit)
-		if grep -q "$MARKER" "/etc/sv/agetty-$1/run" 2>/dev/null; then
+		# Ours: the Machman-named service, an older Machman's own agetty-<dev>, or Void's
+		# stock one that a run of this script linked in (the state says so).
+		if console_runit_own "$1" || console_runit_legacy "$1" \
+			|| { [ "$(readlink "$RUNIT_SERVICE_DIR/agetty-$1" 2>/dev/null)" \
+				= "$RUNIT_SV_DIR/agetty-$1" ] && has_word "$1" "$ST_CONSOLE_LOGINS"; }
+		then
 			echo ours
 		else
 			echo foreign
@@ -407,9 +412,72 @@ console_act_inittab() {
 	return 0
 }
 
+# runit services. Void ships agetty-<dev> for some devices (hvc0, ttyS0, tty1…), each a run
+# LINK into the agetty-generic script every getty shares: those are enabled by a link and
+# never written. Other devices get machman-agetty-<dev>, a run script of Machman's own.
+
+# The Machman-named service for <dev>, its run carrying this VM's marker.
+console_runit_own() {
+	regular_file "$RUNIT_SV_DIR/machman-agetty-$1/run" \
+		&& grep -qF "$MARKER" "$RUNIT_SV_DIR/machman-agetty-$1/run" 2>/dev/null
+}
+
+# An older Machman's own agetty-<dev>: a run FILE (Void's are links) it wrote for <dev>.
+console_runit_legacy() {
+	regular_file "$RUNIT_SV_DIR/agetty-$1/run" \
+		&& grep -qF "$MARKER" "$RUNIT_SV_DIR/agetty-$1/run" 2>/dev/null \
+		&& grep -qF "exec agetty $1 " "$RUNIT_SV_DIR/agetty-$1/run" 2>/dev/null
+}
+
+# An older Machman wrote through a stock service's run link: the shared script carries a
+# Machman marker (this VM's, or a cloned disk's source VM's), and every agetty service runs
+# it. Void's package restores it.
+console_runit_damaged() {
+	regular_file "$RUNIT_SV_DIR/agetty-generic/run" || return 1
+	grep -qxF "# $MARKER" "$RUNIT_SV_DIR/agetty-generic/run" 2>/dev/null \
+		|| grep -q '^# machman-[0-9a-f]\{12\}$' "$RUNIT_SV_DIR/agetty-generic/run" 2>/dev/null
+}
+
+# What console_runit_damaged found, said once by the run and once by the uninstall.
+console_runit_damage() {
+	printf '%s (%s) — %s' "an older Machman overwrote Void's shared getty script" \
+		"$RUNIT_SV_DIR/agetty-generic/run" "restore it with 'xbps-install -f runit-void'"
+}
+
+# console_runit_link <dev> <service dir> — enabled by a link in the service dir.
+console_runit_link() {
+	_crl_link="$RUNIT_SERVICE_DIR/$(basename "$2")"
+	[ -e "$_crl_link" ] && return 0
+	# A dangling link (its service gone) enables nothing: it makes way.
+	[ -L "$_crl_link" ] && rm -f "$_crl_link"
+	if run "enabling a login on $1" ln -s "$2" "$RUNIT_SERVICE_DIR/"; then
+		ok "login enabled on $1"
+	else
+		step_failed console "could not link $(basename "$2") into $RUNIT_SERVICE_DIR" \
+			"Link it yourself: ln -s $2 $RUNIT_SERVICE_DIR/"
+	fi
+	return 0
+}
+
+# Idempotent: what is already in place stays, and finding nothing to do says nothing.
 console_act_runit() {
+	_car_stock="$RUNIT_SV_DIR/agetty-$1"
+	_car_own="$RUNIT_SV_DIR/machman-agetty-$1"
 	if [ "$DRY_RUN" -eq 1 ]; then
-		acting "would create /etc/sv/agetty-$1 and link it into /var/service"
+		if [ -d "$_car_stock" ] && ! console_runit_legacy "$1"; then
+			acting "would link $_car_stock into $RUNIT_SERVICE_DIR"
+		else
+			acting "would create $_car_own and link it into $RUNIT_SERVICE_DIR"
+		fi
+		return 0
+	fi
+	if console_runit_legacy "$1"; then
+		# Retired for the Machman-named service: its name is Void's to ship.
+		rm -f "$RUNIT_SERVICE_DIR/agetty-$1"
+		rm -rf "$_car_stock"
+	fi
+	if [ -d "$_car_stock" ]; then
+		console_runit_link "$1" "$_car_stock"
 		return 0
 	fi
 	if ! have agetty; then
@@ -417,17 +485,27 @@ console_act_runit() {
 			"Install util-linux, then re-run."
 		return 0
 	fi
-	mkdir -p "/etc/sv/agetty-$1"
-	{
-		printf '#!/bin/sh\n# %s\nexec agetty %s 115200 vt100\n' "$MARKER" "$1"
-	} > "/etc/sv/agetty-$1/run"
-	chmod 755 "/etc/sv/agetty-$1/run"
-	if [ ! -e "/var/service/agetty-$1" ]; then
-		run "enabling a login on $1" ln -s "/etc/sv/agetty-$1" /var/service/ \
-			|| step_failed console "could not link agetty-$1 into /var/service" \
-				"Link it yourself: ln -s /etc/sv/agetty-$1 /var/service/"
+	if ! mkdir -p "$_car_own" 2>/dev/null; then
+		step_failed console "could not create $_car_own — no login on $1" \
+			"Create it yourself, then re-run."
+		return 0
 	fi
-	ok "login enabled on $1"
+	_car_tmp="$(mktemp)" || {
+		step_failed console "could not write $_car_own/run — no login on $1" \
+			"Make room for a temporary file, then re-run."
+		return 0
+	}
+	printf '#!/bin/sh\n# %s\nexec agetty -L %s 115200 vt100\n' "$MARKER" "$1" > "$_car_tmp"
+	if ! regular_file "$_car_own/run" || ! cmp -s "$_car_tmp" "$_car_own/run"; then
+		if ! write_file -m 755 "$_car_own/run" < "$_car_tmp"; then
+			rm -f "$_car_tmp"
+			step_failed console "could not write $_car_own/run: $R_ERROR" \
+				"Fix that, then re-run."
+			return 0
+		fi
+	fi
+	rm -f "$_car_tmp"
+	console_runit_link "$1" "$_car_own"
 	return 0
 }
 
@@ -567,6 +645,10 @@ console_install_one() {
 }
 
 console_act() {
+	if [ "$GETTY_MECH" = runit ] && console_runit_damaged; then
+		step_failed console "$(console_runit_damage)" \
+			"Every agetty service runs that script until it is restored."
+	fi
 	[ -n "$CONSOLE_SELECTED" ] || return 0
 	if [ "$OS_FAMILY" = freebsd ]; then
 		if ! kldstat 2>/dev/null | grep -q virtio_console; then
@@ -592,15 +674,14 @@ console_act() {
 		verify)
 			if getty_persistent_on "$_ca_dev"; then
 				# A login in a shared file is staged again, so the block it is rebuilt
-				# with keeps it (in this version's format).
-				case "$GETTY_MECH" in
-				inittab|freebsd-rc)
-					if [ "$DRY_RUN" -eq 0 ]; then
-						console_install_one "$_ca_dev"
-						_ca_flush=1
-					fi
-					;;
-				esac
+				# with keeps it (in this version's format); a runit service an older
+				# Machman wrote moves to its Machman-named one.
+				if [ "$DRY_RUN" -eq 0 ]; then
+					case "$GETTY_MECH" in
+					inittab|freebsd-rc) console_install_one "$_ca_dev"; _ca_flush=1 ;;
+					runit) console_install_one "$_ca_dev" ;;
+					esac
+				fi
 				ok "login on $_ca_dev verified"
 			else
 				# Drifted since detection (or the state file lied): reinstall.
@@ -719,12 +800,30 @@ console_uninstall() {
 		fi
 		;;
 	runit)
-		for _cu_sv in /etc/sv/agetty-*; do
-			[ -e "$_cu_sv" ] || continue
-			grep -q "$MARKER" "$_cu_sv/run" 2>/dev/null || continue
-			rm -f "/var/service/$(basename "$_cu_sv")"
+		# Only what a run added: the Machman-named services, an older Machman's own
+		# agetty-<dev>, and the links to Void's own services the state says it made. A
+		# service whose run is a link (Void's) is never removed.
+		for _cu_sv in "$RUNIT_SV_DIR"/machman-agetty-* "$RUNIT_SV_DIR"/agetty-*; do
+			[ -d "$_cu_sv" ] || continue
+			_cu_name="$(basename "$_cu_sv")"
+			case "$_cu_name" in
+			machman-agetty-*) console_runit_own "${_cu_name#machman-agetty-}" || continue ;;
+			*) console_runit_legacy "${_cu_name#agetty-}" || continue ;;
+			esac
+			rm -f "$RUNIT_SERVICE_DIR/$_cu_name"
 			rm -rf "$_cu_sv"
 		done
+		for _cu_dev in $ST_CONSOLE_LOGINS; do
+			_cu_link="$RUNIT_SERVICE_DIR/agetty-$_cu_dev"
+			if [ "$(readlink "$_cu_link" 2>/dev/null)" = "$RUNIT_SV_DIR/agetty-$_cu_dev" ]
+			then
+				rm -f "$_cu_link"
+			fi
+		done
+		if console_runit_damaged; then
+			warn "$(console_runit_damage)."
+			UNINSTALL_KEPT=1
+		fi
 		;;
 	launchd)
 		for _cu_plist in "$LAUNCHD_DIR/$LAUNCHD_GETTY_PREFIX".*.plist; do
