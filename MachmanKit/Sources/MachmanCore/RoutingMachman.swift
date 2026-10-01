@@ -171,10 +171,11 @@ public final class RoutingMachman: MachmanControlling {
 			let name = vm.name
 			guard hosted[name] == nil else { continue }
 			let socketPath = hostSocketPath(for: name)
-			guard FileManager.default.fileExists(atPath: socketPath) else { continue }
+			guard FileManager.default.fileExists(atPath: socketPath),
+				hostHolding(socketPath) == nil else { continue }
 			do {
-				try await adoptLiveHost(name)
-				MachmanLogger.log(.log, "adopted running vmhost for \(name)")
+				let host = try await adoptLiveHost(name)
+				MachmanLogger.log(.log, "adopted running vmhost for \(host.identity.name)")
 			} catch {
 				// NEVER unlink a live socket (single-writer rule, probe-adopt's guard): a
 				// vmhost whose main actor is busy misses hello but still owns the VM.
@@ -224,11 +225,31 @@ public final class RoutingMachman: MachmanControlling {
 		var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 		adoptionAttempts += 1
 		let client = try await connectHost(identity: identity)
-		let reply = try? await client.vm(named: name, deadline: hostProbeDeadline)
+		var reply: VMInfo?
+		do {
+			reply = try await client.vm(named: name, deadline: hostProbeDeadline)
+		} catch let error as MachmanError where error.code == .notFound {
+			// E27: the host serves another VM — a vmhost from before the socket followed
+			// Save as New VM still answers on its original's path. Key it by what it
+			// serves; never adopt a host as a VM it does not run.
+			let served = (try? await client.listVMs(deadline: hostProbeDeadline)) ?? []
+			guard served.count == 1, let actual = served.first, actual.name != name,
+				registry.vm(named: actual.name) != nil else {
+				await client.disconnect()
+				throw MachmanError(
+					code: .invalidState,
+					message: "the vmhost on \(name)'s socket does not serve it")
+			}
+			identity.name = actual.name
+			reply = actual
+		} catch {
+			reply = nil   // a stall (E20): adopted, its first answer still to come
+		}
 		// The host's reply is the MAC the guest is actually using — it can differ from the
 		// daemon's stale view (safe-save promotions rewrite it mid-run).
-		identity.macInUse = reply?.macAddress ?? registry.vm(named: name)?.config.macAddress
-		if let existing = hosted[name] {
+		identity.macInUse = reply?.macAddress
+			?? registry.vm(named: identity.name)?.config.macAddress
+		if let existing = hosted[identity.name] {
 			// Another path got there during the awaits: never two hosts for one name. The
 			// dropped client's disconnect finds no host with its id.
 			await client.disconnect()
@@ -792,8 +813,16 @@ public final class RoutingMachman: MachmanControlling {
 	func residence(of name: String) -> Residence {
 		if pendingStarts.contains(name) { return .starting }
 		if let host = hosted[name] { return .hosted(host) }
-		if UDSListener.isLive(path: hostSocketPath(for: name)) { return .unadopted }
+		let path = hostSocketPath(for: name)
+		// E27: a run saved as a new VM by an older vmhost keeps its original's socket — a
+		// path another hosted VM holds is not this VM's.
+		if hostHolding(path) != nil { return .local }
+		if UDSListener.isLive(path: path) { return .unadopted }
 		return .local
+	}
+
+	func hostHolding(_ path: String) -> HostedVM? {
+		hosted.values.first { $0.identity.socketPath == path }
 	}
 
 	// Config/window-plane routing: the process that owns the VM's config — its vmhost while
@@ -810,7 +839,10 @@ public final class RoutingMachman: MachmanControlling {
 				message: "\(name) is starting — try again once it is running")
 		case .unadopted:
 			do {
-				return try await adoptLiveHost(name).client
+				let host = try await adoptLiveHost(name)
+				// E27: it serves another VM; the residence now says who owns this one.
+				guard host.identity.name == name else { return try await proxy(name) }
+				return host.client
 			} catch {
 				throw MachmanError(
 					code: .invalidState,
@@ -1682,6 +1714,9 @@ public final class RoutingMachman: MachmanControlling {
 	func probeAdoptAndStart(
 		name: String, socketPath: String, options: StartOptions
 	) async throws -> Bool {
+		if let holder = hostHolding(socketPath), holder.identity.name != name {
+			throw heldSocket(name, by: holder.identity.name)
+		}
 		let host: HostedVM
 		do {
 			host = try await connectAndAdopt(name: name, socketPath: socketPath)
@@ -1696,11 +1731,21 @@ public final class RoutingMachman: MachmanControlling {
 			unlink(socketPath)
 			return false
 		}
+		guard host.identity.name == name else { throw heldSocket(name, by: host.identity.name) }
 		// Other start failures propagate with the host still adopted: it is live and owns
 		// the VM; its own lifecycle (or the user) cleans up.
 		try await startOnExistingHost(
 			host, name: name, mac: host.identity.macInUse, options: options)
 		return true
+	}
+
+	// E27: a run an older vmhost saved as a new VM still serves on its original's socket, so
+	// no vmhost for the original can bind there until that run stops.
+	private func heldSocket(_ name: String, by holder: String) -> MachmanError {
+		MachmanError(
+			code: .invalidState,
+			message: "\(holder), saved from \(name), still runs on its socket — stop \(holder) "
+				+ "before starting \(name)")
 	}
 
 	// A start meeting a host this daemon already holds (E12). A running VM is refused

@@ -369,7 +369,10 @@ vmhost from an earlier start — start it normally, or wait up to 3 minutes to s
 since that host runs the real VM, never a shadow. A host whose VM just stopped is exiting: the
 start waits up to 3 s for it to go and then starts normally; if the host is still there, the
 start answers `invalidState` ("… is still shutting down — try again in a moment"). A host that
-misses its answer deadline answers `invalidState` ("…'s vmhost is not responding").
+misses its answer deadline answers `invalidState` ("…'s vmhost is not responding"). A vmhost
+answering on one VM's socket for another — a run an older vmhost saved as a new VM — is adopted
+as the VM it serves, and starting the original answers `invalidState` ("… saved from …, still
+runs on its socket — stop … before starting …").
 
 ## What is deliberately NOT here
 

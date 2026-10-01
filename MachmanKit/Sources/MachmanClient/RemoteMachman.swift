@@ -91,7 +91,13 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func listVMs() async throws -> [VMInfo] {
-		try await connection.call(.vmList, RPCEmpty?.none, expecting: [VMInfo].self)
+		try await listVMs(deadline: RPCConnection.defaultCallDeadline)
+	}
+
+	// Deadline seam, like vm(named:deadline:): adoption asks a vmhost which VM it serves.
+	public func listVMs(deadline: Duration) async throws -> [VMInfo] {
+		try await connection.call(
+			.vmList, RPCEmpty?.none, expecting: [VMInfo].self, deadline: deadline)
 	}
 
 	public func vm(named name: String) async throws -> VMInfo {
