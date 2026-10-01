@@ -114,6 +114,9 @@ enum InspectorScenes {
 			"guest-setup.update-available", "GuestSetupInspector, report from script v3",
 			vms: { [Samples.olderSetupScript("Debian")] }, node: .device(.guestSetup)),
 		inspector(
+			"guest-setup.notes", "GuestSetupInspector, a clean run with notes",
+			vms: { [Samples.setupNotes("Debian")] }, node: .device(.guestSetup)),
+		inspector(
 			"kernel", "KernelParentInspector", select: "Kernel Lab", node: .group("Kernel")),
 		inspector(
 			"kernel.entry", "KernelEntryInspector, active kernel with an override",

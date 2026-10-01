@@ -3,10 +3,10 @@
 //  MachmanDesktopUI
 //
 //  The unified installer's home (1.0.7): status from the guest's report (detected OS,
-//  last run + script version, the errors popdown), the per-feature list, and the setup
-//  commands per boot mode — auto-collapsed behind a checkmark once installed, with an
-//  Allow-reinstall toggle to bring them back. Inspector text rule: nothing longer than
-//  one sentence — details live in the Setup Guide sheet, never here.
+//  last run + script version, the errors and notes popdowns), the per-feature list, and
+//  the setup commands per boot mode — auto-collapsed behind a checkmark once installed,
+//  with an Allow-reinstall toggle to bring them back. Inspector text rule: nothing longer
+//  than one sentence — details live in the Setup Guide sheet, never here.
 //
 
 import SwiftUI
@@ -105,6 +105,7 @@ struct GuestSetupInspector: View {
 					LabeledContent("Transport", value: transport)
 				}
 				errorsPopdown
+				notesPopdown
 			} else {
 				Text("No report yet — run the install script in the guest.")
 					.font(.caption)
@@ -150,21 +151,35 @@ struct GuestSetupInspector: View {
 	private var errorsPopdown: some View {
 		if let errors = setup?.errors, !errors.isEmpty {
 			DisclosureGroup("Errors (\(errors.count))") {
-				ScrollView {
-					VStack(alignment: .leading, spacing: 4) {
-						ForEach(Array(errors.enumerated()), id: \.offset) { _, error in
-							Text(error.step.isEmpty
-								? error.message : "\(error.step): \(error.message)")
-								.font(.system(.caption, design: .monospaced))
-								.foregroundStyle(.secondary)
-								.fixedSize(horizontal: false, vertical: true)
-						}
-					}
-					.frame(maxWidth: .infinity, alignment: .leading)
-				}
-				.frame(maxHeight: 120)
+				reportLines(errors)
 			}
 		}
+	}
+
+	// What the run noted without failing (a repair it made, a boot refresh that won't run).
+	@ViewBuilder
+	private var notesPopdown: some View {
+		if let notes = setup?.notes, !notes.isEmpty {
+			DisclosureGroup("Notes (\(notes.count))") {
+				reportLines(notes)
+			}
+		}
+	}
+
+	// The report's "step: message" lines, scrolling past a handful.
+	private func reportLines(_ lines: [GuestSetupError]) -> some View {
+		ScrollView {
+			VStack(alignment: .leading, spacing: 4) {
+				ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+					Text(line.step.isEmpty ? line.message : "\(line.step): \(line.message)")
+						.font(.system(.caption, design: .monospaced))
+						.foregroundStyle(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
+				}
+			}
+			.frame(maxWidth: .infinity, alignment: .leading)
+		}
+		.frame(maxHeight: 120)
 	}
 
 	// MARK: - Features
