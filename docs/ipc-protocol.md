@@ -104,7 +104,7 @@ keep working — nothing is rejected at load.
 | `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — `path` must name one of the VM's listed owned files once `..` is resolved, else `notFound` — and clears any field referencing it) |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
-| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, `force: true` overrides; `safe: true` runs a discardable shadow copy — see Safe runs below) |
+| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
 | `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules) |
 | `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
@@ -349,6 +349,16 @@ VM's socket, adopted by this daemon or not. A vmhost the daemon has not adopted 
 the daemon started, or started by a launch agent) is adopted on its VM's next per-VM call or
 list; until then the VM lists with state `unknown`, plus `unresponsive` once an adoption failed.
 
+`vm.start` asks a vmhost the daemon already holds for the VM before spawning one. A running
+VM answers `invalidState` ("… is already running"). An idle host — spawned for a start that
+was never forwarded because its daemon died in between; it exits on its own after 3 minutes —
+runs this start, MAC check included; a safe start there answers `invalidState` ("… has an idle
+vmhost from an earlier start — start it normally, or wait up to 3 minutes to start it safe"),
+since that host runs the real VM, never a shadow. A host whose VM just stopped is exiting: the
+start waits a few seconds for it to go, then answers `invalidState` ("… is still shutting down
+— try again in a moment"). A host that misses its answer deadline answers `invalidState` ("…'s
+vmhost is not responding").
+
 ## What is deliberately NOT here
 
 The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so VM windows
@@ -360,6 +370,9 @@ Each configured console/uart port is served by the VM's vmhost as a raw-byte
 `AF_UNIX SOCK_STREAM` socket; the control plane only reports its `socketPath` (in
 `SerialPortInfo`), and clients connect to it directly (e.g.
 `socat -,raw,echo=0 unix-connect:<socketPath>`). The daemon never proxies the byte stream.
+Input for a guest that is not reading its port waits in order, up to 64 KiB beyond the pipe's
+own buffer; past that, new input is dropped (logged once), and the port keeps serving every
+client.
 
 ## Trying it by hand
 
