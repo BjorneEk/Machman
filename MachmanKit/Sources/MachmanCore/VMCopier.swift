@@ -248,8 +248,8 @@ enum VMCopier {
 		// sidecar walk brought along, or the new VM keeps booting the SOURCE's files (and
 		// dies with them). Both identities: a shadow must be self-contained too, so that
 		// promotion only ever re-points within its own directory.
-		config.rewriteOwnedKernelPaths(
-			fromDir: src, toDir: request.destinationParent + "/" + request.newName)
+		config.rewriteOwnedPaths(
+			fromDir: src, toDir: request.destinationParent + "/" + request.newName, .copied)
 		if request.regenerateMAC {
 			config.macAddress = VZMACAddress.randomLocallyAdministered().string
 		}

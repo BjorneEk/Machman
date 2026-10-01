@@ -335,10 +335,10 @@ public final class VMRegistry {
 		presenter.rekey(from: oldName, to: newName)
 		vm.config.created = Date()
 		vm.config.totalRuntimeSeconds = 0
-		// The directory just moved out of the run root — re-point the owned kernel
+		// The directory just moved out of the run root — re-point the owned kernel and iso
 		// references or the promoted VM boots from a directory the sweep deletes.
-		vm.config.rewriteOwnedKernelPaths(
-			fromDir: runRoot + "/" + oldName, toDir: destination)
+		vm.config.rewriteOwnedPaths(
+			fromDir: runRoot + "/" + oldName, toDir: destination, .moved)
 		// Fresh machine, fresh ssh instance identity, the vm.copy rule: the alias still
 		// belongs to the source VM, the lease follows the source's MAC, and the reverse
 		// grant is labeled with the source's marker.

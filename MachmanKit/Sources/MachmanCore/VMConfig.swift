@@ -595,7 +595,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 				code: .ioFailure, message: "renaming \(oldName): \(error.localizedDescription)")
 		}
 		self.name = newName
-		rewriteOwnedKernelPaths(fromDir: oldDir, toDir: newDir)
+		rewriteOwnedPaths(fromDir: oldDir, toDir: newDir, .moved)
 		// A suffix assigned for the old name stood in for its default; the new name gets
 		// its own default — yielding, like any VM taking a name. A chosen alias stays.
 		if let alias = ssh?.alias, SSHAliasAssignment.isAssigned(alias, to: oldName) {
@@ -763,16 +763,42 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			initrdPath: kernelSettings?.initialRamdiskPath)
 	}
 
-	// Owned kernel paths are absolute and embed the VM directory, so every operation that
-	// MOVES that directory (rename, copy, safe-run shadowing, promotion) must re-point them
-	// or the config keeps booting the old location's files. External paths (never under the
-	// old directory) stay put, like referenced disks. No save — callers batch it into theirs.
-	func rewriteOwnedKernelPaths(fromDir oldDir: String, toDir newDir: String) {
-		guard var settings = kernelSettings else { return }
+	// How the VM directory changed: moved (rename, promotion — the files are now only at
+	// the new place) or copied (vm.copy, safe-run shadowing — the source keeps its files).
+	enum OwnedPathChange {
+		case moved
+		case copied
+	}
+
+	// Owned paths are absolute and embed the VM directory, so every operation that moves or
+	// copies that directory must re-point them, or the config keeps using the old location's
+	// files (C1, C12): the kernel and initramfs, owned (imported) isos, and — on a move only —
+	// fromUrl entries naming a file inside the folder. A copy keeps its fromUrl references on
+	// the source's files: that is VMCopier's reference rule, and a safe-run shadow's unsafe
+	// disks MUST keep naming the real files. External paths (never under the old directory)
+	// stay put. Mounts are never touched. No save — callers batch it into theirs.
+	func rewriteOwnedPaths(
+		fromDir oldDir: String, toDir newDir: String, _ change: OwnedPathChange
+	) {
 		func moved(_ path: String?) -> String? {
 			guard let path, path.hasPrefix(oldDir + "/") else { return nil }
 			return newDir + String(path.dropFirst(oldDir.count))
 		}
+		for index in disks.indices {
+			switch disks[index].kind {
+			case .iso(let url):
+				if let path = moved(url.path) {
+					disks[index].kind = .iso(URL(fileURLWithPath: path))   // flags stay
+				}
+			case .fromUrl(let url) where change == .moved:
+				if let path = moved(url.path) {
+					disks[index].kind = .fromUrl(URL(fileURLWithPath: path))
+				}
+			case .storage, .fromUrl:
+				break
+			}
+		}
+		guard var settings = kernelSettings else { return }
 		var changed = false
 		if let path = moved(settings.kernelPath) {
 			settings.kernelPath = path
