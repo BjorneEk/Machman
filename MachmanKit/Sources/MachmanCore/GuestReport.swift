@@ -12,7 +12,7 @@
 //  Ingested by the process that owns the config (the vmhost while running); the HOST
 //  stamps the ingestion time. Two halves: the SSH keys the v2 script already wrote
 //  (applied into config.ssh, byte-compatible), and the v3 setup sections
-//  (FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_) applied into config.setup as a whole snapshot.
+//  (FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_/NOTE_) applied into config.setup as a whole snapshot.
 //
 
 import Foundation
@@ -45,8 +45,9 @@ struct GuestReport {
 		// 1.0.7: the unified installer's extras.
 		"KERNEL_CONSOLE", "KERNEL_CONSOLE_METHOD",
 	]
-	// Section keys: FEATURE_<wire id>, and CONSOLE_/AUTOMOUNT_/ERROR_<n>.
-	static let allowedPrefixes = ["FEATURE_", "CONSOLE_", "AUTOMOUNT_", "ERROR_"]
+	// Section keys: FEATURE_<wire id>, and CONSOLE_/AUTOMOUNT_/ERROR_/NOTE_<n> (NOTE_<n>:
+	// informational lines; the exact key NOTE is the run's one-sentence summary).
+	static let allowedPrefixes = ["FEATURE_", "CONSOLE_", "AUTOMOUNT_", "ERROR_", "NOTE_"]
 
 	static func read(atPath path: String) -> GuestReport? {
 		guard let data = FileManager.default.contents(atPath: path),
@@ -148,7 +149,17 @@ struct GuestReport {
 
 	// ERROR_<n>=<step>: <message>
 	private func errors() -> [GuestSetupError] {
-		numbered("ERROR_").map { value in
+		stepLines("ERROR_")
+	}
+
+	// NOTE_<n>=<step>: <message> — informational, never a failure.
+	private func notes() -> [GuestSetupNote] {
+		stepLines("NOTE_")
+	}
+
+	// <prefix><n>=<step>: <message>; a line without a step keeps it all as the message.
+	private func stepLines(_ prefix: String) -> [GuestSetupError] {
+		numbered(prefix).map { value in
 			if let colon = value.firstIndex(of: ":") {
 				return GuestSetupError(
 					step: String(value[..<colon]),
@@ -260,6 +271,7 @@ struct GuestReport {
 				setup.lastRunStatus = nil
 				setup.lastRunNote = nil
 				setup.errors = []
+				setup.notes = []
 				setup.features = []
 				setup.consoles = []
 				setup.automounts = []
@@ -297,6 +309,7 @@ struct GuestReport {
 			setup.lastRunNote = values["NOTE"]
 			setup.lastTransport = values["TRANSPORT"]
 			setup.errors = errors()
+			setup.notes = notes()
 			setup.features = features()
 			setup.consoles = consoles()
 			setup.automounts = automounts()

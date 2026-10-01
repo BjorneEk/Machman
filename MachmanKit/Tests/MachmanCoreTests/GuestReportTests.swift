@@ -253,6 +253,33 @@ struct GuestReportTests {
 		}
 	}
 
+	// S36: informational lines (a repair made, a boot refresh that will not run) arrive as
+	// notes, not errors — a clean run lists none under Errors — and go with an uninstall.
+	@Test @MainActor func notesAreNotErrors() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "notes")
+			let vm = try VMConfig(name: "notes", memorySize: 1 << 30, cpuCount: 2)
+			try GuestReport.parse("""
+				SCRIPT_VERSION=4
+				STATUS=ok
+				NOTE_1=report-refresh: /etc/rc.local was not executable — re-enabled
+				NOTE_2=a line without a step
+				""").apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.lastRunStatus == "ok")
+			#expect(vm.setup?.errors.isEmpty == true)
+			#expect(vm.setup?.notes == [
+				GuestSetupNote(
+					step: "report-refresh",
+					message: "/etc/rc.local was not executable — re-enabled"),
+				GuestSetupNote(step: "", message: "a line without a step"),
+			])
+			// The exact key NOTE (the run's one-sentence summary) is not a note.
+			#expect(vm.setup?.lastRunNote == nil)
+			#expect(try GuestReport.parse("UNINSTALLED=1").apply(to: vm, stampedAt: Date()).setup)
+			#expect(vm.setup?.notes.isEmpty == true)
+		}
+	}
+
 	// S17: a mount name with a space arrives whole — its row is TAB-separated — while the
 	// space-separated rows every script writes for space-free names parse as before.
 	@Test @MainActor func spacedMountNamesArriveWhole() throws {

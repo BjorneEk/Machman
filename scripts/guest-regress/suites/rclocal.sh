@@ -98,11 +98,11 @@ $SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
 	>/tmp/run3.log 2>&1
 if [ "$(meta /etc/rc.local | cut -d' ' -f1)" = "-rwxr-xr-x" ] \
 	&& [ "$(code_lines /etc/rc.local | tail -n 1)" = "exit 0" ] \
-	&& grep -q '^ERROR_[0-9]*=.*/etc/rc.local was not executable — re-enabled' "$REPORT" \
-	&& ! grep -q 'automount-sshfs: /etc/rc.local is not executable' "$REPORT"; then
+	&& grep -q '^NOTE_[0-9]*=.*/etc/rc.local was not executable — re-enabled' "$REPORT" \
+	&& ! grep -q '^ERROR_[0-9]*=.*rc\.local' "$REPORT"; then
 	R RCLOCAL_REENABLED pass
 else
-	R RCLOCAL_REENABLED fail; ls -l /etc/rc.local; grep '^ERROR_' "$REPORT"
+	R RCLOCAL_REENABLED fail; ls -l /etc/rc.local; grep -E '^(ERROR|NOTE)_' "$REPORT"
 fi
 $SH "$S" --uninstall -y >/tmp/unin3.log 2>&1
 
@@ -116,11 +116,12 @@ $SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
 if cmp -s /tmp/rc.local.off /etc/rc.local \
 	&& [ "$(meta /etc/rc.local)" = "$(meta /tmp/rc.local.off)" ] \
 	&& grep -q '^ERROR_[0-9]*=automount-sshfs: /etc/rc.local is not executable' "$REPORT" \
-	&& grep -q '^ERROR_[0-9]*=.*boot-time report refresh will not run' "$REPORT" \
+	&& grep -q '^NOTE_[0-9]*=report-refresh: .*boot-time report refresh will not run' "$REPORT" \
+	&& ! grep -q '^ERROR_[0-9]*=report-refresh' "$REPORT" \
 	&& grep -q 'chmod +x /etc/rc.local' /tmp/run4.log; then
 	R RCLOCAL_DISABLED_KEPT pass
 else
-	R RCLOCAL_DISABLED_KEPT fail; ls -l /etc/rc.local; grep '^ERROR_' "$REPORT"
+	R RCLOCAL_DISABLED_KEPT fail; ls -l /etc/rc.local; grep -E '^(ERROR|NOTE)_' "$REPORT"
 	diff /tmp/rc.local.off /etc/rc.local | head -8
 fi
 exit 0

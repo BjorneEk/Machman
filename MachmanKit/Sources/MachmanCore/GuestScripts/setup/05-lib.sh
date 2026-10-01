@@ -22,6 +22,7 @@
 STEP=""              # what we are doing, for the failure trap
 FAILED_STEPS=""      # comma-separated labels of optional steps that did not work out
 ERR_LINES=""         # newline-separated "step: message" pairs, for the report's ERROR_N
+NOTE_LINES=""        # the same for its NOTE_N: informational, never a failure
 MACHMAN_DIED=0       # die() already explained the failure; the trap stays quiet
 REPORT_DONE=0        # a report was written this run; the trap must not clobber it
 UNINSTALL_KEPT=0     # the uninstall had to leave Machman lines in a file it may not edit
@@ -219,13 +220,13 @@ $1: $2"
 }
 
 # Something the report must mention that is no failed step (a repair, a disabled hook):
-# said now and listed with the report's ERROR_ lines, its one channel to the inspector,
-# while the run's status stays what its steps make it. report_note <step> <message>
+# said now and reported as a NOTE_ line — the inspector lists it under Notes, never under
+# Errors — while the run's status stays what its steps make it. report_note <step> <message>
 report_note() {
-	if [ -z "$ERR_LINES" ]; then
-		ERR_LINES="$1: $2"
+	if [ -z "$NOTE_LINES" ]; then
+		NOTE_LINES="$1: $2"
 	else
-		ERR_LINES="$ERR_LINES
+		NOTE_LINES="$NOTE_LINES
 $1: $2"
 	fi
 	warn "$2"

@@ -42,6 +42,10 @@ public struct GuestSetupError: Codable, Sendable, Equatable {
 	}
 }
 
+// One informational line a script run reported (a repair it made, a boot-time refresh that
+// will not run): no failure — the errors' {step, message} shape.
+public typealias GuestSetupNote = GuestSetupError
+
 // One feature as the script saw it on this guest: whether the OS can do it at all (with
 // the reason when it cannot), whether it is configured, and a one-line detail for the UI
 // ("gustaf", "hvc0, hvc1", "2 automounts").
@@ -139,6 +143,8 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 	public var lastRunNote: String?
 	public var lastTransport: String?      // "virtiofs" | "sshfs" | "local"
 	public var errors: [GuestSetupError]?
+	// Informational lines from the last run, never failures (additive; nil = none).
+	public var notes: [GuestSetupNote]?
 	public var features: [GuestFeatureInfo]?
 	public var consoles: [GuestConsoleInfo]?
 	public var automounts: [GuestAutomountInfo]?
@@ -152,7 +158,8 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		guestInit: String? = nil, lastReportAt: Date? = nil, scriptVersion: Int? = nil,
 		currentScriptVersion: Int? = nil, lastRunStatus: String? = nil,
 		lastRunNote: String? = nil, lastTransport: String? = nil,
-		errors: [GuestSetupError]? = nil, features: [GuestFeatureInfo]? = nil,
+		errors: [GuestSetupError]? = nil, notes: [GuestSetupNote]? = nil,
+		features: [GuestFeatureInfo]? = nil,
 		consoles: [GuestConsoleInfo]? = nil, automounts: [GuestAutomountInfo]? = nil,
 		reinstallRequested: Bool? = nil
 	) {
@@ -168,6 +175,7 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		self.lastRunNote = lastRunNote
 		self.lastTransport = lastTransport
 		self.errors = errors
+		self.notes = notes
 		self.features = features
 		self.consoles = consoles
 		self.automounts = automounts
@@ -190,6 +198,7 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		self.lastRunNote = try c.decodeIfPresent(String.self, forKey: .lastRunNote)
 		self.lastTransport = try c.decodeIfPresent(String.self, forKey: .lastTransport)
 		self.errors = try c.decodeIfPresent([GuestSetupError].self, forKey: .errors)
+		self.notes = try c.decodeIfPresent([GuestSetupNote].self, forKey: .notes)
 		self.features = try c.decodeIfPresent([GuestFeatureInfo].self, forKey: .features)
 		self.consoles = try c.decodeIfPresent([GuestConsoleInfo].self, forKey: .consoles)
 		self.automounts =

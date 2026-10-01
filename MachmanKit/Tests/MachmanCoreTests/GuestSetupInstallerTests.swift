@@ -181,7 +181,7 @@ struct GuestSetupInstallerTests {
 			"IP=", "GATEWAY=", "TWO_WAY=", "HOST_KEY=", "REVERSE_PUBKEY=", "UNINSTALLED=1",
 			"STATUS=", "FAILED_STEPS=", "NOTE=", "TRANSPORT=", "OS_FAMILY=", "OS_VERSION=",
 			"INIT=", "SSHD=", "SSHFS=", "SSHFS_VERSION=", "SSHFS_MOUNT_OK=",
-			"SSHFS_MOUNTROOT=", "FEATURE_", "CONSOLE_", "AUTOMOUNT_", "ERROR_",
+			"SSHFS_MOUNTROOT=", "FEATURE_", "CONSOLE_", "AUTOMOUNT_", "ERROR_", "NOTE_",
 			"KERNEL_CONSOLE=",
 		] {
 			#expect(s.contains(key), "missing report key \(key)")

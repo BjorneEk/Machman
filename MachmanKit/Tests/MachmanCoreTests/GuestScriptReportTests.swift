@@ -77,6 +77,27 @@ struct GuestScriptReportTests {
 		}
 	}
 
+	// S36: a note (a repair made, a boot refresh that will not run) is reported as NOTE_<n>,
+	// after the errors, and is no error: a clean run's report carries no ERROR_ line.
+	@Test func reportNotesTravelAsNotes() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				FEATURES=""
+				report_note report-refresh "rc.local was not executable — re-enabled"
+				step_failed sshd "could not enable the service"
+				write_report
+				grep -E '^(STATUS|ERROR_|NOTE_)' "$D/GuestReport/report.env"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("""
+				STATUS=partial
+				ERROR_1=sshd: could not enable the service
+				NOTE_1=report-refresh: rc.local was not executable — re-enabled
+
+				"""), "\(shell): \(r.out)")
+		}
+	}
+
 	// S17: a row whose name has a space is TAB-separated, so the host reads it whole; every
 	// other row stays space-separated, as every daemon reads it. The feature's detail lists
 	// the names comma-separated.

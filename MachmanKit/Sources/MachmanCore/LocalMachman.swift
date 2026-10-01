@@ -998,6 +998,7 @@ public final class LocalMachman: MachmanControlling {
 				lastRunNote: state.lastRunNote,
 				lastTransport: state.lastTransport,
 				errors: state.errors.isEmpty ? nil : state.errors,
+				notes: state.notes.isEmpty ? nil : state.notes,
 				features: state.features.isEmpty ? nil : state.features,
 				consoles: state.consoles.isEmpty ? nil : state.consoles,
 				automounts: state.automounts.isEmpty ? nil : state.automounts,

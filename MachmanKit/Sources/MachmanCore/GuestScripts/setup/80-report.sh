@@ -3,7 +3,8 @@
 # writable — including on failure, so Machman can say what went wrong instead of just
 # "no report yet". v2's keys are kept verbatim (the host's parser whitelists and old
 # daemons ignore what they don't know); v3 adds FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_ lines,
-# v4 no keys. An AUTOMOUNT_ row is TAB-separated only when its mount name has a space.
+# v4 no keys. An AUTOMOUNT_ row is TAB-separated only when its mount name has a space, and
+# NOTE_ lines carry what the run noted without failing (an older daemon drops them).
 
 # Set for real by 90-main; defaulted here so the failure trap can report from any phase.
 FEATURES="${FEATURES:-}"
@@ -203,6 +204,12 @@ write_report() {
 				printf 'ERROR_%s=%s\n' "$_wr_i" "$_wr_line"
 				_wr_i=$((_wr_i + 1))
 			done
+			_wr_i=1
+			printf '%s\n' "$NOTE_LINES" | while IFS= read -r _wr_line; do
+				[ -n "$_wr_line" ] || continue
+				printf 'NOTE_%s=%s\n' "$_wr_i" "$_wr_line"
+				_wr_i=$((_wr_i + 1))
+			done
 		fi
 		[ "$_wr_mode" = uninstalled ] && printf 'UNINSTALLED=1\n'
 		:
@@ -232,7 +239,8 @@ report_hook_install() {
 	[ "$DRY_RUN" -eq 1 ] && return 0
 	if [ "$OS_FAMILY" = nixos ]; then
 		# /etc/systemd/system is generated from configuration.nix (read-only).
-		note "no boot-time report refresh on NixOS — the report updates when this script runs."
+		report_note report-refresh \
+			"no boot-time report refresh on NixOS — the report updates when this script runs"
 		return 0
 	fi
 	_rh_script="$SHARE_ROOT/GuestSetup/$(basename "$0")"
@@ -311,7 +319,8 @@ report_hook_install() {
 			>/dev/null 2>&1 || true
 		;;
 	*)
-		note "no boot-time report refresh under init '$INIT' — reports update on re-runs only."
+		report_note report-refresh \
+			"no boot-time report refresh under init '$INIT' — reports update on re-runs only"
 		return 0
 		;;
 	esac

@@ -208,10 +208,12 @@ persisted. Treat unknown `reverseState`/`reachability` strings as a state you do
 recognize.
 `setup` (1.0.7+) is `{installed?, guestOS?, guestOSFamily?, guestOSVersion?,
 guestInit?, lastReportAt?, scriptVersion?, currentScriptVersion?, lastRunStatus?,
-lastRunNote?, lastTransport?, errors?: [{step, message}], features?: [{id, available,
-reason?, configured, detail?}], consoles?: [{device, login, kernelConsole?}],
-automounts?: [{kind, target, path}], reinstallRequested?}` — the unified installer's
-report, absent when the installer was never used (or from an older daemon).
+lastRunNote?, lastTransport?, errors?: [{step, message}], notes?: [{step, message}],
+features?: [{id, available, reason?, configured, detail?}], consoles?: [{device, login,
+kernelConsole?}], automounts?: [{kind, target, path}], reinstallRequested?}` — the
+unified installer's report, absent when the installer was never used (or from an older
+daemon). `notes` (additive) are informational lines from the last run — a repair it made,
+a boot-time refresh that will not run — never failures; absent when there are none.
 `reinstallRequested` (additive) mirrors `vm.setup.serve`. Feature `id`s are plain strings
 (`console, kernelConsole, ssh, reverseSSH, sshfs, virtiofsAutomount, sshfsAutomount` —
 render unknown ids verbatim), `login` is `active|active-auto|configured|none|missing`,

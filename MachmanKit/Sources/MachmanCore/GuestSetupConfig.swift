@@ -27,6 +27,7 @@ struct GuestSetupConfig: Codable, Equatable {
 	var lastRunNote: String?
 	var lastTransport: String?
 	var errors: [GuestSetupError] = []
+	var notes: [GuestSetupNote] = []
 	var features: [GuestFeatureInfo] = []
 	var consoles: [GuestConsoleInfo] = []
 	var automounts: [GuestAutomountInfo] = []
@@ -48,6 +49,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		case lastRunNote
 		case lastTransport
 		case errors
+		case notes
 		case features
 		case consoles
 		case automounts
@@ -68,6 +70,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		self.lastRunNote = try c.decodeIfPresent(String.self, forKey: .lastRunNote)
 		self.lastTransport = try c.decodeIfPresent(String.self, forKey: .lastTransport)
 		self.errors = try c.decodeIfPresent([GuestSetupError].self, forKey: .errors) ?? []
+		self.notes = try c.decodeIfPresent([GuestSetupNote].self, forKey: .notes) ?? []
 		self.features = try c.decodeIfPresent([GuestFeatureInfo].self, forKey: .features) ?? []
 		self.consoles = try c.decodeIfPresent([GuestConsoleInfo].self, forKey: .consoles) ?? []
 		self.automounts =
