@@ -35,6 +35,8 @@ struct NetworkSSHSection: View {
 	@State private var revokeConsent = false
 
 	@State private var aliasDraft = ""
+	// Seeds the alias field with an unsent draft instead of the alias (render scenes).
+	var initialAliasDraft: String? = nil
 
 	private var setupAttached: Bool {
 		(vm.devices ?? []).contains { $0.kind == .guestSetup }
@@ -96,18 +98,22 @@ struct NetworkSSHSection: View {
 	private var aliasField: some View {
 		VStack(alignment: .leading, spacing: 3) {
 			TextField("Alias", text: $aliasDraft)
-				.onSubmit { viewModel.setSSHAlias(vm.name, alias: aliasDraft) }
+				.onSubmit { viewModel.submitSSHAlias(vm, draft: aliasDraft) }
 			if aliasDraft != alias {
-				Text("Press Return to rename.")
-					.font(.caption2)
-					.foregroundStyle(.tertiary)
+				if let problem = viewModel.sshAliasProblem(aliasDraft, for: vm) {
+					FieldProblem(problem)
+				} else {
+					Text("Press Return to rename.")
+						.font(.caption2)
+						.foregroundStyle(.tertiary)
+				}
 			} else if !aliasDraft.contains(".") && !aliasDraft.isEmpty {
 				Text("A plain name can shadow a real host in your SSH config.")
 					.font(.caption2)
 					.foregroundStyle(.tertiary)
 			}
 		}
-		.onAppear { aliasDraft = alias }
+		.onAppear { aliasDraft = initialAliasDraft ?? alias }
 		.onChange(of: alias) { aliasDraft = alias }
 	}
 
@@ -217,11 +223,19 @@ struct NetworkSSHSection: View {
 struct SSHInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
+	private let aliasDraft: String?
 	@State private var resetConfirm = false
+
+	// `aliasDraft` opens the alias field on an unsent draft (render scenes).
+	init(viewModel: VMListViewModel, vm: VMInfo, aliasDraft: String? = nil) {
+		self.viewModel = viewModel
+		self.vm = vm
+		self.aliasDraft = aliasDraft
+	}
 
 	var body: some View {
 		Form {
-			NetworkSSHSection(viewModel: viewModel, vm: vm)
+			NetworkSSHSection(viewModel: viewModel, vm: vm, initialAliasDraft: aliasDraft)
 			Section("Keys") {
 				if let identity = vm.ssh?.identityFilePath,
 					let pub = try? String(contentsOfFile: identity + ".pub",

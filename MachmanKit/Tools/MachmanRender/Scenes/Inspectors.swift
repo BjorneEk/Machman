@@ -93,6 +93,15 @@ enum InspectorScenes {
 		inspector(
 			"ssh.spaced-name", "SSHInspector, a VM named with a space",
 			vms: { [Samples.linuxSpacedName()] }, select: "Debian copy", node: .group("SSH")),
+		RenderScene(
+			"inspector.ssh.alias-invalid", "SSHInspector, an alias it can't use",
+			widths: RenderScene.inspectorWidths, height: height
+		) { ctx in
+			ctx.viewModel.select(name: "Debian")
+			return AnyView(
+				SSHInspector(viewModel: ctx.viewModel, vm: ctx.vm, aliasDraft: "dev box")
+					.formStyle(.grouped))
+		},
 		inspector(
 			"ssh-session", "SSHSessionInspector, an open session tab",
 			node: .sshSession(sshSession)

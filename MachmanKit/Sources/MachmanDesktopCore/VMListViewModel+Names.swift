@@ -77,4 +77,26 @@ extension VMListViewModel {
 		safeSave(vm.name, to: NameRule.vmName.trimmed(raw))
 		return true
 	}
+
+	// MARK: - SSH alias
+
+	// Why the alias field's draft can't be sent, or nil. Empty means "back to the default".
+	// Uniqueness is checked against the served aliases; the daemon checks again.
+	public func sshAliasProblem(_ draft: String, for vm: VMInfo) -> String? {
+		let alias = draft.trimmingCharacters(in: .whitespaces)
+		guard !alias.isEmpty else { return nil }
+		if let problem = SSHAliasRule.problem(alias) { return problem }
+		if let other = vms.first(where: { $0.name != vm.name && $0.ssh?.alias == alias }) {
+			return "\(other.name) already answers to \u{201C}\(alias)\u{201D}"
+		}
+		return nil
+	}
+
+	// The alias field's Return: false (nothing sent, the draft stays) while it has a problem.
+	@discardableResult
+	public func submitSSHAlias(_ vm: VMInfo, draft: String) -> Bool {
+		guard sshAliasProblem(draft, for: vm) == nil else { return false }
+		setSSHAlias(vm.name, alias: draft.trimmingCharacters(in: .whitespaces))
+		return true
+	}
 }
