@@ -76,6 +76,13 @@ final class DaemonConnection: ObservableObject {
 		loop.retry()
 	}
 
+	// The connect screen's Launch Daemon: launch, then a fresh cycle that won't launch again.
+	func launchAndRetry() {
+		launchDaemon()
+		registerLoginItem()
+		loop.retry(launched: true)
+	}
+
 	func openLoginItemsSettings() {
 		SMAppService.openSystemSettingsLoginItems()
 	}

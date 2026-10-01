@@ -33,6 +33,28 @@ public struct ConnectionProblem: Equatable {
 		self.detail = detail
 	}
 
+	// What the connect screen says: the problem, then the one thing to do about it.
+	public var title: String {
+		switch kind {
+		case .unreachable: return "Can't reach Machman Agent"
+		case .notAnswering: return "Machman Agent is not answering"
+		case .incompatible: return "The running Machman Agent is a different version"
+		}
+	}
+
+	// nil when the screen's own Launch Daemon and Retry buttons say it all.
+	public var hint: String? {
+		switch kind {
+		case .unreachable:
+			return nil
+		case .notAnswering:
+			return "Choose Quit Machman Agent from its menu-bar item, then click Retry."
+		case .incompatible:
+			return "Choose Quit Machman Agent from its menu-bar item, then click Retry to "
+				+ "start the one inside this app."
+		}
+	}
+
 	public static func classify(_ error: Error) -> ConnectionProblem {
 		switch error {
 		case let mismatch as RemoteMachman.APIVersionMismatch:

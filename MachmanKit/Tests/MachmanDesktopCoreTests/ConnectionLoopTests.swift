@@ -169,6 +169,21 @@ struct ConnectionLoopTests {
 		#expect(loop.status == .connected(daemonVersion: "1.0.11"))
 	}
 
+	// Launch Daemon launches the agent itself, then retries: that cycle must not launch it
+	// a second time.
+	@Test func retryAfterALaunchDoesNotLaunchAgain() async {
+		let connector = FakeConnector()
+		let recorder = LoopRecorder()
+		let loop = makeLoop(connector, recorder, policy: .fast(maxAttempts: 3))
+		loop.start()
+		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		#expect(connector.launches == 1)
+		loop.retry(launched: true)
+		#expect(await eventually(timeout: .seconds(5)) { connector.connects == 6 })
+		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		#expect(connector.launches == 1)
+	}
+
 	@Test func startIsANoOpWhileConnected() async {
 		let connector = FakeConnector()
 		connector.script = [.session(FakeSession("A"))]

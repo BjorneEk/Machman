@@ -48,6 +48,23 @@ enum WindowScenes {
 	static let restoredSession = SSHSessionRef(
 		id: UUID(uuidString: "8F1D2C3B-4A5E-4F60-8B7A-6C5D4E3F2A10")!, title: "Session 2")
 
+	// The main window's disconnected state, as the connect loop leaves it, centred in a
+	// window of the scene's size as the app's window centres it. The details are the errors'
+	// own texts (RPCConnection.ConnectionError, expire, APIVersionMismatch).
+	@MainActor
+	private static func connecting(
+		_ status: ConnectionStatus, approval: Bool = false
+	) -> AnyView {
+		AnyView(ConnectionStatusView(
+			status: status, loginItemNeedsApproval: approval,
+			retry: {}, launchDaemon: {}, openLoginItems: {})
+			.frame(maxWidth: .infinity, maxHeight: .infinity))
+	}
+
+	private static let refusedDetail = "cannot reach MachmanAgent at /var/folders/7k/"
+		+ "0q8n1x52l3gr5mhkzz1y7rr0000gn/T/com.gustaffranzen.Machman/machman.sock: "
+		+ "Connection refused"
+
 	static let all: [RenderScene] = [
 		RenderScene(
 			"window.main", "VMNavigationView, inspector open",
@@ -117,6 +134,42 @@ enum WindowScenes {
 			AnyView(TornTabWindowView(
 				connection: ctx.connection, profiles: ctx.profiles,
 				payload: TornTab(vm: "Debian", tab: .config)))
+		},
+		RenderScene(
+			"window.connecting", "ConnectionStatusView, connecting", widths: [480, 900],
+			height: 420
+		) { _ in
+			connecting(.connecting)
+		},
+		RenderScene(
+			"window.connecting.unreachable", "ConnectionStatusView, the agent isn't there",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(.unavailable(ConnectionProblem(kind: .unreachable, detail: refusedDetail)))
+		},
+		RenderScene(
+			"window.connecting.unreachable.approval",
+			"ConnectionStatusView, the agent isn't there and its login item needs approval",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(
+				.unavailable(ConnectionProblem(kind: .unreachable, detail: refusedDetail)),
+				approval: true)
+		},
+		RenderScene(
+			"window.connecting.not-answering", "ConnectionStatusView, a hung agent",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(.unavailable(ConnectionProblem(
+				kind: .notAnswering,
+				detail: "no reply to machman.hello after 10s — the serving process may be hung")))
+		},
+		RenderScene(
+			"window.connecting.incompatible", "ConnectionStatusView, an agent of another api",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(.unavailable(ConnectionProblem(
+				kind: .incompatible, detail: "daemon speaks api v2, client needs v1")))
 		},
 		RenderScene("sidebar.tree", "VMDeviceTreeView", widths: [270], height: 760) { ctx in
 			tree(ctx)

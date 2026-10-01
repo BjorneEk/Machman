@@ -39,6 +39,21 @@ struct ConnectionProblemTests {
 			kind: .incompatible, detail: "daemon speaks api v2, client needs v1"))
 	}
 
+	// One title per problem, and a remedy where the buttons don't already say it.
+	@Test func eachProblemSaysWhatToDo() {
+		let unreachable = ConnectionProblem(kind: .unreachable, detail: "")
+		#expect(unreachable.title == "Can't reach Machman Agent")
+		#expect(unreachable.hint == nil)
+		let silent = ConnectionProblem(kind: .notAnswering, detail: "")
+		#expect(silent.title == "Machman Agent is not answering")
+		#expect(silent.hint
+			== "Choose Quit Machman Agent from its menu-bar item, then click Retry.")
+		let other = ConnectionProblem(kind: .incompatible, detail: "")
+		#expect(other.title == "The running Machman Agent is a different version")
+		#expect(other.hint == "Choose Quit Machman Agent from its menu-bar item, then click "
+			+ "Retry to start the one inside this app.")
+	}
+
 	@Test func anyOtherFailureIsUnreachableWithItsMessage() {
 		let problem = ConnectionProblem.classify(
 			MachmanError(code: .invalidState, message: "the agent is shutting down"))
