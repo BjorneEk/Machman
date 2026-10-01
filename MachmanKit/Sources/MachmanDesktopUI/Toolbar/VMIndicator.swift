@@ -13,15 +13,6 @@ import MachmanUI
 import MachmanAPI
 import MachmanDesktopCore
 
-extension VMInfo {
-	// Whether the VM would boot with a display. nil devices = a pre-1.0.4 daemon, where
-	// graphics were unconditional — treat as present.
-	var hasEnabledGraphics: Bool {
-		guard let devices else { return true }
-		return devices.contains { $0.kind == .graphics && $0.enabled }
-	}
-}
-
 struct VMIndicatorCluster: View {
 	@ObservedObject var viewModel: VMListViewModel
 	// nil = nothing selected; the indicator still renders so the picker stays reachable

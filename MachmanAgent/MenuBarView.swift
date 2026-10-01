@@ -112,21 +112,23 @@ struct MenuBarView: View {
 					Label("Start Safe", systemImage: MachmanSymbols.safe)
 				}
 				.disabled(vm.state.isRunning)
-				Divider()
-				if vm.windowOpen {
-					Button {
-						model.closeWindow(vm.name)
-					} label: {
-						Label("Close Window", systemImage: MachmanSymbols.closeWindow)
+				// A window item only while the VM runs with a display (P27).
+				if let action = vm.windowAction {
+					Divider()
+					switch action {
+					case .close:
+						Button {
+							model.closeWindow(vm.name)
+						} label: {
+							Label("Close Window", systemImage: MachmanSymbols.closeWindow)
+						}
+					case .open:
+						Button {
+							model.openWindow(vm.name)
+						} label: {
+							Label("Open Window", systemImage: MachmanSymbols.openWindow)
+						}
 					}
-					.disabled(!vm.state.isRunning)
-				} else {
-					Button {
-						model.openWindow(vm.name)
-					} label: {
-						Label("Open Window", systemImage: MachmanSymbols.openWindow)
-					}
-					.disabled(!vm.state.isRunning)
 				}
 				Divider()
 				Button {

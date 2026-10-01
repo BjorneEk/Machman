@@ -163,9 +163,9 @@ private struct VMPickerRow: View {
 			viewModel.select(name: vm.name)
 			dismiss()
 		}
-		if vm.state.isRunning && vm.hasEnabledGraphics {
-			Button(vm.windowOpen ? "Close Window" : "Open Window") {
-				if vm.windowOpen {
+		if let action = vm.windowAction {
+			Button(action == .close ? "Close Window" : "Open Window") {
+				if action == .close {
 					viewModel.closeWindow(vm.name)
 				} else {
 					viewModel.openWindow(vm.name)

@@ -88,9 +88,10 @@ struct MachmanDesktopApp: App {
 							viewModel.select(name: vm.name)
 						}
 						.help("show \(vm.name)")
-						// The applicable window action rides right under its VM.
-						if vm.state.isRunning {
-							if vm.windowOpen {
+						// The applicable window action rides right under its VM — only for a
+						// running VM with a display (P27).
+						if let action = vm.windowAction {
+							if action == .close {
 								Button(action: {
 									viewModel.closeWindow(vm.name)
 								}) {
