@@ -55,9 +55,11 @@ enum VMCopier {
 	static let stagingPrefix = ".machman-copy-"
 
 	// Never travel: config is re-encoded; restore.ipsw is an install artifact that only
-	// survives crashes.
+	// survives crashes; the guest share (payload + report drop-box) exists only while the VM
+	// runs — teardown removes it, so one here is a crash leftover, and its report would be
+	// ingested at the copy's first boot as the copy's own (C7). The next start rebuilds it.
 	private static let alwaysSkipped: Set<String> = [
-		"config", MacInstaller.restoreImageFileName,
+		"config", MacInstaller.restoreImageFileName, GuestInstallerWriter.payloadRootName,
 	]
 
 	// A fresh copy also drops the identity files: vm_identifier is lazily recreated on boot,

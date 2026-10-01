@@ -260,6 +260,27 @@ struct VMCopierTests {
 		}
 	}
 
+	// C7: a crash leaves the guest share behind; its report is the source's and must not
+	// become the copy's first-boot state. The share is per run — neither copy carries it.
+	@Test func crashLeftoverShareStaysBehind() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		let report = src + "/" + GuestInstallerWriter.payloadRootName + "/"
+			+ GuestSetupInstallerInfo.reportDirectoryName
+		try FileManager.default.createDirectory(atPath: report, withIntermediateDirectories: true)
+		try Data("MARKER=machman-src\nHOSTNAME=src-box\n".utf8)
+			.write(to: URL(fileURLWithPath: report + "/" + GuestSetupInstallerInfo.reportName))
+
+		for identity in [VMCopyRequest.Identity.fresh, .impersonate] {
+			let dst = try VMCopier.copy(VMCopyRequest(
+				sourceDir: src, destinationParent: library, newName: "dup-\(identity)",
+				regenerateMAC: false, identity: identity))
+			#expect(!FileManager.default.fileExists(
+				atPath: dst + "/" + GuestInstallerWriter.payloadRootName))
+		}
+	}
+
 	@Test func macOSGuestGetsAFreshMachineID() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }
