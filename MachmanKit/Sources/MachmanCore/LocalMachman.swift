@@ -460,11 +460,18 @@ public final class LocalMachman: MachmanControlling {
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
 		let vm = try lookup(name)
 		let kernelsDir = vm.config.kernelsDirPath()
+		// Only a file the VM lists as owned can be deleted over the wire ("..": resolved).
+		let wanted = URL(fileURLWithPath: path).standardized.path
+		guard let owned = vm.config.ownedKernelFiles().first(where: { $0.path == wanted })
+		else {
+			throw MachmanError(code: .notFound, message: "No owned kernel file at \(path)")
+		}
+		let ownedPath = owned.path
 		try await Task.detached(priority: .userInitiated) {
-			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
+			try KernelStore.delete(path: ownedPath, kernelsDir: kernelsDir)
 		}.value
-		try vm.config.clearKernelReference(to: path)
-		vm.config.pruneKernelOverride(forDeletedPath: path)
+		try vm.config.clearKernelReference(to: ownedPath)
+		vm.config.pruneKernelOverride(forDeletedPath: ownedPath)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}

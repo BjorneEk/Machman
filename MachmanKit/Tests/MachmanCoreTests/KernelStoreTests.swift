@@ -67,6 +67,80 @@ struct KernelStoreTests {
 
 	// Files copied in by an older build live at <kernels>/<storeName>/<file> (no role level).
 	// They must still surface, with role from the config's references, else inferred by name.
+	// D16: ownership was a raw string prefix, so "<kernels>/../disk.raw" passed and
+	// vm.kernel.delete removed a VM file. Paths are resolved before the check, and a
+	// directory is never "an owned file".
+	@Test func deleteRefusesPathsThatClimbOutOfTheStore() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "k")
+			let cfg = try VMConfig(name: "k", memorySize: 1 << 30, cpuCount: 2)
+			let src = TestEnvironment.scratch + "ktest-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let dest = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: "janus")
+			let disk = cfg.configFilePath(file: "disk.raw")
+			try Data("DISK".utf8).write(to: URL(fileURLWithPath: disk))
+
+			#expect(!KernelStore.isOwned(
+				cfg.kernelsDirPath() + "/../disk.raw", kernelsDir: cfg.kernelsDirPath()))
+			#expect(throws: MachmanError.self) {
+				try KernelStore.delete(
+					path: cfg.kernelsDirPath() + "/../disk.raw", kernelsDir: cfg.kernelsDirPath())
+			}
+			#expect(FileManager.default.fileExists(atPath: disk))
+			#expect(throws: MachmanError.self) {
+				try KernelStore.rename(
+					path: cfg.kernelsDirPath() + "/kernel/janus/../../../disk.raw",
+					kernelsDir: cfg.kernelsDirPath(), newTag: "x")
+			}
+			#expect(FileManager.default.fileExists(atPath: disk))
+			#expect(FileManager.default.fileExists(atPath: dest))
+		}
+	}
+
+	@Test func deleteRefusesDirectories() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "k")
+			let cfg = try VMConfig(name: "k", memorySize: 1 << 30, cpuCount: 2)
+			let src = TestEnvironment.scratch + "ktest-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let dest = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: "janus")
+			#expect(throws: MachmanError.self) {
+				try KernelStore.delete(
+					path: cfg.kernelsDirPath() + "/kernel", kernelsDir: cfg.kernelsDirPath())
+			}
+			#expect(FileManager.default.fileExists(atPath: dest))
+		}
+	}
+
+	@Test func tagsFollowTheNameRule() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "k")
+			let cfg = try VMConfig(name: "k", memorySize: 1 << 30, cpuCount: 2)
+			let src = TestEnvironment.scratch + "ktest-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			for bad in ["..", ".x", "a\tb", "a/b", " "] {
+				#expect(throws: MachmanError.self, "\(bad)") {
+					try KernelStore.promote(
+						role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(),
+						tag: bad)
+				}
+			}
+			#expect(!FileManager.default.fileExists(atPath: cfg.kernelsDirPath() + "/kernel/.."
+				+ "/" + (src as NSString).lastPathComponent))
+			let dest = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: " 6.12 ")
+			#expect(dest.contains("/kernel/6.12/"))
+			#expect(throws: MachmanError.self) {
+				try KernelStore.rename(path: dest, kernelsDir: cfg.kernelsDirPath(), newTag: "..")
+			}
+		}
+	}
+
 	@Test func legacyFlatLayoutFilesAreSurfaced() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "j")

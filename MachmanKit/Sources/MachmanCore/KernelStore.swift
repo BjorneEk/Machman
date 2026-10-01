@@ -13,9 +13,12 @@ import Foundation
 import MachmanAPI
 
 enum KernelStore {
-	// True when `path` is an owned file under this VM's kernels dir.
+	// True when `path` is under this VM's kernels dir. Lexical, with ".." resolved first:
+	// a raw prefix check let "<kernels>/../disk.raw" through (D16).
 	static func isOwned(_ path: String, kernelsDir: String) -> Bool {
-		path.hasPrefix(kernelsDir + "/")
+		let file = URL(fileURLWithPath: path).standardized.pathComponents
+		let dir = URL(fileURLWithPath: kernelsDir).standardized.pathComponents
+		return file.count > dir.count && file.starts(with: dir)
 	}
 
 	// Every owned file, parsed into role/tag/fileName, sorted by path. The optional kernel/initrd
@@ -84,10 +87,7 @@ enum KernelStore {
 		guard fm.fileExists(atPath: sourcePath) else {
 			throw MachmanError(code: .notFound, message: "no file at '\(sourcePath)'")
 		}
-		let trimmed = tag.trimmingCharacters(in: .whitespaces)
-		guard !trimmed.isEmpty, !trimmed.contains("/") else {
-			throw MachmanError(code: .invalidArgument, message: "invalid tag '\(tag)'")
-		}
+		let trimmed = try NameRule.kernelTag.normalized(tag)
 		let tagDir = kernelsDir + "/" + role.rawValue + "/" + trimmed
 		let basename = (sourcePath as NSString).lastPathComponent
 		let dest = tagDir + "/" + basename
@@ -104,8 +104,12 @@ enum KernelStore {
 	// Move an owned file to a new tag: <role>/<oldTag>/<file> → <role>/<newTag>/<file>,
 	// dropping the old tag dir if it emptied. Returns the new path. Legacy-layout files
 	// (no role level) refuse — re-import gives them the current layout.
-	static func rename(path: String, kernelsDir: String, newTag: String) throws -> String {
+	static func rename(
+		path rawPath: String, kernelsDir rawKernelsDir: String, newTag: String
+	) throws -> String {
 		let fm = FileManager.default
+		let path = URL(fileURLWithPath: rawPath).standardized.path
+		let kernelsDir = URL(fileURLWithPath: rawKernelsDir).standardized.path
 		guard isOwned(path, kernelsDir: kernelsDir) else {
 			throw MachmanError(
 				code: .invalidArgument, message: "'\(path)' is not an owned kernel file")
@@ -118,10 +122,7 @@ enum KernelStore {
 				code: .invalidArgument,
 				message: "legacy-layout kernel file — re-import it to rename")
 		}
-		let trimmed = newTag.trimmingCharacters(in: .whitespaces)
-		guard !trimmed.isEmpty, !trimmed.contains("/") else {
-			throw MachmanError(code: .invalidArgument, message: "invalid tag '\(newTag)'")
-		}
+		let trimmed = try NameRule.kernelTag.normalized(newTag)
 		guard trimmed != rel[1] else { return path }
 		let newDir = kernelsDir + "/" + rel[0] + "/" + trimmed
 		let newPath = newDir + "/" + rel[2]
@@ -139,14 +140,19 @@ enum KernelStore {
 	}
 
 	// Remove an owned file and every container dir it empties — tag dir, role dir, and the
-	// kernels dir itself when the last file leaves. Refuses paths outside the kernels dir.
-	static func delete(path: String, kernelsDir: String) throws {
-		guard isOwned(path, kernelsDir: kernelsDir) else {
-			throw MachmanError(
-				code: .invalidArgument, message: "'\(path)' is not an owned kernel file")
-		}
+	// kernels dir itself when the last file leaves. Refuses paths outside the kernels dir
+	// and directories (a role or tag dir is not a file to delete).
+	static func delete(path rawPath: String, kernelsDir rawKernelsDir: String) throws {
+		let path = URL(fileURLWithPath: rawPath).standardized.path
+		let kernelsDir = URL(fileURLWithPath: rawKernelsDir).standardized.path
 		let fm = FileManager.default
-		if fm.fileExists(atPath: path) {
+		var isDirectory: ObjCBool = false
+		let exists = fm.fileExists(atPath: path, isDirectory: &isDirectory)
+		guard isOwned(path, kernelsDir: kernelsDir), !(exists && isDirectory.boolValue) else {
+			throw MachmanError(
+				code: .invalidArgument, message: "'\(rawPath)' is not an owned kernel file")
+		}
+		if exists {
 			try fm.removeItem(atPath: path)
 		}
 		// Walk up from the file's dir, stopping at the first level that still holds
