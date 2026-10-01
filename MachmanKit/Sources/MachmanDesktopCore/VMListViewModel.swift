@@ -660,15 +660,15 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// The one rename flow (tree rename-in-place + the VM inspector's name field):
-	// dup-checked, migrating terminal/canvas/preview/profile state on success.
-	public func requestRename(_ vm: VMInfo, to newName: String, profiles: TerminalProfileStore) {
+	// The one rename flow (tree rename-in-place + the VM inspector's name field): trimmed,
+	// checked against the VM-name rule and the list before the daemon sees it, migrating
+	// terminal/canvas/preview/profile state on success.
+	public func requestRename(_ vm: VMInfo, to typed: String, profiles: TerminalProfileStore) {
 		let old = vm.name
+		let newName = NameRule.vmName.trimmed(typed)
 		guard !newName.isEmpty, newName != old else { return }
-		guard !hasVM(newName) else {
-			present(
-				message: "A VM named '\(newName)' already exists.",
-				while: "Renaming \(old)")
+		if let problem = newVMNameProblem(newName) {
+			present(message: problem, while: "Renaming \(old)")
 			return
 		}
 		Task { [weak self] in

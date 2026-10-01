@@ -50,4 +50,31 @@ extension VMListViewModel {
 		addDisk(vm.name, .storage(name: NameRule.diskName.trimmed(name), sizeBytes: bytes))
 		return true
 	}
+
+	// MARK: - VM names
+
+	// Why a VM name typed into a sheet (Duplicate, Save as New VM) or the rename field
+	// can't be used, or nil. Checked trimmed: the form sends it trimmed, and the daemon
+	// refuses edge spaces rather than trimming (the router keys on the name as sent).
+	public func newVMNameProblem(_ raw: String) -> String? {
+		let name = NameRule.vmName.trimmed(raw)
+		if let problem = NameRule.vmName.problem(name) { return problem }
+		return hasVM(name) ? "A VM named \u{201C}\(name)\u{201D} already exists" : nil
+	}
+
+	// Duplicate…'s button: false (nothing sent) while the name has a problem.
+	@discardableResult
+	public func submitCopy(_ vm: VMInfo, name raw: String, diskIDs: [String]) -> Bool {
+		guard newVMNameProblem(raw) == nil else { return false }
+		copyVM(vm.name, newName: NameRule.vmName.trimmed(raw), diskIDs: diskIDs)
+		return true
+	}
+
+	// Save as New VM's button, the same way.
+	@discardableResult
+	public func submitSafeSave(_ vm: VMInfo, name raw: String) -> Bool {
+		guard newVMNameProblem(raw) == nil else { return false }
+		safeSave(vm.name, to: NameRule.vmName.trimmed(raw))
+		return true
+	}
 }

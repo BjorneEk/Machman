@@ -75,6 +75,14 @@ enum PopoverScenes {
 			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel))
 		},
 		RenderScene(
+			"sheet.copy-vm.hidden-name", "CopyVMSheet, a name starting with a dot"
+		) { ctx in
+			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel, name: ".Debian copy"))
+		},
+		RenderScene("sheet.copy-vm.taken", "CopyVMSheet, a name another VM has") { ctx in
+			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel, name: "Sequoia"))
+		},
+		RenderScene(
 			"sheet.safe-save", "SafeSaveSheet, a running safe run",
 			vms: {
 				var vm = Samples.linux("Debian", state: .running)
@@ -83,6 +91,12 @@ enum PopoverScenes {
 			}
 		) { ctx in
 			AnyView(SafeSaveSheet(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
+		RenderScene(
+			"sheet.safe-save.blank", "SafeSaveSheet, a blank name",
+			vms: { [Samples.linuxSafeRun()] }
+		) { ctx in
+			AnyView(SafeSaveSheet(vm: ctx.vm, viewModel: ctx.viewModel, name: "   "))
 		},
 		RenderScene("sheet.guest-setup-help", "GuestSetupHelpSheet, Linux guest") { ctx in
 			AnyView(GuestSetupHelpSheet(vm: ctx.vm))

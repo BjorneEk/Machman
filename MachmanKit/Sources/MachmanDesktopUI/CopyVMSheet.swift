@@ -18,13 +18,16 @@ struct CopyVMSheet: View {
 	@State private var newName: String
 	@State private var includedDiskIDs: Set<String>
 
-	init(vm: VMInfo, viewModel: VMListViewModel) {
+	// `name` pre-fills the field (render scenes); the default is "<vm> copy".
+	init(vm: VMInfo, viewModel: VMListViewModel, name: String? = nil) {
 		self.vm = vm
 		self.viewModel = viewModel
-		_newName = State(initialValue: viewModel.defaultCopyName(for: vm.name))
+		_newName = State(initialValue: name ?? viewModel.defaultCopyName(for: vm.name))
 		_includedDiskIDs = State(initialValue:
 			Set(vm.disks.filter { $0.type != .iso }.map(\.id)))
 	}
+
+	private var problem: String? { viewModel.newVMNameProblem(newName) }
 
 	// ISOs always travel by reference; only writable disks are a choice.
 	private var writableDisks: [DiskInfo] { vm.disks.filter { $0.type != .iso } }
@@ -43,6 +46,9 @@ struct CopyVMSheet: View {
 				.font(.headline)
 			TextField("New name", text: $newName)
 				.textFieldStyle(.roundedBorder)
+			if let problem {
+				FieldProblem(problem)
+			}
 			ForEach(writableDisks) { disk in
 				Toggle(isOn: Binding(
 					get: { includedDiskIDs.contains(disk.id) },
@@ -69,14 +75,14 @@ struct CopyVMSheet: View {
 			HStack {
 				Spacer()
 				Button("Cancel", role: .cancel) { viewModel.copyRequest = nil }
+					.keyboardShortcut(.cancelAction)
 				// The sheet closes immediately; the corner progress card tracks the copy.
 				Button("Duplicate") {
-					viewModel.copyVM(vm.name, newName: newName,
-						diskIDs: Array(includedDiskIDs).sorted())
+					viewModel.submitCopy(
+						vm, name: newName, diskIDs: Array(includedDiskIDs).sorted())
 				}
 				.keyboardShortcut(.defaultAction)
-				.disabled(viewModel.copyInFlight || newName.isEmpty
-					|| viewModel.hasVM(newName))
+				.disabled(viewModel.copyInFlight || problem != nil)
 			}
 		}
 		.padding(20)

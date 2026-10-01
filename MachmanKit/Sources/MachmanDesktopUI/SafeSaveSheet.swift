@@ -16,11 +16,14 @@ struct SafeSaveSheet: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@State private var newName: String
 
-	init(vm: VMInfo, viewModel: VMListViewModel) {
+	// `name` pre-fills the field (render scenes); the default is "<vm> saved".
+	init(vm: VMInfo, viewModel: VMListViewModel, name: String? = nil) {
 		self.vm = vm
 		self.viewModel = viewModel
-		_newName = State(initialValue: viewModel.defaultSafeSaveName(for: vm.name))
+		_newName = State(initialValue: name ?? viewModel.defaultSafeSaveName(for: vm.name))
 	}
+
+	private var problem: String? { viewModel.newVMNameProblem(newName) }
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
@@ -34,22 +37,26 @@ struct SafeSaveSheet: View {
 				.fixedSize(horizontal: false, vertical: true)
 			TextField("New VM name", text: $newName)
 				.textFieldStyle(.roundedBorder)
+			if let problem {
+				FieldProblem(problem)
+			}
 			HStack {
 				if viewModel.safeSaveInFlight {
 					ProgressView()
 						.controlSize(.small)
 				}
 				Spacer()
+				// Esc cancels — and stays inert while the save is in flight.
 				Button("Cancel") {
 					viewModel.safeSaveRequest = nil
 				}
+				.keyboardShortcut(.cancelAction)
 				.disabled(viewModel.safeSaveInFlight)
 				Button("Save") {
-					viewModel.safeSave(vm.name, to: newName)
+					viewModel.submitSafeSave(vm, name: newName)
 				}
 				.keyboardShortcut(.defaultAction)
-				.disabled(viewModel.safeSaveInFlight || newName.isEmpty
-					|| viewModel.hasVM(newName))
+				.disabled(viewModel.safeSaveInFlight || problem != nil)
 			}
 		}
 		.padding(20)

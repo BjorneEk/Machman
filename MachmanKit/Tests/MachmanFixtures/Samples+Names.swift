@@ -16,4 +16,11 @@ extension Samples {
 		vm.ssh?.alias = SSHAliasRule.defaultAlias(for: name)
 		return vm
 	}
+
+	// A Linux guest in a safe run — what Save as New VM is offered for.
+	public static func linuxSafeRun(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name, state: .running)
+		vm.safeRun = true
+		return vm
+	}
 }
