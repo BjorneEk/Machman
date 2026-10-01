@@ -151,7 +151,7 @@ struct VMDeviceTreeView: View {
 
 	private var vmRootRow: some View {
 		HStack(spacing: 6) {
-			StatusDot(state: vm.state, size: 8)
+			VMStatusDot(vm: vm, size: 8)
 			if renamingRoot {
 				RenameField(initial: vm.name) { newName in
 					renamingRoot = false

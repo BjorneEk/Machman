@@ -123,8 +123,8 @@ struct VMPreviewTabView: View {
 
 	private var caption: some View {
 		HStack(spacing: 6) {
-			StatusDot(state: vm.state, size: 7)
-			Text(String(describing: vm.state))
+			VMStatusDot(vm: vm, size: 7)
+			Text(vm.stateLabel)
 				.font(.callout)
 				.foregroundStyle(.secondary)
 			Text("·").foregroundStyle(.tertiary)
