@@ -47,7 +47,9 @@ public final class RoutingMachman: MachmanControlling {
 		// var: safe-mode re-attach (startup sweep) and safeSave re-keying mutate its fields.
 		// Safe because every closure captures identity.id (a value), never the struct.
 		var identity: HostIdentity
-		let client: RemoteMachman
+		// var: a dropped connection to a live host is replaced (E8).
+		var client: RemoteMachman
+		var reconnectTask: Task<Void, Never>?
 		// The spawned standalone app; nil for adopted hosts (their only death detector is the
 		// socket disconnect, same as before). deathWatch routes isTerminated to hostGone —
 		// invalidate it BEFORE forceTerminate on failure paths so a cleanup kill can't
@@ -122,6 +124,9 @@ public final class RoutingMachman: MachmanControlling {
 	var helloDeadline: Duration = .seconds(10)
 	// How long a start waits for a host that is exiting after its VM stopped (E12).
 	var hostExitGrace: Duration = .seconds(3)
+	// Whether a vmhost process still exists (E8). A seam: an in-process test host's peer is
+	// the test itself, so a test that ends a host says so here.
+	var isProcessAlive: (Int32) -> Bool = SafeRun.defaultPidAlive
 
 	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
 	// names whose live vmhost did not answer the last attempt (listed as not responding
@@ -505,9 +510,88 @@ public final class RoutingMachman: MachmanControlling {
 			helloDeadline: helloDeadline,
 			onDisconnect: { [weak self] in
 				Task { @MainActor [weak self] in
-					self?.hostGone(id: hostID)
+					self?.hostDisconnected(id: hostID)
 				}
 			})
+	}
+
+	// E8: a dropped connection is not a death — a spurious read or write failure used to tear
+	// down a live run and delete a safe run's shadow under it. Only a confirmed exit ends the
+	// run (the deathWatch's isTerminated stays authoritative); a live host is reconnected, or
+	// listed as not responding until it answers again or exits.
+	private func hostDisconnected(id: UUID) {
+		guard let host = host(withID: id), host.reconnectTask == nil else { return }
+		let clock = ContinuousClock()
+		let exitBy = clock.now.advanced(by: hostExitGrace)
+		host.reconnectTask = Task { [weak self] in
+			while !Task.isCancelled {
+				guard let settled = await self?.settleStep(id: id, pastGrace: clock.now >= exitBy),
+					!settled else { return }
+				let pause = clock.now < exitBy
+					? Duration.milliseconds(50) : (self?.recoveryInterval ?? .seconds(2))
+				try? await Task.sleep(for: pause)
+			}
+		}
+	}
+
+	// One look at a disconnected host; true once it is decided (gone or reconnected). An
+	// orderly vmhost exit darkens its socket before it closes connections, so a live socket
+	// means a dropped connection; a dark one with a live process is a host on its way out
+	// (or wedged), which the grace lets go before it lists as not responding.
+	private func settleStep(id: UUID, pastGrace: Bool) async -> Bool {
+		guard let host = host(withID: id) else { return true }
+		if hostExited(host) {
+			hostGone(id: id)
+			return true
+		}
+		if UDSListener.isLive(path: host.identity.socketPath),
+			let client = try? await connectHost(identity: host.identity) {
+			let answer: VMInfo?
+			do {
+				answer = try await client.vm(named: host.identity.name, deadline: hostProbeDeadline)
+			} catch let error as MachmanError where error.code == .timeout {
+				answer = nil
+			} catch {
+				await client.disconnect()
+				return false
+			}
+			guard let host = self.host(withID: id) else {
+				await client.disconnect()
+				return true
+			}
+			reattach(host, client, answer: answer)
+			return true
+		}
+		if pastGrace {
+			markUnresponsive(host, reason: "lost its connection; the vmhost is still running")
+		}
+		return false
+	}
+
+	// Spawned hosts: the app. Adopted ones: the socket peer's pid (launchd reaps vmhosts, so
+	// kill(pid, 0) is a sound check); without one, a dark socket.
+	private func hostExited(_ host: HostedVM) -> Bool {
+		if host.app?.isTerminated == true { return true }
+		guard let pid = host.app?.processIdentifier ?? host.client.peerPID else {
+			return !UDSListener.isLive(path: host.identity.socketPath)
+		}
+		return !isProcessAlive(pid)
+	}
+
+	private func reattach(_ host: HostedVM, _ client: RemoteMachman, answer: VMInfo?) {
+		host.client = client
+		host.reconnectTask = nil
+		host.eventTask?.cancel()
+		subscribeEvents(host)
+		if let answer {
+			host.lastAnswer = answer
+			markResponsive(host)
+		} else {
+			markUnresponsive(host)
+		}
+		MachmanLogger.log(.passiveWarning,
+			"reconnected to \(host.identity.name)'s vmhost after its connection dropped")
+		registry.events.emit(.listChanged)
 	}
 
 	@discardableResult
@@ -663,6 +747,7 @@ public final class RoutingMachman: MachmanControlling {
 		host.eventTask?.cancel()
 		host.sshDiscoveryTask?.cancel()
 		host.recoveryTask?.cancel()
+		host.reconnectTask?.cancel()
 		let client = host.client
 		Task {
 			await client.disconnect()
@@ -677,7 +762,10 @@ public final class RoutingMachman: MachmanControlling {
 			try? FileManager.default.removeItem(atPath: shadowRoot)
 		}
 		registry.reload(name: name)
-		unlink(host.identity.socketPath)
+		// Never a live socket: a new run may already serve the path (E8).
+		if !UDSListener.isLive(path: host.identity.socketPath) {
+			unlink(host.identity.socketPath)
+		}
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
 		registry.events.emit(.listChanged)
 	}
@@ -875,12 +963,13 @@ public final class RoutingMachman: MachmanControlling {
 
 	// Transitions only: each one logs, announces itself with listChanged (clients reload on
 	// it — the only way a recovered VM's mark ever clears), and starts or ends the watcher.
-	private func markUnresponsive(_ host: HostedVM) {
+	private func markUnresponsive(_ host: HostedVM, reason: String? = nil) {
 		guard !host.unresponsive else { return }
 		host.unresponsive = true
 		MachmanLogger.log(.passiveWarning,
-			"\(host.identity.name)'s vmhost missed its \(hostProbeDeadline) answer deadline — "
-				+ "listing it as not responding")
+			"\(host.identity.name)'s vmhost "
+				+ (reason ?? "missed its \(hostProbeDeadline) answer deadline")
+				+ " — listing it as not responding")
 		startRecoveryWatch(host)
 		registry.events.emit(.listChanged)
 	}

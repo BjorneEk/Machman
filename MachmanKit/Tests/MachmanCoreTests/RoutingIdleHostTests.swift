@@ -41,6 +41,7 @@ struct RoutingIdleHostTests {
 		}
 		routing.hostProbeDeadline = .milliseconds(300)
 		routing.hostExitGrace = .milliseconds(300)
+		routing.isProcessAlive = { _ in false }   // a stub host's exit is its server stopping
 		return routing
 	}
 

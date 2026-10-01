@@ -196,6 +196,7 @@ struct SafeRunTests {
 
 	@Test @MainActor func hostGoneDiscardsTheShadow() async throws {
 		let routing = try makeRouting()
+		routing.isProcessAlive = { _ in false }   // the stub host's exit is its server stopping
 		// Test-owned absolute path: hostGone reads identity.shadowRoot, never the globals.
 		let shadowRoot = TestEnvironment.scratch + "safe-run-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(

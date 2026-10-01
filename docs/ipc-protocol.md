@@ -348,7 +348,9 @@ Every running VM lives in its own `MachmanVMHost` process, which serves this sam
 per-VM operations to it and re-emits its events.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
-daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them.
+daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them. A dropped
+connection to a vmhost that is still running is re-established — meanwhile the VM lists
+`unresponsive`; only the vmhost's exit ends the run (and discards a safe run's shadow).
 
 While a start is in flight (the vmhost's spawn window, a safe run's shadow build) the VM lists
 as `starting`, and its per-VM calls answer `invalidState` ("… is starting — try again once it
