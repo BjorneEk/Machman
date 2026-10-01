@@ -263,8 +263,31 @@ kernelconsole_report() {
 	return 0
 }
 
+# No record of how the kernel console was set (the state is gone, its write failed, or the
+# guest was cloned): grubby keeps no file of ours to find by marker, so the pair Machman
+# puts in its boot entries is named with its remedy, never removed blind — a user can set
+# the same arguments. The uninstall then ends partial.
+kernelconsole_name_unrecorded() {
+	have grubby || return 0
+	_kcn_args=" $(grubby --info=ALL 2>/dev/null | sed -n 's/^args=//p' | tr -d '"' \
+		| tr '\n' ' ') "
+	for _kcn_dev in $CONSOLE_DEVICES; do
+		case "$_kcn_args" in
+		*" console=$_kcn_dev console=tty0 "*)
+			warn "console=$_kcn_dev console=tty0 stays in the boot entries — Machman has no record of adding it."
+			note "Remove it: grubby --update-kernel=ALL --remove-args='console=$_kcn_dev console=tty0'"
+			UNINSTALL_KEPT=1
+			;;
+		esac
+	done
+	return 0
+}
+
 kernelconsole_uninstall() {
 	linux_guest || return 0
+	if [ -z "${ST_KERNEL_CONSOLE_METHOD:-}" ]; then
+		kernelconsole_name_unrecorded
+	fi
 	_kcu_dev="${ST_KERNEL_CONSOLE:-$(kernelconsole_pending_device)}"
 	case "${ST_KERNEL_CONSOLE_METHOD:-}" in
 	grubby)

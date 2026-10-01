@@ -143,6 +143,38 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// MARK: - Kernel console (S11)
+
+	// The state is gone (or never said grubby): the exact pair Machman sets in grubby's
+	// boot entries is named with its remedy and left, and the uninstall ends partial.
+	@Test func grubbyArgsWithoutARecordAreNamed() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				OS=Linux
+				UI_COLS=200
+				CONSOLE_DEVICES="hvc0 hvc1"
+				grubby() {
+					case "$*" in
+					--info=ALL) printf 'index=0\nargs="ro quiet console=hvc1 console=tty0"\n' ;;
+					*) echo "grubby $*" >> "$D/grubby.log" ;;
+					esac
+				}
+				kernelconsole_uninstall
+				echo "kept=$UNINSTALL_KEPT"
+				[ -e "$D/grubby.log" ] || echo "nothing removed"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				[!!] console=hvc1 console=tty0 stays in the boot entries — Machman has no record \
+				of adding it.
+				   Remove it: grubby --update-kernel=ALL --remove-args='console=hvc1 console=tty0'
+				kept=1
+				nothing removed
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - NetBSD (S13)
 
 	// NetBSD is its own init (rc.d + /etc/ttys), its virtio consoles are viocon's ttyVI<n>0,

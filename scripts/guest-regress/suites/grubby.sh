@@ -1,7 +1,8 @@
 # grubby (BLS: Fedora/RHEL): the kernel console's arguments land in every boot entry and
 # leave them at uninstall — also after a later run for other features, which keeps the
-# record the uninstall needs. The boot entry is fabricated (a container has no /boot).
-# CHECKS: KC_STATE_KEPT KC_GRUBBY_UNINSTALL
+# record the uninstall needs; without that record the uninstall names what it finds and
+# leaves it. The boot entry is fabricated (a container has no /boot).
+# CHECKS: KC_STATE_KEPT KC_GRUBBY_UNINSTALL KC_GRUBBY_NO_STATE
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -32,4 +33,21 @@ fi
 $SH "$S" --uninstall -y >/tmp/unin.log 2>&1
 if ! args | grep -q 'console=hvc1'; then R KC_GRUBBY_UNINSTALL pass; else
 	R KC_GRUBBY_UNINSTALL fail; args; tail -n 3 /tmp/unin.log; fi
+
+# S11: the state is gone (a failed write, a cloned guest): the pair is named with grubby's
+# remedy, left in place, and the uninstall ends partial.
+$SH "$S" -y --user reg --kernel-console=hvc1 --no-install --no-service >/tmp/run3.log 2>&1
+rm -f /var/lib/machman/state.env
+$SH "$S" --uninstall -y >/tmp/unin2.log 2>&1
+rc=$?
+# The script folds its lines to the terminal: read them back unfolded.
+tr -d '\n' < /tmp/unin2.log > /tmp/unin2.flat
+if [ "$rc" -eq 4 ] && grep -q 'console=hvc1 console=tty0 stays in the boot entries' /tmp/unin2.flat \
+	&& grep -qF "grubby --update-kernel=ALL --remove-args='console=hvc1 console=tty0'" \
+		/tmp/unin2.flat \
+	&& args | grep -q 'console=hvc1 console=tty0'; then
+	R KC_GRUBBY_NO_STATE pass
+else
+	R KC_GRUBBY_NO_STATE "fail (exit $rc)"; tail -n 4 /tmp/unin2.log
+fi
 exit 0
