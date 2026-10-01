@@ -48,6 +48,22 @@ enum WindowScenes {
 			mainWindow(ctx, inspector: true)
 		},
 		RenderScene(
+			"window.main.not-responding", "VMNavigationView, Debian's vmhost not responding",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			vms: Samples.libraryWithStalledHost,
+			panels: { ctx in
+				[
+					tree(ctx),
+					AnyView(InspectorView(
+						viewModel: ctx.viewModel, sessions: ctx.terminals,
+						profiles: ctx.profiles, vm: ctx.vm)
+						.padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			mainWindow(ctx, inspector: true)
+		},
+		RenderScene(
 			"window.main.no-inspector", "VMNavigationView, inspector closed",
 			widths: RenderScene.windowWidths, height: 820, chrome: .window,
 			panels: { ctx in [tree(ctx)] }

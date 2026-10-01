@@ -216,6 +216,9 @@ public final class VMListViewModel: ObservableObject {
 			let previous = knownStates[vm.name]
 			knownStates[vm.name] = vm.state
 			guard let previous, previous != vm.state else { continue }
+			// unknown = the daemon could not tell (a vmhost not adopted yet, or one that
+			// never answered): whatever it turns out to be was already so.
+			guard previous != .unknown else { continue }
 			switch vm.state {
 			case .running:
 				pushToast(symbol: MachmanSymbols.start, message: "\(vm.name) started")

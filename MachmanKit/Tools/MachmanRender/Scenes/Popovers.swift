@@ -44,6 +44,12 @@ enum PopoverScenes {
 		RenderScene("popover.vm-picker.templates", "VMPickerPopover's New VM templates") { ctx in
 			AnyView(VMPickerPopover(viewModel: ctx.viewModel, templates: true))
 		},
+		RenderScene(
+			"popover.vm-picker.not-responding", "VMPickerPopover, Debian's vmhost not responding",
+			vms: Samples.libraryWithStalledHost
+		) { ctx in
+			AnyView(VMPickerPopover(viewModel: ctx.viewModel))
+		},
 		RenderScene("sheet.copy-vm", "CopyVMSheet") { ctx in
 			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel))
 		},
@@ -65,6 +71,15 @@ enum PopoverScenes {
 		},
 		RenderScene("toolbar.indicator", "VMIndicatorCluster per VM, and with none") { ctx in
 			perVM(ctx, includeNone: true) { vm in
+				AnyView(VMIndicatorCluster(viewModel: ctx.viewModel, vm: vm))
+			}
+		},
+		RenderScene(
+			"toolbar.indicator.not-responding",
+			"VMIndicatorCluster per VM, Debian's vmhost not responding",
+			vms: Samples.libraryWithStalledHost
+		) { ctx in
+			perVM(ctx) { vm in
 				AnyView(VMIndicatorCluster(viewModel: ctx.viewModel, vm: vm))
 			}
 		},

@@ -105,14 +105,18 @@ private struct VMPickerRow: View {
 				dismiss()
 			} label: {
 				HStack(spacing: 8) {
-					StatusDot(state: vm.state, size: 7)
+					VMStatusDot(vm: vm, size: 7)
 					VStack(alignment: .leading, spacing: 1) {
 						HStack(spacing: 4) {
 							Text(vm.name)
 								.font(.system(size: 12, weight: .medium))
 							if vm.safeRun == true { SafeBadge(compact: true) }
 						}
-						BootBadge(mode: vm.boot.mode, size: 9)
+						if vm.isUnresponsive {
+							NotRespondingBadge(size: 9)
+						} else {
+							BootBadge(mode: vm.boot.mode, size: 9)
+						}
 					}
 					Spacer()
 					if vm.name == viewModel.selectedName {

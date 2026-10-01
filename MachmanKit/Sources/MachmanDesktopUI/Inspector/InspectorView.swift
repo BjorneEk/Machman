@@ -206,8 +206,8 @@ struct VMInspector: View {
 		Section("Runtime") {
 			LabeledContent("State") {
 				HStack(spacing: 5) {
-					StatusDot(state: vm.state, size: 7)
-					Text(String(describing: vm.state))
+					VMStatusDot(vm: vm, size: 7)
+					Text(vm.stateLabel)
 				}
 			}
 			if vm.state.isRunning, let started = vm.lastRan {

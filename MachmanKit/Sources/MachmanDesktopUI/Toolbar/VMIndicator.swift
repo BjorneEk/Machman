@@ -36,13 +36,17 @@ struct VMIndicatorCluster: View {
 		} label: {
 			HStack(spacing: 7) {
 				if let vm {
-					StatusDot(state: vm.state)
+					VMStatusDot(vm: vm)
 					VStack(alignment: .leading, spacing: 1) {
 						Text(vm.name)
 							.font(.system(size: 12.5, weight: .semibold))
 							.lineLimit(1)
 							.truncationMode(.tail)
-						BootBadge(mode: vm.boot.mode, size: 9)
+						if vm.isUnresponsive {
+							NotRespondingBadge(size: 9)
+						} else {
+							BootBadge(mode: vm.boot.mode, size: 9)
+						}
 					}
 					.frame(maxWidth: 220, alignment: .leading)
 				} else {

@@ -73,6 +73,9 @@ enum InspectorScenes {
 		inspector("vm", "VMInspector (no tree selection)", node: nil),
 		inspector("vm.macos", "VMInspector, installed macOS guest", select: "Sequoia", node: nil),
 		inspector(
+			"vm.not-responding", "VMInspector, vmhost not responding",
+			vms: Samples.libraryWithStalledHost, node: nil),
+		inspector(
 			"multi", "MultiSelectionInspector, two disks",
 			nodes: [.disk("storage:system"), .disk(iso)]),
 		inspector("disk", "DiskInspector, owned storage disk", node: .disk("storage:system")),
