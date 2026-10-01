@@ -6,9 +6,61 @@
 //  fan-out of "event" notifications. A dedicated reader thread feeds the actor; everything
 //  else is actor-isolated.
 //
+//  The reader thread holds the raw descriptor number for as long as it runs, so teardown
+//  never closes it (E26): a closed number is reused by the next open() in the process, and
+//  the reader's next read() would steal that file's or socket's bytes. Teardown shuts the
+//  socket down instead — that wakes a blocked read with EOF and keeps the number reserved —
+//  and whichever side finishes second, the reader leaving its loop or the owner's shutdown,
+//  closes it (SocketLifetime).
+//
 
 import Foundation
 import MachmanAPI
+
+// The descriptor's two holders, the reader thread and the actor's teardown; the second one
+// to let go closes it, exactly once.
+private final class SocketLifetime: @unchecked Sendable {
+	let fd: Int32
+	private let lock = NSLock()
+	private var readerDone = false
+	private var shutDown = false
+	private var closed = false
+
+	init(fd: Int32) {
+		self.fd = fd
+	}
+
+	var isClosed: Bool {
+		lock.withLock { closed }
+	}
+
+	// The owner is done: wake the reader (a blocked read returns EOF) without freeing the
+	// number it may still read from.
+	func shutDownByOwner() {
+		lock.withLock {
+			if !shutDown {
+				shutDown = true
+				_ = Darwin.shutdown(fd, SHUT_RDWR)
+			}
+			closeIfDone()
+		}
+	}
+
+	// The reader thread left its loop for good.
+	func readerFinished() {
+		lock.withLock {
+			readerDone = true
+			closeIfDone()
+		}
+	}
+
+	// Lock held.
+	private func closeIfDone() {
+		guard readerDone, shutDown, !closed else { return }
+		closed = true
+		close(fd)
+	}
+}
 
 public actor RPCConnection {
 	public enum ConnectionError: Error, CustomStringConvertible {
@@ -39,7 +91,7 @@ public actor RPCConnection {
 		let timer: Task<Void, Never>
 	}
 
-	private let fd: Int32
+	private nonisolated let socket: SocketLifetime
 	// The pid on the other end of the socket, captured once at connect. The daemon's
 	// safe-run sweep matches it against shadow markers — exact peer identity with no wire
 	// change. nil only if the getsockopt fails.
@@ -59,6 +111,17 @@ public actor RPCConnection {
 		socketPath: String, sendTimeout: Duration = RPCConnection.defaultSendTimeout,
 		onDisconnect: @escaping @Sendable () -> Void = {}
 	) throws {
+		try self.init(
+			socketPath: socketPath, sendTimeout: sendTimeout, readerHook: nil,
+			onDisconnect: onDisconnect)
+	}
+
+	// The designated init. readerHook is a test seam: it runs on the reader thread after
+	// each chunk the reader processed, so a test can park the reader between reads.
+	init(
+		socketPath: String, sendTimeout: Duration, readerHook: (@Sendable () -> Void)?,
+		onDisconnect: @escaping @Sendable () -> Void
+	) throws {
 		self.onDisconnect = onDisconnect
 
 		var addr = sockaddr_un()
@@ -72,7 +135,7 @@ public actor RPCConnection {
 				_ = socketPath.withCString { strlcpy(dst, $0, maxLen + 1) }
 			}
 		}
-		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+		let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
 		guard fd >= 0 else { throw ConnectionError.connectFailed(socketPath, errno) }
 		let connected = withUnsafePointer(to: &addr) {
 			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -84,7 +147,7 @@ public actor RPCConnection {
 			close(fd)
 			throw ConnectionError.connectFailed(socketPath, err)
 		}
-		self.fd = fd
+		self.socket = SocketLifetime(fd: fd)
 		// Bounded writes: no progress for sendTimeout fails the write with EAGAIN, and a
 		// write to a peer that left fails with EPIPE instead of raising SIGPIPE.
 		let (seconds, attoseconds) = sendTimeout.components
@@ -106,13 +169,13 @@ public actor RPCConnection {
 
 		// Reader thread feeds an ordered line stream; a single task drains it into the actor,
 		// preserving on-wire order for events and responses alike.
-		let readFD = fd
+		let socket = self.socket
 		let (lines, feed) = AsyncStream<Data>.makeStream()
 		Thread.detachNewThread {
 			var buffer = Data()
 			var chunk = [UInt8](repeating: 0, count: 64 * 1024)
 			while true {
-				let n = read(readFD, &chunk, chunk.count)
+				let n = read(socket.fd, &chunk, chunk.count)
 				if n <= 0 { break }
 				buffer.append(contentsOf: chunk[0..<n])
 				while let newline = buffer.firstIndex(of: 0x0A) {
@@ -122,7 +185,9 @@ public actor RPCConnection {
 						feed.yield(line)
 					}
 				}
+				readerHook?()
 			}
+			socket.readerFinished()
 			feed.finish()
 		}
 		Task { [weak self] in
@@ -200,7 +265,7 @@ public actor RPCConnection {
 		return payload.withUnsafeBytes { raw -> Bool in
 			var offset = 0
 			while offset < raw.count {
-				let n = write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+				let n = write(socket.fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
 				if n <= 0 {
 					if errno == EINTR { continue }
 					return false
@@ -256,7 +321,7 @@ public actor RPCConnection {
 	private func teardown() {
 		guard !closed else { return }
 		closed = true
-		close(fd)
+		socket.shutDownByOwner()
 		for call in pending.values {
 			call.timer.cancel()
 			call.continuation.resume(throwing: ConnectionError.disconnected)
@@ -272,4 +337,13 @@ public actor RPCConnection {
 	public func disconnect() {
 		teardown()
 	}
+
+	// A connection dropped without disconnect() still ends its reader and frees the socket.
+	deinit {
+		socket.shutDownByOwner()
+	}
+
+	// Test seams: the raw descriptor number, and whether it has been closed.
+	nonisolated var fdForTesting: Int32 { socket.fd }
+	nonisolated var socketClosedForTesting: Bool { socket.isClosed }
 }
