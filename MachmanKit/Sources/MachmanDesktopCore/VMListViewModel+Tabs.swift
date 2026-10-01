@@ -103,6 +103,21 @@ extension VMListViewModel {
 		}
 	}
 
+	// The tree mirrors the canvas (T8): when the shown VM's active tab CHANGES — a tab
+	// click, ⇧⌘[ / ], a pane click, a close's fallback, a drag between panes — its row is
+	// selected, so the inspector follows the tab the user is working in. Divider drags,
+	// reorders, other VMs' canvases and renames (the incoming layouts lack the old key)
+	// leave the selection alone. Nothing reopens: the tree's deferred mirror skips openNode
+	// when the published selection already matches the List's. Runs inside the store's
+	// willSet, so canvases still holds the old layouts.
+	func canvasesWillChange(_ incoming: [String: CanvasState]) {
+		guard let name = selectedName else { return }
+		let before = canvases.canvas(for: name).activeTab
+		guard let after = incoming[name]?.activeTab, after != before else { return }
+		let node = Self.treeNode(for: after)
+		if treeSelection != [node] { treeSelection = [node] }
+	}
+
 	// MARK: - SSH sessions
 
 	// The VM's open sessions: its canvas's ssh tabs in order, then the sessions torn into

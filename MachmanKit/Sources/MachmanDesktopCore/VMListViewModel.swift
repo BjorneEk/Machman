@@ -140,6 +140,7 @@ public final class VMListViewModel: ObservableObject {
 	private var storeForwarder: AnyCancellable?
 	private var operationsForwarder: AnyCancellable?
 	private var canvasForwarder: AnyCancellable?
+	private var activeTabReactor: AnyCancellable?
 	private var listReactor: AnyCancellable?
 	// Last state seen per VM, for outcome toasts: diffing the store's list catches changes
 	// that arrive via reload (no discrete event) and dedupes doubled events.
@@ -172,6 +173,12 @@ public final class VMListViewModel: ObservableObject {
 		// Canvas changes flip menu state (Save Terminal follows the active tab).
 		canvasForwarder = canvases.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
+		}
+		// Canvas → tree (T8): a switch of the shown VM's active tab selects that tab's row.
+		// $canvases emits the incoming layouts on willSet, so the store still holds the old
+		// ones to compare against; dropFirst skips the replay of the stored layouts at init.
+		activeTabReactor = canvases.$canvases.dropFirst().sink { [weak self] incoming in
+			self?.canvasesWillChange(incoming)
 		}
 		// React AFTER every list refresh (reconcile tabs, prime phases). $vms emits the
 		// incoming value on willSet — use it, never store.vms (still the old list here).

@@ -88,6 +88,28 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: false)
 		},
+		// T8: the active canvas tab selects its tree row, and the inspector follows it. The
+		// sample console socket is under /var/empty, so the terminal's connect fails there.
+		RenderScene(
+			"window.main.console-tab",
+			"VMNavigationView, Debian's Console 0 tab active; tree row and inspector follow",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			panels: { ctx in
+				[
+					tree(ctx),
+					AnyView(InspectorView(
+						viewModel: ctx.viewModel, sessions: ctx.terminals,
+						profiles: ctx.profiles, vm: ctx.vm)
+						.padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			var canvas = ctx.canvases.canvas(for: "Debian")
+			canvas.open(.config)
+			canvas.open(.terminal(InspectorScenes.console))
+			ctx.canvases.setCanvas(canvas, for: "Debian")
+			return mainWindow(ctx, inspector: true)
+		},
 		RenderScene(
 			"window.torn", "TornTabWindowView, Debian's config tab torn off",
 			widths: [800], height: 520, chrome: .window
