@@ -26,6 +26,9 @@ struct GuestSetupInspector: View {
 	}
 	private var setup: GuestSetupInfo? { vm.setup }
 	private var installed: Bool { setup?.installed == true }
+	// A failed last run keeps the installer served (the daemon's serve rule) until a run
+	// gets through: its commands stay out, whatever the reinstall toggle says.
+	private var lastRunFailed: Bool { setup?.lastRunStatus == "failed" }
 
 	var body: some View {
 		Form {
@@ -63,7 +66,7 @@ struct GuestSetupInspector: View {
 			// While setup is (re)installable the row says what a run will find — the
 			// share already automounted (and how) or merely available. Installed and
 			// collapsed, the ephemeral-payload lifecycle line returns.
-			if installed && !allowReinstall {
+			if installed && !allowReinstall && !lastRunFailed {
 				// Not serving: the reserved dirs ride the share EMPTY (content only
 				// while installing — the toggle below brings it back).
 				LabeledContent("Payload") {
@@ -241,7 +244,7 @@ struct GuestSetupInspector: View {
 	@ViewBuilder
 	private var setupSection: some View {
 		Section("Setup") {
-			if installed && !allowReinstall {
+			if installed && !allowReinstall && !lastRunFailed {
 				Label("Installed — the script ran in this guest.",
 					systemImage: MachmanSymbols.activeEntry)
 					.foregroundStyle(MachmanColors.stateRunning)
@@ -256,7 +259,7 @@ struct GuestSetupInspector: View {
 			// The serve boundary, stated where it is decided: on = filled live, off =
 			// content leaves with the run (never yanked from under the guest).
 			if installed, vm.state.isRunning {
-				Text(allowReinstall
+				Text(allowReinstall || lastRunFailed
 					? "Serving — the installer is in the share."
 					: "Not serving — clears at shutdown if present.")
 					.font(.caption)

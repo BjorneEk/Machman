@@ -82,10 +82,12 @@ struct GuestSetupConfig: Codable, Equatable {
 
 extension VMConfig {
 	// THE serve rule, one place: fresh guests always serve the installer; an installed
-	// guest serves only while a reinstall/update is requested. Off, the share carries
-	// two empty reserved dirs — mountable, nothing inside.
+	// guest serves only while a reinstall/update is requested — or while its last run
+	// failed, until a run gets through (a re-run is the user's next step). Off, the share
+	// carries two empty reserved dirs — mountable, nothing inside.
 	var servesSetupPayload: Bool {
 		setup?.installed != true || setup?.reinstallRequested == true
+			|| setup?.lastRunStatus == "failed"
 	}
 }
 

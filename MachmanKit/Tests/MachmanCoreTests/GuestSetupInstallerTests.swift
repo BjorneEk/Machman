@@ -431,6 +431,26 @@ struct GuestSetupInstallerTests {
 		}
 	}
 
+	// S32: a run that failed after touching the guest (the exit trap's report) is a report
+	// on file, but the installer stays served until a run gets through — the user's next
+	// step is a re-run. A partial run is through: it stops serving like an ok one.
+	@Test @MainActor func aFailedRunKeepsTheInstallerServed() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "failedrun")
+			let vm = try VMConfig(name: "failedrun", memorySize: 1 << 30, cpuCount: 2)
+			#expect(vm.servesSetupPayload)
+			try GuestReport.parse("SCRIPT_VERSION=4\nSTATUS=failed\nNOTE=stopped during: sshd")
+				.apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.installed == true)
+			#expect(vm.servesSetupPayload)
+			try GuestReport.parse("SCRIPT_VERSION=4\nSTATUS=partial")
+				.apply(to: vm, stampedAt: Date())
+			#expect(!vm.servesSetupPayload)
+			try GuestReport.parse("SCRIPT_VERSION=4\nSTATUS=ok").apply(to: vm, stampedAt: Date())
+			#expect(!vm.servesSetupPayload)
+		}
+	}
+
 	// clears the current AND superseded directory names.
 	@Test @MainActor func payloadsAreEphemeral() throws {
 		try VMTestDir.withRedirectedDir {
