@@ -54,6 +54,24 @@ struct VMCopierTests {
 		return dir
 	}
 
+	// A bound UNIX socket file left behind, like a legacy <vm>/vm.sock (the fd closes, the
+	// file stays).
+	private func makeSocketFile(at path: String) throws {
+		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+		defer { close(fd) }
+		var addr = sockaddr_un()
+		addr.sun_family = sa_family_t(AF_UNIX)
+		let bytes = Array(path.utf8)
+		try #require(bytes.count < MemoryLayout.size(ofValue: addr.sun_path))
+		withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: bytes) }
+		let bound = withUnsafePointer(to: &addr) { pointer in
+			pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+			}
+		}
+		try #require(bound == 0)
+	}
+
 	private func loadConfig(_ dir: String) throws -> VMConfig {
 		try JSONDecoder().decode(
 			VMConfig.self, from: try Data(contentsOf: URL(fileURLWithPath: dir + "/config")))
@@ -157,6 +175,63 @@ struct VMCopierTests {
 		#expect(!fm.fileExists(atPath: dst + "/restore.ipsw"))
 		#expect(fm.fileExists(atPath: dst + "/efi_vars.fd"))
 		#expect(fm.fileExists(atPath: dst + "/notes.txt"))
+	}
+
+	// C6: a volume without clonefile (exFAT, HFS+, a network share) used to get directory
+	// sidecars as empty shells — kernels/ is user data — and a legacy vm.sock aborted the
+	// whole copy on every volume. Both paths: the clone and the byte copy.
+	@Test(arguments: [true, false])
+	func directorySidecarsTravelWhole(allowClone: Bool) throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		let fm = FileManager.default
+		try fm.createDirectory(
+			atPath: src + "/kernels/kernel/v1", withIntermediateDirectories: true)
+		try Data("kern".utf8).write(to: URL(fileURLWithPath: src + "/kernels/kernel/v1/vmlinuz"))
+		try fm.createSymbolicLink(
+			atPath: src + "/kernels/current", withDestinationPath: "kernel/v1/vmlinuz")
+		try makeSocketFile(at: src + "/vm.sock")
+		try makeSocketFile(at: src + "/kernels/s.sock")
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup",
+			allowClone: allowClone))
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/kernels/kernel/v1/vmlinuz"))
+			== Data("kern".utf8))
+		#expect(try fm.destinationOfSymbolicLink(atPath: dst + "/kernels/current")
+			== "kernel/v1/vmlinuz")
+		#expect((try? fm.attributesOfItem(atPath: dst + "/vm.sock")) == nil)
+		if !allowClone {
+			#expect((try? fm.attributesOfItem(atPath: dst + "/kernels/s.sock")) == nil)
+		}
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dst + "/disk.raw"))
+			== Data("rawbytes-disk".utf8))
+	}
+
+	// The fallback's own engine: a byte copy (what every cross-volume import takes) lands
+	// whole and reports progress to its total — the C callback used to trap.
+	@Test func byteCopyLandsWholeWithProgress() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let bytes = Data(repeating: 0xAB, count: 512 * 1024)
+		try bytes.write(to: URL(fileURLWithPath: library + "/big.img"))
+		final class Reports: @unchecked Sendable {
+			let lock = NSLock()
+			var values: [(UInt64, UInt64)] = []
+			func add(_ copied: UInt64, _ total: UInt64) {
+				lock.lock()
+				values.append((copied, total))
+				lock.unlock()
+			}
+		}
+		let reports = Reports()
+		try FileTransfer.copy(
+			src: library + "/big.img", dst: library + "/big.raw",
+			progress: { reports.add($0, $1) }, allowClone: false)
+		#expect(try Data(contentsOf: URL(fileURLWithPath: library + "/big.raw")) == bytes)
+		#expect(reports.values.last?.0 == UInt64(bytes.count))
+		#expect(reports.values.map(\.0) == reports.values.map(\.0).sorted())
 	}
 
 	@Test func macOSGuestGetsAFreshMachineID() throws {

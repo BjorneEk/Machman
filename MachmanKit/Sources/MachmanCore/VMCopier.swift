@@ -46,6 +46,9 @@ struct VMCopyRequest: Sendable {
 	var progress: (@Sendable (UInt64, UInt64) -> Void)? = nil
 	// Checked between chunks; returning true aborts with ioFailure. No UI drives it yet.
 	var isCancelled: (@Sendable () -> Bool)? = nil
+	// Test seam: false takes the byte-copy path a volume without clonefile(2) takes (exFAT,
+	// HFS+, network shares), on any volume.
+	var allowClone: Bool = true
 }
 
 enum VMCopier {
@@ -176,8 +179,11 @@ enum VMCopier {
 		for entry in try fm.contentsOfDirectory(atPath: src).sorted() {
 			if skipped.contains(entry) { continue }
 			if entry.hasSuffix(".raw") && !clonedRaws.contains(entry) { continue }
-			let size = (try? fm.attributesOfItem(atPath: src + "/" + entry)[.size] as? UInt64)
-				.flatMap { $0 } ?? 0
+			guard let size = travelSize(atPath: src + "/" + entry) else {
+				MachmanLogger.log(.log,
+					"copying \(config.name): left out \(entry) (not a file or folder)")
+				continue
+			}
 			travel.append((entry, size))
 		}
 		let totalBytes = travel.reduce(0) { $0 + $1.size }
@@ -188,7 +194,7 @@ enum VMCopier {
 			try cloneOrCopy(
 				src + "/" + file.name, staging + "/" + file.name,
 				base: copiedBase, size: file.size, throttle: throttle,
-				isCancelled: request.isCancelled)
+				isCancelled: request.isCancelled, allowClone: request.allowClone)
 			copiedBase += file.size
 			if clonedRaws.contains(file.name) {
 				excludeFromBackup(path: staging + "/" + file.name)
@@ -198,7 +204,7 @@ enum VMCopier {
 			try cloneOrCopy(
 				clone.source, staging + "/" + clone.file,
 				base: copiedBase, size: clone.size, throttle: throttle,
-				isCancelled: request.isCancelled)
+				isCancelled: request.isCancelled, allowClone: request.allowClone)
 			copiedBase += clone.size
 			excludeFromBackup(path: staging + "/" + clone.file)   // owned storage now
 		}
@@ -275,16 +281,56 @@ enum VMCopier {
 		return .reference
 	}
 
-	// clonefile(2) first — instant, and the common same-volume case. The copyfile fallback
-	// carries the per-chunk progress callback for the copies that are actually slow.
+	private enum EntryKind { case file, directory, link }
+
+	// What a directory entry is, links not followed; nil for what never travels — a socket
+	// (a legacy vm.sock: copyfile refuses it with ENOTSUP, which aborted the whole copy), a
+	// FIFO (opening one blocks) or a device.
+	private static func entryKind(atPath path: String) -> EntryKind? {
+		guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+			let type = attributes[.type] as? FileAttributeType else { return nil }
+		switch type {
+		case .typeRegular: return .file
+		case .typeDirectory: return .directory
+		case .typeSymbolicLink: return .link
+		default: return nil
+		}
+	}
+
+	// The bytes one sidecar entry carries, for progress: a file's size, a directory's files
+	// summed (a directory's own size is its entry table), 0 for a link. nil = never travels.
+	static func travelSize(atPath path: String) -> UInt64? {
+		switch entryKind(atPath: path) {
+		case .file:
+			return (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64)
+				.flatMap { $0 } ?? 0
+		case .directory:
+			let children = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+			return children.reduce(0) { $0 + (travelSize(atPath: path + "/" + $1) ?? 0) }
+		case .link:
+			return 0
+		case nil:
+			return nil
+		}
+	}
+
+	// clonefile(2) first — instant, the common same-volume case, and a whole directory tree
+	// at once. The copyfile fallback carries the per-chunk progress callback for the copies
+	// that are actually slow; a directory falls back to copyTree.
 	fileprivate static func cloneOrCopy(
 		_ src: String, _ dst: String, base: UInt64, size: UInt64,
-		throttle: ProgressThrottle, isCancelled: (@Sendable () -> Bool)?
+		throttle: ProgressThrottle, isCancelled: (@Sendable () -> Bool)?,
+		allowClone: Bool = true
 	) throws {
 		if isCancelled?() == true {
 			throw MachmanError(code: .ioFailure, message: "copy canceled")
 		}
-		if clonefile(src, dst, 0) == 0 {
+		if allowClone, clonefile(src, dst, 0) == 0 {
+			throttle.report(base + size)
+			return
+		}
+		if entryKind(atPath: src) == .directory {
+			try copyTree(src, dst, base: base, throttle: throttle, isCancelled: isCancelled)
 			throttle.report(base + size)
 			return
 		}
@@ -295,9 +341,12 @@ enum VMCopier {
 		let unmanaged = Unmanaged.passRetained(context)
 		defer { unmanaged.release() }
 		copyfile_state_set(state, UInt32(COPYFILE_STATE_STATUS_CTX), unmanaged.toOpaque())
+		// Typed first: the bare function name is a Swift closure value (two words), and the
+		// bit cast of THAT trapped every byte copy — the C pointer is one word.
+		let callback: copyfile_callback_t = copyStatusCallback
 		copyfile_state_set(
 			state, UInt32(COPYFILE_STATE_STATUS_CB),
-			unsafeBitCast(copyStatusCallback, to: UnsafeRawPointer.self))
+			unsafeBitCast(callback, to: UnsafeRawPointer.self))
 		guard copyfile(src, dst, state, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
 			if context.canceled {
 				throw MachmanError(code: .ioFailure, message: "copy canceled")
@@ -308,21 +357,62 @@ enum VMCopier {
 		}
 		throttle.report(base + size)
 	}
+
+	// The byte copy of a directory (C6), entry by entry: copyfile without COPYFILE_RECURSIVE
+	// makes only the directory itself (its mode, ACL and xattrs — an empty shell), and with
+	// it the walk stops at the first socket. Files and subdirectories go through
+	// cloneOrCopy with progress, links travel as links (as clonefile carries them), and
+	// sockets, FIFOs and devices are left out.
+	private static func copyTree(
+		_ src: String, _ dst: String, base: UInt64,
+		throttle: ProgressThrottle, isCancelled: (@Sendable () -> Bool)?
+	) throws {
+		guard copyfile(src, dst, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
+			throw MachmanError(
+				code: .ioFailure,
+				message: "copying \(src): \(String(cString: strerror(errno)))")
+		}
+		var offset = base
+		for child in try FileManager.default.contentsOfDirectory(atPath: src).sorted() {
+			let from = src + "/" + child
+			let to = dst + "/" + child
+			switch entryKind(atPath: from) {
+			case .file, .directory:
+				let size = travelSize(atPath: from) ?? 0
+				try cloneOrCopy(
+					from, to, base: offset, size: size, throttle: throttle,
+					isCancelled: isCancelled, allowClone: false)
+				offset += size
+			case .link:
+				let flags = copyfile_flags_t(COPYFILE_ALL | COPYFILE_NOFOLLOW_SRC)
+				guard copyfile(from, to, nil, flags) == 0 else {
+					throw MachmanError(
+						code: .ioFailure,
+						message: "copying \(from): \(String(cString: strerror(errno)))")
+				}
+			case nil:
+				MachmanLogger.log(.log, "copy left out \(from) (not a file or folder)")
+			}
+		}
+	}
 }
 
 // Single-file transfer with the copier's clone-first mechanics and throttled progress —
 // the engine under disk imports and promotes.
 enum FileTransfer {
+	// allowClone false (tests) takes the byte copy a cross-volume import takes.
 	nonisolated static func copy(
 		src: String, dst: String,
 		progress: (@Sendable (UInt64, UInt64) -> Void)? = nil,
-		isCancelled: (@Sendable () -> Bool)? = nil
+		isCancelled: (@Sendable () -> Bool)? = nil,
+		allowClone: Bool = true
 	) throws {
 		let size = (try? FileManager.default.attributesOfItem(atPath: src)[.size] as? UInt64)
 			.flatMap { $0 } ?? 0
 		let throttle = ProgressThrottle(total: size, report: progress)
 		try VMCopier.cloneOrCopy(
-			src, dst, base: 0, size: size, throttle: throttle, isCancelled: isCancelled)
+			src, dst, base: 0, size: size, throttle: throttle, isCancelled: isCancelled,
+			allowClone: allowClone)
 		throttle.finish(size)
 	}
 }
