@@ -435,10 +435,19 @@ public final class VMRegistry {
 			throw MachmanError(
 				code: .invalidState, message: "wait for the macOS install to finish first")
 		}
+		do {
+			try VMConfig.deleteVMDirectory(name: name)
+		} catch {
+			// What is left decides (E16): a readable config keeps the VM listed, so the
+			// client's error and the list agree and the user can retry; one the partial
+			// delete took is gone, as the next scan would have it.
+			reload(name: name)
+			events.emit(.listChanged)
+			throw error
+		}
 		presenter.dropWindow(name: name)
 		vms[name] = nil
 		installSessions[name] = nil
-		try VMConfig.deleteVMDirectory(name: name)
 		events.emit(.listChanged)
 	}
 
