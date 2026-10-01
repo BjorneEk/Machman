@@ -117,8 +117,6 @@ final class UDSListener {
 		close(fd)
 	}
 
-	// Whether something is actually accepting on this socket. The file existing means nothing:
-	// only an orderly shutdown removes it, so anything killed leaves one behind.
 	// Sets the socket's and its directory's access and modification times to now; false when
 	// the socket itself could not be touched. Internal so the serial data-plane sockets, bound
 	// outside this listener, can adopt it.
@@ -128,8 +126,10 @@ final class UDSListener {
 		return utimes(path, nil) == 0
 	}
 
-	// Someone is listening on `path`. A refused connect also means a full accept queue (see
-	// the backlog in init), which SOMAXCONN makes unlikely but not impossible.
+	// Whether something is actually accepting on this socket. The file existing means nothing:
+	// only an orderly shutdown removes it, so anything killed leaves one behind. A refused
+	// connect also means a full accept queue (see the backlog in init), which SOMAXCONN makes
+	// unlikely but not impossible.
 	static func isLive(path: String) -> Bool {
 		guard FileManager.default.fileExists(atPath: path) else { return false }
 		guard var addr = try? makeAddr(path) else { return false }
