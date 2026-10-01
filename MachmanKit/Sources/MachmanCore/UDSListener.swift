@@ -31,10 +31,15 @@ public enum UDSError: Error, CustomStringConvertible {
 final class UDSListener {
 	private let fd: Int32
 	private let source: DispatchSourceRead
+	private let keepAliveTimer: DispatchSourceTimer
 	private let path: String
 
 	// onAccept is called on `queue` with each accepted (already non-blocking-cleared) fd.
-	init(path: String, queue: DispatchQueue, onAccept: @escaping (Int32) -> Void) throws {
+	// keepAlive is how often the socket's timestamps are refreshed (see touch).
+	init(
+		path: String, queue: DispatchQueue, keepAlive: DispatchTimeInterval = .seconds(3600),
+		onAccept: @escaping (Int32) -> Void
+	) throws {
 		self.path = path
 		var addr = try Self.makeAddr(path)
 
@@ -73,9 +78,27 @@ final class UDSListener {
 			}
 		}
 		source.resume()
+
+		// macOS's dirhelper deletes entries under /var/folders/…/T that went untouched for 3
+		// days (CLEAN_FILES_OLDER_THAN_DAYS=3, run daily at 03:35), and connects never refresh
+		// a socket's timestamps. A reaped vm-*.sock orphans its running vmhost; a reaped
+		// machman.sock lets a second daemon bind. tmux defends its socket the same way.
+		keepAliveTimer = DispatchSource.makeTimerSource(queue: queue)
+		keepAliveTimer.schedule(deadline: .now() + keepAlive, repeating: keepAlive)
+		var reportedMissing = false
+		keepAliveTimer.setEventHandler { [path] in
+			guard !Self.touch(path), !reportedMissing,
+				!FileManager.default.fileExists(atPath: path) else { return }
+			// Never rebound: a second daemon may own the path by now.
+			reportedMissing = true
+			MachmanLogger.log(.passiveError,
+				"\(path) was removed — new clients cannot reach this process until it restarts")
+		}
+		keepAliveTimer.resume()
 	}
 
 	func shutdown() {
+		keepAliveTimer.cancel()
 		source.cancel()
 		close(fd)
 		unlink(path)
@@ -86,12 +109,22 @@ final class UDSListener {
 	// the fd NUMBER under a still-armed source, which then watches whatever unrelated
 	// socket a parallel test binds to that number (a real in-suite flake).
 	func simulateKillForTesting() {
+		keepAliveTimer.cancel()
 		source.cancel()
 		close(fd)
 	}
 
 	// Whether something is actually accepting on this socket. The file existing means nothing:
 	// only an orderly shutdown removes it, so anything killed leaves one behind.
+	// Sets the socket's and its directory's access and modification times to now; false when
+	// the socket itself could not be touched. Internal so the serial data-plane sockets, bound
+	// outside this listener, can adopt it.
+	@discardableResult
+	static func touch(_ path: String) -> Bool {
+		_ = utimes((path as NSString).deletingLastPathComponent, nil)
+		return utimes(path, nil) == 0
+	}
+
 	static func isLive(path: String) -> Bool {
 		guard FileManager.default.fileExists(atPath: path) else { return false }
 		guard var addr = try? makeAddr(path) else { return false }

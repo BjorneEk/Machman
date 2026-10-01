@@ -17,7 +17,8 @@ default.
 
 Mode 0600 — filesystem permissions are the auth boundary (same user only). One daemon per
 socket: a second instance probes, finds a live listener, and refuses to start; a stale socket
-file is reclaimed.
+file is reclaimed. Listeners refresh their socket's timestamps hourly, so the system's temp-dir
+cleaner (which removes entries untouched for 3 days) never reaps a live one.
 
 ## Framing & envelope
 
