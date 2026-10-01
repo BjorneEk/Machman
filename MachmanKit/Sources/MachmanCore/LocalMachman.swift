@@ -529,14 +529,22 @@ public final class LocalMachman: MachmanControlling {
 			kind = .guestSetup
 		}
 		let vm = try lookup(name)
-		try vm.config.removeDevice(kind: kind)
-		if kind == .guestSetup {
-			// The share dirs stop being served next boot; drop them from disk too. The
-			// keypair and config.ssh survive re-adds — vm.ssh.reset is the deeper wipe.
-			GuestSetupInstaller.removePayload(for: vm.config)
-		}
+		try detachDevice(kind, from: vm)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
+	}
+
+	// The sync core (attachDevice's twin), so the ordering is testable without the async
+	// shell. Guest setup's share dirs stop being served at the next boot and leave the disk
+	// with the device — at once when stopped, at teardown when running (D12: like
+	// vm.setup.serve off, content is never yanked from under a running guest; teardown's
+	// removePayload runs after the final report poll). The keypair and config.ssh survive
+	// re-adds — vm.ssh.reset is the deeper wipe.
+	func detachDevice(_ kind: DeviceKind, from vm: VirtualMachine) throws {
+		try vm.config.removeDevice(kind: kind)
+		if kind == .guestSetup, vm.runtime == nil {
+			GuestSetupInstaller.removePayload(for: vm.config)
+		}
 	}
 
 	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
