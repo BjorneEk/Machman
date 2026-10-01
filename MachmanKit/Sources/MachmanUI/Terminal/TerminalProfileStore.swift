@@ -21,11 +21,10 @@ public final class TerminalProfileStore: ObservableObject {
 	// Which profile the settings view is currently editing (drives its picker).
 	@Published public var editingProfileID: UUID?
 
-	private let fileURL: URL
-	// Persist off the main thread (serial), so a rapid edit stream (colour-picker drags, typing)
-	// never blocks the UI on disk I/O. flush() waits for it (tests, termination).
-	private let saveQueue = DispatchQueue(
-		label: "com.gustaffranzen.Machman.terminalProfiles.save", qos: .utility)
+	// Persisted off the main thread, so a rapid edit stream (colour-picker drags, typing) never
+	// blocks the UI on disk I/O; an unreadable file is set aside, never overwritten.
+	private let file: PersistedJSONFile<PersistedState>
+	private var setAsideNotice: SetAsideSettingsFile?
 
 	// Default location: <app-support>/<suite>/TerminalProfiles.json. Injectable for tests.
 	// nonisolated so it can be used as a default argument (evaluated off the main actor).
@@ -35,14 +34,15 @@ public final class TerminalProfileStore: ObservableObject {
 	}
 
 	public init(fileURL: URL = TerminalProfileStore.defaultURL()) {
-		self.fileURL = fileURL
-		if let data = try? Data(contentsOf: fileURL),
-			let state = try? JSONDecoder().decode(PersistedState.self, from: data) {
-			self.profiles = state.profiles
-			self.associations = state.associations
-		} else {
-			self.profiles = []
-			self.associations = [:]
+		let file = PersistedJSONFile<PersistedState>(
+			url: fileURL, label: "TerminalProfileStore",
+			queueLabel: "com.gustaffranzen.Machman.terminalProfiles.save")
+		self.file = file
+		let state = file.load()
+		self.profiles = state?.profiles ?? []
+		self.associations = state?.associations ?? [:]
+		self.setAsideNotice = file.backupURL.map {
+			SetAsideSettingsFile(what: "terminal profiles", backup: $0)
 		}
 		ensureDefault()
 	}
@@ -154,30 +154,36 @@ public final class TerminalProfileStore: ObservableObject {
 	}
 
 	private func save() {
-		// Snapshot on the main actor (cheap value copy), then encode + write off it.
-		let snapshot = PersistedState(profiles: profiles, associations: associations)
-		let url = fileURL
-		saveQueue.async {
-			do {
-				let encoder = JSONEncoder()
-				encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-				let data = try encoder.encode(snapshot)
-				try FileManager.default.createDirectory(
-					at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-				try data.write(to: url, options: .atomic)
-			} catch {
-				MachmanLogger.log(.passiveError, "TerminalProfileStore save failed: \(error)")
-			}
-		}
+		// Snapshot on the main actor (cheap value copy); the file encodes + writes off it.
+		file.save(PersistedState(profiles: profiles, associations: associations))
 	}
 
 	// Block until pending writes have landed on disk (app termination and tests).
 	public func flush() {
-		saveQueue.sync {}
+		file.flush()
 	}
 
-	private struct PersistedState: Codable {
+	private struct PersistedState: Codable, Sendable {
 		var profiles: [TerminalProfile]
 		var associations: [String: UUID]
+
+		init(profiles: [TerminalProfile], associations: [String: UUID]) {
+			self.profiles = profiles
+			self.associations = associations
+		}
+
+		// One bad profile or association costs only itself.
+		init(from decoder: Decoder) throws {
+			let c = try decoder.container(keyedBy: CodingKeys.self)
+			profiles = c.decodeTolerantArray(of: TerminalProfile.self, forKey: .profiles)
+			associations = c.decodeTolerantDictionary(of: UUID.self, forKey: .associations)
+		}
+	}
+}
+
+extension TerminalProfileStore: SetAsideReporting {
+	public func takeSetAsideNotice() -> SetAsideSettingsFile? {
+		defer { setAsideNotice = nil }
+		return setAsideNotice
 	}
 }

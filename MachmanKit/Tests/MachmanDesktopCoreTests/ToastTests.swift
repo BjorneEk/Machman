@@ -6,7 +6,8 @@ import MachmanFixtures
 import MachmanTestSupport
 @testable import MachmanDesktopCore
 
-// The toast corner stays readable: repeated warnings collapse, the stack is capped (P15).
+// The toast corner stays readable: repeated warnings collapse, the stack is capped (P15); a
+// settings file set aside at launch is announced once (P19).
 @MainActor
 struct ToastTests {
 	@Test func aRepeatedWarningKeepsOneToast() async {
@@ -40,5 +41,21 @@ struct ToastTests {
 		#expect(h.viewModel.toasts.count == VMListViewModel.maxToasts)
 		#expect(h.viewModel.toasts.first?.message == "SSH: connecting to Debian…")
 		#expect(h.viewModel.toasts.last?.message == "w6")
+	}
+
+	// A settings file set aside at launch is announced once, naming its backup (P19).
+	@Test func anUnreadableSettingsFileIsAnnouncedOnce() async throws {
+		let h = await DesktopHarness.make()
+		let dir = TestEnvironment.scratchURL.appendingPathComponent(UUID().uuidString)
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		let url = dir.appendingPathComponent("TerminalProfiles.json")
+		try Data("not json".utf8).write(to: url)
+		let profiles = TerminalProfileStore(fileURL: url)
+		h.viewModel.announceSetAsideSettings([profiles, h.canvases])
+		#expect(h.viewModel.toasts.map(\.message) == [
+			"Couldn't read your terminal profiles — kept them as TerminalProfiles.json.bak.",
+		])
+		h.viewModel.announceSetAsideSettings([profiles, h.canvases])   // as after a reconnect
+		#expect(h.viewModel.toasts.count == 1)
 	}
 }

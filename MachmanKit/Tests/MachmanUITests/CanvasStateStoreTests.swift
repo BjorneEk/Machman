@@ -98,4 +98,33 @@ struct CanvasStateStoreTests {
 		let tabs = reloaded.canvas(for: "vm").allOpenTabs
 		#expect(tabs == [.config, .terminal(hvc0)])
 	}
+
+	// MARK: - Unreadable values and files (P19)
+
+	@Test func anUnreadableLayoutFileIsSetAside() throws {
+		let url = tempURL()
+		try Data("{ truncated".utf8).write(to: url)
+		let store = CanvasStateStore(fileURL: url)
+		#expect(store.canvases.isEmpty)
+		var canvas = CanvasState()
+		canvas.open(.config)
+		store.setCanvas(canvas, for: "debian")
+		store.flush()
+		let backup = URL(fileURLWithPath: url.path + ".bak")
+		#expect(try String(contentsOf: backup, encoding: .utf8) == "{ truncated")
+		#expect(CanvasStateStore(fileURL: url).canvas(for: "debian") == canvas)
+		#expect(store.takeSetAsideNotice()?.what == "tab layouts")
+	}
+
+	@Test func oneBrokenLayoutCostsOnlyThatVM() throws {
+		let url = tempURL()
+		var good = CanvasState()
+		good.open(.config)
+		good.open(.terminal(hvc0))
+		let encoded = String(decoding: try JSONEncoder().encode(good), as: UTF8.self)
+		try Data(#"{"canvases": {"good": \#(encoded), "broken": 42}}"#.utf8).write(to: url)
+		let store = CanvasStateStore(fileURL: url)
+		#expect(store.canvas(for: "good") == good)
+		#expect(store.canvases["broken"] == nil)
+	}
 }

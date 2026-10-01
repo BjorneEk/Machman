@@ -50,6 +50,10 @@ struct MachmanDesktopApp: App {
 						viewModel: viewModel, selection: $selection, profiles: profiles,
 						daemonVersion: connectedDaemonVersion)
 						.id(ObjectIdentifier(viewModel))   // remount per (re)connection
+						// A settings file set aside at launch is announced once.
+						.onAppear {
+							viewModel.announceSetAsideSettings([profiles, connection.canvases])
+						}
 				} else {
 					ConnectingView(connection: connection)
 				}

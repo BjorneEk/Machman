@@ -69,6 +69,24 @@ public struct TerminalColors: Codable, Equatable, Sendable {
 		self.selectionBackground = selectionBackground
 		self.ansi = ansi
 	}
+
+	// Field by field: a missing or mistyped colour takes OneDark's, and a palette that isn't
+	// exactly 16 entries takes OneDark's palette, so one bad key never fails the profile.
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		let preset = TerminalTheme.oneDark.colors
+		foreground = c.decodeTolerant(String.self, forKey: .foreground) ?? preset.foreground
+		background = c.decodeTolerant(String.self, forKey: .background) ?? preset.background
+		cursor = c.decodeTolerant(String.self, forKey: .cursor) ?? preset.cursor
+		cursorText = c.decodeTolerant(String.self, forKey: .cursorText)
+		selectionBackground = c.decodeTolerant(String.self, forKey: .selectionBackground)
+			?? preset.selectionBackground
+		if let palette = c.decodeTolerant([String].self, forKey: .ansi), palette.count == 16 {
+			ansi = palette
+		} else {
+			ansi = preset.ansi
+		}
+	}
 }
 
 // The built-in colour presets offered in the settings view. OneDark mirrors the user's kitty

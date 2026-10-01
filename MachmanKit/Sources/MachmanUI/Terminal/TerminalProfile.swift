@@ -88,24 +88,25 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 			cursor: cursor, tabStopWidth: tabStopWidth)
 	}
 
-	// Tolerant decode: every field optional-with-default, so a profile written by a newer build (or
-	// hand-edited) still loads instead of failing the whole file.
+	// Tolerant decode: a field that is absent, retyped or unknown to this build (a cursor style
+	// a newer build added) falls back to its default, so one bad value never costs the profile
+	// — or, through the store, the whole file.
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
-		self.id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-		self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Profile"
-		self.scrollback = try c.decodeIfPresent(Int.self, forKey: .scrollback) ?? 500_000
-		self.convertEol = try c.decodeIfPresent(Bool.self, forKey: .convertEol) ?? true
-		self.termName = try c.decodeIfPresent(String.self, forKey: .termName) ?? "xterm-256color"
-		self.cursor = try c.decodeIfPresent(TerminalCursor.self, forKey: .cursor) ?? .block
-		self.tabStopWidth = try c.decodeIfPresent(Int.self, forKey: .tabStopWidth) ?? 8
-		self.fontName = try c.decodeIfPresent(String.self, forKey: .fontName)
+		self.id = c.decodeTolerant(UUID.self, forKey: .id) ?? UUID()
+		self.name = c.decodeTolerant(String.self, forKey: .name) ?? "Profile"
+		self.scrollback = c.decodeTolerant(Int.self, forKey: .scrollback) ?? 500_000
+		self.convertEol = c.decodeTolerant(Bool.self, forKey: .convertEol) ?? true
+		self.termName = c.decodeTolerant(String.self, forKey: .termName) ?? "xterm-256color"
+		self.cursor = c.decodeTolerant(TerminalCursor.self, forKey: .cursor) ?? .block
+		self.tabStopWidth = c.decodeTolerant(Int.self, forKey: .tabStopWidth) ?? 8
+		self.fontName = c.decodeTolerant(String.self, forKey: .fontName)
 			?? TerminalProfile.defaultFontName
-		self.fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 13
-		self.colors = try c.decodeIfPresent(TerminalColors.self, forKey: .colors)
+		self.fontSize = c.decodeTolerant(Double.self, forKey: .fontSize) ?? 13
+		self.colors = c.decodeTolerant(TerminalColors.self, forKey: .colors)
 			?? TerminalTheme.oneDark.colors
-		self.optionAsMeta = try c.decodeIfPresent(Bool.self, forKey: .optionAsMeta) ?? true
-		self.mouseReporting = try c.decodeIfPresent(Bool.self, forKey: .mouseReporting) ?? false
+		self.optionAsMeta = c.decodeTolerant(Bool.self, forKey: .optionAsMeta) ?? true
+		self.mouseReporting = c.decodeTolerant(Bool.self, forKey: .mouseReporting) ?? false
 	}
 }
 

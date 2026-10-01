@@ -28,5 +28,19 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		RenderScene(
+			"overlay.settings-set-aside",
+			"NotificationOverlay: an unreadable settings file set aside at launch",
+			widths: [420], height: 300
+		) { ctx in
+			// A real store over an unreadable file in the sandbox: it sets the file aside.
+			let dir = RenderSandbox.dataDir.appendingPathComponent("set-aside-\(UUID())")
+			let url = dir.appendingPathComponent("TerminalProfiles.json")
+			try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+			try? Data("not json".utf8).write(to: url)
+			ctx.viewModel.announceSetAsideSettings([TerminalProfileStore(fileURL: url)])
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }

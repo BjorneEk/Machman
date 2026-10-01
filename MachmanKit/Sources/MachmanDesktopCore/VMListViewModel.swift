@@ -467,6 +467,18 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Settings files a store could not read at launch and set aside as a .bak (P19): one
+	// toast each, the first time a view model asks (a reconnect's never repeats it).
+	public func announceSetAsideSettings(_ stores: [any SetAsideReporting]) {
+		for store in stores {
+			guard let file = store.takeSetAsideNotice() else { continue }
+			pushToast(
+				symbol: MachmanSymbols.info,
+				message: "Couldn't read your \(file.what) — kept them as "
+					+ "\(file.backup.lastPathComponent).")
+		}
+	}
+
 	// Retire a named slot without replacing it (the wait ended in nothing worth saying).
 	public func dismissToast(key: String) {
 		toasts.removeAll { $0.key == key }

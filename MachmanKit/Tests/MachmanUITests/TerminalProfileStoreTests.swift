@@ -90,4 +90,80 @@ struct TerminalProfileStoreTests {
 		#expect(store.profile(vm: "new", ref: ref).id == p.id)
 		#expect(store.profile(vm: "old", ref: ref).id == store.defaultProfile.id)
 	}
+
+	// MARK: - Unreadable values and files (P19)
+
+	private static let customID = UUID(uuidString: "5A1E0000-0000-4000-8000-000000000001")!
+	private let console = SerialPortRef(kind: .console, index: 0)
+
+	private func write(_ json: String, to url: URL) throws {
+		try FileManager.default.createDirectory(
+			at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+		try Data(json.utf8).write(to: url)
+	}
+
+	// A cursor style from a newer build costs that one field, never the file.
+	@Test func anUnknownCursorKeepsEveryProfile() throws {
+		let url = tempURL()
+		let key = console.assocKey(vm: "vm1")
+		try write("""
+			{"profiles": [{"id": "\(Self.customID)", "name": "Big", "cursor": "blinkHollow",
+			  "fontSize": 18}],
+			 "associations": {"\(key)": "\(Self.customID)"}}
+			""", to: url)
+		let store = TerminalProfileStore(fileURL: url)
+		let custom = try #require(store.profile(id: Self.customID))
+		#expect(custom.name == "Big")
+		#expect(custom.fontSize == 18)
+		#expect(custom.cursor == .block)
+		#expect(store.associatedID(vm: "vm1", ref: console) == Self.customID)
+	}
+
+	@Test func anUnreadableFileIsSetAside() throws {
+		let url = tempURL()
+		try write("not json", to: url)
+		let store = TerminalProfileStore(fileURL: url)
+		#expect(store.profiles.map(\.id) == [TerminalProfile.defaultID])
+		store.flush()
+		let backup = URL(fileURLWithPath: url.path + ".bak")
+		#expect(try String(contentsOf: backup, encoding: .utf8) == "not json")
+		_ = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+		// The one-time notice names the backup, once.
+		let notice = store.takeSetAsideNotice()
+		#expect(notice?.what == "terminal profiles")
+		#expect(notice?.backup.path == backup.path)
+		#expect(store.takeSetAsideNotice() == nil)
+	}
+
+	@Test func aReadableFileGivesNoNotice() {
+		let store = TerminalProfileStore(fileURL: tempURL())
+		#expect(store.takeSetAsideNotice() == nil)
+	}
+
+	@Test func aBadAssociationOrProfileCostsOnlyItself() throws {
+		let url = tempURL()
+		let key = console.assocKey(vm: "vm1")
+		try write("""
+			{"profiles": [42, {"id": "\(Self.customID)", "name": "Big"}],
+			 "associations": {"\(key)": "\(Self.customID)", "vm2|uart|0": 42}}
+			""", to: url)
+		let store = TerminalProfileStore(fileURL: url)
+		#expect(store.profile(id: Self.customID)?.name == "Big")
+		#expect(store.associatedID(vm: "vm1", ref: console) == Self.customID)
+	}
+
+	@Test func missingColourKeysFallBackFieldByField() throws {
+		let url = tempURL()
+		try write("""
+			{"profiles": [{"id": "\(Self.customID)", "name": "Mono",
+			  "colors": {"foreground": "#ffffff", "ansi": ["#000000"]}}]}
+			""", to: url)
+		let store = TerminalProfileStore(fileURL: url)
+		let colors = try #require(store.profile(id: Self.customID)).colors
+		let oneDark = TerminalTheme.oneDark.colors
+		#expect(colors.foreground == "#ffffff")
+		#expect(colors.background == oneDark.background)
+		#expect(colors.cursor == oneDark.cursor)
+		#expect(colors.ansi == oneDark.ansi)   // not 16 entries: the preset's palette
+	}
 }

@@ -4,10 +4,12 @@
 //
 //  Client-side persistence of each VM's canvas layout (CanvasState), so a VM's tabs, panes
 //  and divider positions are restored as they last appeared. Pure desktop concern — nothing
-//  here touches the wire. Same pattern as TerminalProfileStore: a JSON file in the
-//  suite-scoped app-support directory, written atomically off the main thread; flush()
-//  waits for pending writes (termination, tests). The live terminal controllers behind the
-//  tabs stay in the app target (TerminalSessions); this stores only the value layout.
+//  here touches the wire. Same pattern as TerminalProfileStore (PersistedJSONFile): a JSON
+//  file in the suite-scoped app-support directory, written atomically off the main thread,
+//  read tolerantly (one broken layout costs only that VM's) and set aside as a .bak, never
+//  overwritten, when it can't be read at all; flush() waits for pending writes
+//  (termination, tests). The live terminal controllers behind the tabs stay in the app
+//  target (TerminalSessions); this stores only the value layout.
 //
 
 import Foundation
@@ -18,9 +20,8 @@ public final class CanvasStateStore: ObservableObject {
 	// Saved layouts by VM name. Only VMs whose canvas was ever changed have an entry.
 	@Published public private(set) var canvases: [String: CanvasState]
 
-	private let fileURL: URL
-	private let saveQueue = DispatchQueue(
-		label: "com.gustaffranzen.Machman.canvasLayouts.save", qos: .utility)
+	private let file: PersistedJSONFile<PersistedState>
+	private var setAsideNotice: SetAsideSettingsFile?
 
 	// Default location: <app-support>/<suite>/CanvasLayouts.json. Injectable for tests.
 	public nonisolated static func defaultURL() -> URL {
@@ -29,12 +30,13 @@ public final class CanvasStateStore: ObservableObject {
 	}
 
 	public init(fileURL: URL = CanvasStateStore.defaultURL()) {
-		self.fileURL = fileURL
-		if let data = try? Data(contentsOf: fileURL),
-			let state = try? JSONDecoder().decode(PersistedState.self, from: data) {
-			self.canvases = state.canvases
-		} else {
-			self.canvases = [:]
+		let file = PersistedJSONFile<PersistedState>(
+			url: fileURL, label: "CanvasStateStore",
+			queueLabel: "com.gustaffranzen.Machman.canvasLayouts.save")
+		self.file = file
+		self.canvases = file.load()?.canvases ?? [:]
+		self.setAsideNotice = file.backupURL.map {
+			SetAsideSettingsFile(what: "tab layouts", backup: $0)
 		}
 	}
 
@@ -77,31 +79,34 @@ public final class CanvasStateStore: ObservableObject {
 	// MARK: - Internals
 
 	private func save() {
-		// Snapshot on the main actor (cheap value copy), then encode + write off it.
+		// Snapshot on the main actor (cheap value copy); the file encodes + writes off it.
 		// SSH tabs are stripped: sessions are ephemeral, only layout persists.
-		let snapshot = PersistedState(
-			canvases: canvases.mapValues { $0.strippingEphemeralTabs() })
-		let url = fileURL
-		saveQueue.async {
-			do {
-				let encoder = JSONEncoder()
-				encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-				let data = try encoder.encode(snapshot)
-				try FileManager.default.createDirectory(
-					at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-				try data.write(to: url, options: .atomic)
-			} catch {
-				MachmanLogger.log(.passiveError, "CanvasStateStore save failed: \(error)")
-			}
-		}
+		file.save(PersistedState(canvases: canvases.mapValues { $0.strippingEphemeralTabs() }))
 	}
 
 	// Block until pending writes have landed on disk (app termination and tests).
 	public func flush() {
-		saveQueue.sync {}
+		file.flush()
 	}
 
-	private struct PersistedState: Codable {
+	private struct PersistedState: Codable, Sendable {
 		var canvases: [String: CanvasState]
+
+		init(canvases: [String: CanvasState]) {
+			self.canvases = canvases
+		}
+
+		// One VM's broken layout costs only that layout.
+		init(from decoder: Decoder) throws {
+			let c = try decoder.container(keyedBy: CodingKeys.self)
+			canvases = c.decodeTolerantDictionary(of: CanvasState.self, forKey: .canvases)
+		}
+	}
+}
+
+extension CanvasStateStore: SetAsideReporting {
+	public func takeSetAsideNotice() -> SetAsideSettingsFile? {
+		defer { setAsideNotice = nil }
+		return setAsideNotice
 	}
 }
