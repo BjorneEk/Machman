@@ -89,6 +89,8 @@ public actor RPCConnection {
 	private struct PendingCall {
 		let continuation: CheckedContinuation<Data, Error>
 		let timer: Task<Void, Never>
+		let method: RPCMethod
+		let request: Data   // the line as sent, for the interrupted-call record
 	}
 
 	private nonisolated let socket: SocketLifetime
@@ -100,6 +102,9 @@ public actor RPCConnection {
 	private var pending: [Int: PendingCall] = [:]
 	private var eventSubscribers: [UUID: AsyncStream<VMEvent>.Continuation] = [:]
 	private var closed = false
+	// What the connection's death cut off: the calls still waiting for a reply at teardown,
+	// oldest first (P12). Empty while the connection lives.
+	private var interrupted: [InterruptedCall] = []
 	// Fired once when the connection dies (EOF, write failure) — after pending calls fail.
 	private let onDisconnect: @Sendable () -> Void
 
@@ -234,7 +239,8 @@ public actor RPCConnection {
 					guard !Task.isCancelled else { return }
 					await self?.expire(id: id, method: method, deadline: deadline)
 				}
-				pending[id] = PendingCall(continuation: continuation, timer: timer)
+				pending[id] = PendingCall(
+					continuation: continuation, timer: timer, method: method, request: data)
 			}
 		} onCancel: {
 			Task { await self.abandon(id: id) }
@@ -322,6 +328,12 @@ public actor RPCConnection {
 		guard !closed else { return }
 		closed = true
 		socket.shutDownByOwner()
+		// Recorded before the callers hear: a caller that reacts to its .disconnected (or the
+		// owner's onDisconnect) already finds itself on the list. A call whose write failed
+		// was never fully sent, never pending, and is not on it.
+		interrupted = pending.sorted { $0.key < $1.key }.map { _, call in
+			InterruptedCall(method: call.method, vm: Self.peekName(call.request))
+		}
 		for call in pending.values {
 			call.timer.cancel()
 			call.continuation.resume(throwing: ConnectionError.disconnected)
@@ -336,6 +348,23 @@ public actor RPCConnection {
 
 	public func disconnect() {
 		teardown()
+	}
+
+	// The calls this connection's death left unanswered; empty while it lives.
+	public func interruptedCalls() -> [InterruptedCall] {
+		interrupted
+	}
+
+	private struct NamePeek: Decodable {
+		struct Params: Decodable {
+			let name: String?
+		}
+		let params: Params?
+	}
+
+	// The VM a request was about, read back from its own line; nil for anything else.
+	private static func peekName(_ line: Data) -> String? {
+		(try? MachmanWire.decoder().decode(NamePeek.self, from: line))?.params?.name
 	}
 
 	// A connection dropped without disconnect() still ends its reader and frees the socket.

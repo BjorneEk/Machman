@@ -70,6 +70,11 @@ public final class RemoteMachman: MachmanControlling {
 		await connection.disconnect()
 	}
 
+	// What a drop cut off (see InterruptedCall); empty while the connection lives.
+	public func interruptedCalls() async -> [InterruptedCall] {
+		await connection.interruptedCalls()
+	}
+
 	private func void<P: Codable>(
 		_ method: RPCMethod, _ params: P?,
 		deadline: Duration = RPCConnection.defaultCallDeadline
