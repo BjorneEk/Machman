@@ -249,6 +249,71 @@ struct SSHHostConfigWriterTests {
 			encoding: .utf8) == "ssh-ed25519 AAAA g machman:machman-abc:a-b\n")
 	}
 
+	// S23: dotfile managers keep ~/.ssh/config and authorized_keys as links. A write to the
+	// link's path replaced the link with a plain file, detaching the user's managed copy.
+	@Test func aSymlinkedUserConfigIsWrittenThrough() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let fm = FileManager.default
+		let dotfiles = root.appendingPathComponent("dotfiles")
+		try fm.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+		let target = dotfiles.appendingPathComponent("config")
+		try "Host work\n".write(to: target, atomically: true, encoding: .utf8)
+		try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path)
+		let link = root.appendingPathComponent("config")
+		try fm.createSymbolicLink(atPath: link.path, withDestinationPath: "dotfiles/config")
+
+		try SSHHostConfigWriter(sshDir: root).apply(entries: [entry()])
+		#expect(try fm.destinationOfSymbolicLink(atPath: link.path) == "dotfiles/config")
+		let text = try String(contentsOf: target, encoding: .utf8)
+		#expect(text.hasPrefix(SSHHostConfigWriter.includeLine))
+		#expect(text.contains("Host work"))
+		let mode = try fm.attributesOfItem(atPath: target.path)[.posixPermissions] as? NSNumber
+		#expect(mode?.intValue == 0o644)
+	}
+
+	@Test func aSymlinkedAuthorizedKeysIsWrittenThrough() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let fm = FileManager.default
+		let target = root.appendingPathComponent("keys-real")
+		try "ssh-ed25519 USERKEY mine\n".write(to: target, atomically: true, encoding: .utf8)
+		let link = root.appendingPathComponent("authorized_keys")
+		try fm.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+
+		try SSHHostConfigWriter(sshDir: root).setReverseKey(
+			"ssh-ed25519 AAAA g", marker: "machman-abc", vmName: "v")
+		#expect(try fm.destinationOfSymbolicLink(atPath: link.path) == target.path)
+		#expect(try String(contentsOf: target, encoding: .utf8)
+			== "ssh-ed25519 USERKEY mine\nssh-ed25519 AAAA g machman:machman-abc:v\n")
+	}
+
+	@Test func aDanglingOrUnwritableLinkIsRefusedNotReplaced() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let fm = FileManager.default
+		let writer = SSHHostConfigWriter(sshDir: root)
+		let link = root.appendingPathComponent("config")
+
+		// A broken link: refused, left as it is.
+		try fm.createSymbolicLink(atPath: link.path, withDestinationPath: "missing/config")
+		#expect(throws: MachmanError.self) { try writer.apply(entries: [entry()]) }
+		#expect(try fm.destinationOfSymbolicLink(atPath: link.path) == "missing/config")
+
+		// A link into a directory that can't be written (the nix store shape).
+		try fm.removeItem(at: link)
+		let store = root.appendingPathComponent("store")
+		try fm.createDirectory(at: store, withIntermediateDirectories: true)
+		let target = store.appendingPathComponent("config")
+		try "Host work\n".write(to: target, atomically: true, encoding: .utf8)
+		try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: store.path)
+		defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: store.path) }
+		try fm.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+		#expect(throws: MachmanError.self) { try writer.apply(entries: [entry()]) }
+		#expect(try fm.destinationOfSymbolicLink(atPath: link.path) == target.path)
+		#expect(try String(contentsOf: target, encoding: .utf8) == "Host work\n")
+	}
+
 	@Test func authorizedKeysSurgeryIsExactMatch() throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }

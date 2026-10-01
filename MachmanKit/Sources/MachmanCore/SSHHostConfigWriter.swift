@@ -8,7 +8,8 @@
 //  labeled reverse-access lines in ~/.ssh/authorized_keys. The base directory is
 //  injected so tests never touch the real ~/.ssh; the daemon owns the one live instance.
 //  Never edits the user's own content: the Include line and authorized_keys lines are
-//  exact-match surgical, the managed file is ours outright.
+//  exact-match surgical, the managed file is ours outright. The user's files keep their
+//  mode, and a linked one (stow, home-manager, chezmoi) is written through, never replaced.
 //
 
 import Foundation
@@ -155,8 +156,10 @@ public struct SSHHostConfigWriter {
 			}
 			config.append("")
 		}
-		try write(config.joined(separator: "\n") + "\n", to: managedConfig)
-		try write(pins.joined(separator: "\n") + (pins.isEmpty ? "" : "\n"), to: knownHosts)
+		try write(config.joined(separator: "\n") + "\n", to: managedConfig, userFile: false)
+		try write(
+			pins.joined(separator: "\n") + (pins.isEmpty ? "" : "\n"), to: knownHosts,
+			userFile: false)
 		try setIncludeLine(present: true)
 	}
 
@@ -217,7 +220,7 @@ public struct SSHHostConfigWriter {
 		} else {
 			return
 		}
-		try write(lines.joined(separator: "\n"), to: userConfig)
+		try write(lines.joined(separator: "\n"), to: userConfig, userFile: true)
 	}
 
 	// MARK: - Reverse access (authorized_keys)
@@ -250,12 +253,51 @@ public struct SSHHostConfigWriter {
 			return   // nothing to remove, don't create the file
 		}
 		try fm.createDirectory(at: sshDir, withIntermediateDirectories: true)
-		try write(lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n"), to: authorizedKeys)
+		try write(
+			lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n"), to: authorizedKeys,
+			userFile: true)
 	}
 
-	private func write(_ content: String, to url: URL) throws {
-		try content.write(to: url, atomically: true, encoding: .utf8)
-		try FileManager.default.setAttributes(
-			[.posixPermissions: 0o600], ofItemAtPath: url.path)
+	// Machman's own files are 0600. The user's own files (~/.ssh/config, authorized_keys)
+	// keep their mode, and when one is a symbolic link the write goes to the file it points
+	// at: an atomic write to the link's path would replace the link with a plain file and
+	// silently detach the user's managed copy (S23). A link to a missing or unwritable file
+	// (a broken stow link, the read-only nix store) is refused, never replaced.
+	private func write(_ content: String, to url: URL, userFile: Bool) throws {
+		let fm = FileManager.default
+		let target = userFile ? try writeTarget(for: url) : url
+		let priorMode = (try? fm.attributesOfItem(atPath: target.path))?[.posixPermissions]
+			as? NSNumber
+		do {
+			try Data(content.utf8).write(to: target, options: .atomic)
+		} catch where target != url {
+			throw MachmanError(
+				code: .ioFailure,
+				message: "\(url.path) links to \(target.path), which can't be written")
+		}
+		let mode = userFile ? priorMode?.intValue ?? 0o600 : 0o600
+		try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: target.path)
+	}
+
+	// The file a write to `url` must go to: `url` itself, or the end of its link chain.
+	private func writeTarget(for url: URL) throws -> URL {
+		let fm = FileManager.default
+		var current = url
+		for _ in 0..<16 {
+			guard let destination = try? fm.destinationOfSymbolicLink(atPath: current.path)
+			else {
+				if current != url, !fm.fileExists(atPath: current.path) {
+					throw MachmanError(
+						code: .ioFailure,
+						message: "\(url.path) links to a file that doesn't exist")
+				}
+				return current
+			}
+			current = destination.hasPrefix("/")
+				? URL(fileURLWithPath: destination)
+				: current.deletingLastPathComponent().appendingPathComponent(destination)
+					.standardizedFileURL
+		}
+		throw MachmanError(code: .ioFailure, message: "\(url.path) links through too many links")
 	}
 }
