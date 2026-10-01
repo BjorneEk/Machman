@@ -223,10 +223,10 @@ report_hook_install() {
 		chmod 755 /etc/local.d/machman-report.start
 		have rc-update && rc-update add local default >/dev/null 2>&1
 		;;
-	inittab|sysv|runit|openbsd-rc)
+	inittab|sysv|runit|openbsd-rc|netbsd-rc)
 		# /etc/local.d is openrc's mechanism — nothing executes it under these inits.
 		# They all run /etc/rc.local (sysvinit via the distro's rc.local service, Void's
-		# runit stage, OpenBSD's rc), so the hook lands there.
+		# runit stage, OpenBSD's rc, NetBSD's rc.d/local), so the hook lands there.
 		report_hook_rc_local "$_rh_script"
 		;;
 	freebsd-rc)

@@ -104,6 +104,8 @@ detect_init() {
 	# sd_booted(3), not `command -v systemctl`: Devuan ships apt without systemd.
 	if [ -d /run/systemd/system ]; then INIT=systemd
 	elif [ "$OS" = Darwin ]; then INIT=launchd
+	# NetBSD's rc.d reads rc.conf like FreeBSD's but has no sysrc (and a `service`).
+	elif [ "$OS" = NetBSD ]; then INIT=netbsd-rc
 	elif have rcctl; then INIT=openbsd-rc
 	elif have sysrc; then INIT=freebsd-rc
 	elif have rc-update && [ -d /etc/runlevels ]; then INIT=openrc
@@ -120,7 +122,8 @@ detect_init() {
 # Cheap existence probe for availability checks — detect_pm (which may ask) runs later,
 # only once features are selected.
 any_pm_present() {
-	for _app_bin in apt-get dnf yum zypper pacman apk xbps-install emerge pkg pkg_add; do
+	for _app_bin in apt-get dnf yum zypper pacman apk xbps-install emerge pkg pkgin pkg_add
+	do
 		have "$_app_bin" && return 0
 	done
 	return 1
@@ -135,7 +138,8 @@ detect_pm() {
 		return 0
 	fi
 	_dp_found=""
-	for _dp_bin in apt-get dnf yum zypper pacman apk xbps-install emerge pkg pkg_add; do
+	for _dp_bin in apt-get dnf yum zypper pacman apk xbps-install emerge pkg pkgin pkg_add
+	do
 		if have "$_dp_bin"; then
 			_dp_found="$_dp_found
 $(pm_id_of "$_dp_bin")"
@@ -176,6 +180,7 @@ pm_preferred_for_family() {
 	gentoo) echo emerge ;;
 	freebsd) echo pkg ;;
 	openbsd) echo pkg_add ;;
+	netbsd) echo pkgin ;;
 	*) echo "" ;;
 	esac
 }
@@ -191,6 +196,7 @@ pm_command() {
 	xbps) echo "xbps-install -y" ;;
 	emerge) echo "emerge --quiet" ;;
 	pkg) echo "pkg install -y" ;;
+	pkgin) echo "pkgin -y install" ;;
 	pkg_add) echo "pkg_add" ;;
 	*) echo "" ;;
 	esac
@@ -204,6 +210,7 @@ pkg_for_sshd() {
 	zypper) echo "openssh-server openssh" ;;
 	pacman|apk|xbps) echo "openssh" ;;
 	emerge) echo "net-misc/openssh" ;;
+	pkgin) echo "" ;;   # sshd is in NetBSD's base system
 	*) echo "" ;;
 	esac
 }
@@ -214,7 +221,9 @@ pkg_for_sshfs() {
 	dnf|yum) echo "fuse-sshfs sshfs" ;;
 	emerge) echo "net-fs/sshfs" ;;
 	pkg) echo "fusefs-sshfs" ;;
-	pkg_add) echo "sshfs-fuse" ;;
+	pkgin) echo "fuse-sshfs" ;;
+	# pkg_add is OpenBSD's ports and NetBSD's pkgsrc: the same tool, other names.
+	pkg_add) [ "$OS_FAMILY" = netbsd ] && echo "fuse-sshfs" || echo "sshfs-fuse" ;;
 	*) echo "" ;;
 	esac
 }
@@ -315,6 +324,7 @@ sshd_active() {
 	launchd) launchctl print system/com.openssh.sshd >/dev/null 2>&1 ;;
 	openbsd-rc) rcctl check sshd >/dev/null 2>&1 ;;
 	freebsd-rc) service sshd status >/dev/null 2>&1 ;;
+	netbsd-rc) /etc/rc.d/sshd status >/dev/null 2>&1 ;;
 	openrc) rc-service sshd status >/dev/null 2>&1 ;;
 	runit) sv status sshd >/dev/null 2>&1 ;;
 	*)
@@ -423,11 +433,13 @@ find_addresses() {
 # --------------------------------------------------------------------------- consoles ----
 
 # The guest device name for the index-th virtio console — mirrors the app's
-# SerialPortKind.guestDevice table.
+# SerialPortKind.guestDevice table. NetBSD's viocon(4) names unit, then port: Machman
+# attaches one single-port device per console.
 console_device() {
 	case "$OS_FAMILY" in
 	darwin) [ "$1" -eq 0 ] && echo "cu.virtio" || echo "cu.virtio$1" ;;
 	freebsd) echo "ttyV$1.0" ;;
+	netbsd) echo "ttyVI${1}0" ;;
 	*) echo "hvc$1" ;;
 	esac
 }
@@ -480,7 +492,7 @@ getty_persistent_on() {
 		done
 		return 1
 		;;
-	freebsd-rc)
+	freebsd-rc|netbsd-rc)
 		grep -q "^$1[[:space:]]" /etc/ttys 2>/dev/null \
 			&& ! grep -q "^$1[[:space:]].*[[:space:]]off" /etc/ttys 2>/dev/null
 		;;

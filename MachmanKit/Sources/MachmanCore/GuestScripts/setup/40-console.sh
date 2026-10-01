@@ -14,7 +14,7 @@ CONSOLE_ACTIONS=""         # "dev=install dev=verify dev=adopt dev=report dev=au
 CONSOLE_PLAN=""
 avail_console=0
 reason_console=""
-GETTY_MECH="none"          # systemd | launchd | inittab | runit | freebsd-rc | none
+GETTY_MECH="none"          # systemd | launchd | inittab | runit | ttys | none
 LAUNCHD_GETTY_PREFIX="com.machman.console-getty"
 CONSOLE_STAGE=""           # inittab/ttys lines staged for the marker block, one per line
 CONSOLE_STAGED_DEVS=""     # the devices those lines serve, space-separated
@@ -31,7 +31,7 @@ console_detect() {
 	systemd) GETTY_MECH=systemd ;;
 	launchd) GETTY_MECH=launchd ;;
 	runit) GETTY_MECH=runit ;;
-	freebsd-rc) GETTY_MECH=freebsd-rc ;;
+	freebsd-rc|netbsd-rc) GETTY_MECH=ttys ;;
 	inittab) GETTY_MECH=inittab ;;
 	openrc|sysv) [ -f /etc/inittab ] && GETTY_MECH=inittab || GETTY_MECH=none ;;
 	*) GETTY_MECH=none ;;
@@ -94,7 +94,7 @@ console_ownership() {
 			echo foreign
 		fi
 		;;
-	freebsd-rc)
+	ttys)
 		if console_line_in_block /etc/ttys "^$(console_dev_esc "$1")[[:space:]]"; then
 			echo ours
 		else
@@ -150,6 +150,13 @@ console_available() {
 			&& [ ! -f /boot/kernel/virtio_console.ko ] \
 			&& [ ! -f /boot/modules/virtio_console.ko ]; then
 			reason_console="no virtio_console driver in this FreeBSD"
+			return 0
+		fi
+		;;
+	netbsd)
+		# viocon(4) arrived in NetBSD 10, compiled in: a console device, or the version.
+		if ! console_any_device_present && [ "${OS_VERSION%%.*}" -lt 10 ] 2>/dev/null; then
+			reason_console="NetBSD before 10 has no virtio-console driver"
 			return 0
 		fi
 		;;
@@ -509,12 +516,18 @@ console_act_runit() {
 	return 0
 }
 
-console_act_freebsd() {
+# /etc/ttys, in each BSD's own getty format.
+console_act_ttys() {
 	if [ "$DRY_RUN" -eq 1 ]; then
 		acting "would add a getty line for $1 to /etc/ttys"
 		return 0
 	fi
-	console_stage "$1" "$(printf '%s "/usr/libexec/getty 3wire" vt100 onifexists secure' "$1")"
+	if [ "$OS_FAMILY" = netbsd ]; then
+		console_stage "$1" "$(printf '%s "/usr/libexec/getty default" vt100 on secure' "$1")"
+	else
+		console_stage "$1" \
+			"$(printf '%s "/usr/libexec/getty 3wire" vt100 onifexists secure' "$1")"
+	fi
 	return 0
 }
 
@@ -626,7 +639,7 @@ console_install_one() {
 	# A respawning getty on an absent device is a churn loop (systemd's unit binds the
 	# device and waits; launchd checks itself) — skip what is not there and say so.
 	case "$GETTY_MECH" in
-	inittab|runit|freebsd-rc)
+	inittab|runit|ttys)
 		if [ ! -e "/dev/$1" ] && [ "$DRY_RUN" -eq 0 ]; then
 			step_failed console "/dev/$1 is not present in this guest — skipped" \
 				"Boot with the console attached, then re-run."
@@ -638,7 +651,7 @@ console_install_one() {
 	systemd) console_act_systemd "$1" ;;
 	inittab) console_act_inittab "$1" ;;
 	runit) console_act_runit "$1" ;;
-	freebsd-rc) console_act_freebsd "$1" ;;
+	ttys) console_act_ttys "$1" ;;
 	launchd) console_act_launchd "$1" ;;
 	esac
 	return 0
@@ -678,7 +691,7 @@ console_act() {
 				# Machman wrote moves to its Machman-named one.
 				if [ "$DRY_RUN" -eq 0 ]; then
 					case "$GETTY_MECH" in
-					inittab|freebsd-rc) console_install_one "$_ca_dev"; _ca_flush=1 ;;
+					inittab|ttys) console_install_one "$_ca_dev"; _ca_flush=1 ;;
 					runit) console_install_one "$_ca_dev" ;;
 					esac
 				fi
@@ -701,7 +714,7 @@ console_act() {
 				inittab)
 					supersede_lines /etc/inittab "$(console_inittab_re "$_ca_dev")" \
 						|| _ca_ok=1 ;;
-				freebsd-rc)
+				ttys)
 					supersede_lines /etc/ttys \
 						"^$(console_dev_esc "$_ca_dev")[[:space:]]" || _ca_ok=1 ;;
 				esac
@@ -730,7 +743,7 @@ console_act() {
 				ok "logins land in /etc/inittab"
 			fi
 			;;
-		freebsd-rc)
+		ttys)
 			if console_flush_lines /etc/ttys; then
 				run "reloading init" kill -HUP 1 || true
 				ok "logins land in /etc/ttys"
@@ -789,13 +802,14 @@ console_uninstall() {
 		restore_superseded /etc/inittab || uninstall_kept
 		kill -HUP 1 2>/dev/null || true
 		;;
-	freebsd-rc)
+	ttys)
 		strip_block /etc/ttys || uninstall_kept
 		restore_superseded /etc/ttys || uninstall_kept
 		kill -HUP 1 2>/dev/null || true
 		# Deliberate keep, disclosed: un-listing virtio_console would take away the
 		# console devices — possibly the very one this uninstall is being read on.
-		if sysrc -n kld_list 2>/dev/null | grep -q virtio_console; then
+		if [ "$OS_FAMILY" = freebsd ] \
+			&& sysrc -n kld_list 2>/dev/null | grep -q virtio_console; then
 			note "kld_list keeps virtio_console (the console devices stay) — 'sysrc kld_list-=virtio_console' reverts it."
 		fi
 		;;

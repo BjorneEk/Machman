@@ -43,6 +43,7 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains(#"systemctl enable --now "$SSHD_UNIT""#))
 		#expect(s.contains("sysrc sshd_enable=YES"))          // FreeBSD
 		#expect(s.contains("rcctl enable sshd"))              // OpenBSD
+		#expect(s.contains("rc_conf_yes sshd"))               // NetBSD (rc.conf, no sysrc)
 		#expect(s.contains("rc-update add sshd default"))     // OpenRC
 		#expect(s.contains("ln -s /etc/sv/sshd /var/service/"))   // runit
 		#expect(s.contains("update-rc.d"))                    // SysV
@@ -58,14 +59,15 @@ struct GuestSetupInstallerTests {
 		for command in [
 			"apt-get install -y", "dnf install -y", "yum install -y",
 			"zypper --non-interactive install", "pacman -S --noconfirm", "apk add",
-			"xbps-install -y", "emerge --quiet", "pkg install -y", "pkg_add",
+			"xbps-install -y", "emerge --quiet", "pkg install -y", "pkgin -y install",
+			"pkg_add",
 		] {
 			#expect(s.contains(command), "missing package-manager command \(command)")
 		}
 		#expect(s.contains("openssh-server"))
 		#expect(s.contains("fuse-sshfs"))       // rhel-family sshfs
 		#expect(s.contains("fusefs-sshfs"))     // FreeBSD sshfs
-		#expect(s.contains("sshfs-fuse"))       // OpenBSD sshfs
+		#expect(s.contains("sshfs-fuse"))       // OpenBSD sshfs (pkgsrc: fuse-sshfs)
 	}
 
 	// The console and bootloader matrices — the half the v1 console script never had.
@@ -77,6 +79,7 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("::respawn:/sbin/getty 38400"))
 		#expect(s.contains("kill -HUP 1"))
 		#expect(s.contains(#""/usr/libexec/getty 3wire" vt100 onifexists secure"#))
+		#expect(s.contains(#""/usr/libexec/getty default" vt100 on secure"#))   // NetBSD
 		#expect(s.contains("com.machman.console-getty"))
 		#expect(s.contains("/usr/libexec/getty"))
 		#expect(s.contains("active-auto"))
@@ -85,6 +88,7 @@ struct GuestSetupInstallerTests {
 		// Guest device naming mirrors SerialPortKind.guestDevice.
 		#expect(s.contains("cu.virtio"))
 		#expect(s.contains(#"echo "ttyV$1.0""#))
+		#expect(s.contains(#"echo "ttyVI${1}0""#))   // NetBSD viocon(4)
 		#expect(s.contains(#"echo "hvc$1""#))
 		// Kernel console: FLAG-ONLY (it edits the boot loader — the usage text warns and
 		// the menu never offers it), always keeps the display on tty0, backs up grub.cfg,

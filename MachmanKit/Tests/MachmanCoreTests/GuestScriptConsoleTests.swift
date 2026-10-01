@@ -143,6 +143,90 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// MARK: - NetBSD (S13)
+
+	// NetBSD is its own init (rc.d + /etc/ttys), its virtio consoles are viocon's ttyVI<n>0,
+	// and its /etc/ttys lines take NetBSD's getty format. Before 10 it has no viocon at all.
+	@Test func netbsdInitAndConsoleNames() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run("""
+				OS=NetBSD
+				OS_FAMILY=netbsd
+				OS_VERSION=10.1
+				detect_init
+				console_detect
+				echo "$INIT $GETTY_MECH $CONSOLE_DEVICES"
+				console_available
+				echo "$avail_console"
+				OS_VERSION=9.3
+				console_available
+				echo "$avail_console $reason_console"
+				console_act_ttys ttyVI00
+				printf '%s\\n' "$CONSOLE_STAGE"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				netbsd-rc ttys ttyVI00 ttyVI10
+				1
+				0 NetBSD before 10 has no virtio-console driver
+				ttyVI00 "/usr/libexec/getty default" vt100 on secure
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// pkgsrc names sshfs fuse-sshfs (OpenBSD's ports: sshfs-fuse); pkgin is NetBSD's own.
+	@Test func netbsdPackageNames() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run("""
+				OS_FAMILY=netbsd
+				pm_preferred_for_family
+				PM=pkgin; pm_command; pkg_for_sshfs; echo "[$(pkg_for_sshd)]"
+				PM=pkg_add; pkg_for_sshfs
+				OS_FAMILY=openbsd; pkg_for_sshfs
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				pkgin
+				pkgin -y install
+				fuse-sshfs
+				[]
+				fuse-sshfs
+				sshfs-fuse
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// sshd=YES lands once, as the file's last word on sshd (rc.conf is read top to bottom),
+	// and a file already saying so is left alone.
+	@Test func rcConfEnablesOnce() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				printf 'hostname=nb\nsshd=NO\n#sshd=YES\n' > "$D/rc.conf"
+				rc_conf_yes sshd "$D/rc.conf"
+				cp "$D/rc.conf" "$D/once"
+				rc_conf_yes sshd "$D/rc.conf"
+				cmp -s "$D/once" "$D/rc.conf" && echo unchanged
+				cat "$D/rc.conf"
+				printf 'sshd="yes"  # on\n' > "$D/quoted"
+				cp "$D/quoted" "$D/quoted.before"
+				rc_conf_yes sshd "$D/quoted"
+				cmp -s "$D/quoted.before" "$D/quoted" && echo kept
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				unchanged
+				hostname=nb
+				sshd=NO
+				#sshd=YES
+				sshd=YES
+				kept
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - inittab / ttys blocks (S21)
 
 	// A guest inittab with one Machman-managed login (busybox format) beside its own.

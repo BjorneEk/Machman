@@ -27,7 +27,7 @@ What                     (default: ask per feature; every --x has a --no-x)
   --mountpoint <path>    where sshfs host folders land (default $MOUNT_ROOT)
   --install              install missing packages with this guest's package manager
   --pm <name>            force the package manager (apt, dnf, yum, zypper, pacman, apk,
-                         xbps, emerge, pkg, pkg_add)
+                         xbps, emerge, pkg, pkgin, pkg_add)
   --no-service           install the SSH key only; do not touch services
 How
   -y, --yes              never ask; take the defaults shown by --dry-run

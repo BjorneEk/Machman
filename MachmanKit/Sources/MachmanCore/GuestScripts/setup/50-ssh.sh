@@ -176,6 +176,11 @@ enable_sshd() {
 		run "enabling sshd" rcctl enable sshd || return 1
 		run "starting sshd" rcctl start sshd || true
 		;;
+	netbsd-rc)
+		rc_conf_yes sshd || return 1
+		run "starting sshd" /etc/rc.d/sshd start || run "restarting sshd" /etc/rc.d/sshd restart \
+			|| true
+		;;
 	openrc)
 		run "enabling sshd" rc-update add sshd default || return 1
 		run "starting sshd" rc-service sshd start || run "restarting sshd" \
@@ -200,6 +205,34 @@ enable_sshd() {
 		;;
 	esac
 	return 0
+}
+
+# rc_conf_yes <name> [file] — <name>=YES as the file's last word on <name> (rc.conf is
+# read top to bottom; default /etc/rc.conf), appended when it is not. Unmarked, like
+# FreeBSD's sysrc, and kept by the uninstall: the SSH server stays.
+rc_conf_yes() {
+	_rcy_file="${2:-/etc/rc.conf}"
+	STEP="enabling $1 in $_rcy_file"
+	if [ -f "$_rcy_file" ] && awk -v n="$1" -v q="'" '
+		{ sub(/#.*/, "") }
+		$0 ~ "^[ \t]*" n "=" { v = $0; sub("^[ \t]*" n "=", "", v); gsub("[\"" q " \t]", "", v) }
+		END { if (toupper(v) == "YES") exit 0; exit 1 }' "$_rcy_file"; then
+		return 0
+	fi
+	_MF_TEXT="$1=YES"
+	export _MF_TEXT
+	_rcy_code=0
+	if [ -f "$_rcy_file" ]; then
+		rewrite_file "$_rcy_file" awk '{ print } END { print ENVIRON["_MF_TEXT"] }' \
+			|| _rcy_code=$?
+	else
+		# A here-doc, not a pipe: write_file must run in this shell to hand back R_ERROR.
+		write_file "$_rcy_file" <<EOF || _rcy_code=$?
+$_MF_TEXT
+EOF
+	fi
+	unset _MF_TEXT
+	return "$_rcy_code"
 }
 
 # Filter for configuration.nix: our marked services.openssh line, inside the final brace.
