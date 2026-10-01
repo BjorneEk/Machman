@@ -23,6 +23,9 @@ public final class StubMachman: MachmanControlling {
 	public private(set) var starts: [(vm: String, options: StartOptions)] = []
 	// One-shot scripted failures by base name: the next call of that method throws.
 	private var failures: [String: Error] = [:]
+	// Base names whose calls park while listed: a stalled vmhost (E20). They answer once
+	// removed, or after a minute. Honored by vm(named:), operations() and preview.
+	public var stalled: Set<String> = []
 
 	public init() {}
 
@@ -56,6 +59,14 @@ public final class StubMachman: MachmanControlling {
 		}
 	}
 
+	private func stallWhileScripted(_ name: String) async {
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: .seconds(60))
+		while stalled.contains(name), clock.now < deadline {
+			try? await Task.sleep(for: .milliseconds(20))
+		}
+	}
+
 	private func get(_ name: String) throws -> VMInfo {
 		guard let vm = vms[name] else { throw MachmanError.notFound(name) }
 		return vm
@@ -73,6 +84,7 @@ public final class StubMachman: MachmanControlling {
 	}
 	public func vm(named name: String) async throws -> VMInfo {
 		try gate()
+		await stallWhileScripted("vm")
 		return try get(name)
 	}
 	public var lastCreateTemplate: String?
@@ -277,6 +289,7 @@ public final class StubMachman: MachmanControlling {
 	public var ops: [OperationInfo] = []
 	public func operations() async throws -> [OperationInfo] {
 		try gate()
+		await stallWhileScripted("operations")
 		return ops
 	}
 	public func cancelOperation(id: String) async throws {
@@ -510,6 +523,7 @@ public final class StubMachman: MachmanControlling {
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
 		try gate()
+		await stallWhileScripted("preview")
 		let vm = try get(name)
 		return vm.state.isRunning ? previewPayload : nil
 	}

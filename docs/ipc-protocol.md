@@ -129,7 +129,13 @@ boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
-devices?, nestedVirtualization?, ssh?, setup?}`.
+devices?, nestedVirtualization?, ssh?, setup?, unresponsive?}`.
+
+`unresponsive` is a daemon overlay, like `safeRun`: `true` while the VM's vmhost misses its 3 s
+answer deadline. The rest of the entry is then that vmhost's last answer (state `unknown` if it
+never answered), and a `listChanged` follows when it answers again; absent otherwise.
+`vm.list`, `vm.get` and `host.operations` never wait longer than that deadline per vmhost (a
+stalled vmhost's operations are left out until it answers).
 
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
 displayHeightPixels?, displayPixelsPerInch?, systemKeyCapture?, sharesClipboard?,

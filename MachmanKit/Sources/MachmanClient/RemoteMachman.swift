@@ -68,7 +68,14 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func vm(named name: String) async throws -> VMInfo {
-		try await connection.call(.vmGet, RPCParams.Name(name: name), expecting: VMInfo.self)
+		try await vm(named: name, deadline: RPCConnection.defaultCallDeadline)
+	}
+
+	// Deadline seam (not on MachmanControlling): the daemon asks each vmhost with a short
+	// bound, so one stalled host cannot hold a list for every client (E20).
+	public func vm(named name: String, deadline: Duration) async throws -> VMInfo {
+		try await connection.call(
+			.vmGet, RPCParams.Name(name: name), expecting: VMInfo.self, deadline: deadline)
 	}
 
 	public func createVM(template: String?) async throws -> VMInfo {
@@ -284,8 +291,14 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func operations() async throws -> [OperationInfo] {
+		try await operations(deadline: RPCConnection.defaultCallDeadline)
+	}
+
+	// Deadline seam, like vm(named:deadline:).
+	public func operations(deadline: Duration) async throws -> [OperationInfo] {
 		try await connection.call(
-			.hostOperations, RPCEmpty?.none, expecting: [OperationInfo].self)
+			.hostOperations, RPCEmpty?.none, expecting: [OperationInfo].self,
+			deadline: deadline)
 	}
 
 	public func cancelOperation(id: String) async throws {
@@ -344,9 +357,15 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
+		try await preview(vm: name, maxWidth: maxWidth, deadline: RPCConnection.defaultCallDeadline)
+	}
+
+	// Deadline seam, like vm(named:deadline:).
+	public func preview(vm name: String, maxWidth: Int?, deadline: Duration) async throws
+		-> Data? {
 		let result = try await connection.call(
 			.preview, RPCParams.Preview(name: name, maxWidth: maxWidth),
-			expecting: RPCResults.Preview?.self)
+			expecting: RPCResults.Preview?.self, deadline: deadline)
 		return result.flatMap { Data(base64Encoded: $0.jpegBase64) }
 	}
 

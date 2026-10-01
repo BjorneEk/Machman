@@ -64,6 +64,11 @@ public final class RoutingMachman: MachmanControlling {
 		var sshReach: SSHInfo.Reachability = .unknown
 		var sshReachDetail: String?
 		var sshReadySince: Date?
+		// E20: the host's last vm.get answer — what clients see while it misses its answer
+		// deadline, marked unresponsive — and the watcher that notices it answering again.
+		var lastAnswer: VMInfo?
+		var unresponsive = false
+		var recoveryTask: Task<Void, Never>?
 
 		init(
 			identity: HostIdentity, client: RemoteMachman,
@@ -106,6 +111,12 @@ public final class RoutingMachman: MachmanControlling {
 		pendingStartMACs[name] = nil
 	}
 
+	// E20: how long one vmhost may take to answer a list, get, operations or preview probe
+	// before its VM is served from its last answer, marked unresponsive; and how often a
+	// marked host is asked again. Internal seams for tests.
+	var hostProbeDeadline: Duration = .seconds(3)
+	var recoveryInterval: Duration = .seconds(2)
+
 	// Where the vmhost app lives. Internal test seam: a test that reaches spawnHost pins this
 	// to nil, so it fails at "not found" on every machine instead of depending on where the
 	// test binary happens to sit (a located MachmanVMHost.app would be LAUNCHED).
@@ -147,8 +158,9 @@ public final class RoutingMachman: MachmanControlling {
 				let client = try await connectHost(identity: identity)
 				// The host's reply is the MAC the guest is actually using — it can differ
 				// from the daemon's stale view (safe-save promotions rewrite it mid-run).
-				identity.macInUse = (try? await client.vm(named: name))?.macAddress
-				adopt(identity: identity, client: client)
+				let reply = try? await client.vm(named: name)
+				identity.macInUse = reply?.macAddress
+				adopt(identity: identity, client: client).lastAnswer = reply
 				MachmanLogger.log(.log, "adopted running vmhost for \(name)")
 			} catch {
 				unlink(socketPath)
@@ -387,7 +399,8 @@ public final class RoutingMachman: MachmanControlling {
 			})
 	}
 
-	func adopt(identity: HostIdentity, client: RemoteMachman) {
+	@discardableResult
+	func adopt(identity: HostIdentity, client: RemoteMachman) -> HostedVM {
 		let host = HostedVM(identity: identity, client: client, app: nil, deathWatch: nil)
 		hosted[identity.name] = host
 		subscribeEvents(host)
@@ -395,6 +408,7 @@ public final class RoutingMachman: MachmanControlling {
 		// this is how discovery (daemon memory) survives a daemon restart mid-run.
 		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
+		return host
 	}
 
 	private func subscribeEvents(_ host: HostedVM) {
@@ -536,6 +550,7 @@ public final class RoutingMachman: MachmanControlling {
 		host.deathWatch = nil
 		host.eventTask?.cancel()
 		host.sshDiscoveryTask?.cancel()
+		host.recoveryTask?.cancel()
 		let client = host.client
 		Task {
 			await client.disconnect()
@@ -627,28 +642,38 @@ public final class RoutingMachman: MachmanControlling {
 		try await local.hostCapabilities()
 	}
 
+	// Every hosted VM is asked at once, each bounded by hostProbeDeadline: a stalled vmhost
+	// costs the list one deadline, never the whole call for every client (E20). The probes
+	// are main-actor Tasks that suspend inside the RPC, so they overlap.
 	public func listVMs() async throws -> [VMInfo] {
+		let vms = registry.list()
+		var probes: [String: (host: HostedVM, answer: Task<ProbeResult, Never>)] = [:]
+		for vm in vms {
+			guard let host = hosted[vm.name] else { continue }
+			probes[vm.name] = (host, Task { await self.probe(host) })
+		}
 		var infos: [VMInfo] = []
-		for vm in registry.list() {
-			if let host = hosted[vm.name],
-				var info = try? await host.client.vm(named: vm.name) {
-				// The daemon-side overlays: only the router knows a run is safe, and only
-				// it runs address discovery.
-				if host.identity.isSafe { info.safeRun = true }
-				overlaySSH(&info, from: host)
-				infos.append(info)
-				continue
+		for vm in vms {
+			if let probed = probes[vm.name] {
+				let result = await probed.answer.value
+				// A host gone or re-keyed during the wait (a stop, safe-save) answered for a
+				// run that is over: fall through to what owns the VM now.
+				if hosted[vm.name] === probed.host {
+					infos.append(try await presented(probed.host, result))
+					continue
+				}
 			}
-			infos.append(try await localInfo(vm.name))
+			infos.append(try await self.vm(named: vm.name))
 		}
 		return infos
 	}
 
 	public func vm(named name: String) async throws -> VMInfo {
-		if let host = hosted[name], var info = try? await host.client.vm(named: name) {
-			if host.identity.isSafe { info.safeRun = true }
-			overlaySSH(&info, from: host)
-			return info
+		if let host = hosted[name] {
+			let result = await probe(host)
+			if hosted[name] === host {
+				return try await presented(host, result)
+			}
 		}
 		return try await localInfo(name)
 	}
@@ -659,6 +684,98 @@ public final class RoutingMachman: MachmanControlling {
 		var info = try await local.vm(named: name)
 		if pendingStarts.contains(name) { info.state = .starting }
 		return info
+	}
+
+	// MARK: - Stalled vmhosts (E20)
+
+	enum ProbeResult {
+		case answered(VMInfo)
+		case stalled   // missed hostProbeDeadline
+		case failed    // anything else: the host is going away, and hostGone follows
+	}
+
+	// One bounded vm.get to a host, recorded: an answer becomes its last answer and clears
+	// a stall mark, a missed deadline sets one.
+	private func probe(_ host: HostedVM) async -> ProbeResult {
+		let result: ProbeResult
+		do {
+			result = .answered(try await host.client.vm(
+				named: host.identity.name, deadline: hostProbeDeadline))
+		} catch let error as MachmanError where error.code == .timeout {
+			result = .stalled
+		} catch {
+			result = .failed
+		}
+		// Only for the host still serving: a probe that outlived its host changes nothing.
+		guard host.identity.id == hosted[host.identity.name]?.identity.id else { return result }
+		switch result {
+		case .answered(let info):
+			host.lastAnswer = info
+			markResponsive(host)
+		case .stalled:
+			markUnresponsive(host)
+		case .failed:
+			break
+		}
+		return result
+	}
+
+	// A hosted VM as clients see it, with the daemon-side overlays (only the router knows a
+	// run is safe, and only it runs address discovery). Without an answer: the host's last
+	// one, or the daemon's config copy with state unknown when it never answered — marked
+	// unresponsive while it misses its deadline. Never "stopped": clients would report a
+	// stop that never happened.
+	private func presented(_ host: HostedVM, _ result: ProbeResult) async throws -> VMInfo {
+		var info: VMInfo
+		if case .answered(let answer) = result {
+			info = answer
+		} else if let last = host.lastAnswer {
+			info = last
+		} else {
+			info = try await local.vm(named: host.identity.name)
+			info.state = .unknown
+		}
+		info.unresponsive = host.unresponsive ? true : nil
+		if host.identity.isSafe { info.safeRun = true }
+		overlaySSH(&info, from: host)
+		return info
+	}
+
+	// Transitions only: each one logs, announces itself with listChanged (clients reload on
+	// it — the only way a recovered VM's mark ever clears), and starts or ends the watcher.
+	private func markUnresponsive(_ host: HostedVM) {
+		guard !host.unresponsive else { return }
+		host.unresponsive = true
+		MachmanLogger.log(.passiveWarning,
+			"\(host.identity.name)'s vmhost missed its \(hostProbeDeadline) answer deadline — "
+				+ "listing it as not responding")
+		startRecoveryWatch(host)
+		registry.events.emit(.listChanged)
+	}
+
+	private func markResponsive(_ host: HostedVM) {
+		guard host.unresponsive else { return }
+		host.unresponsive = false
+		host.recoveryTask?.cancel()
+		host.recoveryTask = nil
+		MachmanLogger.log(.log, "\(host.identity.name)'s vmhost answers again")
+		registry.events.emit(.listChanged)
+	}
+
+	// Asks a marked host again every recoveryInterval until it answers (the answer clears
+	// the mark and ends the watch) or it is gone. Keyed by identity.id, like discovery.
+	private func startRecoveryWatch(_ host: HostedVM) {
+		host.recoveryTask?.cancel()
+		let id = host.identity.id
+		host.recoveryTask = Task { [weak self] in
+			while !Task.isCancelled {
+				guard let interval = self?.recoveryInterval else { return }
+				try? await Task.sleep(for: interval)
+				guard !Task.isCancelled, let self, let host = self.host(withID: id),
+					host.unresponsive else { return }
+				_ = await self.probe(host)
+			}
+		}
 	}
 
 	// The discovered address rides every VMInfo answer while the VM is hosted — attached
@@ -1051,11 +1168,16 @@ public final class RoutingMachman: MachmanControlling {
 	// MARK: - Operations (1.0.4)
 
 	// The daemon's own operations plus every hosted VM's (imports on a running VM execute
-	// in its vmhost, which runs its own OperationCenter).
+	// in its vmhost, which runs its own OperationCenter). Hosts are asked at once and each
+	// bounded like a list probe; a stalled host's operations are left out (E20).
 	public func operations() async throws -> [OperationInfo] {
 		var all = try await local.operations()
-		for host in hosted.values {
-			if let ops = try? await host.client.operations() {
+		let deadline = hostProbeDeadline
+		let asks = hosted.values.map { host in
+			Task { try? await host.client.operations(deadline: deadline) }
+		}
+		for ask in asks {
+			if let ops = await ask.value {
 				all.append(contentsOf: ops)
 			}
 		}
@@ -1301,8 +1423,9 @@ public final class RoutingMachman: MachmanControlling {
 			return false
 		}
 		// The adopt-side rule: the host's reply is the authoritative live MAC.
-		identity.macInUse = (try? await client.vm(named: name))?.macAddress ?? identity.macInUse
-		adopt(identity: identity, client: client)
+		let reply = try? await client.vm(named: name)
+		identity.macInUse = reply?.macAddress ?? identity.macInUse
+		adopt(identity: identity, client: client).lastAnswer = reply
 		var forwarded = options
 		if options.safe {
 			// An existing run cannot be made safe retroactively — adopt it as it is.
@@ -1372,7 +1495,21 @@ public final class RoutingMachman: MachmanControlling {
 		guard !pendingStarts.contains(name), let target = try? await proxy(name) else {
 			return nil
 		}
-		return try await target.preview(vm: name, maxWidth: maxWidth)
+		guard let host = hosted[name] else {
+			return try await target.preview(vm: name, maxWidth: maxWidth)
+		}
+		// Clients list only on listChanged, so a stall nobody lists would go unseen — but
+		// this poll keeps coming. Bounded like a list probe; a miss checks the host the way
+		// a list does (vm.get decides, so a merely slow frame never flips the mark), and a
+		// marked host is not asked at all until its watcher hears from it.
+		guard !host.unresponsive else { return nil }
+		do {
+			return try await host.client.preview(
+				vm: name, maxWidth: maxWidth, deadline: hostProbeDeadline)
+		} catch let error as MachmanError where error.code == .timeout {
+			_ = await probe(host)
+			return nil
+		}
 	}
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {

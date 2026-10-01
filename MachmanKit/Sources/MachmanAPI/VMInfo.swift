@@ -41,8 +41,13 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	public var ssh: SSHInfo?
 	// Guest-setup installer state (1.0.7; nil = older daemon or the installer never used).
 	public var setup: GuestSetupInfo?
+	// Set by the daemon only, and only while this VM's vmhost misses its answer deadline
+	// (E20): the rest of the entry is its last answer, or the daemon's config copy with state
+	// unknown. nil = answering, or an older daemon.
+	public var unresponsive: Bool?
 
 	public var id: String { name }
+	public var isUnresponsive: Bool { unresponsive == true }
 
 	public init(
 		name: String, state: VMState, created: Date, lastRan: Date?, cpuCount: Int,
@@ -52,7 +57,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		totalRuntimeSeconds: Double? = nil,
 		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil,
 		devices: [DeviceInfo]? = nil, nestedVirtualization: Bool? = nil,
-		ssh: SSHInfo? = nil, setup: GuestSetupInfo? = nil
+		ssh: SSHInfo? = nil, setup: GuestSetupInfo? = nil, unresponsive: Bool? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -74,6 +79,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.nestedVirtualization = nestedVirtualization
 		self.ssh = ssh
 		self.setup = setup
+		self.unresponsive = unresponsive
 	}
 
 	// Hand-written decode so payloads predating the optional fields (and clients that omit
@@ -102,6 +108,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 			try c.decodeIfPresent(Bool.self, forKey: .nestedVirtualization)
 		self.ssh = try c.decodeIfPresent(SSHInfo.self, forKey: .ssh)
 		self.setup = try c.decodeIfPresent(GuestSetupInfo.self, forKey: .setup)
+		self.unresponsive = try c.decodeIfPresent(Bool.self, forKey: .unresponsive)
 	}
 }
 
