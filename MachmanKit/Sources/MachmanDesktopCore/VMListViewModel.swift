@@ -130,6 +130,9 @@ public final class VMListViewModel: ObservableObject {
 	// File ▸ New VM… asks the main window's toolbar picker to open on its template page;
 	// the picker clears it as it opens (VMIndicatorCluster).
 	@Published public var newVMChooserRequested = false
+	// Stop ▸ Shut Down… (⌘.) and Force Stop… (⌥⌘.) ask first (P26); non-nil presents the
+	// question on the main window.
+	@Published public var pendingStop: PendingStop?
 	@Published public private(set) var safeSaveInFlight = false
 	// Bottom-right transient toasts (engine warnings/errors, confirmations). Lifetime is
 	// the user's setting; transfers show as progress cards from OperationsStore instead.

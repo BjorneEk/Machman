@@ -12,6 +12,40 @@ import Foundation
 import MachmanAPI
 import MachmanUI
 
+// A shutdown the Stop menu's chords ask about (P26): ⌘. is the system cancel chord, and
+// from a focused terminal it reaches the menu. One sentence each (decision 16).
+public struct PendingStop: Identifiable, Equatable {
+	public let id = UUID()
+	public let vm: String
+	public let mode: StopMode
+
+	public init(vm: String, mode: StopMode) {
+		self.vm = vm
+		self.mode = mode
+	}
+
+	public var title: String {
+		switch mode {
+		case .soft: return "Shut down \u{201C}\(vm)\u{201D}?"
+		case .force: return "Force stop \u{201C}\(vm)\u{201D}?"
+		}
+	}
+
+	public var message: String {
+		switch mode {
+		case .soft: return "\(vm)'s guest is asked to shut down."
+		case .force: return "\(vm) stops at once, like pulling its power cord."
+		}
+	}
+
+	public var confirmLabel: String {
+		switch mode {
+		case .soft: return "Shut Down"
+		case .force: return "Force Stop"
+		}
+	}
+}
+
 extension VMListViewModel {
 	// A plain Start follows the policy; .headless and .safe override only what they name.
 	public func startPolicyDriven(_ vm: VMInfo, _ intent: StartIntent = .plain) {
@@ -24,6 +58,19 @@ extension VMListViewModel {
 	// install holds the VM until it finishes.
 	public func canStart(_ vm: VMInfo) -> Bool {
 		!vm.state.isRunning && !isInstalling(vm) && !isStartPending(vm.name)
+	}
+
+	// MARK: - Stop
+
+	// The Stop menu's chords ask before stopping; the toolbar, the picker, the Dock and the
+	// per-VM submenus stay immediate.
+	public func requestStop(_ vm: VMInfo, mode: StopMode) {
+		pendingStop = PendingStop(vm: vm.name, mode: mode)
+	}
+
+	public func confirmStop(_ pending: PendingStop) {
+		pendingStop = nil
+		stopVM(pending.vm, mode: pending.mode)
 	}
 
 	// MARK: - New VM

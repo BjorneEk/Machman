@@ -255,6 +255,19 @@ private struct ConfirmationDialogs: ViewModifier {
 			} message: { pending in
 				Text("The file belongs to \(pending.vm) and is removed from its directory.")
 			}
+			// Stop ▸ Shut Down… / Force Stop… (⌘. / ⌥⌘.) ask first (P26).
+			.confirmationDialog(
+				viewModel.pendingStop?.title ?? "",
+				isPresented: presenting($viewModel.pendingStop),
+				presenting: viewModel.pendingStop
+			) { pending in
+				Button(pending.confirmLabel, role: pending.mode == .force ? .destructive : nil) {
+					viewModel.confirmStop(pending)
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: { pending in
+				Text(pending.message)
+			}
 	}
 
 	// isPresented bridge for item-backed confirmationDialogs (dismiss clears the item).

@@ -186,14 +186,18 @@ struct MachmanCommands: Commands {
 
 	@ViewBuilder
 	private func stopItems(_ viewModel: VMListViewModel, target: CommandTarget) -> some View {
+		// The chords ask first (P26): ⌘. is the system cancel chord, and from a focused
+		// terminal it falls through to this menu. The per-VM submenus below stay immediate.
 		if let vm = target.vm {
-			Button("Shut Down \(vm.name)") {
-				viewModel.stopVM(vm.name, mode: .soft)
+			Button("Shut Down \(vm.name)…") {
+				showMainIfNeeded(target)
+				viewModel.requestStop(vm, mode: .soft)
 			}
 			.keyboardShortcut(".")
 			.disabled(!vm.state.isRunning)
-			Button("Force Stop \(vm.name)") {
-				viewModel.stopVM(vm.name, mode: .force)
+			Button("Force Stop \(vm.name)…") {
+				showMainIfNeeded(target)
+				viewModel.requestStop(vm, mode: .force)
 			}
 			.keyboardShortcut(".", modifiers: [.option, .command])
 			.disabled(!vm.state.isRunning)
