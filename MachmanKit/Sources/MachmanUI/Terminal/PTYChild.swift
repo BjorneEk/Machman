@@ -86,10 +86,12 @@ final class PTYChild: @unchecked Sendable {
 		queue = DispatchQueue(label: "machman.pty.child")
 		let source = DispatchSource.makeProcessSource(
 			identifier: pid, eventMask: .exit, queue: queue)
+		// Stored before the handler is set: reap() reads it on the queue, and setting the
+		// handler is the hand-off ThreadSanitizer sees (it does not see resume() as one).
+		self.source = source
 		// Strong on purpose: the child stays watched until it is reaped, even after the
 		// stream that started it is gone. The reap cancels the source, which lets go of this.
 		source.setEventHandler { [self] in reap() }
-		self.source = source
 		source.resume()
 	}
 
