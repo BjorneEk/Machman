@@ -8,8 +8,8 @@
 //  the preview. Built on DropDelegate (dropDestination can't see the payload mid-hover):
 //  dropEntered resolves the file URLs from the item providers so the row can name and
 //  validate them, dropUpdated proposes copy/forbidden (the native no-entry cursor), and
-//  performDrop routes to the section's add flow. Validation is an extension heuristic —
-//  the engine's magic sniff stays the real gate at import.
+//  performDrop routes what fits to the section's add flow. The verdict itself
+//  (TreeDropValidator) lives in MachmanDesktopCore.
 //
 
 import SwiftUI
@@ -17,88 +17,6 @@ import UniformTypeIdentifiers
 import MachmanUI
 import MachmanAPI
 import MachmanDesktopCore
-
-// What a drag currently targets and what we know about its payload.
-struct TreeDragPreview: Equatable {
-	enum Section: Hashable {
-		case disks
-		case mounts
-		case kernel(KernelRole)
-	}
-
-	enum Verdict: Equatable {
-		case loading                 // providers still resolving
-		case valid(String)           // inline message ("Add vmlinuz to Kernel")
-		case invalid(String)         // inline reason ("…is not a supported disk format")
-	}
-
-	var section: Section
-	var urls: [URL] = []
-	var verdict: Verdict = .loading
-
-	var isInvalid: Bool {
-		if case .invalid = verdict { return true }
-		return false
-	}
-}
-
-enum TreeDropValidator {
-	// Formats the engine's sniff is known to reject — surfaced early with a reason.
-	static let unsupportedDiskExtensions: Set<String> = [
-		"qcow2", "qcow", "vdi", "vmdk", "vhd", "vhdx",
-	]
-	// Same name hints KernelStore uses to infer roles for legacy files.
-	static let initramfsHints = ["initramfs", "initrd", "ramdisk", "rootfs", "cpio"]
-
-	static func isDirectory(_ url: URL) -> Bool {
-		var isDir: ObjCBool = false
-		FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-		return isDir.boolValue
-	}
-
-	static func verdict(
-		section: TreeDragPreview.Section, urls: [URL]
-	) -> TreeDragPreview.Verdict {
-		guard let first = urls.first else { return .loading }
-		let name = first.lastPathComponent
-		let isDir = isDirectory(first)
-		let suffix = urls.count > 1 ? " and \(urls.count - 1) more" : ""
-		switch section {
-		case .disks:
-			if isDir {
-				return .invalid("Folders mount — they don't attach as disks")
-			}
-			if unsupportedDiskExtensions.contains(first.pathExtension.lowercased()) {
-				return .invalid("\(name) is not a supported disk format — "
-					+ "raw images and ISOs only")
-			}
-			return .valid("Add \(name)\(suffix) as a disk")
-		case .mounts:
-			if !isDir {
-				return .invalid("Only folders can be shared as mounts")
-			}
-			return .valid("Share \(name)\(suffix) via virtiofs")
-		case .kernel(let role):
-			if isDir {
-				return .invalid(role == .kernel
-					? "Folders can't be kernels" : "Folders can't be initramfs images")
-			}
-			let looksInitramfs = initramfsHints.contains {
-				name.lowercased().contains($0)
-			}
-			switch role {
-			case .kernel where looksInitramfs:
-				return .valid("Add \(name) to Kernel (name looks like an initramfs)")
-			case .kernel:
-				return .valid("Add \(name)\(suffix) to Kernel")
-			case .initramfs:
-				return .valid("Add \(name)\(suffix) to Initramfs")
-			case .unknown:
-				return .invalid("Unknown kernel role")
-			}
-		}
-	}
-}
 
 // One drop target per group section. `touched` fires on every enter/update so the owner
 // can run an expiry watchdog — AppKit does not reliably deliver dropExited when a drag
@@ -119,9 +37,7 @@ struct GroupDropDelegate: DropDelegate {
 		Self.loadURLs(info) { urls in
 			// Still hovering this section? (The drag may have moved on meanwhile.)
 			guard preview?.section == section, !urls.isEmpty else { return }
-			preview = TreeDragPreview(
-				section: section, urls: urls,
-				verdict: TreeDropValidator.verdict(section: section, urls: urls))
+			preview = TreeDragPreview.resolve(section: section, urls: urls)
 		}
 	}
 
@@ -144,17 +60,16 @@ struct GroupDropDelegate: DropDelegate {
 		preview = nil
 		if let current, current.section == section {
 			if current.isInvalid { return false }
-			if !current.urls.isEmpty {
-				perform(current.urls)
+			if !current.adds.isEmpty {
+				perform(current.adds)
 				return true
 			}
 		}
-		// The hover never finished resolving — resolve now, validate, and route.
+		// The hover never finished resolving — resolve now and route what fits.
 		Self.loadURLs(info) { urls in
-			guard !urls.isEmpty,
-				!TreeDropValidator.verdict(section: section, urls: urls).isInvalidVerdict
-			else { return }
-			perform(urls)
+			let adds = TreeDropValidator.fitting(section: section, urls: urls)
+			guard !adds.isEmpty else { return }
+			perform(adds)
 		}
 		return true
 	}
@@ -190,13 +105,6 @@ struct GroupDropDelegate: DropDelegate {
 	}
 }
 
-extension TreeDragPreview.Verdict {
-	var isInvalidVerdict: Bool {
-		if case .invalid = self { return true }
-		return false
-	}
-}
-
 // The would-be entry rendered in the hovered section.
 struct TreeDropPreviewRow: View {
 	let preview: TreeDragPreview
@@ -205,9 +113,11 @@ struct TreeDropPreviewRow: View {
 
 	private var color: Color { preview.isInvalid ? .red : .green }
 
+	// Names what the drop adds; a refused drop names what was dragged.
 	private var title: String {
-		guard let first = preview.urls.first else { return "Dropping…" }
-		let more = preview.urls.count > 1 ? " +\(preview.urls.count - 1)" : ""
+		let shown = preview.adds.isEmpty ? preview.urls : preview.adds
+		guard let first = shown.first else { return "Dropping…" }
+		let more = shown.count > 1 ? " +\(shown.count - 1)" : ""
 		return first.lastPathComponent + more
 	}
 

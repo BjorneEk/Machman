@@ -22,6 +22,17 @@ enum WindowScenes {
 			profiles: ctx.profiles, vm: ctx.vm))
 	}
 
+	// The tree with a Finder drag hovering its Disks group (the files don't exist, so the
+	// classifier reads the URLs' trailing slashes).
+	@MainActor
+	static func treeWithDiskDrop(_ ctx: SceneContext, _ urls: [URL]) -> AnyView {
+		let preview = TreeDragPreview.resolve(
+			section: .disks, urls: urls, isDirectory: { $0.hasDirectoryPath })
+		return AnyView(VMDeviceTreeView(
+			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
+			profiles: ctx.profiles, vm: ctx.vm, dragPreview: preview))
+	}
+
 	@MainActor
 	static func mainWindow(_ ctx: SceneContext, inspector: Bool) -> AnyView {
 		ctx.viewModel.showInfoPanel = inspector
@@ -88,6 +99,18 @@ enum WindowScenes {
 		) { ctx in
 			ctx.viewModel.select(name: "Kernel Lab")
 			return tree(ctx)
+		},
+		RenderScene(
+			"sidebar.tree.drop-mixed", "VMDeviceTreeView, files and a folder dragged onto Disks",
+			widths: [270], height: 760
+		) { ctx in
+			treeWithDiskDrop(ctx, Samples.mixedDrop())
+		},
+		RenderScene(
+			"sidebar.tree.drop-refused", "VMDeviceTreeView, a folder dragged onto Disks",
+			widths: [270], height: 760
+		) { ctx in
+			treeWithDiskDrop(ctx, Samples.mixedDrop().filter(\.hasDirectoryPath))
 		},
 	]
 }

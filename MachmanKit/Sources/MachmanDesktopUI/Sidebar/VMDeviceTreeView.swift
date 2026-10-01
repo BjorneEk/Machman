@@ -46,6 +46,19 @@ struct VMDeviceTreeView: View {
 	@Environment(\.openWindow) private var openWindow
 	@Environment(\.dismissWindow) private var dismissWindow
 
+	// `dragPreview` starts the tree with a drag already hovering (render scenes).
+	init(
+		viewModel: VMListViewModel, sessions: TerminalSessions, canvases: CanvasStateStore,
+		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil
+	) {
+		self.viewModel = viewModel
+		self.sessions = sessions
+		self.canvases = canvases
+		self.profiles = profiles
+		self.vm = vm
+		_dragPreview = State(initialValue: dragPreview)
+	}
+
 	var body: some View {
 		VStack(spacing: 0) {
 			filterField
@@ -954,21 +967,22 @@ struct VMDeviceTreeView: View {
 	}
 
 	// MARK: - Section drops (validated by the hovering preview; routed here on release)
+	// Each receives only the items that fit its section (TreeDragPreview.adds).
 
 	private func performDiskDrop(_ urls: [URL]) {
-		for url in urls where !TreeDropValidator.isDirectory(url) {
+		for url in urls {
 			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, url: url)
 		}
 	}
 
 	private func performMountDrop(_ urls: [URL]) {
-		for url in urls where TreeDropValidator.isDirectory(url) {
+		for url in urls {
 			viewModel.addMount(vm.name, path: url.path, tag: url.lastPathComponent)
 		}
 	}
 
 	private func performKernelDrop(_ urls: [URL], role: KernelRole) {
-		for url in urls where !TreeDropValidator.isDirectory(url) {
+		for url in urls {
 			viewModel.promoteKernel(
 				vm.name, role: role, sourcePath: url.path,
 				tag: url.deletingPathExtension().lastPathComponent)
