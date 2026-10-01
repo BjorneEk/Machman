@@ -184,4 +184,37 @@ struct SerialPortBridgeTests {
 			#expect(logText(env.logURL, containing: "CAPPED_OUTPUT").contains("CAPPED_OUTPUT"))
 		}
 	}
+
+	// E25: a live retune (Max Size changed, the same mode re-picked) reopens and APPENDS — only
+	// the run's first open resets a reset-on-boot log.
+	@Test func retuneKeepsThisBootsLog() throws {
+		let env = makeBridge("keep", log: SerialLogConfig(mode: .resetOnBoot))
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		env.guestOut.write(Data("BEFORE_RETUNE\n".utf8))
+		#expect(logText(env.logURL, containing: "BEFORE_RETUNE").contains("BEFORE_RETUNE"))
+		env.bridge.retune(SerialLogConfig(mode: .resetOnBoot, maxBytes: 1 << 20))
+		env.guestOut.write(Data("AFTER_RETUNE\n".utf8))
+		let logged = logText(env.logURL, containing: "AFTER_RETUNE")
+		#expect(logged.contains("BEFORE_RETUNE"))
+		#expect(logged.contains("AFTER_RETUNE"))
+	}
+
+	// E25's other half: starting still drops the previous boot's output, and so does a
+	// reset-on-boot log first opened mid-run (logging was off at start).
+	@Test func firstOpenOfARunResetsThePreviousBoot() throws {
+		for startMode in [SerialLogMode.resetOnBoot, .disabled] {
+			let env = makeBridge("reset", log: SerialLogConfig(mode: startMode))
+			try Data("OLD_BOOT\n".utf8).write(to: env.logURL)
+			env.bridge.start()
+			defer { env.bridge.stop() }
+			if startMode == .disabled {
+				env.bridge.retune(SerialLogConfig(mode: .resetOnBoot))
+			}
+			env.guestOut.write(Data("NEW_BOOT\n".utf8))
+			let logged = logText(env.logURL, containing: "NEW_BOOT")
+			#expect(logged.contains("NEW_BOOT"))
+			#expect(!logged.contains("OLD_BOOT"))
+		}
+	}
 }

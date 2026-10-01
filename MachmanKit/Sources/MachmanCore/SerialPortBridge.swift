@@ -37,6 +37,8 @@ final class SerialPortBridge {
 	private var acceptSource: DispatchSourceRead?
 	private var drainSource: DispatchSourceRead?
 	private var stopped = false
+	// A reset-on-boot log is truncated by the run's FIRST open only; a retune appends (E25).
+	private var logOpenedThisRun = false
 
 	private static let replayCap = 256 * 1024
 
@@ -138,13 +140,16 @@ final class SerialPortBridge {
 		case .disabled:
 			log = nil
 			return
-		case .resetOnBoot:
+		case .resetOnBoot where !logOpenedThisRun:
+			// The run's first open drops the previous boot's output.
 			FileManager.default.createFile(atPath: logURL.path, contents: nil)
-		case .continuous:
+		case .resetOnBoot, .continuous:
+			// Continuous, or a retune reopening this run's log: append, never truncate.
 			if !FileManager.default.fileExists(atPath: logURL.path) {
 				FileManager.default.createFile(atPath: logURL.path, contents: nil)
 			}
 		}
+		logOpenedThisRun = true
 		log = FileHandle(forWritingAtPath: logURL.path)
 		let end = (try? log?.seekToEnd()) ?? 0
 		logBytes = end

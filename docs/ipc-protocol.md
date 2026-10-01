@@ -79,7 +79,7 @@ alone; unknown codes decode as `internalError`, so the list is additively extens
 | `vm.console.remove` | `{name}` | `{}` (pops the last console port; refused while running) |
 | `vm.uart.add` | `{name}` | `{}` (appends a PL011 uart port, guest `/dev/ttyAMAN`; refused while running) |
 | `vm.uart.remove` | `{name}` | `{}` (pops the last uart port; refused while running) |
-| `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs; `maxBytes` above 1073741824 (1 GiB) → `invalidArgument`) |
+| `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs, appending to this boot's log — only a run's first open empties a `resetOnBoot` file; `maxBytes` above 1073741824 (1 GiB) → `invalidArgument`) |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
 | `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, tag}` | `VMInfo` (copies the file into `<vm>/kernels/<role>/<tag>/` as owned and points the role's field at it) |
