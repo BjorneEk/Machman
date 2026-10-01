@@ -415,10 +415,20 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.daemonRetire, RPCEmpty?.none)
 	}
 
+	// events.subscribe on its own, failure included: a client that must not run event-less
+	// (the desktop's connect loop, P13) calls it first and counts a throw as a failed connect.
+	public func subscribeEvents() async throws {
+		_ = try await connection.call(
+			.eventsSubscribe, RPCEmpty?.none, expecting: RPCEmpty.self)
+	}
+
 	public func events() async -> AsyncStream<VMEvent> {
 		// Subscribe on the wire (idempotent server-side), then hand out a local fan-out stream.
-		_ = try? await connection.call(
-			.eventsSubscribe, RPCEmpty?.none, expecting: RPCEmpty.self)
+		do {
+			try await subscribeEvents()
+		} catch {
+			MachmanLogger.log(.passiveWarning, "events.subscribe failed: \(error)")
+		}
 		return await connection.events()
 	}
 }

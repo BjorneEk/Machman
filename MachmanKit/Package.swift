@@ -86,11 +86,11 @@ let package = Package(
 		// The desktop client's logic: view models + stores over MachmanControlling. Anything
 		// that talks to the window server, the pasteboard, panels or NSWorkspace lives in
 		// MachmanDesktopUI (or the app), so every type here runs headless under swift test.
-		// Never MachmanCore or Virtualization; MachmanClient is allowed if connection logic
-		// ever moves in.
+		// Never MachmanCore or Virtualization. MachmanClient for the connect loop: it and
+		// RemoteMachman's DaemonSession conformance live here so they run headless too.
 		.target(
 			name: "MachmanDesktopCore",
-			dependencies: ["MachmanAPI", "MachmanUI"],
+			dependencies: ["MachmanAPI", "MachmanUI", "MachmanClient"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 		// The desktop's views and SwiftTerm hosting. Only the app's entry points are public;
@@ -162,8 +162,8 @@ let package = Package(
 		.testTarget(
 			name: "MachmanDesktopCoreTests",
 			dependencies: [
-				"MachmanAPI", "MachmanUI", "MachmanDesktopCore", "MachmanFixtures",
-				"MachmanTestSupport",
+				"MachmanAPI", "MachmanClient", "MachmanUI", "MachmanDesktopCore",
+				"MachmanFixtures", "MachmanTestSupport",
 			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),

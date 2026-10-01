@@ -2,9 +2,10 @@
 //  DaemonConnection.swift
 //  MachmanDesktop
 //
-//  Owns the desktop app's link to MachmanAgent: connect, auto-launch the daemon when it isn't
-//  running, retry with backoff, and reconnect (with a fresh view model) if the daemon goes
-//  away mid-session.
+//  Owns the desktop app's link to MachmanAgent: the glue between the bounded connect loop
+//  (ConnectionLoop, MachmanDesktopCore — attempts, agent launch, stop conditions, stale
+//  sessions) and the app: launching the agent, attaching the app-scoped stores, and a fresh
+//  view model per connection.
 //
 
 import Foundation
@@ -19,17 +20,11 @@ import MachmanDesktopUI
 
 @MainActor
 final class DaemonConnection: ObservableObject {
-	enum Status: Equatable {
-		case connecting
-		case connected(daemonVersion: String)
-		case unavailable(String)
-	}
-
 	// Derived, never hardcoded: a Debug build must look for the .dev agent, not the production
 	// one. Same suffix rule MachmanPaths uses to collapse helper ids back to the suite.
 	static var daemonBundleID: String { MachmanPaths.suiteIdentifier() + ".agent" }
 
-	@Published private(set) var status: Status = .connecting
+	@Published private(set) var status: ConnectionStatus = .connecting
 	@Published private(set) var viewModel: VMListViewModel?
 	// App-scoped stores that survive reconnects: each new connection re-attaches them, each
 	// new view model is a facade over them. DaemonConnection is their composition root
@@ -43,10 +38,10 @@ final class DaemonConnection: ObservableObject {
 	let canvases = CanvasStateStore()
 	let previews: PreviewService
 	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
-	// serves), so it is a flag beside Status, not a fourth case.
+	// serves), so it is a flag beside the status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
 	private var api: RemoteMachman?
-	private var connectTask: Task<Void, Never>?
+	private var loop: ConnectionLoop<RemoteMachman>!
 	private var viewModelForwarder: AnyCancellable?
 	private let loginItem = SMAppService.loginItem(identifier: DaemonConnection.daemonBundleID)
 
@@ -56,17 +51,29 @@ final class DaemonConnection: ObservableObject {
 		ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 	}
 
+	// The agent may be launched but still starting, or hung: a hello bounded well under the
+	// RPC default lets the loop say "not answering" after two tries instead of a minute.
+	static let helloDeadline: Duration = .seconds(10)
+
 	init() {
 		previews = PreviewService(store: vmStore)
+		loop = ConnectionLoop(
+			connect: { onDrop in
+				try await RemoteMachman(
+					clientName: "MachmanDesktop", helloDeadline: Self.helloDeadline,
+					onDisconnect: onDrop)
+			},
+			launchDaemon: { [weak self] in self?.launchDaemon() },
+			attach: { [weak self] api in self?.attach(api) },
+			detach: { [weak self] in self?.detached() },
+			onStatus: { [weak self] status in self?.status = status })
 		registerLoginItem()
-		connect()
+		loop.start()
 	}
 
 	func retry() {
 		registerLoginItem()   // re-check approval on every user-driven retry
-		connectTask?.cancel()
-		connectTask = nil
-		connect()
+		loop.retry()
 	}
 
 	func openLoginItemsSettings() {
@@ -100,54 +107,25 @@ final class DaemonConnection: ObservableObject {
 		#endif
 	}
 
-	private func connect() {
-		guard connectTask == nil else { return }
-		status = .connecting
-		let onDisconnect: @Sendable () -> Void = { [weak self] in
-			Task { @MainActor in
-				self?.disconnected()
-			}
+	// A session the loop vetted: re-attach the app-scoped stores, then a fresh view model.
+	private func attach(_ api: RemoteMachman) {
+		vmStore.attach(api: api)
+		operationsStore.attach(api: api)
+		previews.attach(api: api)
+		let viewModel = VMListViewModel(
+			api: api, store: vmStore, operations: operationsStore,
+			terminals: terminals, previews: previews, canvases: canvases)
+		self.api = api
+		self.viewModel = viewModel
+		// The menu bar commands observe this object; forward list changes so Run/Stop/View
+		// menus stay live.
+		viewModelForwarder = viewModel.objectWillChange.sink { [weak self] in
+			self?.objectWillChange.send()
 		}
-		connectTask = Task { [weak self] in
-			var attempt = 0
-			var launched = false
-			var lastError = "unknown"
-			while !Task.isCancelled, attempt < 20 {
-				attempt += 1
-				do {
-					let api = try await RemoteMachman(
-						clientName: "MachmanDesktop", onDisconnect: onDisconnect)
-					guard let self = self else { return }
-					self.vmStore.attach(api: api)
-					self.operationsStore.attach(api: api)
-					self.previews.attach(api: api)
-					let viewModel = VMListViewModel(
-						api: api, store: self.vmStore, operations: self.operationsStore,
-						terminals: self.terminals, previews: self.previews,
-						canvases: self.canvases)
-					self.api = api
-					self.viewModel = viewModel
-					// The menu bar commands observe this object; forward list changes so
-					// Run/Stop/View menus stay live.
-					self.viewModelForwarder = viewModel.objectWillChange.sink { [weak self] in
-						self?.objectWillChange.send()
-					}
-					self.status = .connected(daemonVersion: api.hello.daemonVersion)
-					self.connectTask = nil
-					self.checkDaemonVersion(api.hello.daemonVersion)
-					return
-				} catch {
-					lastError = "\(error)"
-					if !launched {
-						launched = true
-						self?.launchDaemon()
-					}
-					try? await Task.sleep(for: .milliseconds(500))
-				}
-			}
-			guard let self = self, !Task.isCancelled else { return }
-			self.status = .unavailable(lastError)
-			self.connectTask = nil
+		// Deferred a turn: its alert runs modal, never inside the loop's callback.
+		let version = api.hello.daemonVersion
+		Task { @MainActor [weak self] in
+			self?.checkDaemonVersion(version)
 		}
 	}
 
@@ -221,7 +199,8 @@ final class DaemonConnection: ObservableObject {
 		}
 	}
 
-	private func disconnected() {
+	// The attached session dropped; the loop reconnects (or stops) on its own.
+	private func detached() {
 		MachmanLogger.log(.passiveWarning, "daemon connection lost; reconnecting")
 		vmStore.detach()
 		operationsStore.detach()
@@ -229,9 +208,6 @@ final class DaemonConnection: ObservableObject {
 		api = nil
 		viewModel = nil
 		viewModelForwarder = nil
-		connectTask?.cancel()
-		connectTask = nil
-		connect()
 	}
 
 	// The embedded copy is guaranteed by the build — launch by explicit URL, gated by an id

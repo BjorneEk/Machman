@@ -8,6 +8,7 @@
 
 import SwiftUI
 import MachmanUI
+import MachmanDesktopCore
 
 struct ConnectingView: View {
 	@ObservedObject var connection: DaemonConnection
@@ -19,13 +20,13 @@ struct ConnectingView: View {
 				ProgressView()
 				Text("Connecting to Machman Agent…")
 					.foregroundColor(.secondary)
-			case .unavailable(let reason):
+			case .unavailable(let problem):
 				Image(systemName: MachmanSymbols.daemonUnreachable)
 					.font(.largeTitle)
 					.foregroundColor(.secondary)
 				Text("The Machman daemon is not reachable")
 					.font(.title3)
-				Text(reason)
+				Text(problem.detail)
 					.font(.caption)
 					.foregroundColor(.secondary)
 					.textSelection(.enabled)
