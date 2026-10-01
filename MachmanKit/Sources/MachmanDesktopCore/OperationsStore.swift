@@ -58,6 +58,14 @@ public final class OperationsStore: ObservableObject {
 		phasePrimesInFlight.removeAll()
 	}
 
+	// A finished card's ✕: gone here and now, and never resynced back. Local only — there
+	// is nothing on the daemon to cancel (F2).
+	public func dismiss(id: String) {
+		guard operations.contains(where: { $0.id == id && $0.isFinished }) else { return }
+		operations.removeAll { $0.id == id }
+		forgotten.insert(id)
+	}
+
 	// Prime phases for VMs the daemon reports mid-install: only a live install session
 	// serves real progress; every other macInstallState derives its phase client-side
 	// (VMListViewModel.installPhase(for:)) without a fetch — so no per-VM N+1 on reload.

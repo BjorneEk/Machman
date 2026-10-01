@@ -4,9 +4,9 @@
 //
 //  The bottom-right feedback corner (1.0.4 UI): status toasts (a stale VM list) and transient
 //  toasts (engine warnings) over persistent progress cards — the daemon's live operations
-//  plus running macOS installs, with client-side ETA math. The ✕ cancels (op.cancel /
-//  vm.install.cancel); finished operations linger a few seconds showing their outcome, then
-//  prune from the store.
+//  plus running macOS installs, with client-side ETA math. A running card's ✕ cancels
+//  (op.cancel / vm.install.cancel); finished operations linger a few seconds showing their
+//  outcome, then prune from the store, and their ✕ only dismisses them.
 //
 
 import SwiftUI
@@ -22,10 +22,8 @@ struct NotificationOverlay: View {
 		ToastStack(
 			toasts: viewModel.statusToasts + viewModel.toasts,
 			progress: cards,
-			dismissProgress: dismiss)
+			dismissProgress: viewModel.closeProgressCard)
 	}
-
-	private static let installPrefix = "install:"
 
 	private var cards: [ProgressCardModel] {
 		var cards = operations.operations.map { op in
@@ -35,14 +33,15 @@ struct NotificationOverlay: View {
 				symbol: symbol(for: op),
 				phase: phase(for: op),
 				fraction: op.fraction,
-				etaSeconds: eta(for: op))
+				etaSeconds: eta(for: op),
+				finished: op.isFinished)
 		}
 		// Running macOS installs ride the richer install-phase flow, not OperationInfo.
 		for (vm, phase) in operations.installPhases {
 			switch phase.kind {
 			case .resolving, .downloading, .installing:
 				cards.append(ProgressCardModel(
-					id: Self.installPrefix + vm,
+					id: VMListViewModel.installCardPrefix + vm,
 					title: "Installing macOS — \(vm)",
 					symbol: MachmanSymbols.bootMacTab,
 					phase: installPhaseLabel(phase),
@@ -53,14 +52,6 @@ struct NotificationOverlay: View {
 			}
 		}
 		return cards
-	}
-
-	private func dismiss(_ id: String) {
-		if id.hasPrefix(Self.installPrefix) {
-			viewModel.cancelInstall(String(id.dropFirst(Self.installPrefix.count)))
-		} else {
-			viewModel.cancelOperation(id: id)
-		}
 	}
 
 	// MARK: - Operation mapping

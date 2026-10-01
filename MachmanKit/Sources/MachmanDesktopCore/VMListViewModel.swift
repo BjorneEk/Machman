@@ -509,8 +509,13 @@ public final class VMListViewModel: ObservableObject {
 
 	public func cancelOperation(id: String) {
 		Task { [weak self] in
-			do { try await self?.api.cancelOperation(id: id) }
-			catch { self?.present(error, while: "Canceling the operation") }
+			do {
+				try await self?.api.cancelOperation(id: id)
+			} catch let error as MachmanError where error.code == .notFound {
+				// It ended meanwhile; its card already shows how.
+			} catch {
+				self?.present(error, while: "Canceling the operation")
+			}
 		}
 	}
 

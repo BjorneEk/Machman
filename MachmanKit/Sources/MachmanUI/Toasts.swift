@@ -4,9 +4,10 @@
 //
 //  Bottom-right passive feedback (1.0.4 UI): transient toasts for confirmations/warnings
 //  and persistent progress cards for long-running operations (step text, determinate bar,
-//  live ETA, cancel ×). The HIG feedback pattern: passive status near the corner beats
-//  interrupting dialogs; a small indicator stays near the control that started the work
-//  while the detailed card lives here.
+//  live ETA, and a × that cancels a running operation and dismisses a finished one). The
+//  HIG feedback pattern: passive status near the corner beats interrupting dialogs; a small
+//  indicator stays near the control that started the work while the detailed card lives
+//  here.
 //
 
 import SwiftUI
@@ -50,10 +51,12 @@ public struct ProgressCardModel: Identifiable, Equatable {
 	public var phase: String
 	public var fraction: Double?             // nil = indeterminate
 	public var etaSeconds: Double?
+	// Showing its outcome: the × only dismisses the card (nothing left to cancel).
+	public var finished: Bool
 
 	public init(
 		id: String, title: String, symbol: String, phase: String,
-		fraction: Double? = nil, etaSeconds: Double? = nil
+		fraction: Double? = nil, etaSeconds: Double? = nil, finished: Bool = false
 	) {
 		self.id = id
 		self.title = title
@@ -61,6 +64,7 @@ public struct ProgressCardModel: Identifiable, Equatable {
 		self.phase = phase
 		self.fraction = fraction
 		self.etaSeconds = etaSeconds
+		self.finished = finished
 	}
 }
 
@@ -139,7 +143,8 @@ public struct ProgressCard: View {
 				}
 				.buttonStyle(.plain)
 				.onHover { hoveringClose = $0 }
-				.help("Cancel")
+				.help(card.finished ? "Dismiss" : "Cancel")
+				.accessibilityLabel(card.finished ? "Dismiss" : "Cancel")
 			}
 			if let value = card.fraction {
 				ProgressView(value: value)

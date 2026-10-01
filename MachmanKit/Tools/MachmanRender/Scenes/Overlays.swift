@@ -55,5 +55,18 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		RenderScene(
+			"overlay.finished-cards",
+			"NotificationOverlay: a running copy beside a finished import and a cancelled copy",
+			widths: [420], height: 360
+		) { ctx in
+			// The finished cards linger 5 s — longer than the snapshot takes.
+			for op in [Samples.copyOperation(), Samples.finishedImport(), Samples.cancelledCopy()] {
+				ctx.stub.emit(.operationChanged(op: op))
+			}
+			Offscreen.pump(until: { ctx.operations.operations.count == 3 })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }
