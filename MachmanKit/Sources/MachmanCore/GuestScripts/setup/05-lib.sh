@@ -870,6 +870,11 @@ _mf_put() {
 		}'
 }
 
+# Lines containing ENVIRON _MF_TEXT dropped (no regex: markers and keys are literal).
+_mf_drop() {
+	awk 'index($0, ENVIRON["_MF_TEXT"]) == 0'
+}
+
 # strip_block <file> [marker] — remove "# BEGIN <marker>"…"# END <marker>" (default
 # $MARKER). A file without that block is not ours: left untouched, links included. One
 # that has it but may not be edited (a link to it, a hard link) is refused by name.
@@ -905,6 +910,19 @@ put_block() {
 	rewrite_file "$1" _mf_put "$2" || _pb_code=$?
 	unset _MF_BODY
 	return "$_pb_code"
+}
+
+# drop_lines <file> <text> — remove every line containing <text>. A file without one is
+# left untouched (links included); one that has it but may not be edited is refused.
+drop_lines() {
+	[ -f "$1" ] || return 0
+	grep -qF -- "$2" "$1" 2>/dev/null || return 0
+	_MF_TEXT="$2"
+	export _MF_TEXT
+	_dl_code=0
+	rewrite_file "$1" _mf_drop || _dl_code=$?
+	unset _MF_TEXT
+	return "$_dl_code"
 }
 
 # Adopt: comment matching UNMARKED lines out, tagged so uninstall can restore them

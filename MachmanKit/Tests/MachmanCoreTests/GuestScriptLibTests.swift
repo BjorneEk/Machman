@@ -125,6 +125,24 @@ struct GuestScriptLibTests {
 		}
 	}
 
+	// D14: an /etc/default/grub (or configuration.nix) holding nothing but our line empties
+	// cleanly, and a link to such a file is refused by name like any other edit.
+	@Test func aFileOfOnlyOurLinesEmptiesCleanly() throws {
+		for shell in Self.shells {
+			let r = try run("""
+				printf 'G="$G console=hvc0" # %s\\n' "$MARKER" > "$D/grub"
+				ln -s "$D/grub" "$D/linked"
+				drop_lines "$D/linked" "# $MARKER" || echo "kept: $R_ERROR"
+				drop_lines "$D/grub" "# $MARKER"
+				[ -f "$D/grub" ] && [ ! -s "$D/grub" ] && echo empty
+				ls -A "$D" | grep -c machman- || true
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasPrefix("kept: /"), "\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("/linked is a symbolic link\nempty\n0\n"), "\(shell): \(r.out)")
+		}
+	}
+
 	// A whole-file write replaces whatever stands at the name — a link is never written
 	// through, and a hard link's other name keeps the old content.
 	@Test func writeFileReplacesALinkInsteadOfWritingThroughIt() throws {

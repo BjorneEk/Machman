@@ -325,7 +325,11 @@ report_hook_uninstall() {
 		/etc/local.d/machman-report.start \
 		/usr/local/etc/rc.d/machman_report 2>/dev/null || true
 	strip_block /etc/rc.local "$MARKER-report" || uninstall_kept
-	have systemctl && systemctl daemon-reload >/dev/null 2>&1
+	# A systemctl without systemd as PID 1 (sysvinit with systemd installed) fails: nothing
+	# to reload then, and no reason to abort the uninstall.
+	if have systemctl; then
+		systemctl daemon-reload >/dev/null 2>&1 || true
+	fi
 	if [ -f /Library/LaunchDaemons/com.machman.report.plist ]; then
 		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
 		rm -f /Library/LaunchDaemons/com.machman.report.plist

@@ -152,22 +152,34 @@ kernelconsole_grub_default_edit() {
 		acting "would append console=$KC_DEVICE console=tty0 to /etc/default/grub"
 		return 0
 	fi
-	grep -v "# $MARKER\$" /etc/default/grub > /etc/default/grub.machman-tmp || true
-	mv /etc/default/grub.machman-tmp /etc/default/grub
 	# The variable name is a printf argument: the emitted line extends the distro's own
 	# value, and spelling the dollar-name literally here would look like a read to the
 	# drift scanner.
-	printf '%s="$%s console=%s console=tty0" # %s\n' \
-		GRUB_CMDLINE_LINUX_DEFAULT GRUB_CMDLINE_LINUX_DEFAULT \
-		"$KC_DEVICE" "$MARKER" >> /etc/default/grub
-	return 0
+	_MF_BODY="$(printf '%s="$%s console=%s console=tty0" # %s' \
+		GRUB_CMDLINE_LINUX_DEFAULT GRUB_CMDLINE_LINUX_DEFAULT "$KC_DEVICE" "$MARKER")"
+	_MF_TEXT="# $MARKER"
+	export _MF_BODY _MF_TEXT
+	_kge_code=0
+	rewrite_file /etc/default/grub kernelconsole_grub_line || _kge_code=$?
+	unset _MF_BODY _MF_TEXT
+	return "$_kge_code"
 }
 
-# One restorable copy of the generated config before every rebuild.
+# Filter: our previous line dropped wherever it was, the new one (_MF_BODY) appended last.
+kernelconsole_grub_line() {
+	awk 'index($0, ENVIRON["_MF_TEXT"]) == 0 { print } END { print ENVIRON["_MF_BODY"] }'
+}
+
+# One restorable copy of the generated config before every rebuild. Without it nothing is
+# edited or rebuilt: 1, with R_ERROR naming the copy that failed.
 kernelconsole_backup_cfg() {
 	[ "$DRY_RUN" -eq 1 ] && return 0
 	for _kcb_cfg in /boot/grub/grub.cfg /boot/grub2/grub.cfg; do
-		[ -f "$_kcb_cfg" ] && cp "$_kcb_cfg" "$_kcb_cfg.machman-backup" 2>/dev/null
+		[ -f "$_kcb_cfg" ] || continue
+		if ! cp "$_kcb_cfg" "$_kcb_cfg.machman-backup" 2>/dev/null; then
+			R_ERROR="could not back up $_kcb_cfg"
+			return 1
+		fi
 	done
 	return 0
 }
@@ -195,8 +207,16 @@ kernelconsole_act() {
 		fi
 		;;
 	update-grub|grub-mkconfig|grub2-mkconfig)
-		kernelconsole_grub_default_edit
-		kernelconsole_backup_cfg
+		if ! kernelconsole_backup_cfg; then
+			step_failed kernel-console "$R_ERROR — the boot loader was left alone" \
+				"Make room in /boot (or fix its mount), then re-run."
+			return 0
+		fi
+		if ! kernelconsole_grub_default_edit; then
+			step_failed kernel-console "could not edit /etc/default/grub: $R_ERROR" \
+				"Add console=$KC_DEVICE console=tty0 to its kernel line yourself."
+			return 0
+		fi
 		case "$BOOTLOADER" in
 		update-grub) _kca_ok=0; run_live "rebuilding the GRUB config" update-grub || _kca_ok=1 ;;
 		grub-mkconfig)
@@ -254,8 +274,10 @@ kernelconsole_uninstall() {
 		;;
 	*)
 		if [ -f /etc/default/grub ] && grep -q "# $MARKER\$" /etc/default/grub; then
-			grep -v "# $MARKER\$" /etc/default/grub > /etc/default/grub.machman-tmp
-			mv /etc/default/grub.machman-tmp /etc/default/grub
+			if ! drop_lines /etc/default/grub "# $MARKER"; then
+				uninstall_kept
+				return 0
+			fi
 			# No fresh backup here: install's backup holds the last pre-Machman
 			# config, and overwriting it with the Machman-era one (what this used to
 			# do) would leave a failed rebuild with nothing worth restoring.

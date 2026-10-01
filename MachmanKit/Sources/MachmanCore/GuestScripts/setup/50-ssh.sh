@@ -374,12 +374,13 @@ ssh_uninstall() {
 	done
 	if [ "$OS_FAMILY" = nixos ] && [ -f /etc/nixos/configuration.nix ] \
 		&& grep -q "# $MARKER" /etc/nixos/configuration.nix; then
-		_su_tmp="/etc/nixos/configuration.nix.machman-tmp"
-		grep -v "# $MARKER" /etc/nixos/configuration.nix > "$_su_tmp"
-		mv "$_su_tmp" /etc/nixos/configuration.nix
-		# The strip IS the restore — the install-time backup has nothing left in it.
-		rm -f /etc/nixos/configuration.nix.machman-backup
-		note "removed the Machman line from configuration.nix — run 'nixos-rebuild switch'."
+		if drop_lines /etc/nixos/configuration.nix "# $MARKER"; then
+			# The strip IS the restore — the install-time backup has nothing left in it.
+			rm -f /etc/nixos/configuration.nix.machman-backup
+			note "removed the Machman line from configuration.nix — run 'nixos-rebuild switch'."
+		else
+			uninstall_kept
+		fi
 	fi
 	# Deliberate keep, disclosed: sshd stays (this uninstall may be running over it),
 	# and with it openSUSE's permanent firewall opening for ssh.
