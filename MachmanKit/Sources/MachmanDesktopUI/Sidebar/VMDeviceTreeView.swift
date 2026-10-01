@@ -970,9 +970,7 @@ struct VMDeviceTreeView: View {
 	// Each receives only the items that fit its section (TreeDragPreview.adds).
 
 	private func performDiskDrop(_ urls: [URL]) {
-		for url in urls {
-			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, url: url)
-		}
+		AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, urls: urls)
 	}
 
 	private func performMountDrop(_ urls: [URL]) {
@@ -991,58 +989,50 @@ struct VMDeviceTreeView: View {
 
 	// MARK: - Section paste (each group takes only what fits it)
 
-	private static func isDirectory(_ url: URL) -> Bool {
-		TreeDropValidator.isDirectory(url)
-	}
-
 	// Everything on the clipboard pastes into this VM: entities by their own kinds,
 	// plain file URLs by the Finder routing.
 	private func pasteAnything() {
-		let entities = EntityClipboard.read()
-		if !entities.isEmpty {
-			for entity in entities {
-				entity.paste(into: vm.name, viewModel: viewModel)
-			}
-			return
-		}
-		_ = AddFlows.handleFileURLs(
-			AddFlows.pasteboardFileURLs(), viewModel: viewModel, vm: vm.name)
+		AddFlows.paste(
+			entities: EntityClipboard.read(), fileURLs: AddFlows.pasteboardFileURLs(),
+			into: vm.name, viewModel: viewModel)
+	}
+
+	// The pasteboard's file URLs that fit a section (the drop rules).
+	private func pastedFiles(fitting section: TreeDragPreview.Section) -> [URL] {
+		TreeDropValidator.fitting(section: section, urls: AddFlows.pasteboardFileURLs())
 	}
 
 	private var canPasteIntoDisks: Bool {
 		let entities = EntityClipboard.read()
 		if !entities.isEmpty { return entities.contains { $0.kind == .disk } }
-		return AddFlows.pasteboardFileURLs().contains { !Self.isDirectory($0) }
+		return !pastedFiles(fitting: .disks).isEmpty
 	}
 
 	private func pasteIntoDisks() {
 		let matching = EntityClipboard.read().filter { $0.kind == .disk }
 		if !matching.isEmpty {
-			for entity in matching {
-				entity.paste(into: vm.name, viewModel: viewModel)
-			}
+			EntityClipboard.paste(matching, into: vm.name, viewModel: viewModel)
 			return
 		}
-		for url in AddFlows.pasteboardFileURLs() where !Self.isDirectory(url) {
-			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, url: url)
+		let files = pastedFiles(fitting: .disks)
+		if !files.isEmpty {
+			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, urls: files)
 		}
 	}
 
 	private var canPasteIntoMounts: Bool {
 		let entities = EntityClipboard.read()
 		if !entities.isEmpty { return entities.contains { $0.kind == .mount } }
-		return AddFlows.pasteboardFileURLs().contains { Self.isDirectory($0) }
+		return !pastedFiles(fitting: .mounts).isEmpty
 	}
 
 	private func pasteIntoMounts() {
 		let matching = EntityClipboard.read().filter { $0.kind == .mount }
 		if !matching.isEmpty {
-			for entity in matching {
-				entity.paste(into: vm.name, viewModel: viewModel)
-			}
+			EntityClipboard.paste(matching, into: vm.name, viewModel: viewModel)
 			return
 		}
-		for url in AddFlows.pasteboardFileURLs() where Self.isDirectory(url) {
+		for url in pastedFiles(fitting: .mounts) {
 			viewModel.addMount(vm.name, path: url.path, tag: url.lastPathComponent)
 		}
 	}
@@ -1051,19 +1041,17 @@ struct VMDeviceTreeView: View {
 		let entities = EntityClipboard.read()
 		let kind: EntityClipboard.Kind = role == .kernel ? .kernel : .initramfs
 		if !entities.isEmpty { return entities.contains { $0.kind == kind } }
-		return AddFlows.pasteboardFileURLs().contains { !Self.isDirectory($0) }
+		return !pastedFiles(fitting: .kernel(role)).isEmpty
 	}
 
 	private func pasteIntoKernels(role: KernelRole) {
 		let kind: EntityClipboard.Kind = role == .kernel ? .kernel : .initramfs
 		let matching = EntityClipboard.read().filter { $0.kind == kind }
 		if !matching.isEmpty {
-			for entity in matching {
-				entity.paste(into: vm.name, viewModel: viewModel)
-			}
+			EntityClipboard.paste(matching, into: vm.name, viewModel: viewModel)
 			return
 		}
-		for url in AddFlows.pasteboardFileURLs() where !Self.isDirectory(url) {
+		for url in pastedFiles(fitting: .kernel(role)) {
 			viewModel.promoteKernel(
 				vm.name, role: role, sourcePath: url.path,
 				tag: url.deletingPathExtension().lastPathComponent)

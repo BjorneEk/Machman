@@ -14,39 +14,67 @@ import MachmanAPI
 @MainActor
 public enum AddFlows {
 	// The copy-or-reference question every disk-file entry point funnels through (picker,
-	// tree drop, paste): queued on the view model, presented as a confirmationDialog.
+	// tree drop, paste): ONE question for all the files of one gesture, queued on the view
+	// model behind any question already showing, presented as a confirmationDialog.
+	public static func askDiskReferenceOrCopy(
+		viewModel: VMListViewModel, vm: String, urls: [URL]
+	) {
+		viewModel.askDiskAdd(vm: vm, urls: urls)
+	}
+
 	public static func askDiskReferenceOrCopy(viewModel: VMListViewModel, vm: String, url: URL) {
-		viewModel.pendingDiskAdd = VMListViewModel.PendingDiskAdd(vm: vm, url: url)
+		askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, urls: [url])
 	}
 
-	// The dialog's Copy / Reference resolutions.
-	public static func addDiskCopy(viewModel: VMListViewModel, vm: String, url: URL) {
-		viewModel.importDisk(vm, path: url.path)
+	// The dialog's Copy / Reference resolutions, applied to every file it asked about.
+	public static func addDiskCopies(
+		viewModel: VMListViewModel, _ pending: VMListViewModel.PendingDiskAdd
+	) {
+		viewModel.importDisks(pending.vm, paths: pending.urls.map(\.path))
 	}
 
-	public static func addDiskReference(viewModel: VMListViewModel, vm: String, url: URL) {
-		if url.pathExtension.lowercased() == "iso" {
-			viewModel.addDisk(vm, .iso(path: url.path))
-		} else {
-			viewModel.addDisk(vm, .image(path: url.path))
-		}
+	public static func addDiskReferences(
+		viewModel: VMListViewModel, _ pending: VMListViewModel.PendingDiskAdd
+	) {
+		viewModel.addDisks(pending.vm, pending.urls.map(newDisk(for:)))
+	}
+
+	static func newDisk(for url: URL) -> NewDisk {
+		url.pathExtension.lowercased() == "iso" ? .iso(path: url.path) : .image(path: url.path)
 	}
 
 	// Shared Finder-drop / paste routing: folders become virtiofs mounts, files go through
-	// the copy-or-reference question.
+	// one copy-or-reference question.
 	public static func handleFileURLs(
 		_ urls: [URL], viewModel: VMListViewModel, vm: String
 	) -> Bool {
 		guard !urls.isEmpty else { return false }
+		var files: [URL] = []
 		for url in urls {
 			var isDir: ObjCBool = false
 			FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
 			if isDir.boolValue {
 				viewModel.addMount(vm, path: url.path, tag: url.lastPathComponent)
 			} else {
-				askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, url: url)
+				files.append(url)
 			}
 		}
+		if !files.isEmpty {
+			askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, urls: files)
+		}
 		return true
+	}
+
+	// Paste into a VM: copied tree entities by their own kinds when the clipboard holds any,
+	// otherwise the pasteboard's file URLs by the Finder routing.
+	public static func paste(
+		entities: [EntityClipboard], fileURLs: [URL], into vm: String,
+		viewModel: VMListViewModel
+	) {
+		if !entities.isEmpty {
+			EntityClipboard.paste(entities, into: vm, viewModel: viewModel)
+		} else {
+			_ = handleFileURLs(fileURLs, viewModel: viewModel, vm: vm)
+		}
 	}
 }

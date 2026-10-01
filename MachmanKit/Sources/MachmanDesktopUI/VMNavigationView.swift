@@ -210,24 +210,21 @@ private struct ConfirmationDialogs: ViewModifier {
 			} message: { vm in
 				Text("\(vm.name) and its owned files are deleted. This cannot be undone.")
 			}
+			// One question per drop/paste/pick, for all its files; later ones queue.
 			.confirmationDialog(
-				"Add \(viewModel.pendingDiskAdd?.url.lastPathComponent ?? "")?",
-				isPresented: presenting($viewModel.pendingDiskAdd),
+				viewModel.pendingDiskAdd?.title ?? "",
+				isPresented: $viewModel.isDiskAddPresented,
 				presenting: viewModel.pendingDiskAdd
 			) { pending in
 				Button("Copy into VM") {
-					AddFlows.addDiskCopy(
-						viewModel: viewModel, vm: pending.vm, url: pending.url)
+					AddFlows.addDiskCopies(viewModel: viewModel, pending)
 				}
 				Button("Reference") {
-					AddFlows.addDiskReference(
-						viewModel: viewModel, vm: pending.vm, url: pending.url)
+					AddFlows.addDiskReferences(viewModel: viewModel, pending)
 				}
 				Button("Cancel", role: .cancel) {}
 			} message: { pending in
-				Text("Copy \(pending.url.lastPathComponent) into \(pending.vm) (an "
-					+ "independent copy that travels with the VM), or reference the "
-					+ "original in place?")
+				Text(pending.message)
 			}
 			.confirmationDialog(
 				"Delete disk "

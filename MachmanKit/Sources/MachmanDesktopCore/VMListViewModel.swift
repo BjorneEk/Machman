@@ -77,10 +77,24 @@ public final class VMListViewModel: ObservableObject {
 	}
 	// Pending destructive/choice confirmations, presented as confirmationDialogs by
 	// VMNavigationView (the HIG successor to the old modal NSAlerts).
+	// One copy-or-reference question for every disk file of one drop, paste or pick.
 	public struct PendingDiskAdd: Identifiable {
 		public let id = UUID()
 		public let vm: String
-		public let url: URL
+		public let urls: [URL]   // never empty
+
+		public var title: String {
+			urls.count == 1
+				? "Add \(urls[0].lastPathComponent)?"
+				: "Copy or reference these \(urls.count) files?"
+		}
+
+		public var message: String {
+			urls.count == 1
+				? "Copy \(urls[0].lastPathComponent) into \(vm) (an independent copy that "
+					+ "travels with the VM), or reference the original in place?"
+				: "Copies travel with \(vm); references use the originals in place."
+		}
 	}
 	public struct PendingDiskDelete: Identifiable {
 		public let id = UUID()
@@ -94,7 +108,15 @@ public final class VMListViewModel: ObservableObject {
 		public let fileName: String
 	}
 	@Published public var pendingVMDelete: VMInfo?
-	@Published public var pendingDiskAdd: PendingDiskAdd?
+	// Disk-add questions queue: a second drop asked while one shows waits for its own (P17).
+	@Published private var diskAddQueue = PresentationQueue<PendingDiskAdd>()
+	public var pendingDiskAdd: PendingDiskAdd? { diskAddQueue.current }
+	public var isDiskAddPresented: Bool {
+		get { pendingDiskAdd != nil }
+		set {
+			if !newValue, diskAddQueue.dismiss() { presentNext { $0.diskAddQueue.advance() } }
+		}
+	}
 	@Published public var pendingDiskDelete: PendingDiskDelete?
 	@Published public var pendingKernelDelete: PendingKernelDelete?
 	@Published public var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
@@ -746,6 +768,28 @@ public final class VMListViewModel: ObservableObject {
 		return "\(base) \(n)"
 	}
 
+	public func askDiskAdd(vm: String, urls: [URL]) {
+		guard !urls.isEmpty else { return }
+		diskAddQueue.enqueue(PendingDiskAdd(vm: vm, urls: urls))
+	}
+
+	// A batch copies one file after another: the engine picks each copy's name when it
+	// starts, so two copies running at once could pick the same one. A failed file gets its
+	// own alert and the rest carry on.
+	public func importDisks(_ name: String, paths: [String]) {
+		Task { [weak self] in
+			for path in paths {
+				guard let api = self?.api else { return }
+				do {
+					_ = try await api.importDisk(vm: name, path: path)
+				} catch {
+					let file = (path as NSString).lastPathComponent
+					self?.present(error, while: "Importing \(file) into \(name)")
+				}
+			}
+		}
+	}
+
 	public func importDisk(_ name: String, path: String) {
 		Task { [weak self] in
 			do {
@@ -941,6 +985,27 @@ public final class VMListViewModel: ObservableObject {
 			} catch {
 				self?.present(error, while: "Adding a disk")
 			}
+		}
+	}
+
+	// References for a batch, one toast for all of them.
+	public func addDisks(_ name: String, _ disks: [NewDisk]) {
+		Task { [weak self] in
+			var added = 0
+			for disk in disks {
+				guard let api = self?.api else { return }
+				do {
+					try await api.addDisk(vm: name, disk)
+					added += 1
+				} catch {
+					let file = disk.path.map { ($0 as NSString).lastPathComponent }
+					self?.present(error, while: "Adding \(file ?? "a disk")")
+				}
+			}
+			guard added > 0 else { return }
+			self?.pushToast(
+				symbol: MachmanSymbols.diskStorage,
+				message: added == 1 ? "Added disk" : "Added \(added) disks")
 		}
 	}
 

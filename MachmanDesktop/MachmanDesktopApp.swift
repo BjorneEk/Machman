@@ -196,16 +196,10 @@ struct MachmanDesktopApp: App {
 					.disabled(viewModel.copyableSelectionItems.isEmpty)
 					Button("Paste Items") {
 						guard let vm = viewModel.selected else { return }
-						let entities = EntityClipboard.read()
-						if !entities.isEmpty {
-							for entity in entities {
-								entity.paste(into: vm.name, viewModel: viewModel)
-							}
-						} else {
-							_ = AddFlows.handleFileURLs(
-								AddFlows.pasteboardFileURLs(), viewModel: viewModel,
-								vm: vm.name)
-						}
+						AddFlows.paste(
+							entities: EntityClipboard.read(),
+							fileURLs: AddFlows.pasteboardFileURLs(), into: vm.name,
+							viewModel: viewModel)
 					}
 					.keyboardShortcut("v", modifiers: [.option, .command])
 					.disabled(viewModel.selected == nil

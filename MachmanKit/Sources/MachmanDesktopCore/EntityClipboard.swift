@@ -37,19 +37,29 @@ public struct EntityClipboard: Codable {
 		URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
 	}
 
-	// Paste this entity into a VM: the same funnels as picker/drop entry points.
+	// Paste entities into a VM through the same funnels as the picker and drop entry points;
+	// the disks among them share one copy-or-reference question.
 	@MainActor
-	public func paste(into vm: String, viewModel: VMListViewModel) {
-		switch kind {
-		case .disk:
-			AddFlows.askDiskReferenceOrCopy(
-				viewModel: viewModel, vm: vm, url: URL(fileURLWithPath: path))
-		case .kernel:
-			viewModel.promoteKernel(vm, role: .kernel, sourcePath: path, tag: defaultTag)
-		case .initramfs:
-			viewModel.promoteKernel(vm, role: .initramfs, sourcePath: path, tag: defaultTag)
-		case .mount:
-			viewModel.addMount(vm, path: path, tag: tag ?? fileName)
+	public static func paste(
+		_ items: [EntityClipboard], into vm: String, viewModel: VMListViewModel
+	) {
+		var disks: [URL] = []
+		for item in items {
+			switch item.kind {
+			case .disk:
+				disks.append(URL(fileURLWithPath: item.path))
+			case .kernel:
+				viewModel.promoteKernel(
+					vm, role: .kernel, sourcePath: item.path, tag: item.defaultTag)
+			case .initramfs:
+				viewModel.promoteKernel(
+					vm, role: .initramfs, sourcePath: item.path, tag: item.defaultTag)
+			case .mount:
+				viewModel.addMount(vm, path: item.path, tag: item.tag ?? item.fileName)
+			}
+		}
+		if !disks.isEmpty {
+			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, urls: disks)
 		}
 	}
 }
