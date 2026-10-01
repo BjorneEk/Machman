@@ -11,8 +11,10 @@
 //  All state runs on one serial queue, so there are no locks: the drain, the accept loop and the
 //  per-client reads are DispatchSources targeting `queue`. Client writes are non-blocking and
 //  best-effort (a slow client drops output rather than stalling the shared drain — and with it
-//  the guest). SIGPIPE is ignored process-wide (a client that vanishes mid-write must not kill
-//  the vmhost).
+//  the guest). Guest input is non-blocking too: what the guest pipe won't take waits in a
+//  bounded buffer, and a guest that reads nothing loses input rather than freezing the drain.
+//  SIGPIPE is ignored process-wide (a client that vanishes mid-write must not kill the vmhost),
+//  and a closed guest end (EPIPE while VZ tears down) ends input instead of raising.
 //
 
 import Foundation
@@ -39,8 +41,15 @@ final class SerialPortBridge {
 	private var stopped = false
 	// A reset-on-boot log is truncated by the run's FIRST open only; a retune appends (E25).
 	private var logOpenedThisRun = false
+	// Client input the guest pipe has not taken yet, flushed by `guestInputSource` as the
+	// guest reads; bounded by guestInputCap. Closed for good on EPIPE (the guest end is gone).
+	private var guestInput = Data()
+	private var guestInputSource: DispatchSourceWrite?
+	private var guestInputClosed = false
+	private var warnedInputDrop = false
 
 	private static let replayCap = 256 * 1024
+	private static let guestInputCap = 64 * 1024
 
 	private static let ignoreSIGPIPE: Void = {
 		signal(SIGPIPE, SIG_IGN)
@@ -70,6 +79,8 @@ final class SerialPortBridge {
 	// (leaving the port unattachable) the guest's output is still drained and never stalls.
 	func start() {
 		_ = Self.ignoreSIGPIPE
+		let inputFD = toGuest.fileDescriptor
+		_ = fcntl(inputFD, F_SETFL, fcntl(inputFD, F_GETFL) | O_NONBLOCK)
 		installDrain()
 		queue.async { [weak self] in
 			self?.openLog()
@@ -85,11 +96,16 @@ final class SerialPortBridge {
 		}
 	}
 
+	// Captures self strongly: VMRuntime drops its bridges right after calling this, and the
+	// cancels below must still run before the pipe handles close with the bridge.
 	func stop() {
-		queue.async { [weak self] in
-			guard let self = self, !self.stopped else { return }
+		queue.async { [self] in
+			guard !self.stopped else { return }
 			self.stopped = true
 			self.drainSource?.cancel()
+			self.guestInputSource?.cancel()
+			self.guestInputSource = nil
+			self.guestInput.removeAll()
 			self.acceptSource?.cancel()
 			for (_, source) in self.clients { source.cancel() }
 			self.clients.removeAll()
@@ -129,6 +145,8 @@ final class SerialPortBridge {
 			}
 			for fd in self.clients.keys { self.write(fd, data) }
 		}
+		// The fd must outlive the source's registration: the cancel handler holds the handle.
+		source.setCancelHandler { [fromGuest] in _ = fromGuest }
 		drainSource = source
 		source.resume()
 	}
@@ -209,7 +227,7 @@ final class SerialPortBridge {
 			var buf = [UInt8](repeating: 0, count: 4096)
 			let n = read(fd, &buf, buf.count)
 			if n > 0 {
-				self.toGuest.write(Data(buf[0..<n]))
+				self.sendToGuest(Data(buf[0..<n]))
 			} else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) {
 				self.removeClient(fd)
 			}
@@ -217,6 +235,84 @@ final class SerialPortBridge {
 		source.setCancelHandler { close(fd) }
 		clients[fd] = source
 		source.resume()
+	}
+
+	// MARK: - Guest input
+
+	// Client input -> guest without ever blocking `queue`: write what the pipe takes now, keep
+	// the rest (in order) for the write source, and past guestInputCap drop new input — a guest
+	// that reads nothing must not freeze the drain.
+	private func sendToGuest(_ data: Data) {
+		guard !stopped, !guestInputClosed else { return }
+		var pending = data
+		if guestInput.isEmpty {
+			guard let sent = writeToGuest(data) else { return }
+			pending = data.dropFirst(sent)
+		}
+		guard !pending.isEmpty else { return }
+		let room = max(0, Self.guestInputCap - guestInput.count)
+		if pending.count > room, !warnedInputDrop {
+			warnedInputDrop = true
+			MachmanLogger.log(
+				.log, "serial \(kind.rawValue)\(index): guest not reading input, dropping it")
+		}
+		guestInput.append(pending.prefix(room))
+		if !guestInput.isEmpty { armGuestInput() }
+	}
+
+	// Non-blocking write of as much as the pipe takes: the byte count, or nil once the guest
+	// end is gone (EPIPE) or the write failed, which closes input for the rest of the run.
+	private func writeToGuest(_ data: Data) -> Int? {
+		let fd = toGuest.fileDescriptor
+		var failure: Int32 = 0
+		let sent = data.withUnsafeBytes { raw -> Int in
+			guard let base = raw.baseAddress else { return 0 }
+			var off = 0
+			while off < data.count {
+				let n = Foundation.write(fd, base + off, data.count - off)
+				if n > 0 { off += n; continue }
+				if n < 0 && errno == EINTR { continue }
+				if n < 0 && errno != EAGAIN { failure = errno }
+				break   // EAGAIN: the pipe is full — the rest waits for the write source
+			}
+			return off
+		}
+		guard failure == 0 else {
+			closeGuestInput(failure)
+			return nil
+		}
+		return sent
+	}
+
+	private func armGuestInput() {
+		guard guestInputSource == nil else { return }
+		let source = DispatchSource.makeWriteSource(
+			fileDescriptor: toGuest.fileDescriptor, queue: queue)
+		source.setEventHandler { [weak self] in self?.flushGuestInput() }
+		source.setCancelHandler { [toGuest] in _ = toGuest }
+		guestInputSource = source
+		source.resume()
+	}
+
+	private func flushGuestInput() {
+		guard !stopped, !guestInputClosed else { return }
+		guard let sent = writeToGuest(guestInput) else { return }
+		guestInput.removeFirst(sent)
+		if guestInput.isEmpty {
+			guestInputSource?.cancel()
+			guestInputSource = nil
+			warnedInputDrop = false
+		}
+	}
+
+	private func closeGuestInput(_ error: Int32) {
+		guestInputClosed = true
+		guestInput.removeAll()
+		guestInputSource?.cancel()
+		guestInputSource = nil
+		MachmanLogger.log(
+			.log, "serial \(kind.rawValue)\(index): guest input closed ("
+				+ String(cString: strerror(error)) + "), dropping input")
 	}
 
 	private func removeClient(_ fd: Int32) {

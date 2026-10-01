@@ -217,4 +217,80 @@ struct SerialPortBridgeTests {
 			#expect(!logged.contains("OLD_BOOT"))
 		}
 	}
+
+	// E18: typing at a guest that reads nothing fills the 16 KB pipe; the bridge must buffer and
+	// drop instead of blocking its queue — which also runs the always-on drain.
+	@Test func unreadGuestInputDoesNotStallTheDrain() throws {
+		let env = makeBridge("stall")
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+		_ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK)
+		let chunk = [UInt8](repeating: 0x61, count: 4096)
+		var typed = 0
+		let deadline = Date().addingTimeInterval(3)
+		while typed < 256 * 1024, Date() < deadline {
+			let n = chunk.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+			if n > 0 { typed += n } else { Thread.sleep(forTimeInterval: 0.01) }
+		}
+		#expect(typed == 256 * 1024)   // the bridge kept reading its client
+		env.guestOut.write(Data("STILL_DRAINING\n".utf8))
+		#expect(recv(client, until: "STILL_DRAINING").contains("STILL_DRAINING"))
+	}
+
+	// E18's teardown race: the guest end of the input pipe closes (VZ tearing down) while a
+	// client still types. EPIPE must drop the input, not raise an ObjC exception.
+	@Test func inputAfterTheGuestEndClosedIsDropped() throws {
+		let env = makeBridge("epipe")
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+		try env.guestIn.close()
+		let typed = "AFTER_GUEST_GONE\n"
+		_ = typed.utf8CString.withUnsafeBytes { write(client, $0.baseAddress, typed.utf8.count) }
+		Thread.sleep(forTimeInterval: 0.2)
+		env.guestOut.write(Data("STILL_ALIVE\n".utf8))
+		#expect(recv(client, until: "STILL_ALIVE").contains("STILL_ALIVE"))
+	}
+
+	// E18: what the pipe can't take at once is buffered, not lost — below the cap a slow guest
+	// still receives every byte, in order.
+	@Test func bufferedInputReachesASlowGuestInOrder() throws {
+		let env = makeBridge("order")
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+		_ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK)
+		let sent = Data((0..<(60 * 1024)).map { UInt8(truncatingIfNeeded: $0 % 251) })
+		var off = 0
+		let deadline = Date().addingTimeInterval(3)
+		while off < sent.count, Date() < deadline {
+			let n = sent.withUnsafeBytes {
+				write(client, $0.baseAddress! + off, min(4096, sent.count - off))
+			}
+			if n > 0 { off += n } else { Thread.sleep(forTimeInterval: 0.01) }
+		}
+		#expect(off == sent.count)
+		Thread.sleep(forTimeInterval: 0.3)   // the guest starts reading only now
+		let fd = env.guestIn.fileDescriptor
+		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+		var got = Data()
+		let readDeadline = Date().addingTimeInterval(3)
+		while got.count < sent.count, Date() < readDeadline {
+			var buf = [UInt8](repeating: 0, count: 16 * 1024)
+			let n = read(fd, &buf, buf.count)
+			if n > 0 {
+				got.append(contentsOf: buf[0..<n])
+			} else {
+				Thread.sleep(forTimeInterval: 0.02)
+			}
+		}
+		#expect(got == sent)
+	}
 }
