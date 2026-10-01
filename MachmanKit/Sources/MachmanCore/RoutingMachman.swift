@@ -1757,9 +1757,17 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		// The vmhost moves the files (single writer); the daemon re-keys its view after.
 		let info = try await host.client.safeSave(vm: name, to: newName)
-		// ONE synchronous block: the host keeps its socket (stored path — the 1.2 rule) and
-		// its live MAC. Keeping macInUse is deliberate: starting the ORIGINAL now trips
-		// macConflict until the promoted VM reboots onto its fresh MAC.
+		return finishSafeSave(host, from: name, to: newName, reply: info)
+	}
+
+	// The daemon's half once the vmhost replied, in ONE synchronous block. Internal so tests
+	// can run it under the redirect lock: it reads both VMs' configs from disk.
+	func finishSafeSave(
+		_ host: HostedVM, from name: String, to newName: String, reply info: VMInfo
+	) -> VMInfo {
+		// The host keeps its socket (stored path — the 1.2 rule) and its live MAC. Keeping
+		// macInUse is deliberate: starting the ORIGINAL now trips macConflict until the
+		// promoted VM reboots onto its fresh MAC.
 		host.identity.name = newName
 		host.identity.isSafe = false
 		host.identity.shadowRoot = nil   // the vmhost moved + deleted the run root itself
@@ -1775,6 +1783,10 @@ public final class RoutingMachman: MachmanControlling {
 			MachmanLogger.log(.passiveError,
 				"promoted \(newName) is live but not yet adoptable: \(error)")
 		}
+		// The vmhost rewrote the ORIGINAL's config as well: the disks the run wrote directly
+		// moved into the saved VM's folder, and the original references them there (C5).
+		// The daemon's copy is from before the run.
+		registry.reload(name: name)
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
 		registry.events.emit(.stateChanged(vm: newName, state: .running))
 		registry.events.emit(.listChanged)

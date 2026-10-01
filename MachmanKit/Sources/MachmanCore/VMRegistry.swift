@@ -299,8 +299,9 @@ public final class VMRegistry {
 	// vm.safeSave's engine half — vmhost-side ONLY (single-writer: the vmhost moves files it
 	// owns). Renames the shadow dir into the library atomically (same volume by
 	// construction, refused otherwise) and re-keys this restricted registry to the new name;
-	// the running VZ instance never notices — open fds follow the moved inodes. The promoted
-	// VM gets FRESH
+	// the running VZ instance never notices — open fds follow the moved inodes. The disks
+	// the run wrote directly (the original's unsafe storage raws) move into the saved VM's
+	// folder, and the original keeps them as references (C5). The promoted VM gets FRESH
 	// identity like vm.copy (user decision): new MAC now, new machine ids effective next
 	// boot, created = now, runtime restarts (the in-flight session re-adds at teardown
 	// through the re-pointed config).
@@ -313,18 +314,111 @@ public final class VMRegistry {
 			throw MachmanError(code: .invalidState, message: "the safe run already ended")
 		}
 		try NameRule.vmName.validate(newName)
-		let destination = library + "/" + newName
 		let runRoot = machmanVMDir
+		let shadow = runRoot + "/" + oldName
+		let destination = library + "/" + newName
+		let originalDir = library + "/" + oldName
+		// Read before anything moves. Unreadable, nothing is handed over: the run's direct
+		// disks stay references into the original's folder, which the cross-VM guards keep.
+		let original = try? JSONDecoder().decode(
+			VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: originalDir + "/config")))
 		// One atomic same-volume rename, never a copy (E15). The guest writes these images
 		// through open descriptors, which follow a rename but not a copy: a cross-volume
 		// move copied a torn image while the guest kept writing the unlinked originals, and
 		// froze this vmhost's main actor for the whole copy. safe/ is a sibling of VMs/, so
 		// only a symlinked or mounted VMs folder is ever on another volume. The rename is
 		// the first mutation: a refusal leaves the run untouched.
-		switch renameExclusive(runRoot + "/" + oldName, destination) {
+		try moveExclusively(shadow, to: destination, saving: newName, folder: true)
+		let savedFiles = Set(
+			(try? FileManager.default.contentsOfDirectory(atPath: destination)) ?? [])
+		let moves = original.map {
+			DirectDiskMove.plan(
+				run: vm.config, original: $0, originalDir: originalDir, savedFiles: savedFiles)
+		} ?? []
+		// The hand-over (C5), in an order that keeps the guest's data reachable from a
+		// config at every point: the saved VM's config (its new storage entries name files
+		// not there yet), then the disks, then the original's config. Any failure rolls
+		// back every rename and the run goes on untouched. Accepted crash windows: dying
+		// before the disks moved leaves the saved VM missing them (still the original's);
+		// dying after leaves the original missing them (now the saved VM's). Either way no
+		// file is lost, and one VM still lists each disk.
+		let snapshot = PromotionSnapshot(vm.config)
+		let shadowConfig = try? Data(contentsOf: URL(fileURLWithPath: destination + "/config"))
+		var moved: [DirectDiskMove] = []
+		do {
+			// From here the VM lives in the library: every config path resolves through the
+			// re-pointed global + the new name.
+			machmanVMDir = library
+			vm.config.name = newName
+			vm.config.created = Date()
+			vm.config.totalRuntimeSeconds = 0
+			// The directory just moved out of the run root — re-point the owned kernel and
+			// iso references or the promoted VM boots from a directory the sweep deletes.
+			vm.config.rewriteOwnedPaths(fromDir: shadow, toDir: destination, .moved)
+			vm.config.adoptMovedDisks(moves, from: originalDir)
+			// Fresh machine, fresh ssh instance identity, the vm.copy rule: the alias still
+			// belongs to the source VM, the lease follows the source's MAC, and the reverse
+			// grant is labeled with the source's marker.
+			vm.config.dropAlias()
+			vm.config.ssh?.resetInstanceIdentity()
+			// Saving as a new VM takes a name: yield to every VM in the library.
+			vm.config.assignDefaultAliasIfTaken()
+			try vm.config.regenerateMACAddress()   // the saved VM's one save, at the new path
+			for move in moves {
+				try moveExclusively(
+					originalDir + "/" + move.sourceFile, to: destination + "/" + move.targetFile,
+					saving: newName, folder: false)
+				moved.append(move)
+			}
+			if let original, !moves.isEmpty {
+				original.referenceMovedDisks(moves, in: destination)
+				// The persistence coder at the original's own path: nothing hosts it now
+				// (this run IS that VM), so this process is its config's single writer.
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = .prettyPrinted
+				try encoder.encode(original).write(
+					to: URL(fileURLWithPath: originalDir + "/config"), options: .atomic)
+			}
+		} catch {
+			var stranded = false
+			for move in moved.reversed() {
+				let back = originalDir + "/" + move.sourceFile
+				if !restore(destination + "/" + move.targetFile, to: back) { stranded = true }
+			}
+			snapshot.restore(vm.config)
+			machmanVMDir = runRoot
+			// A disk that could not go back keeps the saved folder in the library, where its
+			// config lists it: the run root is deleted when the run ends.
+			if !stranded, restore(destination, to: shadow) {
+				try? shadowConfig?.write(
+					to: URL(fileURLWithPath: shadow + "/config"), options: .atomic)
+			}
+			throw error
+		}
+		restrictedName = newName
+		vms[oldName] = nil
+		vms[newName] = vm
+		presenter.rekey(from: oldName, to: newName)
+		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
+		if case .macOS = vm.config.boot {
+			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")
+		}
+		// With the pin reset this just drops the traveled known_hosts, which was keyed to
+		// the source's alias; the next guest report re-pins under the new alias.
+		SSHSetupInstaller.writeKnownHosts(for: vm.config)
+		try? FileManager.default.removeItem(atPath: runRoot)   // now-empty run root + marker
+		promotionLibrary = nil
+		return vm
+	}
+
+	// One exclusive rename for Save as New VM, or the save's error for it.
+	private func moveExclusively(
+		_ from: String, to: String, saving newName: String, folder: Bool
+	) throws {
+		switch renameExclusive(from, to) {
 		case 0:
-			break
-		case EEXIST, ENOTEMPTY:
+			return
+		case EEXIST where folder, ENOTEMPTY where folder:
 			throw MachmanError(
 				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
 		case EXDEV:
@@ -333,42 +427,21 @@ public final class VMRegistry {
 				message: "Save as New VM needs the VM library on the same volume as its "
 					+ "safe runs")
 		case let code:
+			let what = folder ? "" : " (\((from as NSString).lastPathComponent))"
 			throw MachmanError(
 				code: .ioFailure,
-				message: "saving \(newName): \(String(cString: strerror(code)))")
+				message: "saving \(newName)\(what): \(String(cString: strerror(code)))")
 		}
-		// From here the VM lives in the library: every config path resolves through the
-		// re-pointed global + the new name.
-		machmanVMDir = library
-		restrictedName = newName
-		vms[oldName] = nil
-		vms[newName] = vm
-		vm.config.name = newName
-		presenter.rekey(from: oldName, to: newName)
-		vm.config.created = Date()
-		vm.config.totalRuntimeSeconds = 0
-		// The directory just moved out of the run root — re-point the owned kernel and iso
-		// references or the promoted VM boots from a directory the sweep deletes.
-		vm.config.rewriteOwnedPaths(
-			fromDir: runRoot + "/" + oldName, toDir: destination, .moved)
-		// Fresh machine, fresh ssh instance identity, the vm.copy rule: the alias still
-		// belongs to the source VM, the lease follows the source's MAC, and the reverse
-		// grant is labeled with the source's marker.
-		vm.config.dropAlias()
-		vm.config.ssh?.resetInstanceIdentity()
-		// Saving as a new VM takes a name: yield to every VM in the library.
-		vm.config.assignDefaultAliasIfTaken()
-		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
-		if case .macOS = vm.config.boot {
-			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")
-		}
-		try vm.config.regenerateMACAddress()   // the one save, at the new path
-		// With the pin reset this just drops the traveled known_hosts, which was keyed to
-		// the source's alias; the next guest report re-pins under the new alias.
-		SSHSetupInstaller.writeKnownHosts(for: vm.config)
-		try? FileManager.default.removeItem(atPath: runRoot)   // now-empty run root + marker
-		promotionLibrary = nil
-		return vm
+	}
+
+	// A failed save's way back. Never fails silently: a file left behind is named.
+	private func restore(_ path: String, to original: String) -> Bool {
+		let code = renameExclusive(path, original)
+		guard code != 0 else { return true }
+		MachmanLogger.log(.passiveError,
+			"Save as New VM rollback: \(path) stays put, not back at \(original): "
+				+ String(cString: strerror(code)))
+		return false
 	}
 
 	// Register a directory that appeared after the initial scan (vm.copy now, safe-save
