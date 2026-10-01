@@ -50,17 +50,20 @@ uninstall_release_dir() {
 # drops the mount root it created once it empties.
 uninstall_unmount_and_prune() {
 	_uup_root="${ST_MOUNTPOINT:-$MOUNTPOINT}"
-	# Mount names are host text: never globbed against the working directory.
+	# Mount names are host text, TAB-separated: never split at a space nor globbed.
+	_uup_ifs="$IFS"
+	IFS="$(printf '\t')"
 	set -f
 	# shellcheck disable=SC2086
 	set -- $ST_AUTOMOUNT_SSHFS
 	set +f
+	IFS="$_uup_ifs"
 	for _uup_n in "$@"; do
 		[ "$_uup_n" = "@share" ] && continue
 		uninstall_release_dir "$_uup_root/$_uup_n"
 	done
 	[ -n "$_uup_root" ] && rmdir "$_uup_root" 2>/dev/null || true
-	if state_was_configured vfsauto || has_word "@share" "$ST_AUTOMOUNT_SSHFS"; then
+	if state_was_configured vfsauto || has_item "@share" "$ST_AUTOMOUNT_SSHFS"; then
 		case "$PAYLOAD_DIR" in
 		"$SHARE_ROOT"/*)
 			note "the share stays mounted while this script runs from it; nothing remounts it after a reboot."

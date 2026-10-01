@@ -134,10 +134,13 @@ struct GuestReport {
 		}
 	}
 
-	// AUTOMOUNT_<n>=<kind> <target> <path with spaces allowed>
+	// AUTOMOUNT_<n>=<kind> <target> <path with spaces allowed> — or, when the target (a mount
+	// name) has a space, <kind>TAB<target>TAB<path>: a script that sends that row sends TABs
+	// only there, so every older row still splits at its first two spaces.
 	private func automounts() -> [GuestAutomountInfo] {
 		numbered("AUTOMOUNT_").compactMap { value in
-			let words = value.split(separator: " ", maxSplits: 2).map(String.init)
+			let separator: Character = value.contains("\t") ? "\t" : " "
+			let words = value.split(separator: separator, maxSplits: 2).map(String.init)
 			guard words.count == 3 else { return nil }
 			return GuestAutomountInfo(kind: words[0], target: words[1], path: words[2])
 		}

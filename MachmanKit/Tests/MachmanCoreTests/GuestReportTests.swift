@@ -253,6 +253,29 @@ struct GuestReportTests {
 		}
 	}
 
+	// S17: a mount name with a space arrives whole — its row is TAB-separated — while the
+	// space-separated rows every script writes for space-free names parse as before.
+	@Test @MainActor func spacedMountNamesArriveWhole() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "spaced")
+			let vm = try VMConfig(name: "spaced", memorySize: 1 << 30, cpuCount: 2)
+			try GuestReport.parse("""
+				SCRIPT_VERSION=4
+				AUTOMOUNT_1=sshfs\tmy docs\t/mnt/machman/mounts/my docs
+				AUTOMOUNT_2=sshfs docs /mnt/machman/mounts/docs
+				AUTOMOUNT_3=sshfs projects /mnt/my mounts/projects
+				""").apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.automounts == [
+				GuestAutomountInfo(
+					kind: "sshfs", target: "my docs", path: "/mnt/machman/mounts/my docs"),
+				GuestAutomountInfo(
+					kind: "sshfs", target: "docs", path: "/mnt/machman/mounts/docs"),
+				GuestAutomountInfo(
+					kind: "sshfs", target: "projects", path: "/mnt/my mounts/projects"),
+			])
+		}
+	}
+
 	// The reported host key is pinned where the in-app session tabs look for it — under
 	// the VM's alias, so the app never has to touch the user's own known_hosts.
 	// CONSOLE_N lines arrive in the guest's enabled-compacted order; the k-th reported

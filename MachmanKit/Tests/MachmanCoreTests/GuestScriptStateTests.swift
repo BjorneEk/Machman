@@ -96,6 +96,28 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S17: the automounts' names are a TAB-separated list (names carry spaces); a version-1
+	// state's space-separated list (names then had none that survived) reads as one.
+	@Test func spacedNamesSurviveTheStateFile() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(Self.stateHere + #"""
+				SELECTED_FEATURES="sshfsauto"
+				SSHFSAUTO_SELECTED=x
+				SSHFSAUTO_DONE="my docs${T}@share${T}docs"
+				write_state "sshfsauto"
+				sed -n 's/^STATE_VERSION=//p' "$STATE_FILE"
+				read_state
+				printf '%s\n' "$ST_AUTOMOUNT_SSHFS" | tr '\t' '|'
+				printf "STATE_VERSION=1\nMARKER='%s'\nAUTOMOUNT_SSHFS='projects docs'\n" \
+					"$MARKER" > "$STATE_FILE"
+				read_state
+				printf '%s\n' "$ST_AUTOMOUNT_SSHFS" | tr '\t' '|'
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == "2\nmy docs|@share|docs\nprojects|docs\n", "\(shell): \(r.out)")
+		}
+	}
+
 	// A state file an older script wrote ('…' around raw text, apostrophes unescaped) reads
 	// as it was meant.
 	@Test func olderStateFilesStillRead() throws {

@@ -3,7 +3,7 @@
 # writable — including on failure, so Machman can say what went wrong instead of just
 # "no report yet". v2's keys are kept verbatim (the host's parser whitelists and old
 # daemons ignore what they don't know); v3 adds FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_ lines,
-# v4 no keys.
+# v4 no keys. An AUTOMOUNT_ row is TAB-separated only when its mount name has a space.
 
 # Set for real by 90-main; defaulted here so the failure trap can report from any phase.
 FEATURES="${FEATURES:-}"
@@ -87,9 +87,9 @@ feature_line() {
 		;;
 	sshfsauto)
 		if [ -n "$SSHFSAUTO_DONE" ]; then
-			_fl_state=configured; _fl_detail="$SSHFSAUTO_DONE"
+			_fl_state=configured; _fl_detail="$(tab_list_join "$SSHFSAUTO_DONE")"
 		elif sshfsauto_configured; then
-			_fl_state=configured; _fl_detail="${ST_AUTOMOUNT_SSHFS:-}"
+			_fl_state=configured; _fl_detail="$(tab_list_join "$ST_AUTOMOUNT_SSHFS")"
 		fi
 		;;
 	esac
@@ -106,11 +106,14 @@ automount_lines_kept() {
 }virtiofs	$SHARE_TAG	$SHARE_ROOT"
 	fi
 	feature_selected sshfsauto && return 0
-	# Mount names are host text: never globbed against the working directory.
+	# Mount names are host text, TAB-separated: never split at a space nor globbed.
+	_alk_ifs="$IFS"
+	IFS="$(printf '\t')"
 	set -f
 	# shellcheck disable=SC2086
 	set -- $ST_AUTOMOUNT_SSHFS
 	set +f
+	IFS="$_alk_ifs"
 	for _alk_n in "$@"; do
 		if [ "$_alk_n" = "@share" ]; then
 			_alk_where="$SHARE_ROOT"
@@ -179,10 +182,19 @@ write_report() {
 			if has_word sshfs "$SELECTED_FEATURES" || [ "$SSHFS" -eq 1 ]; then
 				sshfs_report
 			fi
+			# kind target path, space-separated as every daemon reads them — or, when the
+			# target (a mount name) has a space, TAB-separated so it arrives whole.
 			_wr_i=1
-			printf '%s\n' "$AUTOMOUNT_LINES" | while IFS= read -r _wr_line; do
-				[ -n "$_wr_line" ] || continue
-				printf 'AUTOMOUNT_%s=%s\n' "$_wr_i" "$_wr_line" | tr '\t' ' '
+			_wr_tab="$(printf '\t')"
+			printf '%s\n' "$AUTOMOUNT_LINES" \
+				| while IFS="$_wr_tab" read -r _wr_kind _wr_target _wr_path; do
+				[ -n "$_wr_kind" ] || continue
+				case "$_wr_target" in
+				*" "*) _wr_sep="$_wr_tab" ;;
+				*) _wr_sep=" " ;;
+				esac
+				printf 'AUTOMOUNT_%s=%s%s%s%s%s\n' "$_wr_i" \
+					"$_wr_kind" "$_wr_sep" "$_wr_target" "$_wr_sep" "$_wr_path"
 				_wr_i=$((_wr_i + 1))
 			done
 			_wr_i=1

@@ -5,8 +5,8 @@
 # automounts (network-safe); others get a marker-tagged boot script, best-effort.
 
 SSHFSAUTO_PLAN=""
-SSHFSAUTO_SELECTED=""      # mount names chosen, space-separated ("@share" = the share)
-SSHFSAUTO_DONE=""
+SSHFSAUTO_SELECTED=""      # mount names chosen, one per line ("@share" = the share)
+SSHFSAUTO_DONE=""          # the names configured, TAB-separated (names carry spaces)
 avail_sshfsauto=0
 reason_sshfsauto=""
 
@@ -181,6 +181,7 @@ sshfsauto_act() {
 		return 0
 	fi
 	_sa_opts="$(sshfsauto_options)"
+	_sa_tab="$(printf '\t')"
 	# The boot scripts run with the init's PATH — FreeBSD's rc has no /usr/local/bin,
 	# where sshfs lives — so the resolved absolute path is embedded at install time.
 	_sa_bin="$(command -v sshfs 2>/dev/null || echo sshfs)"
@@ -229,11 +230,10 @@ sshfsauto_act() {
 			_sa_script="$_sa_script $(sh_quote "$_sa_what") $(sh_quote "$_sa_where") || true
 "
 		fi
-		SSHFSAUTO_DONE="$SSHFSAUTO_DONE $_sa_name"
+		SSHFSAUTO_DONE="${SSHFSAUTO_DONE:+$SSHFSAUTO_DONE$_sa_tab}$_sa_name"
 		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
 }sshfs	$_sa_name	$_sa_where"
 	done
-	SSHFSAUTO_DONE="${SSHFSAUTO_DONE# }"
 	[ -n "$SSHFSAUTO_DONE" ] || return 0
 	if [ "$INIT" = systemd ]; then
 		# The block is shared; each feature rewrites only its own lines: the share's
@@ -246,7 +246,7 @@ sshfsauto_act() {
 			return 0
 		fi
 		run "reloading systemd mounts" systemctl daemon-reload || true
-		ok "sshfs folders mount on first access ($SSHFSAUTO_DONE)"
+		ok "sshfs folders mount on first access ($(tab_list_join "$SSHFSAUTO_DONE"))"
 		note "They connect once you approve this VM in Machman (guest -> host SSH)."
 	else
 		sshfsauto_write_boot_script "$_sa_script"

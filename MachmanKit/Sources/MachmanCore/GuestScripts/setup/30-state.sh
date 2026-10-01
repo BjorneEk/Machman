@@ -3,7 +3,8 @@
 # so a re-run can offer reconfiguration instead of starting blind, and a newer script can
 # repair older layouts. One flat key=value file, written after the act phase.
 
-STATE_VERSION=1
+# 2: the sshfs automounts' names are TAB-separated (version 1 joined them with spaces).
+STATE_VERSION=2
 STATE_DIR=""
 STATE_FILE=""
 HAD_STATE=0
@@ -14,7 +15,7 @@ ST_CONSOLE_LOGINS=""
 ST_KERNEL_CONSOLE=""
 ST_KERNEL_CONSOLE_METHOD=""
 ST_SSH_USER=""
-ST_AUTOMOUNT_SSHFS=""      # space-separated mount names
+ST_AUTOMOUNT_SSHFS=""      # TAB-separated mount names (they carry spaces)
 ST_MOUNTPOINT=""           # where sshfs automounts land — report-only reconstructs with it
 ST_LAST_STATUS=""          # ok|partial from the last real run — --report-only keeps it
 
@@ -59,6 +60,10 @@ read_state() {
 	ST_KERNEL_CONSOLE_METHOD="$(state_get KERNEL_CONSOLE_METHOD)"
 	ST_SSH_USER="$(state_get SSH_USER)"
 	ST_AUTOMOUNT_SSHFS="$(state_get AUTOMOUNT_SSHFS)"
+	# Version 1 joined the names with spaces: a name with one never survived it anyway.
+	case "$(state_get STATE_VERSION)" in
+	''|1) ST_AUTOMOUNT_SSHFS="$(printf '%s' "$ST_AUTOMOUNT_SSHFS" | tr ' ' '\t')" ;;
+	esac
 	ST_MOUNTPOINT="$(state_get MOUNTPOINT)"
 	ST_LAST_STATUS="$(state_get LAST_STATUS)"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"

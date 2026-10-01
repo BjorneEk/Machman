@@ -44,6 +44,22 @@ has_word() {
 	esac
 }
 
+# has_item <item> <TAB-separated list> — has_word for lists whose items carry spaces
+# (mount names).
+has_item() {
+	_hi_tab="$(printf '\t')"
+	case "$_hi_tab$2$_hi_tab" in
+	*"$_hi_tab$1$_hi_tab"*) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+# tab_list_join <TAB-separated list> — the items as text: "docs, my docs".
+tab_list_join() {
+	printf '%s' "$1" | awk -F '\t' '
+		{ for (i = 1; i <= NF; i++) printf "%s%s", (i > 1 ? ", " : ""), $i }'
+}
+
 detect_os() {
 	OS="$(uname -s)"
 	case "$OS" in
