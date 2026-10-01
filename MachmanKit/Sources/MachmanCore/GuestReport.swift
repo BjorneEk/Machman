@@ -7,7 +7,8 @@
 //  deliberately defensive — size-capped, whitelist-keyed (exact keys plus the numbered/
 //  named section prefixes), garbage-tolerant — and apply() treats values as claims, not
 //  truth (the daemon's own discovery cross-checks the address; host keys only pin the
-//  guest's own identity). Ingested by the process that owns the config (the vmhost while
+//  guest's own identity). The claims that reach ~/.ssh — user, address, host and reverse
+//  keys — are shape-checked first (GuestValueRule): a refused value leaves the stored one. Ingested by the process that owns the config (the vmhost while
 //  running); the HOST stamps the ingestion time. Two halves: the SSH keys the v2 script
 //  already wrote (applied into config.ssh, byte-compatible), and the v3 setup sections
 //  (FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_) applied into config.setup as a whole snapshot.
@@ -156,6 +157,20 @@ struct GuestReport {
 
 	// MARK: - Application
 
+	// A reported value that has the shape it claims; nil when absent or empty, and logged
+	// when it is something else (USER=a b, IP=evil.example, command="…" keys).
+	private func shaped(
+		_ key: String, _ isValid: (String) -> Bool, _ what: String, vm config: VMConfig
+	) -> String? {
+		guard let value = values[key], !value.isEmpty else { return nil }
+		guard isValid(value) else {
+			MachmanLogger.log(.log,
+				"\(config.name): ignored the guest's reported \(key) — not a \(what)")
+			return nil
+		}
+		return value
+	}
+
 	// Fold the report into the persisted state. Caller saves-and-emits per changed half;
 	// .any false = nothing changed (identical report re-read).
 	@discardableResult
@@ -180,16 +195,23 @@ struct GuestReport {
 			state.lastRunNote = nil
 			state.lastTransport = nil
 		} else {
-			if let user = values["USER"], !user.isEmpty { state.guestUser = user }
+			if let user = shaped("USER", GuestValueRule.isUserName, "user name", vm: config) {
+				state.guestUser = user
+			}
 			if let host = values["HOSTNAME"], !host.isEmpty { state.guestHostname = host }
 			if let os = values["OS_ID"], !os.isEmpty { state.guestOS = os }
 			if let version = values["OS_VERSION"], !version.isEmpty {
 				state.guestOSVersion = version
 			}
-			if let key = values["HOST_KEY"], !key.isEmpty { state.guestHostKey = key }
+			if let key = shaped("HOST_KEY", GuestValueRule.isPublicKeyLine, "public key",
+				vm: config) {
+				state.guestHostKey = key
+			}
 			// The address is a claim (the drop-box is guest-writable), kept only as the
 			// fallback that survives a rename — the daemon's own discovery is the truth.
-			if let ip = values["IP"], !ip.isEmpty { state.lastAddress = ip }
+			if let ip = shaped("IP", GuestValueRule.isAddress, "IP address", vm: config) {
+				state.lastAddress = ip
+			}
 			// What the run achieved. A v1 report carries none of this: absence means
 			// "an older script ran", not "it failed", so nothing is cleared here.
 			if let status = values["STATUS"], !status.isEmpty { state.lastRunStatus = status }
@@ -206,7 +228,8 @@ struct GuestReport {
 				let root = values["SSHFS_MOUNTROOT"] ?? ""
 				state.sshfsMountRoot = root.isEmpty ? nil : root
 			}
-			if let reverse = values["REVERSE_PUBKEY"], !reverse.isEmpty {
+			if let reverse = shaped("REVERSE_PUBKEY", GuestValueRule.isPublicKeyLine,
+				"public key", vm: config) {
 				if state.reversePublicKey != reverse {
 					// A new key always needs fresh approval — even if one was approved.
 					state.reversePublicKey = reverse

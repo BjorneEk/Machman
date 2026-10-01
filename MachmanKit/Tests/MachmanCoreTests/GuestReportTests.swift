@@ -44,6 +44,39 @@ struct GuestReportTests {
 		#expect(GuestReport.read(atPath: big.path) == nil)
 	}
 
+	// S22: the drop-box is guest-writable, and USER and the address end up in ~/.ssh —
+	// "USER=a b" stopped every ssh on the Mac. A value without the shape it claims is
+	// ignored and the stored one stays.
+	@Test @MainActor func applyIgnoresUnsafeUsersAddressesAndKeys() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "hostile")
+			let vm = try VMConfig(name: "hostile", memorySize: 1 << 30, cpuCount: 2)
+			let stamp = Date(timeIntervalSince1970: 1_700_000_000)
+
+			try GuestReport.parse("""
+				USER=a b
+				IP=10.0.0.1%en0
+				HOST_KEY=@revoked x
+				REVERSE_PUBKEY=command="x" ssh-ed25519 AAAA
+				""").apply(to: vm, stampedAt: stamp)
+			#expect(vm.ssh?.guestUser == nil)
+			#expect(vm.ssh?.lastAddress == nil)
+			#expect(vm.ssh?.guestHostKey == nil)
+			#expect(vm.ssh?.reversePublicKey == nil)
+			#expect(vm.ssh?.reverseStateValue != .pending)
+
+			try GuestReport.parse("USER=admin\nIP=192.168.64.9")
+				.apply(to: vm, stampedAt: stamp)
+			#expect(vm.ssh?.guestUser == "admin")
+			#expect(vm.ssh?.lastAddress == "192.168.64.9")
+
+			try GuestReport.parse("USER=$(touch x)\nIP=evil.example")
+				.apply(to: vm, stampedAt: stamp)
+			#expect(vm.ssh?.guestUser == "admin")
+			#expect(vm.ssh?.lastAddress == "192.168.64.9")
+		}
+	}
+
 	@Test @MainActor func applyDrivesTheReverseStateMachine() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "sshapply")

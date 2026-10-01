@@ -9,6 +9,7 @@
 
 import Testing
 import Foundation
+import MachmanAPI
 import MachmanTestSupport
 @testable import MachmanCore
 
@@ -162,6 +163,56 @@ struct SSHHostConfigWriterTests {
 			contentsOf: root.appendingPathComponent("machman/config"), encoding: .utf8)
 		#expect(managed.contains("StrictHostKeyChecking accept-new"))
 		#expect(!managed.contains("StrictHostKeyChecking yes"))
+	}
+
+	// S22, the writer half: state stored before the report was shape-checked (validate at
+	// entry, never at load) still never reaches the file in a form that breaks ssh.
+	@Test func hostileValuesNeverReachTheFile() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let writer = SSHHostConfigWriter(sshDir: root)
+		let managed = root.appendingPathComponent("machman/config")
+
+		try writer.apply(entries: [entry(user: "a b")])
+		var text = try String(contentsOf: managed, encoding: .utf8)
+		#expect(!text.contains("\tUser "))
+		#expect(text.contains("HostName 192.168.64.9"))
+
+		try writer.apply(entries: [entry(hostKey: "@revoked x")])
+		text = try String(contentsOf: managed, encoding: .utf8)
+		#expect(text.contains("StrictHostKeyChecking accept-new"))
+		#expect(try String(contentsOf: root.appendingPathComponent("machman/known_hosts"),
+			encoding: .utf8).isEmpty)
+
+		try writer.apply(entries: [])
+		try writer.apply(entries: [entry(address: "x y")])
+		#expect(!FileManager.default.fileExists(atPath: managed.path))
+
+		// A previous file that carries a hostile HostName is no fallback either.
+		try FileManager.default.createDirectory(
+			at: managed.deletingLastPathComponent(), withIntermediateDirectories: true)
+		try "Host \"Debian-kept.machman\"\n\tHostName evil host\n".write(
+			to: managed, atomically: true, encoding: .utf8)
+		try writer.apply(entries: [entry(address: nil)])
+		#expect(!FileManager.default.fileExists(atPath: managed.path))
+
+		if OpenSSHConfigCheck.available {
+			try writer.apply(entries: [entry(user: "a b"), entry(name: "other", user: "$(x)")])
+			let other = try OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
+			#expect(other.status == 0, "\(other.output)")
+		}
+
+		let ak = root.appendingPathComponent("authorized_keys")
+		try "ssh-ed25519 USERKEY mine\n".write(to: ak, atomically: true, encoding: .utf8)
+		#expect(throws: MachmanError.self) {
+			try writer.setReverseKey(
+				"command=\"x\" ssh-ed25519 AAAA", marker: "machman-abc", vmName: "v")
+		}
+		#expect(throws: MachmanError.self) {
+			try writer.setReverseKey(
+				"ssh-ed25519 AAAA\nssh-ed25519 BBBB", marker: "machman-abc", vmName: "v")
+		}
+		#expect(try String(contentsOf: ak, encoding: .utf8) == "ssh-ed25519 USERKEY mine\n")
 	}
 
 	@Test func authorizedKeysSurgeryIsExactMatch() throws {

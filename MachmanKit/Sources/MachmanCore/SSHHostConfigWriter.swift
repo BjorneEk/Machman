@@ -81,7 +81,10 @@ public struct SSHHostConfigWriter {
 			if !SSHAliasRule.isWellFormed(entry.alias) {
 				entry.alias = SSHAliasRule.defaultAlias(for: entry.name)
 			}
-			guard let address = entry.address ?? previous[entry.alias]
+			// Guest-reported values are claims (S22): only an IP literal is ever a HostName,
+			// whether it comes from discovery, the report or the previous file.
+			guard let address = [entry.address, previous[entry.alias]]
+				.compactMap({ $0 }).first(where: GuestValueRule.isAddress)
 				else { return nil }
 			// Backstop only: aliases are made unique where a VM takes one. Two blocks with
 			// one Host name would silently merge settings across VMs, so the first wins.
@@ -114,7 +117,10 @@ public struct SSHHostConfigWriter {
 			let alias = entry.alias
 			config.append("Host \"\(alias)\"")
 			config.append("\tHostName \(address)")
-			if let user = entry.user {
+			// A user outside the guest's own user-name charset is left out: ssh then uses
+			// the Mac account, which fails safe ("User a b" stops every ssh; "User $(…)"
+			// reaches a shell through a %r ProxyCommand).
+			if let user = entry.user, GuestValueRule.isUserName(user) {
 				config.append("\tUser \(user)")
 			}
 			if let identity = entry.identityFilePath {
@@ -126,12 +132,10 @@ public struct SSHHostConfigWriter {
 			// rather than bricking the alias.
 			config.append("\tHostKeyAlias \(alias)")
 			config.append("\tUserKnownHostsFile \"\(knownHosts.path)\"")
-			if let hostKey = entry.hostKey {
+			if let hostKey = entry.hostKey, GuestValueRule.isPublicKeyLine(hostKey) {
 				config.append("\tStrictHostKeyChecking yes")
 				let fields = hostKey.split(separator: " ")
-				if fields.count >= 2 {
-					pins.append("\(alias) \(fields[0]) \(fields[1])")
-				}
+				pins.append("\(alias) \(fields[0]) \(fields[1])")
 			} else {
 				config.append("\tStrictHostKeyChecking accept-new")
 			}
@@ -200,6 +204,13 @@ public struct SSHHostConfigWriter {
 		while lines.last?.isEmpty == true { lines.removeLast() }
 		if let keyLine {
 			let trimmed = keyLine.trimmingCharacters(in: .whitespacesAndNewlines)
+			// A guest-reported line: options (command="…", from=…) or a second line would
+			// grant the guest more than this one key.
+			guard GuestValueRule.isPublicKeyLine(trimmed) else {
+				throw MachmanError(
+					code: .invalidArgument,
+					message: "The guest's reverse key isn't a public-key line")
+			}
 			lines.append("\(trimmed) \(label):\(vmName)")
 		} else if existing.isEmpty {
 			return   // nothing to remove, don't create the file

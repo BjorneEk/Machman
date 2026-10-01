@@ -96,8 +96,9 @@ enum SSHSetupInstaller {
 		let path = knownHostsPath(for: config)
 		let fm = FileManager.default
 		guard fm.fileExists(atPath: config.configFilePath(file: "ssh")) else { return }
-		let fields = (config.ssh?.guestHostKey ?? "").split(separator: " ")
-		guard fields.count >= 2 else {
+		let key = config.ssh?.guestHostKey ?? ""
+		let fields = key.split(separator: " ")
+		guard GuestValueRule.isPublicKeyLine(key) else {
 			try? fm.removeItem(atPath: path)   // nothing reported (yet): no stale pin
 			return
 		}
