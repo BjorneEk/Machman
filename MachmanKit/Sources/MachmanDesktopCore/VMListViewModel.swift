@@ -59,11 +59,16 @@ public final class VMListViewModel: ObservableObject {
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published public var showInfoPanel = false
-	@Published public var presentedError: PresentedError?
-	// Binding surface for .alert(isPresented:presenting:) — clears the item on dismiss.
+	// Failures queue: the alert shows one at a time, in arrival order (P15).
+	@Published private var errorQueue = PresentationQueue<PresentedError>()
+	public var presentedError: PresentedError? { errorQueue.current }
+	// Binding surface for .alert(isPresented:presenting:) — a dismissal retires the shown
+	// error and presents the next waiting one.
 	public var isErrorPresented: Bool {
 		get { presentedError != nil }
-		set { if !newValue { presentedError = nil } }
+		set {
+			if !newValue, errorQueue.dismiss() { presentNext { $0.errorQueue.advance() } }
+		}
 	}
 	@Published public var pendingForceStart: PendingForceStart?
 	public var isForceStartPresented: Bool {
@@ -388,7 +393,21 @@ public final class VMListViewModel: ObservableObject {
 	// dismissed unread.
 	public func present(message: String, while action: String) {
 		MachmanLogger.log(.interactionError, "\(action) failed: \(message)")
-		presentedError = PresentedError(title: "\(action) failed", message: message)
+		errorQueue.enqueue(
+			PresentedError(title: "\(action) failed", message: message),
+			duplicate: { $0.title == $1.title && $0.message == $1.message })
+	}
+
+	// A dismissed alert or dialog animates out; the next one is presented after that, not
+	// inside it.
+	static let representDelay: Duration = .milliseconds(350)
+
+	private func presentNext(_ step: @escaping @MainActor (VMListViewModel) -> Void) {
+		Task { [weak self] in
+			try? await Task.sleep(for: Self.representDelay)
+			guard let self else { return }
+			step(self)
+		}
 	}
 
 	// A bottom-right toast; lifetime comes from the user's setting. A `key` makes it a
