@@ -62,11 +62,13 @@ public enum VMHostBootstrap {
 		app.mainMenu = buildMainMenu(
 			vmName: vmName, delegate: delegate, presenter: registry.presenter)
 
-		let lifecycle = Lifecycle()
-		// Exit when the VM stops (after having run). The idle backstop covers a spawn whose
-		// start never happened — e.g. the daemon died between spawn and forward. Matches the
-		// registry's CURRENT name, not the launch capture: safeSave promotion renames the VM
-		// mid-run and the stop that ends the run arrives under the NEW name.
+		let lifecycle = VMHostLifecycle()
+		// The run in flight, if any: VMRegistry.start sets it before its first await and
+		// teardown clears it, so on this main actor it is a race-free "a start is under way".
+		let currentRun = { registry.vm(named: registry.restrictedName ?? vmName)?.runtime }
+		// Exit when the VM stops (after having run). Matches the registry's CURRENT name, not
+		// the launch capture: safeSave promotion renames the VM mid-run and the stop that
+		// ends the run arrives under the NEW name.
 		Task { @MainActor in
 			let stream = registry.events.stream()
 			for await event in stream {
@@ -78,17 +80,32 @@ public enum VMHostBootstrap {
 					lifecycle.hadRunning = true
 				}
 				if state == .stopped, lifecycle.hadRunning {
+					// The stopped run may still be tearing down (its stopped state can arrive
+					// first); only a DIFFERENT run counts — a start the daemon forwarded inside
+					// the flush window (E12), which this host must keep serving.
+					weak var stoppedRun = currentRun()
 					try? await Task.sleep(for: .milliseconds(300))   // let replies/events flush
+					let run = currentRun()
+					guard lifecycle.stopExitDue(running: run != nil && run !== stoppedRun) else {
+						continue
+					}
 					server.stop()
 					exit(0)
 				}
 			}
 		}
+		// The idle backstop covers a spawn whose start never happened — the daemon died between
+		// spawn and forward (the next daemon can still hand this host a start). It loops: a
+		// start forwarded at the deadline is never killed, and one that failed still exits a
+		// period later.
 		Task { @MainActor in
-			try? await Task.sleep(for: .seconds(180))
-			if !lifecycle.hadRunning {
-				server.stop()
-				exit(0)
+			while true {
+				try? await Task.sleep(for: .seconds(180))
+				if lifecycle.hadRunning { return }   // the stop watcher owns the exit now
+				if lifecycle.idleExitDue(startInFlight: currentRun() != nil) {
+					server.stop()
+					exit(0)
+				}
 			}
 		}
 
@@ -122,11 +139,6 @@ public enum VMHostBootstrap {
 
 		app.run()
 		exit(0)
-	}
-
-	@MainActor
-	private final class Lifecycle {
-		var hadRunning = false
 	}
 
 	@MainActor
@@ -179,6 +191,23 @@ public enum VMHostBootstrap {
 		stopMenu.addItem(forceStop)
 
 		return main
+	}
+}
+
+// When a vmhost exits on its own: after its VM's run stopped, or idle when no start ever came.
+// Pure decisions over what the host saw, so the rules are testable without a VM.
+@MainActor
+final class VMHostLifecycle {
+	var hadRunning = false
+
+	// The idle backstop's verdict: never once a run happened, never while a start is in flight.
+	func idleExitDue(startInFlight: Bool) -> Bool {
+		!hadRunning && !startInFlight
+	}
+
+	// After a stop's flush: exit unless a new run began meanwhile.
+	func stopExitDue(running: Bool) -> Bool {
+		hadRunning && !running
 	}
 }
 

@@ -69,6 +69,9 @@ public final class RoutingMachman: MachmanControlling {
 		var lastAnswer: VMInfo?
 		var unresponsive = false
 		var recoveryTask: Task<Void, Never>?
+		// Whether this host ever ran its VM (E12): an idle host from a start whose forward
+		// never happened can take a new start; one whose run stopped is exiting.
+		var sawRun = false
 
 		init(
 			identity: HostIdentity, client: RemoteMachman,
@@ -117,6 +120,8 @@ public final class RoutingMachman: MachmanControlling {
 	var hostProbeDeadline: Duration = .seconds(3)
 	var recoveryInterval: Duration = .seconds(2)
 	var helloDeadline: Duration = .seconds(10)
+	// How long a start waits for a host that is exiting after its VM stopped (E12).
+	var hostExitGrace: Duration = .seconds(3)
 
 	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
 	// names whose live vmhost did not answer the last attempt (listed as not responding
@@ -225,6 +230,7 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		let host = adopt(identity: identity, client: client)
 		host.lastAnswer = reply
+		host.sawRun = reply?.state.isRunning ?? false
 		reattachSafeRun(host)
 		return host
 	}
@@ -499,6 +505,7 @@ public final class RoutingMachman: MachmanControlling {
 				guard let self = self else { return }
 				if case .stateChanged(_, let state) = event, state.isRunning,
 					let host = self.host(withID: id) {
+					host.sawRun = true
 					// The guest just came up (boot or reboot): (re)start discovery.
 					self.startSSHDiscovery(host)
 				}
@@ -1333,11 +1340,15 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func start(vm name: String, options: StartOptions) async throws {
-		guard hosted[name] == nil else {
-			throw MachmanError(code: .invalidState, message: "\(name) is already running")
-		}
 		guard !pendingStarts.contains(name) else {
 			throw MachmanError(code: .invalidState, message: "\(name) is already starting")
+		}
+		if let host = hosted[name] {
+			// A host this daemon holds is not necessarily running its VM: ask it first.
+			try await settleExistingHost(host, name: name)
+			guard !pendingStarts.contains(name) else {   // the settle awaited
+				throw MachmanError(code: .invalidState, message: "\(name) is already starting")
+			}
 		}
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
@@ -1351,6 +1362,14 @@ public final class RoutingMachman: MachmanControlling {
 		// throw. Everything below (probe, spawn, shadow build) runs under this claim.
 		reserveStart(name, mac: vm.config.macAddress)
 		defer { releaseStart(name) }
+		if let host = hosted[name] {
+			// An idle host from an earlier start whose forward never happened (the daemon
+			// died in between, E12): it takes this start instead of idling out.
+			try await startOnExistingHost(
+				host, name: name, mac: host.identity.macInUse ?? vm.config.macAddress,
+				options: options)
+			return
+		}
 		purgeDeadShadows(for: name)
 		// A live vmhost may already own this VM's socket — launchd autostart, or a spawn
 		// whose daemon died before forwarding start. Adopt it instead of racing it with a
@@ -1372,6 +1391,7 @@ public final class RoutingMachman: MachmanControlling {
 		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
 		do {
 			try await host.client.start(vm: name, options: options)
+			host.sawRun = true
 		} catch {
 			host.deathWatch?.invalidate()
 			host.deathWatch = nil
@@ -1483,6 +1503,7 @@ public final class RoutingMachman: MachmanControlling {
 		forwarded.safe = false   // the vmhost never knows it runs a shadow
 		do {
 			try await host.client.start(vm: name, options: forwarded)
+			host.sawRun = true
 		} catch {
 			host.deathWatch?.invalidate()
 			host.deathWatch = nil
@@ -1506,9 +1527,9 @@ public final class RoutingMachman: MachmanControlling {
 	func probeAdoptAndStart(
 		name: String, socketPath: String, options: StartOptions
 	) async throws -> Bool {
-		let client: RemoteMachman
+		let host: HostedVM
 		do {
-			client = try await connectAndAdopt(name: name, socketPath: socketPath).client
+			host = try await connectAndAdopt(name: name, socketPath: socketPath)
 		} catch {
 			guard !UDSListener.isLive(path: socketPath) else {
 				// NEVER unlink a live socket (single-writer rule) — whoever owns it may
@@ -1520,25 +1541,86 @@ public final class RoutingMachman: MachmanControlling {
 			unlink(socketPath)
 			return false
 		}
-		var forwarded = options
-		if options.safe {
-			// An existing run cannot be made safe retroactively — adopt it as it is.
-			MachmanLogger.log(.passiveWarning,
-				"safe start requested for \(name), but a live vmhost already owns it")
-			forwarded.safe = false
-		}
-		do {
-			try await client.start(vm: name, options: forwarded)
-		} catch let error as MachmanError where error.code == .invalidState {
-			// Already running (autostart got there first) — the caller still gets what
-			// they asked for.
-			if options.openWindow {
-				try? await client.openWindow(vm: name)
-			}
-		}
 		// Other start failures propagate with the host still adopted: it is live and owns
 		// the VM; its own lifecycle (or the user) cleans up.
+		try await startOnExistingHost(
+			host, name: name, mac: host.identity.macInUse, options: options)
 		return true
+	}
+
+	// A start meeting a host this daemon already holds (E12). A running VM is refused
+	// (today's answer); a host that ran and stopped is exiting after its stop flush — a start
+	// forwarded now would die with it — so it is waited out; an idle host that never ran is
+	// let through for startOnExistingHost.
+	private func settleExistingHost(_ host: HostedVM, name: String) async throws {
+		switch await probe(host) {
+		case .answered(let info) where info.state.isRunning:
+			throw MachmanError(code: .invalidState, message: "\(name) is already running")
+		case .answered:
+			guard host.sawRun else { return }
+		case .stalled:
+			throw MachmanError(
+				code: .invalidState, message: "\(name)'s vmhost is not responding")
+		case .failed:
+			break   // its connection is going: wait for it like an exit
+		}
+		guard await waitForHostGone(id: host.identity.id, timeout: hostExitGrace) else {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is still shutting down — try again in a moment")
+		}
+	}
+
+	private func waitForHostGone(id: UUID, timeout: Duration) async -> Bool {
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: timeout)
+		while host(withID: id) != nil {
+			guard clock.now < deadline else { return false }
+			try? await Task.sleep(for: .milliseconds(50))
+		}
+		return true
+	}
+
+	// Hands a start to a host this daemon holds: an idle adopted one, or whoever answered
+	// at probe-adopt. Its last answer decides. A running VM is a fact — adopt it as it is,
+	// safe or not (a run cannot become safe retroactively). An idle host runs the real VM,
+	// never a shadow, so a safe start is refused rather than quietly run unsafe, and the
+	// MAC guard applies like any start.
+	private func startOnExistingHost(
+		_ host: HostedVM, name: String, mac: String?, options: StartOptions
+	) async throws {
+		if host.lastAnswer?.state.isRunning == true {
+			if options.safe {
+				MachmanLogger.log(.passiveWarning,
+					"safe start requested for \(name), but a live vmhost already owns it")
+			}
+		} else {
+			guard !options.safe else {
+				throw MachmanError(
+					code: .invalidState,
+					message: "\(name) has an idle vmhost from an earlier start — start it "
+						+ "normally, or wait up to 3 minutes to start it safe")
+			}
+			try checkMACConflict(name: name, mac: mac, options: options)
+		}
+		var forwarded = options
+		forwarded.safe = false
+		do {
+			try await host.client.start(vm: name, options: forwarded)
+		} catch let error as MachmanError where error.code == .invalidState {
+			// Already running (autostart got there first) — the caller still gets what they
+			// asked for.
+			host.sawRun = true
+			if options.openWindow {
+				try? await host.client.openWindow(vm: name)
+			}
+			return
+		}
+		host.sawRun = true
+		// The host emitted .running while start() was in flight — the subscription may have
+		// seen it, but a kick is cheap and never misses (the plain start path's reasoning).
+		startSSHDiscovery(host)
+		registry.events.emit(.listChanged)
 	}
 
 	// Launch agents rot when nobody is looking: DerivedData moves change the vmhost path,
