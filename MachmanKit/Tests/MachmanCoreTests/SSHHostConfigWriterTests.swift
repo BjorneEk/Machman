@@ -167,7 +167,7 @@ struct SSHHostConfigWriterTests {
 
 	// S22, the writer half: state stored before the report was shape-checked (validate at
 	// entry, never at load) still never reaches the file in a form that breaks ssh.
-	@Test func hostileValuesNeverReachTheFile() throws {
+	@Test func hostileValuesNeverReachTheFile() async throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }
 		let writer = SSHHostConfigWriter(sshDir: root)
@@ -198,7 +198,8 @@ struct SSHHostConfigWriterTests {
 
 		if OpenSSHConfigCheck.available {
 			try writer.apply(entries: [entry(user: "a b"), entry(name: "other", user: "$(x)")])
-			let other = try OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
+			let other = try await OpenSSHConfigCheck.resolve(
+				config: managed, host: "unrelated.invalid")
 			#expect(other.status == 0, "\(other.output)")
 		}
 
@@ -219,7 +220,7 @@ struct SSHHostConfigWriterTests {
 	// refused it — for every host. Quotes and backslashes are escaped, % is doubled (the
 	// path options expand %-tokens), and a line break can't be carried at all.
 	@Test(.enabled(if: OpenSSHConfigCheck.available))
-	func pathsWithQuotesAndPercentSignsStayParseable() throws {
+	func pathsWithQuotesAndPercentSignsStayParseable() async throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }
 		let writer = SSHHostConfigWriter(sshDir: root)
@@ -229,10 +230,10 @@ struct SSHHostConfigWriterTests {
 		let text = try String(contentsOf: managed, encoding: .utf8)
 		#expect(text.contains(#"IdentityFile "/vms/dev\"x 50%%/ssh/id_ed25519""#))
 
-		let vm = try OpenSSHConfigCheck.resolve(config: managed, host: "dev-x-50.machman")
+		let vm = try await OpenSSHConfigCheck.resolve(config: managed, host: "dev-x-50.machman")
 		#expect(vm.status == 0, "\(vm.output)")
 		#expect(vm.output.contains(#"identityfile /vms/dev"x 50%%/ssh/id_ed25519"#))
-		let other = try OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
+		let other = try await OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
 		#expect(other.status == 0, "\(other.output)")
 	}
 

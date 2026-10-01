@@ -36,18 +36,18 @@ struct SSHAliasTests {
 	}
 
 	@Test(.enabled(if: OpenSSHConfigCheck.available))
-	func opensshAcceptsTheManagedConfig() throws {
+	func opensshAcceptsTheManagedConfig() async throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }
 		try SSHHostConfigWriter(sshDir: root).apply(entries: [entry("dev copy")])
 		let managed = root.appendingPathComponent("machman/config")
 
-		let vm = try OpenSSHConfigCheck.resolve(config: managed, host: "dev-copy.machman")
+		let vm = try await OpenSSHConfigCheck.resolve(config: managed, host: "dev-copy.machman")
 		#expect(vm.status == 0, "\(vm.output)")
 		#expect(vm.output.lowercased().contains("hostkeyalias dev-copy.machman"))
 		#expect(vm.output.lowercased().contains("hostname 192.168.64.9"))
 		// The real damage was to everything else: an unrelated host must still resolve.
-		let other = try OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
+		let other = try await OpenSSHConfigCheck.resolve(config: managed, host: "unrelated.invalid")
 		#expect(other.status == 0, "\(other.output)")
 	}
 

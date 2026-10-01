@@ -17,8 +17,14 @@ enum OpenSSHConfigCheck {
 		FileManager.default.isExecutableFile(atPath: "/usr/bin/ssh")
 	}
 
-	// ssh's exit status and its stdout + stderr.
-	static func resolve(config: URL, host: String) throws -> (status: Int32, output: String) {
+	// ssh's exit status and its stdout + stderr. Async and detached: the wait blocks its
+	// thread, and callers are often @MainActor suites; a blocked main actor starves the
+	// in-process stub hosts other suites run in parallel (their hello deadlines are short).
+	static func resolve(config: URL, host: String) async throws -> (status: Int32, output: String) {
+		try await Task.detached { try run(config: config, host: host) }.value
+	}
+
+	private static func run(config: URL, host: String) throws -> (status: Int32, output: String) {
 		let ssh = Process()
 		ssh.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
 		ssh.arguments = ["-G", "-F", config.path, host]
