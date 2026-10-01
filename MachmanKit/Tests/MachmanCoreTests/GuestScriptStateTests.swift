@@ -40,7 +40,8 @@ struct GuestScriptStateTests {
 				ls -ln "$STATE_FILE" | cut -c1-10
 				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
-			#expect(r.out == "mountpoint\nnames\nuser\nconfigured\n-rw-------\n", "\(shell): \(r.out)")
+			#expect(r.out == "mountpoint\nnames\nuser\nconfigured\n-rw-------\n",
+				"\(shell): \(r.out)")
 		}
 	}
 
@@ -51,7 +52,8 @@ struct GuestScriptStateTests {
 			let r = try GuestScriptHarness.run(Self.stateHere + #"""
 				mkdir -p "$STATE_DIR"
 				printf "STATE_VERSION=1\nSCRIPT_VERSION=4\nMARKER='%s'\n" "$MARKER" > "$STATE_FILE"
-				printf "CONFIGURED='ssh sshfsauto'\nLAST_STATUS='ok'\nSSH_USER='reg'\n" >> "$STATE_FILE"
+				printf "CONFIGURED='ssh sshfsauto'\nLAST_STATUS='ok'\n" >> "$STATE_FILE"
+				printf "SSH_USER='reg'\n" >> "$STATE_FILE"
 				printf "AUTOMOUNT_SSHFS='docs'\nMOUNTPOINT='/mnt/it's'\n" >> "$STATE_FILE"
 				read_state
 				printf '%s|%s|%s|%s|%s\n' "$ST_CONFIGURED" "$ST_LAST_STATUS" "$ST_SSH_USER" \
