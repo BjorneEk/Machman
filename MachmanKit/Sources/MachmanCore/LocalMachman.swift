@@ -811,7 +811,13 @@ public final class LocalMachman: MachmanControlling {
 	// MARK: - macOS install
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {
-		try registry.installSession(for: try lookup(name)).startInstall(source: source)
+		let vm = try lookup(name)
+		// Refused up front, before the session reports any phase (MacInstaller guards too).
+		guard !vm.config.boot.isMacInstalled else {
+			throw MachmanError(
+				code: .invalidState, message: "macOS is already installed on \(name)")
+		}
+		try registry.installSession(for: vm).startInstall(source: source)
 	}
 
 	public func cancelMacInstall(vm name: String) async throws {

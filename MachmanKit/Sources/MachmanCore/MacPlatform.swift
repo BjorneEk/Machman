@@ -66,12 +66,19 @@ extension VMConfig {
 			.write(to: URL(fileURLWithPath: path), options: .atomic)
 	}
 
+	// Created before VZMacOSInstaller runs, so a failed or cancelled install leaves it
+	// behind and the retry creates it again (E24): it overwrites — the install rewrites the
+	// platform identity beside it anyway (hardware model, machine id). MacInstaller refuses
+	// an installed Mac, so this never replaces a working guest's NVRAM.
+	static let macAuxStorageCreationOptions: VZMacAuxiliaryStorage.InitializationOptions =
+		[.allowOverwrite]
+
 	@discardableResult
 	func createMacAuxiliaryStorage(hardwareModel: VZMacHardwareModel) throws -> VZMacAuxiliaryStorage {
 		return try VZMacAuxiliaryStorage(
 			creatingStorageAt: URL(fileURLWithPath: macAuxStoragePath()),
 			hardwareModel: hardwareModel,
-			options: [])
+			options: Self.macAuxStorageCreationOptions)
 	}
 
 	// macOS needs a sizable system disk to restore onto; reuse an existing storage disk if

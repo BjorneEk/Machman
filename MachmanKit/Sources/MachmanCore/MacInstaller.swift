@@ -11,6 +11,7 @@
 
 import Foundation
 import Virtualization
+import MachmanAPI
 
 @MainActor
 final class MacInstaller {
@@ -39,6 +40,13 @@ final class MacInstaller {
 	}
 
 	func install(source: Source) async throws {
+		// An install restores over the system disk and rewrites the platform identity and
+		// aux storage (which now overwrites, E24): never on a Mac that is installed. The UI
+		// only offers it before that; this guards every other caller.
+		guard !config.boot.isMacInstalled else {
+			throw MachmanError(
+				code: .invalidState, message: "macOS is already installed on \(config.name)")
+		}
 		// Resolve (and for .latestSupported, download) before touching any VM state, so a
 		// cancelled or failed download leaves the original boot mode untouched.
 		let (image, downloaded) = try await resolveRestoreImage(source)
