@@ -2,7 +2,8 @@
 # The report Machman ingests: flat key=value lines, written whenever the drop-box is
 # writable — including on failure, so Machman can say what went wrong instead of just
 # "no report yet". v2's keys are kept verbatim (the host's parser whitelists and old
-# daemons ignore what they don't know); v3 adds FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_ lines.
+# daemons ignore what they don't know); v3 adds FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_ lines,
+# v4 no keys.
 
 # Set for real by 90-main; defaulted here so the failure trap can report from any phase.
 FEATURES="${FEATURES:-}"
