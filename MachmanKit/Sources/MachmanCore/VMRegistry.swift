@@ -400,6 +400,16 @@ public final class VMRegistry {
 	// stale — the vmhost owned the file while the VM ran).
 	func reload(name: String) {
 		guard vms[name] != nil else { return }
+		if installSessions[name]?.isInstalling == true {
+			// A live install saves through the config it started with; a second object would
+			// fork the VM's state. Unreachable today: installs are refused while hosted.
+			MachmanLogger.log(.passiveWarning, "kept \(name)'s config: a macOS install owns it")
+			return
+		}
+		// A session holds the config it was made for, so the fresh config gets a fresh one:
+		// a kept session would whole-file-save the pre-run config at its next install,
+		// reverting everything the run persisted (E4).
+		installSessions[name] = nil
 		guard let fresh = try? VMConfig.load(name: name) else {
 			vms[name] = nil
 			events.emit(.listChanged)
@@ -492,7 +502,11 @@ public final class VMRegistry {
 		}
 		let session = InstallSession(
 			config: vm.config, events: events,
-			isVMRunning: { [weak vm] in vm?.state.isRunning ?? false },
+			// The registry's CURRENT VM by the session config's current name (a rename
+			// re-keys sessions): a captured VirtualMachine goes stale at the next reload.
+			isVMRunning: { [weak self, config = vm.config] in
+				self?.vms[config.name]?.state.isRunning ?? false
+			},
 			run: installRunner)
 		installSessions[vm.config.name] = session
 		return session

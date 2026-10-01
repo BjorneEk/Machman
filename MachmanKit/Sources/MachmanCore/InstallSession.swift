@@ -69,11 +69,6 @@ final class InstallSession {
 		}
 	}
 
-	func reconcile() {
-		guard installer == nil else { return }   // a live install owns the phase
-		phase = Self.phase(for: config.boot, hasActiveInstall: false)
-	}
-
 	func startInstall(source: InstallSource) throws {
 		// A second start used to answer success while the first install kept running (E15b).
 		guard installer == nil else {

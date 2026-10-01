@@ -75,4 +75,49 @@ struct InstallSessionLifecycleTests {
 			#expect(registry.vm(named: "mac") === vm)
 		}
 	}
+
+	// E4: a session made before a run holds the pre-run config; after the vmhost exits the
+	// daemon reloads, and the next install must save through the FRESH config.
+	@Test @MainActor func reloadGivesTheNextInstallAFreshConfig() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "mac")
+			let cfg = try VMConfig(name: "mac", memorySize: 2048, cpuCount: 2)
+			cfg.boot = .macOS(MacOSBoot(
+				installState: .failed("x"), minimumCPUCount: 2, minimumMemorySize: 2048))
+			try cfg.saveVMConfig()
+			let registry = VMRegistry()
+			let s1 = registry.installSession(for: try #require(registry.vm(named: "mac")))
+			// The run (a vmhost) persists its own state behind the daemon's copy.
+			let ran = try VMConfig.load(name: "mac")
+			ran.cpuCount = 3
+			try ran.saveVMConfig()
+
+			registry.reload(name: "mac")
+
+			let vm2 = try #require(registry.vm(named: "mac"))
+			let s2 = registry.installSession(for: vm2)
+			#expect(s2 !== s1)
+			#expect(s2.config === vm2.config)
+			#expect(s2.config.cpuCount == 3)
+		}
+	}
+
+	@Test @MainActor func anInstallingSessionKeepsItsConfigAcrossAReload() throws {
+		let gate = Gate()
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "mac")
+			_ = try VMConfig(name: "mac", memorySize: 2048, cpuCount: 2)
+			let registry = VMRegistry()
+			registry.installRunner = gate.runner
+			let s1 = registry.installSession(for: try #require(registry.vm(named: "mac")))
+			try s1.startInstall(source: Self.ipsw)
+			defer { gate.open = true }
+
+			registry.reload(name: "mac")
+
+			let vm = try #require(registry.vm(named: "mac"))
+			#expect(vm.config === s1.config)
+			#expect(registry.installSession(for: vm) === s1)
+		}
+	}
 }
