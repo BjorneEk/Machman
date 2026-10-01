@@ -843,8 +843,8 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is not running in safe mode")
 		}
-		// Usually an instant move, but shadow promotion can copy across volumes — an
-		// (indeterminate) card covers the gap. Merged into host.operations by the daemon.
+		// One instant same-volume rename (a cross-volume save is refused); the card records
+		// the save in the operations list. Merged into host.operations by the daemon.
 		let opID = operationCenter.begin(
 			kind: OperationInfo.Kind.safeSave, vm: name, label: "Saving as \(newName)")
 		let vm: VirtualMachine

@@ -71,6 +71,12 @@ public final class VMRegistry {
 	// which is what makes safeSave refusable outside a daemon-spawned safe run; cleared
 	// after use so a run promotes at most once.
 	private var promotionLibrary: String?
+	// Save as New VM's one move primitive: renamex_np(RENAME_EXCL) — atomic, same volume
+	// only (EXDEV otherwise), and never over an existing entry (plain rename(2) silently
+	// replaces an empty directory). Returns 0 or the errno. A test seam.
+	var renameExclusive: (String, String) -> Int32 = {
+		renamex_np($0, $1, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
+	}
 
 	public convenience init() {
 		self.init(only: nil)
@@ -292,8 +298,9 @@ public final class VMRegistry {
 
 	// vm.safeSave's engine half — vmhost-side ONLY (single-writer: the vmhost moves files it
 	// owns). Renames the shadow dir into the library atomically (same volume by
-	// construction) and re-keys this restricted registry to the new name; the running VZ
-	// instance never notices — open fds follow the moved inodes. The promoted VM gets FRESH
+	// construction, refused otherwise) and re-keys this restricted registry to the new name;
+	// the running VZ instance never notices — open fds follow the moved inodes. The promoted
+	// VM gets FRESH
 	// identity like vm.copy (user decision): new MAC now, new machine ids effective next
 	// boot, created = now, runtime restarts (the in-flight session re-adds at teardown
 	// through the re-pointed config).
@@ -307,23 +314,28 @@ public final class VMRegistry {
 		}
 		try NameRule.vmName.validate(newName)
 		let destination = library + "/" + newName
-		guard !FileManager.default.fileExists(atPath: destination) else {
+		let runRoot = machmanVMDir
+		// One atomic same-volume rename, never a copy (E15). The guest writes these images
+		// through open descriptors, which follow a rename but not a copy: a cross-volume
+		// move copied a torn image while the guest kept writing the unlinked originals, and
+		// froze this vmhost's main actor for the whole copy. safe/ is a sibling of VMs/, so
+		// only a symlinked or mounted VMs folder is ever on another volume. The rename is
+		// the first mutation: a refusal leaves the run untouched.
+		switch renameExclusive(runRoot + "/" + oldName, destination) {
+		case 0:
+			break
+		case EEXIST, ENOTEMPTY:
 			throw MachmanError(
 				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
-		}
-		let runRoot = machmanVMDir
-		do {
-			try FileManager.default.moveItem(
-				atPath: runRoot + "/" + oldName, toPath: destination)
-		} catch {
-			if FileManager.default.fileExists(atPath: destination) {
-				// The name appeared while we checked; the rename lost the race.
-				throw MachmanError(
-					code: .alreadyExists, message: "a VM named '\(newName)' already exists")
-			}
+		case EXDEV:
+			throw MachmanError(
+				code: .invalidState,
+				message: "Save as New VM needs the VM library on the same volume as its "
+					+ "safe runs")
+		case let code:
 			throw MachmanError(
 				code: .ioFailure,
-				message: "saving \(newName): \(error.localizedDescription)")
+				message: "saving \(newName): \(String(cString: strerror(code)))")
 		}
 		// From here the VM lives in the library: every config path resolves through the
 		// re-pointed global + the new name.
