@@ -292,11 +292,13 @@ struct VMDeviceTreeView: View {
 				.stopFirst(vm, .renameDisk)
 		}
 		if disk.owned == false {
-			Button("Promote to Owned…") { viewModel.promoteDisk(vm.name, diskID: disk.id) }
+			Button("Promote to Owned") { viewModel.promoteDisk(vm.name, diskID: disk.id) }
 				.stopFirst(vm, .promoteDisk)
 		}
 		Divider()
-		Button(disk.owned == true ? "Delete…" : "Remove…", role: .destructive) {
+		// An owned disk's Delete… asks first; a reference detaches at once (H2: an ellipsis
+		// promises a question).
+		Button(disk.owned == true ? "Delete…" : "Remove", role: .destructive) {
 			viewModel.requestRemoveDisk(vm.name, disk: disk)
 		}
 		.stopFirst(vm, .removeDisk)
@@ -354,7 +356,7 @@ struct VMDeviceTreeView: View {
 						viewModel.setEnabled(vm.name, mounts: [mount.id: !mount.isEnabled])
 					}
 					Divider()
-					Button("Remove…", role: .destructive) {
+					Button("Remove", role: .destructive) {
 						viewModel.removeMount(vm.name, mountID: mount.id)
 					}
 				}
@@ -615,7 +617,7 @@ struct VMDeviceTreeView: View {
 		}
 		// The remove APIs pop the highest index of a kind, so only that port offers Remove.
 		if isLastOfKind(port) {
-			Button("Remove…", role: .destructive) {
+			Button("Remove", role: .destructive) {
 				if port.kind == .console {
 					viewModel.removeConsolePort(vm.name)
 				} else {
@@ -836,7 +838,7 @@ struct VMDeviceTreeView: View {
 			.stopFirst(vm, .renameKernelFile)
 		}
 		if !file.owned {
-			Button("Promote to Owned…") {
+			Button("Promote to Owned") {
 				viewModel.promoteKernel(
 					vm.name, role: role, sourcePath: file.id,
 					tag: URL(fileURLWithPath: file.id)
