@@ -288,3 +288,42 @@ struct SafeSaveHandOverTests {
 		await client.disconnect()
 	}
 }
+
+// The one warning at the save, so the first sign of the hand-over is not a later refusal.
+struct SafeSaveHandOverWarningTests {
+	@Test func theWarningNamesTheMovedFiles() {
+		let one = [DirectDiskMove(storage: "data", size: 0, target: "data")]
+		#expect(DirectDiskMove.handOverWarning(one, original: "alpha", saved: "kept")
+			== "alpha's disk data.raw now lives in kept's folder; kept can't be deleted while "
+				+ "alpha uses it")
+		let two = one + [DirectDiskMove(storage: "b", size: 0, target: "b-2")]
+		#expect(DirectDiskMove.handOverWarning(two, original: "alpha", saved: "kept")
+			== "alpha's disks data.raw, b-2.raw now live in kept's folder; kept can't be "
+				+ "deleted while alpha uses them")
+		#expect(DirectDiskMove.handOverWarning([], original: "alpha", saved: "kept") == nil)
+	}
+
+	@Test @MainActor func theSaveRaisesItOnce() async throws {
+		var registry: VMRegistry!
+		var stream: AsyncStream<VMEvent>!
+		try VMTestDir.withRedirectedDir {
+			let host = try SafeRunFixture.make(
+				disks: [VMDisk(kind: .storage("data", 4096), safe: false)])
+			defer { host.removeLibrary() }
+			registry = host.registry
+			stream = registry.events.stream()
+			_ = try registry.promoteRestrictedVM(to: "kept")
+			registry.events.emit(.log(vm: nil, level: .message, message: "end"))
+		}
+		var warnings: [String] = []
+		for await event in stream {
+			guard case .log(_, let level, let message) = event else { continue }
+			if message == "end" { break }
+			if level == .warning { warnings.append(message) }
+		}
+		#expect(warnings == [
+			"alpha's disk data.raw now lives in kept's folder; kept can't be deleted while "
+				+ "alpha uses it",
+		])
+	}
+}

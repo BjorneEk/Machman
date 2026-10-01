@@ -408,6 +408,9 @@ public final class VMRegistry {
 		SSHSetupInstaller.writeKnownHosts(for: vm.config)
 		try? FileManager.default.removeItem(atPath: runRoot)   // now-empty run root + marker
 		promotionLibrary = nil
+		if let warning = DirectDiskMove.handOverWarning(moves, original: oldName, saved: newName) {
+			events.emit(.log(vm: newName, level: .warning, message: warning))
+		}
 		return vm
 	}
 
