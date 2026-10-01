@@ -15,16 +15,37 @@ public final class RemoteMachman: MachmanControlling {
 	// The serving process's pid (socket peer) — the daemon's shadow sweep matches it.
 	public var peerPID: Int32? { connection.peerPID }
 
+	// The daemon serves a different wire generation than this client speaks. Its own type so
+	// a caller can tell "wrong version" from "not there" or "not answering" (P1).
+	public struct APIVersionMismatch: Error, Equatable, CustomStringConvertible {
+		public let daemonAPI: Int
+		public let clientAPI: Int
+
+		public init(daemonAPI: Int, clientAPI: Int) {
+			self.daemonAPI = daemonAPI
+			self.clientAPI = clientAPI
+		}
+
+		public var description: String {
+			"daemon speaks api v\(daemonAPI), client needs v\(clientAPI)"
+		}
+	}
+
 	// Connects, performs the hello handshake, and refuses on api-version mismatch.
 	// helloDeadline: the daemon's spawn/adopt retry loops pass a tight bound so a vmhost
 	// that accepts but never answers cannot wedge them (E5).
+	// onDisconnect fires only for a connection this init returned: a hello that failed,
+	// timed out, was cancelled or was refused reports no drop — the caller's catch has it,
+	// and a reconnect loop must not hear the same failure twice (P1).
 	public init(
 		socketPath: String = MachmanPaths.daemonSocketPath(),
 		clientName: String,
 		helloDeadline: Duration = RPCConnection.defaultCallDeadline,
 		onDisconnect: @escaping @Sendable () -> Void = {}
 	) async throws {
-		connection = try RPCConnection(socketPath: socketPath, onDisconnect: onDisconnect)
+		let gate = DisconnectGate(onDisconnect)
+		connection = try RPCConnection(
+			socketPath: socketPath, onDisconnect: { gate.connectionDied() })
 		do {
 			hello = try await connection.call(
 				.hello, RPCParams.Hello(client: clientName),
@@ -37,11 +58,12 @@ public final class RemoteMachman: MachmanControlling {
 		}
 		guard hello.apiVersion == MachmanProtocol.apiVersion else {
 			await connection.disconnect()
-			throw MachmanError(
-				code: .invalidState,
-				message: "daemon speaks api v\(hello.apiVersion), "
-					+ "client needs v\(MachmanProtocol.apiVersion)")
+			throw APIVersionMismatch(
+				daemonAPI: hello.apiVersion, clientAPI: MachmanProtocol.apiVersion)
 		}
+		// Last: from here the owner hears the drop — including one that already happened
+		// between the hello's reply and this line.
+		gate.arm()
 	}
 
 	public func disconnect() async {
@@ -398,5 +420,43 @@ public final class RemoteMachman: MachmanControlling {
 		_ = try? await connection.call(
 			.eventsSubscribe, RPCEmpty?.none, expecting: RPCEmpty.self)
 		return await connection.events()
+	}
+}
+
+// Holds a connection's drop report back until RemoteMachman.init hands the connection out:
+// the drop of a connection nobody received is nobody's to hear. The connection dies at most
+// once and the owner hears it at most once, whichever of the two comes first.
+private final class DisconnectGate: @unchecked Sendable {
+	private let lock = NSLock()
+	private var armed = false
+	private var died = false
+	private var fired = false
+	private let forward: @Sendable () -> Void
+
+	init(_ forward: @escaping @Sendable () -> Void) {
+		self.forward = forward
+	}
+
+	func connectionDied() {
+		let fire = lock.withLock { () -> Bool in
+			died = true
+			return takeFire()
+		}
+		if fire { forward() }
+	}
+
+	func arm() {
+		let fire = lock.withLock { () -> Bool in
+			armed = true
+			return takeFire()
+		}
+		if fire { forward() }
+	}
+
+	// Lock held.
+	private func takeFire() -> Bool {
+		guard armed, died, !fired else { return false }
+		fired = true
+		return true
 	}
 }
