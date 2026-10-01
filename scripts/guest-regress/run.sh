@@ -32,7 +32,7 @@ distro() {
 	debian)
 		IMAGE=debian:12
 		PREP="$APT grub2-common openssh-client iproute2 initscripts procps sshfs"
-		SUITES="systemd rclocal files grub uninstall nixos automount" ;;
+		SUITES="systemd rclocal files grub uninstall nixos automount console" ;;
 	ubuntu)
 		IMAGE=ubuntu:24.04
 		PREP="$APT grub2-common openssh-client iproute2 sshfs"

@@ -25,6 +25,7 @@ GATEWAY=""
 GUEST_HOST_KEY=""
 REVERSE_PUBKEY=""
 VIRTIOFS_OK=0
+LAUNCHD_DIR=/Library/LaunchDaemons   # macOS: the console logins' and boot hook's plists
 BOOTLOADER="none"          # grubby | update-grub | grub-mkconfig | grub2-mkconfig |
                            # systemd-boot | kernel-cmdline | none
 CMDLINE_CONSOLES=""        # console= devices from /proc/cmdline, space-separated
@@ -460,9 +461,8 @@ getty_persistent_on() {
 		[ "$1" = "hvc0" ] && [ -e /dev/hvc0 ]
 		;;
 	launchd)
-		ls /Library/LaunchDaemons/com.machman.console-getty.*.plist >/dev/null 2>&1 \
-			&& grep -l "<string>$1</string>" \
-				/Library/LaunchDaemons/com.machman.console-getty.*.plist >/dev/null 2>&1
+		grep -lF "<string>$1</string>" \
+			"$LAUNCHD_DIR/$LAUNCHD_GETTY_PREFIX".*.plist >/dev/null 2>&1
 		;;
 	inittab|sysv|openrc)
 		grep -q "^[^#]*[: ]$1[ :]" /etc/inittab 2>/dev/null \

@@ -16,6 +16,8 @@ avail_console=0
 reason_console=""
 GETTY_MECH="none"          # systemd | launchd | inittab | runit | freebsd-rc | none
 LAUNCHD_GETTY_PREFIX="com.machman.console-getty"
+CONSOLE_STAGE=""           # inittab/ttys lines staged for the marker block, one per line
+CONSOLE_STAGED_DEVS=""     # the devices those lines serve, space-separated
 
 console_detect() {
 	CONSOLE_DEVICES=""
@@ -320,6 +322,15 @@ Adopt — comment the existing line (restorable) and manage a marked one" 1
 	done
 	CONSOLE_ACTIONS="${CONSOLE_ACTIONS# }"
 	CONSOLE_MANAGED="${CONSOLE_MANAGED# }"
+	# Logins an earlier run set up on consoles this run leaves alone stay managed (their
+	# lines stay too), so the state keeps listing them.
+	for _cdc_dev in $ST_CONSOLE_LOGINS; do
+		if ! has_word "$_cdc_dev" "$CONSOLE_SELECTED" \
+			&& ! has_word "$_cdc_dev" "$CONSOLE_MANAGED" && getty_persistent_on "$_cdc_dev"
+		then
+			CONSOLE_MANAGED="${CONSOLE_MANAGED:+$CONSOLE_MANAGED }$_cdc_dev"
+		fi
+	done
 	CONSOLE_PLAN="${CONSOLE_PLAN% · }"
 	[ -n "$CONSOLE_PLAN" ] || CONSOLE_PLAN="none selected"
 	return 0
@@ -355,6 +366,26 @@ console_inittab_is_busybox() {
 	return 1
 }
 
+# sysvinit's id for a device's line: 1-4 characters, one per DEVICE, so a re-run selecting
+# another set never renames a line init is running. hvc<N> → hv<N>, anything else M and its
+# last three letters or digits; both stay clear of the distros' own T0/T1 serial entries.
+# (Older runs keyed the id by selection index, M<n>: a line restaged for its device
+# replaces such a line by device, never by id.)
+console_inittab_id() {
+	case "$1" in
+	hvc[0-9]|hvc[0-9][0-9]) printf 'hv%s' "${1#hvc}" ;;
+	*) printf 'M%s' "$(printf '%s' "$1" | tr -cd 'A-Za-z0-9' | sed 's/.*\(...\)$/\1/')" ;;
+	esac
+}
+
+# console_stage <dev> <line> — one line for the marker block console_flush_lines rebuilds.
+console_stage() {
+	CONSOLE_STAGE="${CONSOLE_STAGE:+$CONSOLE_STAGE
+}$2"
+	CONSOLE_STAGED_DEVS="${CONSOLE_STAGED_DEVS:+$CONSOLE_STAGED_DEVS }$1"
+	return 0
+}
+
 console_act_inittab() {
 	if [ "$DRY_RUN" -eq 1 ]; then
 		acting "would add a getty line for $1 to /etc/inittab"
@@ -368,13 +399,11 @@ console_act_inittab() {
 			_cai_line="$1::respawn:/sbin/getty 38400 $1"
 		fi
 	elif have agetty; then
-		# sysvinit wants a unique 1-4 char id; M<n> stays clear of the distros' own
-		# T0/T1 serial entries.
-		_cai_line="M${2}:2345:respawn:$(command -v agetty) -L $1 115200 vt100"
+		_cai_line="$(console_inittab_id "$1"):2345:respawn:$(command -v agetty) -L $1 115200 vt100"
 	else
 		_cai_line="$1::respawn:/sbin/getty 38400 $1"
 	fi
-	printf '%s\n' "$_cai_line" >> /etc/inittab.machman-add
+	console_stage "$1" "$_cai_line"
 	return 0
 }
 
@@ -407,8 +436,7 @@ console_act_freebsd() {
 		acting "would add a getty line for $1 to /etc/ttys"
 		return 0
 	fi
-	printf '%s "/usr/libexec/getty 3wire" vt100 onifexists secure\n' "$1" \
-		>> /etc/ttys.machman-add
+	console_stage "$1" "$(printf '%s "/usr/libexec/getty 3wire" vt100 onifexists secure' "$1")"
 	return 0
 }
 
@@ -418,19 +446,33 @@ console_act_launchd() {
 			"Boot with the console attached, then re-run."
 		return 0
 	fi
-	_cal_plist="/Library/LaunchDaemons/$LAUNCHD_GETTY_PREFIX.$2.plist"
+	# Keyed by the device: an older run's label was the console's place in its selection,
+	# which another run could give a different device (and overwrite a loaded plist).
+	_cal_label="$LAUNCHD_GETTY_PREFIX.$1"
+	_cal_plist="$LAUNCHD_DIR/$_cal_label.plist"
 	if [ "$DRY_RUN" -eq 1 ]; then
 		acting "would install $_cal_plist for $1"
 		return 0
 	fi
-	cat > "$_cal_plist" <<PLIST
+	for _cal_old in "$LAUNCHD_DIR/$LAUNCHD_GETTY_PREFIX".*.plist; do
+		[ -f "$_cal_old" ] && [ "$_cal_old" != "$_cal_plist" ] || continue
+		grep -qF "<string>$1</string>" "$_cal_old" 2>/dev/null || continue
+		launchctl bootout "system/$(basename "$_cal_old" .plist)" >/dev/null 2>&1 || true
+		rm -f "$_cal_old"
+	done
+	_cal_tmp="$(mktemp)" || {
+		step_failed console "could not write $_cal_plist — no login on $1" \
+			"Make room for a temporary file, then re-run."
+		return 0
+	}
+	cat > "$_cal_tmp" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>$LAUNCHD_GETTY_PREFIX.$2</string>
+	<string>$_cal_label</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/usr/libexec/getty</string>
@@ -442,24 +484,59 @@ console_act_launchd() {
 </dict>
 </plist>
 PLIST
-	chown root:wheel "$_cal_plist"
-	chmod 644 "$_cal_plist"
+	if ! write_file -m 644 -o root:wheel "$_cal_plist" < "$_cal_tmp"; then
+		rm -f "$_cal_tmp"
+		step_failed console "could not write $_cal_plist: $R_ERROR" \
+			"Fix that, then re-run."
+		return 0
+	fi
+	rm -f "$_cal_tmp"
+	launchctl bootout "system/$_cal_label" >/dev/null 2>&1 || true
 	run "starting the login on $1" launchctl bootstrap system "$_cal_plist" || true
 	ok "login installed on $1"
 	return 0
 }
 
-# Marker-scoped batch edits: the inittab/ttys lines collect in a staging file, then land
-# between BEGIN/END markers in one block rewrite (idempotent re-runs, exact uninstall).
+# The marker block's lines in <file> now; with "keep", only those for devices this run
+# staged nothing for (unselected, or skipped as absent) — staged lines replace the rest.
+console_block_lines() { # <file> [keep]
+	[ -f "$1" ] || return 0
+	_cbl_res=""
+	if [ "${2:-}" = keep ]; then
+		for _cbl_dev in $CONSOLE_STAGED_DEVS; do
+			if [ "$GETTY_MECH" = inittab ]; then
+				_cbl_re="$(console_inittab_re "$_cbl_dev")"
+			else
+				_cbl_re="^$(console_dev_esc "$_cbl_dev")[[:space:]]"
+			fi
+			_cbl_res="${_cbl_res:+$_cbl_res
+}$_cbl_re"
+		done
+	fi
+	# The patterns travel through ENVIRON: awk -v would unescape the dots' backslashes.
+	_CB_RES="$_cbl_res" awk -v m="$MARKER" '
+		BEGIN { n = split(ENVIRON["_CB_RES"], re, "\n") }
+		$0 == "# BEGIN " m { inb = 1; next }
+		$0 == "# END " m { inb = 0; next }
+		inb {
+			for (i = 1; i <= n; i++) if ($0 ~ re[i]) next
+			print
+		}' "$1"
+}
+
+# Marker-scoped batch edit: the inittab/ttys lines this run staged land between BEGIN/END
+# markers in one block rewrite (idempotent re-runs, exact uninstall), beside the block's
+# lines for the consoles it left alone. 0 when the file changed; 1 when it did not need to,
+# or could not (said so).
 console_flush_lines() {
-	_cfl_file="$1"
-	_cfl_add="$1.machman-add"
-	[ -f "$_cfl_add" ] || return 1
-	_cfl_ok=0
-	put_block "$_cfl_file" "$MARKER" "$(cat "$_cfl_add")" || _cfl_ok=1
-	rm -f "$_cfl_add"
-	if [ "$_cfl_ok" -ne 0 ]; then
-		step_failed console "could not update $_cfl_file: $R_ERROR" \
+	[ -n "$CONSOLE_STAGE" ] || return 1
+	_cfl_body="$(console_block_lines "$1" keep; printf '%s\n' "$CONSOLE_STAGE")"
+	_cfl_now="$(console_block_lines "$1")"
+	CONSOLE_STAGE=""
+	CONSOLE_STAGED_DEVS=""
+	[ "$_cfl_body" != "$_cfl_now" ] || return 1
+	if ! put_block "$1" "$MARKER" "$_cfl_body"; then
+		step_failed console "could not update $1: $R_ERROR" \
 			"Add the getty lines yourself, then re-run."
 		return 1
 	fi
@@ -481,10 +558,10 @@ console_install_one() {
 	esac
 	case "$GETTY_MECH" in
 	systemd) console_act_systemd "$1" ;;
-	inittab) console_act_inittab "$1" "$2" ;;
+	inittab) console_act_inittab "$1" ;;
 	runit) console_act_runit "$1" ;;
 	freebsd-rc) console_act_freebsd "$1" ;;
-	launchd) console_act_launchd "$1" "$2" ;;
+	launchd) console_act_launchd "$1" ;;
 	esac
 	return 0
 }
@@ -502,8 +579,10 @@ console_act() {
 				|| true
 		fi
 	fi
+	# Older versions staged into these files; one a killed run left behind goes.
 	rm -f /etc/inittab.machman-add /etc/ttys.machman-add 2>/dev/null || true
-	_ca_i=0
+	CONSOLE_STAGE=""
+	CONSOLE_STAGED_DEVS=""
 	_ca_flush=0
 	for _ca_dev in $CONSOLE_SELECTED; do
 		case "$(console_action_of "$_ca_dev")" in
@@ -512,10 +591,20 @@ console_act() {
 			;;
 		verify)
 			if getty_persistent_on "$_ca_dev"; then
+				# A login in a shared file is staged again, so the block it is rebuilt
+				# with keeps it (in this version's format).
+				case "$GETTY_MECH" in
+				inittab|freebsd-rc)
+					if [ "$DRY_RUN" -eq 0 ]; then
+						console_install_one "$_ca_dev"
+						_ca_flush=1
+					fi
+					;;
+				esac
 				ok "login on $_ca_dev verified"
 			else
 				# Drifted since detection (or the state file lied): reinstall.
-				console_install_one "$_ca_dev" "$_ca_i"
+				console_install_one "$_ca_dev"
 				_ca_flush=1
 			fi
 			;;
@@ -539,20 +628,18 @@ console_act() {
 					# A second getty on the same port would fight the first one.
 					step_failed console "could not adopt $_ca_dev: $R_ERROR" \
 						"Comment its line out yourself, then re-run."
-					_ca_i=$((_ca_i + 1))
 					continue
 				fi
 				ok "adopted $_ca_dev — the original line is tagged and restorable"
 			fi
-			console_install_one "$_ca_dev" "$_ca_i"
+			console_install_one "$_ca_dev"
 			_ca_flush=1
 			;;
 		install)
-			console_install_one "$_ca_dev" "$_ca_i"
+			console_install_one "$_ca_dev"
 			_ca_flush=1
 			;;
 		esac
-		_ca_i=$((_ca_i + 1))
 	done
 	if [ "$DRY_RUN" -eq 0 ] && [ "$_ca_flush" -eq 1 ]; then
 		case "$GETTY_MECH" in
@@ -640,7 +727,7 @@ console_uninstall() {
 		done
 		;;
 	launchd)
-		for _cu_plist in "/Library/LaunchDaemons/$LAUNCHD_GETTY_PREFIX".*.plist; do
+		for _cu_plist in "$LAUNCHD_DIR/$LAUNCHD_GETTY_PREFIX".*.plist; do
 			[ -e "$_cu_plist" ] || continue
 			launchctl bootout "system/$(basename "$_cu_plist" .plist)" 2>/dev/null || true
 			rm -f "$_cu_plist"
