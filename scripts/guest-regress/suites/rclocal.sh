@@ -61,6 +61,13 @@ if [ -x /etc/init.d/rc.local ]; then
 else
 	sh -c '[ -x /etc/rc.local ] && /etc/rc.local' >/tmp/rclocal-run.log 2>&1   # runit stage 2
 fi
+# Its report refresh fires 5 s later in the background: let it finish, or it rewrites the
+# report under the runs below. (rc[.]local: grep's own command line must not match.)
+n=0
+while grep -qs 'rc[.]local' /proc/[0-9]*/cmdline && [ "$n" -lt 60 ]; do
+	sleep 1
+	n=$((n + 1))
+done
 cp -p /tmp/sshfs.real "$sshfs_bin"
 if [ "$(grep -c '/mnt/machman/mounts/' /tmp/sshfs.calls 2>/dev/null)" = 2 ]; then
 	R RCLOCAL_RUNS pass
