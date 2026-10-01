@@ -155,6 +155,22 @@ struct DeviceConfigTests {
 		#expect(cleared.systemKeyCapture == nil)
 	}
 
+	// A15: the daemon serves a newer daemon's stored capture mode in its own spelling, and a
+	// client's echo of that device keeps it.
+	@Test @MainActor func storedNewerCaptureModeIsServedVerbatim() throws {
+		var stored = GuestDevice(kind: .graphics)
+		stored.systemKeyCapture = "whenFocused"
+		let served = LocalMachman.deviceInfo(from: stored, macGuest: false)
+		#expect(served.systemKeyCapture == .unknown)
+		let json = String(decoding: try MachmanWire.encoder().encode(served), as: UTF8.self)
+		#expect(json.contains(#""systemKeyCapture":"whenFocused""#))
+		let echoed = try MachmanWire.decoder().decode(DeviceInfo.self, from: Data(json.utf8))
+		#expect(LocalMachman.guestDevice(from: echoed, replacing: stored).systemKeyCapture
+			== "whenFocused")
+		stored.systemKeyCapture = "always"
+		#expect(LocalMachman.deviceInfo(from: stored, macGuest: false).systemKeyCapture == .always)
+	}
+
 	@Test func enabledFlagsPersistOnDisksMountsSerial() throws {
 		try VMTestDir.withRedirectedDir {
 			let vm = try makeVM("flags")

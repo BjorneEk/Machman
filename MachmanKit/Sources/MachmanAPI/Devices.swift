@@ -197,12 +197,13 @@ public struct UnavailabilityInfo: Codable, Sendable, Equatable {
 // Whether the VM window sends system shortcuts (⌘Space, ⌘Tab, Mission Control…) to the guest
 // instead of the host (1.0.10). The display device's value is the DEFAULT a run starts with;
 // the run's own value lives in the vmhost and never writes back. Tolerant decode: an
-// unrecognized future mode degrades to .unknown (treated as off) instead of failing.
+// unrecognized future mode degrades to .unknown (treated as off) instead of failing; DeviceInfo
+// keeps that mode's own spelling and echoes it, so "unknown" is never invented on the wire.
 public enum SystemKeyCapture: String, Codable, Sendable, Equatable {
 	case off
 	case always
 	case fullScreen    // only while the VM window is full screen
-	case unknown       // decode fallback only; never encode it
+	case unknown       // decode fallback only; DeviceInfo encodes the spelling it came from
 
 	public init(from decoder: Decoder) throws {
 		let raw = try decoder.singleValueContainer().decode(String.self)
@@ -220,11 +221,29 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 	public var displayWidthPixels: Int?      // graphics
 	public var displayHeightPixels: Int?     // graphics
 	public var displayPixelsPerInch: Int?    // graphics, macOS guests
-	public var systemKeyCapture: SystemKeyCapture?   // graphics (1.0.10); nil = off
+	// graphics (1.0.10); nil = off. Assigning a known mode (or nil) drops any held spelling.
+	public var systemKeyCapture: SystemKeyCapture? {
+		didSet { if systemKeyCapture != .unknown { unknownCaptureSpelling = nil } }
+	}
 	public var sharesClipboard: Bool?        // clipboard
 	public var unavailable: UnavailabilityInfo?
+	// The wire spelling behind a .unknown systemKeyCapture (a newer peer's mode); nil otherwise.
+	private var unknownCaptureSpelling: String?
 
 	public var id: String { kind.rawValue }
+
+	// systemKeyCapture as the wire (or the daemon's config) spells it. Setting a spelling this
+	// build can't name keeps it verbatim behind .unknown, so a client editing another setting
+	// sends the newer mode back unchanged. A .unknown built in code has no spelling and is
+	// left off the wire rather than written as "unknown".
+	public var systemKeyCaptureSpelling: String? {
+		get { systemKeyCapture == .unknown ? unknownCaptureSpelling : systemKeyCapture?.rawValue }
+		set {
+			let mode = newValue.map { SystemKeyCapture(rawValue: $0) ?? .unknown }
+			systemKeyCapture = mode
+			unknownCaptureSpelling = mode == .unknown ? newValue : nil
+		}
+	}
 
 	public init(
 		kind: DeviceKind, enabled: Bool = true,
@@ -251,10 +270,35 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 			try c.decodeIfPresent(Int.self, forKey: .displayHeightPixels)
 		self.displayPixelsPerInch =
 			try c.decodeIfPresent(Int.self, forKey: .displayPixelsPerInch)
-		self.systemKeyCapture =
-			try c.decodeIfPresent(SystemKeyCapture.self, forKey: .systemKeyCapture)
 		self.sharesClipboard = try c.decodeIfPresent(Bool.self, forKey: .sharesClipboard)
 		self.unavailable = try c.decodeIfPresent(UnavailabilityInfo.self, forKey: .unavailable)
+		self.systemKeyCaptureSpelling =
+			try c.decodeIfPresent(String.self, forKey: .systemKeyCapture)
+	}
+
+	// Hand-written only for systemKeyCapture: the spelling, never "unknown". Every other key
+	// encodes exactly as the synthesized conformance did (WireFixtureTests pins the shape).
+	public func encode(to encoder: Encoder) throws {
+		var c = encoder.container(keyedBy: CodingKeys.self)
+		try c.encode(kind, forKey: .kind)
+		try c.encode(enabled, forKey: .enabled)
+		try c.encodeIfPresent(displayWidthPixels, forKey: .displayWidthPixels)
+		try c.encodeIfPresent(displayHeightPixels, forKey: .displayHeightPixels)
+		try c.encodeIfPresent(displayPixelsPerInch, forKey: .displayPixelsPerInch)
+		try c.encodeIfPresent(systemKeyCaptureSpelling, forKey: .systemKeyCapture)
+		try c.encodeIfPresent(sharesClipboard, forKey: .sharesClipboard)
+		try c.encodeIfPresent(unavailable, forKey: .unavailable)
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case kind
+		case enabled
+		case displayWidthPixels
+		case displayHeightPixels
+		case displayPixelsPerInch
+		case systemKeyCapture
+		case sharesClipboard
+		case unavailable
 	}
 }
 

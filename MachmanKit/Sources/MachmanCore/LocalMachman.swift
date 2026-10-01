@@ -550,6 +550,21 @@ public final class LocalMachman: MachmanControlling {
 		return updated
 	}
 
+	// The config → wire half of a device, the inverse of guestDevice(from:replacing:): the
+	// capture mode is served exactly as stored, so a newer daemon's mode goes out in its own
+	// spelling (never "unknown") and a client's echo brings it back unchanged.
+	static func deviceInfo(from device: GuestDevice, macGuest: Bool) -> DeviceInfo {
+		var info = DeviceInfo(
+			kind: device.deviceKind, enabled: device.enabled,
+			displayWidthPixels: device.displayWidthPixels,
+			displayHeightPixels: device.displayHeightPixels,
+			displayPixelsPerInch: device.displayPixelsPerInch,
+			sharesClipboard: device.sharesClipboard,
+			unavailable: deviceUnavailability(device.deviceKind, macGuest: macGuest))
+		info.systemKeyCaptureSpelling = device.systemKeyCapture
+		return info
+	}
+
 	// Add-time validation keeps impossible configs out of the start path (which would only
 	// fail later inside VZ validate() with a far worse message).
 	static func validateDeviceKind(_ kind: DeviceKind, for config: VMConfig) throws {
@@ -988,14 +1003,7 @@ public final class LocalMachman: MachmanControlling {
 		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.
 		let devices = config.devices.compactMap { device -> DeviceInfo? in
 			guard device.deviceKind != .unknown else { return nil }
-			return DeviceInfo(
-				kind: device.deviceKind, enabled: device.enabled,
-				displayWidthPixels: device.displayWidthPixels,
-				displayHeightPixels: device.displayHeightPixels,
-				displayPixelsPerInch: device.displayPixelsPerInch,
-				systemKeyCapture: device.systemKeyCaptureMode,
-				sharesClipboard: device.sharesClipboard,
-				unavailable: Self.deviceUnavailability(device.deviceKind, macGuest: macGuest))
+			return Self.deviceInfo(from: device, macGuest: macGuest)
 		}
 		return VMInfo(
 			name: config.name,

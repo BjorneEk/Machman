@@ -149,7 +149,10 @@ state lives at `/var/lib/machman/state.env` (Linux) or `/var/db/machman/state.en
 `systemKeyCapture` (1.0.10+, graphics) is `"off"|"always"|"fullScreen"` (absent = off;
 treat unknown values as off): the mode a run STARTS with for sending system shortcuts
 (⌘Space, ⌘Tab…) to the guest. The run's own value lives in the VM's window (its menu and
-⌃⌥⌘K) and is not on the wire.
+⌃⌥⌘K) and is not on the wire. A value you don't recognize (a newer daemon's mode) must go
+back verbatim in `vm.device.update`: the daemon keeps its stored mode for any value it
+doesn't know, and serves a stored mode it doesn't know exactly as stored (1.0.10 daemons
+served it as `"unknown"`).
 
 `ssh` (1.0.5+) is `{configured?, guestUser?, guestHostname?, guestOS?, guestOSVersion?, guestHostKey?,
 reverseState: "none"|"pending"|"approved"|"denied", reversePublicKey?, integrationEnabled?,
