@@ -62,7 +62,9 @@ struct VMIndicatorCluster: View {
 		.onHover { hovering = $0 }
 		.help("Switch VM")
 		.popover(isPresented: $pickerShown, arrowEdge: .bottom) {
+			// Keyed by the page: ⌘N while the picker already shows its list re-seeds it.
 			VMPickerPopover(viewModel: viewModel, templates: pickerTemplates)
+				.id(pickerTemplates)
 		}
 		// File ▸ New VM… (⌘N): open on the template page. A request made while the main
 		// window was closed is picked up when it reappears; deferred, because the request
