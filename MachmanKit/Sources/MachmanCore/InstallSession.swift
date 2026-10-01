@@ -38,14 +38,16 @@ final class InstallSession {
 
 	var isInstalling: Bool { installer != nil }
 
+	// `run` nil = the real installer. Resolved in the body: a default argument is evaluated
+	// outside the main actor, where runInstaller is out of reach.
 	init(
 		config: VMConfig, events: EventBus, isVMRunning: @escaping () -> Bool,
-		run: @escaping Runner = InstallSession.runInstaller
+		run: Runner? = nil
 	) {
 		self.config = config
 		self.events = events
 		self.isVMRunning = isVMRunning
-		self.run = run
+		self.run = run ?? Self.runInstaller
 		self.phase = Self.phase(for: config.boot, hasActiveInstall: false)
 	}
 
