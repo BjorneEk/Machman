@@ -584,9 +584,49 @@ struct VMCopierTests {
 		#expect(copied.guestOS == "debian")
 		#expect(copied.sshfsAvailable == true)
 		#expect(copied.lastRunStatus == "ok")
-		// The alias-keyed pin file is dropped; the keypair travels (self-heals by marker).
-		#expect(!FileManager.default.fileExists(atPath: dst + "/ssh/known_hosts"))
-		#expect(FileManager.default.fileExists(atPath: dst + "/ssh/id_ed25519"))
+		// C14: the ssh dir stays behind — the pin is keyed to the source's alias, and the
+		// keypair is the source's until the copy's first payload mints its own.
+		#expect(!FileManager.default.fileExists(atPath: dst + "/ssh"))
+	}
+
+	// C14 / decision 12: a fresh copy serves the installer at its first boot — it forgets
+	// the source's run (the guest will treat the clone as new) but keeps the OS facts. A
+	// shadow IS the VM and keeps everything.
+	@Test func freshCopyServesGuestSetupAgain() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		let config = try loadConfig(src)
+		var setup = GuestSetupConfig()
+		setup.installed = true
+		setup.reinstallRequested = false
+		setup.guestOS = "debian"
+		setup.guestInit = "systemd"
+		setup.scriptVersion = 4
+		setup.lastRunStatus = "ok"
+		setup.lastReportAt = Date(timeIntervalSince1970: 1_700_000_000)
+		setup.features = [GuestFeatureInfo(id: GuestFeature.ssh, available: true, configured: true)]
+		setup.consoles = [GuestConsoleInfo(device: "hvc0", login: "active")]
+		config.setup = setup
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		let copied = try loadConfig(try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup")))
+		#expect(copied.servesSetupPayload)
+		#expect(copied.setup?.installed == nil)
+		#expect(copied.setup?.lastRunStatus == nil)
+		#expect(copied.setup?.lastReportAt == nil)
+		#expect(copied.setup?.scriptVersion == nil)
+		#expect(copied.setup?.features.isEmpty == true)
+		#expect(copied.setup?.consoles.isEmpty == true)
+		#expect(copied.setup?.guestOS == "debian")
+		#expect(copied.setup?.guestInit == "systemd")
+
+		let shadow = try loadConfig(try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, identity: .impersonate)))
+		#expect(shadow.setup == setup)
+		#expect(!shadow.servesSetupPayload)
 	}
 
 	// The shadow IS the VM: its ssh state and pin travel verbatim.

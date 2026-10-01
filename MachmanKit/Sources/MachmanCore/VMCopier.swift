@@ -65,10 +65,13 @@ enum VMCopier {
 	// A fresh copy also drops the identity files: vm_identifier is lazily recreated on boot,
 	// mac_machine_id is minted below (the installer is its only other creator — omitting it
 	// would make a macOS copy unbootable). An impersonating shadow carries both verbatim —
-	// the copy IS the VM, and the original cannot run concurrently.
+	// the copy IS the VM, and the original cannot run concurrently. The fresh copy leaves
+	// the per-VM ssh dir too (C14): its keypair is the source's (until the copy's first
+	// payload mints its own, `ssh <copy>` would log in with the source's key) and its
+	// known_hosts pin is keyed to the source's alias.
 	private static func skippedFiles(for request: VMCopyRequest) -> Set<String> {
 		switch request.identity {
-		case .fresh: return alwaysSkipped.union(["vm_identifier", "mac_machine_id"])
+		case .fresh: return alwaysSkipped.union(["vm_identifier", "mac_machine_id", "ssh"])
 		case .impersonate: return alwaysSkipped
 		}
 	}
@@ -267,10 +270,9 @@ enum VMCopier {
 				state.alias = alias
 				config.ssh = state
 			}
-			// The traveled per-VM known_hosts is keyed to the source's alias (HostKeyAlias)
-			// — with the alias and pin reset it could only ever mismatch. The keypair beside
-			// it stays: ensureKeypair re-mints it on marker drift.
-			try? fm.removeItem(atPath: staging + "/ssh/known_hosts")
+			// Decision 12: the copy serves the installer at its first boot, like a new guest
+			// — its script will say "looks cloned … treating it as new" (C14).
+			config.setup?.resetForFreshIdentity()
 		}
 		// In both modes autostart must be an explicit opt-in: an inherited flag would
 		// install a launch agent nobody asked for (a promoted shadow becomes a real VM).
@@ -411,6 +413,27 @@ enum VMCopier {
 				MachmanLogger.log(.log, "copy left out \(from) (not a file or folder)")
 			}
 		}
+	}
+}
+
+extension GuestSetupConfig {
+	// What a fresh machine identity (vm.copy) forgets of guest setup: the last run, which the
+	// source's script did under the source's marker — the copy's own script treats those
+	// artifacts as another VM's. With `installed` gone the copy serves the installer until
+	// its own first report (servesSetupPayload). The guest OS facts stay: they describe the
+	// cloned disk.
+	mutating func resetForFreshIdentity() {
+		installed = nil
+		reinstallRequested = nil
+		lastReportAt = nil
+		scriptVersion = nil
+		lastRunStatus = nil
+		lastRunNote = nil
+		lastTransport = nil
+		errors = []
+		features = []
+		consoles = []
+		automounts = []
 	}
 }
 
