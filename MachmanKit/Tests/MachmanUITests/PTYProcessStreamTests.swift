@@ -12,20 +12,9 @@ import MachmanUI
 
 struct PTYProcessStreamTests {
 
-	private final class Sink: @unchecked Sendable {
-		private let lock = NSLock()
-		private var data = Data()
-		private var closed = false
-		func append(_ d: Data) { lock.lock(); data.append(d); lock.unlock() }
-		func markClosed() { lock.lock(); closed = true; lock.unlock() }
-		var received: Data { lock.lock(); defer { lock.unlock() }; return data }
-		var text: String { String(decoding: received, as: UTF8.self) }
-		var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
-	}
-
 	@Test @MainActor func catEchoesThroughThePTY() async throws {
 		let stream = PTYProcessStream(executablePath: "/bin/cat", arguments: [])
-		let sink = Sink()
+		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
 		#expect(stream.connect())
@@ -45,7 +34,7 @@ struct PTYProcessStreamTests {
 
 	@Test @MainActor func childExitReportsCloseOnce() async throws {
 		let stream = PTYProcessStream(executablePath: "/usr/bin/true", arguments: [])
-		let sink = Sink()
+		let sink = StreamSink()
 		stream.onClose = { sink.markClosed() }
 		#expect(stream.connect())
 		for _ in 0..<250 where !sink.isClosed {
@@ -58,7 +47,7 @@ struct PTYProcessStreamTests {
 		let stream = PTYProcessStream(
 			executablePath: "/bin/sh", arguments: ["-c", "echo TERM=$TERM"],
 			environmentOverrides: ["TERM": "xterm-machman-test"])
-		let sink = Sink()
+		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		#expect(stream.connect())
 		for _ in 0..<250 where !String(decoding: sink.received, as: UTF8.self)
@@ -86,7 +75,7 @@ struct PTYProcessStreamTests {
 				executablePath: "/bin/sh",
 				arguments: ["-c", "trap 'echo GOT_WINCH' WINCH; echo READY; "
 					+ "while kill -0 $PPID 2>/dev/null; do sleep 0.05; done"])
-			let sink = Sink()
+			let sink = StreamSink()
 			stream.onData = { sink.append($0) }
 			defer { stream.stop() }
 			#expect(stream.connect())

@@ -1,6 +1,6 @@
 //
 //  SerialTerminalConnection.swift
-//  MachmanDesktopUI
+//  MachmanUI
 //
 //  A raw client for a serial port's data-plane unix socket. The desktop opens the vmhost's
 //  per-port socket directly (its path comes from SerialPortInfo.socketPath) — the daemon never
@@ -9,10 +9,8 @@
 //
 
 import Foundation
-import MachmanUI
-import MachmanDesktopCore
 
-final class SerialTerminalConnection: TerminalByteStream {
+public final class SerialTerminalConnection: TerminalByteStream {
 	private let path: String
 	private var fd: Int32 = -1
 	private var readSource: DispatchSourceRead?
@@ -21,20 +19,23 @@ final class SerialTerminalConnection: TerminalByteStream {
 	private static let transcriptCap = 8 << 20   // 8 MiB of scrollback for "save to file"
 
 	// Called on the main queue with each chunk of guest output.
-	var onData: ((Data) -> Void)?
+	public var onData: ((Data) -> Void)?
 	// Called on the main queue if the socket closes (VM stopped, vmhost gone).
-	var onClose: (() -> Void)?
+	public var onClose: (() -> Void)?
 
-	init(path: String) {
+	public init(path: String) {
 		self.path = path
 	}
 
-	func connect() -> Bool {
+	public func connect() -> Bool {
 		let s = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard s >= 0 else { return false }
 		var addr = sockaddr_un()
 		addr.sun_family = sa_family_t(AF_UNIX)
-		guard path.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else { close(s); return false }
+		guard path.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else {
+			close(s)
+			return false
+		}
 		withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: Array(path.utf8)) }
 		let ok = withUnsafePointer(to: &addr) { p in
 			p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -62,7 +63,7 @@ final class SerialTerminalConnection: TerminalByteStream {
 		return true
 	}
 
-	func send(_ data: Data) {
+	public func send(_ data: Data) {
 		guard fd >= 0 else { return }
 		data.withUnsafeBytes { raw in
 			guard let base = raw.baseAddress else { return }
@@ -74,13 +75,13 @@ final class SerialTerminalConnection: TerminalByteStream {
 		}
 	}
 
-	func stop() {
+	public func stop() {
 		readSource?.cancel()
 		readSource = nil
 		if fd >= 0 { close(fd); fd = -1 }
 	}
 
-	func transcriptData() -> Data {
+	public func transcriptData() -> Data {
 		transcriptLock.lock(); defer { transcriptLock.unlock() }
 		return transcript
 	}
