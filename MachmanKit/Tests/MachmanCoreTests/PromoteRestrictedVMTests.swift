@@ -183,6 +183,53 @@ struct PromoteRestrictedVMTests {
 		}
 	}
 
+	// Decision 12 at the promotion seam: the saved VM is a new identity, and its guest's
+	// reports still carry the original's marker, which the report gate ignores (PR4). So it
+	// forgets the last setup run and serves the installer at its next boot, like a copy.
+	@Test @MainActor func promotionServesGuestSetupAgain() throws {
+		try VMTestDir.withRedirectedDir {
+			let (registry, library) = try makeSafeHost()
+			defer { try? FileManager.default.removeItem(atPath: library) }
+			let vm = try #require(registry.vm(named: "alpha"))
+			var setup = GuestSetupConfig()
+			setup.installed = true
+			setup.guestOS = "debian"
+			setup.lastRunStatus = "ok"
+			setup.scriptVersion = 5
+			setup.notes = [GuestSetupNote(step: "report-refresh", message: "rc.local re-enabled")]
+			vm.config.setup = setup
+			try vm.config.saveVMConfig()
+
+			_ = try registry.promoteRestrictedVM(to: "kept")
+
+			let saved = try JSONDecoder().decode(
+				VMConfig.self,
+				from: Data(contentsOf: URL(fileURLWithPath: library + "/kept/config")))
+			#expect(saved.servesSetupPayload)
+			#expect(saved.setup?.installed == nil)
+			#expect(saved.setup?.lastRunStatus == nil)
+			#expect(saved.setup?.notes.isEmpty == true)
+			#expect(saved.setup?.guestOS == "debian")
+		}
+	}
+
+	// A failed save restores every field promotion wrote, the setup reset included.
+	@Test @MainActor func aPromotionSnapshotRestoresGuestSetup() throws {
+		try VMTestDir.withRedirectedDir {
+			let (registry, library) = try makeSafeHost()
+			defer { try? FileManager.default.removeItem(atPath: library) }
+			let config = try #require(registry.vm(named: "alpha")).config
+			var setup = GuestSetupConfig()
+			setup.installed = true
+			setup.lastRunStatus = "ok"
+			config.setup = setup
+			let snapshot = PromotionSnapshot(config)
+			config.setup?.resetForFreshIdentity()
+			snapshot.restore(config)
+			#expect(config.setup == setup)
+		}
+	}
+
 	@Test @MainActor func promotionRefusals() throws {
 		// No promotion library (an unsafe or launchd vmhost): refused.
 		try VMTestDir.withRedirectedDir {

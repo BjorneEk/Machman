@@ -119,6 +119,7 @@ struct PromotionSnapshot {
 	private let boot: BootConfig
 	private let kernelSettings: LinuxKernelBoot?
 	private let ssh: SSHConfig?
+	private let setup: GuestSetupConfig?
 	private let macAddress: String?
 
 	init(_ config: VMConfig) {
@@ -129,6 +130,7 @@ struct PromotionSnapshot {
 		boot = config.boot
 		kernelSettings = config.kernelSettings
 		ssh = config.ssh
+		setup = config.setup
 		macAddress = config.macAddress
 	}
 
@@ -140,6 +142,7 @@ struct PromotionSnapshot {
 		config.boot = boot
 		config.kernelSettings = kernelSettings
 		config.ssh = ssh
+		config.setup = setup
 		config.macAddress = macAddress
 	}
 }

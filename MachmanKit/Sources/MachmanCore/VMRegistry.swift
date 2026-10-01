@@ -363,6 +363,11 @@ public final class VMRegistry {
 			// grant is labeled with the source's marker.
 			vm.config.dropAlias()
 			vm.config.ssh?.resetInstanceIdentity()
+			// Decision 12, as for a copy: the guest's reports still carry the original's
+			// marker, which the report gate ignores (PR4), so the saved VM forgets the last
+			// setup run and serves the installer at its next boot. Its traveled keypair stays
+			// for the running guest; the next served start re-mints it (marker drift).
+			vm.config.setup?.resetForFreshIdentity()
 			// Saving as a new VM takes a name: yield to every VM in the library.
 			vm.config.assignDefaultAliasIfTaken()
 			try vm.config.regenerateMACAddress()   // the saved VM's one save, at the new path
