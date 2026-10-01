@@ -166,7 +166,7 @@ struct GuestSetupInstallerTests {
 			"--automount-sshfs", "--no-automount-sshfs", "--mount-setup",
 			"--no-mount-setup", "--mountpoint", "--install", "--no-install", "--pm",
 			"--no-service", "--user", "--uninstall", "--yes", "--dry-run", "--verbose",
-			"--quiet", "--help", "--version",
+			"--quiet", "--help", "--version", "--report-only", "--at-boot",
 		] {
 			#expect(s.contains(flag), "missing flag \(flag)")
 		}

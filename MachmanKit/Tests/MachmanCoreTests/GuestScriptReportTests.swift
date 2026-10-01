@@ -134,6 +134,38 @@ struct GuestScriptReportTests {
 		}
 	}
 
+	// S31: --at-boot is the boot hook's --report-only, and it first waits for the share's
+	// drop-box and a default route (the sshfs automounts need one) — polling, bounded — so
+	// a boot report never marks them unavailable before DHCP. The locked copy accepts it.
+	@Test func bootWaitWaitsForTheRouteAndTheShare() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				echo "report-only=$REPORT_ONLY at-boot=$AT_BOOT"
+				BOOT_WAIT_POLL=0
+				REPORT_DIR="$D/later"
+				GATEWAY=""
+				calls=0
+				find_addresses() {
+					calls=$((calls + 1))
+					[ "$calls" -lt 2 ] || mkdir -p "$REPORT_DIR"
+					[ "$calls" -lt 3 ] || GATEWAY=192.168.64.1
+					return 0
+				}
+				boot_wait
+				echo "probes=$calls"
+				REPORT_DIR="$D/never"
+				GATEWAY=""
+				calls=0
+				BOOT_WAIT_SECONDS=0
+				boot_wait
+				echo "probes=$calls"
+				"""#, under: shell, env: ["BOOT_REPORT_DIR": "/mnt/machman/share/GuestReport"],
+				args: ["--at-boot"])
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == "report-only=1 at-boot=1\nprobes=3\nprobes=1\n", "\(shell): \(r.out)")
+		}
+	}
+
 	// S36: a note (a repair made, a boot refresh that will not run) is reported as NOTE_<n>,
 	// after the errors, and is no error: a clean run's report carries no ERROR_ line.
 	@Test func reportNotesTravelAsNotes() throws {

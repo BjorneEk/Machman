@@ -89,6 +89,9 @@ fi
 
 detect_os
 detect_init
+if [ "$AT_BOOT" -eq 1 ]; then
+	boot_wait
+fi
 detect_transport
 find_addresses
 read_state

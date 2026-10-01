@@ -238,6 +238,24 @@ write_report() {
 
 REPORT_COPY=""             # the boot-time copy, once report_copy_install wrote it
 
+# --at-boot: the hooks start it early (in the background, so boot never waits on it).
+# It waits until the share's drop-box is writable and the guest has a default route —
+# the report and the sshfs automounts need both — or until BOOT_WAIT_SECONDS pass, then
+# reports what is true: a missing route is the truth then, and a drop-box that never
+# appeared means no report.
+boot_wait() {
+	_bw_waited=0
+	while :; do
+		find_addresses
+		if [ -d "$REPORT_DIR" ] && [ -w "$REPORT_DIR" ] && [ -n "$GATEWAY" ]; then
+			return 0
+		fi
+		[ "$_bw_waited" -lt "$BOOT_WAIT_SECONDS" ] || return 0
+		sleep "$BOOT_WAIT_POLL"
+		_bw_waited=$((_bw_waited + (BOOT_WAIT_POLL > 0 ? BOOT_WAIT_POLL : 1)))
+	done
+}
+
 report_hook_install() {
 	[ "$DRY_RUN" -eq 1 ] && return 0
 	if [ "$OS_FAMILY" = nixos ]; then
@@ -266,9 +284,12 @@ report_hook_install() {
 			printf '[Unit]\n'
 			printf 'Description=Machman guest report refresh\n'
 			printf 'ConditionPathExists=%s\n' "$REPORT_COPY"
-			printf 'After=local-fs.target network.target\n'
-			printf '\n[Service]\nType=oneshot\n'
-			printf 'ExecStart=/bin/sh %s --report-only -q\n' "$REPORT_COPY"
+			# Ordered after the network is up; simple, not oneshot: a oneshot would hold
+			# multi-user.target for as long as the copy waits.
+			printf 'Wants=network-online.target\n'
+			printf 'After=local-fs.target remote-fs.target network-online.target\n'
+			printf '\n[Service]\nType=simple\n'
+			printf 'ExecStart=/bin/sh %s --at-boot -q\n' "$REPORT_COPY"
 			printf '\n[Install]\nWantedBy=multi-user.target'
 		)" || return 0
 		systemctl daemon-reload >/dev/null 2>&1 || true
@@ -279,7 +300,7 @@ report_hook_install() {
 		report_hook_file /etc/local.d/machman-report.start 755 "$(
 			printf '#!/bin/sh\n# %s\n' "$MARKER"
 			printf '[ -r %s ] || exit 0\n' "$_rh_copy"
-			printf '/bin/sh %s --report-only -q >/dev/null 2>&1 &' "$_rh_copy"
+			printf '/bin/sh %s --at-boot -q >/dev/null 2>&1 &' "$_rh_copy"
 		)" || return 0
 		have rc-update && rc-update add local default >/dev/null 2>&1
 		;;
@@ -291,7 +312,7 @@ report_hook_install() {
 		;;
 	freebsd-rc)
 		# REQUIRE: local orders after /etc/rc.d/local, which runs /etc/rc.local — where
-		# the sshfs automounts connect. The grace sleep covers the mount settling.
+		# the sshfs automounts connect; --at-boot waits for them to settle.
 		mkdir -p /usr/local/etc/rc.d
 		report_hook_file /usr/local/etc/rc.d/machman_report 755 "$(
 			printf '#!/bin/sh\n'
@@ -304,8 +325,7 @@ report_hook_install() {
 			printf 'start_cmd="machman_report_start"\n'
 			printf 'stop_cmd=":"\n\n'
 			printf 'machman_report_start() {\n'
-			printf '\t(sleep 5; [ -r %s ] && /bin/sh %s --report-only -q) &\n' \
-				"$_rh_copy" "$_rh_copy"
+			printf '\t([ -r %s ] && /bin/sh %s --at-boot -q) &\n' "$_rh_copy" "$_rh_copy"
 			printf '}\n\n'
 			printf 'load_rc_config $name\n'
 			printf ': ${machman_report_enable:=YES}\n'
@@ -325,7 +345,7 @@ report_hook_install() {
 			printf '<!-- %s -->\n' "$MARKER"
 			printf '<key>ProgramArguments</key><array>\n'
 			printf '<string>/bin/sh</string><string>%s</string>\n' "$REPORT_COPY"
-			printf '<string>--report-only</string><string>-q</string>\n'
+			printf '<string>--at-boot</string><string>-q</string>\n'
 			printf '</array>\n'
 			printf '<key>RunAtLoad</key><true/>\n'
 			printf '</dict></plist>'
@@ -384,8 +404,8 @@ EOF
 # The shared-file arm: a marker block in /etc/rc.local. The marker carries a "-report"
 # suffix so it never collides with the sshfs automounts' block, which strip_blocks the
 # PLAIN marker over this same file — and the block must not `exit`: rc.local is shared,
-# later lines still have to run. The settle sleep and the -r guard mirror the FreeBSD
-# hook: the share the report goes to may be mounted by an earlier rc.local line.
+# later lines still have to run. It goes to the background like the FreeBSD hook, whose
+# --at-boot waits for the share an earlier rc.local line may still be mounting.
 # report_hook_rc_local <the copy's path, sh-quoted>
 report_hook_rc_local() {
 	# Pre-fix runs on sysvinit wrote openrc's file here; it was never executed — retire it.
@@ -396,7 +416,7 @@ report_hook_rc_local() {
 		return 0
 	fi
 	if ! rc_local_put "$MARKER-report" "$(printf \
-		'(sleep 5; [ -r %s ] && /bin/sh %s --report-only -q) >/dev/null 2>&1 &' \
+		'([ -r %s ] && /bin/sh %s --at-boot -q) >/dev/null 2>&1 &' \
 		"$1" "$1")"; then
 		report_note report-refresh "no boot-time report refresh: $R_ERROR"
 		return 0

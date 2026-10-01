@@ -35,6 +35,8 @@ How
       --report-only      probe and refresh Machman's report; change nothing else.
                          The setup keeps a copy of itself in the guest that runs
                          this at every boot.
+      --at-boot          what that copy runs: waits up to 5 minutes for the share
+                         and the network, then --report-only
   -v, --verbose          narrate every decision and command
   -q, --quiet            only the summary and errors
   -h, --help             this text

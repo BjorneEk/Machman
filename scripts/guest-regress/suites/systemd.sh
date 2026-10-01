@@ -2,7 +2,7 @@
 # verbs, uninstall restore. The distro's own grub tool does the rebuild (it fails in a
 # container; the edit, its backup and its idempotency are what is checked).
 # CHECKS: IDEMPOTENT TTY0_LAST GRUB_SOURCES GRUB_BACKUP FSTAB_VERIFY SECOND_PLAN_CLEAN
-# CHECKS: UNINSTALL_PRISTINE STATE_REMOVED BOOT_COPY BOOT_COPY_REMOVED
+# CHECKS: UNINSTALL_PRISTINE STATE_REMOVED BOOT_COPY BOOT_COPY_REMOVED UNIT_AFTER_NETWORK
 . /mnt/machman/share/regress/lib.sh
 
 printf 'GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="quiet"\n' > /etc/default/grub
@@ -65,6 +65,11 @@ case "$exec_line" in
 esac
 R BOOT_COPY "$boot"
 [ "$boot" = pass ] || { cat "$UNIT"; ls -l /var/lib/machman; tail -n 3 /tmp/boot.log; }
+# S31: it runs once the network is up, without holding boot while it waits (--at-boot).
+if grep -qx 'Wants=network-online.target' "$UNIT" \
+	&& grep -qx 'After=local-fs.target remote-fs.target network-online.target' "$UNIT" \
+	&& grep -qx 'Type=simple' "$UNIT" && [ "$exec_line" = "/bin/sh $COPY --at-boot -q" ]
+then R UNIT_AFTER_NETWORK pass; else R UNIT_AFTER_NETWORK fail; cat "$UNIT"; fi
 
 $SH "$S" --uninstall -y >/tmp/unin.log 2>&1
 # sshd host keys appear under /etc/ssh (ssh-keygen -A) and stay — everything else is ours.

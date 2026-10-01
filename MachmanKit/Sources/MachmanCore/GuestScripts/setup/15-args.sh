@@ -16,6 +16,7 @@ KERNEL_CONSOLE_DEVICE=""   # --kernel-console=<dev>
 MOUNTPOINT=""
 UNINSTALL=0
 REPORT_ONLY=0
+AT_BOOT=0                  # --at-boot: --report-only, once the share and the network are up
 NO_SERVICE=0
 USER_OVERRIDE=""
 PM_OVERRIDE=""
@@ -50,6 +51,7 @@ while [ $# -gt 0 ]; do
 	--automount-sshfs) want_sshfsauto=1 ;;
 	--no-automount-sshfs) want_sshfsauto=0 ;;
 	--report-only) REPORT_ONLY=1 ;;
+	--at-boot) REPORT_ONLY=1; AT_BOOT=1 ;;
 	--mount-setup) WANT_MOUNT_SETUP=1 ;;
 	--no-mount-setup) WANT_MOUNT_SETUP=0 ;;
 	--mountpoint)
@@ -85,6 +87,9 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
+# How long --at-boot waits for the share and a default route, and how often it looks.
+: "${BOOT_WAIT_SECONDS:=300}"
+: "${BOOT_WAIT_POLL:=5}"
 # The boot-time copy reports and does nothing else (a root copy that could reconfigure the
 # guest is more than a boot hook needs): changes are runs from the share's install.sh.
 if [ -n "$BOOT_REPORT_DIR" ] && [ "$REPORT_ONLY" -ne 1 ]; then
