@@ -24,6 +24,7 @@ FAILED_STEPS=""      # comma-separated labels of optional steps that did not wor
 ERR_LINES=""         # newline-separated "step: message" pairs, for the report's ERROR_N
 MACHMAN_DIED=0       # die() already explained the failure; the trap stays quiet
 REPORT_DONE=0        # a report was written this run; the trap must not clobber it
+UNINSTALL_KEPT=0     # the uninstall had to leave Machman lines in a file it may not edit
 R_ERROR=""           # last run() failure's final stderr line
 R_LAST_FAILURE=""    # last step_failed() message, for the report's one-sentence note
 R_YES=0              # ask_yes_no result
@@ -214,6 +215,20 @@ $1: $2"
 	fi
 	warn "$2"
 	[ -n "${3:-}" ] && note "$3"
+	return 0
+}
+
+# Something the report must mention that is no failed step (a repair, a disabled hook):
+# said now and listed with the report's ERROR_ lines, its one channel to the inspector,
+# while the run's status stays what its steps make it. report_note <step> <message>
+report_note() {
+	if [ -z "$ERR_LINES" ]; then
+		ERR_LINES="$1: $2"
+	else
+		ERR_LINES="$ERR_LINES
+$1: $2"
+	fi
+	warn "$2"
 	return 0
 }
 
@@ -636,18 +651,260 @@ menu_multi() {
 }
 
 # ------------------------------------------------------------------- marked-file edits ----
+#
+# Every file this script edits goes through rewrite_file, every file it writes whole goes
+# through write_file. Root runs them over files other users own (~/.ssh, the sshfs mount
+# root, the report drop-box), so neither ever writes through anything a user can plant:
+#   * pinned: a subshell cd -P's into the file's directory, which must itself be real (not
+#     a link), and from there touches only names relative to it;
+#   * never through a link: a symlinked or non-regular target is refused, and so is a
+#     hard-linked one for an edit — a dotfile-managed ~/.ssh entry gets a named refusal,
+#     never a silent rewrite;
+#   * a fresh name: the content goes into ".<name>.machman-<random>~", created exclusively
+#     (set -C) by the very open that writes it, then renamed over the target;
+#   * the old file's owner (chown -h) and mode: rw bits through the umask at creation,
+#     x/setuid/sticky by chmod, and only in a directory no other user can rename names in;
+#   * an empty result empties the file instead of failing: filters are awk or sed, which
+#     exit 0 whatever they keep (grep -v exits 1 when nothing is left).
+# Paths are absolute. A refusal or failure returns 1 with R_ERROR set and the target
+# untouched; the caller decides between step_failed, a warning and giving up. Two races
+# stay open, as POSIX sh cannot close them without dropping privileges: a link swapped in
+# between the not-a-link check and the read makes root copy what it can read into that
+# user's own file, and a link to a directory swapped in just before the rename receives
+# the new file there, under its inert dot-and-tilde name.
 
-# Remove the lines between "# BEGIN <marker>" and "# END <marker>" (both inclusive).
+# rewrite_file [-m <mode>] [-o <user:group>] <file> <filter> [args…] — the file becomes
+# what <filter> prints when fed the file; -m/-o set the result's mode/owner instead.
+rewrite_file() {
+	_rf_fmode=""
+	_rf_fown=""
+	while :; do
+		case "$1" in
+		-m) _rf_fmode="$2"; shift 2 ;;
+		-o) _rf_fown="$2"; shift 2 ;;
+		*) break ;;
+		esac
+	done
+	_rf_path="$1"
+	shift
+	R_ERROR=""
+	_rf_code=0
+	( _rf_in_dir rewrite "$_rf_path" "$@" ) || _rf_code=$?
+	[ "$_rf_code" -eq 0 ] && return 0
+	R_ERROR="$(_rf_reason "$_rf_code" "$_rf_path")"
+	return 1
+}
+
+# write_file [-m <mode>] [-o <user:group>] <file> — stdin becomes <file> (mode 644 unless
+# -m): created, or replaced by rename — whatever stood there, a link included, is never
+# written through.
+write_file() {
+	_rf_fmode=644
+	_rf_fown=""
+	while :; do
+		case "$1" in
+		-m) _rf_fmode="$2"; shift 2 ;;
+		-o) _rf_fown="$2"; shift 2 ;;
+		*) break ;;
+		esac
+	done
+	R_ERROR=""
+	_rf_code=0
+	( _rf_in_dir write "$1" cat ) || _rf_code=$?
+	[ "$_rf_code" -eq 0 ] && return 0
+	R_ERROR="$(_rf_reason "$_rf_code" "$1")"
+	return 1
+}
+
+# A plain file this script may read and edit: there, regular, not a link.
+regular_file() {
+	[ -f "$1" ] && [ ! -L "$1" ]
+}
+
+_rf_reason() { # <code> <path>
+	case "$1" in
+	10) printf '%s is not an absolute path in an existing directory' "$2" ;;
+	11) printf '%s is reached through a symbolic link' "$2" ;;
+	12) printf '%s is a symbolic link' "$2" ;;
+	13) printf '%s is not a regular file' "$2" ;;
+	14) printf '%s has other hard links' "$2" ;;
+	*) printf 'could not write %s' "$2" ;;
+	esac
+}
+
+# <rewrite|write> <path> <filter> [args…] — only ever run in a subshell (it cd's and
+# exits with a reason code).
+_rf_in_dir() {
+	_rf_op="$1"
+	case "$2" in
+	/*) ;;
+	*) exit 10 ;;
+	esac
+	_rf_dir="$(dirname "$2")"
+	_rf_name="$(basename "$2")"
+	shift 2
+	cd -P "$_rf_dir" 2>/dev/null || exit 10
+	# Only the last directory is checked: the swap that matters is a user's own directory
+	# (~/.ssh) turned into a link to someone else's. Links further up (FreeBSD's /home,
+	# macOS's /tmp) are the system's own.
+	_rf_up="$(cd -P "$(dirname "$_rf_dir")" 2>/dev/null && pwd -P)" || exit 10
+	[ "$_rf_dir" = / ] || [ "$(pwd -P)" = "${_rf_up%/}/$(basename "$_rf_dir")" ] || exit 11
+	_rf_perm=""
+	_rf_uid=""
+	_rf_gid=""
+	if [ -L "./$_rf_name" ]; then
+		[ "$_rf_op" = write ] || exit 12
+	elif [ -e "./$_rf_name" ]; then
+		[ -f "./$_rf_name" ] || exit 13
+		# Numeric, and every field ahead of the name: spaces in it never shift one.
+		read -r _rf_perm _rf_links _rf_uid _rf_gid _rf_rest <<EOF
+$(ls -ln "./$_rf_name")
+EOF
+		# An edit would split a hard link (the other name keeps the old text); a whole
+		# new file replaces this name only, by design.
+		[ "$_rf_op" = write ] || [ "$_rf_links" = 1 ] || exit 14
+	else
+		[ "$_rf_op" = write ] || exit 13
+	fi
+	[ "$_rf_op" = write ] && { _rf_uid=""; _rf_gid=""; }
+	# The result's mode, in octal: forced, else the old file's.
+	if [ -n "$_rf_fmode" ]; then
+		_rf_mode="$_rf_fmode"
+	else
+		_rf_mode="$(printf '%s\n' "$_rf_perm" | awk '{
+			m = 0
+			if (substr($0, 2, 1) == "r") m += 256
+			if (substr($0, 3, 1) == "w") m += 128
+			c = substr($0, 4, 1); if (c == "x" || c == "s") m += 64; if (c ~ /[sS]/) m += 2048
+			if (substr($0, 5, 1) == "r") m += 32
+			if (substr($0, 6, 1) == "w") m += 16
+			c = substr($0, 7, 1); if (c == "x" || c == "s") m += 8; if (c ~ /[sS]/) m += 1024
+			if (substr($0, 8, 1) == "r") m += 4
+			if (substr($0, 9, 1) == "w") m += 2
+			c = substr($0, 10, 1); if (c == "x" || c == "t") m += 1; if (c ~ /[tT]/) m += 512
+			printf "%o\n", m }')"
+	fi
+	# "<umask for the rw bits> <1 when x/setuid/setgid/sticky bits need a chmod>"
+	read -r _rf_umask _rf_extra <<EOF
+$(printf '%s\n' "$_rf_mode" | awk '{
+	v = 0
+	for (i = 1; i <= length($0); i++) v = v * 8 + substr($0, i, 1)
+	rw = 0
+	if (int(v / 256) % 2) rw += 256; if (int(v / 128) % 2) rw += 128
+	if (int(v / 32) % 2) rw += 32;   if (int(v / 16) % 2) rw += 16
+	if (int(v / 4) % 2) rw += 4;     if (int(v / 2) % 2) rw += 2
+	extra = (v > rw) ? 1 : 0
+	printf "%o %d\n", 438 - rw, extra }')
+EOF
+	_rf_rand="$(od -An -N6 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+	[ -n "$_rf_rand" ] || exit 15
+	_rf_tmp="./.$_rf_name.machman-$_rf_rand~"
+	if [ "$_rf_op" = write ]; then
+		( umask "$_rf_umask" && set -C && "$@" > "$_rf_tmp" ) || { rm -f "$_rf_tmp"; exit 15; }
+	else
+		( umask "$_rf_umask" && set -C && "$@" < "./$_rf_name" > "$_rf_tmp" ) \
+			|| { rm -f "$_rf_tmp"; exit 15; }
+	fi
+	if [ -n "$_rf_fown" ]; then
+		chown -h "$_rf_fown" "$_rf_tmp" || { rm -f "$_rf_tmp"; exit 15; }
+	elif [ -n "$_rf_uid" ]; then
+		chown -h "$_rf_uid:$_rf_gid" "$_rf_tmp" || { rm -f "$_rf_tmp"; exit 15; }
+	fi
+	if [ "$_rf_extra" = 1 ]; then
+		read -r _rf_dperm _rf_dlinks _rf_duid _rf_rest <<EOF
+$(ls -lnd .)
+EOF
+		if [ "$_rf_duid" = "$(id -u)" ]; then
+			chmod "$_rf_mode" "$_rf_tmp" || { rm -f "$_rf_tmp"; exit 15; }
+		fi
+	fi
+	# A link standing where write_file writes goes first: mv would follow one that
+	# points at a directory and land the file inside it.
+	[ -L "./$_rf_name" ] && rm -f "./$_rf_name"
+	mv -f "$_rf_tmp" "./$_rf_name" || { rm -f "$_rf_tmp"; exit 15; }
+	exit 0
+}
+
+# Filters: stdin to stdout, exit 0 whatever they keep.
+
+# <marker> — without that marker's "# BEGIN"…"# END" blocks. An unclosed BEGIN keeps its
+# lines: a hand-edited file never loses everything after it.
+_mf_strip() {
+	awk -v m="$1" '
+		$0 == "# BEGIN " m {
+			for (i = 1; i <= held; i++) print buf[i]
+			held = 1; buf[1] = $0; next
+		}
+		held && $0 == "# END " m { held = 0; next }
+		held { buf[++held] = $0; next }
+		{ print }
+		END { for (i = 1; i <= held; i++) print buf[i] }'
+}
+
+# <marker> — stripped, then the block (body from ENVIRON _MF_BODY, verbatim: awk -v would
+# unescape fstab's \040) added before a final exit statement (rc.local: nothing after
+# "exit 0" ever runs), else at the end. Machman blocks are not the file's own code: older
+# runs appended theirs after that exit, and those (another VM's included) stay inert there.
+_mf_put() {
+	_mf_strip "$1" | awk -v m="$1" '
+		{
+			line[++n] = $0
+			if ($0 ~ /^# BEGIN machman-/) inb = 1
+			ours[n] = inb
+			if (inb && $0 ~ /^# END machman-/) inb = 0
+		}
+		END {
+			body = ENVIRON["_MF_BODY"]
+			sub(/\n+$/, "", body)
+			at = n + 1
+			for (i = n; i >= 1; i--) {
+				if (ours[i] || line[i] ~ /^[ \t]*(#.*)?$/) continue
+				if (line[i] ~ /^[ \t]*exit([ \t;].*)?$/) at = i
+				break
+			}
+			for (i = 1; i < at; i++) print line[i]
+			print "# BEGIN " m
+			if (body != "") print body
+			print "# END " m
+			for (i = at; i <= n; i++) print line[i]
+		}'
+}
+
+# strip_block <file> [marker] — remove "# BEGIN <marker>"…"# END <marker>" (default
+# $MARKER). A file without that block is not ours: left untouched, links included. One
+# that has it but may not be edited (a link to it, a hard link) is refused by name.
 strip_block() {
+	_sb_m="${2:-$MARKER}"
 	[ -f "$1" ] || return 0
-	_sb_tmp="$1.machman-tmp"
-	awk -v m="$MARKER" '
-		$0 == "# BEGIN " m { skip = 1; next }
-		$0 == "# END " m { skip = 0; next }
-		!skip { print }
-	' "$1" > "$_sb_tmp"
-	mv "$_sb_tmp" "$1"
-	return 0
+	grep -qxF "# BEGIN $_sb_m" "$1" 2>/dev/null || return 0
+	rewrite_file "$1" _mf_strip "$_sb_m"
+}
+
+# put_block [-m <mode>] [-o <user:group>] <file> <marker> <body> — replace that marker's
+# block with <body>; a missing file is created first (-m/-o apply only then).
+put_block() {
+	_pb_mode=644
+	_pb_own=""
+	while :; do
+		case "$1" in
+		-m) _pb_mode="$2"; shift 2 ;;
+		-o) _pb_own="$2"; shift 2 ;;
+		*) break ;;
+		esac
+	done
+	if [ ! -e "$1" ] && [ ! -L "$1" ]; then
+		if [ -n "$_pb_own" ]; then
+			write_file -m "$_pb_mode" -o "$_pb_own" "$1" </dev/null || return 1
+		else
+			write_file -m "$_pb_mode" "$1" </dev/null || return 1
+		fi
+	fi
+	_MF_BODY="$3"
+	export _MF_BODY
+	_pb_code=0
+	rewrite_file "$1" _mf_put "$2" || _pb_code=$?
+	unset _MF_BODY
+	return "$_pb_code"
 }
 
 # Adopt: comment matching UNMARKED lines out, tagged so uninstall can restore them
@@ -655,24 +912,26 @@ strip_block() {
 # supersede_lines <file> <awk ERE>
 supersede_lines() {
 	[ -f "$1" ] || return 0
-	_sl_tmp="$1.machman-tmp"
-	awk -v re="$2" -v m="$MARKER" '
+	rewrite_file "$1" awk -v re="$2" -v m="$MARKER" '
 		$0 == "# BEGIN " m { inb = 1 }
 		$0 == "# END " m { inb = 0 }
 		!inb && $0 !~ /^#/ && $0 ~ re { print "#" $0 " # " m "-superseded"; next }
 		{ print }
-	' "$1" > "$_sl_tmp"
-	mv "$_sl_tmp" "$1"
-	return 0
+	'
 }
 
 # Undo supersede_lines: strip the tag and the leading comment mark, restoring the
 # original line byte-for-byte.
 restore_superseded() {
 	[ -f "$1" ] || return 0
-	_rs_tmp="$1.machman-tmp"
-	sed "/ # ${MARKER}-superseded\$/{s/ # ${MARKER}-superseded\$//;s/^#//;}" \
-		"$1" > "$_rs_tmp"
-	mv "$_rs_tmp" "$1"
+	grep -qF -- " # $MARKER-superseded" "$1" 2>/dev/null || return 0
+	rewrite_file "$1" sed "/ # ${MARKER}-superseded\$/{s/ # ${MARKER}-superseded\$//;s/^#//;}"
+}
+
+# The uninstall's answer to a refusal (R_ERROR): say what stays, carry on with the rest —
+# the run ends partial (exit 4).
+uninstall_kept() {
+	warn "$R_ERROR — its Machman lines stay; remove those tagged $MARKER yourself."
+	UNINSTALL_KEPT=1
 	return 0
 }

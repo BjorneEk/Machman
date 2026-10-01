@@ -109,21 +109,20 @@ reverse_act() {
 		chown "$U:$GROUP" "$_atw_known"
 		chmod 600 "$_atw_known"
 	fi
-	_atw_config="$_atw_dir/config"
-	touch "$_atw_config"
-	strip_block "$_atw_config"
-	{
-		printf '# BEGIN %s\n' "$MARKER"
-		printf 'Host mac\n'
-		printf '\tHostName %s\n' "$_atw_target"
-		printf '\tUser %s\n' "$HOST_USER"
-		printf '\tIdentityFile %s\n' "$_atw_key"
-		printf '\tIdentitiesOnly yes\n'
+	_atw_body="$(
+		printf 'Host mac\n\tHostName %s\n\tUser %s\n' "$_atw_target" "$HOST_USER"
+		printf '\tIdentityFile %s\n\tIdentitiesOnly yes\n' "$_atw_key"
 		[ -n "$_atw_known" ] && printf '\tUserKnownHostsFile %s\n' "$_atw_known"
-		printf '# END %s\n' "$MARKER"
-	} >> "$_atw_config"
-	chown "$U:$GROUP" "$_atw_config" "$_atw_key" "$_atw_key.pub"
-	chmod 600 "$_atw_config" "$_atw_key"
+		:
+	)"
+	chown "$U:$GROUP" "$_atw_key" "$_atw_key.pub"
+	chmod 600 "$_atw_key"
+	# A new config is the user's own, 0600; an existing one keeps its owner and mode.
+	if ! put_block -m 600 -o "$U:$GROUP" "$_atw_dir/config" "$MARKER" "$_atw_body"; then
+		step_failed two-way "'ssh mac' was not added: $R_ERROR" \
+			"Add a 'Host mac' entry to it yourself (IdentityFile $_atw_key)."
+		return 0
+	fi
 	ok "guest -> host ready: 'ssh mac' reaches ${_atw_target}${HOST_NAME:+ ($HOST_NAME)} as $HOST_USER"
 	note "It works once you approve this VM in Machman and Remote Login is on."
 	return 0
@@ -142,7 +141,7 @@ reverse_uninstall() {
 	for _ru_u in $(ssh_touched_users); do
 		_ru_h="$(home_of "$_ru_u")"
 		[ -n "$_ru_h" ] || continue
-		[ -f "$_ru_h/.ssh/config" ] && strip_block "$_ru_h/.ssh/config"
+		strip_block "$_ru_h/.ssh/config" || uninstall_kept
 		if grep -qF "$MARKER-reverse" "$_ru_h/.ssh/machman_host.pub" 2>/dev/null; then
 			rm -f "$_ru_h/.ssh/machman_host" "$_ru_h/.ssh/machman_host.pub" \
 				"$_ru_h/.ssh/machman_known_hosts"

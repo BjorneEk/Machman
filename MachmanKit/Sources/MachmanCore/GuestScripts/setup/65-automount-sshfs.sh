@@ -222,7 +222,6 @@ sshfsauto_act() {
 	[ -n "$SSHFSAUTO_DONE" ] || return 0
 	if [ "$INIT" = systemd ]; then
 		# Shares the marker block with the virtiofs line: rebuild the block whole.
-		touch /etc/fstab
 		_sa_keep=""
 		if grep -q "^# BEGIN $MARKER" /etc/fstab 2>/dev/null; then
 			_sa_keep="$(awk -v m="$MARKER" '
@@ -231,13 +230,12 @@ sshfsauto_act() {
 				inb && $3 == "virtiofs" { print }
 			' /etc/fstab)"
 		fi
-		strip_block /etc/fstab
-		{
-			printf '# BEGIN %s\n' "$MARKER"
-			[ -n "$_sa_keep" ] && printf '%s\n' "$_sa_keep"
-			printf '%s' "$_sa_fstab"
-			printf '# END %s\n' "$MARKER"
-		} >> /etc/fstab
+		if ! put_block /etc/fstab "$MARKER" "${_sa_keep:+$_sa_keep
+}$_sa_fstab"; then
+			step_failed automount-sshfs "could not update /etc/fstab: $R_ERROR" \
+				"Add the sshfs lines yourself."
+			return 0
+		fi
 		run "reloading systemd mounts" systemctl daemon-reload || true
 		ok "sshfs folders mount on first access ($SSHFSAUTO_DONE)"
 		note "They connect once you approve this VM in Machman (guest -> host SSH)."
@@ -261,16 +259,17 @@ sshfsauto_write_boot_script() {
 		ok "sshfs folders mount at boot (/etc/local.d/machman-sshfs.start)"
 		;;
 	*)
-		if [ ! -f /etc/rc.local ]; then
-			printf '#!/bin/sh\n' > /etc/rc.local
-			chmod 755 /etc/rc.local
+		if ! rc_local_ready automount-sshfs; then
+			step_failed automount-sshfs \
+				"/etc/rc.local is not executable, so the boot mounts will not run" \
+				"chmod +x /etc/rc.local if everything in it should run at boot, then re-run."
+			return 0
 		fi
-		strip_block /etc/rc.local
-		{
-			printf '# BEGIN %s\n' "$MARKER"
-			printf '%s' "$1"
-			printf '# END %s\n' "$MARKER"
-		} >> /etc/rc.local
+		if ! rc_local_put "$MARKER" "$1"; then
+			step_failed automount-sshfs "could not update /etc/rc.local: $R_ERROR" \
+				"Add the sshfs lines to it yourself."
+			return 0
+		fi
 		ok "sshfs folders mount at boot (/etc/rc.local)"
 		;;
 	esac
@@ -284,6 +283,6 @@ sshfsauto_report() {
 
 sshfsauto_uninstall() {
 	rm -f /etc/local.d/machman-sshfs.start 2>/dev/null || true
-	[ -f /etc/rc.local ] && strip_block /etc/rc.local
+	strip_block /etc/rc.local || uninstall_kept
 	return 0
 }

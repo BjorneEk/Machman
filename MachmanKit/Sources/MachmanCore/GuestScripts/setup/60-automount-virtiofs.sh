@@ -112,13 +112,12 @@ vfsauto_act() {
 			"Create it yourself, then re-run."
 		return 0
 	}
-	touch /etc/fstab
-	strip_block /etc/fstab
-	{
-		printf '# BEGIN %s\n' "$MARKER"
-		printf '%s %s virtiofs rw,nofail 0 0\n' "$SHARE_TAG" "$SHARE_ROOT"
-		printf '# END %s\n' "$MARKER"
-	} >> /etc/fstab
+	_va_line="$SHARE_TAG $SHARE_ROOT virtiofs rw,nofail 0 0"
+	if ! put_block /etc/fstab "$MARKER" "$_va_line"; then
+		step_failed automount-virtiofs "could not update /etc/fstab: $R_ERROR" \
+			"Add '$_va_line' to it yourself."
+		return 0
+	fi
 	ok "the share mounts at boot ($SHARE_ROOT)"
 	AUTOMOUNT_LINES="virtiofs	$SHARE_TAG	$SHARE_ROOT"
 	if [ "$VFSAUTO_MOUNT_NOW" = 1 ]; then

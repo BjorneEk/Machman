@@ -120,11 +120,17 @@ if [ "$UNINSTALL" -eq 1 ]; then
 		"${_mm_f}_uninstall"
 	done
 	# The shared fstab block (virtiofs + sshfs automounts) strips once, here.
-	[ -f /etc/fstab ] && strip_block /etc/fstab
+	strip_block /etc/fstab || uninstall_kept
 	report_hook_uninstall
 	write_report uninstalled
 	uninstall_unmount_and_prune
 	remove_state
+	if [ "$UNINSTALL_KEPT" -eq 1 ]; then
+		# Files it may not edit (links, hard links) kept their lines, each one named above.
+		warn "Machman's guest configuration is gone except where noted above."
+		MACHMAN_DIED=1   # an explained outcome — the trap stays quiet
+		exit 4
+	fi
 	ok "Machman's guest configuration is gone."
 	note "Installed packages and the SSH server stay — remove them yourself if unwanted."
 	exit 0

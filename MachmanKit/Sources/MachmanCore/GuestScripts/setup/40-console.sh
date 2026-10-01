@@ -455,18 +455,19 @@ PLIST
 }
 
 # Marker-scoped batch edits: the inittab/ttys lines collect in a staging file, then land
-# between BEGIN/END markers in one strip-and-append (idempotent re-runs, exact uninstall).
+# between BEGIN/END markers in one block rewrite (idempotent re-runs, exact uninstall).
 console_flush_lines() {
 	_cfl_file="$1"
 	_cfl_add="$1.machman-add"
-	[ -f "$_cfl_add" ] || return 0
-	strip_block "$_cfl_file"
-	{
-		printf '# BEGIN %s\n' "$MARKER"
-		cat "$_cfl_add"
-		printf '# END %s\n' "$MARKER"
-	} >> "$_cfl_file"
+	[ -f "$_cfl_add" ] || return 1
+	_cfl_ok=0
+	put_block "$_cfl_file" "$MARKER" "$(cat "$_cfl_add")" || _cfl_ok=1
 	rm -f "$_cfl_add"
+	if [ "$_cfl_ok" -ne 0 ]; then
+		step_failed console "could not update $_cfl_file: $R_ERROR" \
+			"Add the getty lines yourself, then re-run."
+		return 1
+	fi
 	return 0
 }
 
@@ -530,13 +531,22 @@ console_act() {
 			if [ "$DRY_RUN" -eq 1 ]; then
 				acting "would supersede the existing $_ca_dev line and manage a marked one"
 			else
+				_ca_ok=0
 				case "$GETTY_MECH" in
 				inittab)
-					supersede_lines /etc/inittab "$(console_inittab_re "$_ca_dev")" ;;
+					supersede_lines /etc/inittab "$(console_inittab_re "$_ca_dev")" \
+						|| _ca_ok=1 ;;
 				freebsd-rc)
 					supersede_lines /etc/ttys \
-						"^$(console_dev_esc "$_ca_dev")[[:space:]]" ;;
+						"^$(console_dev_esc "$_ca_dev")[[:space:]]" || _ca_ok=1 ;;
 				esac
+				if [ "$_ca_ok" -ne 0 ]; then
+					# A second getty on the same port would fight the first one.
+					step_failed console "could not adopt $_ca_dev: $R_ERROR" \
+						"Comment its line out yourself, then re-run."
+					_ca_i=$((_ca_i + 1))
+					continue
+				fi
 				ok "adopted $_ca_dev — the original line is tagged and restorable"
 			fi
 			console_install_one "$_ca_dev" "$_ca_i"
@@ -552,15 +562,13 @@ console_act() {
 	if [ "$DRY_RUN" -eq 0 ] && [ "$_ca_flush" -eq 1 ]; then
 		case "$GETTY_MECH" in
 		inittab)
-			if [ -f /etc/inittab.machman-add ]; then
-				console_flush_lines /etc/inittab
+			if console_flush_lines /etc/inittab; then
 				run "reloading init" kill -HUP 1 || true
 				ok "logins land in /etc/inittab"
 			fi
 			;;
 		freebsd-rc)
-			if [ -f /etc/ttys.machman-add ]; then
-				console_flush_lines /etc/ttys
+			if console_flush_lines /etc/ttys; then
 				run "reloading init" kill -HUP 1 || true
 				ok "logins land in /etc/ttys"
 			fi
@@ -614,13 +622,13 @@ console_uninstall() {
 		done
 		;;
 	inittab)
-		strip_block /etc/inittab
-		restore_superseded /etc/inittab
+		strip_block /etc/inittab || uninstall_kept
+		restore_superseded /etc/inittab || uninstall_kept
 		kill -HUP 1 2>/dev/null || true
 		;;
 	freebsd-rc)
-		strip_block /etc/ttys
-		restore_superseded /etc/ttys
+		strip_block /etc/ttys || uninstall_kept
+		restore_superseded /etc/ttys || uninstall_kept
 		kill -HUP 1 2>/dev/null || true
 		# Deliberate keep, disclosed: un-listing virtio_console would take away the
 		# console devices — possibly the very one this uninstall is being read on.

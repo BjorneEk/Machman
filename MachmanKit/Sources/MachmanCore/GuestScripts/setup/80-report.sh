@@ -271,19 +271,51 @@ report_hook_install() {
 # later lines still have to run. The settle sleep and the -r guard mirror the FreeBSD
 # hook: the share this script lives on may be mounted by an earlier rc.local line.
 report_hook_rc_local() {
-	if [ ! -f /etc/rc.local ]; then
-		printf '#!/bin/sh\n' > /etc/rc.local
-		chmod 755 /etc/rc.local
-	fi
 	# Pre-fix runs on sysvinit wrote openrc's file here; it was never executed — retire it.
 	rm -f /etc/local.d/machman-report.start 2>/dev/null || true
-	( MARKER="$MARKER-report"; strip_block /etc/rc.local )
-	{
-		printf '# BEGIN %s-report\n' "$MARKER"
-		printf '(sleep 5; [ -r "%s" ] && /bin/sh "%s" --report-only -q) >/dev/null 2>&1 &\n' \
-			"$1" "$1"
-		printf '# END %s-report\n' "$MARKER"
-	} >> /etc/rc.local
+	if ! rc_local_ready report-refresh; then
+		report_note report-refresh \
+			"/etc/rc.local is not executable, so the boot-time report refresh will not run"
+		return 0
+	fi
+	if ! rc_local_put "$MARKER-report" "$(printf \
+		'(sleep 5; [ -r "%s" ] && /bin/sh "%s" --report-only -q) >/dev/null 2>&1 &' \
+		"$1" "$1")"; then
+		report_note report-refresh "no boot-time report refresh: $R_ERROR"
+		return 0
+	fi
+	return 0
+}
+
+# rc_local_put <marker> <body> — that marker's block in /etc/rc.local, ahead of its final
+# exit. A missing rc.local is created "#!/bin/sh", 0755; an existing one keeps its mode.
+rc_local_put() {
+	if [ ! -e /etc/rc.local ] && [ ! -L /etc/rc.local ]; then
+		# A here-doc, not a pipe: write_file must run in this shell to hand back R_ERROR.
+		_rlp_shebang='#!/bin/sh'
+		write_file -m 755 /etc/rc.local <<EOF || return 1
+$_rlp_shebang
+EOF
+	fi
+	put_block /etc/rc.local "$1" "$2"
+}
+
+# Will the init run /etc/rc.local? Linux inits run it only while it is executable: the
+# exec bit is the guest's own on/off switch (Debian's template says so), so a file the
+# guest switched off stays off, and nothing is added to it. One that carries a Machman
+# block was switched off by an older Machman, which dropped the bit on every edit: that
+# one goes back on, and the report says so. The BSDs feed rc.local to sh whatever its
+# mode. rc_local_ready <step label>
+rc_local_ready() {
+	linux_guest || return 0
+	# Missing (created executable) or a link (refused by name when written): not this.
+	[ -e /etc/rc.local ] && [ ! -L /etc/rc.local ] || return 0
+	[ -x /etc/rc.local ] && return 0
+	# Any VM's block counts: a cloned disk carries its source VM's marker.
+	grep -q '^# BEGIN machman-' /etc/rc.local 2>/dev/null || return 1
+	chmod +x /etc/rc.local || return 1
+	report_note "$1" \
+		"/etc/rc.local was not executable — re-enabled (Machman's boot hook lives there)"
 	return 0
 }
 
@@ -292,9 +324,7 @@ report_hook_uninstall() {
 		/etc/systemd/system/multi-user.target.wants/machman-report.service \
 		/etc/local.d/machman-report.start \
 		/usr/local/etc/rc.d/machman_report 2>/dev/null || true
-	if [ -f /etc/rc.local ]; then
-		( MARKER="$MARKER-report"; strip_block /etc/rc.local )
-	fi
+	strip_block /etc/rc.local "$MARKER-report" || uninstall_kept
 	have systemctl && systemctl daemon-reload >/dev/null 2>&1
 	if [ -f /Library/LaunchDaemons/com.machman.report.plist ]; then
 		launchctl bootout system/com.machman.report >/dev/null 2>&1 || true
