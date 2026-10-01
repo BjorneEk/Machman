@@ -5,8 +5,9 @@
 //  App-scoped store of long-running work: the daemon's OperationInfo registry mirror and the
 //  per-VM macOS install phases. Owns its own event stream (installPhaseChanged +
 //  operationChanged); events have no replay, so each (re)attach pulls host.operations once
-//  and lets the stream keep it fresh. The progress-card UI (S7) consumes `operations` and
-//  owns dismissal/pruning of finished entries; until then they just accumulate here.
+//  and lets the stream keep it fresh; a pull that fails is retried with a backoff (P13).
+//  The progress-card UI (S7) consumes `operations` and owns dismissal/pruning of finished
+//  entries; until then they just accumulate here.
 //
 
 import Foundation
@@ -18,14 +19,19 @@ public final class OperationsStore: ObservableObject {
 	@Published public private(set) var installPhases: [String: InstallPhase] = [:]
 	private var api: MachmanControlling?
 	private var eventTask: Task<Void, Never>?
+	private var retryTask: Task<Void, Never>?
+	private var backoff: RetryBackoff
 	// macOS VMs whose install phase is being fetched (dedupes re-triggered primes).
 	private var phasePrimesInFlight: Set<String> = []
 
-	public init() {}
+	public init(retryDelays: [Duration] = RetryBackoff.standardDelays) {
+		backoff = RetryBackoff(delays: retryDelays)
+	}
 
 	public func attach(api: MachmanControlling) {
 		detach()
 		self.api = api
+		backoff.reset()
 		eventTask = Task { [weak self] in
 			let stream = await api.events()
 			await self?.resync()
@@ -39,6 +45,8 @@ public final class OperationsStore: ObservableObject {
 	public func detach() {
 		eventTask?.cancel()
 		eventTask = nil
+		retryTask?.cancel()
+		retryTask = nil
 		api = nil
 		phasePrimesInFlight.removeAll()
 	}
@@ -66,8 +74,29 @@ public final class OperationsStore: ObservableObject {
 
 	private func resync() async {
 		guard let api else { return }
-		if let ops = try? await api.operations() {
-			operations = ops
+		let ops: [OperationInfo]
+		do {
+			ops = try await api.operations()
+		} catch {
+			guard self.api === api, !(error is CancellationError) else { return }
+			MachmanLogger.log(.passiveWarning, "couldn't refresh operations: \(error)")
+			scheduleRetry()
+			return
+		}
+		guard self.api === api else { return }
+		operations = ops
+		backoff.reset()
+	}
+
+	// Silent: progress cards are passive, and the next event or retry fills them in.
+	private func scheduleRetry() {
+		guard retryTask == nil else { return }
+		let delay = backoff.next()
+		retryTask = Task { [weak self] in
+			try? await Task.sleep(for: delay)
+			guard !Task.isCancelled, let self else { return }
+			self.retryTask = nil
+			await self.resync()
 		}
 	}
 

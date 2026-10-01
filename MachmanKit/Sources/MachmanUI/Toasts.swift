@@ -12,7 +12,9 @@
 import SwiftUI
 
 public struct MachmanToast: Identifiable, Equatable {
-	public let id = UUID()
+	// Fresh per toast, unless a status toast that is recomputed per render passes its own
+	// fixed id, so it doesn't re-animate every time.
+	public let id: UUID
 	public var symbol: String
 	public var message: String
 	public var tint: Color?
@@ -26,9 +28,10 @@ public struct MachmanToast: Identifiable, Equatable {
 	public var sticky: Bool
 
 	public init(
-		symbol: String, message: String, tint: Color? = nil,
+		id: UUID = UUID(), symbol: String, message: String, tint: Color? = nil,
 		key: String? = nil, spinner: Bool = false, sticky: Bool = false
 	) {
+		self.id = id
 		self.symbol = symbol
 		self.message = message
 		self.tint = tint

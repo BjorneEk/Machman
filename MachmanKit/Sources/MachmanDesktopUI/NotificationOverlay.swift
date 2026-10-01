@@ -2,10 +2,11 @@
 //  NotificationOverlay.swift
 //  MachmanDesktopUI
 //
-//  The bottom-right feedback corner (1.0.4 UI): transient toasts (engine warnings) over
-//  persistent progress cards — the daemon's live operations plus running macOS installs,
-//  with client-side ETA math. The ✕ cancels (op.cancel / vm.install.cancel); finished
-//  operations linger a few seconds showing their outcome, then prune from the store.
+//  The bottom-right feedback corner (1.0.4 UI): status toasts (a stale VM list) and transient
+//  toasts (engine warnings) over persistent progress cards — the daemon's live operations
+//  plus running macOS installs, with client-side ETA math. The ✕ cancels (op.cancel /
+//  vm.install.cancel); finished operations linger a few seconds showing their outcome, then
+//  prune from the store.
 //
 
 import SwiftUI
@@ -19,7 +20,7 @@ struct NotificationOverlay: View {
 
 	var body: some View {
 		ToastStack(
-			toasts: viewModel.toasts,
+			toasts: viewModel.statusToasts + viewModel.toasts,
 			progress: cards,
 			dismissProgress: dismiss)
 	}

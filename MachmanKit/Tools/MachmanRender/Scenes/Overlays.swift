@@ -42,5 +42,18 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		RenderScene(
+			"overlay.list-stale", "NotificationOverlay: the VM list failed to refresh",
+			widths: [420], height: 300
+		) { ctx in
+			// The store's first retry is a second out — after the snapshot.
+			ctx.stub.fail("listVMs", with: MachmanError(
+				code: .timeout,
+				message: "no reply to vm.list after 30s — the serving process may be hung"))
+			Task { await ctx.store.reload() }
+			Offscreen.pump(until: { ctx.store.listProblem != nil })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }
