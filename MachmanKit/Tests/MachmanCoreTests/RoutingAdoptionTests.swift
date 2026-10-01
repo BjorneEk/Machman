@@ -45,8 +45,13 @@ private final class HungHost: @unchecked Sendable {
 }
 
 struct RoutingAdoptionTests {
+	// Deadlines: a test against a live in-process stub host gets a generous one, because the
+	// stub answers on the main actor, which parallel @MainActor suites keep busy; only the
+	// tests that WANT a timeout (a hung host) pass the short ones.
 	@MainActor
-	private func makeRouting() throws -> (RoutingMachman, String) {
+	private func makeRouting(
+		helloDeadline: Duration = .seconds(10), probeDeadline: Duration = .seconds(10)
+	) throws -> (RoutingMachman, String) {
 		var routing: RoutingMachman!
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "alpha")
@@ -58,8 +63,8 @@ struct RoutingAdoptionTests {
 		let socketPath = TestEnvironment.scratch
 			+ "mm-adopt-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		routing.socketPathForVM = { _ in socketPath }
-		routing.helloDeadline = .milliseconds(200)
-		routing.hostProbeDeadline = .milliseconds(300)
+		routing.helloDeadline = helloDeadline
+		routing.hostProbeDeadline = probeDeadline
 		return (routing, socketPath)
 	}
 
@@ -73,7 +78,8 @@ struct RoutingAdoptionTests {
 	}
 
 	@Test @MainActor func adoptionKeepsALiveSocketThatMissesHello() async throws {
-		let (routing, socketPath) = try makeRouting()
+		let (routing, socketPath) = try makeRouting(
+			helloDeadline: .milliseconds(200), probeDeadline: .milliseconds(300))
 		let host = try HungHost(path: socketPath)
 		defer { host.close() }
 
@@ -117,7 +123,8 @@ struct RoutingAdoptionTests {
 	}
 
 	@Test @MainActor func aVMHostThatNeverAnswersListsAsNotResponding() async throws {
-		let (routing, socketPath) = try makeRouting()
+		let (routing, socketPath) = try makeRouting(
+			helloDeadline: .milliseconds(200), probeDeadline: .milliseconds(300))
 		let host = try HungHost(path: socketPath)
 		defer { host.close() }
 
