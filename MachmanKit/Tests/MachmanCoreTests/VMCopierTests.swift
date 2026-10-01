@@ -638,6 +638,7 @@ struct VMCopierTests {
 		setup.lastReportAt = Date(timeIntervalSince1970: 1_700_000_000)
 		setup.features = [GuestFeatureInfo(id: GuestFeature.ssh, available: true, configured: true)]
 		setup.consoles = [GuestConsoleInfo(device: "hvc0", login: "active")]
+		setup.notes = [GuestSetupNote(step: "report-refresh", message: "rc.local re-enabled")]
 		config.setup = setup
 		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
 
@@ -650,6 +651,7 @@ struct VMCopierTests {
 		#expect(copied.setup?.scriptVersion == nil)
 		#expect(copied.setup?.features.isEmpty == true)
 		#expect(copied.setup?.consoles.isEmpty == true)
+		#expect(copied.setup?.notes.isEmpty == true)
 		#expect(copied.setup?.guestOS == "debian")
 		#expect(copied.setup?.guestInit == "systemd")
 

@@ -442,6 +442,7 @@ extension GuestSetupConfig {
 		lastRunNote = nil
 		lastTransport = nil
 		errors = []
+		notes = []
 		features = []
 		consoles = []
 		automounts = []
