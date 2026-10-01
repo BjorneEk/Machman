@@ -15,7 +15,8 @@ public final class SerialTerminalConnection: TerminalByteStream {
 	private var fd: Int32 = -1
 	private var readSource: DispatchSourceRead?
 	private let transcriptLock = NSLock()
-	private var transcript = Data()
+	// The output's last transcriptCap bytes; chunked, so trimming the head really frees it.
+	private var transcript = ByteChunkQueue()
 	private static let transcriptCap = 8 << 20   // 8 MiB of scrollback for "save to file"
 
 	// Called on the main queue with each chunk of guest output.
@@ -83,7 +84,7 @@ public final class SerialTerminalConnection: TerminalByteStream {
 
 	public func transcriptData() -> Data {
 		transcriptLock.lock(); defer { transcriptLock.unlock() }
-		return transcript
+		return transcript.joined()
 	}
 
 	private func appendTranscript(_ data: Data) {

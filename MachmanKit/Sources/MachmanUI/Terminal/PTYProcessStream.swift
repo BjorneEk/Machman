@@ -18,7 +18,8 @@ public final class PTYProcessStream: TerminalByteStream {
 	private var parentFD: Int32 = -1
 	private var readSource: DispatchSourceRead?
 	private let transcriptLock = NSLock()
-	private var transcript = Data()
+	// The output's last transcriptCap bytes; chunked, so trimming the head really frees it.
+	private var transcript = ByteChunkQueue()
 	private static let transcriptCap = 8 << 20
 
 	public var onData: ((Data) -> Void)?
@@ -123,7 +124,7 @@ public final class PTYProcessStream: TerminalByteStream {
 	public func transcriptData() -> Data {
 		transcriptLock.lock()
 		defer { transcriptLock.unlock() }
-		return transcript
+		return transcript.joined()
 	}
 
 	private func appendTranscript(_ data: Data) {

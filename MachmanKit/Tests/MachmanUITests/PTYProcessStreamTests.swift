@@ -9,6 +9,7 @@
 import Testing
 import Foundation
 import MachmanUI
+import MachmanTestSupport
 
 struct PTYProcessStreamTests {
 
@@ -89,6 +90,20 @@ struct PTYProcessStreamTests {
 			}
 			#expect(sink.text.contains("GOT_WINCH"))
 		}
+	}
+
+	// Q5: the transcript keeps its last 8 MiB and nothing more alive. A sliced Data head
+	// kept the whole buffer — every byte the session ever printed.
+	@Test @MainActor func theTranscriptKeepsOnlyItsLastEightMiB() async throws {
+		let stream = PTYProcessStream(
+			executablePath: "/bin/sh", arguments: ["-c", "head -c 20971520 /dev/zero; printf END"])
+		let sink = StreamSink()
+		stream.onClose = { sink.markClosed() }
+		#expect(stream.connect())
+		#expect(await eventually(timeout: .seconds(20)) { sink.isClosed })
+		let transcript = stream.transcriptData()
+		#expect(transcript.count == 8 << 20)
+		#expect(transcript.startIndex == 0, "still holds \(transcript.startIndex) dead bytes")
 	}
 
 	@Test func windowSizeAndSendAreSafeBeforeConnect() {

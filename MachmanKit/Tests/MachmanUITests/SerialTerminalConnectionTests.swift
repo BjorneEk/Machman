@@ -34,6 +34,29 @@ struct SerialTerminalConnectionTests {
 		#expect(stream.transcriptData() == Data("BYE".utf8))
 	}
 
+	// Q5: the transcript keeps the output's last 8 MiB and nothing more alive.
+	@Test func theTranscriptKeepsOnlyItsLastEightMiB() async throws {
+		let peer = try SocketPeer()
+		defer { peer.close() }
+		let stream = SerialTerminalConnection(path: peer.path)
+		let sink = StreamSink()
+		stream.onClose = { sink.markClosed() }
+		defer { stream.stop() }
+		#expect(stream.connect())
+		#expect(await eventually { peer.client >= 0 })
+		let chunk = Data(repeating: 0, count: 1 << 20)
+		Thread.detachNewThread {
+			for _ in 0..<20 { peer.write(chunk) }
+			peer.write(Data("END".utf8))
+			peer.hangUp()
+		}
+		#expect(await eventually(timeout: .seconds(20)) { sink.isClosed })
+		let transcript = stream.transcriptData()
+		#expect(transcript.count == 8 << 20)
+		#expect(transcript.startIndex == 0, "still holds \(transcript.startIndex) dead bytes")
+		#expect(transcript.suffix(3) == Data("END".utf8))
+	}
+
 	@Test func aMissingSocketFailsToConnect() {
 		let stream = SerialTerminalConnection(path: TestEnvironment.scratch + "nobody.sock")
 		#expect(!stream.connect())
