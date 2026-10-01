@@ -70,6 +70,24 @@ struct PromoteRestrictedVMTests {
 		}
 	}
 
+	// C15: promotion takes a name through the same VM-name rule as rename and copy.
+	@Test @MainActor func promotionRefusesHiddenAndControlNames() throws {
+		try VMTestDir.withRedirectedDir {
+			let (registry, library) = try makeSafeHost()
+			defer { try? FileManager.default.removeItem(atPath: library) }
+			let runRoot = machmanVMDir
+			for bad in [".kept", "a\nb", " kept"] {
+				let error = try #require(throws: MachmanError.self, "\(bad)") {
+					try registry.promoteRestrictedVM(to: bad)
+				}
+				#expect(error.code == .invalidArgument)
+			}
+			#expect(FileManager.default.fileExists(atPath: runRoot + "/alpha/config"))
+			#expect(registry.restrictedName == "alpha")
+			#expect(try FileManager.default.contentsOfDirectory(atPath: library).isEmpty)
+		}
+	}
+
 	@Test @MainActor func promotionMintsAFreshMacMachineID() throws {
 		try VMTestDir.withRedirectedDir {
 			let (registry, library) = try makeSafeHost(macOS: true)

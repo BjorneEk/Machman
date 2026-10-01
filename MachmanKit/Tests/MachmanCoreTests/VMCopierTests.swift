@@ -59,6 +59,21 @@ struct VMCopierTests {
 			VMConfig.self, from: try Data(contentsOf: URL(fileURLWithPath: dir + "/config")))
 	}
 
+	// C15: whatever the caller checked, a copy never lands outside destinationParent.
+	@Test func copyRefusesAPathAsTheNewName() throws {
+		let library = try makeLibrary() + "/lib"
+		try FileManager.default.createDirectory(atPath: library, withIntermediateDirectories: true)
+		let src = try makeSourceVM(in: library)
+		for bad in ["../escape", "a/b", "..", "."] {
+			let error = try #require(throws: MachmanError.self, "\(bad)") {
+				try VMCopier.copy(VMCopyRequest(
+					sourceDir: src, destinationParent: library, newName: bad))
+			}
+			#expect(error.code == .invalidArgument)
+		}
+		#expect(!FileManager.default.fileExists(atPath: library + "/../escape"))
+	}
+
 	@Test func clonedDiskIsIndependent() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }

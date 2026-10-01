@@ -539,16 +539,28 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try fileManager.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
 	}
 
+	// The name changes only once the directory moved: a failed move (a stray directory at
+	// the target) must leave the config saving where it lives. Name rules are the caller's
+	// (VMRegistry.checkNewVMName).
 	func rename(to newName: String) throws {
 		let oldName = self.name
 		let fileManager = FileManager.default
-
+		let oldDir = "\(machmanVMDir)/\(oldName)"
+		let newDir = "\(machmanVMDir)/\(newName)"
+		do {
+			try fileManager.moveItem(
+				at: URL(fileURLWithPath: oldDir), to: URL(fileURLWithPath: newDir))
+		} catch {
+			if fileManager.fileExists(atPath: newDir) {
+				throw MachmanError(
+					code: .alreadyExists,
+					message: "A VM named \u{201C}\(newName)\u{201D} already exists")
+			}
+			throw MachmanError(
+				code: .ioFailure, message: "renaming \(oldName): \(error.localizedDescription)")
+		}
 		self.name = newName
-		try fileManager.moveItem(
-			at: URL(fileURLWithPath: "\(machmanVMDir)/\(oldName)"),
-			to: URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)"))
-		rewriteOwnedKernelPaths(
-			fromDir: "\(machmanVMDir)/\(oldName)", toDir: "\(machmanVMDir)/\(newName)")
+		rewriteOwnedKernelPaths(fromDir: oldDir, toDir: newDir)
 		// A suffix assigned for the old name stood in for its default; the new name gets
 		// its own default — yielding, like any VM taking a name. A chosen alias stays.
 		if let alias = ssh?.alias, SSHAliasAssignment.isAssigned(alias, to: oldName) {

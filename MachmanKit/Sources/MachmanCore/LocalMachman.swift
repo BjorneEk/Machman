@@ -123,10 +123,7 @@ public final class LocalMachman: MachmanControlling {
 		}
 		let target: String
 		if let newName {
-			guard registry.vm(named: newName) == nil else {
-				throw MachmanError(
-					code: .alreadyExists, message: "a VM named '\(newName)' already exists")
-			}
+			try registry.checkNewVMName(newName)
 			target = newName
 		} else {
 			target = registry.uniqueName(base: "\(name) copy")

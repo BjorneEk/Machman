@@ -72,6 +72,14 @@ enum VMCopier {
 	@discardableResult
 	nonisolated static func copy(_ request: VMCopyRequest) throws -> String {
 		let fm = FileManager.default
+		// The name rules are the callers'; this only makes sure the copy lands inside
+		// destinationParent. Safe-run shadows reuse the VM's own (legacy) name as is.
+		guard !request.newName.isEmpty, !request.newName.contains("/"),
+			request.newName != ".", request.newName != ".." else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "'\(request.newName)' can't name a VM directory")
+		}
 		let src = request.sourceDir
 		let dst = request.destinationParent + "/" + request.newName
 		guard fm.fileExists(atPath: src + "/config") else {

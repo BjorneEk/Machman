@@ -303,10 +303,7 @@ public final class VMRegistry {
 		guard let vm = vms[oldName], vm.runtime != nil else {
 			throw MachmanError(code: .invalidState, message: "the safe run already ended")
 		}
-		guard !newName.isEmpty, !newName.contains("/") else {
-			throw MachmanError(
-				code: .invalidArgument, message: "invalid VM name '\(newName)'")
-		}
+		try NameRule.vmName.validate(newName)
 		let destination = library + "/" + newName
 		guard !FileManager.default.fileExists(atPath: destination) else {
 			throw MachmanError(
@@ -445,13 +442,20 @@ public final class VMRegistry {
 		events.emit(.listChanged)
 	}
 
+	// The one entry check for a VM name taken by rename or copy (promotion checks the
+	// library on disk instead). Refused, never trimmed: the router keys on the name as sent.
+	func checkNewVMName(_ name: String) throws {
+		try NameRule.vmName.validate(name)
+		guard vms[name] == nil else {
+			throw MachmanError(
+				code: .alreadyExists, message: "A VM named \u{201C}\(name)\u{201D} already exists")
+		}
+	}
+
 	func rename(_ vm: VirtualMachine, to newName: String) throws {
 		let oldName = vm.config.name
 		guard oldName != newName else { return }
-		guard vms[newName] == nil else {
-			throw MachmanError(
-				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
-		}
+		try checkNewVMName(newName)
 		guard vm.runtime == nil else {
 			throw MachmanError(code: .invalidState, message: "stop \(oldName) before renaming it")
 		}
