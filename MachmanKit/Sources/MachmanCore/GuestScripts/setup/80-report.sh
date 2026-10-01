@@ -97,6 +97,32 @@ feature_line() {
 	return 0
 }
 
+# The AUTOMOUNT_ lines of the automounts this run leaves as they are (a --report-only run:
+# all of them): their entries stay in place, so the report keeps listing them, each where
+# its entry mounts it — the share's own sshfs mount at the share root (sshfsauto_entry).
+automount_lines_kept() {
+	if ! feature_selected vfsauto && { vfsauto_configured || vfsauto_foreign; }; then
+		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
+}virtiofs	$SHARE_TAG	$SHARE_ROOT"
+	fi
+	feature_selected sshfsauto && return 0
+	# Mount names are host text: never globbed against the working directory.
+	set -f
+	# shellcheck disable=SC2086
+	set -- $ST_AUTOMOUNT_SSHFS
+	set +f
+	for _alk_n in "$@"; do
+		if [ "$_alk_n" = "@share" ]; then
+			_alk_where="$SHARE_ROOT"
+		else
+			_alk_where="${ST_MOUNTPOINT:-$MOUNT_ROOT}/$_alk_n"
+		fi
+		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
+}sshfs	$_alk_n	$_alk_where"
+	done
+	return 0
+}
+
 # Always written when the drop-box is writable. Rename-into-place, so the host never
 # reads a half-file.
 write_report() {
