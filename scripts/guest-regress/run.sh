@@ -32,30 +32,30 @@ distro() {
 	debian)
 		IMAGE=debian:12
 		PREP="$APT grub2-common openssh-client iproute2 initscripts procps sshfs"
-		SUITES="systemd rclocal files grub uninstall nixos" ;;
+		SUITES="systemd rclocal files grub uninstall nixos automount" ;;
 	ubuntu)
 		IMAGE=ubuntu:24.04
 		PREP="$APT grub2-common openssh-client iproute2 sshfs"
-		SUITES="systemd files grub" ;;
+		SUITES="systemd files grub automount" ;;
 	fedora)
 		# grub2-tools without grubby: the /etc/default/grub path (BLS needs a real boot).
 		IMAGE=fedora:42
 		PREP="dnf install -y -q grub2-tools openssh-clients iproute util-linux procps-ng"
 		PREP="$PREP fuse-sshfs"
-		SUITES="systemd files grub" ;;
+		SUITES="systemd files grub automount" ;;
 	leap)
 		IMAGE=opensuse/leap:15.6
 		PREP="$ZYPPER grub2 openssh-clients iproute2 util-linux-systemd sshfs"
-		SUITES="systemd files grub" ;;
+		SUITES="systemd files grub automount" ;;
 	tumbleweed)
 		IMAGE=opensuse/tumbleweed:latest
 		PREP="$ZYPPER gawk diffutils grub2 openssh-clients iproute2 util-linux-systemd sshfs"
-		SUITES="systemd files grub" ;;
+		SUITES="systemd files grub automount" ;;
 	arch)
 		# Landlock is not permitted in Docker: pacman runs without its sandbox.
 		IMAGE=menci/archlinuxarm:latest
 		PREP="pacman -Sy --noconfirm --disable-sandbox grub openssh iproute2 diffutils sshfs"
-		SUITES="systemd files grub" ;;
+		SUITES="systemd files grub automount" ;;
 	alpine)
 		IMAGE=alpine:3.24
 		PREP="apk add -q openrc openssh-keygen sshfs util-linux-misc loksh"

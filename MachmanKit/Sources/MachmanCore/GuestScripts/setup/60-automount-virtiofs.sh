@@ -112,8 +112,12 @@ vfsauto_act() {
 			"Create it yourself, then re-run."
 		return 0
 	}
+	# The block is shared; each feature rewrites only its own lines: the sshfs automounts'
+	# stay as they are, after the share's.
 	_va_line="$SHARE_TAG $SHARE_ROOT virtiofs rw,nofail 0 0"
-	if ! put_block /etc/fstab "$MARKER" "$_va_line"; then
+	_va_keep="$(fstab_block_lines ne virtiofs)"
+	if ! put_block /etc/fstab "$MARKER" "$_va_line${_va_keep:+
+$_va_keep}"; then
 		step_failed automount-virtiofs "could not update /etc/fstab: $R_ERROR" \
 			"Add '$_va_line' to it yourself."
 		return 0
@@ -126,6 +130,17 @@ vfsauto_act() {
 				"It still mounts at the next boot; try: mount $SHARE_ROOT"
 	fi
 	return 0
+}
+
+# fstab_block_lines <eq|ne> <fstype> — the lines of our fstab block whose type (3rd field)
+# is (eq) or is not (ne) <fstype>.
+fstab_block_lines() {
+	regular_file /etc/fstab || return 0
+	awk -v m="$MARKER" -v op="$1" -v t="$2" '
+		$0 == "# BEGIN " m { inb = 1; next }
+		$0 == "# END " m { inb = 0; next }
+		inb && ((op == "eq") == ($3 == t)) { print }
+	' /etc/fstab
 }
 
 vfsauto_report() {

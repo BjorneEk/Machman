@@ -228,15 +228,9 @@ sshfsauto_act() {
 	SSHFSAUTO_DONE="${SSHFSAUTO_DONE# }"
 	[ -n "$SSHFSAUTO_DONE" ] || return 0
 	if [ "$INIT" = systemd ]; then
-		# Shares the marker block with the virtiofs line: rebuild the block whole.
-		_sa_keep=""
-		if grep -q "^# BEGIN $MARKER" /etc/fstab 2>/dev/null; then
-			_sa_keep="$(awk -v m="$MARKER" '
-				$0 == "# BEGIN " m { inb = 1; next }
-				$0 == "# END " m { inb = 0; next }
-				inb && $3 == "virtiofs" { print }
-			' /etc/fstab)"
-		fi
+		# The block is shared; each feature rewrites only its own lines: the share's
+		# virtiofs line stays as it is, ahead of the sshfs ones.
+		_sa_keep="$(fstab_block_lines eq virtiofs)"
 		if ! put_block /etc/fstab "$MARKER" "${_sa_keep:+$_sa_keep
 }$_sa_fstab"; then
 			step_failed automount-sshfs "could not update /etc/fstab: $R_ERROR" \
