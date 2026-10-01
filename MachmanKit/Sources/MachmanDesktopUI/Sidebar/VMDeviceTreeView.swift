@@ -472,7 +472,7 @@ struct VMDeviceTreeView: View {
 			dismissWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .ssh(ref)))
 			return
 		}
-		sessions.dropSSHController(vm: vm.name, ref: ref)
+		sessions.drop(.ssh(ref), vm: vm.name)
 		mutateCanvas { $0.close(.ssh(ref)) }
 		viewModel.tabClosed(.ssh(ref), vm: vm.name)
 	}
@@ -1083,7 +1083,7 @@ struct VMDeviceTreeView: View {
 			dismissWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .terminal(ref)))
 			return
 		}
-		sessions.dropController(vm: vm.name, ref: ref)
+		sessions.drop(.terminal(ref), vm: vm.name)
 		mutateCanvas { $0.close(.terminal(ref)) }
 		viewModel.tabClosed(.terminal(ref), vm: vm.name)
 	}

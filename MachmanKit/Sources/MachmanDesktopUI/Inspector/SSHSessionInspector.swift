@@ -62,7 +62,7 @@ struct SSHSessionInspector: View {
 					}
 				}
 				Button("Close Session", role: .destructive) {
-					sessions.dropSSHController(vm: vm.name, ref: ref)
+					sessions.drop(.ssh(ref), vm: vm.name)
 					var canvas = viewModel.canvases.canvas(for: vm.name)
 					canvas.close(.ssh(ref))
 					viewModel.canvases.setCanvas(canvas, for: vm.name)

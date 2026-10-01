@@ -212,7 +212,7 @@ public final class VMListViewModel: ObservableObject {
 			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 			let refs = Set(ports.map { SerialPortRef($0) })
 			for ref in canvases.reconcile(vm: vm.name, existing: refs) {
-				terminals.dropController(vm: vm.name, ref: ref)
+				terminals.drop(.terminal(ref), vm: vm.name)
 			}
 		}
 		// Torn tabs live in their windows, not the canvas — reconcile them too (T6): a
@@ -1372,12 +1372,7 @@ public final class VMListViewModel: ObservableObject {
 		guard let name = selectedName else { return false }
 		var canvas = canvases.canvas(for: name)
 		guard let tab = canvas.activeTab else { return false }
-		if case .terminal(let ref) = tab {
-			terminals.dropController(vm: name, ref: ref)
-		}
-		if case .ssh(let ref) = tab {
-			terminals.dropSSHController(vm: name, ref: ref)
-		}
+		terminals.drop(tab, vm: name)
 		canvas.close(tab)
 		canvases.setCanvas(canvas, for: name)
 		tabClosed(tab, vm: name)

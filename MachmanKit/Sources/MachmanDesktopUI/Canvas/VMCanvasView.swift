@@ -244,12 +244,7 @@ struct VMCanvasView: View {
 	// MARK: - Tab actions
 
 	private func close(_ tab: VMPaneTab) {
-		if case .terminal(let ref) = tab {
-			sessions.dropController(vm: vm.name, ref: ref)
-		}
-		if case .ssh(let ref) = tab {
-			sessions.dropSSHController(vm: vm.name, ref: ref)
-		}
+		sessions.drop(tab, vm: vm.name)
 		mutate { $0.close(tab) }
 		viewModel.tabClosed(tab, vm: vm.name)
 	}

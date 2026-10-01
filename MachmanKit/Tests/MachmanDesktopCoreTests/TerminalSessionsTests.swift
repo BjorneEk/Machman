@@ -1,0 +1,89 @@
+//
+//  TerminalSessionsTests.swift
+//  MachmanDesktopCoreTests
+//
+//  The terminal registry is one lifecycle for both transports (Q3): a serial terminal and an
+//  ssh session are dropped, reconciled away and renamed by the same paths. The fakes never
+//  connect a socket or start ssh (FakeTerminalController).
+//
+
+import Testing
+import Foundation
+import MachmanAPI
+import MachmanUI
+import MachmanFixtures
+import MachmanTestSupport
+@testable import MachmanDesktopCore
+
+@MainActor
+struct TerminalSessionsTests {
+	private let console = SerialPortRef(kind: .console, index: 0)
+	private let session = SSHSessionRef(title: "Session 1")
+
+	// One serial and one ssh controller for Debian, both live.
+	private func harnessWithBothKinds() async -> DesktopHarness {
+		let h = await DesktopHarness.make()
+		h.terminals.ensureController(
+			vm: "Debian", ref: console, socketPath: "/var/empty/machman-sample/c0.sock",
+			profile: h.profiles.defaultProfile)
+		h.terminals.ensureSSHController(
+			vm: "Debian", ref: session, arguments: ["debian.machman"],
+			profile: h.profiles.defaultProfile)
+		_ = await eventually {
+			h.terminals.controller(for: .terminal(console), vm: "Debian") != nil
+				&& h.terminals.controller(for: .ssh(session), vm: "Debian") != nil
+		}
+		return h
+	}
+
+	@Test func dropEndsASerialAndAnSSHControllerAlike() async throws {
+		let h = await harnessWithBothKinds()
+		h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "build box")
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		let ssh = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		h.terminals.drop(.terminal(console), vm: "Debian")
+		h.terminals.drop(.ssh(session), vm: "Debian")
+		#expect(h.terminals.controller(vm: "Debian", ref: console) == nil)
+		#expect(h.terminals.sshController(vm: "Debian", ref: session) == nil)
+		#expect(serial.disconnects == 1)
+		#expect(ssh.disconnects == 1)
+		#expect(h.terminals.sshSessionName(vm: "Debian", ref: session) == "Session 1")
+	}
+
+	@Test func aGoneVMTakesBothKindsWithIt() async {
+		let h = await harnessWithBothKinds()
+		h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "build box")
+		h.terminals.reconcile(vms: [])
+		#expect(h.terminals.controller(for: .terminal(console), vm: "Debian") == nil)
+		#expect(h.terminals.controller(for: .ssh(session), vm: "Debian") == nil)
+		#expect(h.controllers.allSatisfy { $0.disconnects == 1 })
+		#expect(h.terminals.sshSessionName(vm: "Debian", ref: session) == "Session 1")
+	}
+
+	@Test func renameMovesBothKindsAndTheirNames() async {
+		let h = await harnessWithBothKinds()
+		h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "build box")
+		let serial = h.terminals.controller(for: .terminal(console), vm: "Debian")
+		let ssh = h.terminals.controller(for: .ssh(session), vm: "Debian")
+		h.terminals.renameVM(from: "Debian", to: "Debian 2")
+		#expect(h.terminals.controller(for: .terminal(console), vm: "Debian 2") === serial)
+		#expect(h.terminals.controller(for: .ssh(session), vm: "Debian 2") === ssh)
+		#expect(h.terminals.controller(for: .terminal(console), vm: "Debian") == nil)
+		#expect(h.terminals.sshSessionName(vm: "Debian 2", ref: session) == "build box")
+		#expect(h.controllers.allSatisfy { $0.disconnects == 0 })
+	}
+
+	// Sessions keep their own per-session profile; a profile edit re-applies serial tabs only.
+	@Test func profileEditsSkipSSHSessions() async throws {
+		let h = await harnessWithBothKinds()
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		let ssh = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		h.terminals.reapplyLiveProfiles(h.profiles)
+		#expect(serial.liveApplies == 1)
+		#expect(ssh.liveApplies == 0)
+	}
+}

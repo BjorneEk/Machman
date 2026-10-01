@@ -2,12 +2,15 @@
 //  TerminalSessions.swift
 //  MachmanDesktopCore
 //
-//  The live terminal controllers behind terminal tabs, keyed (vm, port). Pure controller
+//  The live terminal controllers behind terminal tabs, keyed (vm, tab). Pure controller
 //  lifecycle — WHICH tabs exist and which is active lives in CanvasStateStore (the canvas
 //  layout); this registry only creates, connects, reloads, and tears down terminals on
 //  demand. App-scoped, so controllers (and their transcripts) survive VM navigation and
 //  daemon reconnects; a controller lives exactly as long as its tab is open. Controllers come
 //  from an injected factory (the app's is SwiftTerm-backed, tests' record their calls).
+//  One registry keyed by the tab: a serial port and an ssh session share every step of the
+//  lifecycle (deferred creation, drop, reconcile, rename) and differ only in how they
+//  connect, so a third transport is a new VMPaneTab case plus its connect closure.
 //
 
 import Foundation
@@ -17,53 +20,79 @@ import MachmanUI
 @MainActor
 public final class TerminalSessions: ObservableObject {
 	// Not published per-keystroke: views observe each controller's own @Published
-	// `connected`; objectWillChange fires when a controller appears or disappears.
-	private var controllers: [String: [SerialPortRef: any TerminalController]] = [:]
+	// `connected`; objectWillChange fires when a controller appears or disappears. The
+	// config tab has no terminal and is never a key here.
+	private var live: [String: [VMPaneTab: any TerminalController]] = [:]
 	// Tabs whose controller is being created on a deferred runloop turn (so the spinner
 	// shows and we don't schedule creation twice).
-	private var creating: Set<String> = []
+	private struct PendingKey: Hashable {
+		let vm: String
+		let tab: VMPaneTab
+	}
+	private var creating: Set<PendingKey> = []
 	private let makeController: @MainActor (TerminalProfile) -> any TerminalController
 
 	public init(makeController: @escaping @MainActor (TerminalProfile) -> any TerminalController) {
 		self.makeController = makeController
 	}
 
-	public func controller(vm: String, ref: SerialPortRef) -> (any TerminalController)? {
-		controllers[vm]?[ref]
+	public func controller(for tab: VMPaneTab, vm: String) -> (any TerminalController)? {
+		live[vm]?[tab]
 	}
 
-	// Make sure the tab's controller exists and is connected, ready to render. The
-	// TerminalView is built on a later runloop turn so the tab + spinner paint first
-	// (AppKit view creation is main-thread-bound — deferral, not backgrounding, but the
-	// click stays instant). `stillWanted` re-checks on that turn: the tab may have closed.
-	// Idempotent per tab; also (re)connects an existing controller whose socket reappeared.
-	public func ensureController(
-		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile,
-		stillWanted: @escaping @MainActor () -> Bool = { true }
+	public func controller(vm: String, ref: SerialPortRef) -> (any TerminalController)? {
+		controller(for: .terminal(ref), vm: vm)
+	}
+
+	// The deferred-creation shape every transport shares: the tab + spinner paint first and
+	// the controller is made on a later runloop turn (AppKit view creation is main-thread-
+	// bound — deferral, not backgrounding, but the click stays instant). `stillWanted`
+	// re-checks on that turn: the tab may have closed. `start` connects the new controller.
+	private func create(
+		_ tab: VMPaneTab, vm: String, profile: TerminalProfile,
+		stillWanted: @escaping @MainActor () -> Bool,
+		start: @escaping @MainActor (any TerminalController) -> Void
 	) {
-		if let c = controllers[vm]?[ref] {
-			if let path = socketPath, !c.connected { c.connect(path: path) }
-			return
-		}
-		let key = ref.assocKey(vm: vm)
+		guard live[vm]?[tab] == nil else { return }
+		let key = PendingKey(vm: vm, tab: tab)
 		guard !creating.contains(key) else { return }
 		creating.insert(key)
 		DispatchQueue.main.async { [weak self] in
 			guard let self else { return }
 			self.creating.remove(key)
 			guard stillWanted() else { return }
-			let c = makeController(profile)
-			self.controllers[vm, default: [:]][ref] = c
-			if let path = socketPath { c.connect(path: path) }
+			let c = self.makeController(profile)
+			self.live[vm, default: [:]][tab] = c
+			start(c)
 			self.objectWillChange.send()   // swap the spinner for the terminal
 		}
 	}
 
-	// Tear down a tab's controller: tab closed, port removed, or VM deleted.
-	public func dropController(vm: String, ref: SerialPortRef) {
-		guard let c = controllers[vm]?[ref] else { return }
+	// Make sure a serial tab's controller exists and is connected, ready to render (created
+	// on a later runloop turn — see create). Idempotent per tab; also (re)connects an
+	// existing controller whose socket reappeared.
+	public func ensureController(
+		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile,
+		stillWanted: @escaping @MainActor () -> Bool = { true }
+	) {
+		if let c = live[vm]?[.terminal(ref)] {
+			if let path = socketPath, !c.connected { c.connect(path: path) }
+			return
+		}
+		create(.terminal(ref), vm: vm, profile: profile, stillWanted: stillWanted) { c in
+			if let path = socketPath { c.connect(path: path) }
+		}
+	}
+
+	// Tear down a tab's controller: tab closed, port removed, or VM deleted. An ssh tab's
+	// display metadata goes with it — the session it named is over.
+	public func drop(_ tab: VMPaneTab, vm: String) {
+		if case .ssh(let ref) = tab {
+			sshMeta[vm]?[ref] = nil
+		}
+		guard let c = live[vm]?[tab] else { return }
 		c.disconnect()
-		controllers[vm]?[ref] = nil
+		live[vm]?[tab] = nil
 		objectWillChange.send()
 	}
 
@@ -73,18 +102,20 @@ public final class TerminalSessions: ObservableObject {
 	public func reloadTab(
 		vm: String, ref: SerialPortRef, socketPath: String?, profile: TerminalProfile
 	) {
-		controllers[vm]?[ref]?.disconnect()
+		live[vm]?[.terminal(ref)]?.disconnect()
 		let c = makeController(profile)
-		controllers[vm, default: [:]][ref] = c
+		live[vm, default: [:]][.terminal(ref)] = c
 		if let path = socketPath { c.connect(path: path) }
 		objectWillChange.send()
 	}
 
-	// Re-apply live profile settings to every open controller (profile edited). Covers
-	// hidden VMs too, so an edit is reflected everywhere at once.
+	// Re-apply live profile settings to every open serial controller (profile edited).
+	// Covers hidden VMs too, so an edit is reflected everywhere at once. SSH sessions keep
+	// their own per-session pick (applySSHProfile).
 	public func reapplyLiveProfiles(_ store: TerminalProfileStore) {
-		for (vm, byRef) in controllers {
-			for (ref, c) in byRef {
+		for (vm, byTab) in live {
+			for (tab, c) in byTab {
+				guard case .terminal(let ref) = tab else { continue }
 				c.applyLive(store.profile(vm: vm, ref: ref))
 			}
 		}
@@ -94,7 +125,6 @@ public final class TerminalSessions: ObservableObject {
 
 	// Same deferred-creation shape as the serial tabs, but the transport is a PTY-spawned
 	// /usr/bin/ssh, and it is one-shot: a dead session never reconnects — open a new tab.
-	private var sshControllers: [String: [SSHSessionRef: any TerminalController]] = [:]
 	// Display metadata: the ref's title is only the birth name ("Session N") — renames
 	// live here so tab identity (Hashable ref) never changes; startedAt drives duration.
 	private struct SSHSessionMeta {
@@ -105,7 +135,7 @@ public final class TerminalSessions: ObservableObject {
 	private var sshMeta: [String: [SSHSessionRef: SSHSessionMeta]] = [:]
 
 	public func sshController(vm: String, ref: SSHSessionRef) -> (any TerminalController)? {
-		sshControllers[vm]?[ref]
+		controller(for: .ssh(ref), vm: vm)
 	}
 
 	public func sshSessionName(vm: String, ref: SSHSessionRef) -> String {
@@ -136,7 +166,7 @@ public final class TerminalSessions: ObservableObject {
 	) {
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
 			name: ref.title, startedAt: Date())].profileID = id
-		sshControllers[vm]?[ref]?.applyLive(profile)
+		live[vm]?[.ssh(ref)]?.applyLive(profile)
 		objectWillChange.send()
 	}
 
@@ -144,16 +174,8 @@ public final class TerminalSessions: ObservableObject {
 		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile,
 		stillWanted: @escaping @MainActor () -> Bool = { true }
 	) {
-		guard sshControllers[vm]?[ref] == nil else { return }
-		let key = "ssh|\(vm)|\(ref.id.uuidString)"
-		guard !creating.contains(key) else { return }
-		creating.insert(key)
-		DispatchQueue.main.async { [weak self] in
+		create(.ssh(ref), vm: vm, profile: profile, stillWanted: stillWanted) { [weak self] c in
 			guard let self else { return }
-			self.creating.remove(key)
-			guard stillWanted() else { return }
-			let c = makeController(profile)
-			self.sshControllers[vm, default: [:]][ref] = c
 			if self.sshMeta[vm]?[ref] == nil {
 				self.sshMeta[vm, default: [:]][ref] =
 					SSHSessionMeta(name: ref.title, startedAt: Date())
@@ -162,7 +184,6 @@ public final class TerminalSessions: ObservableObject {
 			c.connect(stream: PTYProcessStream(
 				executablePath: "/usr/bin/ssh", arguments: arguments,
 				environmentOverrides: ["TERM": profile.termName]))
-			self.objectWillChange.send()
 		}
 	}
 
@@ -172,7 +193,7 @@ public final class TerminalSessions: ObservableObject {
 	public func reconnectSSHSession(
 		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile
 	) {
-		guard let controller = sshControllers[vm]?[ref], !controller.connected else { return }
+		guard let controller = live[vm]?[.ssh(ref)], !controller.connected else { return }
 		controller.note("reconnected " + Date().formatted(date: .omitted, time: .shortened))
 		controller.connect(stream: PTYProcessStream(
 			executablePath: "/usr/bin/ssh", arguments: arguments,
@@ -180,25 +201,15 @@ public final class TerminalSessions: ObservableObject {
 		objectWillChange.send()
 	}
 
-	public func dropSSHController(vm: String, ref: SSHSessionRef) {
-		sshMeta[vm]?[ref] = nil
-		guard let c = sshControllers[vm]?[ref] else { return }
-		c.disconnect()
-		sshControllers[vm]?[ref] = nil
-		objectWillChange.send()
-	}
-
-	// Drop every controller of VMs that no longer exist. Per-port pruning is the canvas
-	// reconcile's job — it reports removed refs into dropController.
+	// Drop every controller (and session name) of VMs that no longer exist. Per-port
+	// pruning is the canvas reconcile's job — it reports removed refs into drop.
 	public func reconcile(vms: [VMInfo]) {
 		let names = Set(vms.map(\.name))
-		for vm in Array(controllers.keys) where !names.contains(vm) {
-			controllers[vm]?.values.forEach { $0.disconnect() }
-			controllers[vm] = nil
+		for vm in Array(live.keys) where !names.contains(vm) {
+			live[vm]?.values.forEach { $0.disconnect() }
+			live[vm] = nil
 		}
-		for vm in Array(sshControllers.keys) where !names.contains(vm) {
-			sshControllers[vm]?.values.forEach { $0.disconnect() }
-			sshControllers[vm] = nil
+		for vm in Array(sshMeta.keys) where !names.contains(vm) {
 			sshMeta[vm] = nil
 		}
 	}
@@ -206,13 +217,9 @@ public final class TerminalSessions: ObservableObject {
 	// Migrate a VM's controllers on rename, so open terminals survive it. (A live SSH
 	// process is unaffected by the rename; its argv already resolved.)
 	public func renameVM(from old: String, to new: String) {
-		if let c = controllers[old] {
-			controllers[new] = c
-			controllers[old] = nil
-		}
-		if let c = sshControllers[old] {
-			sshControllers[new] = c
-			sshControllers[old] = nil
+		if let c = live[old] {
+			live[new] = c
+			live[old] = nil
 		}
 		if let m = sshMeta[old] {
 			sshMeta[new] = m

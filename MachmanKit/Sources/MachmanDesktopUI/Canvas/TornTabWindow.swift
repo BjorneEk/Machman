@@ -90,14 +90,9 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			viewModel = connection.viewModel] in
 			DispatchQueue.main.async {
 				TornTabRegistry.shared.open.remove(payload)
-				if case .terminal(let ref) = payload.tab {
-					terminals.dropController(vm: payload.vm, ref: ref)
-				}
-				if case .ssh(let ref) = payload.tab {
-					// A session lives exactly as long as the thing showing it, window or
-					// tab: closing this window ends the ssh process.
-					terminals.dropSSHController(vm: payload.vm, ref: ref)
-				}
+				// A terminal or session lives exactly as long as the thing showing it,
+				// window or tab: closing this window ends its connection or ssh process.
+				terminals.drop(payload.tab, vm: payload.vm)
 				viewModel?.tabClosed(payload.tab, vm: payload.vm)
 			}
 		}
