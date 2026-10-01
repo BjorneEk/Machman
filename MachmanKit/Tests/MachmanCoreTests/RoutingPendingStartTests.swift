@@ -175,7 +175,67 @@ struct RoutingPendingStartTests {
 			#expect(error.code == .macConflict)
 		}
 		#expect(routing.pendingStarts.isEmpty)
+		#expect(routing.pendingStartMACs.isEmpty)
 		await client.disconnect()
+	}
+
+	// E19's MAC half: a start still in its spawn window (nothing hosted yet) holds its MAC
+	// too — two same-MAC VMs started together used to both boot, and one lost networking.
+	@Test @MainActor func aStartingVMsMACBlocksASecondStart() async throws {
+		let mac = "aa:bb:cc:77:33:44"
+		let routing = try makeRouting(names: ["pending-alpha", "pending-beta"], mac: mac)
+		routing.reserveStart("pending-alpha", mac: mac)
+
+		do {
+			try await routing.start(vm: "pending-beta", options: StartOptions())
+			Issue.record("expected macConflict")
+		} catch let error as MachmanError {
+			#expect(error.code == .macConflict)
+			#expect(error.message.contains("pending-alpha"))
+			#expect(error.message.contains("starting"))
+		}
+		#expect(routing.pendingStartMACs.keys.sorted() == ["pending-alpha"])
+	}
+
+	@Test @MainActor func forceBypassesAStartingVMsMAC() async throws {
+		let mac = "aa:bb:cc:77:55:66"
+		let routing = try makeRouting(names: ["pending-alpha", "pending-beta"], mac: mac)
+		routing.reserveStart("pending-alpha", mac: mac)
+
+		do {
+			try await routing.start(vm: "pending-beta", options: StartOptions(force: true))
+			Issue.record("expected a spawn failure in the test host")
+		} catch let error as MachmanError {
+			#expect(error.code != .macConflict)   // past the guard, failing at the spawn
+		}
+	}
+
+	// The earlier reservation wins: the later start is the one refused, never both.
+	@Test @MainActor func aLaterReservationNeverBlocksAnEarlierOne() async throws {
+		let mac = "aa:bb:cc:77:77:88"
+		let routing = try makeRouting(names: ["pending-alpha", "pending-beta"], mac: mac)
+		routing.reserveStart("pending-beta", mac: mac)
+
+		do {
+			try await routing.start(vm: "pending-alpha", options: StartOptions())
+			Issue.record("expected macConflict")
+		} catch let error as MachmanError {
+			#expect(error.code == .macConflict)
+			#expect(error.message.contains("pending-beta"))
+		}
+		routing.releaseStart("pending-beta")
+		#expect(routing.pendingStartMACs.isEmpty)
+		#expect(routing.pendingStarts.isEmpty)
+
+		// Both in flight at once: the earlier passes, only the later is refused.
+		routing.reserveStart("pending-alpha", mac: mac)
+		routing.reserveStart("pending-beta", mac: mac)
+		#expect(throws: Never.self) {
+			try routing.checkMACConflict(name: "pending-alpha", mac: mac, options: StartOptions())
+		}
+		#expect(throws: MachmanError.self) {
+			try routing.checkMACConflict(name: "pending-beta", mac: mac, options: StartOptions())
+		}
 	}
 
 	// …and when it fails deeper in: past purge and probe, at the spawn itself (the test

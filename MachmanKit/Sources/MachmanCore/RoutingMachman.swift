@@ -86,6 +86,25 @@ public final class RoutingMachman: MachmanControlling {
 	// failed; main-actor confinement makes the check-then-insert atomic. Internal (not
 	// private) as a test seam — tests reserve a name to exercise the guards.
 	var pendingStarts: Set<String> = []
+	// The MAC each in-flight start will boot with, and the order the starts reserved in:
+	// the MAC-conflict check counts starts still in their spawn window, and the earlier
+	// reservation wins. Internal read for tests.
+	private(set) var pendingStartMACs: [String: (order: Int, mac: String)] = [:]
+	private var nextStartOrder = 0
+
+	// Claims the name (and its MAC) for a start; internal so tests can stage a start in flight.
+	func reserveStart(_ name: String, mac: String?) {
+		pendingStarts.insert(name)
+		if let mac {
+			pendingStartMACs[name] = (nextStartOrder, mac)
+		}
+		nextStartOrder += 1
+	}
+
+	func releaseStart(_ name: String) {
+		pendingStarts.remove(name)
+		pendingStartMACs[name] = nil
+	}
 
 	// Where the vmhost app lives. Internal test seam: a test that reaches spawnHost pins this
 	// to nil, so it fails at "not found" on every machine instead of depending on where the
@@ -1110,8 +1129,8 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		// Reserved before the first await; the defer releases on every exit, success or
 		// throw. Everything below (probe, spawn, shadow build) runs under this claim.
-		pendingStarts.insert(name)
-		defer { pendingStarts.remove(name) }
+		reserveStart(name, mac: vm.config.macAddress)
+		defer { releaseStart(name) }
 		purgeDeadShadows(for: name)
 		// A live vmhost may already own this VM's socket — launchd autostart, or a spawn
 		// whose daemon died before forwarding start. Adopt it instead of racing it with a
@@ -1122,16 +1141,7 @@ public final class RoutingMachman: MachmanControlling {
 			try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options) {
 			return
 		}
-		// The router is the only place that sees every host's live MAC. Applies to safe runs
-		// too — the shadow impersonates this VM's MAC.
-		if !options.force, let mac = vm.config.macAddress,
-			let clash = hosted.values.first(where: { $0.identity.macInUse == mac }) {
-			throw MachmanError(
-				code: .macConflict,
-				message: "\(name) uses MAC \(mac), which running VM "
-					+ "'\(clash.identity.name)' is already using — one of them would lose "
-					+ "networking. Stop it, regenerate a MAC, or force start.")
-		}
+		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
 		if options.safe {
 			try await startSafe(vm: vm, name: name, options: options)
 			return
@@ -1157,6 +1167,33 @@ public final class RoutingMachman: MachmanControlling {
 		// otherwise never discover (the filter still covers guest reboots).
 		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
+	}
+
+	// The router is the only place that sees every live MAC: running hosts, and starts still
+	// in their spawn window (nothing hosted yet). Among starts the earlier reservation wins,
+	// so two same-MAC starts never both fail. Applies to safe runs too — the shadow
+	// impersonates this VM's MAC. Internal for tests.
+	func checkMACConflict(name: String, mac: String?, options: StartOptions) throws {
+		guard !options.force, let mac else { return }
+		if let clash = hosted.values.first(where: {
+			$0.identity.name != name && $0.identity.macInUse == mac
+		}) {
+			throw MachmanError(
+				code: .macConflict,
+				message: "\(name) uses MAC \(mac), which running VM "
+					+ "'\(clash.identity.name)' is already using — one of them would lose "
+					+ "networking. Stop it, regenerate a MAC, or force start.")
+		}
+		let mine = pendingStartMACs[name]?.order ?? Int.max
+		let earlier = pendingStartMACs
+			.filter { $0.key != name && $0.value.mac == mac && $0.value.order < mine }
+			.min { $0.value.order < $1.value.order }
+		if let other = earlier?.key {
+			throw MachmanError(
+				code: .macConflict,
+				message: "\(name) uses MAC \(mac), which '\(other)' is starting with — one of "
+					+ "them would lose networking. Wait for it, regenerate a MAC, or force start.")
+		}
 	}
 
 	// A safe run: clone the VM into a shadow run root (per-disk/mount safe flags decide
