@@ -21,7 +21,7 @@ struct MachmanDesktopApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	@StateObject var connection: DaemonConnection
 	// App-scoped (survives daemon reconnects): terminal profiles + per-socket associations.
-	@StateObject var profiles = TerminalProfileStore()
+	@StateObject var profiles: TerminalProfileStore
 	// The selected VM (the sidebar's selection). Serial ports open as tabs, they are not selected.
 	@State var selection: String? = nil
 	@StateObject private var themeStore = ThemeStore()
@@ -30,6 +30,9 @@ struct MachmanDesktopApp: App {
 		let connection = DaemonConnection()
 		_connection = StateObject(wrappedValue: connection)
 		AppDelegate.connection = connection   // the dock menu reads through it
+		let profiles = TerminalProfileStore()
+		_profiles = StateObject(wrappedValue: profiles)
+		AppDelegate.profiles = profiles       // flushed on quit
 	}
 
 	private var connectedDaemonVersion: String? {
@@ -276,6 +279,14 @@ struct MachmanDesktopApp: App {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 	static weak var connection: DaemonConnection?
+	static weak var profiles: TerminalProfileStore?
+
+	// Settings writes land off the main thread, so a quit waits for the pending ones (a
+	// divider dragged just before ⌘Q, a profile edit) instead of dropping them (T9).
+	func applicationWillTerminate(_ notification: Notification) {
+		Self.connection?.canvases.flush()
+		Self.profiles?.flush()
+	}
 
 	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting.
 	nonisolated func applicationShouldTerminateAfterLastWindowClosed(
