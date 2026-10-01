@@ -287,7 +287,8 @@ fraction?, completedBytes?, totalBytes?, startedAt, state, message?}` with open 
 for `kind` (`copyVM, importDisk, promoteDisk, shadowBuild, safeSave, kernelImport, rosettaInstall`, …)
 and `state` (`running, succeeded, failed, cancelled`). Terminal states are emitted once;
 resync after reconnect with `host.operations`. `copyProgress` keeps being emitted in
-parallel for older clients. ETA stays consumer math.
+parallel for older clients. ETA stays consumer math. `host.operations` keeps terminal states
+listed for about 10 s; a resyncing client ages them out as it would after the terminal event.
 
 `sshChanged {vm}` (1.0.5+): the VM's SSH state moved (guest report ingested, address
 discovery resolved, or switches flipped). No payload beyond the name — re-fetch the VM.

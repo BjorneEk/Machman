@@ -6,8 +6,9 @@
 //  per-VM macOS install phases. Owns its own event stream (installPhaseChanged +
 //  operationChanged); events have no replay, so each (re)attach pulls host.operations once
 //  and lets the stream keep it fresh; a pull that fails is retried with a backoff (P13).
-//  The progress-card UI (S7) consumes `operations` and owns dismissal/pruning of finished
-//  entries; until then they just accumulate here.
+//  Finished entries linger briefly (the progress card shows the outcome), then prune —
+//  whether a terminal event or a resync brought them — and a pruned one never comes back
+//  on a later resync, though the daemon keeps listing it for a while (P24).
 //
 
 import Foundation
@@ -21,11 +22,17 @@ public final class OperationsStore: ObservableObject {
 	private var eventTask: Task<Void, Never>?
 	private var retryTask: Task<Void, Never>?
 	private var backoff: RetryBackoff
+	private let linger: Duration
+	// Finished operations already pruned here; host.operations may still list them.
+	private var forgotten: Set<String> = []
 	// macOS VMs whose install phase is being fetched (dedupes re-triggered primes).
 	private var phasePrimesInFlight: Set<String> = []
 
-	public init(retryDelays: [Duration] = RetryBackoff.standardDelays) {
+	public init(
+		retryDelays: [Duration] = RetryBackoff.standardDelays, linger: Duration = .seconds(5)
+	) {
 		backoff = RetryBackoff(delays: retryDelays)
+		self.linger = linger
 	}
 
 	public func attach(api: MachmanControlling) {
@@ -84,8 +91,23 @@ public final class OperationsStore: ObservableObject {
 			return
 		}
 		guard self.api === api else { return }
-		operations = ops
+		// Only ids the daemon still lists can come back, so that is all `forgotten` keeps.
+		forgotten.formIntersection(ops.map(\.id))
+		operations = ops.filter { !forgotten.contains($0.id) }
+		for op in operations where op.isFinished {
+			schedulePrune(op.id)
+		}
 		backoff.reset()
+	}
+
+	private func schedulePrune(_ id: String) {
+		let linger = self.linger
+		Task { [weak self] in
+			try? await Task.sleep(for: linger)
+			guard let self else { return }
+			self.operations.removeAll { $0.id == id && $0.isFinished }
+			self.forgotten.insert(id)
+		}
 	}
 
 	// Silent: progress cards are passive, and the next event or retry fills them in.
@@ -112,11 +134,7 @@ public final class OperationsStore: ObservableObject {
 			}
 			// Terminal states linger briefly (the card shows the outcome) then prune.
 			if op.isFinished {
-				let id = op.id
-				Task { [weak self] in
-					try? await Task.sleep(for: .seconds(5))
-					self?.operations.removeAll { $0.id == id && $0.isFinished }
-				}
+				schedulePrune(op.id)
 			}
 		default:
 			break
