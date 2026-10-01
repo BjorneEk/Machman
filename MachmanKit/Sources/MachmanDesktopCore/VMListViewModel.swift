@@ -439,6 +439,14 @@ public final class VMListViewModel: ObservableObject {
 			duplicate: { $0.title == $1.title && $0.message == $1.message })
 	}
 
+	// An alert whose title is the whole story, not "<action> failed".
+	public func present(title: String, message: String) {
+		MachmanLogger.log(.interactionError, "\(title): \(message)")
+		errorQueue.enqueue(
+			PresentedError(title: title, message: message),
+			duplicate: { $0.title == $1.title && $0.message == $1.message })
+	}
+
 	// A dismissed alert or dialog animates out; the next one is presented after that, not
 	// inside it.
 	static let representDelay: Duration = .milliseconds(350)

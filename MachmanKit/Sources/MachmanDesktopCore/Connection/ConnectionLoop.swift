@@ -9,12 +9,15 @@
 //  events subscription held, so the list never runs event-less (P13). An attempt whose cycle
 //  was cancelled or replaced disconnects whatever it got and never attaches, and only the
 //  attached session's drop starts a reconnect (P4). A session that keeps dying right after
-//  connecting stops the loop after `maxQuickDrops`. Generic over DaemonSession, so all of it
-//  runs headless against fakes; DaemonConnection is the thin app-side glue.
+//  connecting stops the loop after `maxQuickDrops`. What a drop cut off (the calls still in
+//  flight) rides along to the next attach, however many cycles and Retries that takes (P12).
+//  Generic over DaemonSession, so all of it runs headless against fakes; DaemonConnection is
+//  the thin app-side glue.
 //
 
 import Foundation
 import MachmanAPI
+import MachmanClient
 
 // How hard one connect cycle tries before it stops and asks the user.
 public struct ConnectionPolicy: Sendable {
@@ -53,7 +56,8 @@ public final class ConnectionLoop<Session: DaemonSession> {
 	private let policy: Policy
 	private let connect: Connect
 	private let launchDaemon: @MainActor () -> Void
-	private let attach: @MainActor (Session) -> Void
+	// The vetted session, and the calls the previous session's drop left unanswered.
+	private let attach: @MainActor (Session, [InterruptedCall]) -> Void
 	private let detach: @MainActor () -> Void
 	private let onStatus: @MainActor (ConnectionStatus) -> Void
 
@@ -66,12 +70,16 @@ public final class ConnectionLoop<Session: DaemonSession> {
 	private var resolving: Set<Int> = []
 	private var current: (id: Int, session: Session, since: ContinuousClock.Instant)?
 	private var quickDrops = 0
+	// Interrupted calls waiting for the next attach, and the fetch from a dead session that
+	// will add to them.
+	private var carried: [InterruptedCall] = []
+	private var carryTask: Task<[InterruptedCall], Never>?
 
 	public init(
 		policy: Policy = .standard,
 		connect: @escaping Connect,
 		launchDaemon: @escaping @MainActor () -> Void,
-		attach: @escaping @MainActor (Session) -> Void,
+		attach: @escaping @MainActor (Session, [InterruptedCall]) -> Void,
 		detach: @escaping @MainActor () -> Void,
 		onStatus: @escaping @MainActor (ConnectionStatus) -> Void
 	) {
@@ -117,6 +125,7 @@ public final class ConnectionLoop<Session: DaemonSession> {
 	}
 
 	private func run(cycle: Int, launched: Bool) async {
+		await collectCarry()
 		var launched = launched
 		var notAnswering = 0
 		var last = ConnectionProblem(kind: .unreachable, detail: "no attempt was made")
@@ -142,7 +151,9 @@ public final class ConnectionLoop<Session: DaemonSession> {
 				}
 				current = (id, session, clock.now)
 				cycleTask = nil
-				attach(session)
+				let interrupted = carried
+				carried = []
+				attach(session, interrupted)
 				report(.connected(daemonVersion: session.daemonVersion))
 				return
 			} catch {
@@ -210,6 +221,12 @@ public final class ConnectionLoop<Session: DaemonSession> {
 		}
 		_ = drops.take(id)
 		current = nil
+		let dead = live.session
+		let earlier = carryTask
+		carryTask = Task {
+			let before = await earlier?.value ?? []
+			return before + (await dead.interruptedCalls())
+		}
 		quickDrops = clock.now - live.since < policy.healthySession ? quickDrops + 1 : 0
 		detach()
 		guard quickDrops < policy.maxQuickDrops else {
@@ -220,6 +237,16 @@ public final class ConnectionLoop<Session: DaemonSession> {
 			return
 		}
 		startCycle(launched: false)
+	}
+
+	// Every cycle waits for the last drop's record first, so whichever cycle attaches hands
+	// it over — a cancelled one that resumes later finds it already taken.
+	private func collectCarry() async {
+		guard let task = carryTask else { return }
+		let calls = await task.value
+		guard carryTask == task else { return }
+		carryTask = nil
+		carried += calls
 	}
 
 	private func finish(_ problem: ConnectionProblem) {

@@ -41,7 +41,8 @@ generous bounds for boot/copy-class calls). Abandoning is unilateral and safe by
 rule: a response whose id is no longer awaited is silently dropped, so a late reply from a
 slow server is never misdelivered. A deadline expiring says nothing about the server — the
 call may still complete server-side (watch events for the outcome); clients must not treat a
-timeout as a dead connection.
+timeout as a dead connection. A dropped connection says as little about the calls in flight:
+each may or may not have run, so re-read state after reconnecting.
 
 A client must keep reading: one that leaves the daemon's writes blocked for 10 s, or lets
 32 MiB queue up (an event subscription it stopped draining), is disconnected.

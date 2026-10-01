@@ -184,6 +184,49 @@ struct ConnectionLoopTests {
 		#expect(connector.launches == 1)
 	}
 
+	// P12: what a drop cut off reaches the next attach, once.
+	@Test func interruptedCallsReachTheNextAttach() async {
+		let connector = FakeConnector()
+		let a = FakeSession("A")
+		a.interrupted = [InterruptedCall(method: .start, vm: "Debian")]
+		let b = FakeSession("B")
+		let c = FakeSession("C")
+		connector.script = [.session(a), .session(b), .session(c)]
+		let recorder = LoopRecorder()
+		let loop = makeLoop(connector, recorder)
+		loop.start()
+		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A"] })
+		a.die()
+		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A", "B"] })
+		b.die()
+		#expect(await eventually(timeout: .seconds(5)) {
+			recorder.attachedNames == ["A", "B", "C"]
+		})
+		#expect(recorder.carried == [
+			[], [InterruptedCall(method: .start, vm: "Debian")], [],
+		])
+	}
+
+	// A drop whose reconnect fails keeps its record through the stopped cycle and the
+	// user's Retry.
+	@Test func interruptedCallsSurviveAStoppedCycle() async {
+		let connector = FakeConnector()
+		let a = FakeSession("A")
+		a.interrupted = [InterruptedCall(method: .vmDelete, vm: "Alpine")]
+		connector.script = [.session(a)]
+		connector.otherwise = .failure(FakeConnector.silent)
+		let recorder = LoopRecorder()
+		let loop = makeLoop(connector, recorder)
+		loop.start()
+		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A"] })
+		a.die()
+		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		connector.script = [.session(FakeSession("B"))]
+		loop.retry()
+		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A", "B"] })
+		#expect(recorder.carried.last == [InterruptedCall(method: .vmDelete, vm: "Alpine")])
+	}
+
 	@Test func startIsANoOpWhileConnected() async {
 		let connector = FakeConnector()
 		connector.script = [.session(FakeSession("A"))]

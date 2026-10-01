@@ -64,7 +64,7 @@ final class DaemonConnection: ObservableObject {
 					onDisconnect: onDrop)
 			},
 			launchDaemon: { [weak self] in self?.launchDaemon() },
-			attach: { [weak self] api in self?.attach(api) },
+			attach: { [weak self] api, interrupted in self?.attach(api, interrupted) },
 			detach: { [weak self] in self?.detached() },
 			onStatus: { [weak self] status in self?.status = status })
 		registerLoginItem()
@@ -114,14 +114,16 @@ final class DaemonConnection: ObservableObject {
 		#endif
 	}
 
-	// A session the loop vetted: re-attach the app-scoped stores, then a fresh view model.
-	private func attach(_ api: RemoteMachman) {
+	// A session the loop vetted: re-attach the app-scoped stores, then a fresh view model,
+	// which first says what the last drop cut off (its alert shows once the window mounts).
+	private func attach(_ api: RemoteMachman, _ interrupted: [InterruptedCall]) {
 		vmStore.attach(api: api)
 		operationsStore.attach(api: api)
 		previews.attach(api: api)
 		let viewModel = VMListViewModel(
 			api: api, store: vmStore, operations: operationsStore,
 			terminals: terminals, previews: previews, canvases: canvases)
+		viewModel.announceInterrupted(interrupted)
 		self.api = api
 		self.viewModel = viewModel
 		// The menu bar commands observe this object; forward list changes so Run/Stop/View

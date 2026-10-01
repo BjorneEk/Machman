@@ -20,6 +20,8 @@ final class FakeSession: DaemonSession {
 	let api: MachmanControlling
 	let daemonVersion: String
 	var subscribeError: Error?
+	// What this session's drop cut off, as RemoteMachman.interruptedCalls() would report it.
+	var interrupted: [InterruptedCall] = []
 	private(set) var subscribes = 0
 	private(set) var disconnects = 0
 	fileprivate(set) var onDrop: (@Sendable () -> Void)?
@@ -39,6 +41,10 @@ final class FakeSession: DaemonSession {
 	func disconnect() async {
 		disconnects += 1
 		die()
+	}
+
+	func interruptedCalls() async -> [InterruptedCall] {
+		interrupted
 	}
 
 	// The agent's end went away: the drop is reported once, like RPCConnection's teardown.
@@ -111,6 +117,7 @@ final class FakeConnector {
 @MainActor
 final class LoopRecorder {
 	var attached: [FakeSession] = []
+	var carried: [[InterruptedCall]] = []   // per attach, what it was handed
 	var detaches = 0
 	var statuses: [ConnectionStatus] = []
 
@@ -136,7 +143,10 @@ func makeLoop(
 		policy: policy,
 		connect: { try await connector.connect($0) },
 		launchDaemon: { connector.launch() },
-		attach: { recorder.attached.append($0) },
+		attach: { session, interrupted in
+			recorder.attached.append(session)
+			recorder.carried.append(interrupted)
+		},
 		detach: { recorder.detaches += 1 },
 		onStatus: { recorder.statuses.append($0) })
 }
