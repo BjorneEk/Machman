@@ -97,7 +97,7 @@ alone; unknown codes decode as `internalError`, so the list is additively extens
 | `vm.install.phase` | `{name}` | `InstallPhase` |
 | `vm.device.add` | `{name, kind}` | `VMInfo` (1.0.4+; one device per kind; kind validity depends on boot mode — trackpad needs macOS, clipboard/rosetta refuse macOS; takes effect next boot) |
 | `vm.device.remove` | `{name, kind}` | `VMInfo` (1.0.4+) |
-| `vm.device.update` | `{name, device: DeviceInfo}` | `VMInfo` (1.0.4+; settings + enabled; `unavailable` ignored on input) |
+| `vm.device.update` | `{name, device: DeviceInfo}` | `VMInfo` (1.0.4+; replaces the whole device: every setting comes from the request and an absent one is cleared — absent `systemKeyCapture` = off — so send back the `DeviceInfo` you read with only your change applied; a client that predates a field resets it (a 1.0.9 desktop editing the resolution turns `systemKeyCapture` off); `unavailable` ignored on input) |
 | `vm.setEnabled` | `{name, disks?: {id: bool}, mounts?: {id: bool}, console?: {"<index>": bool}, uart?: {"<index>": bool}}` | `{}` (1.0.4+; `vm.setSafety` twin — unknown ids/indices refuse the whole batch; disabling a serial port renumbers later guest names, same as removing it) |
 | `vm.kernel.setOverride` | `{name, path, commandLine?, overrideEnabled?}` | `VMInfo` (1.0.4+; per-owned-kernel-file cmdline override — replaces the VM command line while that file is active and the override is enabled; nil fields unchanged; dropped when the file is deleted) |
 | `vm.disk.resize` | `{name, diskID, sizeBytes}` | `VMInfo` (1.0.4+; grow-only, owned storage disks, refused while running) |
