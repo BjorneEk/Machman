@@ -3,8 +3,9 @@
 //  MachmanDesktopUI
 //
 //  The VM indicator's dropdown: searchable VM list with per-row quick-action menus, plus
-//  the New VM template chooser (blank / default / mac → vm.create {template}). Quick
-//  actions follow the HIG rule for menus: unavailable actions are hidden, not dimmed.
+//  the New VM template chooser (blank / default / mac → vm.create {template}). In the
+//  quick actions, state alternates (Start ↔ Shut Down) stay hidden; stop-first actions show
+//  dimmed with the reason while the VM runs (P14), as in the tree and the inspector.
 //
 
 import SwiftUI
@@ -176,6 +177,7 @@ private struct VMPickerRow: View {
 			dismiss()
 			viewModel.deleteVM(vm)
 		}
+		.stopFirst(vm, .deleteVM)
 	}
 }
 

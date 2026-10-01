@@ -184,7 +184,9 @@ struct VMDeviceTreeView: View {
 		.frame(height: theme.metrics.treeRowHeight)
 		.tag(SidebarNode.vmRoot)
 		.contextMenu {
+			// Stop-first actions show dimmed with the reason while the VM runs (P14).
 			Button("Rename") { renamingRoot = true }
+				.stopFirst(vm, .renameVM)
 			// A copied entity (disk/kernel/mount from any VM) pastes first; plain file
 			// URLs keep the Finder routing.
 			Button("Paste") { pasteAnything() }
@@ -192,6 +194,7 @@ struct VMDeviceTreeView: View {
 					&& AddFlows.pasteboardFileURLs().isEmpty)
 			Divider()
 			Button("Delete VM…", role: .destructive) { viewModel.deleteVM(vm) }
+				.stopFirst(vm, .deleteVM)
 		}
 	}
 
@@ -284,16 +287,19 @@ struct VMDeviceTreeView: View {
 		Button(disk.isEnabled ? "Disable" : "Enable") {
 			viewModel.setEnabled(vm.name, disks: [disk.id: !disk.isEnabled])
 		}
-		if disk.type == .storage && disk.owned != false && !vm.state.isRunning {
+		if disk.type == .storage && disk.owned != false {
 			Button("Rename") { renamingNode = .disk(disk.id) }
+				.stopFirst(vm, .renameDisk)
 		}
 		if disk.owned == false {
 			Button("Promote to Owned…") { viewModel.promoteDisk(vm.name, diskID: disk.id) }
+				.stopFirst(vm, .promoteDisk)
 		}
 		Divider()
 		Button(disk.owned == true ? "Delete…" : "Remove…", role: .destructive) {
 			viewModel.requestRemoveDisk(vm.name, disk: disk)
 		}
+		.stopFirst(vm, .removeDisk)
 	}
 
 	@ViewBuilder
@@ -621,6 +627,7 @@ struct VMDeviceTreeView: View {
 					viewModel.removeUartPort(vm.name)
 				}
 			}
+			.stopFirst(vm, .changeSerialPorts)
 		}
 	}
 
@@ -827,10 +834,11 @@ struct VMDeviceTreeView: View {
 				kind: role == .kernel ? .kernel : .initramfs, path: file.id))
 		}
 		Button("Show in Finder") { Self.revealInFinder(file.id) }
-		if file.owned && !vm.state.isRunning {
+		if file.owned {
 			Button("Rename") {
 				renamingNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
 			}
+			.stopFirst(vm, .renameKernelFile)
 		}
 		if !file.owned {
 			Button("Promote to Owned…") {

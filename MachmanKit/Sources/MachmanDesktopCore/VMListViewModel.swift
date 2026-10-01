@@ -736,13 +736,22 @@ public final class VMListViewModel: ObservableObject {
 
 	// The one rename flow (tree rename-in-place + the VM inspector's name field): trimmed,
 	// checked against the VM-name rule and the list before the daemon sees it, migrating
-	// terminal/canvas/preview/profile state on success.
-	public func requestRename(_ vm: VMInfo, to typed: String, profiles: TerminalProfileStore) {
+	// terminal/canvas/preview/profile state on success. `reverted` runs when the typed name
+	// is not applied (blank, unchanged, refused here or by the daemon), so a field can drop
+	// it instead of showing a name the VM doesn't have.
+	public func requestRename(
+		_ vm: VMInfo, to typed: String, profiles: TerminalProfileStore,
+		reverted: @escaping @MainActor () -> Void = {}
+	) {
 		let old = vm.name
 		let newName = NameRule.vmName.trimmed(typed)
-		guard !newName.isEmpty, newName != old else { return }
+		guard !newName.isEmpty, newName != old else {
+			reverted()
+			return
+		}
 		if let problem = newVMNameProblem(newName) {
 			present(message: problem, while: "Renaming \(old)")
+			reverted()
 			return
 		}
 		Task { [weak self] in
@@ -753,6 +762,8 @@ public final class VMListViewModel: ObservableObject {
 				self.pushToast(
 					symbol: MachmanSymbols.rename,
 					message: "Renamed to \u{201C}\(newName)\u{201D}")
+			} else {
+				reverted()
 			}
 		}
 	}

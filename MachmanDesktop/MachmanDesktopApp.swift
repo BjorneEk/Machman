@@ -230,8 +230,9 @@ struct MachmanDesktopApp: App {
 					}
 					.keyboardShortcut("d")
 					.disabled(viewModel.selected == nil
-						|| viewModel.selected?.state.isRunning == true
+						|| viewModel.selected?.refusal(.duplicateVM) != nil
 						|| viewModel.copyInFlight)
+					.help(viewModel.selected?.refusal(.duplicateVM) ?? "")
 					Button(action: {
 						if let vm = viewModel.selected { viewModel.requestSafeSave(vm) }
 					}) {

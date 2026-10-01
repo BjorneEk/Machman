@@ -96,11 +96,14 @@ struct AddPopover: View {
 			}
 			Divider()
 			section("Serial") {
+				// The daemon refuses port changes while the VM runs (P14).
 				AddTile(symbol: MachmanSymbols.serialConsole, caption: "Console",
-					tooltip: "Add Console (virtio)", badge: true) {
+					tooltip: vm.refusal(.changeSerialPorts) ?? "Add Console (virtio)",
+					badge: true) {
 					viewModel.addConsolePort(vm.name)
 					dismiss()
 				}
+				.disabled(vm.refusal(.changeSerialPorts) != nil)
 				uartTile
 			}
 			if hasInstallerTiles {
@@ -137,13 +140,15 @@ struct AddPopover: View {
 	}
 
 	private var uartTile: some View {
+		// The host gate explains first: stopping the VM wouldn't help there.
 		let gate = viewModel.capabilities?.uartUnavailable
+		let refusal = vm.refusal(.changeSerialPorts)
 		return AddTile(symbol: MachmanSymbols.serialUart, caption: "UART",
-			tooltip: gate?.message ?? "Add UART (PL011)", badge: true) {
+			tooltip: gate?.message ?? refusal ?? "Add UART (PL011)", badge: true) {
 			viewModel.addUartPort(vm.name)
 			dismiss()
 		}
-		.disabled(gate != nil)
+		.disabled(gate != nil || refusal != nil)
 	}
 
 	private func attached(_ kind: DeviceKind) -> Bool {

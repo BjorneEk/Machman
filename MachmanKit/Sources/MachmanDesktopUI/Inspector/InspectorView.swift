@@ -127,10 +127,14 @@ struct VMInspector: View {
 	var body: some View {
 		Form {
 			Section("Machine") {
+				// A name the rule, the list or the daemon refuses doesn't stay in the field.
 				TextField("Name", text: $draftName)
 					.onSubmit {
-						viewModel.requestRename(vm, to: draftName, profiles: profiles)
+						viewModel.requestRename(
+							vm, to: draftName, profiles: profiles,
+							reverted: { draftName = vm.name })
 					}
+					.stopFirst(vm, .renameVM)
 					.onAppear { draftName = vm.name }
 					.onChange(of: vm.name) { draftName = vm.name }
 				LabeledContent {

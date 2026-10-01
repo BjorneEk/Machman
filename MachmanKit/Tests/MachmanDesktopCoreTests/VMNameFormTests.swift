@@ -57,6 +57,32 @@ struct VMNameFormTests {
 		#expect(!h.stub.calls.contains("renameVM"))
 	}
 
+	// P14: the inspector's Name field kept a refused name. The rename flow now says when
+	// the typed name wasn't applied, so the field can return to the VM's name.
+	@Test func aRefusedRenameRestoresTheField() async throws {
+		let h = await DesktopHarness.make()
+		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
+		var reverts = 0
+		h.viewModel.requestRename(alpine, to: "a/b", profiles: h.profiles) { reverts += 1 }
+		#expect(reverts == 1)
+		h.viewModel.requestRename(alpine, to: " Alpine ", profiles: h.profiles) { reverts += 1 }
+		#expect(reverts == 2)
+		h.stub.fail("renameVM", with: MachmanError(code: .invalidState, message: "busy"))
+		h.viewModel.requestRename(alpine, to: "Alpine 2", profiles: h.profiles) { reverts += 1 }
+		#expect(await eventually { reverts == 3 })
+		#expect(h.stub.vms["Alpine 2"] == nil)
+	}
+
+	@Test func anAppliedRenameKeepsTheField() async throws {
+		let h = await DesktopHarness.make()
+		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
+		var reverts = 0
+		h.viewModel.requestRename(alpine, to: "Alpine 2", profiles: h.profiles) { reverts += 1 }
+		#expect(await eventually { h.viewModel.selectedName == "Alpine 2" })
+		try await Task.sleep(for: .milliseconds(50))
+		#expect(reverts == 0)
+	}
+
 	@Test func renameTrimsTheName() async throws {
 		let h = await DesktopHarness.make()
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
