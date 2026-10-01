@@ -60,7 +60,10 @@ final class UDSListener {
 				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
 			}
 		}
-		guard bound, listen(fd, 8) == 0 else {
+		// A full backlog, not just a dead socket, makes a UNIX-socket connect fail with
+		// ECONNREFUSED, so a short one would let isLive(path:) misread a busy listener as
+		// dead — and the router acts on that (unlink, route to the local engine).
+		guard bound, listen(fd, SOMAXCONN) == 0 else {
 			let err = errno
 			close(fd)
 			throw UDSError.systemError("bind/listen", err)
@@ -125,6 +128,8 @@ final class UDSListener {
 		return utimes(path, nil) == 0
 	}
 
+	// Someone is listening on `path`. A refused connect also means a full accept queue (see
+	// the backlog in init), which SOMAXCONN makes unlikely but not impossible.
 	static func isLive(path: String) -> Bool {
 		guard FileManager.default.fileExists(atPath: path) else { return false }
 		guard var addr = try? makeAddr(path) else { return false }
