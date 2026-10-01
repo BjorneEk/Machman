@@ -24,38 +24,53 @@ struct InspectorView: View {
 			if viewModel.treeSelection.count > 1 {
 				MultiSelectionInspector(viewModel: viewModel, vm: vm)
 			} else {
-				switch viewModel.treeSelection.first {
-				case .group("Kernel"):
-					KernelParentInspector(viewModel: viewModel, vm: vm)
-				case .group("SSH"):
-					SSHInspector(viewModel: viewModel, vm: vm)
-				case .group("Serial"):
-					SerialGroupInspector(viewModel: viewModel, vm: vm)
-				case .kernel(let path):
-					KernelEntryInspector(viewModel: viewModel, vm: vm, path: path)
-				case .initramfs(let path):
-					InitramfsEntryInspector(viewModel: viewModel, vm: vm, path: path)
-				case .vmRoot, nil, .group:
-					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
-				case .sshSession(let ref):
-					SSHSessionInspector(
-						viewModel: viewModel, sessions: viewModel.terminals,
-						profiles: profiles, vm: vm, ref: ref)
-				case .disk(let id):
-					DiskInspector(viewModel: viewModel, vm: vm, diskID: id)
-				case .mount(let id):
-					MountInspector(viewModel: viewModel, vm: vm, mountID: id)
-				case .serial(let ref):
-					SerialInspector(
-						vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
-						profiles: profiles)
-				case .device(let kind):
-					DeviceInspector(viewModel: viewModel, vm: vm, kind: kind)
-				}
+				let node = viewModel.treeSelection.first
+				entityInspector(node).id(InspectorIdentity(vm: vm.name, node: node))
 			}
 		}
 		.formStyle(.grouped)
 	}
+
+	@ViewBuilder
+	private func entityInspector(_ node: SidebarNode?) -> some View {
+		switch node {
+		case .group("Kernel"):
+			KernelParentInspector(viewModel: viewModel, vm: vm)
+		case .group("SSH"):
+			SSHInspector(viewModel: viewModel, vm: vm)
+		case .group("Serial"):
+			SerialGroupInspector(viewModel: viewModel, vm: vm)
+		case .kernel(let path):
+			KernelEntryInspector(viewModel: viewModel, vm: vm, path: path)
+		case .initramfs(let path):
+			InitramfsEntryInspector(viewModel: viewModel, vm: vm, path: path)
+		case .vmRoot, nil, .group:
+			VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
+		case .sshSession(let ref):
+			SSHSessionInspector(
+				viewModel: viewModel, sessions: viewModel.terminals,
+				profiles: profiles, vm: vm, ref: ref)
+		case .disk(let id):
+			DiskInspector(viewModel: viewModel, vm: vm, diskID: id)
+		case .mount(let id):
+			MountInspector(viewModel: viewModel, vm: vm, mountID: id)
+		case .serial(let ref):
+			SerialInspector(
+				vm: vm, ref: ref, viewModel: viewModel, sessions: sessions,
+				profiles: profiles)
+		case .device(let kind):
+			DeviceInspector(viewModel: viewModel, vm: vm, kind: kind)
+		}
+	}
+}
+
+// A different entity is a different inspector: without this identity SwiftUI reuses one switch
+// branch's @State across entities, so a kernel's command-line editor kept the previous kernel's
+// text (and committed it on disappear) and a staged disk grow applied to the next disk selected.
+// The VM is part of the key because entity ids repeat across VMs ("storage:system").
+struct InspectorIdentity: Hashable {
+	let vm: String
+	let node: SidebarNode?
 }
 
 struct NoSelectionInspector: View {

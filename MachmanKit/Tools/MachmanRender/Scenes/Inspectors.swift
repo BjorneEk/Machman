@@ -118,6 +118,23 @@ enum InspectorScenes {
 		inspector(
 			"initramfs.entry", "InitramfsEntryInspector, the active initramfs",
 			select: "Kernel Lab", node: .initramfs(kernelLab.boot.ownedKernels![2].path)),
+		RenderScene(
+			"inspector.kernel.reselect", "KernelEntryInspector after moving from 6.12 to 6.6-lts",
+			widths: RenderScene.inspectorWidths, height: height
+		) { ctx in
+			ctx.viewModel.select(name: "Kernel Lab")
+			let kernels = kernelLab.boot.ownedKernels!
+			ctx.viewModel.treeSelection = [.kernel(kernels[0].path)]
+			// The second selection lands a main-queue turn later, as a click would.
+			return AnyView(InspectorView(
+				viewModel: ctx.viewModel, sessions: ctx.terminals, profiles: ctx.profiles,
+				vm: ctx.vm
+			).onAppear {
+				DispatchQueue.main.async {
+					ctx.viewModel.treeSelection = [.kernel(kernels[1].path)]
+				}
+			})
+		},
 		device(.keyboard, "DeviceInspector, USB keyboard"),
 		device(.trackpad, "DeviceInspector, Mac trackpad", select: "Sequoia"),
 		device(.pointer, "DeviceInspector, pointing device"),
