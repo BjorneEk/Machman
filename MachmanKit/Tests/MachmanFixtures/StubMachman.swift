@@ -540,6 +540,9 @@ public final class StubMachman: MachmanControlling {
 		_ = try get(name)
 		return InstallPhase(kind: .idle)
 	}
+	// The engine keeps the original VM after a save (stopped, its run handed to the new
+	// name); the stub drops it unless this is set (LoopbackTests pins the dropping list).
+	public var safeSaveKeepsOriginal = false
 	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
 		try gate()
 		var vm = try get(name)
@@ -551,9 +554,26 @@ public final class StubMachman: MachmanControlling {
 			throw MachmanError(
 				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
 		}
+		var original = vm
 		vm.name = newName
 		vm.safeRun = nil
 		vms[name] = nil
+		if safeSaveKeepsOriginal {
+			original.state = .stopped
+			original.safeRun = nil
+			original.windowOpen = false
+			original.consolePorts = original.consolePorts?.map { port in
+				var port = port
+				port.socketPath = nil
+				return port
+			}
+			original.uartPorts = original.uartPorts?.map { port in
+				var port = port
+				port.socketPath = nil
+				return port
+			}
+			vms[name] = original
+		}
 		vms[newName] = vm
 		emit(.stateChanged(vm: name, state: .stopped))
 		emit(.stateChanged(vm: newName, state: .running))

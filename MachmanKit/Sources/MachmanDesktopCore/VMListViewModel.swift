@@ -688,26 +688,35 @@ public final class VMListViewModel: ObservableObject {
 			try await api.renameVM(named: oldName, to: newName)
 			// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
 			// old-keyed session would look like a vanished VM and its terminals get closed).
-			terminals.renameVM(from: oldName, to: newName)
-			canvases.renameVM(from: oldName, to: newName)
-			previews.renameVM(from: oldName, to: newName)
+			migrateClientState(from: oldName, to: newName)
 			await reload()
 			select(name: newName)
-			// Torn windows cannot re-key their birth payload — swap them (T3): each
-			// old-named window is ordered to reopen as the new name, adopting the live
-			// controller the migration above re-keyed. Posted AFTER reload: the
-			// reconcile's staleness pass just marked these payloads close (old name gone
-			// from the fresh list), and this overwrite lands in the same main-actor job,
-			// before any window can act on it.
-			let registry = tornTabs
-			for torn in registry.open where torn.vm == oldName {
-				registry.orders[torn] = .reopen(as: TornTab(vm: newName, tab: torn.tab))
-			}
+			reopenTornWindows(from: oldName, to: newName)
 			return true
 		} catch {
 			present(error, while: "Renaming \(oldName)")
 			vmName = oldName
 			return false
+		}
+	}
+
+	// A VM's client-side state follows it to a new name: live terminals and ssh sessions,
+	// the canvas layout and the last preview frame.
+	private func migrateClientState(from old: String, to new: String) {
+		terminals.renameVM(from: old, to: new)
+		canvases.renameVM(from: old, to: new)
+		previews.renameVM(from: old, to: new)
+	}
+
+	// Torn windows cannot re-key their birth payload — swap them (T3): each old-named
+	// window is ordered to reopen as the new name, adopting the live controller the
+	// migration re-keyed. Posted AFTER the reload: a rename's reconcile just marked these
+	// payloads close (old name gone from the fresh list), and this overwrite lands in the
+	// same main-actor job, before any window can act on it.
+	private func reopenTornWindows(from old: String, to new: String) {
+		let registry = tornTabs
+		for torn in registry.open where torn.vm == old {
+			registry.orders[torn] = .reopen(as: TornTab(vm: new, tab: torn.tab))
 		}
 	}
 
@@ -941,10 +950,18 @@ public final class VMListViewModel: ObservableObject {
 		Task { [weak self] in
 			do {
 				let saved = try await self?.api.safeSave(vm: name, to: newName)
+				// The run continues as the new VM (the daemon re-keys the live host and keeps
+				// the original, stopped), so its terminals, sessions, layout, torn windows and
+				// last frame go with it — as a rename's do. The original starts fresh and
+				// connects anew when it is started (T17).
+				if let saved { self?.migrateClientState(from: name, to: saved.name) }
 				self?.safeSaveInFlight = false
 				self?.safeSaveRequest = nil        // item binding dismisses the sheet
 				await self?.reload()
-				if let saved { self?.select(name: saved.name) }
+				if let saved {
+					self?.select(name: saved.name)
+					self?.reopenTornWindows(from: name, to: saved.name)
+				}
 			} catch {
 				self?.safeSaveInFlight = false
 				self?.safeSaveRequest = nil        // dismiss first; alert isn't sheet-blocked
