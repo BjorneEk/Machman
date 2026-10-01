@@ -141,6 +141,10 @@ public struct VMNavigationView: View {
 		// Destructive/choice confirmations (the HIG successors to the old NSAlerts),
 		// isolated in a modifier so this chain stays type-checkable.
 		.modifier(ConfirmationDialogs(viewModel: viewModel))
+		// The menu commands act on the key window (P22): this one is the main window,
+		// and ⌥⌘0 toggles its inspector.
+		.focusedSceneValue(\.machmanWindow, .main)
+		.focusedSceneValue(\.machmanInspector, $viewModel.showInfoPanel)
 	}
 
 	@ToolbarContentBuilder

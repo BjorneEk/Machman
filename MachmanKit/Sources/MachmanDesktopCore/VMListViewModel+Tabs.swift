@@ -156,6 +156,12 @@ extension VMListViewModel {
 
 	// MARK: - Cycling
 
+	// Whether Next/Previous Tab have anywhere to go: the active pane holds another tab.
+	public var canCycleTabs: Bool {
+		guard let name = selectedName else { return false }
+		return (canvases.canvas(for: name).activePane?.tabs.count ?? 0) > 1
+	}
+
 	public func cycleTab(forward: Bool) {
 		guard let name = selectedName else { return }
 		var canvas = canvases.canvas(for: name)

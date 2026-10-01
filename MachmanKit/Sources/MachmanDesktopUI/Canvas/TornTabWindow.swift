@@ -58,6 +58,10 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			inspector
 				.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
 		}
+		// The menu commands act on the key window (P22): this torn tab's VM and terminal,
+		// and ⌥⌘0 toggles this window's inspector.
+		.focusedSceneValue(\.machmanWindow, .torn(payload))
+		.focusedSceneValue(\.machmanInspector, $showInspector)
 		.toolbar {
 			ToolbarItem(placement: .primaryAction) {
 				Button {
