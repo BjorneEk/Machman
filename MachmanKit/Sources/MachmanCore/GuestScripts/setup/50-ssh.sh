@@ -107,17 +107,19 @@ ssh_decide() {
 		SSHD_PLAN="left alone (--no-service)"
 		return 0
 	fi
+	# NixOS: the service is a configuration.nix setting whether or not the openssh
+	# package (and with it an sshd binary) is on PATH — only a running sshd is done.
+	if [ "$OS_FAMILY" = nixos ] && [ "$SSHD" != running ]; then
+		SSHD_PLAN="declarative — configuration.nix + rebuild"
+		if [ -z "$DO_INSTALL" ]; then
+			ask_yes_no "Add services.openssh to /etc/nixos/configuration.nix and rebuild?" n
+			DO_INSTALL="$R_YES"
+		fi
+		[ "$DO_INSTALL" = 1 ] || SSHD_PLAN="NOT enabled — NixOS needs a config change"
+		return 0
+	fi
 	if [ "$SSHD" = missing ]; then
 		_ds_pkgs="$(pkg_for_sshd)"
-		if [ "$OS_FAMILY" = nixos ]; then
-			SSHD_PLAN="declarative — configuration.nix + rebuild"
-			if [ -z "$DO_INSTALL" ]; then
-				ask_yes_no "Add services.openssh to /etc/nixos/configuration.nix and rebuild?" n
-				DO_INSTALL="$R_YES"
-			fi
-			[ "$DO_INSTALL" = 1 ] || SSHD_PLAN="NOT installed — NixOS needs a config change"
-			return 0
-		fi
 		if [ -z "$_ds_pkgs" ] || [ -z "$PM" ]; then
 			SSHD_PLAN="NOT installed — no package manager to install it with"
 			return 0
@@ -200,23 +202,8 @@ enable_sshd() {
 	return 0
 }
 
-ssh_act_nixos() {
-	if sshd_active; then
-		ok "sshd is already enabled (declaratively) — nothing to change"
-		return 0
-	fi
-	if [ "$DO_INSTALL" != 1 ] || [ ! -f /etc/nixos/configuration.nix ] \
-		|| grep -q "services.openssh" /etc/nixos/configuration.nix; then
-		step_failed sshd "NixOS is declarative — sshd cannot be enabled from a script here" \
-			"Add 'services.openssh.enable = true;' to /etc/nixos/configuration.nix, run 'nixos-rebuild switch', then re-run. Your key is installed either way."
-		return 0
-	fi
-	if [ "$DRY_RUN" -eq 1 ]; then
-		acting "would add services.openssh to configuration.nix and rebuild"
-		return 0
-	fi
-	# One marked line inside the final brace, backed up first.
-	cp /etc/nixos/configuration.nix /etc/nixos/configuration.nix.machman-backup
+# Filter for configuration.nix: our marked services.openssh line, inside the final brace.
+ssh_nixos_filter() {
 	awk -v m="$MARKER" '
 		{ lines[NR] = $0 }
 		END {
@@ -227,8 +214,38 @@ ssh_act_nixos() {
 				}
 			}
 			for (i = 1; i <= NR; i++) print lines[i]
-		}
-	' /etc/nixos/configuration.nix.machman-backup > /etc/nixos/configuration.nix
+		}'
+}
+
+ssh_act_nixos() {
+	if sshd_active; then
+		ok "sshd is already enabled (declaratively) — nothing to change"
+		return 0
+	fi
+	# Only a SETTING counts as the user's own: the stock template's commented-out
+	# "# services.openssh.enable = true;" is not one, and neither is our marked line
+	# (a rebuild that failed last time is simply retried).
+	if [ "$DO_INSTALL" != 1 ] || ! regular_file /etc/nixos/configuration.nix \
+		|| grep -v "# $MARKER\$" /etc/nixos/configuration.nix \
+			| grep -q '^[[:space:]]*services\.openssh'; then
+		step_failed sshd "NixOS is declarative — sshd cannot be enabled from a script here" \
+			"Add 'services.openssh.enable = true;' to /etc/nixos/configuration.nix, run 'nixos-rebuild switch', then re-run. Your key is installed either way."
+		return 0
+	fi
+	if [ "$DRY_RUN" -eq 1 ]; then
+		acting "would add services.openssh to configuration.nix and rebuild"
+		return 0
+	fi
+	# One marked line inside the final brace, backed up first.
+	if ! grep -q "# $MARKER\$" /etc/nixos/configuration.nix; then
+		if ! write_file /etc/nixos/configuration.nix.machman-backup \
+			< /etc/nixos/configuration.nix \
+			|| ! rewrite_file /etc/nixos/configuration.nix ssh_nixos_filter; then
+			step_failed sshd "could not edit configuration.nix: $R_ERROR" \
+				"Add 'services.openssh.enable = true;' to it yourself and rebuild."
+			return 0
+		fi
+	fi
 	if run_live "rebuilding NixOS (slow)" nixos-rebuild switch; then
 		ok "sshd enabled in configuration.nix and rebuilt"
 	else

@@ -2,7 +2,8 @@
 # into a read-only /nix/store (run.sh mounts one), configuration.nix is the stock template
 # and nixos-rebuild only records that it ran. Declarative pieces must be reported, never
 # written, and never abort the run.
-# CHECKS: NIXOS_NO_ABORT NIXOS_AUTOMOUNT_DECLARATIVE NIXOS_ONLY_MARKER
+# CHECKS: NIXOS_NO_ABORT NIXOS_AUTOMOUNT_DECLARATIVE NIXOS_SSHD_ADDED NIXOS_PLAN_DECLARATIVE
+# CHECKS: NIXOS_ONLY_MARKER
 . /mnt/machman/share/regress/lib.sh
 
 fake_systemd
@@ -40,6 +41,32 @@ if grep -q '^FEATURE_virtiofsAutomount=unavailable .*NixOS' "$REPORT" \
 	R NIXOS_AUTOMOUNT_DECLARATIVE pass
 else
 	R NIXOS_AUTOMOUNT_DECLARATIVE fail; grep '^FEATURE_' "$REPORT"
+fi
+
+# Stock configuration.nix (its only openssh mention is the commented template line):
+# --install adds the marked line inside the final brace and rebuilds.
+$SH "$S" -y --user reg --ssh --install --no-automount-virtiofs --no-automount-sshfs \
+	--one-way --no-sshfs >/tmp/run2.log 2>&1
+if grep -q "^  services.openssh.enable = true; # $NEW\$" /etc/nixos/configuration.nix \
+	&& [ "$(tail -n 1 /etc/nixos/configuration.nix)" = "}" ] \
+	&& grep -q switch /tmp/rebuild.log 2>/dev/null; then
+	R NIXOS_SSHD_ADDED pass
+else
+	R NIXOS_SSHD_ADDED fail; tail -n 4 /tmp/run2.log; cat /etc/nixos/configuration.nix
+fi
+
+# The openssh package is on PATH even while the service is off: the plan is still the
+# declarative one, never "enable and start".
+cp /tmp/configuration.nix.orig /etc/nixos/configuration.nix
+mkdir -p /usr/local/sbin
+printf '#!/bin/sh\nexit 0\n' > /usr/local/sbin/sshd && chmod 755 /usr/local/sbin/sshd
+$SH "$S" -n -y --user reg --ssh --no-automount-virtiofs --no-automount-sshfs --one-way \
+	--no-sshfs >/tmp/plan.log 2>&1
+if grep -q 'ssh server .*\(declarative\|NixOS\)' /tmp/plan.log \
+	&& ! grep -q 'enable and start' /tmp/plan.log; then
+	R NIXOS_PLAN_DECLARATIVE pass
+else
+	R NIXOS_PLAN_DECLARATIVE fail; grep 'ssh server' /tmp/plan.log
 fi
 
 # A configuration.nix holding nothing but Machman's line still uninstalls.
