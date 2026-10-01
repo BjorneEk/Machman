@@ -328,7 +328,11 @@ for _mm_f in $FEATURES; do
 	console)
 		[ -n "$CONSOLE_MANAGED" ] && _mm_configured="$_mm_configured console" ;;
 	kernelconsole)
-		[ -n "$KC_DEVICE_DONE" ] && _mm_configured="$_mm_configured kernelconsole" ;;
+		# Configured now, or found configured (already active or pending): no change.
+		if [ -n "$KC_DEVICE_DONE" ] || kernelconsole_is_configured; then
+			_mm_configured="$_mm_configured kernelconsole"
+		fi
+		;;
 	ssh)
 		_mm_configured="$_mm_configured ssh" ;;
 	reverse)
@@ -338,7 +342,12 @@ for _mm_f in $FEATURES; do
 	vfsauto)
 		vfsauto_configured && _mm_configured="$_mm_configured vfsauto" ;;
 	sshfsauto)
-		[ -n "$SSHFSAUTO_DONE" ] && _mm_configured="$_mm_configured sshfsauto" ;;
+		# Selected with nothing chosen: the earlier record stands (write_state keeps it).
+		if [ -n "$SSHFSAUTO_DONE" ] \
+			|| { [ -z "$SSHFSAUTO_SELECTED" ] && state_was_configured sshfsauto; }; then
+			_mm_configured="$_mm_configured sshfsauto"
+		fi
+		;;
 	esac
 done
 write_state "${_mm_configured# }"

@@ -29,6 +29,7 @@ struct GuestScriptStateTests {
 			let r = try GuestScriptHarness.run(Self.stateHere + #"""
 				SELECTED_FEATURES="ssh sshfsauto"
 				MOUNTPOINT="/mnt/it's \"here\" \\ now"
+				SSHFSAUTO_SELECTED="my docs"
 				SSHFSAUTO_DONE="my docs${T}@share"
 				U="o'brien"
 				write_state "ssh sshfsauto"
@@ -42,6 +43,56 @@ struct GuestScriptStateTests {
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == "mountpoint\nnames\nuser\nconfigured\n-rw-------\n",
 				"\(shell): \(r.out)")
+		}
+	}
+
+	// S24: a run keeps the record of every feature it did not act on — consoles, the kernel
+	// console and its method (the uninstall's grubby path), the SSH user, the sshfs
+	// automounts (also when selected with nothing chosen) — while a selected feature's
+	// record is this run's.
+	@Test func unselectedFeaturesKeepTheirRecords() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(Self.stateHere + #"""
+				ST_CONSOLE_LOGINS="hvc0 hvc1"
+				ST_KERNEL_CONSOLE=hvc1
+				ST_KERNEL_CONSOLE_METHOD=grubby
+				ST_SSH_USER=old
+				ST_AUTOMOUNT_SSHFS=docs
+				ST_MOUNTPOINT=/mnt/m
+				show() {
+					grep -E '^(CONSOLE_LOGINS|KERNEL_CONSOLE|KERNEL_CONSOLE_METHOD|SSH_USER)=' \
+						"$STATE_FILE"
+					grep -E '^(AUTOMOUNT_SSHFS|MOUNTPOINT)=' "$STATE_FILE"
+					echo --
+				}
+				SELECTED_FEATURES="ssh sshfsauto"
+				U=reg
+				write_state "ssh"
+				show
+				SELECTED_FEATURES="console kernelconsole"
+				CONSOLE_MANAGED=hvc0
+				U=""
+				write_state "console"
+				show
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				CONSOLE_LOGINS='hvc0 hvc1'
+				KERNEL_CONSOLE='hvc1'
+				KERNEL_CONSOLE_METHOD='grubby'
+				SSH_USER='reg'
+				AUTOMOUNT_SSHFS='docs'
+				MOUNTPOINT='/mnt/m'
+				--
+				CONSOLE_LOGINS='hvc0'
+				KERNEL_CONSOLE='hvc1'
+				KERNEL_CONSOLE_METHOD='grubby'
+				SSH_USER='old'
+				AUTOMOUNT_SSHFS='docs'
+				MOUNTPOINT='/mnt/m'
+				--
+
+				""", "\(shell): \(r.out)")
 		}
 	}
 

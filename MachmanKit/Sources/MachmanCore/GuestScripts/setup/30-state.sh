@@ -96,13 +96,36 @@ write_state() {
 		else
 			state_line LAST_STATUS ok
 		fi
-		[ -n "$CONSOLE_MANAGED" ] && state_line CONSOLE_LOGINS "$CONSOLE_MANAGED"
-		[ -n "$KC_DEVICE_DONE" ] && state_line KERNEL_CONSOLE "$KC_DEVICE_DONE"
-		[ -n "$KC_METHOD_DONE" ] && state_line KERNEL_CONSOLE_METHOD "$KC_METHOD_DONE"
-		[ -n "$U" ] && state_line SSH_USER "$U"
-		# A run that leaves the sshfs automounts alone keeps their record: their fstab
-		# lines or boot script stay, and uninstall and --report-only work from it.
-		if feature_selected sshfsauto; then
+		# Each feature's record is this run's when the run acted on it, else the last
+		# run's: what a feature configured stays configured whatever a later run selects,
+		# and uninstall and --report-only work from the record (grubby's arguments, the
+		# key's user, the automounts' names).
+		if feature_selected console; then
+			_ws_logins="$CONSOLE_MANAGED"
+		else
+			_ws_logins="$ST_CONSOLE_LOGINS"
+		fi
+		# The kernel console: what this run set, else what an earlier run set (also when
+		# this one found it in place and changed nothing).
+		if [ -n "$KC_DEVICE_DONE" ]; then
+			_ws_kc="$KC_DEVICE_DONE"
+			_ws_kcm="$KC_METHOD_DONE"
+		else
+			_ws_kc="$ST_KERNEL_CONSOLE"
+			_ws_kcm="$ST_KERNEL_CONSOLE_METHOD"
+		fi
+		if feature_selected ssh; then
+			_ws_user="$U"
+		else
+			_ws_user="${ST_SSH_USER:-$U}"
+		fi
+		[ -n "$_ws_logins" ] && state_line CONSOLE_LOGINS "$_ws_logins"
+		[ -n "$_ws_kc" ] && state_line KERNEL_CONSOLE "$_ws_kc"
+		[ -n "$_ws_kcm" ] && state_line KERNEL_CONSOLE_METHOD "$_ws_kcm"
+		[ -n "$_ws_user" ] && state_line SSH_USER "$_ws_user"
+		# A run that leaves the sshfs automounts alone (or selects them and chooses none)
+		# keeps their record: their fstab lines or boot script stay.
+		if feature_selected sshfsauto && [ -n "$SSHFSAUTO_SELECTED" ]; then
 			_ws_auto="$SSHFSAUTO_DONE"
 			_ws_root="$MOUNTPOINT"
 		else

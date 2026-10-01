@@ -19,7 +19,7 @@ set -u
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(CDPATH= cd -- "$HERE/../.." && pwd)"
 
-ALL="debian ubuntu fedora leap tumbleweed arch alpine void devuan"
+ALL="debian ubuntu fedora fedora-bls leap tumbleweed arch alpine void devuan"
 APT='apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq'
 APT="$APT --no-install-recommends"
 ZYPPER='zypper -n -q install'
@@ -43,6 +43,12 @@ distro() {
 		PREP="dnf install -y -q grub2-tools openssh-clients iproute util-linux procps-ng"
 		PREP="$PREP fuse-sshfs"
 		SUITES="systemd files grub automount" ;;
+	fedora-bls)
+		# The same with grubby: the kernel console's BLS path, over a fabricated entry.
+		IMAGE=fedora:42
+		PREP="dnf install -y -q grub2-tools openssh-clients iproute util-linux procps-ng"
+		PREP="$PREP fuse-sshfs grubby"
+		SUITES="grubby" ;;
 	leap)
 		IMAGE=opensuse/leap:15.6
 		PREP="$ZYPPER grub2 openssh-clients iproute2 util-linux-systemd sshfs"

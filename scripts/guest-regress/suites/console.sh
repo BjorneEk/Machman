@@ -3,7 +3,7 @@
 # that adds or leaves out a console keeps every login it manages, and uninstall restores the
 # file exactly. (/dev/hvcN are stand-in files; HUP to a container's PID 1 is ignored.)
 # CHECKS: CONSOLE_INITTAB CONSOLE_IDEMPOTENT CONSOLE_PRISTINE CONSOLE_RESTAGE
-# CHECKS: CONSOLE_UNSELECTED_KEPT
+# CHECKS: CONSOLE_UNSELECTED_KEPT CONSOLE_STATE_KEPT
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -59,5 +59,9 @@ if [ "$(lines_for hvc0)" = 1 ] && [ "$(lines_for hvc1)" = 1 ] \
 else
 	R CONSOLE_UNSELECTED_KEPT "fail ($(logins))"; block; tail -n 4 /tmp/run5.log
 fi
+# S24: a run for another feature keeps the consoles' record, so --uninstall still knows.
+$SH "$S" -y --user root --ssh --no-console --no-install --no-service >/tmp/run6.log 2>&1
+if [ "$(logins)" = "'hvc1 hvc0'" ]; then R CONSOLE_STATE_KEPT pass; else
+	R CONSOLE_STATE_KEPT "fail ($(logins))"; tail -n 4 /tmp/run6.log; fi
 $SH "$S" --uninstall -y --user root >/tmp/unin2.log 2>&1
 exit 0
