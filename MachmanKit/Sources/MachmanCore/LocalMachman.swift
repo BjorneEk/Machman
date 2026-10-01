@@ -939,7 +939,7 @@ public final class LocalMachman: MachmanControlling {
 		let sshAttached = config.devices.contains {
 			$0.deviceKind == .guestSetup && $0.enabled
 		}
-		let ssh: SSHInfo? = (config.ssh ?? (sshAttached ? SSHConfig() : nil)).map { state in
+		let ssh: SSHInfo? = config.servedSSHState(installerAttached: sshAttached).map { state in
 			let keyPath = config.configFilePath(file: "ssh/id_ed25519")
 			let hasKey = FileManager.default.fileExists(atPath: keyPath)
 			// Served only once the pin FILE exists: clients turn strict host-key checking

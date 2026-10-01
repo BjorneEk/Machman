@@ -200,6 +200,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		// A new VM boots EFI, so give it the one console every VM used to have by default.
 		self.consolePorts = [SerialPort()]
 		self.devices = VMConfig.impliedDevices(for: .efi)
+		// A new VM takes a name: its default alias yields to every VM already there.
+		assignDefaultAliasIfTaken()
 		try saveVMConfig()
 	}
 
@@ -404,6 +406,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// mid-write leaves a truncated config, which the registry scan cannot parse — and a VM that
 	// cannot be parsed silently disappears from the app.
 	func saveVMConfig() throws {
+		persistResolvedDefaultAlias()
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .prettyPrinted
 		let data = try encoder.encode(self)
@@ -546,6 +549,12 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			to: URL(fileURLWithPath: "\(machmanVMDir)/\(self.name)"))
 		rewriteOwnedKernelPaths(
 			fromDir: "\(machmanVMDir)/\(oldName)", toDir: "\(machmanVMDir)/\(newName)")
+		// A suffix assigned for the old name stood in for its default; the new name gets
+		// its own default — yielding, like any VM taking a name. A chosen alias stays.
+		if let alias = ssh?.alias, SSHAliasAssignment.isAssigned(alias, to: oldName) {
+			dropAlias()
+		}
+		assignDefaultAliasIfTaken()
 		try saveVMConfig()
 	}
 

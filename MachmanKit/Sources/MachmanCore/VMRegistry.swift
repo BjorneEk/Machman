@@ -343,7 +343,10 @@ public final class VMRegistry {
 		// Fresh machine, fresh ssh instance identity, the vm.copy rule: the alias still
 		// belongs to the source VM, the lease follows the source's MAC, and the reverse
 		// grant is labeled with the source's marker.
+		vm.config.dropAlias()
 		vm.config.ssh?.resetInstanceIdentity()
+		// Saving as a new VM takes a name: yield to every VM in the library.
+		vm.config.assignDefaultAliasIfTaken()
 		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
 		if case .macOS = vm.config.boot {
 			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")

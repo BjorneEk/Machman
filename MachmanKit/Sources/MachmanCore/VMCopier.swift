@@ -225,7 +225,17 @@ enum VMCopier {
 			config.created = Date()
 			config.lastRan = nil
 			config.totalRuntimeSeconds = 0
+			config.dropAlias()
 			config.ssh?.resetInstanceIdentity()
+			// The copy takes a new name: its default alias yields to every VM already in
+			// the library, the source included (SSHAliasAssignment).
+			if let alias = SSHAliasAssignment.yieldingAlias(
+				for: request.newName,
+				among: SSHAliasAssignment.claims(inLibrary: request.destinationParent)) {
+				var state = config.ssh ?? SSHConfig()
+				state.alias = alias
+				config.ssh = state
+			}
 			// The traveled per-VM known_hosts is keyed to the source's alias (HostKeyAlias)
 			// — with the alias and pin reset it could only ever mismatch. The keypair beside
 			// it stays: ensureKeypair re-mints it on marker drift.

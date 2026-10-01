@@ -41,6 +41,15 @@ struct SSHConfig: Codable, Equatable {
 	var sshfsMountReady: Bool?
 	var sshfsMountRoot: String?
 
+	// Nothing on file but an alias: a colliding default stored for a VM that never used SSH
+	// (SSHAliasAssignment). Not SSH on file, so nothing is served for it.
+	var isAliasOnly: Bool {
+		guard alias != nil else { return false }
+		var bare = self
+		bare.alias = nil
+		return bare == SSHConfig()
+	}
+
 	var reverseStateValue: SSHInfo.ReverseState {
 		guard let reverseState else { return .none }
 		return SSHInfo.ReverseState(rawValue: reverseState) ?? .unknown
@@ -156,8 +165,13 @@ extension VMConfig {
 					: SSHInfo.ReverseState.denied.rawValue
 			}
 		}
-		let aliasChanged = ssh?.alias != state.alias
+		let before = ssh?.alias
 		ssh = state
+		// Back to the default after a stored one: an assignment point (SSHAliasAssignment).
+		if alias != nil, before != nil, state.alias == nil {
+			assignDefaultAliasIfTaken()
+		}
+		let aliasChanged = before != ssh?.alias
 		try saveVMConfig()
 		// The pin is keyed by the alias (HostKeyAlias), so renaming without rewriting it
 		// would leave sessions verifying against a name that is no longer in the file.
@@ -166,16 +180,29 @@ extension VMConfig {
 		}
 	}
 
-	// The name this VM answers to in ~/.ssh — its own if it has one, the default otherwise.
+	// The name this VM answers to in ~/.ssh — its own if it has one, the default otherwise
+	// (mapped into the alias charset, and split from a colliding VM's: SSHAliasAssignment).
 	var effectiveSSHAlias: String {
-		ssh?.alias ?? SSHHostConfigWriter.defaultAlias(for: name)
+		ssh?.alias ?? resolvedDefaultAlias
+	}
+
+	// The SSH state served as SSHInfo: what is on file, or a blank one once the installer
+	// is attached. An alias-only state is not SSH on file.
+	func servedSSHState(installerAttached: Bool) -> SSHConfig? {
+		if let ssh, !ssh.isAliasOnly { return ssh }
+		return installerAttached ? (ssh ?? SSHConfig()) : nil
 	}
 
 	// vm.ssh.reset — forget everything SSH this side of the guest: persisted state, the
 	// per-VM keypair, and both share dirs (they regenerate at the next assembly while the
 	// device stays attached).
 	func resetSSH() throws {
+		let hadAlias = ssh?.alias != nil
 		ssh = nil
+		// A dropped alias falls back to the default: an assignment point.
+		if hadAlias {
+			assignDefaultAliasIfTaken()
+		}
 		try? FileManager.default.removeItem(atPath: configFilePath(file: "ssh"))
 		GuestSetupInstaller.removePayload(for: self)
 		try saveVMConfig()
