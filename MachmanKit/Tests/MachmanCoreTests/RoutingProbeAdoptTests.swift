@@ -85,13 +85,14 @@ struct RoutingProbeAdoptTests {
 		let routing = try makeRouting()
 		let socketPath = TestEnvironment.scratch
 			+ "mm-unadopted-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		routing.socketPathForVM = { _ in socketPath }
 		let listener = try UDSListener(
 			path: socketPath, queue: DispatchQueue(label: "mm-unadopted-accept")) { fd in
 				close(fd)
 			}
 
 		do {
-			try routing.refuseUnadoptedHost("alpha", "deleting it", socketPath: socketPath)
+			try routing.requireStopped("alpha", "deleting it")
 			Issue.record("expected invalidState while the socket is live")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
@@ -101,9 +102,77 @@ struct RoutingProbeAdoptTests {
 		// SIGKILL leftover: the file exists but nothing listens — no refusal.
 		listener.simulateKillForTesting()
 		#expect(throws: Never.self) {
-			try routing.refuseUnadoptedHost("alpha", "deleting it", socketPath: socketPath)
+			try routing.requireStopped("alpha", "deleting it")
 		}
 		unlink(socketPath)
+	}
+
+	// D1's follow-up: every whole-VM edit — not only delete — must refuse while a vmhost the
+	// daemon never adopted answers on the VM's socket; each one moves or rewrites files that
+	// host is serving.
+	@Test @MainActor func wholeVMEditsRefuseWhileAnUnadoptedVMHostOwnsTheSocket() async throws {
+		let routing = try makeRouting()
+		let socketPath = TestEnvironment.scratch
+			+ "mm-unadopted2-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		routing.socketPathForVM = { _ in socketPath }
+		let listener = try UDSListener(
+			path: socketPath, queue: DispatchQueue(label: "mm-unadopted2-accept")) { fd in
+				close(fd)
+			}
+		defer { listener.shutdown() }
+
+		let ops: [(String, () async throws -> Void)] = [
+			("rename", { try await routing.renameVM(named: "alpha", to: "x") }),
+			("copy", { _ = try await routing.copyVM(
+				vm: "alpha", newName: nil, diskIDs: nil, regenerateMAC: true) }),
+			("regenerateMAC", { _ = try await routing.regenerateMAC(vm: "alpha") }),
+			("resizeDisk", { _ = try await routing.resizeDisk(
+				vm: "alpha", diskID: "storage:disk", sizeBytes: 1) }),
+			("renameDisk", { _ = try await routing.renameDisk(
+				vm: "alpha", diskID: "storage:disk", newName: "y") }),
+			("removeDisk", { try await routing.removeDisk(vm: "alpha", diskID: "storage:disk") }),
+			("promoteDisk", { _ = try await routing.promoteDisk(
+				vm: "alpha", diskID: "storage:disk") }),
+			("consoleAdd", { try await routing.addConsolePort(vm: "alpha") }),
+			("uartAdd", { try await routing.addUartPort(vm: "alpha") }),
+			("renameKernelFile", { _ = try await routing.renameKernelFile(
+				vm: "alpha", path: "/k", tag: "t") }),
+			("installStart", { try await routing.startMacInstall(vm: "alpha", source: .latest) }),
+		]
+		for (label, op) in ops {
+			do {
+				try await op()
+				Issue.record("\(label): expected invalidState while a vmhost owns the socket")
+			} catch let error as MachmanError {
+				#expect(error.code == .invalidState, "\(label) carried \(error.code)")
+				#expect(error.message.contains("still running"), "\(label): \(error.message)")
+			} catch {
+				Issue.record("\(label): \(error)")
+			}
+		}
+	}
+
+	// A proxied edit must not land on the daemon's config copy under a live unadopted host
+	// either (the host's own saves would revert it).
+	@Test @MainActor func proxiedCallsRefuseAnUnadoptedVMHost() async throws {
+		let routing = try makeRouting()
+		let socketPath = TestEnvironment.scratch
+			+ "mm-unadopted3-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		routing.socketPathForVM = { _ in socketPath }
+		let listener = try UDSListener(
+			path: socketPath, queue: DispatchQueue(label: "mm-unadopted3-accept")) { fd in
+				close(fd)
+			}
+		defer { listener.shutdown() }
+
+		do {
+			try await routing.setHardware(
+				vm: "alpha", cpuCount: 3, memoryBytes: nil, nestedVirtualization: nil)
+			Issue.record("expected invalidState while a vmhost owns the socket")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+		}
+		#expect(try await routing.vm(named: "alpha").cpuCount == 2)
 	}
 
 	// D6: the stale-socket sweep also matches the serial data-plane sockets (tty-*.sock) a

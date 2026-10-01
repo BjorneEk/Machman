@@ -121,7 +121,7 @@ public final class RoutingMachman: MachmanControlling {
 		for vm in registry.list() {
 			let name = vm.name
 			guard hosted[name] == nil else { continue }
-			let socketPath = Self.hostSocketPath(for: name)
+			let socketPath = hostSocketPath(for: name)
 			guard FileManager.default.fileExists(atPath: socketPath) else { continue }
 			var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 			do {
@@ -186,7 +186,7 @@ public final class RoutingMachman: MachmanControlling {
 			// An unadopted vmhost (a launch agent racing daemon startup, or one whose
 			// socket appeared after adoption ran) may be serving this directory right
 			// now — the socket is the truth, not the hosted map.
-			guard !isSocketLive(Self.hostSocketPath(for: vm.name)) else { continue }
+			guard !isSocketLive(hostSocketPath(for: vm.name)) else { continue }
 			GuestSetupInstaller.removePayload(for: vm.config)
 			DiskImport.sweepStaleStaging(vmDir: vm.config.vmDirPath())
 			let ipsw = vm.config.configFilePath(file: MacInstaller.restoreImageFileName)
@@ -257,8 +257,12 @@ public final class RoutingMachman: MachmanControlling {
 
 	// MARK: - Host plumbing
 
-	static func hostSocketPath(for name: String) -> String {
-		machmanVMSocketPath(vm: name)
+	// Where a VM's vmhost serves. A test seam: the test runtime dir already sits at sun_path's
+	// 104-byte limit, so routing tests point this into their scratch dir.
+	var socketPathForVM: (String) -> String = { machmanVMSocketPath(vm: $0) }
+
+	func hostSocketPath(for name: String) -> String {
+		socketPathForVM(name)
 	}
 
 	// Sockets are only unlinked on an orderly exit, so anything killed leaves one behind — and a
@@ -416,7 +420,7 @@ public final class RoutingMachman: MachmanControlling {
 		guard let writer = sshHostConfig, let marker = existingSSHMarker(name) else { return }
 		Task { [weak self] in
 			guard let self,
-				let ssh = (try? await self.target(name).vm(named: name))?.ssh else { return }
+				let ssh = (try? await self.proxy(name).vm(named: name))?.ssh else { return }
 			guard ssh.reverseState != .approved else { return }
 			try? writer.setReverseKey(nil, marker: marker, vmName: name)
 		}
@@ -532,38 +536,69 @@ public final class RoutingMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	// Config/window-plane routing: a hosted VM's own process, else the daemon-local engine.
-	private func target(_ name: String) -> MachmanControlling {
-		if let host = hosted[name] { return host.client }
-		return local
+	// Who owns a VM's files right now — the ONE table every per-VM entry point reads (PR1),
+	// so no call can slip through a window another one guards:
+	//   starting   a start is in flight (spawn window, safe-run shadow build). It owns the
+	//              name even once a host is registered: the vmhost is (or is about to be)
+	//              reading the very config files, and its whole-file saves would silently
+	//              revert any daemon-side edit (E19).
+	//   hosted     a vmhost this daemon spawned or adopted serves the VM.
+	//   unadopted  a vmhost answers on the VM's socket that the hosted map has never heard of
+	//              (a launch-agent start, a socket that appeared after adoption ran). The
+	//              socket is the truth, not the map.
+	//   local      stopped: the daemon's own engine owns the config.
+	enum Residence {
+		case starting
+		case hosted(HostedVM)
+		case unadopted
+		case local
 	}
 
-	// Whole-VM edits the framework fixes at start refuse rather than proxy while hosted.
-	// A pending start counts as hosted: the vmhost is (or is about to be) reading the very
-	// files these operations move, and its markRan whole-file save would silently revert
-	// any daemon-side edit that slipped through the spawn window.
-	private func refuseWhileHosted(_ name: String, _ action: String) throws {
-		guard hosted[name] == nil else {
-			throw MachmanError(code: .invalidState, message: "stop \(name) before \(action)")
+	func residence(of name: String) -> Residence {
+		if pendingStarts.contains(name) { return .starting }
+		if let host = hosted[name] { return .hosted(host) }
+		if UDSListener.isLive(path: hostSocketPath(for: name)) { return .unadopted }
+		return .local
+	}
+
+	// Config/window-plane routing: the process that owns the VM's config — its vmhost while
+	// one runs it, else the daemon-local engine. Never the daemon's copy while a start or an
+	// unadopted vmhost owns the files: those edits were silently reverted, and a vm.stop
+	// "succeeded" doing nothing.
+	private func proxy(_ name: String) async throws -> MachmanControlling {
+		switch residence(of: name) {
+		case .hosted(let host):
+			return host.client
+		case .starting:
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is starting — try again once it is running")
+		case .unadopted:
+			throw MachmanError(
+				code: .invalidState,
+				message: "a vmhost is running \(name) that this daemon has not adopted yet — "
+					+ "try again in a moment")
+		case .local:
+			return local
 		}
-		guard !pendingStarts.contains(name) else {
+	}
+
+	// Whole-VM edits the framework fixes at start (files moved, ports, MAC) refuse rather
+	// than proxy unless the VM is stopped — and stopped means no start in flight and no
+	// vmhost answering on its socket either, whether this daemon adopted it or not.
+	func requireStopped(_ name: String, _ action: String) throws {
+		switch residence(of: name) {
+		case .hosted:
+			throw MachmanError(code: .invalidState, message: "stop \(name) before \(action)")
+		case .starting:
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is starting — wait before \(action)")
-		}
-	}
-
-	// The hosted map only knows vmhosts this daemon spawned or adopted at its startup. A
-	// launch-agent vmhost that bound its socket later is invisible to it — the VM lists as
-	// stopped while a live guest runs from the directory. For destruction, the socket is
-	// the truth (same probe launchAgents.remove gates its bootout on): refuse, and let the
-	// next start — or the next daemon — adopt the host. The socket path is injectable so
-	// tests can bind a stub listener (probeAdoptAndStart seam pattern).
-	func refuseUnadoptedHost(_ name: String, _ action: String, socketPath: String? = nil) throws {
-		let path = socketPath ?? Self.hostSocketPath(for: name)
-		guard !UDSListener.isLive(path: path) else {
+		case .unadopted:
 			throw MachmanError(
 				code: .invalidState,
 				message: "a vmhost is still running \(name) — stop it before \(action)")
+		case .local:
+			return
 		}
 	}
 
@@ -585,7 +620,7 @@ public final class RoutingMachman: MachmanControlling {
 				infos.append(info)
 				continue
 			}
-			infos.append(try await local.vm(named: vm.name))
+			infos.append(try await localInfo(vm.name))
 		}
 		return infos
 	}
@@ -596,7 +631,15 @@ public final class RoutingMachman: MachmanControlling {
 			overlaySSH(&info, from: host)
 			return info
 		}
-		return try await local.vm(named: name)
+		return try await localInfo(name)
+	}
+
+	// The daemon's own view of a VM nothing hosted answers for. During a start's spawn
+	// window it says starting, never stopped: a stopped VM offered a second Start.
+	private func localInfo(_ name: String) async throws -> VMInfo {
+		var info = try await local.vm(named: name)
+		if pendingStarts.contains(name) { info.state = .starting }
+		return info
 	}
 
 	// The discovered address rides every VMInfo answer while the VM is hosted — attached
@@ -623,8 +666,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func deleteVM(named name: String) async throws {
-		try refuseWhileHosted(name, "deleting it")
-		try refuseUnadoptedHost(name, "deleting it")
+		try requireStopped(name, "deleting it")
 		// Capture the marker BEFORE the identity file dies with the VM dir.
 		let sshMarker = existingSSHMarker(name)
 		try await local.deleteVM(named: name)
@@ -636,7 +678,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func renameVM(named name: String, to newName: String) async throws {
-		try refuseWhileHosted(name, "renaming it")
+		try requireStopped(name, "renaming it")
 		try await local.renameVM(named: name, to: newName)
 		// The managed ssh alias is name-keyed; regeneration re-keys the block (the
 		// marker — and with it the reverse authorized_keys label — never changes).
@@ -656,7 +698,7 @@ public final class RoutingMachman: MachmanControlling {
 	public func setHardware(
 		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
 	) async throws {
-		try await target(name).setHardware(
+		try await proxy(name).setHardware(
 			vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
 			nestedVirtualization: nestedVirtualization)
 	}
@@ -665,7 +707,7 @@ public final class RoutingMachman: MachmanControlling {
 		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool
 	) async throws -> VMInfo {
 		// Cloning images under an active writer produces torn copies.
-		try refuseWhileHosted(name, "copying it")
+		try requireStopped(name, "copying it")
 		return try await local.copyVM(
 			vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC)
 	}
@@ -673,18 +715,18 @@ public final class RoutingMachman: MachmanControlling {
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
 	// tracking captures macInUse at spawn — a mid-run change would desynchronize both.
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {
-		try refuseWhileHosted(name, "regenerating its MAC")
+		try requireStopped(name, "regenerating its MAC")
 		return try await local.regenerateMAC(vm: name)
 	}
 
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
-		try await target(name).addDisk(vm: name, disk)
+		try await proxy(name).addDisk(vm: name, disk)
 	}
 
 	public func removeDisk(vm name: String, diskID: String) async throws {
 		// Unlinking the backing file under a live VZ attachment is unsafe — stop first
 		// (the guest would keep a ghost disk until shutdown, then the data is gone).
-		try refuseWhileHosted(name, "removing its disks")
+		try requireStopped(name, "removing its disks")
 		try await local.removeDisk(vm: name, diskID: diskID)
 	}
 
@@ -692,73 +734,75 @@ public final class RoutingMachman: MachmanControlling {
 	// external file no attachment references, the owned image is NEW, and the config
 	// addition is the hosted vmhost's to make (next-boot effect, like addDisk/addMount).
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
-		try await target(name).importDisk(vm: name, path: path)
+		try await proxy(name).importDisk(vm: name, path: path)
 	}
 
 	// Refused while hosted, not proxied or deferred: the copy reads an image the live VZ
 	// attachment holds open read-write (torn owned copy — copyVM's refusal reason), and the
 	// config rewire under that attachment makes the next boot silently switch disks.
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
-		try refuseWhileHosted(name, "promoting its disks")
+		try requireStopped(name, "promoting its disks")
 		return try await local.promoteDisk(vm: name, diskID: diskID)
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
-		try await target(name).addMount(vm: name, path: path, tag: tag, kind: kind)
+		try await proxy(name).addMount(vm: name, path: path, tag: tag, kind: kind)
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
-		try await target(name).removeMount(vm: name, mountID: mountID)
+		try await proxy(name).removeMount(vm: name, mountID: mountID)
 	}
 
 	// Serial ports are fixed at VM start, so add/remove is refused while hosted (like MAC), but
 	// setSerialLogging proxies to the live bridge.
 	public func addConsolePort(vm name: String) async throws {
-		try refuseWhileHosted(name, "changing its serial ports")
+		try requireStopped(name, "changing its serial ports")
 		try await local.addConsolePort(vm: name)
 	}
 
 	public func removeConsolePort(vm name: String) async throws {
-		try refuseWhileHosted(name, "changing its serial ports")
+		try requireStopped(name, "changing its serial ports")
 		try await local.removeConsolePort(vm: name)
 	}
 
 	public func addUartPort(vm name: String) async throws {
-		try refuseWhileHosted(name, "changing its serial ports")
+		try requireStopped(name, "changing its serial ports")
 		try await local.addUartPort(vm: name)
 	}
 
 	public func removeUartPort(vm name: String) async throws {
-		try refuseWhileHosted(name, "changing its serial ports")
+		try requireStopped(name, "changing its serial ports")
 		try await local.removeUartPort(vm: name)
 	}
 
 	public func setSerialLogging(
 		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
 	) async throws {
-		try await target(name).setSerialLogging(vm: name, kind: kind, index: index, config: config)
+		try await proxy(name).setSerialLogging(vm: name, kind: kind, index: index, config: config)
 	}
 
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
-		try await target(name).setKernelBoot(vm: name, enabled: enabled)
+		try await proxy(name).setKernelBoot(vm: name, enabled: enabled)
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
-		try await target(name).updateKernelSettings(vm: name, settings)
+		try await proxy(name).updateKernelSettings(vm: name, settings)
 	}
 
 	public func promoteKernelFile(
 		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
-		try await target(name).promoteKernelFile(
+		try await proxy(name).promoteKernelFile(
 			vm: name, role: role, sourcePath: sourcePath, tag: tag)
 	}
 
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
-		try await target(name).deleteKernelFile(vm: name, path: path)
+		try await proxy(name).deleteKernelFile(vm: name, path: path)
 	}
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
+		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
+		let target = try await proxy(name)
 		// Policy has a daemon-side launchd side effect that must never reconcile against a
 		// discardable shadow write — refuse rather than half-apply.
 		if let host = hosted[name], host.identity.isSafe {
@@ -767,7 +811,7 @@ public final class RoutingMachman: MachmanControlling {
 				message: "run defaults cannot change during a safe run — stop \(name) "
 					+ "or save it first")
 		}
-		try await target(name).setStartPolicy(vm: name, policy: policy)
+		try await target.setStartPolicy(vm: name, policy: policy)
 		// Agent bookkeeping reads the ARGUMENT, never the registry: while the VM is hosted
 		// the daemon's config copy is stale until the host exits.
 		guard let launchAgents else { return }
@@ -786,64 +830,64 @@ public final class RoutingMachman: MachmanControlling {
 	public func setSafety(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
 	) async throws {
-		try await target(name).setSafety(vm: name, disks: disks, mounts: mounts)
+		try await proxy(name).setSafety(vm: name, disks: disks, mounts: mounts)
 	}
 
 	// MARK: - Guest devices (1.0.4) — config-plane edits proxy like disks (next-boot effect).
 
 	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		try await target(name).addDevice(vm: name, kind: kind)
+		try await proxy(name).addDevice(vm: name, kind: kind)
 	}
 
 	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		try await target(name).removeDevice(vm: name, kind: kind)
+		try await proxy(name).removeDevice(vm: name, kind: kind)
 	}
 
 	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
-		try await target(name).updateDevice(vm: name, device: device)
+		try await proxy(name).updateDevice(vm: name, device: device)
 	}
 
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
 		console: [String: Bool]?, uart: [String: Bool]?
 	) async throws {
-		try await target(name).setEnabled(
+		try await proxy(name).setEnabled(
 			vm: name, disks: disks, mounts: mounts, console: console, uart: uart)
 	}
 
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {
-		try await target(name).setKernelOverride(
+		try await proxy(name).setKernelOverride(
 			vm: name, path: path, commandLine: commandLine, overrideEnabled: overrideEnabled)
 	}
 
 	public func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws
 		-> VMInfo {
 		// Growing the raw file under a live VZ attachment is unsafe — stop first.
-		try refuseWhileHosted(name, "resizing its disks")
+		try requireStopped(name, "resizing its disks")
 		return try await local.resizeDisk(vm: name, diskID: diskID, sizeBytes: sizeBytes)
 	}
 	public func renameDisk(vm name: String, diskID: String, newName: String) async throws
 		-> VMInfo {
 		// Moving the raw file under a live VZ attachment is unsafe — stop first.
-		try refuseWhileHosted(name, "renaming its disks")
+		try requireStopped(name, "renaming its disks")
 		return try await local.renameDisk(vm: name, diskID: diskID, newName: newName)
 	}
 	public func setMountTag(vm name: String, mountID: String, tag: String) async throws
 		-> VMInfo {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
-		try await target(name).setMountTag(vm: name, mountID: mountID, tag: tag)
+		try await proxy(name).setMountTag(vm: name, mountID: mountID, tag: tag)
 	}
 	public func setMountKind(vm name: String, mountID: String, kind: String) async throws
 		-> VMInfo {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
-		try await target(name).setMountKind(vm: name, mountID: mountID, kind: kind)
+		try await proxy(name).setMountKind(vm: name, mountID: mountID, kind: kind)
 	}
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
 		-> VMInfo {
 		// The hosted VM's config references the old path — stop first.
-		try refuseWhileHosted(name, "renaming its kernel files")
+		try requireStopped(name, "renaming its kernel files")
 		return try await local.renameKernelFile(vm: name, path: path, tag: tag)
 	}
 
@@ -864,6 +908,8 @@ public final class RoutingMachman: MachmanControlling {
 	public func setSSH(
 		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
+		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
+		let target = try await proxy(name)
 		try refuseSSHWhileSafe(name)
 		// Uniqueness is checkable only here: a vmhost sees exactly one VM, and two VMs
 		// sharing a Host name would make `ssh <alias>` reach whichever block came first.
@@ -878,7 +924,7 @@ public final class RoutingMachman: MachmanControlling {
 				}
 			}
 		}
-		let info = try await target(name).setSSH(
+		let info = try await target.setSSH(
 			vm: name, integrationEnabled: integrationEnabled,
 			reverseApproved: reverseApproved, alias: alias)
 		// Host-side effects AFTER the config write succeeded, from the RETURNED state —
@@ -905,9 +951,10 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func resetSSH(vm name: String) async throws -> VMInfo {
+		let target = try await proxy(name)
 		try refuseSSHWhileSafe(name)
 		let marker = existingSSHMarker(name)
-		let info = try await target(name).resetSSH(vm: name)
+		let info = try await target.resetSSH(vm: name)
 		if let writer = sshHostConfig, let marker {
 			try? writer.setReverseKey(nil, marker: marker, vmName: name)
 		}
@@ -919,13 +966,13 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func resetSetup(vm name: String) async throws -> VMInfo {
 		// Config-plane only (no daemon-side effects) — plain proxy, like device edits.
-		try await target(name).resetSetup(vm: name)
+		try await proxy(name).resetSetup(vm: name)
 	}
 
 	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
 		// Routed to the vmhost while running: it owns the config there AND does the
 		// live fill when serving turns on.
-		try await target(name).setSetupServed(vm: name, serve: serve)
+		try await proxy(name).setSetupServed(vm: name, serve: serve)
 	}
 
 	// The marker labeling this VM's host-side artifacts — a read-only derivation from
@@ -1070,7 +1117,7 @@ public final class RoutingMachman: MachmanControlling {
 		// whose daemon died before forwarding start. Adopt it instead of racing it with a
 		// second host. Deliberately ahead of the MAC-conflict guard: an already-running VM
 		// is a fact, not a request — refusing to adopt it would strand it.
-		let socketPath = Self.hostSocketPath(for: name)
+		let socketPath = hostSocketPath(for: name)
 		if FileManager.default.fileExists(atPath: socketPath),
 			try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options) {
 			return
@@ -1090,7 +1137,7 @@ public final class RoutingMachman: MachmanControlling {
 			return
 		}
 		let identity = HostIdentity(
-			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
+			id: UUID(), name: name, socketPath: hostSocketPath(for: name),
 			macInUse: vm.config.macAddress)
 		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
 		do {
@@ -1157,7 +1204,7 @@ public final class RoutingMachman: MachmanControlling {
 			throw error
 		}
 		var identity = HostIdentity(
-			id: UUID(), name: name, socketPath: Self.hostSocketPath(for: name),
+			id: UUID(), name: name, socketPath: hostSocketPath(for: name),
 			macInUse: vm.config.macAddress)
 		identity.isSafe = true
 		identity.shadowRoot = runRoot
@@ -1271,23 +1318,28 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {
-		try await target(name).stop(vm: name, mode: mode)
+		try await proxy(name).stop(vm: name, mode: mode)
 	}
 
 	public func openWindow(vm name: String) async throws {
-		try await target(name).openWindow(vm: name)
+		try await proxy(name).openWindow(vm: name)
 	}
 
 	public func closeWindow(vm name: String) async throws {
-		try await target(name).closeWindow(vm: name)
+		try await proxy(name).closeWindow(vm: name)
 	}
 
+	// The preview poller's read, and it must never error: a VM that is starting (or whose
+	// vmhost cannot be reached) simply has no preview yet.
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
-		try await target(name).preview(vm: name, maxWidth: maxWidth)
+		guard !pendingStarts.contains(name), let target = try? await proxy(name) else {
+			return nil
+		}
+		return try await target.preview(vm: name, maxWidth: maxWidth)
 	}
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {
-		try refuseWhileHosted(name, "installing macOS")
+		try requireStopped(name, "installing macOS")
 		try await local.startMacInstall(vm: name, source: source)
 	}
 

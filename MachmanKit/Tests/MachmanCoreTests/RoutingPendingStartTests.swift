@@ -82,6 +82,72 @@ struct RoutingPendingStartTests {
 		}
 	}
 
+	// E19: while a start is in flight nothing is hosted yet, and every per-VM call used to
+	// land on the daemon's own config copy — which the vmhost's whole-file saves then
+	// silently reverted (and vm.stop "succeeded" doing nothing). They refuse now, and reads
+	// say starting instead of stopped.
+	@Test @MainActor func proxiedCallsRefuseWhileAStartIsPending() async throws {
+		let routing = try makeRouting(names: ["pending-alpha"])
+		routing.pendingStarts.insert("pending-alpha")
+		let vm = "pending-alpha"
+
+		let ops: [(String, () async throws -> Void)] = [
+			("setHardware", { try await routing.setHardware(
+				vm: vm, cpuCount: 3, memoryBytes: nil, nestedVirtualization: nil) }),
+			("addDisk", { try await routing.addDisk(
+				vm: vm, NewDisk(type: .storage, name: "data", sizeBytes: 1 << 20)) }),
+			("importDisk", { _ = try await routing.importDisk(vm: vm, path: "/nonexistent") }),
+			("addMount", { try await routing.addMount(
+				vm: vm, path: "/nonexistent", tag: "docs", kind: nil) }),
+			("removeMount", { try await routing.removeMount(vm: vm, mountID: "m") }),
+			("setSerialLogging", { try await routing.setSerialLogging(
+				vm: vm, kind: .console, index: 0, config: SerialLogConfig()) }),
+			("setKernelBoot", { try await routing.setKernelBoot(vm: vm, enabled: true) }),
+			("updateKernelSettings", { try await routing.updateKernelSettings(
+				vm: vm, KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")) }),
+			("setStartPolicy", { try await routing.setStartPolicy(vm: vm, policy: StartPolicy()) }),
+			("setSafety", { try await routing.setSafety(vm: vm, disks: nil, mounts: nil) }),
+			("addDevice", { _ = try await routing.addDevice(vm: vm, kind: .entropy) }),
+			("updateDevice", { _ = try await routing.updateDevice(
+				vm: vm, device: DeviceInfo(kind: .entropy)) }),
+			("setEnabled", { try await routing.setEnabled(
+				vm: vm, disks: nil, mounts: nil, console: nil, uart: nil) }),
+			("setSSH", { _ = try await routing.setSSH(
+				vm: vm, integrationEnabled: true, reverseApproved: nil, alias: nil) }),
+			("resetSSH", { _ = try await routing.resetSSH(vm: vm) }),
+			("resetSetup", { _ = try await routing.resetSetup(vm: vm) }),
+			("setSetupServed", { _ = try await routing.setSetupServed(vm: vm, serve: true) }),
+			("setMountTag", { _ = try await routing.setMountTag(vm: vm, mountID: "m", tag: "t") }),
+			("setMountKind", { _ = try await routing.setMountKind(
+				vm: vm, mountID: "m", kind: MountKind.sshfs) }),
+			("stop", { try await routing.stop(vm: vm, mode: .force) }),
+			("openWindow", { try await routing.openWindow(vm: vm) }),
+			("closeWindow", { try await routing.closeWindow(vm: vm) }),
+		]
+		for (label, op) in ops {
+			do {
+				try await op()
+				Issue.record("\(label): expected invalidState while a start is pending")
+			} catch let error as MachmanError {
+				#expect(error.code == .invalidState, "\(label) carried \(error.code)")
+				#expect(error.message.contains("is starting"), "\(label): \(error.message)")
+			} catch {
+				Issue.record("\(label): \(error)")
+			}
+		}
+		let info = try await routing.vm(named: vm)
+		#expect(info.cpuCount == 2)          // the daemon's copy was never edited
+		#expect(info.state == .starting)     // never "stopped", which offered a second Start
+		#expect(try await routing.listVMs().first?.state == .starting)
+	}
+
+	// The preview poller's read never errors: a VM that is starting has no preview yet.
+	@Test @MainActor func previewIsNilWhileAStartIsPending() async throws {
+		let routing = try makeRouting(names: ["pending-alpha"])
+		routing.pendingStarts.insert("pending-alpha")
+		#expect(try await routing.preview(vm: "pending-alpha", maxWidth: nil) == nil)
+	}
+
 	// The reservation must be released when a start throws after claiming the name —
 	// here at the MAC-conflict guard (first throw site past the insert).
 	@Test @MainActor func reservationIsReleasedWhenTheStartIsRefused() async throws {
