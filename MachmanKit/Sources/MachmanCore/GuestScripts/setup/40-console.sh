@@ -61,11 +61,6 @@ console_login_state() {
 	return 0
 }
 
-# The device name as an ERE fragment (ttyV0.0 carries dots).
-console_dev_esc() {
-	printf '%s' "$1" | sed 's/\./\\./g'
-}
-
 # Is a matching line inside OUR marker block? <file> <awk ERE>
 console_line_in_block() {
 	[ -f "$1" ] || return 1

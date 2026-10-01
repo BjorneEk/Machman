@@ -429,10 +429,23 @@ console_device() {
 	esac
 }
 
-# Is something serving a login on the device right now? Process-table check — fedora/leap
-# containers taught us pgrep/fuser cannot be assumed, but ps + grep can.
+# The device name as an ERE fragment (ttyV0.0 carries dots).
+console_dev_esc() {
+	printf '%s' "$1" | sed 's/\./\\./g'
+}
+
+# Is something serving a login on the device right now? systemd says so for its
+# serial-getty@ units, the getty-generator's included; elsewhere the process table does
+# (fedora/leap containers taught us pgrep/fuser cannot be assumed, but ps + grep can). The
+# device is a whole word anywhere on a getty's line: serial-getty@ names it only in ps's
+# TTY column (agetty … - $TERM), our sysvinit lines put the baud after it.
 getty_active_on() {
-	ps ax 2>/dev/null | grep -v grep | grep getty | grep -q "[^a-zA-Z0-9]$1\$"
+	if [ "$INIT" = systemd ] \
+		&& systemctl is-active --quiet "serial-getty@$1.service" 2>/dev/null; then
+		return 0
+	fi
+	ps ax 2>/dev/null | grep getty | grep -v grep \
+		| grep -Eq "(^|[^A-Za-z0-9._])$(console_dev_esc "$1")([^A-Za-z0-9._]|\$)"
 }
 
 # Is a login configured to come back at the next boot? Per-init config check; "auto"
