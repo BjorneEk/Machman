@@ -562,12 +562,6 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// MARK: - Preview
-
-	public func onFocusEvent(focused: Bool) {
-		previews.setFocused(focused)
-	}
-
 	// MARK: - List / selection
 
 	public func hasVM(_ name: String) -> Bool {

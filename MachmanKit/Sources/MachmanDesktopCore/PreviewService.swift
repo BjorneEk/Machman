@@ -5,7 +5,8 @@
 //  App-scoped preview polling: one ~4s loop per visible running VM, writing frames into the
 //  isolated PreviewStore (only the small PreviewView re-renders per frame — see PreviewStore).
 //  Today the visible set is just the sidebar selection; the tabbed canvas widens it to every
-//  VM tab on screen. Polls only while the window is focused, restarts a VM's loop on its
+//  VM tab on screen. Polls only while the app is focused (active, with any of its windows
+//  key — DaemonConnection's FocusMonitor says so), restarts a VM's loop on its
 //  stateChanged (keyed off the event's state so a not-yet-patched row can't stall it), and
 //  keeps the last frame across reconnects — DaemonConnection re-attaches it per connection.
 //

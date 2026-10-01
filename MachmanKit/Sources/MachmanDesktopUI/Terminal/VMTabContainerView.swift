@@ -46,8 +46,5 @@ struct VMTabContainerView: View {
 			viewModel: viewModel, sessions: sessions, canvases: viewModel.canvases,
 			profiles: profiles, vm: vm)
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
-			.background(FocusAndTopmostTracker { focused in
-				viewModel.onFocusEvent(focused: focused)
-			})
 	}
 }

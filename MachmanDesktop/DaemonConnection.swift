@@ -42,6 +42,9 @@ final class DaemonConnection: ObservableObject {
 	@Published private(set) var loginItemNeedsApproval = false
 	private var api: RemoteMachman?
 	private var loop: ConnectionLoop<RemoteMachman>!
+	// App-scoped like the previews it pauses: one watcher for the app's lifetime, never one
+	// per connection or per mounted pane (P3).
+	private var focus: FocusMonitor?
 	private var viewModelForwarder: AnyCancellable?
 	private let loginItem = SMAppService.loginItem(identifier: DaemonConnection.daemonBundleID)
 
@@ -57,6 +60,9 @@ final class DaemonConnection: ObservableObject {
 
 	init() {
 		previews = PreviewService(store: vmStore)
+		focus = FocusMonitor.application { [previews] focused in
+			previews.setFocused(focused)
+		}
 		loop = ConnectionLoop(
 			connect: { onDrop in
 				try await RemoteMachman(
