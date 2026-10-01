@@ -137,13 +137,20 @@ enum Offscreen {
 }
 
 extension Offscreen {
+	// A split-view column's glass panel, as opposed to a toolbar item's platter: wider than a
+	// platter and taller than the titlebar. Width alone failed once a status subtitle ("Not
+	// responding") stretched the indicator's platter past 120 pt.
+	static func isColumnGlass(_ v: NSView) -> Bool {
+		v.bounds.width > 120 && v.bounds.height > 60
+	}
+
 	// Toolbar item platters are small Liquid Glass views; cacheDisplay draws them as opaque
 	// white pills (hiding dark-mode icons). The items themselves are separate views, so
 	// hiding the platters leaves the items on the plain titlebar.
 	static func hideToolbarGlass(in root: NSView) {
 		guard let glassClass = NSClassFromString("NSGlassEffectView") else { return }
 		func walk(_ v: NSView) {
-			if v.isKind(of: glassClass), v.bounds.width <= 120 { v.isHidden = true; return }
+			if v.isKind(of: glassClass), !isColumnGlass(v) { v.isHidden = true; return }
 			v.subviews.forEach(walk)
 		}
 		walk(root)
@@ -151,7 +158,7 @@ extension Offscreen {
 
 	// macOS 26 draws a split view's sidebar and inspector as Liquid Glass panels, which
 	// cacheDisplay cannot draw (and a never-shown window never mounts the sidebar's content).
-	// Find the panels (NSGlassEffectView subclasses wider than a toolbar platter), left to
+	// Find the panels (NSGlassEffectView subclasses passing isColumnGlass), left to
 	// right, and paint the matching real column views — rendered on their own at exactly the
 	// panel's size — into the window image. Glass becomes flat; layout stays the window's.
 	static func paintPanels(
@@ -161,7 +168,7 @@ extension Offscreen {
 		guard let glassClass = NSClassFromString("NSGlassEffectView") else { return }
 		var found: [NSView] = []
 		func walk(_ v: NSView) {
-			if v.isKind(of: glassClass), v.bounds.width > 120 { found.append(v); return }
+			if v.isKind(of: glassClass), isColumnGlass(v) { found.append(v); return }
 			v.subviews.forEach(walk)
 		}
 		walk(root)
