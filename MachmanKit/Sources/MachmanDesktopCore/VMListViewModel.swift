@@ -790,14 +790,17 @@ public final class VMListViewModel: ObservableObject {
 		copyRequest = vm
 	}
 
-	public func copyVM(_ name: String, newName: String, diskIDs: [String]) {
+	public func copyVM(
+		_ name: String, newName: String, diskIDs: [String], mountIDs: [String]? = nil
+	) {
 		guard !copyInFlight else { return }
 		copyInFlight = true
 		copyRequest = nil   // the sheet closes now; the corner card tracks the copy
 		Task { [weak self] in
 			do {
 				let copy = try await self?.api.copyVM(
-					vm: name, newName: newName, diskIDs: diskIDs, regenerateMAC: true)
+					vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
+					regenerateMAC: true)
 				self?.copyInFlight = false
 				await self?.reload()
 				if let copy { self?.select(name: copy.name) }

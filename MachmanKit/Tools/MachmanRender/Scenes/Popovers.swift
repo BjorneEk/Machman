@@ -83,6 +83,13 @@ enum PopoverScenes {
 			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel, name: "Sequoia"))
 		},
 		RenderScene(
+			"sheet.copy-vm.mounts", "CopyVMSheet, two mounts, the sshfs one left out",
+			vms: { [Samples.linuxWithMounts()] }
+		) { ctx in
+			AnyView(CopyVMSheet(
+				vm: ctx.vm, viewModel: ctx.viewModel, excludedMountIDs: [Samples.notesMountID]))
+		},
+		RenderScene(
 			"sheet.safe-save", "SafeSaveSheet, a running safe run",
 			vms: {
 				var vm = Samples.linux("Debian", state: .running)

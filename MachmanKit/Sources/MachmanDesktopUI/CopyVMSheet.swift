@@ -2,9 +2,9 @@
 //  CopyVMSheet.swift
 //  MachmanDesktopUI
 //
-//  Duplicate a stopped VM: pick a name and which writable disks to carry. ISOs are read-only
-//  references and always travel; image disks travel as references to the same file. The
-//  space hint is worst case — APFS clones usually share blocks.
+//  Duplicate a stopped VM: pick a name, which writable disks to carry and which mounts to
+//  keep. ISOs are read-only references and always travel; image disks travel as references
+//  to the same file. The space hint is worst case — APFS clones usually share blocks.
 //
 
 import SwiftUI
@@ -17,14 +17,21 @@ struct CopyVMSheet: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@State private var newName: String
 	@State private var includedDiskIDs: Set<String>
+	@State private var includedMountIDs: Set<String>
 
-	// `name` pre-fills the field (render scenes); the default is "<vm> copy".
-	init(vm: VMInfo, viewModel: VMListViewModel, name: String? = nil) {
+	// `name` pre-fills the field and `excludedMountIDs` unticks mounts (render scenes); the
+	// defaults are "<vm> copy" and every mount kept.
+	init(
+		vm: VMInfo, viewModel: VMListViewModel, name: String? = nil,
+		excludedMountIDs: Set<String> = []
+	) {
 		self.vm = vm
 		self.viewModel = viewModel
 		_newName = State(initialValue: name ?? viewModel.defaultCopyName(for: vm.name))
 		_includedDiskIDs = State(initialValue:
 			Set(vm.disks.filter { $0.type != .iso }.map(\.id)))
+		_includedMountIDs = State(initialValue:
+			Set(vm.mounts.map(\.id)).subtracting(excludedMountIDs))
 	}
 
 	private var problem: String? { viewModel.newVMNameProblem(newName) }
@@ -49,6 +56,11 @@ struct CopyVMSheet: View {
 			if let problem {
 				FieldProblem(problem)
 			}
+			if !writableDisks.isEmpty {
+				Text("Disks")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
 			ForEach(writableDisks) { disk in
 				Toggle(isOn: Binding(
 					get: { includedDiskIDs.contains(disk.id) },
@@ -66,6 +78,30 @@ struct CopyVMSheet: View {
 					? "Copies the disk file into the new VM"
 					: "The copy references the same image file — don't run both on it at once")
 			}
+			if !vm.mounts.isEmpty {
+				Text("Mounts")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			ForEach(vm.mounts) { mount in
+				Toggle(isOn: Binding(
+					get: { includedMountIDs.contains(mount.id) },
+					set: { include in
+						if include {
+							includedMountIDs.insert(mount.id)
+						} else {
+							includedMountIDs.remove(mount.id)
+						}
+					})) {
+					// Capped: a deep path truncates in the middle instead of widening the sheet.
+					Text((mount.path as NSString).abbreviatingWithTildeInPath)
+						.lineLimit(1)
+						.truncationMode(.middle)
+						.frame(maxWidth: 300, alignment: .leading)
+				}
+				.toggleStyle(.checkbox)
+				.help("The copy shares this folder with its guest as \u{201C}\(mount.tag)\u{201D}")
+			}
 			if let free = viewModel.capabilities?.freeDiskBytes {
 				Text("Needs up to \(ByteSize.toGB(bytesNeeded)) GB — "
 					+ "\(ByteSize.toGB(free)) GB free")
@@ -79,7 +115,9 @@ struct CopyVMSheet: View {
 				// The sheet closes immediately; the corner progress card tracks the copy.
 				Button("Duplicate") {
 					viewModel.submitCopy(
-						vm, name: newName, diskIDs: Array(includedDiskIDs).sorted())
+						vm, name: newName, diskIDs: Array(includedDiskIDs).sorted(),
+						mountIDs: VMListViewModel.copyMountIDs(
+							for: vm, included: includedMountIDs))
 				}
 				.keyboardShortcut(.defaultAction)
 				.disabled(viewModel.copyInFlight || problem != nil)

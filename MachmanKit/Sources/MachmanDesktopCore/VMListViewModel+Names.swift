@@ -62,11 +62,16 @@ extension VMListViewModel {
 		return hasVM(name) ? "A VM named \u{201C}\(name)\u{201D} already exists" : nil
 	}
 
-	// Duplicate…'s button: false (nothing sent) while the name has a problem.
+	// Duplicate…'s button: false (nothing sent) while the name has a problem. mountIDs nil
+	// carries every mount (copyMountIDs).
 	@discardableResult
-	public func submitCopy(_ vm: VMInfo, name raw: String, diskIDs: [String]) -> Bool {
+	public func submitCopy(
+		_ vm: VMInfo, name raw: String, diskIDs: [String], mountIDs: [String]? = nil
+	) -> Bool {
 		guard newVMNameProblem(raw) == nil else { return false }
-		copyVM(vm.name, newName: NameRule.vmName.trimmed(raw), diskIDs: diskIDs)
+		copyVM(
+			vm.name, newName: NameRule.vmName.trimmed(raw), diskIDs: diskIDs,
+			mountIDs: mountIDs)
 		return true
 	}
 
