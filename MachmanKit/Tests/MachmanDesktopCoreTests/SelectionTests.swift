@@ -87,6 +87,15 @@ struct SelectionTests {
 		#expect(h.viewModel.treeSelection.isEmpty)
 	}
 
+	// Showing a VM fills its empty canvas with the configuration tab (VMCanvasView's
+	// fallback). That is part of switching VMs, so it selects no row either.
+	@Test func showingAVMsConfigurationSelectsNoRow() async {
+		let h = await DesktopHarness.make()
+		h.viewModel.select(name: "Debian")
+		h.open(.config, vm: "Debian")
+		#expect(h.viewModel.treeSelection.isEmpty)
+	}
+
 	@Test func closingATabDeselectsItsTreeRow() async {
 		let h = await DesktopHarness.make()
 		let ref = SerialPortRef(kind: .console, index: 0)
