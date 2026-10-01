@@ -261,8 +261,9 @@ enum VMCopier {
 	// "ubuntu-cloud.img" → "ubuntu-cloud", uniquified with -2, -3… against taken names.
 	// Internal: disk imports (phase 6 disk-ownership track) reuse it.
 	static func storageName(for url: URL, taken: Set<String>) -> String {
-		var base = url.deletingPathExtension().lastPathComponent
-		if base.isEmpty { base = "disk" }
+		// Imported names follow the disk-name rule like typed ones (".hidden.raw" → hidden).
+		let base = NameRule.diskName.suggestion(
+			from: url.deletingPathExtension().lastPathComponent, fallback: "disk")
 		guard taken.contains(base) else { return base }
 		var n = 2
 		while taken.contains("\(base)-\(n)") { n += 1 }

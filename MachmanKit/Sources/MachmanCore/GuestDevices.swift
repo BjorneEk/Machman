@@ -218,10 +218,7 @@ extension VMConfig {
 			throw MachmanError(
 				code: .invalidArgument, message: "only owned storage disks can be renamed")
 		}
-		let trimmed = newName.trimmingCharacters(in: .whitespaces)
-		guard !trimmed.isEmpty, !trimmed.contains("/") else {
-			throw MachmanError(code: .invalidArgument, message: "invalid disk name '\(newName)'")
-		}
+		let trimmed = try NameRule.diskName.normalized(newName)
 		guard trimmed != oldName else { return }
 		guard !disks.contains(where: { $0.id == "storage:\(trimmed)" }) else {
 			throw MachmanError(

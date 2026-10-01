@@ -74,12 +74,20 @@ extension VMConfig {
 			options: [])
 	}
 
-	// macOS needs a sizable system disk to restore onto; reuse an existing storage disk if present.
+	// macOS needs a sizable system disk to restore onto; reuse an existing storage disk if
+	// present. Otherwise "disk", or "disk-2", "disk-3"… when an orphan image (a .raw no
+	// config entry names) already holds the name — creation never replaces a file.
 	func ensureMacSystemDisk(minimumSize: UInt64 = 64 * 1024 * 1024 * 1024) throws {
 		let hasStorage = disks.contains {
 			if case .storage = $0.kind { return true } else { return false }
 		}
 		if hasStorage { return }
-		try addNewStorageDisk(name: "disk", size: minimumSize)
+		var name = "disk"
+		var n = 2
+		while FileManager.default.fileExists(atPath: configFilePath(file: "\(name).raw")) {
+			name = "disk-\(n)"
+			n += 1
+		}
+		try addNewStorageDisk(name: name, size: minimumSize)
 	}
 }

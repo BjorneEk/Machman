@@ -1,0 +1,108 @@
+//
+//  NewStorageDiskTests.swift
+//  MachmanCoreTests
+//
+//  D15: + Disk → New with an existing disk's name replaced main.raw with zeros (even under
+//  a running VM) and added a second entry for the same file; "../other/x" wrote outside the
+//  VM folder. A new disk now takes a name through the disk-name rule, must be new to the
+//  VM's config AND folder, and its image is created exclusively.
+//
+
+import Testing
+import Foundation
+import MachmanAPI
+@testable import MachmanCore
+
+@MainActor
+struct NewStorageDiskTests {
+	private let mib: UInt64 = 1 << 20
+
+	private func makeVM(_ name: String = "disks") throws -> VMConfig {
+		try VMConfig.createNewVMDirectory(name: name)
+		return try VMConfig(name: name, memorySize: 1 << 30, cpuCount: 2)
+	}
+
+	@Test func aNewDiskNeverReplacesAnExistingOne() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM()
+			try vm.addNewStorageDisk(name: "main", size: mib)
+			let path = vm.configFilePath(file: "main.raw")
+			let handle = try #require(FileHandle(forWritingAtPath: path))
+			try handle.write(contentsOf: Data("marker".utf8))
+			try handle.close()
+
+			let error = try #require(throws: MachmanError.self) {
+				try vm.addNewStorageDisk(name: "main", size: 64 * mib)
+			}
+			#expect(error.code == .alreadyExists)
+			#expect(error.message == "This VM already has a disk named \u{201C}main\u{201D}")
+			let data = try Data(contentsOf: URL(fileURLWithPath: path))
+			#expect(data.count == Int(mib))
+			#expect(data.prefix(6) == Data("marker".utf8))
+			#expect(vm.disks.count == 1)
+		}
+	}
+
+	@Test func anOrphanFileIsNotOverwritten() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM()
+			let path = vm.configFilePath(file: "orphan.raw")
+			try Data("orphan".utf8).write(to: URL(fileURLWithPath: path))
+			let error = try #require(throws: MachmanError.self) {
+				try vm.addNewStorageDisk(name: "orphan", size: mib)
+			}
+			#expect(error.code == .alreadyExists)
+			#expect(try Data(contentsOf: URL(fileURLWithPath: path)) == Data("orphan".utf8))
+			#expect(vm.disks.isEmpty)
+		}
+	}
+
+	@Test func pathsAndHiddenNamesAreRefused() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM()
+			try FileManager.default.createDirectory(
+				atPath: machmanVMDir + "/other", withIntermediateDirectories: true)
+			for bad in ["../other/x", "a/b", ".hidden", "", "a\tb"] {
+				let error = try #require(throws: MachmanError.self, "\(bad)") {
+					try vm.addNewStorageDisk(name: bad, size: mib)
+				}
+				#expect(error.code == .invalidArgument, "\(bad)")
+			}
+			#expect(!FileManager.default.fileExists(atPath: machmanVMDir + "/other/x.raw"))
+			#expect(vm.disks.isEmpty)
+		}
+	}
+
+	@Test func namesTrimAndSizesAlign() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM()
+			try vm.addNewStorageDisk(name: " data ", size: mib)
+			#expect(vm.disks.first?.id == "storage:data")
+			#expect(FileManager.default.fileExists(atPath: vm.configFilePath(file: "data.raw")))
+			for size: UInt64 in [0, 1000] {
+				#expect(throws: MachmanError.self) {
+					try vm.addNewStorageDisk(name: "odd", size: size)
+				}
+			}
+			#expect(!FileManager.default.fileExists(atPath: vm.configFilePath(file: "odd.raw")))
+		}
+	}
+
+	@Test func macSystemDiskDodgesAnOrphan() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM()
+			let orphan = vm.configFilePath(file: "disk.raw")
+			try Data("orphan".utf8).write(to: URL(fileURLWithPath: orphan))
+			try vm.ensureMacSystemDisk(minimumSize: mib)
+			#expect(vm.disks.map(\.id) == ["storage:disk-2"])
+			#expect(try Data(contentsOf: URL(fileURLWithPath: orphan)) == Data("orphan".utf8))
+		}
+	}
+
+	@Test func importNamesFollowTheRule() {
+		#expect(VMCopier.storageName(
+			for: URL(fileURLWithPath: "/x/.hidden.raw"), taken: []) == "hidden")
+		#expect(VMCopier.storageName(
+			for: URL(fileURLWithPath: "/x/disk.img"), taken: ["disk"]) == "disk-2")
+	}
+}

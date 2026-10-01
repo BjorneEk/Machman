@@ -469,29 +469,61 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try addDisk(disk: VMDisk(kind: .iso(isoUrl)))
 	}
 
-	public func addNewStorageDisk(name: String, size: UInt64) throws {
-		let diskPath = self.configFilePath(file: "\(name).raw")
-		let diskUrl = URL(fileURLWithPath: diskPath)
-		let diskCreated = FileManager.default.createFile(
-			atPath: diskPath,
-			contents: nil,
-			attributes: nil
-		)
-		if !diskCreated {
-			throw VirtualMachineError.critical("Failed to create the main disk image: '\(diskPath)'")
+	// A new owned image, <name>.raw. The name follows the disk-name rule and must be new to
+	// this VM — in its config and in its folder: creating over an existing file would wipe
+	// that disk, even under a running VM (D15). VZ needs raw images in whole sectors.
+	public func addNewStorageDisk(name raw: String, size: UInt64) throws {
+		let name = try NameRule.diskName.normalized(raw)
+		guard size > 0, size % 512 == 0, size <= UInt64(Int64.max) else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "A new disk's size must be a positive multiple of 512 bytes")
 		}
-
-		guard let diskFileHandle = try? FileHandle(forWritingTo: diskUrl) else {
-			throw VirtualMachineError.critical("Failed to get the file handle for the main disk image: '\(diskPath)'")
+		let taken = disks.contains {
+			if case .storage(let existing, _) = $0.kind { return existing == name }
+			return false
 		}
-
+		guard !taken else {
+			throw MachmanError(
+				code: .alreadyExists,
+				message: "This VM already has a disk named \u{201C}\(name)\u{201D}")
+		}
+		let path = configFilePath(file: "\(name).raw")
+		try Self.createDiskImage(atPath: path, size: size, name: name)
+		excludeFromBackup(path: path)
 		do {
-			try diskFileHandle.truncate(atOffset: size)
+			try addDisk(disk: VMDisk(kind: .storage(name, size)))
 		} catch {
-			throw VirtualMachineError.critical("Failed to truncate the disk image: '\(diskPath)' (\(size))")
+			disks.removeAll { $0.id == "storage:\(name)" }
+			try? FileManager.default.removeItem(atPath: path)
+			throw error
 		}
-		excludeFromBackup(path: diskPath)
-		try addDisk(disk: VMDisk(kind: .storage(name, size)))
+	}
+
+	// O_EXCL: the image is created or the call fails — an existing file is never replaced.
+	// Sparse: ftruncate allocates nothing.
+	static func createDiskImage(atPath path: String, size: UInt64, name: String) throws {
+		let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
+		guard fd >= 0 else {
+			let code = errno
+			if code == EEXIST {
+				throw MachmanError(
+					code: .alreadyExists,
+					message: "A file named \u{201C}\(name).raw\u{201D} is already in the "
+						+ "VM's folder")
+			}
+			throw MachmanError(
+				code: .ioFailure,
+				message: "creating \(name).raw: \(String(cString: strerror(code)))")
+		}
+		defer { close(fd) }
+		guard ftruncate(fd, off_t(size)) == 0 else {
+			let code = errno
+			unlink(path)
+			throw MachmanError(
+				code: .ioFailure,
+				message: "sizing \(name).raw: \(String(cString: strerror(code)))")
+		}
 	}
 
 	// Keep VM disks out of Time Machine. Only images the VM owns are touched: a .fromUrl or .iso
