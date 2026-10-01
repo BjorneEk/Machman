@@ -135,6 +135,50 @@ struct GuestScriptLibTests {
 		}
 	}
 
+	// S35: FreeBSD, OpenBSD and NetBSD show no open file through /dev/fd, but their stat
+	// reads a descriptor itself: with /dev/fd ruled out, the same swap is refused there.
+	@Test func aLinkSwappedInIsRefusedWithoutDevFd() throws {
+		for shell in Self.shells {
+			let r = try run(Self.swap(check: "_rf_stat_shows_fds", without: "_rf_fd_shows_files"),
+				under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasPrefix("check on\n"), "\(shell): \(r.out)")
+			#expect(r.out.contains("/config changed while it was being edited\n"),
+				"\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("still a link\nsecret\n"), "\(shell): \(r.out)")
+		}
+	}
+
+	// …and where stat cannot read a descriptor (GNU, busybox), /dev/fd still checks it.
+	@Test func aLinkSwappedInIsRefusedThroughDevFd() throws {
+		for shell in Self.shells {
+			let r = try run(Self.swap(check: "_rf_fd_shows_files", without: "_rf_stat_shows_fds"),
+				under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out.hasPrefix("check on\n"), "\(shell): \(r.out)")
+			#expect(r.out.contains("/config changed while it was being edited\n"),
+				"\(shell): \(r.out)")
+			#expect(r.out.hasSuffix("still a link\nsecret\n"), "\(shell): \(r.out)")
+		}
+	}
+
+	// The S20 swap with one descriptor check ruled out: `check` must still work alone.
+	private static func swap(check: String, without other: String) -> String {
+		"""
+		echo secret > "$D/victim"
+		printf 'mine\\n# BEGIN %s\\nours\\n# END %s\\n' "$MARKER" "$MARKER" > "$D/config"
+		\(other)() { return 1; }
+		od() {
+			rm -f "$D/config" && ln -s "$D/victim" "$D/config"
+			command od "$@"
+		}
+		\(check) && echo "check on"
+		strip_block "$D/config" && echo "copied" || echo "kept: $R_ERROR"
+		[ -L "$D/config" ] && echo "still a link"
+		cat "$D/victim"
+		"""
+	}
+
 	// S20: a file without our block is not ours — not even rewritten in place, and a link
 	// to one is no refusal either.
 	@Test func filesWithoutTheMarkerAreLeftAlone() throws {

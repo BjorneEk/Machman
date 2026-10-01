@@ -670,17 +670,18 @@ menu_multi() {
 #     (set -C) by the very open that writes it, then renamed over the target;
 #   * the old file's owner (chown -h) and mode: rw bits through the umask at creation,
 #     x/setuid/sticky by chmod, and only in a directory no other user can rename names in;
-#   * read through one open: an edit opens the file once and, where /dev/fd shows what a
-#     descriptor holds (Linux, macOS), refuses unless that is the file it checked — a link
-#     swapped in after the check would have root copy what it can read into the user's file;
+#   * read through one open: an edit opens the file once and refuses unless that is the
+#     file it checked — a link swapped in after the check would have root copy what it can
+#     read into the user's file. BSD stat reads the descriptor itself (macOS, FreeBSD,
+#     OpenBSD, NetBSD); elsewhere /dev/fd shows what it holds (Linux);
 #   * an empty result empties the file instead of failing: filters are awk or sed, which
 #     exit 0 whatever they keep (grep -v exits 1 when nothing is left).
 # Paths are absolute. A refusal or failure returns 1 with R_ERROR set and the target
-# untouched; the caller decides between step_failed, a warning and giving up. Two races
-# stay open, as POSIX sh cannot close them without dropping privileges: that swap where
-# /dev/fd cannot show it (FreeBSD's fdescfs numbers its own nodes), and a link to a
+# untouched; the caller decides between step_failed, a warning and giving up. One race
+# stays open, as POSIX sh cannot close it without dropping privileges: a link to a
 # directory swapped in just before the rename, which receives the new file there, under
-# its inert dot-and-tilde name.
+# its inert dot-and-tilde name. (The read goes unchecked only where neither stat nor
+# /dev/fd can see an open file.)
 
 # rewrite_file [-m <mode>] [-o <user:group>] <file> <filter> [args…] — the file becomes
 # what <filter> prints when fed the file; -m/-o set the result's mode/owner instead.
@@ -814,7 +815,10 @@ EOF
 	else
 		# One open, checked against the file checked above before anything reads it.
 		command exec 8< "./$_rf_name" || exit 13
-		if _rf_fd_shows_files; then
+		if _rf_stat_shows_fds; then
+			[ "$(stat -f '%i %u %g' <&8 2>/dev/null)" = "$_rf_ino $_rf_uid $_rf_gid" ] \
+				|| exit 16
+		elif _rf_fd_shows_files; then
 			read -r _rf_oino _rf_operm _rf_olinks _rf_ouid _rf_ogid _rf_rest <<EOF
 $(ls -lniL /dev/fd/7 7<&8 2>/dev/null)
 EOF
@@ -842,6 +846,15 @@ EOF
 	[ -L "./$_rf_name" ] && rm -f "./$_rf_name"
 	mv -f "$_rf_tmp" "./$_rf_name" || { rm -f "$_rf_tmp"; exit 15; }
 	exit 0
+}
+
+# Whether stat reads the file a descriptor has open (BSD stat: stdin, given no file): an
+# open "/" must read as "/" (inode, owner, group). GNU and busybox stat take -f for the
+# file system and want an operand, so they fail this and the /dev/fd check below runs.
+_rf_stat_shows_fds() {
+	_rf_ss_root="$(ls -lnid / 2>/dev/null | awk '{ print $1, $4, $5 }')"
+	[ -n "$_rf_ss_root" ] && [ "$_rf_ss_root" = "$( (command exec 9< / \
+		&& stat -f '%i %u %g' <&9) 2>/dev/null)" ]
 }
 
 # Whether /dev/fd shows the file a descriptor has open rather than a node of its own: an
