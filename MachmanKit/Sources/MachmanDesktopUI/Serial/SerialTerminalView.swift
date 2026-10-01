@@ -114,6 +114,10 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 			self.connection = nil
 			self.connected = false
 		}
+		// The terminal's current size is the new session's first size: a reconnect, or a
+		// view that already has its final frame, sends no resize of its own.
+		let terminal = terminalView.getTerminal()
+		c.setWindowSize(cols: terminal.cols, rows: terminal.rows)
 		if c.connect() { connection = c; connected = true }
 	}
 

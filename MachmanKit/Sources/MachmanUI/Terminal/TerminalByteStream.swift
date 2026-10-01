@@ -19,8 +19,8 @@ public protocol TerminalByteStream: AnyObject {
 	func send(_ data: Data)
 	func stop()
 	func transcriptData() -> Data
-	// Window-size changes: PTY streams forward TIOCSWINSZ; a serial console has no
-	// size channel (the default no-op).
+	// Window-size changes: PTY streams forward TIOCSWINSZ (a size set before connect() is
+	// the session's first size); a serial console has no size channel (the default no-op).
 	func setWindowSize(cols: Int, rows: Int)
 }
 
