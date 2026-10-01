@@ -160,10 +160,13 @@ final class SerialPortBridge {
 		}
 		// Bounded logs grow to 2x the cap, then get trimmed back to the last `cap` bytes — so the
 		// occasional rewrite is amortized O(1) per byte while one clean file keeps the recent tail.
-		if let cap = logConfig.maxBytes, cap > 0, logBytes > cap * 2 {
+		// A cap whose double overflows (2^63 and up — a script's "no cap") never trims.
+		guard let cap = logConfig.maxBytes, cap > 0 else { return }
+		let (threshold, overflow) = cap.multipliedReportingOverflow(by: 2)
+		if !overflow, logBytes > threshold {
 			try? log.close()
 			let full = (try? Data(contentsOf: logURL)) ?? Data()
-			let tail = Data(full.suffix(Int(cap)))
+			let tail = Data(full.suffix(Int(clamping: cap)))
 			try? tail.write(to: logURL)
 			self.log = FileHandle(forWritingAtPath: logURL.path)
 			try? self.log?.seekToEnd()

@@ -72,6 +72,19 @@ struct SerialPortBridgeTests {
 		return String(decoding: acc, as: UTF8.self)
 	}
 
+	// Polls the log file until it holds `marker` (the drain and the tee run on the bridge's own
+	// queue, so a fixed sleep races them on a loaded machine).
+	private func logText(_ url: URL, containing marker: String, timeout: Double = 3) -> String {
+		let deadline = Date().addingTimeInterval(timeout)
+		var text = ""
+		while Date() < deadline {
+			text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+			if text.contains(marker) { break }
+			Thread.sleep(forTimeInterval: 0.05)
+		}
+		return text
+	}
+
 	@Test func teesToLogAndBroadcastsToClient() throws {
 		let env = makeBridge("tee", log: SerialLogConfig(mode: .resetOnBoot))
 		env.bridge.start()
@@ -158,5 +171,17 @@ struct SerialPortBridgeTests {
 		let logged = (try? String(contentsOf: env.logURL, encoding: .utf8)) ?? ""
 		#expect(logged.contains("AFTER_RETUNE"))
 		#expect(env.bridge.currentLogPath() == env.logURL.path)
+	}
+
+	// E23: a cap at or past 2^63 (a script's "no cap") once overflowed `cap * 2` and trapped the
+	// vmhost on the first byte; the bridge now treats it as no cap.
+	@Test func oversizedCapDoesNotTrap() throws {
+		for cap in [UInt64.max, UInt64(1) << 63] {
+			let env = makeBridge("cap", log: SerialLogConfig(mode: .resetOnBoot, maxBytes: cap))
+			env.bridge.start()
+			defer { env.bridge.stop() }
+			env.guestOut.write(Data("CAPPED_OUTPUT\n".utf8))
+			#expect(logText(env.logURL, containing: "CAPPED_OUTPUT").contains("CAPPED_OUTPUT"))
+		}
 	}
 }

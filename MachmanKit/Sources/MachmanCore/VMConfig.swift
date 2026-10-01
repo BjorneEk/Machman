@@ -627,7 +627,17 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try? FileManager.default.removeItem(at: serialLogURL(kind: kind, index: index))
 	}
 
+	// The largest serial log cap vm.serial.setLogging accepts (E23): a trim reads up to twice the
+	// cap into the vmhost's memory, and a cap of 2^63 or more overflowed the bridge. 0 and nil
+	// both mean no cap.
+	static let serialLogMaxBytesLimit: UInt64 = 1 << 30
+
 	func setSerialLogging(kind: SerialPortKind, index: Int, config: SerialLogConfig) throws {
+		if let cap = config.maxBytes, cap > Self.serialLogMaxBytesLimit {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "a serial log can be capped at 1 GB at most — omit maxBytes for no cap")
+		}
 		switch kind {
 		case .console:
 			guard consolePorts.indices.contains(index) else {

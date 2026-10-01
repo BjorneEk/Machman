@@ -79,7 +79,7 @@ alone; unknown codes decode as `internalError`, so the list is additively extens
 | `vm.console.remove` | `{name}` | `{}` (pops the last console port; refused while running) |
 | `vm.uart.add` | `{name}` | `{}` (appends a PL011 uart port, guest `/dev/ttyAMAN`; refused while running) |
 | `vm.uart.remove` | `{name}` | `{}` (pops the last uart port; refused while running) |
-| `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs) |
+| `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs; `maxBytes` above 1073741824 (1 GiB) → `invalidArgument`) |
 | `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
 | `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, tag}` | `VMInfo` (copies the file into `<vm>/kernels/<role>/<tag>/` as owned and points the role's field at it) |
@@ -210,7 +210,8 @@ when a configured port cannot be attached on the daemon's host and is therefore 
 running VM — currently only uart ports, which macOS gates behind the
 `com.apple.private.virtualization` entitlement from `sinceOSVersion` (26.6.1) on; `message` is a
 ready-to-display explanation. `SerialLogConfig` is
-`{mode: "disabled"|"resetOnBoot"|"continuous", maxBytes?}` (default resetOnBoot, unlimited).
+`{mode: "disabled"|"resetOnBoot"|"continuous", maxBytes?}` (default resetOnBoot, unlimited;
+`maxBytes` 0 or absent = unlimited, at most 1073741824).
 
 `disks[].owned?` is true when the backing file lives inside (and travels with) the VM's
 directory — imports/promotes create owned disks; absent means an older daemon.

@@ -142,6 +142,31 @@ struct SerialConfigTests {
 		}
 	}
 
+	// E23: a cap past the limit (a script's 2^64-1 for "no cap") is refused before it can
+	// persist; the limit itself, 0 and no cap are accepted.
+	@Test func setLoggingRefusesOversizedCaps() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("capvm")
+			for cap in [(UInt64(1) << 30) + 1, UInt64(1) << 63, UInt64.max] {
+				do {
+					try vm.setSerialLogging(
+						kind: .console, index: 0,
+						config: SerialLogConfig(mode: .continuous, maxBytes: cap))
+					Issue.record("expected invalidArgument for \(cap)")
+				} catch let error as MachmanError {
+					#expect(error.code == .invalidArgument)
+				}
+			}
+			for cap: UInt64? in [UInt64(1) << 30, 0, nil] {
+				try vm.setSerialLogging(
+					kind: .console, index: 0,
+					config: SerialLogConfig(mode: .continuous, maxBytes: cap))
+			}
+			let reloaded = try VMConfig.load(name: "capvm")
+			#expect(reloaded.consolePorts[0].logging == SerialLogConfig(mode: .continuous))
+		}
+	}
+
 	// macOS 26.6.1 gated the private PL011/16550 serial devices behind the
 	// com.apple.private.virtualization entitlement (the helper traps decoding them at start for an
 	// unentitled host). The gate must reject exactly [26.6.1, ∞) — a wrong boundary either crashes
