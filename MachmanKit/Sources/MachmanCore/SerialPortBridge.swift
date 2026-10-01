@@ -150,7 +150,7 @@ final class SerialPortBridge {
 			self.appendToLog(data)
 			self.ring.append(data)
 			if self.ring.count > Self.replayCap {
-				self.ring.removeFirst(self.ring.count - Self.replayCap)
+				self.ring.dropHead(self.ring.count - Self.replayCap, live: Self.replayCap)
 			}
 			for fd in self.clients.keys { self.write(fd, data) }
 		}
@@ -306,7 +306,7 @@ final class SerialPortBridge {
 	private func flushGuestInput() {
 		guard !stopped, !guestInputClosed else { return }
 		guard let sent = writeToGuest(guestInput) else { return }
-		guestInput.removeFirst(sent)
+		guestInput.dropHead(sent, live: Self.guestInputCap)
 		if guestInput.isEmpty {
 			guestInputSource?.cancel()
 			guestInputSource = nil
@@ -384,10 +384,26 @@ final class SerialPortBridge {
 		timer.resume()
 	}
 
+	// What the two head-trimmed buffers' storage spans (E31) — a test seam.
+	var retainedForTesting: (ring: Int, guestInput: Int) {
+		queue.sync { (ring.endIndex, guestInput.endIndex) }
+	}
+
 	private func bridgeError(_ what: String) -> MachmanError {
 		MachmanError(
 			code: .ioFailure,
 			message: "serial bridge \(kind.rawValue)\(index) \(what): "
 				+ String(cString: strerror(errno)))
+	}
+}
+
+extension Data {
+	// Drops the first `count` bytes and keeps the storage bounded (E31). removeFirst only
+	// advances startIndex: the storage keeps every byte ever appended, for the VM's whole
+	// lifetime. Once the dropped head passes twice `live` (the most the buffer holds), the
+	// tail moves into fresh storage — one copy per 2×live bytes dropped.
+	mutating func dropHead(_ count: Int, live: Int) {
+		removeFirst(count)
+		if startIndex > 2 * live { self = Data(self) }
 	}
 }
