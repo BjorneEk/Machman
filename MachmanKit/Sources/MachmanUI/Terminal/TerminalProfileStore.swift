@@ -21,8 +21,9 @@ public final class TerminalProfileStore: ObservableObject {
 	// Which profile the settings view is currently editing (drives its picker).
 	@Published public var editingProfileID: UUID?
 
-	// Persisted off the main thread, so a rapid edit stream (colour-picker drags, typing) never
-	// blocks the UI on disk I/O; an unreadable file is set aside, never overwritten.
+	// Persisted off the main thread with writes coalesced, so a rapid edit stream (colour-picker
+	// drags, typing) neither blocks the UI nor writes per change; flush() writes what is
+	// pending. An unreadable file is set aside, never overwritten.
 	private let file: PersistedJSONFile<PersistedState>
 	private var setAsideNotice: SetAsideSettingsFile?
 
@@ -33,10 +34,13 @@ public final class TerminalProfileStore: ObservableObject {
 			.appendingPathComponent("TerminalProfiles.json")
 	}
 
-	public init(fileURL: URL = TerminalProfileStore.defaultURL()) {
+	// `saveDelay` is how long writes coalesce (tests shorten or stretch it).
+	public init(
+		fileURL: URL = TerminalProfileStore.defaultURL(), saveDelay: Duration = .milliseconds(500)
+	) {
 		let file = PersistedJSONFile<PersistedState>(
 			url: fileURL, label: "TerminalProfileStore",
-			queueLabel: "com.gustaffranzen.Machman.terminalProfiles.save")
+			queueLabel: "com.gustaffranzen.Machman.terminalProfiles.save", saveDelay: saveDelay)
 		self.file = file
 		let state = file.load()
 		self.profiles = state?.profiles ?? []

@@ -5,11 +5,12 @@
 //  Client-side persistence of each VM's canvas layout (CanvasState), so a VM's tabs, panes
 //  and divider positions are restored as they last appeared. Pure desktop concern — nothing
 //  here touches the wire. Same pattern as TerminalProfileStore (PersistedJSONFile): a JSON
-//  file in the suite-scoped app-support directory, written atomically off the main thread,
-//  read tolerantly (one broken layout costs only that VM's) and set aside as a .bak, never
-//  overwritten, when it can't be read at all; flush() waits for pending writes
-//  (termination, tests). The live terminal controllers behind the tabs stay in the app
-//  target (TerminalSessions); this stores only the value layout.
+//  file in the suite-scoped app-support directory, written atomically off the main thread
+//  with writes coalesced (a divider drag writes about twice a second, not per frame), read
+//  tolerantly (one broken layout costs only that VM's) and set aside as a .bak, never
+//  overwritten, when it can't be read at all; flush() writes what is pending (termination,
+//  tests). The live terminal controllers behind the tabs stay in the app target
+//  (TerminalSessions); this stores only the value layout.
 //
 
 import Foundation
@@ -29,10 +30,13 @@ public final class CanvasStateStore: ObservableObject {
 			.appendingPathComponent("CanvasLayouts.json")
 	}
 
-	public init(fileURL: URL = CanvasStateStore.defaultURL()) {
+	// `saveDelay` is how long writes coalesce (tests shorten or stretch it).
+	public init(
+		fileURL: URL = CanvasStateStore.defaultURL(), saveDelay: Duration = .milliseconds(500)
+	) {
 		let file = PersistedJSONFile<PersistedState>(
 			url: fileURL, label: "CanvasStateStore",
-			queueLabel: "com.gustaffranzen.Machman.canvasLayouts.save")
+			queueLabel: "com.gustaffranzen.Machman.canvasLayouts.save", saveDelay: saveDelay)
 		self.file = file
 		self.canvases = file.load()?.canvases ?? [:]
 		self.setAsideNotice = file.backupURL.map {

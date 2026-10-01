@@ -139,4 +139,34 @@ struct CanvasStateStoreTests {
 		let store = CanvasStateStore(fileURL: url)
 		#expect(store.canvas(for: "debian").allOpenTabs == [.config])
 	}
+
+	// MARK: - Coalesced writes (P9's per-frame write half)
+
+	// A divider drag calls setCanvas every frame; the file is written after the drag, not
+	// per frame, and flush() lands the final layout.
+	@Test func aDividerDragWritesOnceNotPerFrame() async throws {
+		let url = tempURL()
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		canvas.split(.terminal(hvc0))
+		let store = CanvasStateStore(fileURL: url, saveDelay: .seconds(5))
+		for frame in 0..<120 {
+			canvas.setFraction(0.2 + Double(frame) * 0.005, at: 0)
+			store.setCanvas(canvas, for: "debian")
+		}
+		try await Task.sleep(for: .milliseconds(100))
+		#expect(!FileManager.default.fileExists(atPath: url.path))
+		store.flush()
+		#expect(CanvasStateStore(fileURL: url).canvas(for: "debian") == canvas)
+	}
+
+	@Test func aQuietPeriodWritesOnItsOwn() async throws {
+		let url = tempURL()
+		var canvas = CanvasState()
+		canvas.open(.config)
+		let store = CanvasStateStore(fileURL: url, saveDelay: .milliseconds(50))
+		store.setCanvas(canvas, for: "debian")
+		#expect(await eventually { FileManager.default.fileExists(atPath: url.path) })
+	}
 }

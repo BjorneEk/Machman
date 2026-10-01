@@ -166,4 +166,22 @@ struct TerminalProfileStoreTests {
 		#expect(colors.cursor == oneDark.cursor)
 		#expect(colors.ansi == oneDark.ansi)   // not 16 entries: the preset's palette
 	}
+
+	// MARK: - Coalesced writes
+
+	// A colour-picker drag or typing in the editor updates on every change; the writes
+	// coalesce and flush() lands the last edit.
+	@Test func rapidEditsLandOnFlush() async throws {
+		let url = tempURL()
+		let store = TerminalProfileStore(fileURL: url, saveDelay: .seconds(5))
+		var profile = store.addProfile()
+		for size in 1...50 {
+			profile.fontSize = Double(size)
+			store.update(profile)
+		}
+		try await Task.sleep(for: .milliseconds(100))
+		#expect(!FileManager.default.fileExists(atPath: url.path))
+		store.flush()
+		#expect(TerminalProfileStore(fileURL: url).profile(id: profile.id)?.fontSize == 50)
+	}
 }
