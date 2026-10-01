@@ -928,6 +928,11 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	public func addMount(_ name: String, path: String, tag: String, kind: String? = nil) {
+		// Every drop, paste and picker passes the folder's name: one the mount-tag rule
+		// refuses (.config, a:b) mounts under a cleaned tag the user can rename.
+		let rule = NameRule.mountTag
+		let tag = rule.problem(rule.trimmed(tag)) == nil
+			? tag : rule.suggestion(from: tag, fallback: "share")
 		Task { [weak self] in
 			do {
 				try await self?.api.addMount(vm: name, path: path, tag: tag, kind: kind)

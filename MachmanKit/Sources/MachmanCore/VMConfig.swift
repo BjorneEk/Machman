@@ -426,18 +426,21 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try? saveVMConfig()
 	}
 
-	// One rule for every user-supplied share tag (add AND rename): trimmed, non-empty, and
-	// never one of the engine's reserved payload directories.
+	// One rule for every user-supplied share tag (add AND rename): the mount-tag rule
+	// (trimmed; no "/", leading dot or control characters; none of VZ's refused characters;
+	// never a reserved payload directory), then VZ's own share-name check, so VZ stays the
+	// authority if it tightens. Not validateTag: that is the 36-byte rule for a DEVICE tag,
+	// and mount tags are directory names inside one share.
 	static func normalizedShareTag(_ raw: String) throws -> String {
-		let trimmed = raw.trimmingCharacters(in: .whitespaces)
-		guard !trimmed.isEmpty else {
-			throw MachmanError(code: .invalidArgument, message: "mount tags cannot be empty")
-		}
-		guard !ReservedShareNames.all.contains(trimmed) else {
+		let tag = try NameRule.mountTag.normalized(raw)
+		do {
+			try VZMultipleDirectoryShare.validateName(tag)
+		} catch {
 			throw MachmanError(
-				code: .alreadyExists, message: "'\(trimmed)' is reserved by Machman")
+				code: .invalidArgument,
+				message: "\u{201C}\(tag)\u{201D} can't name a shared folder")
 		}
-		return trimmed
+		return tag
 	}
 
 	func addMountPoint(_ mountPoint: HostMountPoint) throws {

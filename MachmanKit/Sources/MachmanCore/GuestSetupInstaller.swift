@@ -62,8 +62,21 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 		let publicKey = try SSHSetupInstaller.ensureKeypair(for: config, marker: marker)
 		let machineKey = try? String(
 			contentsOfFile: "/etc/ssh/ssh_host_ed25519_key.pub", encoding: .utf8)
+		// A legacy tag or path with a tab or line break would corrupt the
+		// kind<TAB>name<TAB>path list: names are validated at entry, but a broken row is
+		// never emitted.
 		let sshfsMounts = config.mountPoints
 			.filter { $0.enabled && $0.kind == MountKind.sshfs }
+			.filter { mount in
+				let usable = !NameRule.hasControlCharacters(mount.tag)
+					&& !NameRule.hasControlCharacters(mount.path)
+				if !usable {
+					MachmanLogger.log(.log,
+						"\(config.name): mount \(mount.tag.debugDescription) can't be listed "
+							+ "for the guest — rename its tag")
+				}
+				return usable
+			}
 			.map { "\(MountKind.sshfs)\t\($0.tag)\t\($0.path)" }
 		return [
 			"host_key.pub": Data((publicKey + "\n").utf8),
