@@ -286,6 +286,31 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
+	// Runs at daemon startup, after adoptExistingHosts: a VM that loses an older ssh alias
+	// collision (A-1a-1) and is served its suffix by resolution alone stores it now, so the
+	// winner's delete or rename can't hand it the base before its own next save. Only VMs
+	// nothing hosts — a vmhost owns its VM's config, and stores the suffix on its next save.
+	public func storeCollisionAliases() {
+		storeCollisionAliases(isSocketLive: { UDSListener.isLive(path: $0) })
+	}
+
+	func storeCollisionAliases(isSocketLive: (String) -> Bool) {
+		for vm in registry.list() where hosted[vm.name] == nil {
+			let config = vm.config
+			guard config.ssh?.alias == nil,
+				config.resolvedDefaultAlias != SSHHostConfigWriter.defaultAlias(for: vm.name),
+				!isSocketLive(hostSocketPath(for: vm.name)) else { continue }
+			do {
+				try config.saveVMConfig()   // every save stores a resolved suffix
+				MachmanLogger.log(.log,
+					"stored \(vm.name)'s ssh alias \(config.ssh?.alias ?? "?") (older collision)")
+			} catch {
+				MachmanLogger.log(.passiveWarning,
+					"could not store \(vm.name)'s ssh alias: \(error)")
+			}
+		}
+	}
+
 	// Runs at daemon startup, after adoptExistingHosts (same ordering reason as
 	// sweepSafeRuns): whatever a crash-killed process left behind in a NON-hosted VM's
 	// directory is stale by definition — payloads are ephemeral (regenerated at start),

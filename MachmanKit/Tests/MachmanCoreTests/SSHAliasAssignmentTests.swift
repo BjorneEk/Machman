@@ -60,6 +60,28 @@ struct SSHAliasAssignmentTests {
 		}
 	}
 
+	// Daemon startup stores an older collision's suffix, so the winner's delete can't move it
+	// even when the loser is never saved in between. A VM a live vmhost serves is its host's.
+	@Test func daemonStartupStoresAnOlderCollisionsSuffix() throws {
+		try VMTestDir.withRedirectedDir {
+			let older = Date(timeIntervalSince1970: 1_600_000_000)
+			try writeOlderVM("dev copy", created: older)
+			try writeOlderVM("dev-copy", created: older.addingTimeInterval(1))
+			try writeOlderVM("x y", created: older)
+			try writeOlderVM("x  y", created: older.addingTimeInterval(1))
+			let routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }   // a test never finds (or launches) a real vmhost
+			let hostedSocket = routing.hostSocketPath(for: "x  y")
+			routing.storeCollisionAliases(isSocketLive: { $0 == hostedSocket })
+
+			#expect(try VMConfig.load(name: "dev copy").ssh?.alias == "dev-copy-2.machman")
+			#expect(try VMConfig.load(name: "dev-copy").ssh == nil)   // the winner follows its name
+			#expect(try VMConfig.load(name: "x  y").ssh == nil)
+			try VMConfig.deleteVMDirectory(name: "dev-copy")
+			#expect(try alias("dev copy") == "dev-copy-2.machman")   // before: dev-copy.machman
+		}
+	}
+
 	@Test func deletingTheOtherVMLeavesTheSuffix() throws {
 		try VMTestDir.withRedirectedDir {
 			try makeVM("dev")
