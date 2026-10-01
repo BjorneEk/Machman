@@ -431,6 +431,42 @@ struct GuestSetupInstallerTests {
 		}
 	}
 
+	// C16: a guest without virtiofs sshfs-mounts the share at boot from the host path in its
+	// machman.env, which its fstab or rc.local embeds: that path is a link in the library
+	// keyed by the VM's marker, which a rename keeps, so after a rename it still reaches the
+	// VM's share. A link whose VM directory is gone is swept at the next start.
+	@Test @MainActor func sharePathSurvivesARename() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "before")
+			let vm = try VMConfig(name: "before", memorySize: 1 << 30, cpuCount: 2)
+			let fm = FileManager.default
+			func sharePath() throws -> String {
+				try #require(try GuestSetupInstaller.environment(for: vm)["SHARE_HOST_PATH"])
+			}
+			func resolved(_ path: String) -> String {
+				URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+			}
+			_ = try GuestSetupInstaller.writePayload(for: vm)
+			let path = try sharePath()
+			#expect(path.contains("/.machman-shares/machman-"))
+			#expect(!path.contains("before"))
+			#expect(resolved(path) == resolved(GuestInstallerWriter.payloadRoot(for: vm).path))
+
+			try vm.rename(to: "after")
+			try GuestSetupInstaller.ensurePayloadDirectories(for: vm)
+			#expect(try sharePath() == path)
+			#expect(resolved(path) == resolved(GuestInstallerWriter.payloadRoot(for: vm).path))
+			#expect(resolved(path).hasSuffix("/after/share"))
+
+			let links = (path as NSString).deletingLastPathComponent
+			let stale = links + "/machman-000000000000"
+			try fm.createSymbolicLink(atPath: stale, withDestinationPath: "../gone/share")
+			try GuestSetupInstaller.ensurePayloadDirectories(for: vm)
+			#expect((try? fm.destinationOfSymbolicLink(atPath: stale)) == nil)
+			#expect(resolved(path).hasSuffix("/after/share"))
+		}
+	}
+
 	// S32: a run that failed after touching the guest (the exit trap's report) is a report
 	// on file, but the installer stays served until a run gets through — the user's next
 	// step is a re-run. A partial run is through: it stops serving like an ok one.

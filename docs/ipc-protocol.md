@@ -202,7 +202,8 @@ charset plus `.machman` (`dev copy` → `dev-copy.machman`). When that default i
 another VM's alias, the VM taking the name stores a numbered one (`dev-copy-2.machman`),
 which no other VM's change moves.
 `setupSharePath` is the directory a guest without a virtiofs driver sshfs-mounts to reach
-the payload. `address`/`addressSource`/`hostAddressForGuest`/`reachability*`/`readySince`
+the payload; the setup script's own boot-time sshfs mount of the share goes through a
+rename-stable link in the library instead (`<library>/.machman-shares/<marker>`). `address`/`addressSource`/`hostAddressForGuest`/`reachability*`/`readySince`
 are a daemon overlay (like `safeRun`), present only while the VM runs — `reachability`
 (1.0.6+) is this run's answer to "does the guest's sshd actually respond", never
 persisted. Treat unknown `reverseState`/`reachability` strings as a state you don't

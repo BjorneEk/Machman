@@ -46,7 +46,8 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			// Where the guest mounts the share: macOS automounts it under My Shared Files.
 			"SHARE_ROOT": bootMode == "macos" ? GuestPaths.macOSAutomount : GuestPaths.share,
 			"SHARE_TAG": GuestPaths.shareTag,
-			"SHARE_HOST_PATH": GuestInstallerWriter.payloadRoot(for: config).path,
+			"SHARE_HOST_PATH": stableSharePath(for: config)
+				?? GuestInstallerWriter.payloadRoot(for: config).path,
 			"BOOT_MODE": bootMode,
 			"CONSOLE_COUNT": String(config.consolePorts.filter(\.enabled).count),
 			"UART_COUNT": String(config.uartPorts.filter(\.enabled).count),
@@ -98,6 +99,69 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			.appendingPathComponent(GuestSetupInstallerInfo.reportName).path
 	}
 
+	// A guest without a virtiofs driver sshfs-mounts the share at boot from the host path in
+	// its machman.env, which its fstab or rc.local embeds: <vmdir>/share would strand it at
+	// the first rename. It gets a link in the library instead, hidden (no VM) and named by
+	// the VM's marker, which a rename keeps: <library>/.machman-shares/<marker> ->
+	// ../<vm>/share, re-pointed at every start. (ssh.setupSharePath, the first by-hand
+	// mount, stays the real path: it is used before a rename can matter.)
+	static let shareLinksDirectoryName = ".machman-shares"
+
+	static func shareLinksDirectory(for config: VMConfig) -> URL {
+		URL(fileURLWithPath: config.vmDirPath()).deletingLastPathComponent()
+			.appendingPathComponent(shareLinksDirectoryName, isDirectory: true)
+	}
+
+	// Where the VM's link points: its own share, relative so the library can move.
+	private static func shareLinkDestination(for config: VMConfig) -> String {
+		"../\(URL(fileURLWithPath: config.vmDirPath()).lastPathComponent)/"
+			+ GuestInstallerWriter.payloadRootName
+	}
+
+	// The link's path while it points at this VM's share; nil before the first start, or
+	// while another VM (an un-reminted copy) holds it.
+	static func stableSharePath(for config: VMConfig) -> String? {
+		guard let marker = SSHSetupInstaller.existingMarker(for: config) else { return nil }
+		let link = shareLinksDirectory(for: config).appendingPathComponent(marker).path
+		guard (try? FileManager.default.destinationOfSymbolicLink(atPath: link))
+			== shareLinkDestination(for: config) else { return nil }
+		return link
+	}
+
+	// Points the VM's link at its share (a rename moved it) and sweeps links whose VM
+	// directory is gone (deleted, or renamed away by a VM that has not started since).
+	// Never mints the marker (a served start's writePayload does, first). Failures are
+	// logged: the guest then gets the real path, as before.
+	@discardableResult
+	static func pointStableShareLink(for config: VMConfig) -> URL? {
+		guard let marker = SSHSetupInstaller.existingMarker(for: config) else { return nil }
+		let fm = FileManager.default
+		let dir = shareLinksDirectory(for: config)
+		do {
+			try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+			for name in try fm.contentsOfDirectory(atPath: dir.path) where name != marker {
+				let entry = dir.appendingPathComponent(name)
+				guard let target = try? fm.destinationOfSymbolicLink(atPath: entry.path)
+				else { continue }
+				let vmDir = dir.appendingPathComponent(target).deletingLastPathComponent()
+				if !fm.fileExists(atPath: vmDir.standardizedFileURL.path) {
+					try? fm.removeItem(at: entry)
+				}
+			}
+			let link = dir.appendingPathComponent(marker)
+			let destination = shareLinkDestination(for: config)
+			if (try? fm.destinationOfSymbolicLink(atPath: link.path)) != destination {
+				try? fm.removeItem(at: link)
+				try fm.createSymbolicLink(atPath: link.path, withDestinationPath: destination)
+			}
+			return link
+		} catch {
+			MachmanLogger.log(.log,
+				"\(config.name): no rename-stable share link — \(error.localizedDescription)")
+			return nil
+		}
+	}
+
 	// The payload dirs this installer supersedes — cleaned up on every write and remove
 	// so exactly one served truth exists (an old daemon regenerates them, which is what
 	// the 1.0.7 floor prompt exists to stop).
@@ -126,8 +190,10 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 				named: name, for: config))
 		}
 		// Every start re-pins under the current alias, serving or not: the pin is keyed by
-		// the alias, which a rename or a newer default mapping can have moved.
+		// the alias, which a rename or a newer default mapping can have moved — and
+		// re-points the share link, which a rename moved too.
 		SSHSetupInstaller.writeKnownHosts(for: config)
+		pointStableShareLink(for: config)
 		return (payload, report)
 	}
 
