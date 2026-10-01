@@ -111,6 +111,9 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			try? fm.removeItem(at: GuestInstallerWriter.payloadDirectory(
 				named: name, for: config))
 		}
+		// Every start re-pins under the current alias, serving or not: the pin is keyed by
+		// the alias, which a rename or a newer default mapping can have moved.
+		SSHSetupInstaller.writeKnownHosts(for: config)
 		return (payload, report)
 	}
 

@@ -41,16 +41,16 @@ struct SSHHostConfigWriterTests {
 
 		let managed = try String(
 			contentsOf: root.appendingPathComponent("machman/config"), encoding: .utf8)
-		// Names with spaces stay usable: Host and IdentityFile are quoted.
-		#expect(managed.contains(#"Host "Debian kept.machman""#))
+		// A spaced VM name gets an alias in the alias charset (C13); its paths stay quoted.
+		#expect(managed.contains(#"Host "Debian-kept.machman""#))
 		#expect(managed.contains(#"IdentityFile "/vms/Debian kept/ssh/id_ed25519""#))
 		#expect(managed.contains("HostName 192.168.64.9"))
 		#expect(managed.contains("User admin"))
-		#expect(managed.contains("HostKeyAlias Debian kept.machman"))
+		#expect(managed.contains("HostKeyAlias Debian-kept.machman"))
 		#expect(managed.contains("StrictHostKeyChecking yes"))
 		let pins = try String(
 			contentsOf: root.appendingPathComponent("machman/known_hosts"), encoding: .utf8)
-		#expect(pins == "Debian kept.machman ssh-ed25519 AAAAC3Nz\n")
+		#expect(pins == "Debian-kept.machman ssh-ed25519 AAAAC3Nz\n")
 		// The Include line landed at the top of the (created) user config.
 		let user = try String(
 			contentsOf: root.appendingPathComponent("config"), encoding: .utf8)
@@ -68,7 +68,7 @@ struct SSHHostConfigWriterTests {
 			contentsOf: root.appendingPathComponent("machman/config"), encoding: .utf8)
 		#expect(managed.contains(#"Host "dev""#))
 		#expect(managed.contains("HostKeyAlias dev"))
-		#expect(!managed.contains("Debian kept.machman"))
+		#expect(!managed.contains("Debian-kept.machman"))
 		let pins = try String(
 			contentsOf: root.appendingPathComponent("machman/known_hosts"), encoding: .utf8)
 		#expect(pins.hasPrefix("dev ssh-ed25519"))

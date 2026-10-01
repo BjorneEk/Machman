@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import MachmanAPI
 
 public struct SSHHostConfigWriter {
 	let sshDir: URL
@@ -55,8 +56,12 @@ public struct SSHHostConfigWriter {
 	private var userConfig: URL { sshDir.appendingPathComponent("config") }
 	private var authorizedKeys: URL { sshDir.appendingPathComponent("authorized_keys") }
 
-	// The alias a VM gets unless its config names another one (SSHConfig.alias).
-	public static func defaultAlias(for vmName: String) -> String { "\(vmName).machman" }
+	// The alias a VM gets unless its config names another one (SSHConfig.alias), mapped
+	// into the alias charset: "dev copy" → dev-copy.machman (decision 4). A raw spaced name
+	// here made OpenSSH refuse the whole file — and with it every ssh on the Mac.
+	public static func defaultAlias(for vmName: String) -> String {
+		SSHAliasRule.defaultAlias(for: vmName)
+	}
 
 	// MARK: - Whole-state regeneration
 
@@ -68,9 +73,24 @@ public struct SSHHostConfigWriter {
 		// A block with no HostName would make `ssh <alias>` fail with a DNS-flavored
 		// error — an alias only exists once SOME address is known (fresh discovery, or
 		// the file's own last-known value: the file is the persistence across restarts).
-		let addressed = entries.compactMap { entry -> (VMEntry, String)? in
+		var claimed = Set<String>()
+		let addressed = entries.compactMap { served -> (VMEntry, String)? in
+			var entry = served
+			// One malformed Host line stops OpenSSH for every host, and an older vmhost may
+			// still serve the raw "<name>.machman" — map it like the default is mapped.
+			if !SSHAliasRule.isWellFormed(entry.alias) {
+				entry.alias = SSHAliasRule.defaultAlias(for: entry.name)
+			}
 			guard let address = entry.address ?? previous[entry.alias]
 				else { return nil }
+			// Backstop only: aliases are made unique where a VM takes one. Two blocks with
+			// one Host name would silently merge settings across VMs, so the first wins.
+			// Exact compare — OpenSSH matches Host patterns case-sensitively.
+			guard claimed.insert(entry.alias).inserted else {
+				MachmanLogger.log(.log,
+					"\(entry.name): \(entry.alias) already names another VM in ~/.ssh — skipped")
+				return nil
+			}
 			return (entry, address)
 		}
 		guard !addressed.isEmpty else {

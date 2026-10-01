@@ -115,23 +115,10 @@ struct SSHConfig: Codable, Equatable {
 }
 
 extension VMConfig {
-	// The alias rules, in one place. An ssh_config Host pattern, so glob characters would
-	// silently capture unrelated hosts — and a name with a slash or a space is not a host
-	// at all. Uniqueness across VMs is the daemon's check (only it sees every VM).
+	// The alias rules live in MachmanAPI (SSHAliasRule), shared with the desktop's field.
+	// Uniqueness across VMs is the daemon's check (only it sees every VM).
 	static func validateSSHAlias(_ alias: String) throws {
-		guard alias.count <= 64 else {
-			throw MachmanError(
-				code: .invalidArgument, message: "an SSH alias can be at most 64 characters")
-		}
-		let allowed = CharacterSet(charactersIn:
-			"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_")
-		guard alias.unicodeScalars.allSatisfy({ allowed.contains($0) }),
-			let first = alias.first, first.isLetter || first.isNumber else {
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "an SSH alias must start with a letter or digit and use only "
-					+ "letters, digits, dots, dashes and underscores")
-		}
+		try SSHAliasRule.validate(alias)
 	}
 
 	// vm.ssh.set — nil fields leave that half unchanged. Approving reverse access requires
