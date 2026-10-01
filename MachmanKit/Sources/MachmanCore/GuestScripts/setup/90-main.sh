@@ -73,6 +73,26 @@ uninstall_unmount_and_prune() {
 	return 0
 }
 
+# The AUTOMOUNT_ lines of the automounts this run leaves as they are (a --report-only run:
+# all of them): their entries stay in place, so the report keeps listing them.
+automount_lines_kept() {
+	if ! feature_selected vfsauto && { vfsauto_configured || vfsauto_foreign; }; then
+		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
+}virtiofs	$SHARE_TAG	$SHARE_ROOT"
+	fi
+	feature_selected sshfsauto && return 0
+	# Mount names are host text: never globbed against the working directory.
+	set -f
+	# shellcheck disable=SC2086
+	set -- $ST_AUTOMOUNT_SSHFS
+	set +f
+	for _alk_n in "$@"; do
+		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
+}sshfs	$_alk_n	${ST_MOUNTPOINT:-$MOUNT_ROOT}/$_alk_n"
+	done
+	return 0
+}
+
 # ------------------------------------------------------------------------- detection ----
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -100,18 +120,7 @@ done
 # The boot hook's mode (and a hand tool): probe everything, refresh the report, change
 # nothing else. States the last run could only promise flip to what the guest does now.
 if [ "$REPORT_ONLY" -eq 1 ]; then
-	if vfsauto_configured || vfsauto_foreign; then
-		AUTOMOUNT_LINES="virtiofs	$SHARE_TAG	$SHARE_ROOT"
-	fi
-	# Mount names are host text: never globbed against the working directory.
-	set -f
-	# shellcheck disable=SC2086
-	set -- $ST_AUTOMOUNT_SSHFS
-	set +f
-	for _mm_n in "$@"; do
-		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
-}sshfs	$_mm_n	${ST_MOUNTPOINT:-$MOUNT_ROOT}/$_mm_n"
-	done
+	automount_lines_kept
 	write_report
 	[ "$QUIET" -eq 1 ] || ok "refreshed Machman's report"
 	exit 0
@@ -329,6 +338,7 @@ for _mm_f in $FEATURES; do
 	esac
 done
 write_state "${_mm_configured# }"
+automount_lines_kept
 # Anything configured wants the boot-time report refresh, so promised states flip.
 [ -n "$_mm_configured" ] && report_hook_install
 find_addresses

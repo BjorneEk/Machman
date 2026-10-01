@@ -86,8 +86,17 @@ write_state() {
 		[ -n "$KC_DEVICE_DONE" ] && printf "KERNEL_CONSOLE='%s'\n" "$KC_DEVICE_DONE"
 		[ -n "$KC_METHOD_DONE" ] && printf "KERNEL_CONSOLE_METHOD='%s'\n" "$KC_METHOD_DONE"
 		[ -n "$U" ] && printf "SSH_USER='%s'\n" "$U"
-		[ -n "$SSHFSAUTO_DONE" ] && printf "AUTOMOUNT_SSHFS='%s'\n" "$SSHFSAUTO_DONE"
-		[ -n "$SSHFSAUTO_DONE" ] && printf "MOUNTPOINT='%s'\n" "$MOUNTPOINT"
+		# A run that leaves the sshfs automounts alone keeps their record: their fstab
+		# lines or boot script stay, and uninstall and --report-only work from it.
+		if feature_selected sshfsauto; then
+			_ws_auto="$SSHFSAUTO_DONE"
+			_ws_root="$MOUNTPOINT"
+		else
+			_ws_auto="$ST_AUTOMOUNT_SSHFS"
+			_ws_root="${ST_MOUNTPOINT:-$MOUNTPOINT}"
+		fi
+		[ -n "$_ws_auto" ] && printf "AUTOMOUNT_SSHFS='%s'\n" "$_ws_auto"
+		[ -n "$_ws_auto" ] && printf "MOUNTPOINT='%s'\n" "$_ws_root"
 		:
 	} > "$STATE_FILE.tmp"
 	mv "$STATE_FILE.tmp" "$STATE_FILE"

@@ -1,12 +1,14 @@
 # The shared fstab block (systemd guests): each automount feature rewrites only its own
 # lines, and mount names are never globbed.
-# CHECKS: VFS_KEEPS_SSHFS GLOB_TAG
+# CHECKS: VFS_KEEPS_SSHFS SSHFS_RECORD_KEPT GLOB_TAG
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
 fake_systemd
 mkuser reg
-block() { awk -v m="$NEW" '$0 == "# BEGIN " m { b = 1; next } $0 == "# END " m { b = 0 } b' /etc/fstab; }
+block() {
+	awk -v m="$NEW" '$0 == "# BEGIN " m { b = 1; next } $0 == "# END " m { b = 0 } b' /etc/fstab
+}
 
 $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-install \
 	--no-service >/tmp/run1.log 2>&1
@@ -19,6 +21,14 @@ if [ "$(block | grep -c fuse.sshfs)" = 2 ] && [ "$(block | grep -c ' virtiofs ')
 	R VFS_KEEPS_SSHFS pass
 else
 	R VFS_KEEPS_SSHFS fail; cat /etc/fstab
+fi
+# …and so does what the guest remembers and reports about them.
+if grep -q "^AUTOMOUNT_SSHFS='projects docs'" /var/lib/machman/state.env \
+	&& grep -q '^AUTOMOUNT_[0-9]*=sshfs projects /mnt/machman/mounts/projects$' "$REPORT" \
+	&& grep -q '^AUTOMOUNT_[0-9]*=virtiofs host-share /mnt/machman/share$' "$REPORT"; then
+	R SSHFS_RECORD_KEPT pass
+else
+	R SSHFS_RECORD_KEPT fail; cat /var/lib/machman/state.env; grep AUTOMOUNT "$REPORT"
 fi
 $SH "$S" --uninstall -y >/dev/null 2>&1
 
