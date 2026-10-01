@@ -41,7 +41,12 @@ struct MachmanDesktopApp: App {
 	}
 
 	var body: some Scene {
-		WindowGroup {
+		// ONE main window (P18): a terminal view can live in only one window (the newest
+		// mount owns it — SerialTerminalView), so a second main window over the same view
+		// model blanked the first one's terminals. A Window scene is single-instance, listed
+		// in the Window menu, reopenable after a close, and openWindow(id: "main") brings it
+		// forward.
+		Window("Machman", id: "main") {
 			ThemedRoot(store: themeStore) {
 				if let viewModel = connection.viewModel {
 					VMNavigationView(
@@ -210,7 +215,9 @@ struct MachmanDesktopApp: App {
 							&& AddFlows.pasteboardFileURLs().isEmpty))
 				}
 			}
-			CommandGroup(before: CommandGroupPlacement.newItem) {
+			// Replacing, not before: SwiftUI's own New Window items (the torn-tab group's too)
+			// go, and ⌘N belongs to New VM.
+			CommandGroup(replacing: .newItem) {
 				if let viewModel = connection.viewModel {
 					Button(action: {
 						Task {
