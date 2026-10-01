@@ -355,9 +355,9 @@ was never forwarded because its daemon died in between; it exits on its own afte
 runs this start, MAC check included; a safe start there answers `invalidState` ("… has an idle
 vmhost from an earlier start — start it normally, or wait up to 3 minutes to start it safe"),
 since that host runs the real VM, never a shadow. A host whose VM just stopped is exiting: the
-start waits a few seconds for it to go, then answers `invalidState` ("… is still shutting down
-— try again in a moment"). A host that misses its answer deadline answers `invalidState` ("…'s
-vmhost is not responding").
+start waits up to 3 s for it to go and then starts normally; if the host is still there, the
+start answers `invalidState` ("… is still shutting down — try again in a moment"). A host that
+misses its answer deadline answers `invalidState` ("…'s vmhost is not responding").
 
 ## What is deliberately NOT here
 
