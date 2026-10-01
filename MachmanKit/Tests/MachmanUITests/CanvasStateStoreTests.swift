@@ -127,4 +127,16 @@ struct CanvasStateStoreTests {
 		#expect(store.canvas(for: "good") == good)
 		#expect(store.canvases["broken"] == nil)
 	}
+
+	// A tab kind another build wrote is dropped on reload, not turned into a second config
+	// tab (T12).
+	@Test func aLayoutWithAnUnknownTabReloadsWithoutIt() throws {
+		let url = tempURL()
+		try Data(#"""
+			{"canvases": {"debian": {"panes": [{"id": "0A000000-0000-4000-8000-00000000000A",
+			  "tabs": [{"kind": "config"}, {"kind": "history"}]}]}}}
+			"""#.utf8).write(to: url)
+		let store = CanvasStateStore(fileURL: url)
+		#expect(store.canvas(for: "debian").allOpenTabs == [.config])
+	}
 }

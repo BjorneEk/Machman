@@ -20,16 +20,31 @@ extension VMPaneTab: Codable {
 		case session
 	}
 
-	public init(from decoder: Decoder) throws {
+	private struct UnknownKind: Error {}
+
+	// A kind this build doesn't know (another build's tab) throws UnknownKind.
+	init(knownFrom decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		switch try c.decode(String.self, forKey: .kind) {
+		case "config":
+			self = .config
 		case "terminal":
 			self = .terminal(try c.decode(SerialPortRef.self, forKey: .port))
 		case "ssh":
-			// Decodable for completeness; the store never persists ssh tabs, and older
-			// builds' tolerant default degrades a leaked one to .config.
+			// Decodable for completeness; the canvas store never persists ssh tabs.
 			self = .ssh(try c.decode(SSHSessionRef.self, forKey: .session))
 		default:
+			throw UnknownKind()
+		}
+	}
+
+	// The standalone decode, used by TornTab's window restoration: a torn window must show
+	// something, so an unknown kind opens as the config tab. Canvases decode tab by tab
+	// (KnownTab) and drop unknown kinds instead (T12).
+	public init(from decoder: Decoder) throws {
+		do {
+			try self.init(knownFrom: decoder)
+		} catch is UnknownKind {
 			self = .config
 		}
 	}
@@ -49,6 +64,16 @@ extension VMPaneTab: Codable {
 	}
 }
 
+// One persisted tab of a canvas: nil when another build wrote a kind this one doesn't know
+// (or the tab is unreadable), so the canvas drops it rather than showing a stand-in.
+private struct KnownTab: Decodable {
+	let tab: VMPaneTab?
+
+	init(from decoder: Decoder) throws {
+		tab = try? VMPaneTab(knownFrom: decoder)
+	}
+}
+
 public struct CanvasPane: Equatable, Sendable, Codable, Identifiable {
 	public let id: UUID
 	public private(set) var tabs: [VMPaneTab]
@@ -58,6 +83,21 @@ public struct CanvasPane: Equatable, Sendable, Codable, Identifiable {
 		self.id = id
 		self.tabs = tabs
 		self.active = active ?? tabs.first
+	}
+
+	// A saved pane keeps the tabs this build knows, each once (tab views are keyed by the
+	// tab, so a repeat would collide), and an active tab only if it is among them.
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		var tabs: [VMPaneTab] = []
+		for tab in c.decodeTolerantArray(of: KnownTab.self, forKey: .tabs).compactMap(\.tab)
+			where !tabs.contains(tab) {
+			tabs.append(tab)
+		}
+		let active = c.decodeTolerant(KnownTab.self, forKey: .active)?.tab
+		self.init(
+			id: c.decodeTolerant(UUID.self, forKey: .id) ?? UUID(), tabs: tabs,
+			active: active.flatMap { tabs.contains($0) ? $0 : nil })
 	}
 
 	// VMTabState's activation rules, per pane: only open tabs can be active.
@@ -118,6 +158,32 @@ public struct CanvasState: Equatable, Sendable, Codable {
 		self.activePaneID = activePaneID ?? self.panes.first?.id
 		self.fractions = fractions ?? []
 		normalize()
+	}
+
+	// A saved layout is held to the live invariants: a tab lives in one pane (the first that
+	// holds it), pane ids are unique, empty panes collapse as on a live close, and the
+	// active pane is one that exists. Fractions that don't fit the panes are reset.
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		var panes: [CanvasPane] = []
+		var seenTabs = Set<VMPaneTab>()
+		var seenIDs = Set<UUID>()
+		for var pane in c.decodeTolerantArray(of: CanvasPane.self, forKey: .panes) {
+			pane.remove { seenTabs.contains($0) }
+			seenTabs.formUnion(pane.tabs)
+			if seenIDs.contains(pane.id) {
+				pane = CanvasPane(tabs: pane.tabs, active: pane.active)
+			}
+			seenIDs.insert(pane.id)
+			panes.append(pane)
+		}
+		let filled = panes.filter { !$0.tabs.isEmpty }
+		panes = filled.isEmpty ? Array(panes.prefix(1)) : filled
+		let activeID = c.decodeTolerant(UUID.self, forKey: .activePaneID)
+		self.init(
+			panes: panes,
+			activePaneID: panes.contains { $0.id == activeID } ? activeID : nil,
+			fractions: c.decodeTolerant([Double].self, forKey: .fractions))
 	}
 
 	public var activePane: CanvasPane? {

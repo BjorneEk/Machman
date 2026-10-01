@@ -166,4 +166,68 @@ struct CanvasStateTests {
 		#expect(String(decoding: data, as: UTF8.self).contains(#""kind":"ssh""#))
 		#expect(try JSONDecoder().decode(VMPaneTab.self, from: data) == .ssh(ref))
 	}
+
+	// MARK: - Loading layouts another build wrote (T12)
+
+	private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+		try JSONDecoder().decode(type, from: Data(json.utf8))
+	}
+
+	private let paneA = "0A000000-0000-4000-8000-00000000000A"
+	private let paneB = "0B000000-0000-4000-8000-00000000000B"
+	private let hvc0JSON = #"{"kind":"terminal","port":{"kind":"console","index":0}}"#
+
+	@Test func unknownTabKindsAreDroppedNotTurnedIntoConfig() throws {
+		let pane = try decode(CanvasPane.self, """
+			{"id": "\(paneA)", "tabs": [{"kind": "config"}, {"kind": "history"},
+			  {"kind": "notes"}, \(hvc0JSON)], "active": {"kind": "history"}}
+			""")
+		#expect(pane.tabs == [.config, .terminal(hvc0)])
+		#expect(pane.active == .config)
+	}
+
+	@Test func aRepeatedTabInOnePaneIsKeptOnce() throws {
+		let pane = try decode(CanvasPane.self, """
+			{"id": "\(paneA)", "tabs": [\(hvc0JSON), {"kind": "config"}, \(hvc0JSON)]}
+			""")
+		#expect(pane.tabs == [.terminal(hvc0), .config])
+	}
+
+	@Test func aTabInTwoPanesStaysInTheFirst() throws {
+		let canvas = try decode(CanvasState.self, """
+			{"panes": [{"id": "\(paneA)", "tabs": [{"kind": "config"}, \(hvc0JSON)]},
+			           {"id": "\(paneB)", "tabs": [\(hvc0JSON)]}],
+			 "activePaneID": "\(paneB)", "fractions": [0.5, 0.5]}
+			""")
+		#expect(canvas.panes.count == 1)
+		#expect(canvas.allOpenTabs == [.config, .terminal(hvc0)])
+		#expect(canvas.activePaneID == UUID(uuidString: paneA))
+		#expect(canvas.fractions == [1.0])
+	}
+
+	@Test func aDanglingActivePaneFallsBackToTheFirst() throws {
+		let canvas = try decode(CanvasState.self, """
+			{"panes": [{"id": "\(paneA)", "tabs": [{"kind": "config"}]}],
+			 "activePaneID": "\(paneB)", "fractions": [1.0]}
+			""")
+		#expect(canvas.activePaneID == UUID(uuidString: paneA))
+	}
+
+	@Test func aRepeatedPaneIDIsMadeUnique() throws {
+		let canvas = try decode(CanvasState.self, """
+			{"panes": [{"id": "\(paneA)", "tabs": [{"kind": "config"}]},
+			           {"id": "\(paneA)", "tabs": [\(hvc0JSON)]}],
+			 "activePaneID": "\(paneA)", "fractions": [0.5, 0.5]}
+			""")
+		#expect(canvas.panes.count == 2)
+		#expect(Set(canvas.panes.map(\.id)).count == 2)
+		#expect(canvas.fractions == [0.5, 0.5])
+	}
+
+	// A torn-off window must always show something: its standalone tab decode keeps
+	// turning an unknown kind into the config tab (canvases drop such tabs instead).
+	@Test func aTornWindowOfAnUnknownKindStillOpensAsConfig() throws {
+		let torn = try decode(TornTab.self, #"{"vm": "Debian", "tab": {"kind": "history"}}"#)
+		#expect(torn.tab == .config)
+	}
 }
