@@ -391,7 +391,11 @@ public final class VMRegistry {
 			machmanVMDir = runRoot
 			// A disk that could not go back keeps the saved folder in the library, where its
 			// config lists it: the run root is deleted when the run ends.
-			if !stranded, restore(destination, to: shadow) {
+			if stranded {
+				MachmanLogger.log(.passiveError,
+					"Save as New VM failed half-way: \(newName) stays in the library with the "
+						+ "disks that could not go back to \(oldName)")
+			} else if restore(destination, to: shadow) {
 				try? shadowConfig?.write(
 					to: URL(fileURLWithPath: shadow + "/config"), options: .atomic)
 			}
