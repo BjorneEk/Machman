@@ -61,6 +61,13 @@ public struct CommandTarget {
 	// ⌘W closes the main canvas's active tab; any other window closes as a whole.
 	public var closesCanvasTab: Bool { window == .main }
 
+	// Delete VM… (⌘⌫): a VM to delete that the daemon would delete now, and no text input
+	// in front — there ⌘⌫ deletes to the start of the line (H5).
+	public func canDeleteVM(editingText: Bool) -> Bool {
+		guard let vm, !editingText else { return false }
+		return vm.refusal(.deleteVM) == nil
+	}
+
 	public init(viewModel: VMListViewModel?, window: CommandWindow?) {
 		self.window = window
 		switch (viewModel, window) {

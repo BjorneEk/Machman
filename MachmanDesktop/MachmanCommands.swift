@@ -18,6 +18,7 @@ import MachmanDesktopUI
 
 struct MachmanCommands: Commands {
 	@ObservedObject var connection: DaemonConnection
+	@ObservedObject var textEditing: TextEditingMonitor
 	@Binding var selection: String?
 	@FocusedValue(\.machmanWindow) private var window
 	@FocusedBinding(\.machmanInspector) private var inspectorShown
@@ -248,6 +249,19 @@ struct MachmanCommands: Commands {
 			Label("Save as New VM…", systemImage: MachmanSymbols.safe)
 		}
 		.disabled(target.vm?.safeRun != true || viewModel.safeSaveInFlight)
+		Divider()
+		// Asks first ("Delete “X”?" on the main window).
+		Button(action: {
+			guard let vm = target.vm else { return }
+			showMainIfNeeded(target)
+			viewModel.deleteVM(vm)
+		}) {
+			Label("Delete VM…", systemImage: MachmanSymbols.delete)
+		}
+		.keyboardShortcut(.delete, modifiers: .command)
+		.disabled(!target.canDeleteVM(editingText: textEditing.isEditingText))
+		.help(target.vm?.refusal(.deleteVM) ?? "")
+		Divider()
 		Button(action: {
 			guard let terminal = target.terminal else { return }
 			viewModel.saveTerminalTranscript(of: terminal)

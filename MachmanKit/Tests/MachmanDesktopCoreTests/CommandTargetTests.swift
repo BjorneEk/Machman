@@ -95,4 +95,28 @@ struct CommandTargetTests {
 		h.viewModel.requestNewVM()
 		#expect(h.viewModel.newVMChooserRequested)
 	}
+
+	// H5: ⌘⌫ deletes the key window's VM, but never while text input has focus — there it
+	// deletes to the start of the line.
+	@Test func deleteVMWaitsForTextEditingToEnd() async {
+		let h = await DesktopHarness.make()
+		h.viewModel.select(name: "Alpine")
+		let target = CommandTarget(viewModel: h.viewModel, window: .main)
+		#expect(!target.canDeleteVM(editingText: true))
+		#expect(target.canDeleteVM(editingText: false))
+	}
+
+	@Test func aRunningVMCannotBeDeleted() async {
+		let h = await DesktopHarness.make()
+		h.viewModel.select(name: "Debian")
+		let target = CommandTarget(viewModel: h.viewModel, window: .main)
+		#expect(!target.canDeleteVM(editingText: false))
+		#expect(target.vm?.refusal(.deleteVM) == "Stop the VM to delete it")
+	}
+
+	@Test func noWindowNoDelete() async {
+		let h = await DesktopHarness.make()
+		#expect(!CommandTarget(viewModel: h.viewModel, window: nil)
+			.canDeleteVM(editingText: false))
+	}
 }

@@ -25,6 +25,8 @@ struct MachmanDesktopApp: App {
 	// The selected VM (the sidebar's selection). Serial ports open as tabs, they are not selected.
 	@State var selection: String? = nil
 	@StateObject private var themeStore = ThemeStore()
+	// Whether text input has focus: Delete VM… (⌘⌫) is off then.
+	@StateObject private var textEditing = TextEditingMonitor()
 
 	init() {
 		let connection = DaemonConnection()
@@ -64,7 +66,8 @@ struct MachmanDesktopApp: App {
 		}
 		// Every menu command, aimed at the key window (MachmanCommands.swift).
 		.commands {
-			MachmanCommands(connection: connection, selection: $selection)
+			MachmanCommands(
+				connection: connection, textEditing: textEditing, selection: $selection)
 		}
 		// Torn-off canvas tabs: one window per (vm, tab) value; Codable payload restores
 		// them across relaunches. The terminal reparents from the app-scoped sessions.
