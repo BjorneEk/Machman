@@ -112,6 +112,7 @@ public final class VMListViewModel: ObservableObject {
 
 	public static let toastSecondsKey = "MachmanToastSeconds"
 	public static let defaultToastSeconds = 4.0
+	public static let maxToasts = 5
 
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
@@ -253,6 +254,7 @@ public final class VMListViewModel: ObservableObject {
 	private var knownSSH: [String: SSHSnapshot] = [:]
 
 	public static func sshWaitToastKey(_ vm: String) -> String { "ssh-wait-\(vm)" }
+	public static func logToastKey(_ text: String) -> String { "log:" + text }
 
 	// The SSH story, told through toasts: the guest answering at all, then whether its
 	// sshd does, then what its setup run achieved. Same rule as the state diff — a first
@@ -361,10 +363,12 @@ public final class VMListViewModel: ObservableObject {
 			// the user actually runs.
 			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
 			if level == .warning || level == .error {
+				// Keyed by its text: a warning repeated while its toast shows restarts that
+				// toast instead of stacking another copy (P15).
+				let text = "\(vm.map { "\($0): " } ?? "")\(message)"
 				pushToast(
-					symbol: MachmanSymbols.warning,
-					message: "\(vm.map { "\($0): " } ?? "")\(message)",
-					tint: MachmanColors.warning)
+					symbol: MachmanSymbols.warning, message: text, tint: MachmanColors.warning,
+					key: Self.logToastKey(text))
 			}
 		case .copyProgress:
 			break   // legacy wire event; the operation cards carry all copy progress
@@ -426,6 +430,11 @@ public final class VMListViewModel: ObservableObject {
 			toasts[existing] = toast
 		} else {
 			toasts.append(toast)
+			// A burst keeps the newest few: the oldest timed toast goes first, waits stay.
+			while toasts.count > Self.maxToasts,
+				let oldest = toasts.firstIndex(where: { !$0.sticky }) {
+				toasts.remove(at: oldest)
+			}
 		}
 		guard !sticky else { return }
 		let stored = UserDefaults.standard.double(forKey: Self.toastSecondsKey)
