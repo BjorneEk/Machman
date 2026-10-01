@@ -18,6 +18,10 @@ ST_SSH_USER=""
 ST_AUTOMOUNT_SSHFS=""      # TAB-separated mount names (they carry spaces)
 ST_MOUNTPOINT=""           # where sshfs automounts land — report-only reconstructs with it
 ST_LAST_STATUS=""          # ok|partial from the last real run — --report-only keeps it
+ST_LAST_NOTE=""            # …with its one-sentence note, failed steps, and the error and
+ST_LAST_FAILED_STEPS=""    # note lines ("step: message", newline-separated) that explain
+ST_ERR_LINES=""            # it
+ST_NOTE_LINES=""
 
 state_paths() {
 	case "$OS_FAMILY" in
@@ -39,6 +43,22 @@ state_get() {
 # state_line <key> <value> — one KEY='value' line, the value sh-quoted.
 state_line() {
 	printf '%s=%s\n' "$1" "$(sh_quote "$2")"
+}
+
+# state_lines <prefix> <lines> — <prefix>1, <prefix>2, … one per non-empty line.
+state_lines() {
+	_sls_i=1
+	printf '%s\n' "$2" | while IFS= read -r _sls_line; do
+		[ -n "$_sls_line" ] || continue
+		state_line "$1$_sls_i" "$_sls_line"
+		_sls_i=$((_sls_i + 1))
+	done
+}
+
+# state_list <prefix> — the values of <prefix><n> keys, unquoted, in file order.
+state_list() {
+	sed -n "/^$1[0-9][0-9]*=/{s/^$1[0-9][0-9]*=//;s/^'//;s/'\$//;s/'\\\\''/'/g;p;}" \
+		"$STATE_FILE" 2>/dev/null
 }
 
 read_state() {
@@ -66,6 +86,10 @@ read_state() {
 	esac
 	ST_MOUNTPOINT="$(state_get MOUNTPOINT)"
 	ST_LAST_STATUS="$(state_get LAST_STATUS)"
+	ST_LAST_NOTE="$(state_get LAST_NOTE)"
+	ST_LAST_FAILED_STEPS="$(state_get LAST_FAILED_STEPS)"
+	ST_ERR_LINES="$(state_list ERROR_)"
+	ST_NOTE_LINES="$(state_list NOTE_)"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
 	# version writing state at all (v2 left only marker-tagged artifacts), so there is
@@ -75,6 +99,16 @@ read_state() {
 
 state_was_configured() {
 	has_word "$1" "$ST_CONFIGURED"
+}
+
+# A --report-only run describes the last real run (write_report takes its status from the
+# state): that run's note, failed steps, and error and note lines become this report's.
+state_replay_outcome() {
+	FAILED_STEPS="$ST_LAST_FAILED_STEPS"
+	R_LAST_FAILURE="$ST_LAST_NOTE"
+	ERR_LINES="$ST_ERR_LINES"
+	NOTE_LINES="$ST_NOTE_LINES"
+	return 0
 }
 
 # write_state <configured feature ids, space-separated>
@@ -101,6 +135,11 @@ write_state() {
 		else
 			state_line LAST_STATUS ok
 		fi
+		# What explains that status, for --report-only (the boot-time refresh) to report.
+		[ -n "$R_LAST_FAILURE" ] && state_line LAST_NOTE "$R_LAST_FAILURE"
+		[ -n "$FAILED_STEPS" ] && state_line LAST_FAILED_STEPS "$FAILED_STEPS"
+		state_lines ERROR_ "$ERR_LINES"
+		state_lines NOTE_ "$NOTE_LINES"
 		# Each feature's record is this run's when the run acted on it, else the last
 		# run's: what a feature configured stays configured whatever a later run selects,
 		# and uninstall and --report-only work from the record (grubby's arguments, the

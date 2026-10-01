@@ -118,6 +118,39 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S28: a --report-only run (the boot-time refresh) describes the last real run whole —
+	// its status, one-sentence note, failed steps, errors and notes — from the state file,
+	// so after a reboot "partial" still says why.
+	@Test func reportOnlyReplaysTheLastRun() throws {
+		let dir = try GuestScriptHarness.scratch()
+		for shell in GuestScriptHarness.shells {
+			let run = try GuestScriptHarness.run(Self.stateHere + #"""
+				step_failed sshd "could not enable the service"
+				report_note report-refresh "rc.local was not executable — re-enabled"
+				write_state "ssh"
+				"""#, under: shell, in: dir)
+			#expect(run.status == 0, "\(shell): \(run.out)")
+			let boot = try GuestScriptHarness.run(Self.stateHere + #"""
+				read_state
+				REPORT_ONLY=1
+				FEATURES=""
+				state_replay_outcome
+				write_report
+				grep -E '^(STATUS|FAILED_STEPS|NOTE|ERROR_[0-9]*|NOTE_[0-9]*)=' \
+					"$D/GuestReport/report.env"
+				"""#, under: shell, in: dir)
+			#expect(boot.status == 0, "\(shell): \(boot.out)")
+			#expect(boot.out == """
+				STATUS=partial
+				FAILED_STEPS=sshd
+				NOTE=could not enable the service
+				ERROR_1=sshd: could not enable the service
+				NOTE_1=report-refresh: rc.local was not executable — re-enabled
+
+				""", "\(shell): \(boot.out)")
+		}
+	}
+
 	// A state file an older script wrote ('…' around raw text, apostrophes unescaped) reads
 	// as it was meant.
 	@Test func olderStateFilesStillRead() throws {

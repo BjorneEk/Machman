@@ -103,6 +103,7 @@ done
 # The boot hook's mode (and a hand tool): probe everything, refresh the report, change
 # nothing else. States the last run could only promise flip to what the guest does now.
 if [ "$REPORT_ONLY" -eq 1 ]; then
+	state_replay_outcome
 	automount_lines_kept
 	write_report
 	[ "$QUIET" -eq 1 ] || ok "refreshed Machman's report"
@@ -333,10 +334,11 @@ for _mm_f in $FEATURES; do
 		;;
 	esac
 done
+# Anything configured wants the boot-time report refresh, so promised states flip. Ahead
+# of the state: what it notes is part of the run the state records.
+[ -n "$_mm_configured" ] && report_hook_install
 write_state "${_mm_configured# }"
 automount_lines_kept
-# Anything configured wants the boot-time report refresh, so promised states flip.
-[ -n "$_mm_configured" ] && report_hook_install
 find_addresses
 write_report
 

@@ -3,6 +3,7 @@
 # sshfs boot mounts share the file with whatever the guest already runs there.
 # CHECKS: RCLOCAL_INIT RCLOCAL_HOOK RCLOCAL_IDEMPOTENT RCLOCAL_PRISTINE
 # CHECKS: RCLOCAL_EXEC RCLOCAL_BEFORE_EXIT RCLOCAL_RUNS RCLOCAL_REENABLED RCLOCAL_DISABLED_KEPT
+# CHECKS: BOOT_REPORT_KEEPS_ERRORS
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -123,5 +124,17 @@ if cmp -s /tmp/rc.local.off /etc/rc.local \
 else
 	R RCLOCAL_DISABLED_KEPT fail; ls -l /etc/rc.local; grep -E '^(ERROR|NOTE)_' "$REPORT"
 	diff /tmp/rc.local.off /etc/rc.local | head -8
+fi
+# S28: the boot-time refresh (--report-only) keeps that run's "partial" explained: its
+# status, note, failed steps, error and note lines come back from the state file.
+outcome() { grep -E '^(STATUS|FAILED_STEPS|NOTE|ERROR_[0-9]*|NOTE_[0-9]*)=' "$REPORT"; }
+outcome > /tmp/outcome-run
+$SH "$S" --report-only -q >/tmp/ro4.log 2>&1
+outcome > /tmp/outcome-boot
+if grep -q '^ERROR_[0-9]*=automount-sshfs: /etc/rc.local is not executable' /tmp/outcome-run \
+	&& grep -q '^NOTE=' /tmp/outcome-run && cmp -s /tmp/outcome-run /tmp/outcome-boot; then
+	R BOOT_REPORT_KEEPS_ERRORS pass
+else
+	R BOOT_REPORT_KEEPS_ERRORS fail; diff /tmp/outcome-run /tmp/outcome-boot
 fi
 exit 0
