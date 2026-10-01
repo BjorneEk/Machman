@@ -91,6 +91,9 @@ enum InspectorScenes {
 			node: .serial(SerialPortRef(kind: .uart, index: 0))),
 		inspector("ssh", "SSHInspector", node: .group("SSH")),
 		inspector(
+			"ssh.spaced-name", "SSHInspector, a VM named with a space",
+			vms: { [Samples.linuxSpacedName()] }, select: "Debian copy", node: .group("SSH")),
+		inspector(
 			"ssh-session", "SSHSessionInspector, an open session tab",
 			node: .sshSession(sshSession)
 		) { ctx in

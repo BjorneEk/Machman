@@ -13,50 +13,7 @@ import MachmanUI
 import MachmanAPI
 import MachmanDesktopCore
 
-// argv for /usr/bin/ssh from daemon-served state — self-contained (-i + IdentitiesOnly),
-// deliberately independent of the ~/.ssh integration so tabs work without consent.
-//
-// Host verification uses the VM's OWN known-hosts file, keyed by its alias: the app never
-// writes the user's ~/.ssh (which is the promise the setup guide makes), the pin follows
-// the guest rather than its address, and a guest whose key we already know is verified
-// strictly. Keepalives matter because a guest that dies mid-session otherwise leaves the
-// tab hanging with no output and no exit.
-enum SSHCommand {
-	static func arguments(for vm: VMInfo) -> [String]? {
-		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
-			let identity = ssh.identityFilePath else { return nil }
-		var arguments = [
-			"-i", identity,
-			"-o", "IdentitiesOnly=yes",
-			"-o", "ConnectTimeout=10",
-			"-o", "ServerAliveInterval=15",
-			"-o", "ServerAliveCountMax=3",
-		]
-		// Strict checking only when there is a pin to check against: the daemon serves
-		// knownHostsPath once the file actually exists, and a host key means we know who
-		// should answer. Otherwise accept-new — better than a TOFU prompt in a terminal
-		// the user did not ask to be prompted in, and it cannot lock them out.
-		if let knownHosts = ssh.knownHostsPath, ssh.guestHostKey != nil {
-			arguments += [
-				"-o", quotedOption("UserKnownHostsFile", path: knownHosts),
-				"-o", "HostKeyAlias=\(ssh.alias ?? vm.name)",
-				"-o", "StrictHostKeyChecking=yes",
-			]
-		} else {
-			arguments += ["-o", "StrictHostKeyChecking=accept-new"]
-		}
-		return arguments + ["\(user)@\(address)"]
-	}
-
-	// ssh parses -o values with its own config parser, and UserKnownHostsFile takes a
-	// SPACE-SEPARATED LIST — so an unquoted path under "Application Support" becomes three
-	// filenames that do not exist, and strict checking then fails with "no host key is
-	// known" (measured). Quoting inside the value is what ssh_config expects.
-	private static func quotedOption(_ key: String, path: String) -> String {
-		"\(key)=\"\(path)\""
-	}
-}
-
+// The argv comes from SSHCommand (MachmanDesktopCore).
 struct SSHTabContent: View {
 	@ObservedObject var sessions: TerminalSessions
 	@ObservedObject var viewModel: VMListViewModel

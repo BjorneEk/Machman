@@ -39,8 +39,9 @@ struct NetworkSSHSection: View {
 	private var setupAttached: Bool {
 		(vm.devices ?? []).contains { $0.kind == .guestSetup }
 	}
-	// Served, never derived: the VM can be named something else in ~/.ssh.
-	private var alias: String { vm.ssh?.alias ?? "\(vm.name).machman" }
+	// Served, never derived: the VM can be named something else in ~/.ssh. The fallback
+	// (an older daemon) follows the daemon's own mapping.
+	private var alias: String { vm.ssh?.alias ?? SSHAliasRule.defaultAlias(for: vm.name) }
 	private var sshCommand: String? {
 		guard let ssh = vm.ssh else { return nil }
 		if ssh.integrationEnabled == true {
