@@ -129,7 +129,11 @@ fi
 # ------------------------------------------------------------------------- uninstall ----
 
 if [ "$UNINSTALL" -eq 1 ]; then
-	detect_user
+	# The sweep covers every home it may have touched (ssh_touched_users), so there is
+	# nobody to ask about — an explicit --user only joins it (and is still checked).
+	if [ -n "$USER_OVERRIDE" ]; then
+		detect_user
+	fi
 	STEP="removing Machman's guest configuration"
 	if [ "$DRY_RUN" -eq 1 ]; then
 		acting "would remove every line, file and service carrying $MARKER"
