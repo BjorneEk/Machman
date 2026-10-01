@@ -99,6 +99,23 @@ enum WindowScenes {
 			mainWindow(ctx, inspector: true)
 		},
 		RenderScene(
+			"window.main.mac-unfinished-copy",
+			"VMNavigationView, the copy of a Mac whose install never finished",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			vms: { [Samples.macOSUnfinishedCopy()] },
+			panels: { ctx in
+				[
+					tree(ctx),
+					AnyView(InspectorView(
+						viewModel: ctx.viewModel, sessions: ctx.terminals,
+						profiles: ctx.profiles, vm: ctx.vm)
+						.padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			mainWindow(ctx, inspector: true)
+		},
+		RenderScene(
 			"window.main.no-inspector", "VMNavigationView, inspector closed",
 			widths: RenderScene.windowWidths, height: 820, chrome: .window,
 			panels: { ctx in [tree(ctx)] }

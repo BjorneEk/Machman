@@ -386,6 +386,37 @@ struct VMCopierTests {
 		#expect(config.startPolicy.autostart == false)   // cleared in BOTH identity modes
 	}
 
+	// C10: the copy of a Mac whose install never finished — cut short (persisted
+	// "installing") or failed — needs installing, and says so in its own words; an
+	// installed Mac stays installed, and a shadow carries the state verbatim.
+	@Test func unfinishedMacInstallCopiesAsNotInstalled() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let states: [MachmanCore.MacInstallState] = [
+			.installing, .failed("cancelled by user"), .installed,
+		]
+		for (n, state) in states.enumerated() {
+			let src = try makeSourceVM(
+				in: library, name: "mac\(n)",
+				boot: .macOS(MacOSBoot(
+					installState: state, minimumCPUCount: 4, minimumMemorySize: 8 << 30)),
+				extraFiles: ["mac_hardware_model": Data("model".utf8)])
+			let copied = try loadConfig(try VMCopier.copy(VMCopyRequest(
+				sourceDir: src, destinationParent: library, newName: "mac\(n) copy",
+				guestKind: .macOS)))
+			let expected: MachmanCore.MacInstallState = state == .installed
+				? .installed : .failed(VMCopier.unfinishedInstallNote)
+			#expect(copied.boot == .macOS(MacOSBoot(
+				installState: expected, minimumCPUCount: 4, minimumMemorySize: 8 << 30)))
+
+			let shadow = try loadConfig(try VMCopier.copy(VMCopyRequest(
+				sourceDir: src, destinationParent: library, newName: "mac\(n) shadow",
+				regenerateMAC: false, guestKind: .macOS, identity: .impersonate)))
+			#expect(shadow.boot == .macOS(MacOSBoot(
+				installState: state, minimumCPUCount: 4, minimumMemorySize: 8 << 30)))
+		}
+	}
+
 	@Test func impersonateMacOSKeepsMachineID() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }

@@ -53,6 +53,9 @@ struct VMCopyRequest: Sendable {
 
 enum VMCopier {
 	static let stagingPrefix = ".machman-copy-"
+	// The install state a copy of a not-yet-installed Mac starts in (C10).
+	static let unfinishedInstallNote =
+		"Duplicated before macOS was installed"
 
 	// Never travel: config is re-encoded; restore.ipsw is an install artifact that only
 	// survives crashes; the guest share (payload + report drop-box) exists only while the VM
@@ -273,6 +276,14 @@ enum VMCopier {
 			// Decision 12: the copy serves the installer at its first boot, like a new guest
 			// — its script will say "looks cloned … treating it as new" (C14).
 			config.setup?.resetForFreshIdentity()
+			// C10: a Mac whose install never finished copies as one that needs installing,
+			// in its own words. "installing" would claim an install ran in the COPY's
+			// directory (read back as "interrupted"), and a carried failure reason would
+			// describe the source's attempt.
+			if case .macOS(var mac) = config.boot, mac.installState != .installed {
+				mac.installState = .failed(Self.unfinishedInstallNote)
+				config.boot = .macOS(mac)
+			}
 		}
 		// In both modes autostart must be an explicit opt-in: an inherited flag would
 		// install a launch agent nobody asked for (a promoted shadow becomes a real VM).
