@@ -27,9 +27,17 @@ state_paths() {
 	return 0
 }
 
-# Parsed, never sourced — same reasoning as /etc/os-release.
+# Parsed, never sourced — same reasoning as /etc/os-release. Values are written sh-quoted
+# (sh_quote): one outer pair of quotes goes, and each '\'' turns back into '. A value an
+# older script wrote raw between quotes reads the same way.
 state_get() {
-	sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null | head -n 1 | tr -d "'"
+	sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null | head -n 1 \
+		| sed "s/^'//; s/'\$//; s/'\\\\''/'/g"
+}
+
+# state_line <key> <value> — one KEY='value' line, the value sh-quoted.
+state_line() {
+	printf '%s=%s\n' "$1" "$(sh_quote "$2")"
 }
 
 read_state() {
@@ -72,20 +80,26 @@ write_state() {
 			"Create it yourself and re-run."
 		return 0
 	}
+	# Composed in a root-only temp file, then written whole: never through a link.
+	_ws_tmp="$(mktemp)" || {
+		step_failed state "could not write $STATE_FILE — re-runs will not remember choices" \
+			"Make room for a temporary file, then re-run."
+		return 0
+	}
 	{
 		printf 'STATE_VERSION=%s\n' "$STATE_VERSION"
 		printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
-		printf "MARKER='%s'\n" "$MARKER"
-		printf "CONFIGURED='%s'\n" "$1"
+		state_line MARKER "$MARKER"
+		state_line CONFIGURED "$1"
 		if [ -n "$FAILED_STEPS" ]; then
-			printf "LAST_STATUS='partial'\n"
+			state_line LAST_STATUS partial
 		else
-			printf "LAST_STATUS='ok'\n"
+			state_line LAST_STATUS ok
 		fi
-		[ -n "$CONSOLE_MANAGED" ] && printf "CONSOLE_LOGINS='%s'\n" "$CONSOLE_MANAGED"
-		[ -n "$KC_DEVICE_DONE" ] && printf "KERNEL_CONSOLE='%s'\n" "$KC_DEVICE_DONE"
-		[ -n "$KC_METHOD_DONE" ] && printf "KERNEL_CONSOLE_METHOD='%s'\n" "$KC_METHOD_DONE"
-		[ -n "$U" ] && printf "SSH_USER='%s'\n" "$U"
+		[ -n "$CONSOLE_MANAGED" ] && state_line CONSOLE_LOGINS "$CONSOLE_MANAGED"
+		[ -n "$KC_DEVICE_DONE" ] && state_line KERNEL_CONSOLE "$KC_DEVICE_DONE"
+		[ -n "$KC_METHOD_DONE" ] && state_line KERNEL_CONSOLE_METHOD "$KC_METHOD_DONE"
+		[ -n "$U" ] && state_line SSH_USER "$U"
 		# A run that leaves the sshfs automounts alone keeps their record: their fstab
 		# lines or boot script stay, and uninstall and --report-only work from it.
 		if feature_selected sshfsauto; then
@@ -95,12 +109,17 @@ write_state() {
 			_ws_auto="$ST_AUTOMOUNT_SSHFS"
 			_ws_root="${ST_MOUNTPOINT:-$MOUNTPOINT}"
 		fi
-		[ -n "$_ws_auto" ] && printf "AUTOMOUNT_SSHFS='%s'\n" "$_ws_auto"
-		[ -n "$_ws_auto" ] && printf "MOUNTPOINT='%s'\n" "$_ws_root"
+		[ -n "$_ws_auto" ] && state_line AUTOMOUNT_SSHFS "$_ws_auto"
+		[ -n "$_ws_auto" ] && state_line MOUNTPOINT "$_ws_root"
 		:
-	} > "$STATE_FILE.tmp"
-	mv "$STATE_FILE.tmp" "$STATE_FILE"
-	chmod 600 "$STATE_FILE" 2>/dev/null || true
+	} > "$_ws_tmp"
+	if ! write_file -m 600 "$STATE_FILE" < "$_ws_tmp"; then
+		rm -f "$_ws_tmp"
+		step_failed state "$R_ERROR — re-runs will not remember choices" \
+			"Fix that, then re-run."
+		return 0
+	fi
+	rm -f "$_ws_tmp"
 	verbose state "wrote $STATE_FILE"
 	return 0
 }
