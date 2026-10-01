@@ -141,12 +141,15 @@ public enum MachmanPaths {
 		"\(runtimeDir)/vm-\(shortHash(name)).sock"
 	}
 
-	// A running VM's per-port serial data-plane socket, a sibling of its control socket. Hashed
-	// over name+kind+index so it stays well under the 104-byte sun_path ceiling.
+	// A running VM's per-port serial data-plane socket, a sibling of its control socket. Keyed
+	// by the RUN (one VMRuntime), never the VM name: a run saved as a new VM keeps its ports,
+	// and no later run of either VM can land on a live run's path (E27). Clients read it from
+	// VMInfo. Hashed over run+kind+index so it stays well under the 104-byte sun_path ceiling;
+	// the tty- prefix is what the startup prune matches.
 	public static func serialSocketPath(
-		vm name: String, kind: String, index: Int, runtimeDir: String
+		run: String, kind: String, index: Int, runtimeDir: String
 	) -> String {
-		"\(runtimeDir)/tty-\(shortHash("\(name)|\(kind)|\(index)")).sock"
+		"\(runtimeDir)/tty-\(shortHash("\(run)|\(kind)|\(index)")).sock"
 	}
 
 	// FNV-1a, truncated to 32 bits. Hand-rolled to keep this module Foundation-only, and stable

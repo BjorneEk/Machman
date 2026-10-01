@@ -120,8 +120,12 @@ final class SerialPortBridge {
 			self.clients.removeAll()
 			try? self.log?.close()
 			self.log = nil
-			if self.listenerFD >= 0 { close(self.listenerFD); self.listenerFD = -1 }
-			unlink(self.socketPath)
+			// Only a socket this bridge bound: the path may be another run's (E27).
+			if self.listenerFD >= 0 {
+				close(self.listenerFD)
+				self.listenerFD = -1
+				unlink(self.socketPath)
+			}
 		}
 	}
 
@@ -333,6 +337,13 @@ final class SerialPortBridge {
 	// MARK: - Socket
 
 	private func bindSocket() throws {
+		// Never take a live socket: whoever answers there serves another run's port, and
+		// unlinking it would cross-wire that run's terminals (E27). A dead leftover goes.
+		guard !UDSListener.isLive(path: socketPath) else {
+			throw MachmanError(
+				code: .alreadyExists,
+				message: "serial bridge \(kind.rawValue)\(index): \(socketPath) is in use")
+		}
 		unlink(socketPath)
 		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard fd >= 0 else { throw bridgeError("socket") }
@@ -352,7 +363,12 @@ final class SerialPortBridge {
 		}
 		guard bound == 0 else { close(fd); throw bridgeError("bind") }
 		chmod(socketPath, 0o600)
-		guard listen(fd, 8) == 0 else { close(fd); throw bridgeError("listen") }
+		guard listen(fd, 8) == 0 else {
+			let error = bridgeError("listen")
+			close(fd)
+			unlink(socketPath)   // bound here a moment ago: ours to remove
+			throw error
+		}
 		listenerFD = fd
 	}
 

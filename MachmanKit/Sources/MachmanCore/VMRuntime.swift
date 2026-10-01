@@ -21,6 +21,8 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	private var lastEmitted: VMState = .stopped
 	// One data-plane bridge per serial port, live while the VM runs.
 	private var serialBridges: [SerialPortBridge] = []
+	// This run's identity for its data-plane sockets (MachmanPaths.serialSocketPath).
+	private let runID = UUID().uuidString
 	// SSH report ingestion (1.0.5): mtime-poll of the guest-writable drop-box while the
 	// VM runs — this process owns the config, so ingestion persists here (single writer).
 	private var sshReportTimer: Timer?
@@ -217,7 +219,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 			let bridge = SerialPortBridge(
 				kind: wire.kind, index: wire.index,
 				socketPath: MachmanPaths.serialSocketPath(
-					vm: config.name, kind: wire.kind.rawValue, index: wire.index,
+					run: runID, kind: wire.kind.rawValue, index: wire.index,
 					runtimeDir: runtimeDir),
 				logURL: config.serialLogURL(kind: wire.kind, index: wire.index),
 				logConfig: logging, toGuest: wire.toGuest, fromGuest: wire.fromGuest)

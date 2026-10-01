@@ -381,6 +381,8 @@ Each configured console/uart port is served by the VM's vmhost as a raw-byte
 `AF_UNIX SOCK_STREAM` socket; the control plane only reports its `socketPath` (in
 `SerialPortInfo`), and clients connect to it directly (e.g.
 `socat -,raw,echo=0 unix-connect:<socketPath>`). The daemon never proxies the byte stream.
+A port's `socketPath` belongs to the run: every start gets new paths, and a run saved as a new
+VM keeps serving its ports at theirs — always read it from `SerialPortInfo`, never derive it.
 Input for a guest that is not reading its port waits in order, up to 64 KiB beyond the pipe's
 own buffer; past that, new input is dropped (logged once), and the port keeps serving every
 client.

@@ -2,9 +2,10 @@
 //  SerialBridgeKeepAliveTests.swift
 //  MachmanTests
 //
-//  E30: a serial port's data-plane socket (tty-*.sock) is bound by its bridge, outside
-//  UDSListener, and gets the same keep-alive against the temp cleaner as the control
-//  sockets (E10). The tests run the timer at 100 ms over bare pipes (no VZ).
+//  A serial port's data-plane socket (tty-*.sock) is bound by its bridge, outside
+//  UDSListener. E30: it gets the same keep-alive against the temp cleaner as the control
+//  sockets (E10); the tests run the timer at 100 ms over bare pipes (no VZ). E27: a bridge
+//  never takes over, or removes, a socket another run is serving.
 //
 
 import Testing
@@ -67,5 +68,29 @@ struct SerialBridgeKeepAliveTests {
 		port.bridge.stop()
 		try await Task.sleep(for: .milliseconds(300))
 		#expect(!FileManager.default.fileExists(atPath: port.socketPath))   // never recreated
+	}
+
+	private func inode(_ path: String) -> UInt64? {
+		var info = stat()
+		return stat(path, &info) == 0 ? UInt64(info.st_ino) : nil
+	}
+
+	// A path a live run already serves (a hash collision, or a pre-fix run's name-keyed
+	// path) stays that run's: the bridge neither rebinds nor, at stop, unlinks it.
+	@Test @MainActor func aBridgeNeverTakesALiveSocket() async throws {
+		let path = TestEnvironment.scratch
+			+ "mm-ttylive-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let listener = try UDSListener(
+			path: path, queue: DispatchQueue(label: "mm-tty-live")) { fd in close(fd) }
+		defer { listener.shutdown() }
+		let served = try #require(inode(path))
+
+		let port = makeBridge("ttylive", socketPath: path)
+		port.bridge.start()
+		port.bridge.stop()
+		try await Task.sleep(for: .milliseconds(300))   // stop runs on the bridge's queue
+
+		#expect(inode(path) == served)              // before: unlinked and rebound
+		#expect(UDSListener.isLive(path: path))     // before: removed at stop
 	}
 }
