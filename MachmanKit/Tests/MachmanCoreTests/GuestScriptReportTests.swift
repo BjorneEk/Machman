@@ -33,6 +33,50 @@ struct GuestScriptReportTests {
 		}
 	}
 
+	// S14: systemd's sshfs automounts are started right after the reload that creates their
+	// units, so the folders mount on first access without a reboot — and the run says so
+	// only for those it armed; without systemd-escape they arm at the next boot.
+	@Test func automountsArmNow() throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try GuestScriptHarness.run(#"""
+				T="$(printf '\t')"
+				INIT=systemd
+				U="$(id -un)"
+				GROUP="$(id -gn)"
+				HOME_DIR="$D/home"
+				MOUNTPOINT="$D/mounts"
+				GATEWAY=192.168.64.1
+				MOUNTS_SSHFS="docs${T}/Users/g/Docs"
+				SSHFSAUTO_SELECTED=docs
+				UI_COLS=200
+				put_block() { return 0; }
+				systemctl() { printf 'systemctl %s\n' "$*" >> "$D/log"; }
+				mkdir -p "$D/bin"
+				printf '#!/bin/sh\necho "escape $*" >> "%s/log"\necho mnt-docs.automount\n' \
+					"$D" > "$D/bin/systemd-escape"
+				chmod 755 "$D/bin/systemd-escape"
+				SYSTEM_PATH="$PATH"
+				PATH="$D/bin:$PATH"
+				sshfsauto_act 2>&1 | grep -v connect
+				PATH="$SYSTEM_PATH"
+				sed "s|$D|D|" "$D/log"
+				rm -f "$D/log"
+				sshfsauto_act 2>&1 | grep -v connect
+				sed "s|$D|D|" "$D/log"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				[ok] sshfs automounts armed (docs) — each mounts on first access
+				systemctl daemon-reload
+				escape -p --suffix=automount -- D/mounts/docs
+				systemctl start mnt-docs.automount
+				[!!] sshfs automounts (docs) are armed at the next boot
+				systemctl daemon-reload
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// S17: a row whose name has a space is TAB-separated, so the host reads it whole; every
 	// other row stays space-separated, as every daemon reads it. The feature's detail lists
 	// the names comma-separated.

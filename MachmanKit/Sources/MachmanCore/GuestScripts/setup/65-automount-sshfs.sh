@@ -187,6 +187,7 @@ sshfsauto_act() {
 	_sa_bin="$(command -v sshfs 2>/dev/null || echo sshfs)"
 	_sa_fstab=""
 	_sa_script=""
+	_sa_arm=""
 	_sa_old_ifs="$IFS"
 	IFS='
 '
@@ -231,6 +232,8 @@ sshfsauto_act() {
 "
 		fi
 		SSHFSAUTO_DONE="${SSHFSAUTO_DONE:+$SSHFSAUTO_DONE$_sa_tab}$_sa_name"
+		_sa_arm="${_sa_arm:+$_sa_arm
+}$_sa_name$_sa_tab$_sa_where"
 		AUTOMOUNT_LINES="${AUTOMOUNT_LINES:+$AUTOMOUNT_LINES
 }sshfs	$_sa_name	$_sa_where"
 	done
@@ -246,10 +249,42 @@ sshfsauto_act() {
 			return 0
 		fi
 		run "reloading systemd mounts" systemctl daemon-reload || true
-		ok "sshfs folders mount on first access ($(tab_list_join "$SSHFSAUTO_DONE"))"
+		sshfsauto_arm "$_sa_arm"
 		note "They connect once you approve this VM in Machman (guest -> host SSH)."
 	else
 		sshfsauto_write_boot_script "$_sa_script"
+	fi
+	return 0
+}
+
+# sshfsauto_arm <"name<TAB>mountpoint" lines> — the reload created each fstab automount's
+# unit; starting it arms it now, as the next boot would, so the folder mounts on its first
+# access without a reboot. What cannot be armed now (no systemd-escape to name the unit, or
+# the start failed) arms at the next boot: said so, not a failed step.
+sshfsauto_arm() {
+	_sar_tab="$(printf '\t')"
+	_sar_now=""
+	_sar_later=""
+	while IFS="$_sar_tab" read -r _sar_name _sar_where; do
+		[ -n "$_sar_name" ] || continue
+		_sar_unit=""
+		if have systemd-escape; then
+			_sar_unit="$(systemd-escape -p --suffix=automount -- "$_sar_where" 2>/dev/null)" \
+				|| _sar_unit=""
+		fi
+		if [ -n "$_sar_unit" ] && run "arming $_sar_where" systemctl start "$_sar_unit"; then
+			_sar_now="${_sar_now:+$_sar_now$_sar_tab}$_sar_name"
+		else
+			_sar_later="${_sar_later:+$_sar_later$_sar_tab}$_sar_name"
+		fi
+	done <<EOF
+$1
+EOF
+	if [ -n "$_sar_now" ]; then
+		ok "sshfs automounts armed ($(tab_list_join "$_sar_now")) — each mounts on first access"
+	fi
+	if [ -n "$_sar_later" ]; then
+		warn "sshfs automounts ($(tab_list_join "$_sar_later")) are armed at the next boot"
 	fi
 	return 0
 }

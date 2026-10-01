@@ -1,6 +1,7 @@
 # The shared fstab block (systemd guests): each automount feature rewrites only its own
 # lines, and mount names are never globbed.
-# CHECKS: VFS_KEEPS_SSHFS SSHFS_RECORD_KEPT GLOB_TAG SPACED_NAME SHARE_PATH_REPORT_ONLY
+# CHECKS: VFS_KEEPS_SSHFS SSHFS_RECORD_KEPT AUTOMOUNT_ARMED GLOB_TAG SPACED_NAME
+# CHECKS: SHARE_PATH_REPORT_ONLY
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -14,6 +15,19 @@ block() {
 $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-install \
 	--no-service >/tmp/run1.log 2>&1
 [ "$(block | grep -c fuse.sshfs)" = 2 ] || R VFS_KEEPS_SSHFS "uncalibrated"
+# S14: the automounts are armed now where systemd-escape names their units, and the run
+# claims mounting only for those (the script folds its lines: read them back unfolded).
+tr '\n' ' ' < /tmp/run1.log | tr -s ' ' > /tmp/run1.flat
+if command -v systemd-escape >/dev/null 2>&1; then
+	grep -q '^start mnt-machman-mounts-projects\.automount$' /tmp/systemctl.log \
+		&& grep -q 'armed (projects, docs) — each mounts on first access' /tmp/run1.flat \
+		&& armed=pass || armed=fail
+else
+	grep -q '(projects, docs) are armed at the next boot' /tmp/run1.flat \
+		&& ! grep -q 'mounts on first access' /tmp/run1.flat && armed=pass || armed=fail
+fi
+R AUTOMOUNT_ARMED "$armed"
+[ "$armed" = pass ] || { grep -n 'start\|daemon-reload' /tmp/systemctl.log; cat /tmp/run1.flat; echo; }
 # A later run that refreshes only the share must leave the sshfs lines alone.
 $SH "$S" -y --user reg --automount-virtiofs --no-automount-sshfs --one-way --no-sshfs \
 	--no-install --no-service >/tmp/run2.log 2>&1
