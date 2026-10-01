@@ -201,8 +201,10 @@ extension Offscreen {
 	// A SwiftTerm TerminalView clears its rect to transparent and keeps its background colour
 	// in a layer property, which cacheDisplay never draws — so drawn with the rest of the
 	// view tree its background is a hole, and its glyphs can go missing as well (in the light
-	// scheme every one did). Drawn into a bitmap of its own it comes out whole: paint each
-	// visible terminal back in at its place, over its layer's background colour.
+	// scheme every one did). Drawn into a bitmap of its own it comes out whole. Each visible
+	// terminal goes back in at its place UNDER what the tree drew (destination-over), then its
+	// layer's background colour under that: they fill the hole only, so SwiftUI content laid
+	// over a terminal (the SSH tab's "Session ended." banner) stays on top.
 	static func redrawTerminals(in root: NSView, into rep: NSBitmapImageRep) {
 		var found: [TerminalView] = []
 		func walk(_ v: NSView) {
@@ -223,13 +225,17 @@ extension Offscreen {
 			var rect = terminal.convert(visible, to: root)
 			// The bitmap's context is unflipped; a hosting view is flipped.
 			if root.isFlipped { rect.origin.y = root.bounds.height - rect.maxY }
-			if let background = terminal.layer?.backgroundColor {
-				ctx.cgContext.setFillColor(background)
-				ctx.cgContext.fill(rect)
-			}
 			let image = NSImage(size: visible.size)
 			image.addRepresentation(own)
-			image.draw(in: rect)
+			image.draw(in: rect, from: .zero, operation: .destinationOver, fraction: 1)
+			if let background = terminal.layer?.backgroundColor {
+				let cg = ctx.cgContext
+				cg.saveGState()
+				cg.setBlendMode(.destinationOver)
+				cg.setFillColor(background)
+				cg.fill(rect)
+				cg.restoreGState()
+			}
 		}
 	}
 }
