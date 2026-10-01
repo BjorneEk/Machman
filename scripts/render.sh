@@ -17,11 +17,13 @@
 # nothing on screen, no Dock icon, no focus change, no daemon; it stops if a scene breaks that.
 #
 # Fidelity: layout and text are the app's; colours nearly so. Switch and checkbox "on" states
-# lack the accent fill. Glass and materials draw in their Reduce Transparency form (opaque,
-# hairline edge); capsule outlines get a short tick at each end. In window.* scenes the split
-# view's glass columns are flat composites of the real column views, the traffic lights are
-# hidden and a 1 px line marks the inspector edge. Alerts, confirmation dialogs and open/save
-# panels cannot render. Text follows the locale ("34,36 GB").
+# lack the accent fill. MachmanGlassSurface draws its opaque Reduce Transparency form (a
+# hairline edge; capsule outlines get a short tick at each end); system materials draw
+# opaque, without one. In window.* scenes the split view's glass columns are flat composites
+# of the real column views, the traffic lights are hidden and a 1 px line marks the inspector
+# edge. Alerts, confirmation dialogs and open/save panels cannot render. Text follows the
+# locale ("34,36 GB"). Elapsed times count from the run's first sample, so a sweep's later
+# scenes read older (the copy card's "about 2m left" alone, about 4m at the end of a sweep).
 #
 set -euo pipefail
 
