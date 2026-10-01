@@ -117,5 +117,9 @@ enum InspectorScenes {
 			"device.graphics.2560x1600", "GraphicsInspector, 2560 × 1600 (a width it shares)",
 			vms: { [Samples.linuxDisplay(width: 2560, height: 1600)] },
 			node: .device(.graphics)),
+		inspector(
+			"device.graphics.newer-capture",
+			"GraphicsInspector, a capture mode from a newer Machman",
+			vms: { [Samples.linuxNewerCaptureMode()] }, node: .device(.graphics)),
 	]
 }

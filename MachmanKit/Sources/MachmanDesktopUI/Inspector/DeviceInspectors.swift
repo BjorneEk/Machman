@@ -207,9 +207,12 @@ struct GraphicsInspector: View {
 					}
 				}
 				Picker("Capture system keys", selection: captureBinding) {
-					Text("Off").tag(SystemKeyCapture.off)
-					Text("Always").tag(SystemKeyCapture.always)
-					Text("Full screen only").tag(SystemKeyCapture.fullScreen)
+					ForEach(
+						GraphicsChoices.captureModes(current: device.systemKeyCapture),
+						id: \.self
+					) { mode in
+						Text(captureLabel(mode)).tag(mode)
+					}
 				}
 				.help("Sends shortcuts like ⌘Space and ⌘Tab to the guest; ⌃⌥⌘K toggles it "
 					+ "while running.")
@@ -276,6 +279,15 @@ struct GraphicsInspector: View {
 				updated.displayPixelsPerInch = value.map { max(40, min(300, $0)) }
 				viewModel.updateDevice(vm.name, device: updated)
 			})
+	}
+
+	private func captureLabel(_ mode: SystemKeyCapture) -> String {
+		switch mode {
+		case .off: return "Off"
+		case .always: return "Always"
+		case .fullScreen: return "Full screen only"
+		case .unknown: return "Newer mode"
+		}
 	}
 
 	// The default a run starts with (the run's own value lives in the VM window's menu).

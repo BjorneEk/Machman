@@ -3,7 +3,8 @@
 //  MachmanDesktopCore
 //
 //  What the display inspector's pickers offer. Resolution presets are keyed by both
-//  dimensions (2560 × 1440 and 2560 × 1600 share a width — H14).
+//  dimensions (2560 × 1440 and 2560 × 1600 share a width — H14); the capture picker gains a
+//  row for a mode a newer Machman set, so its selection is never blank (A15).
 //
 
 import MachmanAPI
@@ -44,5 +45,12 @@ public enum GraphicsChoices {
 			presets.append(preset)
 		}
 		return presets
+	}
+
+	// The capture picker's rows: the three modes, plus .unknown while the device holds a mode
+	// this build can't name (picking a known row replaces it).
+	public static func captureModes(current: SystemKeyCapture?) -> [SystemKeyCapture] {
+		let known: [SystemKeyCapture] = [.off, .always, .fullScreen]
+		return current == .unknown ? known + [.unknown] : known
 	}
 }

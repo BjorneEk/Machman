@@ -25,4 +25,19 @@ extension Samples {
 		}
 		return vm
 	}
+
+	// A15: the Linux sample whose display holds a capture mode a newer Machman wrote
+	// ("whenFocused"): this build reads it as .unknown and sends it back verbatim.
+	public static func linuxNewerCaptureMode(
+		_ name: String = "Debian", state: VMState = .stopped
+	) -> VMInfo {
+		var vm = linux(name, state: state)
+		vm.devices = vm.devices?.map { device in
+			guard device.kind == .graphics else { return device }
+			var graphics = device
+			graphics.systemKeyCaptureSpelling = "whenFocused"
+			return graphics
+		}
+		return vm
+	}
 }
