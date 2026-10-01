@@ -191,6 +191,11 @@ write_report() {
 
 report_hook_install() {
 	[ "$DRY_RUN" -eq 1 ] && return 0
+	if [ "$OS_FAMILY" = nixos ]; then
+		# /etc/systemd/system is generated from configuration.nix (read-only).
+		note "no boot-time report refresh on NixOS — the report updates when this script runs."
+		return 0
+	fi
 	_rh_script="$SHARE_ROOT/GuestSetup/$(basename "$0")"
 	case "$INIT" in
 	systemd)

@@ -2,7 +2,7 @@
 # into a read-only /nix/store (run.sh mounts one), configuration.nix is the stock template
 # and nixos-rebuild only records that it ran. Declarative pieces must be reported, never
 # written, and never abort the run.
-# CHECKS: NIXOS_ONLY_MARKER
+# CHECKS: NIXOS_NO_ABORT NIXOS_AUTOMOUNT_DECLARATIVE NIXOS_ONLY_MARKER
 . /mnt/machman/share/regress/lib.sh
 
 fake_systemd
@@ -29,6 +29,18 @@ cp /etc/nixos/configuration.nix /tmp/configuration.nix.orig
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> /tmp/rebuild.log\nexit 0\n' \
 	> /usr/local/bin/nixos-rebuild
 chmod 755 /usr/local/bin/nixos-rebuild
+
+$SH "$S" -y --user reg --automount-virtiofs --automount-sshfs --two-way --no-install \
+	--no-service >/tmp/run1.log 2>&1
+rc=$?
+if [ "$rc" -ne 1 ] && ! grep -q '^STATUS=failed' "$REPORT"; then R NIXOS_NO_ABORT pass; else
+	R NIXOS_NO_ABORT "fail (exit $rc)"; tail -n 4 /tmp/run1.log; fi
+if grep -q '^FEATURE_virtiofsAutomount=unavailable .*NixOS' "$REPORT" \
+	&& grep -q '^FEATURE_sshfsAutomount=unavailable .*NixOS' "$REPORT"; then
+	R NIXOS_AUTOMOUNT_DECLARATIVE pass
+else
+	R NIXOS_AUTOMOUNT_DECLARATIVE fail; grep '^FEATURE_' "$REPORT"
+fi
 
 # A configuration.nix holding nothing but Machman's line still uninstalls.
 printf '  services.openssh.enable = true; # %s\n' "$NEW" > /etc/nixos/configuration.nix

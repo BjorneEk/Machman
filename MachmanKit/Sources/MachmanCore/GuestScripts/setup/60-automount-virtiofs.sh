@@ -59,6 +59,11 @@ vfsauto_available() {
 		reason_vfsauto="macOS automounts the share itself"
 		return 0
 	fi
+	if [ "$OS_FAMILY" = nixos ]; then
+		# /etc/fstab is generated from configuration.nix (a read-only store link).
+		reason_vfsauto="NixOS is declarative — declare the share in configuration.nix"
+		return 0
+	fi
 	if [ "$VIRTIOFS_OK" -eq 0 ]; then
 		reason_vfsauto="no virtiofs driver in this guest — sshfs automount covers the share instead"
 		return 0

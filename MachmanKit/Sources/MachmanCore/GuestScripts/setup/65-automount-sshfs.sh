@@ -61,6 +61,10 @@ sshfsauto_available() {
 		reason_sshfsauto="macOS needs macFUSE — install it yourself"
 		return 0
 	fi
+	if [ "$OS_FAMILY" = nixos ]; then
+		reason_sshfsauto="NixOS is declarative — declare sshfs mounts in configuration.nix"
+		return 0
+	fi
 	if [ -z "$(sshfsauto_items)" ]; then
 		reason_sshfsauto="no sshfs mounts on this VM — set a mount's kind to sshfs in Machman"
 		return 0
