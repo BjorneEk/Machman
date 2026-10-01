@@ -11,7 +11,7 @@
 //  These assert on the script's TEXT, which is a blunt instrument — it catches a recipe
 //  being dropped or renamed, not one being wrong. What the script actually does is
 //  verified by running it in real guests (docs/local/manual-tests.md) and in the
-//  container harness (docs/local/guest-cli-research).
+//  container harness (scripts/guest-regress).
 //
 
 import Testing
