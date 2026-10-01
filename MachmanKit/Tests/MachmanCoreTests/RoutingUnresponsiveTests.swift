@@ -56,7 +56,8 @@ struct RoutingUnresponsiveTests {
 			try server.start()
 			let identity = RoutingMachman.HostIdentity(
 				id: UUID(), name: name, socketPath: socketPath)
-			routing.adopt(identity: identity, client: try await routing.connectHost(identity: identity))
+			let client = try await routing.connectHost(identity: identity)
+			routing.adopt(identity: identity, client: client)
 			stubs.append(stub)
 			servers.append(server)
 		}

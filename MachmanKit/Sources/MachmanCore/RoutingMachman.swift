@@ -116,6 +116,14 @@ public final class RoutingMachman: MachmanControlling {
 	// marked host is asked again. Internal seams for tests.
 	var hostProbeDeadline: Duration = .seconds(3)
 	var recoveryInterval: Duration = .seconds(2)
+	var helloDeadline: Duration = .seconds(10)
+
+	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
+	// names whose live vmhost did not answer the last attempt (listed as not responding
+	// until one gets through).
+	private var adoptions: [String: Task<HostedVM, Error>] = [:]
+	private(set) var unadoptable: Set<String> = []
+	private(set) var adoptionAttempts = 0   // test seam: connects made to adopt a host
 
 	// Where the vmhost app lives. Internal test seam: a test that reaches spawnHost pins this
 	// to nil, so it fails at "not found" on every machine instead of depending on where the
@@ -153,18 +161,89 @@ public final class RoutingMachman: MachmanControlling {
 			guard hosted[name] == nil else { continue }
 			let socketPath = hostSocketPath(for: name)
 			guard FileManager.default.fileExists(atPath: socketPath) else { continue }
-			var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 			do {
-				let client = try await connectHost(identity: identity)
-				// The host's reply is the MAC the guest is actually using — it can differ
-				// from the daemon's stale view (safe-save promotions rewrite it mid-run).
-				let reply = try? await client.vm(named: name)
-				identity.macInUse = reply?.macAddress
-				adopt(identity: identity, client: client).lastAnswer = reply
+				try await adoptLiveHost(name)
 				MachmanLogger.log(.log, "adopted running vmhost for \(name)")
 			} catch {
+				// NEVER unlink a live socket (single-writer rule, probe-adopt's guard): a
+				// vmhost whose main actor is busy misses hello but still owns the VM.
+				// Without its socket it turned invisible and unstoppable, and the next start
+				// spawned a second VZ against the same disks (E21).
+				guard !UDSListener.isLive(path: socketPath) else {
+					MachmanLogger.log(.passiveWarning,
+						"kept \(name)'s live vmhost socket (\(error)) — adopting it on next use")
+					continue
+				}
 				unlink(socketPath)
 			}
+		}
+	}
+
+	// The vmhost serving `name`, adopting one this daemon has not met yet: a launch-agent
+	// start, a socket that appeared after startup adoption ran, a host that missed hello
+	// then. Concurrent callers share one adoption.
+	@discardableResult
+	func adoptLiveHost(_ name: String) async throws -> HostedVM {
+		if let host = hosted[name] { return host }
+		if let inFlight = adoptions[name] { return try await inFlight.value }
+		let socketPath = hostSocketPath(for: name)
+		let adoption = Task { try await self.connectAndAdopt(name: name, socketPath: socketPath) }
+		adoptions[name] = adoption
+		defer { adoptions[name] = nil }
+		do {
+			let host = try await adoption.value
+			unadoptable.remove(name)
+			return host
+		} catch {
+			if UDSListener.isLive(path: socketPath) { unadoptable.insert(name) }
+			throw error
+		}
+	}
+
+	// Fire-and-forget adoption for the read paths; a no-op while one is in flight.
+	private func scheduleAdoption(_ name: String) {
+		guard adoptions[name] == nil else { return }
+		Task { _ = try? await self.adoptLiveHost(name) }
+	}
+
+	// The one adoption path — startup, probe-adopt and on demand: connect, ask the host once
+	// (bounded; its reply is its first last answer), adopt, and re-attach the safe run it
+	// may be serving.
+	private func connectAndAdopt(name: String, socketPath: String) async throws -> HostedVM {
+		var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
+		adoptionAttempts += 1
+		let client = try await connectHost(identity: identity)
+		let reply = try? await client.vm(named: name, deadline: hostProbeDeadline)
+		// The host's reply is the MAC the guest is actually using — it can differ from the
+		// daemon's stale view (safe-save promotions rewrite it mid-run).
+		identity.macInUse = reply?.macAddress ?? registry.vm(named: name)?.config.macAddress
+		if let existing = hosted[name] {
+			// Another path got there during the awaits: never two hosts for one name. The
+			// dropped client's disconnect finds no host with its id.
+			await client.disconnect()
+			return existing
+		}
+		let host = adopt(identity: identity, client: client)
+		host.lastAnswer = reply
+		reattachSafeRun(host)
+		return host
+	}
+
+	// A late adoption's half of the startup sweep: the run root whose marker names this VM
+	// and this host's pid makes the host a safe run again. Never deletes — a pid-nil root
+	// may be an in-flight safe start's shadow build; the startup sweep decides the rest.
+	func reattachSafeRun(_ host: HostedVM, safeDir: String = machmanSafeDir) {
+		guard let peer = host.client.peerPID,
+			let entries = try? FileManager.default.contentsOfDirectory(atPath: safeDir)
+		else { return }
+		for entry in entries.sorted() where entry.hasPrefix(SafeRun.runPrefix) {
+			let runRoot = safeDir + "/" + entry
+			guard let marker = SafeRun.readMarker(runRoot: runRoot),
+				marker.vm == host.identity.name, marker.pid == peer else { continue }
+			host.identity.isSafe = true
+			host.identity.shadowRoot = runRoot
+			MachmanLogger.log(.log, "re-attached safe run \(entry) to \(marker.vm)")
+			return
 		}
 	}
 
@@ -186,7 +265,8 @@ public final class RoutingMachman: MachmanControlling {
 			switch SafeRun.sweepVerdict(
 				marker: marker, hostedPeerPID: hostedPeer, isPidAlive: isPidAlive) {
 			case .reattach:
-				guard let marker, let host = hosted[marker.vm] else { break }
+				guard let marker, let host = hosted[marker.vm],
+					host.identity.shadowRoot != runRoot else { break }   // adoption did
 				host.identity.isSafe = true
 				host.identity.shadowRoot = runRoot
 				MachmanLogger.log(.log, "re-attached safe run \(entry) to \(marker.vm)")
@@ -391,7 +471,7 @@ public final class RoutingMachman: MachmanControlling {
 			// Tight: spawnHost retries this in a loop and adoption runs it per socket while
 			// the server parks requests — a vmhost that accepts but never answers hello must
 			// fail fast, not add 30 s per attempt.
-			helloDeadline: .seconds(10),
+			helloDeadline: helloDeadline,
 			onDisconnect: { [weak self] in
 				Task { @MainActor [weak self] in
 					self?.hostGone(id: hostID)
@@ -608,10 +688,14 @@ public final class RoutingMachman: MachmanControlling {
 				code: .invalidState,
 				message: "\(name) is starting — try again once it is running")
 		case .unadopted:
-			throw MachmanError(
-				code: .invalidState,
-				message: "a vmhost is running \(name) that this daemon has not adopted yet — "
-					+ "try again in a moment")
+			do {
+				return try await adoptLiveHost(name).client
+			} catch {
+				throw MachmanError(
+					code: .invalidState,
+					message: "a vmhost is running \(name) but did not answer — "
+						+ "try again in a moment")
+			}
 		case .local:
 			return local
 		}
@@ -680,9 +764,23 @@ public final class RoutingMachman: MachmanControlling {
 
 	// The daemon's own view of a VM nothing hosted answers for. During a start's spawn
 	// window it says starting, never stopped: a stopped VM offered a second Start.
+	// An unadopted vmhost's VM is adopted in the background; until then the daemon's copy
+	// knows nothing of the run, so its state is unknown (not stopped), and not responding
+	// once an adoption failed.
 	private func localInfo(_ name: String) async throws -> VMInfo {
 		var info = try await local.vm(named: name)
-		if pendingStarts.contains(name) { info.state = .starting }
+		switch residence(of: name) {
+		case .starting:
+			info.state = .starting
+		case .unadopted:
+			scheduleAdoption(name)
+			info.state = .unknown
+			if unadoptable.contains(name) { info.unresponsive = true }
+		case .local:
+			unadoptable.remove(name)
+		case .hosted:
+			break
+		}
 		return info
 	}
 
@@ -1408,10 +1506,10 @@ public final class RoutingMachman: MachmanControlling {
 	func probeAdoptAndStart(
 		name: String, socketPath: String, options: StartOptions
 	) async throws -> Bool {
-		var identity = HostIdentity(
-			id: UUID(), name: name, socketPath: socketPath,
-			macInUse: registry.vm(named: name)?.config.macAddress)
-		guard let client = try? await connectHost(identity: identity) else {
+		let client: RemoteMachman
+		do {
+			client = try await connectAndAdopt(name: name, socketPath: socketPath).client
+		} catch {
 			guard !UDSListener.isLive(path: socketPath) else {
 				// NEVER unlink a live socket (single-writer rule) — whoever owns it may
 				// recover; spawning over it would fork the VM's identity.
@@ -1422,10 +1520,6 @@ public final class RoutingMachman: MachmanControlling {
 			unlink(socketPath)
 			return false
 		}
-		// The adopt-side rule: the host's reply is the authoritative live MAC.
-		let reply = try? await client.vm(named: name)
-		identity.macInUse = reply?.macAddress ?? identity.macInUse
-		adopt(identity: identity, client: client).lastAnswer = reply
 		var forwarded = options
 		if options.safe {
 			// An existing run cannot be made safe retroactively — adopt it as it is.

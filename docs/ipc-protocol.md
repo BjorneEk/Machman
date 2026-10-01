@@ -328,7 +328,9 @@ While a start is in flight (the vmhost's spawn window, a safe run's shadow build
 as `starting`, and its per-VM calls answer `invalidState` ("… is starting — try again once it
 is running"); `vm.preview` answers `null`. Whole-VM edits (rename, copy, delete, MAC, disk
 files, serial ports, kernel files, macOS install) also refuse while any vmhost answers on the
-VM's socket, adopted by this daemon or not.
+VM's socket, adopted by this daemon or not. A vmhost the daemon has not adopted yet (busy when
+the daemon started, or started by a launch agent) is adopted on its VM's next per-VM call or
+list; until then the VM lists with state `unknown`, plus `unresponsive` once an adoption failed.
 
 ## What is deliberately NOT here
 
