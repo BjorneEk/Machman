@@ -18,7 +18,8 @@ import MachmanTestSupport
 @MainActor
 struct StoreRetryTests {
 	private static let listTimeout = MachmanError(
-		code: .timeout, message: "no reply to vm.list after 30s — the serving process may be hung")
+		code: .timeout,
+		message: "no reply to vm.list after 30s — the serving process may be hung")
 
 	// No listChanged ever comes: only the store's own retry can load the list.
 	@Test func aListThatFailedOnceLoadsWithoutAnEvent() async {
