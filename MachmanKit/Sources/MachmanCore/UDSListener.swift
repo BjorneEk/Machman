@@ -34,10 +34,14 @@ final class UDSListener {
 	private let keepAliveTimer: DispatchSourceTimer
 	private let path: String
 
+	// How often a served socket's timestamps are refreshed against the temp cleaner (see the
+	// timer below) — the control sockets here and the serial data-plane sockets alike.
+	static let defaultKeepAlive: DispatchTimeInterval = .seconds(3600)
+
 	// onAccept is called on `queue` with each accepted (already non-blocking-cleared) fd.
 	// keepAlive is how often the socket's timestamps are refreshed (see touch).
 	init(
-		path: String, queue: DispatchQueue, keepAlive: DispatchTimeInterval = .seconds(3600),
+		path: String, queue: DispatchQueue, keepAlive: DispatchTimeInterval = defaultKeepAlive,
 		onAccept: @escaping (Int32) -> Void
 	) throws {
 		self.path = path

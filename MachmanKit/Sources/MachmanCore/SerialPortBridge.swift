@@ -37,6 +37,11 @@ final class SerialPortBridge {
 	private var warnedDrop: Set<Int32> = []
 	private var listenerFD: Int32 = -1
 	private var acceptSource: DispatchSourceRead?
+	// The socket's timestamps, refreshed like the control sockets' (E30): the temp cleaner
+	// reaps entries untouched for three days, and a console socket then can't be attached.
+	private let keepAlive: DispatchTimeInterval
+	private var keepAliveTimer: DispatchSourceTimer?
+	private var reportedMissing = false
 	private var drainSource: DispatchSourceRead?
 	private var stopped = false
 	// A reset-on-boot log is truncated by the run's FIRST open only; a retune appends (E25).
@@ -57,7 +62,8 @@ final class SerialPortBridge {
 
 	init(
 		kind: SerialPortKind, index: Int, socketPath: String, logURL: URL,
-		logConfig: SerialLogConfig, toGuest: FileHandle, fromGuest: FileHandle
+		logConfig: SerialLogConfig, toGuest: FileHandle, fromGuest: FileHandle,
+		keepAlive: DispatchTimeInterval = UDSListener.defaultKeepAlive
 	) {
 		self.kind = kind
 		self.index = index
@@ -66,6 +72,7 @@ final class SerialPortBridge {
 		self.logConfig = logConfig
 		self.toGuest = toGuest
 		self.fromGuest = fromGuest
+		self.keepAlive = keepAlive
 	}
 
 	// The on-disk log path when logging is enabled (nil when disabled or not yet started).
@@ -88,6 +95,7 @@ final class SerialPortBridge {
 		do {
 			try bindSocket()
 			installAccept()
+			installKeepAlive()
 		} catch {
 			MachmanLogger.log(
 				.passiveWarning,
@@ -107,6 +115,7 @@ final class SerialPortBridge {
 			self.guestInputSource = nil
 			self.guestInput.removeAll()
 			self.acceptSource?.cancel()
+			self.keepAliveTimer?.cancel()
 			for (_, source) in self.clients { source.cancel() }
 			self.clients.removeAll()
 			try? self.log?.close()
@@ -356,6 +365,23 @@ final class SerialPortBridge {
 		}
 		acceptSource = source
 		source.resume()
+	}
+
+	// Never rebinds a removed socket, like UDSListener: says so once instead.
+	private func installKeepAlive() {
+		let timer = DispatchSource.makeTimerSource(queue: queue)
+		timer.schedule(deadline: .now() + keepAlive, repeating: keepAlive)
+		timer.setEventHandler { [weak self] in
+			guard let self, !self.stopped, !UDSListener.touch(self.socketPath),
+				!self.reportedMissing,
+				!FileManager.default.fileExists(atPath: self.socketPath) else { return }
+			self.reportedMissing = true
+			MachmanLogger.log(.passiveWarning,
+				"\(self.socketPath) was removed — terminals cannot attach to "
+					+ "\(self.kind.rawValue)\(self.index) until the VM restarts")
+		}
+		keepAliveTimer = timer
+		timer.resume()
 	}
 
 	private func bridgeError(_ what: String) -> MachmanError {
