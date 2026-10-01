@@ -85,8 +85,14 @@ public final class MachmanServer {
 	func clientsForTesting() -> [AnyObject] { Array(connections.values) }
 
 	// Internal so tests can hand in one end of a socketpair.
+	// Per-connection write bounds (E17): a client whose socket takes no bytes for this long,
+	// or that lets this much queue up, is disconnected. Internal so tests can tighten them.
+	var clientSendTimeout: TimeInterval = 10
+	var clientMaxQueuedBytes = 32 << 20
+
 	func accept(_ fd: Int32) {
-		let connection = UDSConnection(fd: fd)
+		let connection = UDSConnection(
+			fd: fd, sendTimeout: clientSendTimeout, maxQueuedBytes: clientMaxQueuedBytes)
 		let client = Client(connection: connection)
 		let id = nextConnectionID
 		nextConnectionID += 1

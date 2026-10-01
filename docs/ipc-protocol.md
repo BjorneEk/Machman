@@ -42,6 +42,9 @@ slow server is never misdelivered. A deadline expiring says nothing about the se
 call may still complete server-side (watch events for the outcome); clients must not treat a
 timeout as a dead connection.
 
+A client must keep reading: one that leaves the daemon's writes blocked for 10 s, or lets
+32 MiB queue up (an event subscription it stopped draining), is disconnected.
+
 ### Errors
 
 ```

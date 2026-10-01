@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import MachmanAPI
 
 // Public: hosts need to tell "someone else is already serving" — a benign race when a client
 // auto-launches a daemon — apart from a genuine failure to bind.
@@ -120,21 +121,46 @@ final class UDSListener {
 
 // One connected client: newline-framed reads via a dispatch source, serialized writes.
 // Thread-safe to send from any context; onLine/onClose fire on the connection's queue.
+//
+// Writes are bounded (E17): a peer that stops reading is dropped, never buffered for. A write
+// may go without progress for at most sendTimeout (SO_SNDTIMEO turns the stall into EAGAIN),
+// and at most maxQueuedBytes may wait behind it. Either limit ends the connection, which the
+// peer sees as EOF. Unbounded, one such client parked a GCD thread in write() for good and
+// grew its queue with every event.
 final class UDSConnection {
 	let fd: Int32
 	private let queue: DispatchQueue
 	private let source: DispatchSourceRead
+	private let sendTimeout: TimeInterval
+	private let maxQueuedBytes: Int
 	private var buffer = Data()
 	private var closed = false
+	// send() runs on any thread, the writes and the close on the queue: the byte count and
+	// the descriptor's open state are shared under this lock.
+	private let lock = NSLock()
+	private var queuedBytes = 0
+	private var overCap = false
+	private var descriptorOpen = true
 	var onLine: ((Data) -> Void)?
 	var onClose: (() -> Void)?
 
-	init(fd: Int32) {
+	init(fd: Int32, sendTimeout: TimeInterval = 10, maxQueuedBytes: Int = 32 << 20) {
 		self.fd = fd
+		self.sendTimeout = sendTimeout
+		self.maxQueuedBytes = maxQueuedBytes
 		self.queue = DispatchQueue(label: "machman.uds.connection.\(fd)")
 		// accept() on BSD inherits O_NONBLOCK from the listening socket; writes here must
 		// block (large responses overflow the send buffer and would EAGAIN otherwise).
 		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
+		// …but never for longer than sendTimeout without progress, and a write to a peer that
+		// left fails with EPIPE instead of raising SIGPIPE in the whole process.
+		var timeout = timeval(
+			tv_sec: Int(sendTimeout),
+			tv_usec: Int32((sendTimeout - sendTimeout.rounded(.down)) * 1_000_000))
+		_ = setsockopt(
+			fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+		var on: Int32 = 1
+		_ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
 		source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
 		source.setEventHandler { [weak self] in
 			self?.readAvailable()
@@ -142,8 +168,15 @@ final class UDSConnection {
 		// The descriptor is captured by value: it must close even when the connection object
 		// is already gone (a weak-self guard leaked it then).
 		source.setCancelHandler { [weak self, fd] in
-			close(fd)
-			self?.onClose?()
+			guard let self else {
+				close(fd)
+				return
+			}
+			self.lock.withLock {
+				self.descriptorOpen = false
+				close(fd)
+			}
+			self.onClose?()
 		}
 	}
 
@@ -168,10 +201,30 @@ final class UDSConnection {
 		}
 	}
 
-	// Serialized on the connection queue; whole-message write with EPIPE handling.
+	// Serialized on the connection queue; whole-message writes. A write that fails — the
+	// peer left, or made no room for sendTimeout — ends the connection.
 	func send(_ data: Data) {
+		let size = data.count + 1
+		lock.lock()
+		guard !overCap else {
+			lock.unlock()
+			return
+		}
+		guard queuedBytes + size <= maxQueuedBytes else {
+			overCap = true
+			let queued = queuedBytes
+			lock.unlock()
+			MachmanLogger.log(.passiveWarning,
+				"dropping a client that stopped reading (\(queued) bytes queued)")
+			abort()
+			return
+		}
+		queuedBytes += size
+		lock.unlock()
 		queue.async { [weak self] in
-			guard let self = self, !self.closed else { return }
+			guard let self = self else { return }
+			defer { self.lock.withLock { self.queuedBytes -= size } }
+			guard !self.closed else { return }
 			var payload = data
 			payload.append(0x0A)
 			let ok = payload.withUnsafeBytes { raw -> Bool in
@@ -186,9 +239,10 @@ final class UDSConnection {
 						continue
 					}
 					if errno == EAGAIN {
-						// Shouldn't happen on a blocking fd; wait out a full buffer anyway.
-						usleep(2000)
-						continue
+						// SO_SNDTIMEO expired: the peer took no bytes for the whole timeout.
+						MachmanLogger.log(.passiveWarning,
+							"dropping a client that stopped reading (no write progress for "
+								+ "\(self.sendTimeout) s)")
 					}
 					return false
 				}
@@ -206,6 +260,18 @@ final class UDSConnection {
 		queue.async {
 			self.shutdownLocked()
 		}
+	}
+
+	// Over the byte cap: a write is blocked on this peer, and the queue's shutdown would
+	// only run after it times out. Shutting the socket down wakes that write with EPIPE now.
+	// Never on a closed descriptor — its number may already belong to another socket.
+	private func abort() {
+		lock.withLock {
+			if descriptorOpen {
+				_ = Darwin.shutdown(fd, SHUT_RDWR)
+			}
+		}
+		shutdown()
 	}
 
 	private func shutdownLocked() {

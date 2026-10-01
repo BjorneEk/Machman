@@ -14,6 +14,11 @@ import MachmanAPI
 final class EventBus {
 	private var continuations: [UUID: AsyncStream<VMEvent>.Continuation] = [:]
 
+	// The streams keep AsyncStream's unbounded buffer on purpose: every subscriber drains on
+	// the main actor without blocking — the server's per-client pump only enqueues a write,
+	// the router re-emits, the vmhost's lifecycle watcher and the agent menu only read state.
+	// A client that stops reading backs up in its connection's write queue instead, which is
+	// bounded in time and bytes (E17, UDSConnection).
 	func stream() -> AsyncStream<VMEvent> {
 		AsyncStream { continuation in
 			let id = UUID()

@@ -51,7 +51,14 @@ public actor RPCConnection {
 	// Fired once when the connection dies (EOF, write failure) — after pending calls fail.
 	private let onDisconnect: @Sendable () -> Void
 
-	public init(socketPath: String, onDisconnect: @escaping @Sendable () -> Void = {}) throws {
+	// How long one write may go without progress before the connection counts as lost: a
+	// peer that stopped reading must not hold this actor in write() (E17).
+	public static let defaultSendTimeout: Duration = .seconds(10)
+
+	public init(
+		socketPath: String, sendTimeout: Duration = RPCConnection.defaultSendTimeout,
+		onDisconnect: @escaping @Sendable () -> Void = {}
+	) throws {
 		self.onDisconnect = onDisconnect
 
 		var addr = sockaddr_un()
@@ -78,6 +85,15 @@ public actor RPCConnection {
 			throw ConnectionError.connectFailed(socketPath, err)
 		}
 		self.fd = fd
+		// Bounded writes: no progress for sendTimeout fails the write with EAGAIN, and a
+		// write to a peer that left fails with EPIPE instead of raising SIGPIPE.
+		let (seconds, attoseconds) = sendTimeout.components
+		var timeout = timeval(
+			tv_sec: Int(seconds), tv_usec: Int32(attoseconds / 1_000_000_000_000))
+		_ = setsockopt(
+			fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+		var on: Int32 = 1
+		_ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
 		var pid: pid_t = 0
 		var len = socklen_t(MemoryLayout<pid_t>.size)
 		// LOCAL_PEERPID: hard-coded 0x002 — stable Darwin ABI, the constant does not
@@ -174,6 +190,10 @@ public actor RPCConnection {
 		call.continuation.resume(throwing: CancellationError())
 	}
 
+	// A failure means the connection is lost — including EAGAIN, which with SO_SNDTIMEO means
+	// the peer took no bytes for the whole send timeout. Unbounded, a peer that stopped
+	// reading held this actor in write() for good, and with it every deadline timer that
+	// runs on the actor.
 	private func writeLine(_ data: Data) -> Bool {
 		var payload = data
 		payload.append(0x0A)
