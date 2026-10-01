@@ -238,6 +238,38 @@ ssh_act_nixos() {
 	return 0
 }
 
+# <home>/.ssh as the user's own real directory, 0700 (created when missing). A link there
+# is refused, never followed: root is about to write and chown inside it.
+# ssh_dir_ready <home> <user> <group>
+ssh_dir_ready() {
+	R_ERROR=""
+	if [ -L "$1/.ssh" ]; then
+		R_ERROR="$1/.ssh is a symbolic link"
+		return 1
+	fi
+	if [ ! -e "$1/.ssh" ] && ! mkdir -p -m 700 "$1/.ssh" 2>/dev/null; then
+		R_ERROR="could not create $1/.ssh"
+		return 1
+	fi
+	# Pinned: the chown/chmod land on the directory just checked, whatever moves after.
+	if ! ( _sdr_up="$(cd -P "$1" && pwd -P)" && cd -P "$1/.ssh" \
+		&& [ "$(pwd -P)" = "${_sdr_up%/}/.ssh" ] && chown -h "$2:$3" . && chmod 700 . ) \
+		2>/dev/null; then
+		R_ERROR="$1/.ssh is not a directory of its own"
+		return 1
+	fi
+	return 0
+}
+
+# Filter for authorized_keys: other Machman VMs' keys dropped (a cloned disk's), the
+# Mac's key (ENVIRON _MF_BODY) kept, or appended when missing. _MF_TEXT is our marker.
+ssh_keys_filter() {
+	awk '
+		/machman-[0-9a-f]/ && index($0, ENVIRON["_MF_TEXT"]) == 0 { next }
+		{ print; if (index($0, ENVIRON["_MF_BODY"])) have = 1 }
+		END { if (!have) print ENVIRON["_MF_BODY"] }'
+}
+
 ssh_act_key() {
 	STEP="installing the Mac's key"
 	_aik_key="$(cat "$PAYLOAD_DIR/host_key.pub")"
@@ -245,28 +277,45 @@ ssh_act_key() {
 		acting "would add the Mac's key to $HOME_DIR/.ssh/authorized_keys"
 		return 0
 	fi
-	mkdir -p "$HOME_DIR/.ssh"
-	touch "$HOME_DIR/.ssh/authorized_keys"
+	_aik_ak="$HOME_DIR/.ssh/authorized_keys"
+	if ! ssh_dir_ready "$HOME_DIR" "$U" "$GROUP"; then
+		step_failed ssh-key "the Mac's key was not installed: $R_ERROR" \
+			"Make it a plain directory owned by $U, then re-run."
+		return 0
+	fi
+	if [ ! -e "$_aik_ak" ] && [ ! -L "$_aik_ak" ]; then
+		write_file -m 600 -o "$U:$GROUP" "$_aik_ak" </dev/null || true
+	fi
+	if ! regular_file "$_aik_ak"; then
+		_aik_code=13
+		[ -L "$_aik_ak" ] && _aik_code=12
+		step_failed ssh-key \
+			"the Mac's key was not installed: $(_rf_reason "$_aik_code" "$_aik_ak")" \
+			"Add host_key.pub from the share to it yourself."
+		return 0
+	fi
 	# A cloned guest disk carries the source VM's machman key. A machman-tagged line
-	# whose marker is not ours is stale, not the user's — sweep it before installing.
-	if grep 'machman-[0-9a-f]' "$HOME_DIR/.ssh/authorized_keys" 2>/dev/null \
-		| grep -qvF "$MARKER"; then
-		_aik_swp="$HOME_DIR/.ssh/authorized_keys.machman-tmp"
-		awk -v m="$MARKER" \
-			'/machman-[0-9a-f]/ && index($0, m) == 0 { next } { print }' \
-			"$HOME_DIR/.ssh/authorized_keys" > "$_aik_swp"
-		mv "$_aik_swp" "$HOME_DIR/.ssh/authorized_keys"
-		ok "removed another Machman VM's key (cloned guest)"
+	# whose marker is not ours is stale, not the user's — the rewrite sweeps it.
+	_aik_swept=0
+	if grep 'machman-[0-9a-f]' "$_aik_ak" | grep -qvF "$MARKER"; then
+		_aik_swept=1
 	fi
 	_aik_had=0
-	if grep -qF "$_aik_key" "$HOME_DIR/.ssh/authorized_keys"; then
-		_aik_had=1
-	else
-		printf '%s\n' "$_aik_key" >> "$HOME_DIR/.ssh/authorized_keys"
+	grep -qF "$_aik_key" "$_aik_ak" && _aik_had=1
+	# One rewrite sweeps, installs and repairs what sshd's StrictModes wants (the user's
+	# own file, 0600) — so this one does not keep the old owner and mode.
+	_MF_TEXT="$MARKER"
+	_MF_BODY="$_aik_key"
+	export _MF_TEXT _MF_BODY
+	_aik_ok=0
+	rewrite_file -m 600 -o "$U:$GROUP" "$_aik_ak" ssh_keys_filter || _aik_ok=1
+	unset _MF_TEXT _MF_BODY
+	if [ "$_aik_ok" -ne 0 ]; then
+		step_failed ssh-key "the Mac's key was not installed: $R_ERROR" \
+			"Add host_key.pub from the share to it yourself."
+		return 0
 	fi
-	chown "$U:$GROUP" "$HOME_DIR/.ssh" "$HOME_DIR/.ssh/authorized_keys"
-	chmod 700 "$HOME_DIR/.ssh"
-	chmod 600 "$HOME_DIR/.ssh/authorized_keys"
+	[ "$_aik_swept" -eq 1 ] && ok "removed another Machman VM's key (cloned guest)"
 	# SELinux (rhel-family, Leap 16): a root-written authorized_keys can land with the
 	# wrong context and be silently refused — exactly what ssh-copy-id fixes up.
 	if have restorecon; then
@@ -281,14 +330,15 @@ ssh_act_key() {
 	if [ -n "$SSH_SWITCH_FROM" ] && [ "$SSH_SWITCH_FROM" != "$U" ]; then
 		_aik_oh="$(home_of "$SSH_SWITCH_FROM")"
 		_aik_oak="$_aik_oh/.ssh/authorized_keys"
-		if [ -n "$_aik_oh" ] && [ -f "$_aik_oak" ]; then
-			_aik_tmp="$_aik_oak.machman-tmp"
-			grep -vF "$MARKER" "$_aik_oak" > "$_aik_tmp" || true
-			mv "$_aik_tmp" "$_aik_oak"
-			chown "$SSH_SWITCH_FROM:$(id -gn "$SSH_SWITCH_FROM" 2>/dev/null || echo "$SSH_SWITCH_FROM")" \
-				"$_aik_oak" 2>/dev/null || true
-			chmod 600 "$_aik_oak"
-			ok "removed the Mac's key from $SSH_SWITCH_FROM"
+		if [ -n "$_aik_oh" ] && [ -f "$_aik_oak" ] \
+			&& grep -qF "$MARKER" "$_aik_oak" 2>/dev/null; then
+			if drop_lines "$_aik_oak" "$MARKER"; then
+				ok "removed the Mac's key from $SSH_SWITCH_FROM"
+			else
+				step_failed ssh-key \
+					"could not remove the Mac's key from $SSH_SWITCH_FROM: $R_ERROR" \
+					"Delete the line tagged $MARKER from it yourself."
+			fi
 		fi
 	fi
 	return 0
@@ -362,15 +412,13 @@ ssh_uninstall() {
 		_su_h="$(home_of "$_su_u")"
 		[ -n "$_su_h" ] || continue
 		_su_ak="$_su_h/.ssh/authorized_keys"
-		[ -f "$_su_ak" ] || continue
-		grep -qF "$MARKER" "$_su_ak" || continue
-		_su_tmp="$_su_ak.machman-tmp"
-		grep -vF "$MARKER" "$_su_ak" > "$_su_tmp" || true
-		mv "$_su_tmp" "$_su_ak"
-		chown "$_su_u:$(id -gn "$_su_u" 2>/dev/null || echo "$_su_u")" "$_su_ak" \
-			2>/dev/null || true
-		chmod 600 "$_su_ak"
-		ok "removed the Mac's key from $_su_u"
+		[ -f "$_su_ak" ] && grep -qF "$MARKER" "$_su_ak" 2>/dev/null || continue
+		# Owner and mode stay as the user left them.
+		if drop_lines "$_su_ak" "$MARKER"; then
+			ok "removed the Mac's key from $_su_u"
+		else
+			uninstall_kept
+		fi
 	done
 	if [ "$OS_FAMILY" = nixos ] && [ -f /etc/nixos/configuration.nix ] \
 		&& grep -q "# $MARKER" /etc/nixos/configuration.nix; then

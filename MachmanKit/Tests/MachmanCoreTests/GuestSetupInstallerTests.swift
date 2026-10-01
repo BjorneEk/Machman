@@ -202,8 +202,10 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("Move SSH from"))
 		#expect(s.contains("left as is"))
 		#expect(s.contains("(external)"))
-		// Uninstall removes marker-matched artifacts but never disables sshd.
-		#expect(s.contains(#"grep -vF "$MARKER""#))
+		// Uninstall removes marker-matched artifacts but never disables sshd, and every
+		// edit goes through the link-safe helpers: no fixed temp name is left to plant.
+		#expect(s.contains(#"drop_lines "$_su_ak" "$MARKER""#))
+		#expect(!s.contains(".machman-tmp"))
 		#expect(s.contains("--uninstall [--user <name>]"))
 		// The report lands in the writable sibling, addressed payload-relatively (the
 		// directory name itself comes from machman.env).

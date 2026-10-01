@@ -196,12 +196,19 @@ sshfsauto_act() {
 		}
 		_sa_what="$R_MOUNT_WHAT"
 		_sa_where="$R_MOUNT_WHERE"
+		# The mount root is the user's: a link there was planted, and root never follows
+		# one (no mkdir through it, chown -h).
+		if [ -L "$_sa_where" ]; then
+			step_failed automount-sshfs "$_sa_where is a symbolic link — skipped" \
+				"Remove it, then re-run."
+			continue
+		fi
 		mkdir -p "$_sa_where" 2>/dev/null || {
 			step_failed automount-sshfs "could not create $_sa_where" \
 				"Create it yourself and re-run."
 			continue
 		}
-		chown "$U:$GROUP" "$_sa_where" 2>/dev/null || true
+		chown -h "$U:$GROUP" "$_sa_where" 2>/dev/null || true
 		if [ "$INIT" = systemd ]; then
 			_sa_fstab="$_sa_fstab$(fstab_escape "$_sa_what") $(fstab_escape "$_sa_where")"
 			_sa_fstab="$_sa_fstab fuse.sshfs noauto,x-systemd.automount,nofail,_netdev,$_sa_opts 0 0

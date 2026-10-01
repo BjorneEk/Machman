@@ -71,17 +71,41 @@ reverse_act() {
 	fi
 	_atw_dir="$HOME_DIR/.ssh"
 	_atw_key="$_atw_dir/machman_host"
-	mkdir -p "$_atw_dir"
-	if [ -f "$_atw_key" ] \
-		&& ! grep -qF "$MARKER-reverse" "$_atw_key.pub" 2>/dev/null; then
+	if ! ssh_dir_ready "$HOME_DIR" "$U" "$GROUP"; then
+		step_failed two-way "guest -> host SSH was not set up: $R_ERROR" \
+			"Make it a plain directory owned by $U, then re-run."
+		return 0
+	fi
+	# Links where our files go were planted, never made by us: they go (rm never follows).
+	for _atw_f in "$_atw_key" "$_atw_key.pub" "$_atw_dir/machman_known_hosts"; do
+		if [ -L "$_atw_f" ]; then rm -f "$_atw_f"; fi
+	done
+	if [ -e "$_atw_key" ] && ! { regular_file "$_atw_key.pub" \
+		&& grep -qF "$MARKER-reverse" "$_atw_key.pub"; }; then
 		rm -f "$_atw_key" "$_atw_key.pub"
 		ok "replaced another Machman VM's guest key (cloned guest)"
 	fi
-	if [ ! -f "$_atw_key" ]; then
-		run "creating the guest's key" ssh-keygen -q -t ed25519 -N "" \
-			-C "$MARKER-reverse" -f "$_atw_key" \
-			|| die 1 "ssh-keygen could not create the guest's key${R_ERROR:+: $R_ERROR}" \
-				"Check $_atw_dir is writable, then re-run."
+	if ! regular_file "$_atw_key" || ! regular_file "$_atw_key.pub"; then
+		# Minted in a directory only root can enter, then moved in by write_file:
+		# ssh-keygen itself would write through whatever stands at its -f path.
+		_atw_tmpd="$(mktemp -d)" \
+			|| die 1 "could not make a temporary directory for the guest's key"
+		if ! run "creating the guest's key" ssh-keygen -q -t ed25519 -N "" \
+			-C "$MARKER-reverse" -f "$_atw_tmpd/key"; then
+			rm -rf "$_atw_tmpd"
+			die 1 "ssh-keygen could not create the guest's key${R_ERROR:+: $R_ERROR}" \
+				"Check that ssh-keygen works, then re-run."
+		fi
+		_atw_ok=0
+		write_file -m 600 -o "$U:$GROUP" "$_atw_key" < "$_atw_tmpd/key" \
+			&& write_file -m 644 -o "$U:$GROUP" "$_atw_key.pub" < "$_atw_tmpd/key.pub" \
+			|| _atw_ok=1
+		rm -rf "$_atw_tmpd"
+		if [ "$_atw_ok" -ne 0 ]; then
+			step_failed two-way "could not store the guest's key: $R_ERROR" \
+				"Check $_atw_dir, then re-run."
+			return 0
+		fi
 	fi
 	REVERSE_PUBKEY="$(cat "$_atw_key.pub")"
 	_atw_target="$GATEWAY"
@@ -92,8 +116,6 @@ reverse_act() {
 	if [ -z "$_atw_target" ]; then
 		step_failed two-way "no route to the Mac was found — 'ssh mac' was not configured" \
 			"The key is reported anyway; re-run once the guest has a default route."
-		chown "$U:$GROUP" "$_atw_key" "$_atw_key.pub"
-		chmod 600 "$_atw_key"
 		return 0
 	fi
 	# Pin the Mac's host key so the first guest -> host connect has no TOFU prompt.
@@ -101,13 +123,15 @@ reverse_act() {
 	if [ -r "$PAYLOAD_DIR/host_machine_key.pub" ]; then
 		_atw_hk="$(awk '{ print $1" "$2 }' "$PAYLOAD_DIR/host_machine_key.pub")"
 		_atw_known="$_atw_dir/machman_known_hosts"
-		{
+		_atw_lines="$(
 			[ -n "$GATEWAY" ] && printf '%s %s\n' "$GATEWAY" "$_atw_hk"
 			[ -n "$HOST_LOCAL" ] && printf '%s %s\n' "$HOST_LOCAL" "$_atw_hk"
 			:
-		} > "$_atw_known"
-		chown "$U:$GROUP" "$_atw_known"
-		chmod 600 "$_atw_known"
+		)"
+		# A here-doc, not a pipe: write_file runs in this shell, so a refusal clears it.
+		write_file -m 600 -o "$U:$GROUP" "$_atw_known" <<EOF || _atw_known=""
+$_atw_lines
+EOF
 	fi
 	_atw_body="$(
 		printf 'Host mac\n\tHostName %s\n\tUser %s\n' "$_atw_target" "$HOST_USER"
@@ -115,8 +139,6 @@ reverse_act() {
 		[ -n "$_atw_known" ] && printf '\tUserKnownHostsFile %s\n' "$_atw_known"
 		:
 	)"
-	chown "$U:$GROUP" "$_atw_key" "$_atw_key.pub"
-	chmod 600 "$_atw_key"
 	# A new config is the user's own, 0600; an existing one keeps its owner and mode.
 	if ! put_block -m 600 -o "$U:$GROUP" "$_atw_dir/config" "$MARKER" "$_atw_body"; then
 		step_failed two-way "'ssh mac' was not added: $R_ERROR" \
@@ -142,7 +164,8 @@ reverse_uninstall() {
 		_ru_h="$(home_of "$_ru_u")"
 		[ -n "$_ru_h" ] || continue
 		strip_block "$_ru_h/.ssh/config" || uninstall_kept
-		if grep -qF "$MARKER-reverse" "$_ru_h/.ssh/machman_host.pub" 2>/dev/null; then
+		if regular_file "$_ru_h/.ssh/machman_host.pub" \
+			&& grep -qF "$MARKER-reverse" "$_ru_h/.ssh/machman_host.pub"; then
 			rm -f "$_ru_h/.ssh/machman_host" "$_ru_h/.ssh/machman_host.pub" \
 				"$_ru_h/.ssh/machman_known_hosts"
 			ok "removed the guest -> host key from $_ru_u"

@@ -116,6 +116,9 @@ write_report() {
 		fi
 		;;
 	esac
+	# Composed in a root-only temp file: the brace group must run in THIS shell (the
+	# probes it calls set globals), so it cannot feed write_file through a pipe.
+	_wr_tmp="$(mktemp)" || return 0
 	{
 		printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
 		printf 'MARKER=%s\n' "$MARKER"
@@ -164,8 +167,15 @@ write_report() {
 		fi
 		[ "$_wr_mode" = uninstalled ] && printf 'UNINSTALLED=1\n'
 		:
-	} > "$REPORT_DIR/report.env.tmp"
-	mv "$REPORT_DIR/report.env.tmp" "$REPORT_DIR/report.env"
+	} > "$_wr_tmp"
+	# Whoever mounted the share (the sshfs bootstrap, a macOS guest's user) can write the
+	# drop-box: the report goes in by write_file, never through a planted name.
+	if ! write_file "$REPORT_DIR/report.env" < "$_wr_tmp"; then
+		rm -f "$_wr_tmp"
+		warn "could not write Machman's report: $R_ERROR"
+		return 0
+	fi
+	rm -f "$_wr_tmp"
 	REPORT_DONE=1
 	verbose report "wrote $REPORT_DIR/report.env (status=$_wr_status)"
 	return 0

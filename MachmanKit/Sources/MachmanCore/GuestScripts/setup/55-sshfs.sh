@@ -112,7 +112,7 @@ sshfs_act_fuse_ready() {
 				"Create it yourself, or pass --mountpoint <path>."
 	fi
 	if [ -d "$MOUNTPOINT" ] || [ "$DRY_RUN" -eq 1 ]; then
-		run "giving $U the mount point" chown "$U:$GROUP" "$MOUNTPOINT" || true
+		run "giving $U the mount point" chown -h "$U:$GROUP" "$MOUNTPOINT" || true
 	fi
 	ok "$MOUNTPOINT is ready for host folders"
 	return 0
