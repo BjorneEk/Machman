@@ -113,5 +113,9 @@ enum InspectorScenes {
 		device(.clipboard, "ClipboardInspector"),
 		device(.entropy, "DeviceInspector, entropy", select: "Kernel Lab"),
 		device(.rosetta, "RosettaInspector", select: "Kernel Lab"),
+		inspector(
+			"device.graphics.2560x1600", "GraphicsInspector, 2560 × 1600 (a width it shares)",
+			vms: { [Samples.linuxDisplay(width: 2560, height: 1600)] },
+			node: .device(.graphics)),
 	]
 }

@@ -156,18 +156,10 @@ struct GraphicsInspector: View {
 		case custom
 	}
 
-	private var commonPresets: [(Int, Int)] {
-		var presets: [(Int, Int)] = []
-		if let w = viewModel.capabilities?.hostDisplayWidthPixels,
-			let h = viewModel.capabilities?.hostDisplayHeightPixels {
-			presets.append((w, h))
-		}
-		for p in [(1280, 800), (1920, 1080), (2560, 1440), (2560, 1600),
-			(3024, 1964), (3456, 2234), (3840, 2160)]
-			where !presets.contains(where: { $0 == p }) {
-			presets.append(p)
-		}
-		return presets
+	private var commonPresets: [DisplayResolutionPreset] {
+		GraphicsChoices.resolutionPresets(
+			hostWidth: viewModel.capabilities?.hostDisplayWidthPixels,
+			hostHeight: viewModel.capabilities?.hostDisplayHeightPixels)
 	}
 
 	private var currentResolution: Resolution {
@@ -175,7 +167,8 @@ struct GraphicsInspector: View {
 		guard let w = device.displayWidthPixels, let h = device.displayHeightPixels else {
 			return .auto
 		}
-		return commonPresets.contains(where: { $0 == (w, h) }) ? .preset(w, h) : .custom
+		return commonPresets.contains(DisplayResolutionPreset(width: w, height: h))
+			? .preset(w, h) : .custom
 	}
 
 	var body: some View {
@@ -183,8 +176,9 @@ struct GraphicsInspector: View {
 			Section("Display") {
 				Picker("Resolution", selection: resolutionBinding) {
 					Text("Auto (host screen)").tag(Resolution.auto)
-					ForEach(commonPresets, id: \.0) { w, h in
-						Text(presetLabel(w, h)).tag(Resolution.preset(w, h))
+					ForEach(commonPresets) { preset in
+						Text(presetLabel(preset.width, preset.height))
+							.tag(Resolution.preset(preset.width, preset.height))
 					}
 					Text("Custom…").tag(Resolution.custom)
 				}
