@@ -4,15 +4,17 @@
 //
 //  App-scoped preview polling: one ~4s loop per visible running VM, writing frames into the
 //  isolated PreviewStore (only the small PreviewView re-renders per frame — see PreviewStore).
-//  Today the visible set is just the sidebar selection; the tabbed canvas widens it to every
-//  VM tab on screen. Polls only while the app is focused (active, with any of its windows
-//  key — DaemonConnection's FocusMonitor says so), restarts a VM's loop on its
+//  The visible set is the sidebar selection plus every VM with a torn-off Configuration window
+//  (T18; read from TornTabRegistry). Polls only while the app is focused (active, with any of
+//  its windows key — DaemonConnection's FocusMonitor says so), restarts a VM's loop on its
 //  stateChanged (keyed off the event's state so a not-yet-patched row can't stall it), and
 //  keeps the last frame across reconnects — DaemonConnection re-attaches it per connection.
 //
 
 import AppKit
+import Combine
 import MachmanAPI
+import MachmanUI
 
 @MainActor
 public final class PreviewService: ObservableObject {
@@ -23,11 +25,21 @@ public final class PreviewService: ObservableObject {
 	private var eventTask: Task<Void, Never>?
 	private var tasks: [String: Task<Void, Never>] = [:]
 	private var visible: Set<String> = []
+	// The two sources of `visible`: what the main window selects, and torn-off windows.
+	private var selection: Set<String> = []
+	private var torn: Set<String> = []
+	private var tornSink: AnyCancellable?
 	private var focused = true
 	private let interval: Double = 4
 
-	public init(store: VMStore) {
+	// `tornTabs`: the registry whose open Configuration windows also get frames; nil polls
+	// the selection only.
+	public init(store: VMStore, tornTabs: TornTabRegistry? = nil) {
 		self.store = store
+		// $open emits the incoming set (willSet) — use it, never tornTabs.open here.
+		tornSink = tornTabs?.$open.sink { [weak self] open in
+			self?.setTorn(open)
+		}
 	}
 
 	public func attach(api: MachmanControlling) {
@@ -53,9 +65,21 @@ public final class PreviewService: ObservableObject {
 		restartAll()   // with no api every loop stops; images keep their last frame
 	}
 
-	// Which VMs' previews are on screen. Adding starts a loop, removing stops one; an
-	// unchanged set is a no-op (running loops keep their cadence).
+	// Which VMs the main window shows (its selection).
 	public func setVisible(_ names: Set<String>) {
+		selection = names
+		apply()
+	}
+
+	private func setTorn(_ open: Set<TornTab>) {
+		torn = Set(open.filter { $0.tab == .config }.map(\.vm))
+		apply()
+	}
+
+	// Adding a VM starts its loop, removing one stops it; an unchanged set is a no-op
+	// (running loops keep their cadence).
+	private func apply() {
+		let names = selection.union(torn)
 		guard names != visible else { return }
 		let stale = visible.subtracting(names)
 		let added = names.subtracting(visible)
@@ -63,6 +87,9 @@ public final class PreviewService: ObservableObject {
 		for name in stale { restart(name) }
 		for name in added { restart(name) }
 	}
+
+	// Test seam: the VMs with a polling loop right now.
+	var pollingNames: Set<String> { Set(tasks.keys) }
 
 	public func setFocused(_ focused: Bool) {
 		guard focused != self.focused else { return }

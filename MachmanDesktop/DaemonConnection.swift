@@ -59,7 +59,9 @@ final class DaemonConnection: ObservableObject {
 	static let helloDeadline: Duration = .seconds(10)
 
 	init() {
-		previews = PreviewService(store: vmStore)
+		// The registry the torn-off windows and the view model use: their Configuration tabs
+		// get live frames too.
+		previews = PreviewService(store: vmStore, tornTabs: .shared)
 		focus = FocusMonitor.application { [previews] focused in
 			previews.setFocused(focused)
 		}
