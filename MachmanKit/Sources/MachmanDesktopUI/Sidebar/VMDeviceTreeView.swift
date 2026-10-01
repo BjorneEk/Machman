@@ -44,7 +44,6 @@ struct VMDeviceTreeView: View {
 	]
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
-	@Environment(\.dismissWindow) private var dismissWindow
 
 	// `dragPreview` starts the tree with a drag already hovering (render scenes).
 	init(
@@ -460,21 +459,9 @@ struct VMDeviceTreeView: View {
 					Label("Move to New Window", systemImage: MachmanSymbols.newWindow)
 				}
 			}
-			Button("Close Session") { closeSSHSession(ref) }
+			// Canvas tab or torn window alike: closeTab knows which.
+			Button("Close Session") { viewModel.closeTab(.ssh(ref), vm: vm.name) }
 		}
-	}
-
-	private func closeSSHSession(_ ref: SSHSessionRef) {
-		// closeTerminal's torn branch: a torn-off tab IS its window — close that, and its
-		// teardown ends the ssh process and drops the registry entry. Killing the process
-		// in place would leave a zombie tree row over a wrong-message window.
-		if isTorn(.ssh(ref)) {
-			dismissWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .ssh(ref)))
-			return
-		}
-		sessions.drop(.ssh(ref), vm: vm.name)
-		mutateCanvas { $0.close(.ssh(ref)) }
-		viewModel.tabClosed(.ssh(ref), vm: vm.name)
 	}
 
 	// Move a tab out of the canvas into its own window (or focus the window it already
@@ -486,9 +473,7 @@ struct VMDeviceTreeView: View {
 			openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
 			return
 		}
-		mutateCanvas { $0.close(tab) }
-		viewModel.tabClosed(tab, vm: vm.name)   // next row click focuses the window
-		let payload = TornTab(vm: vm.name, tab: tab)
+		let payload = viewModel.tearOff(tab, vm: vm.name)
 		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
 	}
 
@@ -616,7 +601,9 @@ struct VMDeviceTreeView: View {
 		batchMenuItems(for: .serial(ref))
 		if !gated && enabled {
 			if open {
-				Button("Close Terminal (disconnect)") { closeTerminal(ref) }
+				Button("Close Terminal (disconnect)") {
+					viewModel.closeTab(.terminal(ref), vm: vm.name)
+				}
 			} else {
 				Button("Open Terminal (connect)") { openTerminal(ref) }
 			}
@@ -1072,20 +1059,6 @@ struct VMDeviceTreeView: View {
 		}
 		// Instant: just record the tab. The canvas builds + connects the terminal lazily.
 		mutateCanvas { $0.open(.terminal(ref)) }
-	}
-
-	private func closeTerminal(_ ref: SerialPortRef) {
-		// A torn-off tab IS its window — close that, and its teardown drops the
-		// controller. Dropping the controller in place would strand the window on its
-		// connecting spinner: ensureController only runs from onAppear, which an
-		// in-place branch flip never re-fires.
-		if isTorn(.terminal(ref)) {
-			dismissWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: .terminal(ref)))
-			return
-		}
-		sessions.drop(.terminal(ref), vm: vm.name)
-		mutateCanvas { $0.close(.terminal(ref)) }
-		viewModel.tabClosed(.terminal(ref), vm: vm.name)
 	}
 
 	// MARK: - Helpers

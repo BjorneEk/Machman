@@ -244,9 +244,7 @@ struct VMCanvasView: View {
 	// MARK: - Tab actions
 
 	private func close(_ tab: VMPaneTab) {
-		sessions.drop(tab, vm: vm.name)
-		mutate { $0.close(tab) }
-		viewModel.tabClosed(tab, vm: vm.name)
+		viewModel.closeTab(tab, vm: vm.name)
 	}
 
 	private func closeOthers(than tab: VMPaneTab, in pane: CanvasPane) {
@@ -261,9 +259,7 @@ struct VMCanvasView: View {
 	// inline makes the window's container adopt the terminal while the canvas's is still
 	// alive, and the outgoing mount's last update takes it back.
 	private func tearOff(_ tab: VMPaneTab) {
-		mutate { $0.close(tab) }
-		viewModel.tabClosed(tab, vm: vm.name)   // next row click focuses the window
-		let payload = TornTab(vm: vm.name, tab: tab)
+		let payload = viewModel.tearOff(tab, vm: vm.name)
 		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
 	}
 

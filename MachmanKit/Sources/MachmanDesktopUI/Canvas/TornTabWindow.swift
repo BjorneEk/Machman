@@ -83,17 +83,15 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			resolve(order)
 		}
 		// The OUTER view disappears only when the window closes (branch flips inside keep
-		// it mounted) — closing the window closes the tab, tearing down its terminal.
+		// it mounted) — closing the window closes the tab, tearing down its terminal (the
+		// view model's one close path, which works without a view model mid-reconnect).
 		// Deferred like the insert: both stores are @Published, and onDisappear runs
 		// mid-view-update.
 		.onDisappear { [payload, terminals = connection.terminals,
 			viewModel = connection.viewModel] in
 			DispatchQueue.main.async {
-				TornTabRegistry.shared.open.remove(payload)
-				// A terminal or session lives exactly as long as the thing showing it,
-				// window or tab: closing this window ends its connection or ssh process.
-				terminals.drop(payload.tab, vm: payload.vm)
-				viewModel?.tabClosed(payload.tab, vm: payload.vm)
+				VMListViewModel.tornWindowClosed(
+					payload, registry: .shared, terminals: terminals, viewModel: viewModel)
 			}
 		}
 	}
@@ -106,8 +104,8 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		tornTabs.orders[payload] = nil
 		switch order {
 		case .close:
-			// The window's onDisappear is the teardown: controller, registry entry, and
-			// (via the tabClosed funnel) the tree selection.
+			// The window's onDisappear is the teardown (tornWindowClosed): controller,
+			// registry entry, and the tree row. closeTab posts this order for a torn tab.
 			dismiss()
 		case .reopen(let next):
 			// The tear-off swap shape: this window's mount must be gone before the

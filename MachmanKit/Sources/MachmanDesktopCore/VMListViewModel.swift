@@ -202,7 +202,8 @@ public final class VMListViewModel: ObservableObject {
 
 	private func listRefreshed(_ list: [VMInfo]) {
 		// Terminals + canvas layouts follow the list: drop controllers of gone VMs, forget
-		// their layouts, and close tabs whose port vanished (tearing down the controller).
+		// their layouts, and close tabs whose port vanished (tearing down the controller and
+		// deselecting the port's row, as every close does).
 		terminals.reconcile(vms: list)
 		let names = Set(list.map(\.name))
 		for vmName in Array(canvases.canvases.keys) where !names.contains(vmName) {
@@ -213,6 +214,7 @@ public final class VMListViewModel: ObservableObject {
 			let refs = Set(ports.map { SerialPortRef($0) })
 			for ref in canvases.reconcile(vm: vm.name, existing: refs) {
 				terminals.drop(.terminal(ref), vm: vm.name)
+				tabClosed(.terminal(ref), vm: vm.name)
 			}
 		}
 		// Torn tabs live in their windows, not the canvas — reconcile them too (T6): a
@@ -1311,23 +1313,7 @@ public final class VMListViewModel: ObservableObject {
 		}.sorted { $0.path < $1.path }   // Set order is unstable; keep copies deterministic
 	}
 
-	// MARK: - Canvas commands (menu shortcuts)
-
-	// Opening rides on selection CHANGE (the tree's only channel), so a row left selected
-	// after its tab closed is a dead end — clicking it again cannot re-fire. Every path
-	// that takes a tab off a canvas (close, tear-off, torn-window close) reports here.
-	public func tabClosed(_ tab: VMPaneTab, vm: String) {
-		guard vm == selectedName else { return }
-		treeSelection.remove(Self.treeNode(for: tab))
-	}
-
-	private static func treeNode(for tab: VMPaneTab) -> SidebarNode {
-		switch tab {
-		case .config: return .vmRoot
-		case .terminal(let ref): return .serial(ref)
-		case .ssh(let ref): return .sshSession(ref)
-		}
-	}
+	// MARK: - Torn tabs
 
 	// Guards the torn-tab reconcile against the pre-first-list window: at launch the list
 	// is empty until the first refresh, and closing restored windows against it would be
@@ -1344,39 +1330,16 @@ public final class VMListViewModel: ObservableObject {
 	private func reconcileTornTabs(list: [VMInfo]) {
 		let registry = tornTabs
 		var next: [TornTab: TornTabRegistry.Order] = [:]
-		// Pending rename swaps survive recomputes until their window acts — the old-named
-		// payload IS stale in the fresh list, and that must not degrade a swap to a close.
-		for (torn, order) in registry.orders {
-			if case .reopen = order, registry.open.contains(torn) { next[torn] = order }
+		// Pending orders survive recomputes until their window acts: a rename swap must not
+		// degrade to a close (the old-named payload IS stale in the fresh list), and a close
+		// the user asked for (closeTab) must not be dropped by a refresh that lands first.
+		for (torn, order) in registry.orders where registry.open.contains(torn) {
+			next[torn] = order
 		}
 		for torn in registry.open where next[torn] == nil && torn.isStale(in: list) {
 			next[torn] = .close
 		}
 		if registry.orders != next { registry.orders = next }
-	}
-
-	public func cycleTab(forward: Bool) {
-		guard let name = selectedName else { return }
-		var canvas = canvases.canvas(for: name)
-		guard let pane = canvas.activePane, pane.tabs.count > 1,
-			let current = pane.active,
-			let index = pane.tabs.firstIndex(of: current) else { return }
-		let count = pane.tabs.count
-		canvas.activate(pane.tabs[(index + (forward ? 1 : count - 1)) % count])
-		canvases.setCanvas(canvas, for: name)
-	}
-
-	// True when a tab was closed (⌘W falls back to closing the window otherwise).
-	@discardableResult
-	public func closeActiveTab() -> Bool {
-		guard let name = selectedName else { return false }
-		var canvas = canvases.canvas(for: name)
-		guard let tab = canvas.activeTab else { return false }
-		terminals.drop(tab, vm: name)
-		canvas.close(tab)
-		canvases.setCanvas(canvas, for: name)
-		tabClosed(tab, vm: name)
-		return true
 	}
 
 	public func setSerialLogging(

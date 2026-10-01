@@ -86,7 +86,7 @@ public final class TerminalSessions: ObservableObject {
 
 	// Tear down a tab's controller: tab closed, port removed, or VM deleted. An ssh tab's
 	// display metadata goes with it — the session it named is over.
-	public func drop(_ tab: VMPaneTab, vm: String) {
+	func drop(_ tab: VMPaneTab, vm: String) {
 		if case .ssh(let ref) = tab {
 			sshMeta[vm]?[ref] = nil
 		}

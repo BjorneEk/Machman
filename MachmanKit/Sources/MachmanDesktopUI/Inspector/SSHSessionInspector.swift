@@ -61,11 +61,10 @@ struct SSHSessionInspector: View {
 						Button("Check Connection") { viewModel.refreshSSH(vm.name) }
 					}
 				}
+				// One close path (Q3): a torn window is ordered closed, a canvas tab
+				// closes, and either way ssh ends and the session's row goes.
 				Button("Close Session", role: .destructive) {
-					sessions.drop(.ssh(ref), vm: vm.name)
-					var canvas = viewModel.canvases.canvas(for: vm.name)
-					canvas.close(.ssh(ref))
-					viewModel.canvases.setCanvas(canvas, for: vm.name)
+					viewModel.closeTab(.ssh(ref), vm: vm.name)
 				}
 			}
 		}
