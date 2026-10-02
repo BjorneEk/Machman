@@ -22,15 +22,15 @@ public final class RoutingMachman: MachmanControlling {
 	// The shadow build's progress label; its card reads "<VM> — Preparing a safe run".
 	nonisolated static let safeRunLabel = "Preparing a safe run"
 
-	private let registry: VMRegistry
-	private let local: LocalMachman
-	private let daemonVersion: String
+	let registry: VMRegistry
+	let local: LocalMachman
+	let daemonVersion: String
 	// Injected (not built here) so unit tests can never touch ~/Library/LaunchAgents by
 	// construction. nil = no agents are written; policy toggles still persist.
-	private let launchAgents: LaunchAgentManager?
+	let launchAgents: LaunchAgentManager?
 	// Same rule for ~/.ssh: injected by the daemon, nil in tests — SSH switches still
 	// persist, only the host-side files stay untouched.
-	private let sshHostConfig: SSHHostConfigWriter?
+	let sshHostConfig: SSHHostConfigWriter?
 
 	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
 	// recomputed: hostGone unlinks identity.socketPath and closures capture identity.id, so
@@ -117,7 +117,7 @@ public final class RoutingMachman: MachmanControlling {
 			self.deathWatch = deathWatch
 		}
 	}
-	private var hosted: [String: HostedVM] = [:]   // keyed by VM name
+	var hosted: [String: HostedVM] = [:]   // keyed by VM name
 
 	// The start-window reservation. `hosted[name]` is written only after the NSWorkspace
 	// launch, the connect poll, and (for safe runs) a possibly minutes-long shadow build —
@@ -174,9 +174,9 @@ public final class RoutingMachman: MachmanControlling {
 	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
 	// names whose live vmhost did not answer the last attempt (listed as not responding
 	// until one gets through).
-	private var adoptions: [String: Task<HostedVM, Error>] = [:]
-	private(set) var unadoptable: Set<String> = []
-	private(set) var adoptionAttempts = 0   // test seam: connects made to adopt a host
+	var adoptions: [String: Task<HostedVM, Error>] = [:]
+	var unadoptable: Set<String> = []
+	var adoptionAttempts = 0   // test seam: connects made to adopt a host
 
 	// Where the vmhost app lives. Internal test seam: a test that reaches spawnHost pins this
 	// to nil, so it fails at "not found" on every machine instead of depending on where the
@@ -265,7 +265,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// Fire-and-forget adoption for the read paths; a no-op while one is in flight.
-	private func scheduleAdoption(_ name: String) {
+	func scheduleAdoption(_ name: String) {
 		guard adoptions[name] == nil else { return }
 		Task { _ = try? await self.adoptLiveHost(name) }
 	}
@@ -273,7 +273,7 @@ public final class RoutingMachman: MachmanControlling {
 	// The one adoption path — startup, probe-adopt and on demand: connect, ask the host once
 	// (bounded; its reply is its first last answer), adopt, and re-attach the safe run it
 	// may be serving.
-	private func connectAndAdopt(name: String, socketPath: String) async throws -> HostedVM {
+	func connectAndAdopt(name: String, socketPath: String) async throws -> HostedVM {
 		var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 		adoptionAttempts += 1
 		let client = try await connectHost(identity: identity)
@@ -521,7 +521,7 @@ public final class RoutingMachman: MachmanControlling {
 	// any closure is built: termination and disconnect handlers capture the identity's id,
 	// never the (re-keyable) name. dataDir is the vmhost's scan root — the library for a
 	// normal run, the shadow run root for a safe one.
-	private func spawnHost(
+	func spawnHost(
 		identity: HostIdentity, dataDir: String, extraArguments: [String] = []
 	) async throws -> HostedVM {
 		let name = identity.name
@@ -765,7 +765,7 @@ public final class RoutingMachman: MachmanControlling {
 
 	// MARK: - SSH discovery (1.0.5, daemon-side)
 
-	private func host(withID id: UUID) -> HostedVM? {
+	func host(withID id: UUID) -> HostedVM? {
 		hosted.values.first { $0.identity.id == id }
 	}
 
@@ -773,7 +773,7 @@ public final class RoutingMachman: MachmanControlling {
 	// script after an uninstall mints a fresh reverse key, which drops approval back to
 	// pending — and the line installed for the old key has to go with it, or that key
 	// keeps its way in with nothing in the UI offering to revoke it.
-	private func reconcileReverseKey(vm name: String) {
+	func reconcileReverseKey(vm name: String) {
 		guard let writer = sshHostConfig, let marker = existingSSHMarker(name) else { return }
 		Task { [weak self] in
 			guard let self,
@@ -792,7 +792,7 @@ public final class RoutingMachman: MachmanControlling {
 	//   2. reachability — does the guest's sshd actually answer? Only for VMs whose guest
 	//      has run the setup script (without a reported user there is nothing to connect
 	//      as, and "waiting for SSH" would be noise on every other VM).
-	private func startSSHDiscovery(_ host: HostedVM) {
+	func startSSHDiscovery(_ host: HostedVM) {
 		host.sshDiscoveryTask?.cancel()
 		guard let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
@@ -935,7 +935,7 @@ public final class RoutingMachman: MachmanControlling {
 	// one runs it, else the daemon-local engine. Never the daemon's copy while a start or an
 	// unadopted vmhost owns the files: those edits were silently reverted, and a vm.stop
 	// "succeeded" doing nothing.
-	private func proxy(_ name: String) async throws -> MachmanControlling {
+	func proxy(_ name: String) async throws -> MachmanControlling {
 		switch residence(of: name) {
 		case .hosted(let host):
 			return host.client
@@ -970,7 +970,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// The owner of a setting change: proxy()'s, refused while it is an outdated vmhost.
-	private func settingsOwner(_ name: String) async throws -> MachmanControlling {
+	func settingsOwner(_ name: String) async throws -> MachmanControlling {
 		let target = try await proxy(name)
 		if let host = hosted[name], isOutdated(host) {
 			throw MachmanError(
@@ -1073,7 +1073,7 @@ public final class RoutingMachman: MachmanControlling {
 	// One bounded vm.get to a host, recorded: an answer becomes its last answer and clears
 	// a stall mark, a missed deadline sets one. A running answer also proves the host ran:
 	// one adopted while it missed its deadline never sees a running event for that run.
-	private func probe(_ host: HostedVM) async -> ProbeResult {
+	func probe(_ host: HostedVM) async -> ProbeResult {
 		let result: ProbeResult
 		do {
 			result = .answered(try await host.client.vm(
@@ -1163,7 +1163,7 @@ public final class RoutingMachman: MachmanControlling {
 	// The daemon's half of SSHInfo: what discovery found, and how this run is going.
 	// Nothing is invented for a VM that never used SSH and has no address either — the
 	// clients read a nil `ssh` as "SSH was never set up here".
-	private func overlaySSH(_ info: inout VMInfo, from host: HostedVM) {
+	func overlaySSH(_ info: inout VMInfo, from host: HostedVM) {
 		guard host.sshAnswer != nil || info.ssh != nil else { return }
 		var ssh = info.ssh ?? SSHInfo()
 		if let answer = host.sshAnswer {
@@ -1513,14 +1513,14 @@ public final class RoutingMachman: MachmanControlling {
 
 	// The marker labeling this VM's host-side artifacts — a read-only derivation from
 	// the identity file, safe against the stale-while-hosted registry copy (paths only).
-	private func existingSSHMarker(_ name: String) -> String? {
+	func existingSSHMarker(_ name: String) -> String? {
 		guard let config = registry.vm(named: name)?.config else { return nil }
 		return SSHSetupInstaller.existingMarker(for: config)
 	}
 
 	// Rebuild ~/.ssh/machman/config (+ Include line) from current state. Fire-and-forget
 	// with whole-state writes — concurrent triggers converge on last-write-wins.
-	private func scheduleSSHHostConfigWrite() {
+	func scheduleSSHHostConfigWrite() {
 		guard sshHostConfig != nil else { return }
 		Task { [weak self] in
 			await self?.writeSSHHostConfig()
