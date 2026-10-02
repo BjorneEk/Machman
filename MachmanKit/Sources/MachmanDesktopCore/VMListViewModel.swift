@@ -974,8 +974,8 @@ public final class VMListViewModel: ObservableObject {
 					_ = try await api.importDisk(vm: name, path: path)
 				} catch {
 					let file = (path as NSString).lastPathComponent
-					self?.present(
-						error, while: "Importing \u{201C}\(file)\u{201D} into \u{201C}\(name)\u{201D}")
+					let action = "Importing \u{201C}\(file)\u{201D} into \u{201C}\(name)\u{201D}"
+					self?.present(error, while: action)
 				}
 			}
 		}
@@ -1209,8 +1209,8 @@ public final class VMListViewModel: ObservableObject {
 					added += 1
 				} catch {
 					let file = disk.path.map { ($0 as NSString).lastPathComponent }
-					self?.present(
-						error, while: file.map { "Adding \u{201C}\($0)\u{201D}" } ?? "Adding a disk")
+					let action = file.map { "Adding \u{201C}\($0)\u{201D}" } ?? "Adding a disk"
+					self?.present(error, while: action)
 				}
 			}
 			guard added > 0 else { return }
