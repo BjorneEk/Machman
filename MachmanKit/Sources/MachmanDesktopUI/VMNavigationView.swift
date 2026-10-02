@@ -163,6 +163,10 @@ public struct VMNavigationView: View {
 		ToolbarItem(placement: .navigation) {
 			VMIndicatorCluster(viewModel: viewModel, vm: vm)
 		}
+		// The leftmost trailing item, with or without a VM: what finished, failed or warned.
+		ToolbarItem(placement: .primaryAction) {
+			ActivityButton(activity: viewModel.activity)
+		}
 		if let vm {
 			if vm.safeRun == true {
 				ToolbarItem(placement: .navigation) {

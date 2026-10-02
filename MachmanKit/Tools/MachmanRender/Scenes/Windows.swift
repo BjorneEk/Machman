@@ -139,6 +139,27 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: false)
 		},
+		RenderScene(
+			"window.main.activity", "VMNavigationView, two unseen problems in the activity list",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			panels: { ctx in
+				[
+					tree(ctx),
+					AnyView(InspectorView(
+						viewModel: ctx.viewModel, sessions: ctx.terminals,
+						profiles: ctx.profiles, vm: ctx.vm)
+						.padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			PopoverScenes.seedActivity(ctx)
+			// The corner as it looks once those cards and the toast have gone (the panels
+			// are painted over it, so it would only show cut).
+			for op in ctx.operations.operations { ctx.operations.dismiss(id: op.id) }
+			ctx.viewModel.dismissToast(key: VMListViewModel.logToastKey(
+				"Debian: " + Samples.screenRecordingWarning))
+			return mainWindow(ctx, inspector: true)
+		},
 		// L1: the window at its fitting size is the floor its regions derive (a smaller
 		// --widths proposal comes out at this size too).
 		RenderScene(

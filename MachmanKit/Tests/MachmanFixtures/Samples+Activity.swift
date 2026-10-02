@@ -68,3 +68,14 @@ extension Samples {
 		+ "previews are blank: allow it in System Settings › Privacy & Security › Screen "
 		+ "Recording, then stop and start this VM."
 }
+
+extension Samples {
+	// A copy of `source` the user cancelled part-way, labelled the way copies are now.
+	public static func cancelledCopyFrom(source: String = "Alpine") -> OperationInfo {
+		OperationInfo(
+			id: "op-copy-from-cancelled", kind: OperationInfo.Kind.copyVM, vm: "\(source) copy",
+			label: "Copying from \(source)", fraction: 0.3,
+			startedAt: now.addingTimeInterval(-600), state: OperationInfo.State.cancelled,
+			cancellable: true)
+	}
+}

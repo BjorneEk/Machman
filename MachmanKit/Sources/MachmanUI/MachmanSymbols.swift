@@ -124,6 +124,7 @@ public enum MachmanSymbols {
 	public static let newWindow = "macwindow.on.rectangle"
 	public static let sidebarToggle = "sidebar.left"
 	public static let inspectorToggle = "sidebar.right" // successor name for infoPanel
+	public static let activity = "clock.arrow.circlepath"   // toolbar activity list
 	public static let bootEFI = "gearshape.2"           // EFI boot-kind badge
 	public static let mount = "folder.fill"
 	public static let mountSSHFS = "externaldrive.badge.wifi"     // sshfs-kind mount badge

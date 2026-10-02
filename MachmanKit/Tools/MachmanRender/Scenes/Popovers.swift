@@ -31,7 +31,37 @@ enum PopoverScenes {
 			.padding(12))
 	}
 
+	// The activity list as the real flows fill it (PR5): a cancelled copy, a finished and a
+	// failed import (operation events), then Debian's Screen Recording warning (a log event).
+	@MainActor
+	static func seedActivity(_ ctx: SceneContext) {
+		for op in [Samples.cancelledCopyFrom(), Samples.finishedImport(), Samples.failedImport()] {
+			ctx.stub.emit(.operationChanged(op: op))
+			Offscreen.pump(until: { ctx.operations.activity.contains(
+				key: ActivityEntry.operationKey(op.id)) })
+		}
+		ctx.stub.emit(.log(vm: "Debian", level: .warning, message: Samples.screenRecordingWarning))
+		Offscreen.pump(until: { ctx.operations.activity.entries.count == 4 })
+	}
+
 	static let all: [RenderScene] = [
+		RenderScene("popover.activity", "ActivityPopover, four entries, newest first") { ctx in
+			seedActivity(ctx)
+			return AnyView(ActivityPopover(activity: ctx.operations.activity))
+		},
+		RenderScene("popover.activity.empty", "ActivityPopover, nothing yet") { ctx in
+			AnyView(ActivityPopover(activity: ctx.operations.activity))
+		},
+		RenderScene(
+			"toolbar.activity", "ActivityButton with two unseen problems, and with none"
+		) { ctx in
+			seedActivity(ctx)
+			return AnyView(HStack(spacing: 20) {
+				ActivityButton(activity: ctx.operations.activity)
+				ActivityButton(activity: ActivityLog())
+			}
+			.padding(16))
+		},
 		RenderScene("popover.add", "AddPopover tiles") { ctx in
 			AnyView(AddPopover(viewModel: ctx.viewModel, vm: ctx.vm))
 		},
