@@ -95,6 +95,15 @@ public enum MachmanGlassLevel: String, CaseIterable, Identifiable, Codable {
 	case standard, extra
 	public var id: String { rawValue }
 	public var label: String { self == .standard ? "Standard chrome" : "Extra glass" }
+
+	// The Liquid Glass a MachmanGlassSurface draws on macOS 26: Extra glass is the clearer
+	// variant; prominent surfaces react to the pointer; a tint washes either.
+	@available(macOS 26.0, *)
+	public func liquidGlass(prominent: Bool, tint: Color?) -> Glass {
+		let base: Glass = self == .extra ? .clear : .regular
+		let glass = prominent ? base.interactive() : base
+		return tint.map { glass.tint($0) } ?? glass
+	}
 }
 
 public enum MachmanScheme: String, CaseIterable, Identifiable, Codable {

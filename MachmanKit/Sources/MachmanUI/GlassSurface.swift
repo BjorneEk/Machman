@@ -28,8 +28,10 @@ public struct MachmanGlassSurface<S: InsettableShape>: ViewModifier {
 		if reduceTransparency {
 			solid(content: content)
 		} else if #available(macOS 26.0, *) {
-			let glass: Glass = prominent ? .regular.interactive() : .regular
-			content.glassEffect(tint.map { glass.tint($0) } ?? glass, in: shape)
+			// Settings ▸ Appearance ▸ Glass: Extra glass is Liquid Glass's clear variant here,
+			// ultra-thin material on the fallback.
+			content.glassEffect(
+				theme.glass.liquidGlass(prominent: prominent, tint: tint), in: shape)
 		} else {
 			legacy(content: content)
 		}

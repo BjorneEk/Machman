@@ -26,6 +26,11 @@ enum SettingsScenes {
 		pane("appearance", "AppearanceSettingsView") { _ in
 			AnyView(AppearanceSettingsView())
 		},
+		// H20: the Glass control set to Extra glass (shown while the key is unset — no
+		// defaults write). The glass itself renders in its Reduce Transparency form.
+		pane("appearance.extra-glass", "AppearanceSettingsView, Glass set to Extra glass") { _ in
+			AnyView(AppearanceSettingsView(glass: .extra))
+		},
 		pane("terminal", "TerminalSettingsView (profile editor, live preview)") { ctx in
 			AnyView(TerminalSettingsView(store: ctx.profiles))
 		},

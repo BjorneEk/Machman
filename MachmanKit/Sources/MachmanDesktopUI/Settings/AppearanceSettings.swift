@@ -4,7 +4,7 @@
 //
 //  The Appearance and Behaviour settings tabs (1.0.4 UI) and the theme they feed: knobs
 //  persist in UserDefaults and resolve into the MachmanTheme every window injects into the
-//  environment, so scheme/accent/density/font-scale/tab-style apply live everywhere.
+//  environment, so scheme/accent/glass/density/font-scale/tab-style apply live everywhere.
 //
 
 import SwiftUI
@@ -55,6 +55,12 @@ struct AppearanceSettingsView: View {
 	@AppStorage(ThemeKeys.fontScale) private var fontScale = 1.0
 	@AppStorage(ThemeKeys.tabHeight) private var tabHeight = 0.0
 	@AppStorage(ThemeKeys.tabFontSize) private var tabFontSize = 0.0
+	@AppStorage private var glassRaw: String
+
+	// `glass` is what shows while the key is unset (render scenes; the app passes nothing).
+	init(glass: MachmanGlassLevel = .standard) {
+		_glassRaw = AppStorage(wrappedValue: glass.rawValue, ThemeKeys.glass)
+	}
 
 	var body: some View {
 		Form {
@@ -74,6 +80,12 @@ struct AppearanceSettingsView: View {
 						Text(style.label).tag(style.rawValue)
 					}
 				}
+				Picker("Glass", selection: $glassRaw) {
+					ForEach(MachmanGlassLevel.allCases) { level in
+						Text(level.label).tag(level.rawValue)
+					}
+				}
+				.help("Extra glass makes Machman's own glass surfaces clearer")
 			}
 			Section("Density") {
 				LabeledContent("Spacing") {
@@ -100,6 +112,7 @@ struct AppearanceSettingsView: View {
 					schemeRaw = MachmanScheme.system.rawValue
 					accentRaw = MachmanAccent.system.rawValue
 					tabStyleRaw = MachmanTabStyle.rectangular.rawValue
+					glassRaw = MachmanGlassLevel.standard.rawValue
 					tabHeight = 0
 					tabFontSize = 0
 				}
