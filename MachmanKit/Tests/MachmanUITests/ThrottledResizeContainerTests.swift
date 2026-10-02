@@ -74,11 +74,13 @@ struct ThrottledResizeContainerTests {
 		#expect(child.frame.size == NSSize(width: 900, height: 500))
 	}
 
-	// Real time: two changes a moment apart. Under the autoresizing mask the second resized the
-	// terminal at once too.
+	// Two changes a moment apart. Under the autoresizing mask the second resized the terminal
+	// at once too.
 	@Test func aQuickSecondChangeWaits() {
-		let (container, child) = mount()
+		let clock = FakeClock()
+		let (container, child) = mount(clock: clock)
 		container.setFrameSize(NSSize(width: 900, height: 480))
+		clock.advance(by: 0.001)
 		container.setFrameSize(NSSize(width: 910, height: 480))
 		#expect(child.frame.size == NSSize(width: 900, height: 480))
 	}
