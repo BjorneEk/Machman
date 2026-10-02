@@ -54,11 +54,16 @@ extension RoutingMachman {
 			let runRoot = safeDir + "/" + entry
 			guard let marker = SafeRun.readMarker(runRoot: runRoot),
 				marker.vm == host.identity.name, marker.pid == peer else { continue }
-			host.identity.isSafe = true
-			host.identity.shadowRoot = runRoot
-			MachmanLogger.log(.log, "re-attached safe run \(entry) to \(marker.vm)")
+			markSafeRun(host, runRoot: runRoot, entry: entry, vm: marker.vm)
 			return
 		}
+	}
+
+	// What both halves do once a run root is proven this host's: the host is a safe run again.
+	private func markSafeRun(_ host: HostedVM, runRoot: String, entry: String, vm: String) {
+		host.identity.isSafe = true
+		host.identity.shadowRoot = runRoot
+		MachmanLogger.log(.log, "re-attached safe run \(entry) to \(vm)")
 	}
 
 	// Runs at daemon startup, strictly AFTER adoptExistingHosts: adoption is what turns a
@@ -81,9 +86,7 @@ extension RoutingMachman {
 			case .reattach:
 				guard let marker, let host = hosted[marker.vm],
 					host.identity.shadowRoot != runRoot else { break }   // adoption did
-				host.identity.isSafe = true
-				host.identity.shadowRoot = runRoot
-				MachmanLogger.log(.log, "re-attached safe run \(entry) to \(marker.vm)")
+				markSafeRun(host, runRoot: runRoot, entry: entry, vm: marker.vm)
 			case .delete:
 				try? fm.removeItem(atPath: runRoot)
 				MachmanLogger.log(.log, "swept dead safe run \(entry)")
