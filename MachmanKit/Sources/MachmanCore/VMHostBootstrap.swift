@@ -259,24 +259,22 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+		terminateReply()
+	}
+
+	// The quit decision, apart from AppKit's call so tests can answer the prompt.
+	func terminateReply() -> NSApplication.TerminateReply {
 		let name = vmName()
 		guard presenter.isRunning?(name) ?? false else {
 			server.stop()
 			return .terminateNow
 		}
-		let alert = NSAlert()
-		alert.messageText = "\(name) is running"
-		alert.informativeText = "Quitting stops the VM. Ask the guest to shut down, "
-			+ "stop it immediately, or cancel?"
-		alert.addButton(withTitle: "Shut Down")
-		alert.addButton(withTitle: "Force Stop")
-		alert.addButton(withTitle: "Cancel")
-		switch alert.runModal() {
-		case .alertFirstButtonReturn:
+		switch presenter.present(.quitWhileRunning(name)) {
+		case .shutDown:
 			presenter.stopHandler?(name, .soft)
-		case .alertSecondButtonReturn:
+		case .forceStop:
 			presenter.stopHandler?(name, .force)
-		default:
+		case .closeWindow, .keepWaiting, .cancel:
 			break
 		}
 		return .terminateCancel

@@ -218,26 +218,18 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 			forget(name)
 			return true
 		}
-		let alert = NSAlert()
-		alert.messageText = "\(name) is running"
-		alert.informativeText = "Close the window and leave the VM running, "
-			+ "ask the guest to shut down, or stop it immediately?"
-		alert.addButton(withTitle: "Close Window")
-		alert.addButton(withTitle: "Shut Down")
-		alert.addButton(withTitle: "Force Stop")
-		alert.addButton(withTitle: "Cancel")
-		switch alert.runModal() {
-		case .alertFirstButtonReturn:      // Close Window — VM keeps running headless
+		switch present(.closeWhileRunning(name)) {
+		case .closeWindow:      // the VM keeps running headless
 			forget(name)
 			return true
-		case .alertSecondButtonReturn:     // Shut Down — window stays to watch it happen
+		case .shutDown:         // the window stays to watch it happen
 			stopHandler?(name, .soft)
 			scheduleSoftStopEscalation(name)
 			return false
-		case .alertThirdButtonReturn:      // Force Stop — teardown closes the window
+		case .forceStop:        // teardown closes the window
 			stopHandler?(name, .force)
 			return false
-		default:
+		case .keepWaiting, .cancel:
 			return false
 		}
 	}
@@ -251,15 +243,32 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 				self.isRunning?(name) ?? false else {
 				return
 			}
-			let alert = NSAlert()
-			alert.messageText = "\(name) hasn't shut down yet"
-			alert.informativeText = "The guest hasn't responded to the shutdown request."
-			alert.addButton(withTitle: "Keep Waiting")
-			alert.addButton(withTitle: "Force Stop")
-			if alert.runModal() == .alertSecondButtonReturn {
+			if self.present(.notShutDownYet(name)) == .forceStop {
 				self.stopHandler?(name, .force)
 			}
 		}
+	}
+
+	// MARK: - Prompts
+
+	// Every vmhost prompt goes through here (VMHostPrompts.swift). A test seam answers in
+	// place of the modal alert.
+	var answerPrompt: ((HostPrompt) -> HostChoice)?
+
+	func present(_ prompt: HostPrompt) -> HostChoice {
+		answerPrompt?(prompt) ?? runAlert(prompt)
+	}
+
+	private func runAlert(_ prompt: HostPrompt) -> HostChoice {
+		let alert = NSAlert()
+		alert.messageText = prompt.message
+		alert.informativeText = prompt.info
+		for button in prompt.buttons {
+			alert.addButton(withTitle: button.title)
+		}
+		let response = alert.runModal()
+		return prompt.choice(forButtonAt:
+			response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue)
 	}
 
 	// MARK: - Window capture (previews)
