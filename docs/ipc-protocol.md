@@ -283,7 +283,9 @@ and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
 
 The daemon passes each event a vmhost emits on in the line the vmhost sent it (1.0.12+), so
 event types and fields the daemon itself doesn't know reach clients unchanged; older daemons
-re-encoded them, which cut an unknown type down to `{"type"}`.
+re-encoded them, which cut an unknown type down to `{"type"}`. Events a vmhost emits while its
+VM boots (a serial port it could not attach, a start without a window) reach subscribers too
+(1.0.12+; older daemons subscribed to a vmhost only after its boot, so they reached nobody).
 
 `operationChanged {op: OperationInfo}` (1.0.4+): a long-running operation started,
 progressed, or reached a terminal state. `OperationInfo` = `{id, kind, vm?, label,

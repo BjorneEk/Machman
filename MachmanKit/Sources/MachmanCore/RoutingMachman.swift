@@ -61,6 +61,9 @@ public final class RoutingMachman: MachmanControlling {
 		let app: NSRunningApplication?
 		var deathWatch: NSKeyValueObservation?
 		var eventTask: Task<Void, Never>?
+		// Done once the host has this daemon's subscription (E9): a start is forwarded only
+		// after it, so nothing the boot emits goes to a bus nobody hears.
+		var eventsSubscribed: Task<Void, Never>?
 		// SSH address discovery (1.0.5): daemon memory only, rebuilt after restarts by
 		// the adopt path; served as a VMInfo overlay like safeRun.
 		var sshAnswer: SSHDiscovery.Answer?
@@ -637,12 +640,18 @@ public final class RoutingMachman: MachmanControlling {
 		return host
 	}
 
-	// Each event goes on by the line the host sent it in, so a newer vmhost's event types and
-	// fields reach clients whole (A10); the side effects here read the decoded event.
+	// The subscription is made before anything else reaches the host, and `eventsSubscribed`
+	// says when the host has it (E9). Each event goes on by the line the host sent it in, so a
+	// newer vmhost's event types and fields reach clients whole (A10); the side effects here
+	// read the decoded event.
 	private func subscribeEvents(_ host: HostedVM) {
 		let id = host.identity.id
+		let client = host.client
+		host.eventTask?.cancel()
+		let subscription = Task { await client.eventLines() }
+		host.eventsSubscribed = Task { _ = await subscription.value }
 		host.eventTask = Task { [weak self] in
-			let stream = await host.client.eventLines()
+			let stream = await subscription.value
 			for await forwarded in stream {
 				guard let self = self else { return }
 				let event = forwarded.event
@@ -667,6 +676,14 @@ public final class RoutingMachman: MachmanControlling {
 				self.registry.events.emit(event, line: forwarded.line)
 			}
 		}
+	}
+
+	// Hands a host its VM's start once the host has this daemon's subscription (E9), so the
+	// boot's own events — a uart it could not attach, a headless start — reach clients.
+	func forwardStart(_ host: HostedVM, name: String, options: StartOptions) async throws {
+		if host.eventsSubscribed == nil { subscribeEvents(host) }
+		await host.eventsSubscribed?.value
+		try await host.client.start(vm: name, options: options)
 	}
 
 	// MARK: - SSH discovery (1.0.5, daemon-side)
@@ -1573,9 +1590,10 @@ public final class RoutingMachman: MachmanControlling {
 		let unattached = vm.config.unattachedDiskFiles
 		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
 		do {
-			try await host.client.start(vm: name, options: options)
+			try await forwardStart(host, name: name, options: options)
 			host.sawRun = true
 		} catch {
+			host.eventTask?.cancel()
 			host.deathWatch?.invalidate()
 			host.deathWatch = nil
 			host.app?.forceTerminate()
@@ -1585,10 +1603,10 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		host.unattachedDisks = unattached
 		hosted[name] = host
-		subscribeEvents(host)
 		// Explicit kick, not the event filter: the vmhost emitted .running while start()
-		// was still in flight — BEFORE this subscription existed — so a fresh start would
-		// otherwise never discover (the filter still covers guest reboots).
+		// was still in flight — before the host was in `hosted`, where the filter looks it
+		// up — so a fresh start would otherwise never discover (the filter still covers guest
+		// reboots).
 		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
 	}
@@ -1721,9 +1739,10 @@ public final class RoutingMachman: MachmanControlling {
 		var forwarded = options
 		forwarded.safe = false   // the vmhost never knows it runs a shadow
 		do {
-			try await host.client.start(vm: name, options: forwarded)
+			try await forwardStart(host, name: name, options: forwarded)
 			host.sawRun = true
 		} catch {
+			host.eventTask?.cancel()
 			host.deathWatch?.invalidate()
 			host.deathWatch = nil
 			host.app?.forceTerminate()
@@ -1735,7 +1754,6 @@ public final class RoutingMachman: MachmanControlling {
 		// The shadow keeps every entry's flag, so it left these unattached too.
 		host.unattachedDisks = unattached
 		hosted[name] = host
-		subscribeEvents(host)
 		// Same missed-running reasoning as the plain start path; the shadow impersonates
 		// the VM's MAC, so discovery works for safe runs too.
 		startSSHDiscovery(host)
@@ -1841,7 +1859,8 @@ public final class RoutingMachman: MachmanControlling {
 		var forwarded = options
 		forwarded.safe = false
 		do {
-			try await host.client.start(vm: name, options: forwarded)
+			// An adopted host holds its subscription from adopt(); this waits until it does.
+			try await forwardStart(host, name: name, options: forwarded)
 		} catch let error as MachmanError where error.code == .invalidState {
 			// Already running (autostart got there first) — the caller still gets what they
 			// asked for.

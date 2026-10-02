@@ -436,15 +436,15 @@ public final class RemoteMachman: MachmanControlling {
 			.eventsSubscribe, RPCEmpty?.none, expecting: RPCEmpty.self)
 	}
 
+	// The local stream first, then the subscription on the wire (idempotent server-side): an
+	// event the server sends right after its reply already has a stream to land in (E9).
 	public func events() async -> AsyncStream<VMEvent> {
-		// Subscribe on the wire (idempotent server-side), then hand out a local fan-out stream.
+		let stream = await connection.events()
 		await subscribeLogged()
-		return await connection.events()
+		return stream
 	}
 
-	// events(), each with the line it arrived in (A10). The local stream comes first, then the
-	// subscription on the wire: an event the server sends right after its reply already has a
-	// stream to land in.
+	// events(), each with the line it arrived in (A10). Same order as events().
 	public func eventLines() async -> AsyncStream<EventLine> {
 		let stream = await connection.eventLines()
 		await subscribeLogged()
