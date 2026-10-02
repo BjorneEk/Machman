@@ -15,6 +15,8 @@ import MachmanAPI
 final class MenuBarModel: ObservableObject {
 	let api: MachmanControlling
 	@Published private(set) var vms: [VMInfo] = []
+	// Live macOS install phases by VM: an install's start emits no listChanged (P23).
+	@Published private(set) var installPhases: [String: InstallPhase.Kind] = [:]
 	private var eventTask: Task<Void, Never>?
 
 	init(api: MachmanControlling) {
@@ -32,8 +34,13 @@ final class MenuBarModel: ObservableObject {
 					}
 				case .listChanged:
 					await self.reload()
-				case .installPhaseChanged, .log, .copyProgress, .operationChanged,
-					.sshChanged, .setupChanged, .unknown:
+				case .installPhaseChanged(let name, let phase):
+					// Progress ticks twice a second; only a new kind republishes.
+					if self.installPhases[name] != phase.kind {
+						self.installPhases[name] = phase.kind
+					}
+				case .log, .copyProgress, .operationChanged, .sshChanged, .setupChanged,
+					.unknown:
 					break
 				}
 			}
@@ -50,39 +57,63 @@ final class MenuBarModel: ObservableObject {
 		}
 	}
 
+	// Start waits for a running macOS install, as the desktop's does.
+	func canStart(_ vm: VMInfo) -> Bool {
+		!vm.state.isRunning && !vm.isInstallingMacOS(phase: installPhases[vm.name])
+	}
+
 	// The desktop's start rule (StartIntent): the policy, overridden only where named.
 	func start(_ vm: VMInfo, _ intent: StartIntent) {
 		let name = vm.name
 		let options = vm.startOptions(intent)
-		Task {
-			do {
-				try await api.start(vm: name, options: options)
-			} catch {
-				MachmanLogger.log(.interactionError, "start \(name): \(error.localizedDescription)")
-			}
-		}
+		Task { await perform(.start(options), vm: name) }
 	}
 
 	func stop(_ name: String, mode: StopMode) {
-		Task {
-			do {
-				try await api.stop(vm: name, mode: mode)
-			} catch {
-				MachmanLogger.log(.interactionError, "stop \(name): \(error.localizedDescription)")
+		Task { await perform(.stop(mode), vm: name) }
+	}
+
+	func openWindow(_ name: String) {
+		Task { await perform(.openWindow, vm: name) }
+	}
+
+	func closeWindow(_ name: String) {
+		Task { await perform(.closeWindow, vm: name) }
+	}
+
+	// A failed action says so in an alert (P23); a MAC conflict offers Start Anyway, as the
+	// desktop does, and a forced start that fails too just reports it.
+	private func perform(_ action: MenuBarAction, vm name: String) async {
+		do {
+			switch action {
+			case .start(let options): try await api.start(vm: name, options: options)
+			case .stop(let mode): try await api.stop(vm: name, mode: mode)
+			case .openWindow: try await api.openWindow(vm: name)
+			case .closeWindow: try await api.closeWindow(vm: name)
+			}
+		} catch {
+			let failure = MenuBarFailure(vm: name, action: action, error: error)
+			// Logged first: the alert of an LSUIElement app can end up behind everything.
+			MachmanLogger.log(.interactionError, "\(failure.title): \(failure.message)")
+			if present(failure), let forced = failure.forceStart {
+				await perform(.start(forced), vm: name)
 			}
 		}
 	}
 
-	func openWindow(_ name: String) {
-		Task {
-			try? await api.openWindow(vm: name)
+	// True when the user chose Start Anyway.
+	private func present(_ failure: MenuBarFailure) -> Bool {
+		NSApp.activate(ignoringOtherApps: true)
+		let alert = NSAlert()
+		alert.messageText = failure.title
+		alert.informativeText = failure.message
+		guard failure.forceStart != nil else {
+			alert.runModal()
+			return false
 		}
-	}
-
-	func closeWindow(_ name: String) {
-		Task {
-			try? await api.closeWindow(vm: name)
-		}
+		alert.addButton(withTitle: "Start Anyway")
+		alert.addButton(withTitle: "Cancel")
+		return alert.runModal() == .alertFirstButtonReturn
 	}
 }
 
@@ -99,19 +130,19 @@ struct MenuBarView: View {
 				} label: {
 					Label("Start", systemImage: MachmanSymbols.start)
 				}
-				.disabled(vm.state.isRunning)
+				.disabled(!model.canStart(vm))
 				Button {
 					model.start(vm, .headless)
 				} label: {
 					Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 				}
-				.disabled(vm.state.isRunning)
+				.disabled(!model.canStart(vm))
 				Button {
 					model.start(vm, .safe)
 				} label: {
 					Label("Start Safe", systemImage: MachmanSymbols.safe)
 				}
-				.disabled(vm.state.isRunning)
+				.disabled(!model.canStart(vm))
 				// A window item only while the VM runs with a display (P27).
 				if let action = vm.windowAction {
 					Divider()
