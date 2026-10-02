@@ -1171,7 +1171,7 @@ public final class RoutingMachman: MachmanControlling {
 			MachmanLogger.log(.passiveWarning, "revoking \(name)'s reverse key: \(error)")
 			registry.events.emit(.log(
 				vm: name, level: .warning,
-				message: "Couldn't remove the guest's key from ~/.ssh/authorized_keys — "
+				message: "Couldn’t remove the guest’s key from ~/.ssh/authorized_keys — "
 					+ "delete the line ending in machman:\(marker):\(name)"))
 		}
 	}
@@ -1403,7 +1403,7 @@ public final class RoutingMachman: MachmanControlling {
 		if let host = hosted[name], host.identity.isSafe {
 			throw MachmanError(
 				code: .invalidState,
-				message: "SSH settings cannot change during a safe run — stop \(name) "
+				message: "SSH settings can’t change during a safe run — stop \(name) "
 					+ "or save it first")
 		}
 	}
@@ -1423,7 +1423,7 @@ public final class RoutingMachman: MachmanControlling {
 					guard other.config.effectiveSSHAlias == wanted else { continue }
 					throw MachmanError(
 						code: .invalidArgument,
-						message: "\(other.name) already answers to \"\(wanted)\"")
+						message: "\(other.name) already answers to \u{201C}\(wanted)\u{201D}")
 				}
 			}
 		}

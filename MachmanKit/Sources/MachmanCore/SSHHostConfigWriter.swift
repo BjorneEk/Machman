@@ -116,7 +116,7 @@ public struct SSHHostConfigWriter {
 		}
 		guard let knownHostsValue = Self.quoted(knownHosts.path, expandsTokens: true) else {
 			throw MachmanError(
-				code: .ioFailure, message: "The ~/.ssh path can't be written into an ssh config")
+				code: .ioFailure, message: "The ~/.ssh path can’t be written into an ssh config")
 		}
 		try fm.createDirectory(at: managedDir, withIntermediateDirectories: true)
 		try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: managedDir.path)
@@ -241,7 +241,7 @@ public struct SSHHostConfigWriter {
 			guard GuestValueRule.isPublicKeyLine(trimmed) else {
 				throw MachmanError(
 					code: .invalidArgument,
-					message: "The guest's reverse key isn't a public-key line")
+					message: "The guest’s reverse key isn’t a public-key line")
 			}
 			// The label rides the key's comment: a legacy VM name with a line break must not
 			// split it into a second line.
@@ -273,7 +273,7 @@ public struct SSHHostConfigWriter {
 		} catch where target != url {
 			throw MachmanError(
 				code: .ioFailure,
-				message: "\(url.path) links to \(target.path), which can't be written")
+				message: "\(url.path) links to \(target.path), which can’t be written")
 		}
 		let mode = userFile ? priorMode?.intValue ?? 0o600 : 0o600
 		try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: target.path)
@@ -289,7 +289,7 @@ public struct SSHHostConfigWriter {
 				if current != url, !fm.fileExists(atPath: current.path) {
 					throw MachmanError(
 						code: .ioFailure,
-						message: "\(url.path) links to a file that doesn't exist")
+						message: "\(url.path) links to a file that doesn’t exist")
 				}
 				return current
 			}

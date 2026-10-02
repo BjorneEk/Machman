@@ -666,7 +666,7 @@ public final class LocalMachman: MachmanControlling {
 	// refuses like retire does.
 	public func refreshSSH(vm name: String) async throws {
 		throw MachmanError(
-			code: .invalidState, message: "only the daemon can refresh SSH state")
+			code: .invalidState, message: "Only Machman Agent can refresh SSH state")
 	}
 
 	public func resetSSH(vm name: String) async throws -> VMInfo {

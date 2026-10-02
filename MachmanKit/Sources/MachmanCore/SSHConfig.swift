@@ -151,8 +151,8 @@ extension VMConfig {
 				guard state.reversePublicKey != nil else {
 					throw MachmanError(
 						code: .invalidState,
-						message: "no reverse key reported yet — run the SSH Setup script "
-							+ "in \(name) with --two-way first")
+						message: "No guest key reported yet — run Guest Setup in \(name) "
+							+ "with --two-way first")
 				}
 				state.reverseState = SSHInfo.ReverseState.approved.rawValue
 			} else {
