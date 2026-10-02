@@ -210,6 +210,7 @@ public struct ToggleIconButton: View {
 		.buttonStyle(MachmanButtonStyle(flat: true))
 		.opacity(enabled ? 1 : MachmanColors.disabledOpacity)
 		.help(tooltip)
+		.accessibilityLabel(tooltip)
 	}
 }
 

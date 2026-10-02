@@ -3,7 +3,8 @@
 //  MachmanUI
 //
 //  The standard Machman button: an icon (optionally with a text label), a tooltip, and the
-//  MachmanButtonStyle hover treatment.
+//  MachmanButtonStyle hover treatment. An icon-only button speaks its tooltip to VoiceOver,
+//  never the symbol's name ("arrow clockwise") (H23).
 //
 
 import SwiftUI
@@ -46,5 +47,6 @@ public struct IconButton: View {
 		.font(font)
 		.buttonStyle(MachmanButtonStyle(flat: flat))
 		.help(tooltip)
+		.accessibilityLabel(text ?? tooltip)
 	}
 }
