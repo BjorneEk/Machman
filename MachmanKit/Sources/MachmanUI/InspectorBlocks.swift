@@ -12,8 +12,8 @@ import MachmanAPI
 
 // MARK: - Unavailable gate ---------------------------------------------------------------------
 
-// Why something configured on this VM cannot be used on this host — leads the inspector so
-// the reason is read before the settings below it.
+// Why something configured on this VM cannot be used — leads the inspector so the reason is
+// read before the settings below it, headed by whose limit it is.
 public struct UnavailableGateSection: View {
 	private let info: UnavailabilityInfo
 
@@ -25,7 +25,7 @@ public struct UnavailableGateSection: View {
 		Section {
 			Label {
 				VStack(alignment: .leading, spacing: 3) {
-					Text("Unavailable on this host")
+					Text(info.headline)
 						.fontWeight(.medium)
 					Text(info.message)
 						.font(.caption)
@@ -36,6 +36,20 @@ public struct UnavailableGateSection: View {
 				Image(systemName: MachmanSymbols.warning)
 					.foregroundStyle(MachmanColors.warning)
 			}
+		}
+	}
+}
+
+extension UnavailabilityInfo {
+	// The gate's header, from its reason. Every daemon so far sends unsupportedHost only for
+	// guest-type limits (LocalMachman.deviceUnavailability: a trackpad on a non-mac guest, a
+	// clipboard or Rosetta on a mac one), so it reads as this VM's limit, not this Mac's —
+	// a limit of the host itself must travel as one of the host reasons.
+	public var headline: String {
+		switch reason {
+		case .unsupportedHost: return "Not available for this VM"
+		case .privateUARTGated, .classUnavailable, .notInstalled: return "Unavailable on this host"
+		case .unknown: return "Unavailable"
 		}
 	}
 }

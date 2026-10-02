@@ -171,7 +171,7 @@ public struct UnavailabilityInfo: Codable, Sendable, Equatable {
 		case privateUARTGated   // macOS >= SerialPortSupport.privateUARTGatedSince
 		case classUnavailable   // a required private class is absent from this runtime
 		case notInstalled       // host component missing but installable (Rosetta)
-		case unsupportedHost    // this hardware/OS cannot do it (nested virt pre-M3)
+		case unsupportedHost    // a guest-type limit: "Not available for this VM", never a host one
 		case unknown            // forward-compat: unrecognized future reasons decode to this
 	}
 

@@ -238,6 +238,9 @@ enum InspectorScenes {
 		},
 		device(.keyboard, "DeviceInspector, USB keyboard"),
 		device(.trackpad, "DeviceInspector, Mac trackpad", select: "Sequoia"),
+		inspector(
+			"device.trackpad.efi", "DeviceInspector, a Mac trackpad on a Linux guest",
+			vms: { [Samples.linuxWithTrackpad()] }, node: .device(.trackpad)),
 		device(.pointer, "DeviceInspector, pointing device"),
 		device(.graphics, "GraphicsInspector"),
 		device(.audioInput, "DeviceInspector, audio input"),

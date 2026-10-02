@@ -42,4 +42,17 @@ extension Samples {
 			path: "\(vmsRoot)/\(name)/data.raw", sizeBytes: 8 << 30, owned: true))
 		return vm
 	}
+
+	// A Linux (EFI) guest carrying a Mac trackpad, gated the way the daemon gates it: a
+	// guest-type limit, not a host one.
+	public static func linuxWithTrackpad(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name)
+		vm.devices = (vm.devices ?? []) + [DeviceInfo(
+			kind: .trackpad,
+			unavailable: UnavailabilityInfo(
+				reason: .unsupportedHost,
+				message: "The Mac trackpad needs a macOS guest \u{2014} it is skipped until "
+					+ "macOS is installed."))]
+		return vm
+	}
 }
