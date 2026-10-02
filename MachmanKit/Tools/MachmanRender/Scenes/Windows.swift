@@ -61,6 +61,16 @@ enum WindowScenes {
 			.frame(maxWidth: .infinity, maxHeight: .infinity))
 	}
 
+	// One serial tab's content as a canvas pane or torn window shows it (T10).
+	@MainActor
+	private static func serialTab(_ ctx: SceneContext, _ ref: SerialPortRef) -> AnyView {
+		AnyView(TerminalTabContent(
+			sessions: ctx.terminals, profiles: ctx.profiles, vm: ctx.vm, ref: ref,
+			stillWanted: { false }))
+	}
+
+	static let uart = SerialPortRef(kind: .uart, index: 0)
+
 	private static let refusedDetail = "cannot reach MachmanAgent at /var/folders/7k/"
 		+ "0q8n1x52l3gr5mhkzz1y7rr0000gn/T/com.gustaffranzen.Machman/machman.sock: "
 		+ "Connection refused"
@@ -225,6 +235,31 @@ enum WindowScenes {
 			return AnyView(TornTabWindowView(
 				connection: ctx.connection, profiles: ctx.profiles,
 				payload: TornTab(vm: "Debian", tab: .ssh(canvasSession))))
+		},
+		// T10: a serial tab without a socket says why, not always "Start the VM".
+		RenderScene(
+			"canvas.serial-tab.disabled", "TerminalTabContent, Console 0 disabled on a running VM",
+			widths: [320, 640], height: 360, vms: { [Samples.disabledConsole()] }
+		) { ctx in
+			serialTab(ctx, InspectorScenes.console)
+		},
+		RenderScene(
+			"canvas.serial-tab.gated", "TerminalTabContent, a UART this Mac can't attach",
+			widths: [320, 640], height: 360, vms: { [Samples.gatedUART()] }
+		) { ctx in
+			serialTab(ctx, uart)
+		},
+		RenderScene(
+			"canvas.serial-tab.restart", "TerminalTabContent, Console 0 enabled after the start",
+			widths: [320, 640], height: 360, vms: { [Samples.consoleEnabledAfterStart()] }
+		) { ctx in
+			serialTab(ctx, InspectorScenes.console)
+		},
+		RenderScene(
+			"canvas.serial-tab.waiting", "TerminalTabContent, a UART of a starting VM",
+			widths: [320, 640], height: 360, vms: { [Samples.kernelBoot(state: .starting)] }
+		) { ctx in
+			serialTab(ctx, uart)
 		},
 		RenderScene(
 			"window.connecting", "ConnectionStatusView, connecting", widths: [480, 900],
