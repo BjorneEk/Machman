@@ -22,7 +22,7 @@ struct SSHSessionInspector: View {
 
 	var body: some View {
 		Form {
-			Section("SSH Session") {
+			Section("SSH session") {
 				TextField("Name", text: $draftName)
 					.onSubmit {
 						sessions.renameSSHSession(vm: vm.name, ref: ref, to: draftName)
