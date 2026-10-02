@@ -107,6 +107,7 @@ struct SerialInspector: View {
 		.buttonStyle(.plain)
 		.machmanHoverable()
 		.help("Edit this port’s profile in Settings")
+		.accessibilityLabel("Edit this port’s profile in Settings")   // image-only (H32)
 	}
 
 	private var profileBinding: Binding<UUID> {

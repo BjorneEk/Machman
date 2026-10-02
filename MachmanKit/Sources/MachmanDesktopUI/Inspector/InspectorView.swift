@@ -152,6 +152,9 @@ struct VMInspector: View {
 		_memoryNote = State(initialValue: memoryNote)
 	}
 
+	private static let noDisplayHelp =
+		"No display device — the window can’t open until one is added"
+
 	// macOS guests carry install-time hardware minimums; other modes have none.
 	private var cpuFloor: Int { max(1, vm.boot.minCPUCount ?? 1) }
 	private var cpuRange: ClosedRange<Int> {
@@ -218,8 +221,8 @@ struct VMInspector: View {
 						Image(systemName: MachmanSymbols.warning)
 							.font(.system(size: 11))
 							.foregroundStyle(MachmanColors.warning)
-							.help("No display device — the window can’t open until one "
-								+ "is added")
+							.help(Self.noDisplayHelp)
+							.accessibilityLabel(Self.noDisplayHelp)
 					}
 				}
 				Toggle("Safe mode", isOn: policyBinding(\.safe))

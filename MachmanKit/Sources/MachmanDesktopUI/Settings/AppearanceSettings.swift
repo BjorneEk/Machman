@@ -2,7 +2,7 @@
 //  AppearanceSettings.swift
 //  MachmanDesktopUI
 //
-//  The Appearance and Behaviour settings tabs (1.0.4 UI) and the theme they feed: knobs
+//  The Appearance and Behavior settings tabs (1.0.4 UI) and the theme they feed: knobs
 //  persist in UserDefaults and resolve into the MachmanTheme every window injects into the
 //  environment, so scheme/accent/glass/density/font-scale/tab-style apply live everywhere.
 //
@@ -85,7 +85,7 @@ struct AppearanceSettingsView: View {
 						Text(level.label).tag(level.rawValue)
 					}
 				}
-				.help("Extra glass makes Machman's own glass surfaces clearer")
+				.help("Extra glass makes Machman’s own glass surfaces clearer")
 			}
 			Section("Density") {
 				LabeledContent("Spacing") {
@@ -117,12 +117,12 @@ struct AppearanceSettingsView: View {
 					tabFontSize = 0
 				}
 			}
-			Section("Tab Bar") {
+			Section("Tab bar") {
 				LabeledContent("Tab height") {
 					Slider(
 						value: explicitBinding($tabHeight, auto: 25),
 						in: MachmanMetrics.tabHeightRange, step: 1)
-					Text(tabHeight > 0 ? "\(Int(tabHeight)) pt" : "auto")
+					Text(tabHeight > 0 ? "\(Int(tabHeight)) pt" : "Auto")
 						.monospacedDigit()
 						.frame(width: 44, alignment: .trailing)
 				}
@@ -133,7 +133,7 @@ struct AppearanceSettingsView: View {
 					Text(tabFontSize > 0
 						? tabFontSize.formatted(.number.precision(.fractionLength(0...1)))
 							+ " pt"
-						: "auto")
+						: "Auto")
 						.monospacedDigit()
 						.frame(width: 44, alignment: .trailing)
 				}

@@ -24,9 +24,9 @@ public struct SettingsRootView: View {
 			TerminalSettingsView(store: profiles)
 				.tabItem { Label("Terminal", systemImage: MachmanSymbols.tabTerminal) }
 			BehaviourSettingsView()
-				.tabItem { Label("Behaviour", systemImage: MachmanSymbols.tabConfig) }
+				.tabItem { Label("Behavior", systemImage: MachmanSymbols.tabConfig) }
 		}
-		// 600 pt: Appearance's four sections fit with room to spare (at 560 the Tab Bar
+		// 600 pt: Appearance's four sections fit with room to spare (at 560 the Tab bar
 		// section reached the bottom edge); a larger text size scrolls the Form.
 		.frame(width: 760, height: 600)
 	}

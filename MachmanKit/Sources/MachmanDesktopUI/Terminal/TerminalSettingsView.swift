@@ -79,16 +79,20 @@ struct TerminalSettingsView: View {
 			}
 			.frame(maxWidth: 100)
 			Spacer()
+			// Image-only: each help text is also the VoiceOver label (H32).
 			Button { newProfile() } label: { Image(systemName: MachmanSymbols.add) }
 				.help("New profile")
+				.accessibilityLabel("New profile")
 			Button { store.duplicate(id: current.id) } label: {
 				Image(systemName: MachmanSymbols.duplicateVM)
 			}
 			.help("Duplicate profile")
+			.accessibilityLabel("Duplicate profile")
 			Button(role: .destructive) { store.requestDelete(id: current.id) } label: {
 				Image(systemName: MachmanSymbols.delete)
 			}
-			.help("Delete Profile…")
+			.help("Delete profile…")
+			.accessibilityLabel("Delete profile…")
 			.disabled(!store.canDelete(id: current.id))
 		}
 	}
@@ -105,7 +109,7 @@ struct TerminalSettingsView: View {
 					"Size: \(Int(current.fontSize))",
 					value: binding(\.fontSize), in: 8...48, step: 1)
 			}
-			Section("Colours") {
+			Section("Colors") {
 				ColorPicker("Text", selection: colorBinding(\.colors.foreground),
 					supportsOpacity: false)
 				ColorPicker("Background", selection: colorBinding(\.colors.background),
@@ -123,7 +127,7 @@ struct TerminalSettingsView: View {
 						ForEach(0..<16, id: \.self) { i in
 							ColorPicker("", selection: ansiBinding(i), supportsOpacity: false)
 								.labelsHidden()
-								.help("ANSI colour \(i)")
+								.help("ANSI color \(i)")
 						}
 					}
 				}
@@ -145,7 +149,7 @@ struct TerminalSettingsView: View {
 				Stepper("Tab width: \(current.tabStopWidth)",
 					value: binding(\.tabStopWidth), in: 1...16)
 			} header: {
-				Text("Behaviour")
+				Text("Behavior")
 			} footer: {
 				Text("Scrollback, newline conversion, $TERM and tab width apply when a terminal is "
 					+ "(re)created — use Reload on an open terminal.")

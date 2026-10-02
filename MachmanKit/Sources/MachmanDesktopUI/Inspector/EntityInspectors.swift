@@ -59,7 +59,7 @@ struct DiskInspector: View {
 						PathRow(label: "Path", path: path) { reveal(path) }
 					}
 				}
-				Section("Behaviour") {
+				Section("Behavior") {
 					Toggle("Shadow in safe runs", isOn: safeBinding(disk))
 						.help("Safe runs write to a discardable shadow of this disk")
 					Toggle("Enabled", isOn: enabledBinding(disk))
