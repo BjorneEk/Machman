@@ -28,9 +28,10 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// exactly that — so the outgoing mount must not re-adopt and drag the terminal into a
 	// container that is about to leave the hierarchy.
 	fileprivate weak var mountedIn: ThrottledResizeContainer?
-	// The last connection's transcript, retained when it closes (VM stop, daemon bounce) so
-	// File → Save Terminal can still save what is on screen. A reconnect starts fresh.
-	private var lastTranscript = Data()
+	// The last connection, kept when it closes (VM stop, daemon bounce) so File → Save
+	// Terminal can still save what is on screen: its transcript is joined only if asked (P39).
+	// A reconnect starts fresh.
+	private var lastStream: TerminalByteStream?
 	// What applyLive last set, so a repeat sets nothing.
 	private var appliedLive: TerminalLiveSettings?
 
@@ -121,7 +122,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		// the closing stream is the one invoking us.
 		c.onClose = { [weak self, weak c] in
 			guard let self else { return }
-			if let c { self.lastTranscript = c.transcriptData() }
+			if let c { self.lastStream = c }
 			self.connection = nil
 			self.connected = false
 		}
@@ -129,7 +130,11 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		// view that already has its final frame, sends no resize of its own.
 		let terminal = terminalView.getTerminal()
 		c.setWindowSize(cols: terminal.cols, rows: terminal.rows)
-		if c.connect() { connection = c; connected = true }
+		if c.connect() {
+			connection = c
+			lastStream = nil
+			connected = true
+		}
 	}
 
 	// Machman's own line in the guest's terminal — session boundaries, nothing else. CRLF
@@ -139,14 +144,16 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		terminalView.feed(byteArray: [UInt8](Array(line.utf8))[...])
 	}
 
+	// Only TerminalSessions calls this, and only to throw the controller away (tab closed,
+	// port or VM gone, Reload), so nothing is kept for Save Terminal.
 	func disconnect() {
-		if let c = connection { lastTranscript = c.transcriptData() }
 		connection?.stop()
 		connection = nil
+		lastStream = nil
 		connected = false
 	}
 
-	func transcript() -> Data { connection?.transcriptData() ?? lastTranscript }
+	func transcript() -> Data { (connection ?? lastStream)?.transcriptData() ?? Data() }
 
 	// MARK: TerminalViewDelegate (called on the main thread by SwiftTerm)
 	func send(source: TerminalView, data: ArraySlice<UInt8>) {
