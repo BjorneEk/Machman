@@ -218,6 +218,7 @@ struct RoutingIdleHostTests {
 		routing.endIdleHost = { host in
 			ended.append(host.identity.name)
 			rig.server.stop()   // the host exits
+			return true
 		}
 
 		do {
@@ -236,10 +237,28 @@ struct RoutingIdleHostTests {
 		let routing = try makeRouting(daemonVersion: "1.0.12")
 		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.12-vmhost")
 		defer { rig.server.stop() }
-		routing.endIdleHost = { _ in Issue.record("a current host must not be ended") }
+		routing.endIdleHost = { _ in
+			Issue.record("a current host must not be ended")
+			return true
+		}
 
 		try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
 		#expect(rig.stub.starts.count == 1)
+	}
+
+	// RR3-3: an outdated idle host the daemon has nothing to end by (no app, no peer pid) still
+	// takes the start, locked, instead of every start failing "still shutting down" until the
+	// host idles out.
+	@Test @MainActor func anOutdatedIdleHostThatCannotBeEndedStillTakesTheStart() async throws {
+		let routing = try makeRouting(daemonVersion: "1.0.12", exitGrace: .seconds(3))
+		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.11-vmhost")
+		defer { rig.server.stop() }
+		routing.endIdleHost = { _ in false }
+
+		try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+		#expect(rig.stub.starts.count == 1)
+		let host = try #require(routing.hostForTesting("alpha"))
+		#expect(routing.isOutdated(host))
 	}
 
 	@Test @MainActor func anIdleHostsMACStillConflicts() async throws {

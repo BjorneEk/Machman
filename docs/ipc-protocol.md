@@ -397,8 +397,9 @@ was never forwarded because its daemon died in between; it exits on its own afte
 runs this start, MAC check included; a safe start there answers `invalidState` ("… has an idle
 vmhost from an earlier start — start it normally, or wait up to 3 minutes to start it safe"),
 since that host runs the real VM, never a shadow. An idle host older than the daemon (1.0.12+)
-is ended instead and the start spawns a current one, so the run never starts locked by
-`outdatedHost`. A host whose VM just stopped is exiting: the
+is ended instead and the start spawns a current one, so the run does not start locked by
+`outdatedHost`; one the daemon has no process to end by still runs the start, locked.
+A host whose VM just stopped is exiting: the
 start waits up to 3 s for it to go and then starts normally; if the host is still there, the
 start answers `invalidState` ("… is still shutting down — try again in a moment"). A host that
 misses its answer deadline answers `invalidState` ("…'s vmhost is not responding"). A vmhost
