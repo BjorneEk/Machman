@@ -81,8 +81,10 @@ extension View {
 }
 
 // Standard interactive-hover treatment (macOS has no hoverEffect): overlay tint + optional
-// slight scale, using the MachmanColors overlay strengths.
+// slight scale, using the MachmanColors overlay strengths. A disabled control never lights
+// up (H24); the raw hover state is kept, so re-enabling under a resting pointer lights it.
 public struct MachmanHoverable: ViewModifier {
+	@Environment(\.isEnabled) private var enabled
 	@State private var hovering = false
 	private let radius: CGFloat
 	private let scales: Bool
@@ -93,12 +95,13 @@ public struct MachmanHoverable: ViewModifier {
 	}
 
 	public func body(content: Content) -> some View {
+		let lit = hovering && enabled
 		content
 			.background(
 				RoundedRectangle(cornerRadius: radius, style: .continuous)
-					.fill(Color.primary.opacity(hovering ? MachmanColors.hoverOverlay : 0)))
-			.scaleEffect(scales && hovering ? 1.04 : 1)
-			.animation(.easeOut(duration: 0.12), value: hovering)
+					.fill(Color.primary.opacity(lit ? MachmanColors.hoverOverlay : 0)))
+			.scaleEffect(scales && lit ? 1.04 : 1)
+			.animation(.easeOut(duration: 0.12), value: lit)
 			.onHover { hovering = $0 }
 	}
 }
