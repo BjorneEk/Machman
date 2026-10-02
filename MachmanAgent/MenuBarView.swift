@@ -123,6 +123,12 @@ struct MenuBarView: View {
 	var body: some View {
 		ForEach(model.vms) { vm in
 			Menu {
+				// E22: an older vmhost still runs it, so its settings are locked until a restart.
+				// A Text is a disabled menu row.
+				if let reason = vm.restartToUpdate {
+					Text(reason)
+					Divider()
+				}
 				// Start follows the VM's start policy (window AND safety); Start Headless and
 				// Start Safe override only what they name (decision 7).
 				Button {
