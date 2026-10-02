@@ -100,6 +100,17 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		// Q4: the install card's phase and ETA come from InstallPhase+Display and ProgressETA.
+		RenderScene(
+			"overlay.cards.installing", "NotificationOverlay: a macOS install downloading",
+			widths: [420], height: 300, vms: { [Samples.macOS("Sequoia")] }
+		) { ctx in
+			ctx.stub.emit(.installPhaseChanged(
+				vm: "Sequoia", phase: Samples.downloadingMacInstall()))
+			Offscreen.pump(until: { !ctx.operations.installPhases.isEmpty })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 		// F6: the engine's warning arrives as a log event; the toast wraps at its cap.
 		RenderScene(
 			"overlay.toasts.long-warning",

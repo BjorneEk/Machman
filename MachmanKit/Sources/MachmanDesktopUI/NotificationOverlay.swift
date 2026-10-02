@@ -4,7 +4,7 @@
 //
 //  The bottom-right feedback corner (1.0.4 UI): status toasts (a stale VM list) and transient
 //  toasts (engine warnings) over persistent progress cards — the daemon's live operations
-//  plus running macOS installs, with client-side ETA math. A running card's ✕ cancels
+//  plus running macOS installs, with ETA math from ProgressETA. A running card's ✕ cancels
 //  (op.cancel / vm.install.cancel); finished operations linger a few seconds showing their
 //  outcome, then prune from the store, and their ✕ only dismisses them.
 //
@@ -34,7 +34,7 @@ struct NotificationOverlay: View {
 				symbol: op.displaySymbol,
 				phase: phase(for: op),
 				fraction: op.fraction,
-				etaSeconds: eta(for: op),
+				etaSeconds: op.etaSeconds(),
 				finished: op.isFinished,
 				cancellable: op.isCancellable)
 		}
@@ -46,9 +46,9 @@ struct NotificationOverlay: View {
 					id: VMListViewModel.installCardPrefix + vm,
 					title: "Installing macOS — \(vm)",
 					symbol: MachmanSymbols.bootMacTab,
-					phase: installPhaseLabel(phase),
+					phase: phase.displayLabel,
 					fraction: phase.progress?.fraction,
-					etaSeconds: installETA(phase)))
+					etaSeconds: phase.etaSeconds()))
 			default:
 				break
 			}
@@ -67,39 +67,5 @@ struct NotificationOverlay: View {
 			return "\(f) of \(t)"
 		}
 		return "Working…"
-	}
-
-	// ETA is consumer math: elapsed rate over remaining bytes (nil until measurable).
-	private func eta(for op: OperationInfo) -> Double? {
-		guard op.state == OperationInfo.State.running,
-			let done = op.completedBytes, let total = op.totalBytes,
-			done > 0, total > done else { return nil }
-		let elapsed = Date().timeIntervalSince(op.startedAt)
-		guard elapsed > 1 else { return nil }
-		let rate = Double(done) / elapsed
-		guard rate > 0 else { return nil }
-		return Double(total - done) / rate
-	}
-
-	private func installPhaseLabel(_ phase: InstallPhase) -> String {
-		let version = phase.version.map { " macOS \($0)" } ?? ""
-		switch phase.kind {
-		case .resolving: return "Resolving\(version)…"
-		case .downloading: return "Downloading\(version)…"
-		default: return "Installing\(version)…"
-		}
-	}
-
-	private func installETA(_ phase: InstallPhase) -> Double? {
-		guard phase.kind == .downloading,
-			let progress = phase.progress,
-			let done = progress.completedBytes, let total = progress.totalBytes,
-			done > 0, total > done,
-			let started = phase.downloadStartedAt else { return nil }
-		let elapsed = Date().timeIntervalSince(started)
-		guard elapsed > 1 else { return nil }
-		let rate = Double(done) / elapsed
-		guard rate > 0 else { return nil }
-		return Double(total - done) / rate
 	}
 }

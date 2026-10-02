@@ -342,6 +342,16 @@ enum WindowScenes {
 				connection: ctx.connection, profiles: ctx.profiles,
 				payload: TornTab(vm: "Debian", tab: .ssh(canvasSession))))
 		},
+		// Q4: the canvas banner reads the same phase as the install's corner card.
+		RenderScene(
+			"canvas.preview.installing", "VMPreviewTabView, a macOS install downloading",
+			widths: [320, 640], height: 420, vms: { [Samples.macOS("Sequoia")] }
+		) { ctx in
+			ctx.stub.emit(.installPhaseChanged(
+				vm: "Sequoia", phase: Samples.downloadingMacInstall()))
+			Offscreen.pump(until: { !ctx.operations.installPhases.isEmpty })
+			return AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
 		// T10: a serial tab without a socket says why, not always "Start the VM".
 		RenderScene(
 			"canvas.serial-tab.disabled", "TerminalTabContent, Console 0 disabled on a running VM",

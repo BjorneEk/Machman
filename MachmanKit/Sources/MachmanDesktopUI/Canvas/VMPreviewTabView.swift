@@ -179,7 +179,7 @@ struct VMPreviewTabView: View {
 			VStack(spacing: 6) {
 				HStack(spacing: 6) {
 					ProgressView().controlSize(.small)
-					Text(phaseLabel(phase))
+					Text(phase.displayLabel)
 						.font(.callout)
 					Spacer()
 					Button("Cancel") { viewModel.cancelInstall(vm.name) }
@@ -215,14 +215,5 @@ struct VMPreviewTabView: View {
 			.frame(maxWidth: 480)
 			.padding(.horizontal, 24)
 			.help(message)
-	}
-
-	private func phaseLabel(_ phase: InstallPhase) -> String {
-		let version = phase.version.map { " macOS \($0)" } ?? ""
-		switch phase.kind {
-		case .resolving: return "Resolving\(version)…"
-		case .downloading: return "Downloading\(version)…"
-		default: return "Installing\(version)…"
-		}
 	}
 }
