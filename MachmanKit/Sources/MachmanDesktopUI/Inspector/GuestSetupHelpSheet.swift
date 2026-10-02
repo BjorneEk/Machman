@@ -66,9 +66,8 @@ struct GuestSetupHelpSheet: View {
 	var body: some View {
 		HelpSheetFrame(
 			symbol: MachmanSymbols.deviceGuestSetup, title: "Guest Setup",
-			footer: "The script runs inside the virtual machine and asks before every "
-				+ "change. On this Mac, Machman only touches ~/.ssh — and only with "
-				+ "your confirmation."
+			footer: "Everything asks first: the script before each change in the guest, and "
+				+ "Machman before touching ~/.ssh, the only thing it changes on this Mac."
 		) {
 			Picker("Guest OS", selection: $tab) {
 				ForEach(tabs, id: \.self) { Text($0.rawValue).tag($0) }
@@ -128,7 +127,7 @@ struct GuestSetupGuidePage: View {
 
 	@ViewBuilder
 	private var linuxSteps: some View {
-		HelpStep(1, "Add (+) → Installers → Guest Setup, then boot the guest.")
+		HelpStep(1, "Add (+) › Installers › Guest Setup, then boot the guest.")
 		if let auto = shareAutomount {
 			HelpStep(2, "The share automounts (\(auto.kind)) at \(auto.path) — run the script:")
 			command(GuestSetupInstallerInfo.runCommand())
@@ -147,12 +146,13 @@ struct GuestSetupGuidePage: View {
 
 	@ViewBuilder
 	private var macOSSteps: some View {
-		HelpStep(1, "Add (+) → Installers → Guest Setup, then boot the guest — the share "
+		HelpStep(1, "Add (+) › Installers › Guest Setup, then boot the guest — the share "
 			+ "automounts (macOS 13+).")
-		HelpStep(2, "In the guest's Terminal, run the script:")
+		HelpStep(2, "In the guest’s Terminal, run the script:")
 		command(GuestSetupInstallerInfo.runFromAutomountCommand)
-		HelpNote("Volume missing (macOS 12 guests)? "
-			+ ConsoleLoginInstallerInfo.fallbackMountCommand)
+		HelpNote("Volume missing (macOS 12)? Mount the share and run the script from there:")
+		command(ConsoleLoginInstallerInfo.fallbackMountCommand + " && "
+			+ GuestSetupInstallerInfo.runCommand(inShareAt: "~/shared"))
 		HelpStep(3, "Undo it later:")
 		command(GuestSetupInstallerInfo.runFromAutomountCommand + " --uninstall")
 	}
@@ -166,8 +166,6 @@ struct GuestSetupGuidePage: View {
 	@ViewBuilder
 	private var bsdSteps: some View {
 		if let auto = shareAutomount {
-			HelpIntro("This guest automounts the share over \(auto.kind) at boot — no "
-				+ "bootstrap needed while that holds.")
 			HelpStep(1, "Start the VM — the share appears at \(auto.path).")
 			HelpStep(2, "Run the installer:")
 			command(GuestSetupInstallerInfo.runCommand())
@@ -180,37 +178,29 @@ struct GuestSetupGuidePage: View {
 
 	@ViewBuilder
 	private var bsdBootstrapSteps: some View {
-		HelpIntro("FreeBSD and OpenBSD have no virtiofs driver, so the setup folder is mounted "
-			+ "over SSH instead — then the same script runs.")
-		HelpStep(1, "Start the VM — the payload is generated fresh at boot and served only "
-			+ "while it runs.")
-		HelpStep(2, "Turn on Remote Login on this Mac (System Settings → General → Sharing).")
+		HelpStep(1, "Start the VM.")
+		HelpStep(2, "Turn on Remote Login on this Mac (System Settings › General › Sharing).")
 		HelpStep(3, "Install sshfs in the guest:")
 		command("pkg install fusefs-sshfs")
-		HelpNote("OpenBSD: pkg_add sshfs-fuse — and skip step 4; fuse is already in its kernel.")
+		HelpNote("On OpenBSD, run this instead and skip step 4:")
+		command("pkg_add sshfs-fuse")
 		HelpStep(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
 		command(GuestSetupCommands.bsdFuseLoad)
 		let approvedUser = reverseApproved ? vm.ssh?.guestUser : nil
 		if approvedUser != nil {
-			HelpStep(5, "Mount Machman's setup folder — this guest's key is approved, so the "
-				+ "'mac' alias works without a password:")
+			HelpStep(5, "Mount Machman’s setup folder — the approved key needs no password:")
 		} else {
-			HelpStep(5, "Mount Machman's setup folder. This asks for your Mac account "
-				+ "password — once, because keys are what the script is about to set up:")
+			HelpStep(5, "Mount Machman’s setup folder (it asks for your Mac password once):")
 		}
 		command(GuestSetupCommands.bsdShareMount(
 			approvedGuestUser: approvedUser, hostUser: hostUser, hostAddress: hostAddress,
 			sharePath: sharePath))
-		HelpNote("Same folder Linux mounts over virtiofs, same path — so step 6 is the same "
-			+ "command on every guest.")
 		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
-			HelpNote("Boot the VM once so Machman can fill in this Mac's address and the real "
+			HelpNote("Boot the VM once so Machman can fill in this Mac’s address and the real "
 				+ "path above.")
 		}
 		HelpStep(6, "Run the installer:")
 		command(GuestSetupInstallerInfo.runCommand())
-		HelpNote("Mounting as root needs no system changes. The script keeps the fuse driver "
-			+ "across reboots by itself, and can allow user mounts later if you ask it to.")
 	}
 
 	// MARK: - Info (everything that is not a step)
@@ -218,47 +208,44 @@ struct GuestSetupGuidePage: View {
 	@ViewBuilder
 	private var infoPage: some View {
 		HelpSectionTitle("Where the details live")
-		HelpIntro("The Guest Setup inspector shows the report: install status, per-feature "
-			+ "state, and errors. SSH specifics (address, alias, guest → Mac approval) "
-			+ "live in the SSH section.")
+		HelpIntro("The Guest Setup inspector shows the script’s report, and the SSH section "
+			+ "holds everything SSH.")
 		HelpSectionTitle("What the script does")
 		HelpBullet("One script for everything guest-side: console logins, kernel boot output, "
-			+ "SSH, guest → host SSH, sshfs, and boot automounts.")
+			+ "SSH, guest → Mac SSH, sshfs, and boot automounts.")
 		HelpBullet("Probes before offering: a feature the guest cannot do is skipped with the "
 			+ "reason, never a failure.")
-		HelpBullet("Asks first, always: it prints the whole plan, then does it. Run it with -n "
-			+ "to see that plan and change nothing.")
+		HelpBullet("Asks first, always: it prints the whole plan, then does it.")
 		HelpBullet("Remembers its choices in the guest, so re-running offers reconfiguration "
 			+ "and repairs older versions.")
 		HelpSectionTitle("Options")
 		HelpOptionRow("-n, --dry-run", "print the plan and exit")
-		HelpOptionRow("-y, --yes", "never ask; take the defaults")
+		HelpOptionRow("-y, --yes", "never ask, take the defaults")
 		HelpOptionRow("--user <name>", "set SSH up for this user")
 		HelpOptionRow("--consoles \"…\"", "logins on exactly these consoles")
-		HelpOptionRow("--kernel-console", "send kernel boot messages to a console — EDITS THE "
-			+ "BOOT LOADER, so it is flag-only, keeps the display on tty0, and backs up "
-			+ "grub.cfg; test in a safe run first")
-		HelpOptionRow("--two-way", "also configure guest → host SSH")
+		HelpOptionRow("--kernel-console", "send kernel boot messages to a console — edits the "
+			+ "boot loader, so try it in a safe run first")
+		HelpOptionRow("--two-way", "also configure guest → Mac SSH")
 		HelpOptionRow("--sshfs", "install sshfs (implies --two-way)")
 		HelpOptionRow("--automount-virtiofs", "mount the share at boot")
 		HelpOptionRow("--automount-sshfs", "mount sshfs folders at boot")
 		HelpOptionRow("--install", "install missing packages")
-		HelpOptionRow("--report-only", "refresh Machman's report, change nothing — a boot hook "
-			+ "runs this so \"next boot\" states flip after a reboot")
+		HelpOptionRow("--report-only", "refresh Machman’s report and change nothing")
 		HelpOptionRow("--uninstall", "remove everything it installed")
 		HelpNote("Every question the script can ask has a flag, so the same script runs "
 			+ "unattended.")
 		HelpSectionTitle("Consoles")
-		HelpIntro("Linux with systemd usually gives the first console a login on its own; the "
-			+ "script verifies, covers the rest, and can put kernel boot messages on one. "
-			+ "OpenBSD has no virtio-console driver — the script says so and moves on.")
+		HelpIntro("The script adds logins on the consoles that lack one (systemd often covers "
+			+ "the first) and skips OpenBSD, which has no virtio-console driver.")
+		HelpSectionTitle("FreeBSD and OpenBSD")
+		HelpIntro("They have no virtiofs driver, so the setup folder comes over sshfs and the "
+			+ "same script runs from it.")
 		HelpSectionTitle("Automounts")
-		HelpIntro("The share is one fstab line (every mount is a folder inside it); sshfs "
-			+ "folders ride the guest → host link, so approve the key in the SSH section "
-			+ "before they connect.")
+		HelpIntro("The share is one fstab line holding every mount, and sshfs folders connect "
+			+ "once you approve the guest’s key in the SSH section.")
 		HelpSectionTitle("Undoing it")
-		HelpIntro("--uninstall removes what the script installed in the guest; “Reset Setup "
-			+ "State” in the inspector forgets the report on the Mac side.")
+		HelpIntro("--uninstall removes what the script installed, and Reset Setup State… in "
+			+ "the inspector forgets its report.")
 	}
 
 	// A copyable command, carrying the page's escalation on every command in the line —

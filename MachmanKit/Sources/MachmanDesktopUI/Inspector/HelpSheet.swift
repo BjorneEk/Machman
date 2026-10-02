@@ -112,7 +112,7 @@ struct HelpOptionRow: View {
 		HStack(alignment: .firstTextBaseline, spacing: 8) {
 			Text(flag)
 				.font(.system(size: HelpSheetType.small, design: .monospaced))
-				.frame(width: 160, alignment: .leading)
+				.frame(width: 180, alignment: .leading)
 			Text(meaning)
 				.font(.system(size: HelpSheetType.small))
 				.foregroundStyle(.secondary)
