@@ -31,10 +31,11 @@ struct VMIndicatorCluster: View {
 				if let vm {
 					VMStatusDot(vm: vm)
 					VStack(alignment: .leading, spacing: 1) {
+						// Middle: copies differ at the end ("… copy 2"), so keep both ends.
 						Text(vm.name)
 							.font(.system(size: 12.5, weight: .semibold))
 							.lineLimit(1)
-							.truncationMode(.tail)
+							.truncationMode(.middle)
 						if vm.isUnresponsive {
 							NotRespondingBadge(size: 9)
 						} else {
@@ -60,7 +61,8 @@ struct VMIndicatorCluster: View {
 		}
 		.buttonStyle(.plain)
 		.onHover { hovering = $0 }
-		.help("Switch VM")
+		// The name truncates at 220 pt; the tooltip carries all of it (L5).
+		.help(vm.map { "\($0.name) — Switch VM" } ?? "Switch VM")
 		.popover(isPresented: $pickerShown, arrowEdge: .bottom) {
 			// Keyed by the page: ⌘N while the picker already shows its list re-seeds it.
 			VMPickerPopover(viewModel: viewModel, templates: pickerTemplates)

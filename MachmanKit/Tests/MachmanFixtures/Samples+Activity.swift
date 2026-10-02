@@ -31,3 +31,16 @@ extension Samples {
 			startedAt: now.addingTimeInterval(-30), cancellable: true)
 	}
 }
+
+extension Samples {
+	// A running copy whose name is longer than the toolbar indicator's 220 pt: copies are
+	// named "<name> copy N", so the end is what tells them apart (L5).
+	public static func longNamedLinux() -> VMInfo {
+		linux("Debian 13 trixie arm64 build server copy 2", state: .running)
+	}
+
+	// A guest whose soft shutdown is under way (F3).
+	public static func stoppingLinux(_ name: String = "Debian") -> VMInfo {
+		linux(name, state: .stopping)
+	}
+}

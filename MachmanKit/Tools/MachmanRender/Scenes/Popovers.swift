@@ -149,6 +149,12 @@ enum PopoverScenes {
 				AnyView(VMIndicatorCluster(viewModel: ctx.viewModel, vm: vm))
 			}
 		},
+		RenderScene(
+			"toolbar.indicator.long-name", "VMIndicatorCluster, a VM name longer than the cap",
+			vms: { [Samples.longNamedLinux()] }
+		) { ctx in
+			AnyView(VMIndicatorCluster(viewModel: ctx.viewModel, vm: ctx.vm).padding(12))
+		},
 		RenderScene("toolbar.start-stop", "StartStopGroup per VM") { ctx in
 			perVM(ctx) { vm in
 				AnyView(StartStopGroup(viewModel: ctx.viewModel, vm: vm!))
