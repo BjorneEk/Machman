@@ -215,6 +215,17 @@ enum WindowScenes {
 				connection: ctx.connection, profiles: ctx.profiles,
 				payload: TornTab(vm: "Debian", tab: .config)))
 		},
+		// T13: the title follows a rename made after the window tore off. No controller, so
+		// the adopt-only window shows its notice and never spawns ssh.
+		RenderScene(
+			"window.torn.ssh-renamed", "TornTabWindowView, an SSH session renamed to Build",
+			widths: [800], height: 520, chrome: .window
+		) { ctx in
+			ctx.terminals.renameSSHSession(vm: "Debian", ref: canvasSession, to: "Build")
+			return AnyView(TornTabWindowView(
+				connection: ctx.connection, profiles: ctx.profiles,
+				payload: TornTab(vm: "Debian", tab: .ssh(canvasSession))))
+		},
 		RenderScene(
 			"window.connecting", "ConnectionStatusView, connecting", widths: [480, 900],
 			height: 420

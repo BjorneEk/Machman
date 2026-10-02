@@ -146,11 +146,18 @@ extension VMListViewModel {
 		return refs
 	}
 
-	// "Session N": the next number above every open session's current name, torn ones
-	// included, so a new tab never repeats a name still showing in a window.
+	// "Session N": the next number above every name still showing in a window — open
+	// sessions (torn ones included) under their current names, plus the windows the system
+	// restored after a relaunch, which hold no session (not listed, T20) but still show
+	// their birth name in the title (T13).
 	public func nextSSHSessionTitle(vm: String) -> String {
 		let prefix = "Session "
-		let taken = openSSHSessions(vm: vm).compactMap { ref -> Int? in
+		let restored = tornTabs.open.compactMap { torn -> SSHSessionRef? in
+			guard torn.vm == vm, case .ssh(let ref) = torn.tab,
+				terminals.sshController(vm: vm, ref: ref) == nil else { return nil }
+			return ref
+		}
+		let taken = (openSSHSessions(vm: vm) + restored).compactMap { ref -> Int? in
 			let name = terminals.sshSessionName(vm: vm, ref: ref)
 			guard name.hasPrefix(prefix) else { return nil }
 			return Int(name.dropFirst(prefix.count))

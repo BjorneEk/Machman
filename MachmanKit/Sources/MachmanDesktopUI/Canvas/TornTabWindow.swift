@@ -26,6 +26,10 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	@ObservedObject var profiles: TerminalProfileStore
 	let payload: TornTab
 	@ObservedObject private var tornTabs = TornTabRegistry.shared
+	// Observed for the title: an ssh session's rename lives here, and neither the
+	// connection nor the view model forwards its changes (T13). App-scoped, so it outlives
+	// reconnects.
+	@ObservedObject private var terminals: TerminalSessions
 	@Environment(\.dismiss) private var dismiss
 	@Environment(\.openWindow) private var openWindow
 	@State private var showInspector = false
@@ -34,6 +38,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		self.connection = connection
 		self.profiles = profiles
 		self.payload = payload
+		_terminals = ObservedObject(wrappedValue: connection.terminals)
 	}
 
 	public var body: some View {
@@ -51,7 +56,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.navigationTitle(title)
+		.navigationTitle(payload.windowTitle(vms: connection.viewModel?.vms, terminals: terminals))
 		// The tab's own inspector rides along: the serial inspector for terminals, the VM
 		// inspector for the config/preview tab.
 		.inspector(isPresented: $showInspector) {
@@ -157,24 +162,6 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			SSHTabContent(
 				sessions: connection.terminals, viewModel: viewModel, profiles: profiles,
 				vm: vm, ref: ref, stillWanted: { true }, adoptOnly: true)
-		}
-	}
-
-	private var title: String {
-		switch payload.tab {
-		case .config:
-			return "\(payload.vm) — Configuration"
-		case .terminal(let ref):
-			// Resolve the live VM for its boot mode (and compacted index); a gone VM gets
-			// the neutral EFI naming.
-			let vm = connection.viewModel?.vms.first(where: { $0.name == payload.vm })
-			let mode = vm?.boot.mode ?? .efi
-			let port = (ref.kind == .console ? vm?.consolePorts : vm?.uartPorts)?
-				.first(where: { $0.index == ref.index })
-			let name = port?.displayName(mode: mode) ?? ref.displayName(mode: mode)
-			return "\(payload.vm) — \(name)"
-		case .ssh(let ref):
-			return "\(payload.vm) — \(ref.title)"
 		}
 	}
 }
