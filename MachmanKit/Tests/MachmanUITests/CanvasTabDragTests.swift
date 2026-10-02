@@ -157,17 +157,18 @@ struct CanvasTabDragTests {
 		let (canvas, frames) = onePane()
 		var drag = CanvasTabDrag(
 			tab: .config, paneID: left, location: point(50, 15), translation: .zero)
-		let small = CGSize(width: 0, height: 20)
-		_ = drag.update(location: point(50, 37), translation: small, canvas: canvas, frames: frames)
-		#expect(!drag.detached)
-		_ = drag.update(location: point(50, 38), translation: small, canvas: canvas, frames: frames)
-		#expect(drag.detached)
-		_ = drag.update(location: point(-8, 15), translation: small, canvas: canvas, frames: frames)
-		#expect(!drag.detached)
-		_ = drag.update(location: point(1008, 15), translation: small, canvas: canvas, frames: frames)
-		#expect(drag.detached)
-		_ = drag.update(location: point(50, 15), translation: small, canvas: canvas, frames: frames)
-		#expect(!drag.detached)
+		// A pull too small to detach on its own.
+		func move(to location: CGPoint) -> Bool {
+			_ = drag.update(
+				location: location, translation: CGSize(width: 0, height: 20),
+				canvas: canvas, frames: frames)
+			return drag.detached
+		}
+		#expect(!move(to: point(50, 37)))
+		#expect(move(to: point(50, 38)))
+		#expect(!move(to: point(-8, 15)))
+		#expect(move(to: point(1008, 15)))
+		#expect(!move(to: point(50, 15)))
 	}
 
 	@Test func anUnmeasuredStripCountsAsInside() {
