@@ -19,9 +19,22 @@ public enum MainRunLoopCallout {
 	@MainActor
 	public static func run<T>(_ body: @escaping @MainActor () -> T) async -> T {
 		await withCheckedContinuation { continuation in
-			RunLoop.main.perform(inModes: [.common]) {
-				MainActor.assumeIsolated {
-					continuation.resume(returning: body())
+			post { continuation.resume(returning: body()) }
+		}
+	}
+
+	// A loop nested inside a main-actor job runs callouts too: a synchronous Process wait
+	// (ssh-keygen writing a guest setup payload) spins one. A modal from there would hold the
+	// main queue after all, so the work waits for that job to end and is posted again.
+	// Internal for tests.
+	@MainActor
+	static func post(_ work: @escaping @MainActor () -> Void) {
+		RunLoop.main.perform(inModes: [.common]) {
+			MainActor.assumeIsolated {
+				if withUnsafeCurrentTask(body: { $0 != nil }) {
+					Task { @MainActor in post(work) }
+				} else {
+					work()
 				}
 			}
 		}
