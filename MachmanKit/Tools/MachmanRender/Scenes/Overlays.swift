@@ -80,5 +80,15 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		RenderScene(
+			"overlay.cards.copy-from",
+			"NotificationOverlay: a VM copy titled by the copy, labelled by its source",
+			widths: [420], height: 300
+		) { ctx in
+			ctx.stub.emit(.operationChanged(op: Samples.copyFromOperation()))
+			Offscreen.pump(until: { !ctx.operations.operations.isEmpty })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }

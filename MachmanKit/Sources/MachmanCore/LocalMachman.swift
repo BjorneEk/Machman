@@ -134,7 +134,7 @@ public final class LocalMachman: MachmanControlling {
 		let cancelFlag = CancelFlag()
 		let opID = center.begin(
 			kind: OperationInfo.Kind.copyVM, vm: target,
-			label: "Copying \(name) → \(target)", cancel: { cancelFlag.set() })
+			label: Self.copyLabel(source: name), cancel: { cancelFlag.set() })
 		var request = Self.copyRequest(
 			from: vm.config, sourceDir: machmanVMDir + "/" + name,
 			destinationParent: machmanVMDir, newName: target, diskIDs: diskIDs,
@@ -164,6 +164,12 @@ public final class LocalMachman: MachmanControlling {
 		}
 		center.finish(opID, state: OperationInfo.State.succeeded)
 		return info(for: try registry.adoptFromDisk(name: target))
+	}
+
+	// A copy's progress label. The operation's vm is the copy being made, and clients title
+	// the card "<vm> — <label>", so the label names only the source (F8).
+	static func copyLabel(source: String) -> String {
+		"Copying from \(source)"
 	}
 
 	// What vm.copy hands the copier, as a sync seam (tests pin it without the async shell):
