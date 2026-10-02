@@ -20,7 +20,7 @@ What                     (default: ask per feature; every --x has a --no-x)
   --ssh                  Mac -> guest SSH (enable sshd, install the Mac's key)
   --two-way              also configure guest -> host SSH   (--one-way skips it)
   --sshfs                install sshfs in the guest (implies --two-way)
-  --mount-setup          let ANY user of the guest mount filesystems
+  --mount-setup          FreeBSD only: let ANY user of the guest mount filesystems
                          (vfs.usermount=1; root can mount without it)
   --automount-virtiofs   mount the Machman share at boot (fstab)
   --automount-sshfs      mount sshfs host folders at boot (needs guest -> host SSH)

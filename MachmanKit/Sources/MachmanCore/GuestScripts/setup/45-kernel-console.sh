@@ -301,9 +301,9 @@ kernelconsole_uninstall() {
 				uninstall_kept
 				return 0
 			fi
-			# No fresh backup here: install's backup holds the last pre-Machman
-			# config, and overwriting it with the Machman-era one (what this used to
-			# do) would leave a failed rebuild with nothing worth restoring.
+			# No fresh backup here: keep the copy from before setup's last rebuild (the
+			# pre-Machman config only if setup ran once); overwriting it with the current,
+			# Machman-era config would leave a failed rebuild with nothing worth restoring.
 			_kcu_ok=0
 			if have update-grub; then
 				if run_live "rebuilding the GRUB config" update-grub; then
