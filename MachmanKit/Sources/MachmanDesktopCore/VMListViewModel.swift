@@ -290,8 +290,15 @@ public final class VMListViewModel: ObservableObject {
 		var setupReportAt: Date?
 	}
 	private var knownSSH: [String: SSHSnapshot] = [:]
+	// Re-run Address Discovery / Check Connection (F4): the VMs waiting on an answer (each
+	// with its timeout) and those that heard one, so even "nothing changed" is said.
+	private var rediscovering: [String: Task<Void, Never>] = [:]
+	private var rediscoveryAnswered: Set<String> = []
+	// How long a re-run waits before saying the daemon keeps looking (tests shorten it).
+	var rediscoveryWait: Duration = .seconds(30)
 
 	public static func sshWaitToastKey(_ vm: String) -> String { "ssh-wait-\(vm)" }
+	public static func rediscoveryToastKey(_ vm: String) -> String { "rediscover-\(vm)" }
 	public static func logToastKey(_ text: String) -> String { "log:" + text }
 
 	// The SSH story, told through toasts: the guest answering at all, then whether its
@@ -308,6 +315,17 @@ public final class VMListViewModel: ObservableObject {
 				setupReportAt: vm.setup?.lastReportAt)
 			let previous = knownSSH[vm.name]
 			knownSSH[vm.name] = now
+			// A re-run discovery that heard back says what it found, unchanged or not.
+			if rediscovering[vm.name] != nil, rediscoveryAnswered.contains(vm.name),
+				let address = now.address {
+				endRediscovery(vm.name)
+				if previous?.address == address {
+					pushToast(
+						symbol: MachmanSymbols.network,
+						message: "\(vm.name) is still at \(address)",
+						key: Self.rediscoveryToastKey(vm.name))
+				}   // else the "answered" toast below says it
+			}
 			guard let previous, previous != now else { continue }
 
 			// The guest is on the network — the first sign of life Machman gets.
@@ -390,6 +408,38 @@ public final class VMListViewModel: ObservableObject {
 		for vm in list where !vm.state.isRunning {
 			dismissToast(key: Self.sshWaitToastKey(vm.name))
 		}
+		// …nor a re-run discovery to wait on.
+		let running = Set(list.filter { $0.state.isRunning }.map(\.name))
+		for name in rediscovering.keys where !running.contains(name) {
+			endRediscovery(name)
+		}
+	}
+
+	// The spinner goes up before the RPC: an answer can beat its reply.
+	private func beginRediscovery(_ name: String) {
+		rediscovering[name]?.cancel()
+		rediscoveryAnswered.remove(name)
+		pushToast(
+			symbol: MachmanSymbols.network, message: "Looking for \(name)'s address…",
+			key: Self.rediscoveryToastKey(name), spinner: true, sticky: true)
+		let wait = rediscoveryWait
+		rediscovering[name] = Task { [weak self] in
+			try? await Task.sleep(for: wait)
+			guard !Task.isCancelled, let self else { return }
+			self.rediscovering[name] = nil
+			self.rediscoveryAnswered.remove(name)
+			self.pushToast(
+				symbol: MachmanSymbols.network,
+				message: "No address for \(name) yet — Machman keeps looking",
+				key: Self.rediscoveryToastKey(name))
+		}
+	}
+
+	// The wait is over; its toast is replaced by whoever says how it ended.
+	private func endRediscovery(_ name: String) {
+		rediscovering.removeValue(forKey: name)?.cancel()
+		rediscoveryAnswered.remove(name)
+		dismissToast(key: Self.rediscoveryToastKey(name))
 	}
 
 	private func handle(event: VMEvent) {
@@ -421,8 +471,9 @@ public final class VMListViewModel: ObservableObject {
 			// The operations UI (progress cards) lands with the desktop overhaul; until
 			// then the legacy copyProgress events above cover the same transfers.
 			break
-		case .sshChanged:
+		case .sshChanged(let vm):
 			// Discovery answers arrive with no listChanged — refresh the rows ourselves.
+			if rediscovering[vm] != nil { rediscoveryAnswered.insert(vm) }
 			Task { [weak self] in await self?.store.reload() }
 		case .setupChanged:
 			// Guest-setup reports land with no listChanged — same treatment.
@@ -1248,10 +1299,17 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Re-run Address Discovery and Check Connection: a spinner toast, then what it found —
+	// even an unchanged address (F4).
 	public func refreshSSH(_ name: String) {
+		beginRediscovery(name)
 		Task { [weak self] in
-			do { try await self?.api.refreshSSH(vm: name) }
-			catch { self?.present(error, while: "Refreshing the SSH address") }
+			do {
+				try await self?.api.refreshSSH(vm: name)
+			} catch {
+				self?.endRediscovery(name)
+				self?.present(error, while: "Refreshing the SSH address")
+			}
 		}
 	}
 
