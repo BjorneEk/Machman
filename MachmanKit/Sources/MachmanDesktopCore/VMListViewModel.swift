@@ -526,7 +526,7 @@ public final class VMListViewModel: ObservableObject {
 	// localizedDescription on a non-LocalizedError is NSError-bridge boilerplate ("The
 	// operation couldn't be completed…"); String(describing:) picks up the connection
 	// errors' CustomStringConvertible instead.
-	private static func message(for error: Error) -> String {
+	static func message(for error: Error) -> String {
 		(error as? LocalizedError)?.errorDescription ?? String(describing: error)
 	}
 
@@ -697,6 +697,13 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	public func rename(from oldName: String, to newName: String) async -> Bool {
+		await rename(from: oldName, to: newName, refused: nil)
+	}
+
+	// `refused` takes a refusal to the field that asked, instead of an alert (PR8).
+	func rename(
+		from oldName: String, to newName: String, refused: (@MainActor (String) -> Void)?
+	) async -> Bool {
 		do {
 			try await api.renameVM(named: oldName, to: newName)
 			// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
@@ -707,7 +714,7 @@ public final class VMListViewModel: ObservableObject {
 			reopenTornWindows(from: oldName, to: newName)
 			return true
 		} catch {
-			present(error, while: "Renaming \(oldName)")
+			refuse(error, while: "Renaming \(oldName)", to: refused)
 			vmName = oldName
 			return false
 		}
@@ -751,10 +758,12 @@ public final class VMListViewModel: ObservableObject {
 	// checked against the VM-name rule and the list before the daemon sees it, migrating
 	// terminal/canvas/preview/profile state on success. `reverted` runs when the typed name
 	// is not applied (blank, unchanged, refused here or by the daemon), so a field can drop
-	// it instead of showing a name the VM doesn't have.
+	// it instead of showing a name the VM doesn't have. `refused` (last, so a trailing
+	// closure still means `reverted`) takes a refusal to the field instead of an alert.
 	public func requestRename(
 		_ vm: VMInfo, to typed: String, profiles: TerminalProfileStore,
-		reverted: @escaping @MainActor () -> Void = {}
+		reverted: @escaping @MainActor () -> Void = {},
+		refused: (@MainActor (String) -> Void)? = nil
 	) {
 		let old = vm.name
 		let newName = NameRule.vmName.trimmed(typed)
@@ -763,13 +772,13 @@ public final class VMListViewModel: ObservableObject {
 			return
 		}
 		if let problem = newVMNameProblem(newName) {
-			present(message: problem, while: "Renaming \(old)")
+			refuse(problem, while: "Renaming \(old)", to: refused)
 			reverted()
 			return
 		}
 		Task { [weak self] in
 			guard let self = self else { return }
-			if await self.rename(from: old, to: newName) {
+			if await self.rename(from: old, to: newName, refused: refused) {
 				profiles.renameVM(from: old, to: newName)
 				self.log(message: "Renamed \(old) to \(newName)")
 				self.pushToast(
@@ -862,8 +871,12 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	// The disk id derives from the name, so a successful rename repoints a selection that
-	// was on the old id (the inspector would otherwise go blank).
-	public func renameDisk(_ name: String, diskID: String, newName: String) {
+	// was on the old id (the inspector would otherwise go blank). `refused` takes a refusal
+	// to the field instead of an alert.
+	public func renameDisk(
+		_ name: String, diskID: String, newName: String,
+		refused: (@MainActor (String) -> Void)? = nil
+	) {
 		Task { [weak self] in
 			do {
 				guard let updated = try await self?.api.renameDisk(
@@ -876,12 +889,15 @@ public final class VMListViewModel: ObservableObject {
 					symbol: MachmanSymbols.rename,
 					message: "Disk renamed to \u{201C}\(newName)\u{201D}")
 			} catch {
-				self?.present(error, while: "Renaming a disk")
+				self?.refuse(error, while: "Renaming a disk", to: refused)
 			}
 		}
 	}
 
-	public func setMountTag(_ name: String, mountID: String, tag: String) {
+	public func setMountTag(
+		_ name: String, mountID: String, tag: String,
+		refused: (@MainActor (String) -> Void)? = nil
+	) {
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.setMountTag(vm: name, mountID: mountID, tag: tag)
@@ -889,7 +905,7 @@ public final class VMListViewModel: ObservableObject {
 					symbol: MachmanSymbols.rename,
 					message: "Mount tag changed to \u{201C}\(tag)\u{201D}")
 			} catch {
-				self?.present(error, while: "Changing a mount tag")
+				self?.refuse(error, while: "Changing a mount tag", to: refused)
 			}
 		}
 	}

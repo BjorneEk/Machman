@@ -32,4 +32,14 @@ extension Samples {
 		vm.unresponsive = true
 		return vm
 	}
+
+	// A Linux guest with a second owned storage disk, "data" — a name the system disk can't
+	// be renamed to.
+	public static func linuxTwoDisks(_ name: String = "Alpine") -> VMInfo {
+		var vm = linux(name)
+		vm.disks.append(DiskInfo(
+			id: "storage:data", type: .storage, name: "data",
+			path: "\(vmsRoot)/\(name)/data.raw", sizeBytes: 8 << 30, owned: true))
+		return vm
+	}
 }

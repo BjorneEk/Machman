@@ -113,6 +113,9 @@ struct VMInspector: View {
 	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var draftName = ""
+	// The daemon's reason for refusing the last rename, until the next edit.
+	@State private var renameRefusal: String?
+	private let initialNameDraft: String?
 	@State private var memText = ""
 	// What the last Return in the memory field did to the value (clamped, unreadable), until
 	// the next edit; committedMemText is the text that answer belongs to.
@@ -120,14 +123,16 @@ struct VMInspector: View {
 	@State private var committedMemText = ""
 	@State private var macSwitchSheet = false
 
-	// `memoryNote` opens the memory row with a note under it (render scenes).
+	// `nameDraft` opens the Name field on an unsent draft and `memoryNote` the memory row
+	// with a note under it (render scenes).
 	init(
 		viewModel: VMListViewModel, profiles: TerminalProfileStore, vm: VMInfo,
-		memoryNote: String? = nil
+		nameDraft: String? = nil, memoryNote: String? = nil
 	) {
 		self.viewModel = viewModel
 		self.profiles = profiles
 		self.vm = vm
+		initialNameDraft = nameDraft
 		_memoryNote = State(initialValue: memoryNote)
 	}
 
@@ -141,16 +146,7 @@ struct VMInspector: View {
 	var body: some View {
 		Form {
 			Section("Machine") {
-				// A name the rule, the list or the daemon refuses doesn't stay in the field.
-				TextField("Name", text: $draftName)
-					.onSubmit {
-						viewModel.requestRename(
-							vm, to: draftName, profiles: profiles,
-							reverted: { draftName = vm.name })
-					}
-					.stopFirst(vm, .renameVM)
-					.onAppear { draftName = vm.name }
-					.onChange(of: vm.name) { draftName = vm.name }
+				nameField
 				LabeledContent {
 					Stepper("\(vm.cpuCount) cores", value: cpuBinding, in: cpuRange)
 				} label: {
@@ -281,6 +277,29 @@ struct VMInspector: View {
 			? [.hours, .minutes, .seconds] : [.hours, .minutes]
 		return Duration.seconds(seconds).formatted(
 			.units(allowed: allowed, width: .narrow, maximumUnitCount: showSeconds ? 3 : 2))
+	}
+
+	// A name the rule or the list refuses is explained under the field while it is typed,
+	// and Return sends nothing (PR8). One the daemon refuses doesn't stay in the field, but
+	// its reason stays under it until the next edit.
+	private var nameField: some View {
+		VStack(alignment: .leading, spacing: 3) {
+			TextField("Name", text: $draftName)
+				.onSubmit {
+					viewModel.submitRename(
+						vm, draft: draftName, profiles: profiles,
+						reverted: { draftName = vm.name }, refused: { renameRefusal = $0 })
+				}
+				.stopFirst(vm, .renameVM)
+			if let problem = renameRefusal ?? viewModel.vmRenameProblem(draftName, for: vm) {
+				FieldProblem(problem)
+			}
+		}
+		.onAppear { draftName = initialNameDraft ?? vm.name }
+		.onChange(of: vm.name) { draftName = vm.name }
+		.onChange(of: draftName) {
+			if draftName != vm.name { renameRefusal = nil }
+		}
 	}
 
 	private var memoryRow: some View {

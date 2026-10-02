@@ -2,10 +2,11 @@
 //  EntityInspectors.swift
 //  MachmanDesktopUI
 //
-//  Disk and mount inspectors (1.0.4 UI), grounded in the wire: names and tags are
-//  read-only (no rename APIs exist), safety/enabled ride vm.setSafety / vm.setEnabled,
-//  grow is vm.disk.resize (owned storage, stopped VM only), promote copies a referenced
-//  image in. The mount inspector carries the per-OS virtiofs how-tos.
+//  Disk and mount inspectors (1.0.4 UI), grounded in the wire: an owned disk's name and a
+//  mount's tag rename in place (vm.disk.rename / vm.mount.setTag, the reason under the
+//  field), safety/enabled ride vm.setSafety / vm.setEnabled, grow is vm.disk.resize (owned
+//  storage, stopped VM only), promote copies a referenced image in. The mount inspector
+//  carries the per-OS virtiofs how-tos.
 //
 
 import SwiftUI
@@ -22,13 +23,22 @@ struct DiskInspector: View {
 	let diskID: String
 	@State private var growText: String
 	@State private var draftName = ""
+	// The daemon's reason for refusing the last rename, until the next edit.
+	@State private var renameRefusal: String?
+	private let initialNameDraft: String?
 
-	// `growText` opens the Grow-to field on a typed size (render scenes).
-	init(viewModel: VMListViewModel, vm: VMInfo, diskID: String, growText: String = "") {
+	// `growText` opens the Grow-to field on a typed size, `nameDraft` the Name field on an
+	// unsent draft and `refusal` with the daemon's reason under it (render scenes).
+	init(
+		viewModel: VMListViewModel, vm: VMInfo, diskID: String, growText: String = "",
+		nameDraft: String? = nil, refusal: String? = nil
+	) {
 		self.viewModel = viewModel
 		self.vm = vm
 		self.diskID = diskID
 		_growText = State(initialValue: growText)
+		initialNameDraft = nameDraft
+		_renameRefusal = State(initialValue: refusal)
 	}
 
 	var body: some View {
@@ -36,12 +46,7 @@ struct DiskInspector: View {
 			Form {
 				Section("Info") {
 					if disk.type == .storage && disk.owned != false {
-						TextField("Name", text: $draftName)
-							.onSubmit { commitRename(disk) }
-							.onAppear { draftName = disk.name ?? "" }
-							.onChange(of: disk.name) { draftName = disk.name ?? "" }
-							.disabled(vm.refusal(.renameDisk) != nil)
-							.help(vm.refusal(.renameDisk) ?? "Renames the backing file too")
+						nameField(disk)
 					} else {
 						LabeledContent("Name", value: disk.name ?? fileName(disk))
 					}
@@ -93,13 +98,38 @@ struct DiskInspector: View {
 		}
 	}
 
-	private func commitRename(_ disk: DiskInfo) {
-		let newName = draftName.trimmingCharacters(in: .whitespaces)
-		guard !newName.isEmpty, newName != disk.name else {
-			draftName = disk.name ?? ""
-			return
+	// The VM Name field's pattern: the reason under the field while it is typed, Return
+	// sends nothing then; a daemon refusal restores the name and keeps its reason (PR8).
+	private func nameField(_ disk: DiskInfo) -> some View {
+		let current = disk.name ?? ""
+		let problem = renameRefusal
+			?? viewModel.diskRenameProblem(draftName, diskID: diskID, on: vm)
+		return VStack(alignment: .leading, spacing: 3) {
+			TextField("Name", text: $draftName)
+				.onSubmit { commitRename(disk) }
+				.disabled(vm.refusal(.renameDisk) != nil)
+				.help(vm.refusal(.renameDisk) ?? "Renames the backing file too")
+			if let problem {
+				FieldProblem(problem)
+			}
 		}
-		viewModel.renameDisk(vm.name, diskID: diskID, newName: newName)
+		.onAppear { draftName = initialNameDraft ?? current }
+		.onChange(of: disk.name) { draftName = disk.name ?? "" }
+		.onChange(of: draftName) {
+			if draftName != current { renameRefusal = nil }
+		}
+	}
+
+	private func commitRename(_ disk: DiskInfo) {
+		let current = disk.name ?? ""
+		let sent = viewModel.submitDiskRename(vm, diskID: diskID, draft: draftName) { reason in
+			draftName = current
+			renameRefusal = reason
+		}
+		// Only padded, or unchanged: tidy the field back to the name.
+		if !sent, viewModel.diskRenameProblem(draftName, diskID: diskID, on: vm) == nil {
+			draftName = current
+		}
 	}
 
 	private func typeLabel(_ disk: DiskInfo) -> String {
@@ -174,17 +204,23 @@ struct MountInspector: View {
 	let vm: VMInfo
 	let mountID: String
 	@State private var draftTag = ""
+	// The daemon's reason for refusing the last tag change, until the next edit.
+	@State private var tagRefusal: String?
+	private let initialTagDraft: String?
+
+	// `tagDraft` opens the Tag field on an unsent draft (render scenes).
+	init(viewModel: VMListViewModel, vm: VMInfo, mountID: String, tagDraft: String? = nil) {
+		self.viewModel = viewModel
+		self.vm = vm
+		self.mountID = mountID
+		initialTagDraft = tagDraft
+	}
 
 	var body: some View {
 		if let mount = vm.mounts.first(where: { $0.id == mountID }) {
 			Form {
 				Section("Info") {
-					TextField("Tag", text: $draftTag)
-						.onSubmit { commitTag(mount) }
-						.onAppear { draftTag = mount.tag }
-						.onChange(of: mount.tag) { draftTag = mount.tag }
-						.help("The name guests see this folder under "
-							+ "(applies at the next boot)")
+					tagField(mount)
 					PathRow(label: "Host path", path: mount.path) {
 						NSWorkspace.shared.activateFileViewerSelecting(
 							[URL(fileURLWithPath: mount.path)])
@@ -284,13 +320,34 @@ struct MountInspector: View {
 		}
 	}
 
-	private func commitTag(_ mount: MountInfo) {
-		let tag = draftTag.trimmingCharacters(in: .whitespaces)
-		guard !tag.isEmpty, tag != mount.tag else {
-			draftTag = mount.tag
-			return
+	// The VM Name field's pattern (PR8): the reason under the field, no alert.
+	private func tagField(_ mount: MountInfo) -> some View {
+		let problem = tagRefusal
+			?? viewModel.mountTagProblem(draftTag, mountID: mountID, on: vm)
+		return VStack(alignment: .leading, spacing: 3) {
+			TextField("Tag", text: $draftTag)
+				.onSubmit { commitTag(mount) }
+				.help("The name guests see this folder under (applies at the next boot)")
+			if let problem {
+				FieldProblem(problem)
+			}
 		}
-		viewModel.setMountTag(vm.name, mountID: mountID, tag: tag)
+		.onAppear { draftTag = initialTagDraft ?? mount.tag }
+		.onChange(of: mount.tag) { draftTag = mount.tag }
+		.onChange(of: draftTag) {
+			if draftTag != mount.tag { tagRefusal = nil }
+		}
+	}
+
+	private func commitTag(_ mount: MountInfo) {
+		let sent = viewModel.submitMountTag(vm, mountID: mountID, draft: draftTag) { reason in
+			draftTag = mount.tag
+			tagRefusal = reason
+		}
+		// Only padded, or unchanged: tidy the field back to the tag.
+		if !sent, viewModel.mountTagProblem(draftTag, mountID: mountID, on: vm) == nil {
+			draftTag = mount.tag
+		}
 	}
 
 	private func guestHelp(os: String, requirement: String, command: String) -> some View {

@@ -99,6 +99,17 @@ enum InspectorScenes {
 					memoryNote: "Lowered to this Mac's maximum")
 					.formStyle(.grouped))
 		},
+		RenderScene(
+			"inspector.vm.name-taken", "VMInspector, a name another VM has",
+			widths: RenderScene.inspectorWidths, height: height
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				VMInspector(
+					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
+					nameDraft: "Sequoia")
+					.formStyle(.grouped))
+		},
 		inspector(
 			"multi", "MultiSelectionInspector, two disks",
 			nodes: [.disk("storage:system"), .disk(iso)]),
@@ -111,12 +122,47 @@ enum InspectorScenes {
 		diskGrow(
 			"inspector.disk.grow-too-big", "DiskInspector, a grow past the free space",
 			text: "500"),
+		RenderScene(
+			"inspector.disk.name-taken", "DiskInspector, a name the VM's other disk has",
+			widths: RenderScene.inspectorWidths, height: height,
+			vms: { [Samples.linuxTwoDisks()] }
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				DiskInspector(
+					viewModel: ctx.viewModel, vm: ctx.vm, diskID: "storage:system",
+					nameDraft: "data")
+					.formStyle(.grouped))
+		},
+		RenderScene(
+			"inspector.disk.name-refused", "DiskInspector, a rename the daemon refused",
+			widths: RenderScene.inspectorWidths, height: height
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				DiskInspector(
+					viewModel: ctx.viewModel, vm: ctx.vm, diskID: "storage:system",
+					refusal: "kept uses system.raw from Alpine's folder \u{2014} remove that "
+						+ "disk from kept first")
+					.formStyle(.grouped))
+		},
 		inspector(
 			"disk.never-answered", "DiskInspector, a VM whose vmhost never answered",
 			vms: { [Samples.neverAnswered()] }, select: "Alpine", node: .disk("storage:system")),
 		inspector(
 			"mount", "MountInspector, virtiofs mount",
 			node: .mount("7B0E4F52-3C1A-4D55-9E0B-2A6C1D9F0A11")),
+		RenderScene(
+			"inspector.mount.tag-reserved", "MountInspector, a tag Machman reserves",
+			widths: RenderScene.inspectorWidths, height: height
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				MountInspector(
+					viewModel: ctx.viewModel, vm: ctx.vm,
+					mountID: "7B0E4F52-3C1A-4D55-9E0B-2A6C1D9F0A11", tagDraft: "GuestSetup")
+					.formStyle(.grouped))
+		},
 		inspector("serial-group", "SerialGroupInspector", node: .group("Serial")),
 		inspector(
 			"serial", "SerialInspector, console port of a running VM", node: .serial(console)),
