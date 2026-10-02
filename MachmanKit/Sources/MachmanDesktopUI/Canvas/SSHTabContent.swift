@@ -86,7 +86,7 @@ struct SSHTabContent: View {
 
 // Observes the controller so the ended-state banner appears when the process exits. The
 // banner is where a dropped session gets reconnected — that is where the user is looking.
-private struct SSHSessionSurface: View {
+struct SSHSessionSurface: View {
 	@ObservedObject var controller: SerialTerminalController
 	let guestIsReachable: Bool
 	let reconnect: () -> Void
@@ -98,22 +98,14 @@ private struct SSHSessionSurface: View {
 			.padding(6)
 			.overlay(alignment: .top) {
 				if !controller.connected {
-					HStack(spacing: 8) {
-						Text("Session ended.")
-							.font(.caption)
+					TerminalBanner("Session ended.") {
 						if guestIsReachable {
 							Button("Reconnect", action: reconnect)
-								.controlSize(.small)
 						} else {
 							Button("Check Connection", action: checkConnection)
-								.controlSize(.small)
 								.help("The guest is not answering on port 22 — probe again")
 						}
 					}
-					.padding(.horizontal, 10)
-					.padding(.vertical, 5)
-					.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
-					.padding(.top, 10)
 				}
 			}
 	}

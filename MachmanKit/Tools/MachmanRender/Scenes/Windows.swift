@@ -413,6 +413,25 @@ enum WindowScenes {
 			})
 			return AnyView(serialTab(ctx, console).environment(\.terminalDisconnectedGrace, .zero))
 		},
+		// An ssh session that ended: the banner offers Reconnect while the guest answers on
+		// port 22, Check Connection when it doesn't. A never-connected controller: no ssh.
+		RenderScene(
+			"canvas.ssh-tab.ended", "SSHSessionSurface, a session that ended, guest reachable",
+			widths: [320, 640], height: 360
+		) { ctx in
+			AnyView(SSHSessionSurface(
+				controller: SerialTerminalController(profile: ctx.profiles.defaultProfile),
+				guestIsReachable: true, reconnect: {}, checkConnection: {}))
+		},
+		RenderScene(
+			"canvas.ssh-tab.ended.unreachable",
+			"SSHSessionSurface, a session that ended, guest not answering on port 22",
+			widths: [320, 640], height: 360
+		) { ctx in
+			AnyView(SSHSessionSurface(
+				controller: SerialTerminalController(profile: ctx.profiles.defaultProfile),
+				guestIsReachable: false, reconnect: {}, checkConnection: {}))
+		},
 		RenderScene(
 			"window.connecting", "ConnectionStatusView, connecting", widths: [480, 900],
 			height: 420
