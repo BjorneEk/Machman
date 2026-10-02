@@ -241,6 +241,19 @@ public enum SystemKeyCapture: String, Codable, Sendable, Equatable {
 	}
 }
 
+// The one name per capture mode (W4): the VM window's Keyboard menu and the inspector's
+// picker both show these, so the two never drift. Menu and pop-up items: Title Case.
+public extension SystemKeyCapture {
+	var displayLabel: String {
+		switch self {
+		case .off: return "Off"
+		case .always: return "Always"
+		case .fullScreen: return "In Full Screen"
+		case .unknown: return "Newer Mode"
+		}
+	}
+}
+
 // A guest device as served over the API. Settings are flat optionals (only meaningful for
 // some kinds); `unavailable` is computed by the daemon per host and never persisted.
 public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {

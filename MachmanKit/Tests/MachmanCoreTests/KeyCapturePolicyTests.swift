@@ -122,6 +122,19 @@ struct KeyCapturePolicyTests {
 		} == .toggleCapture)
 	}
 
+	// W4: the toggle repeated its section's title ("Capture System Keys" twice). The modes
+	// use the shared labels (the inspector's picker shows the same), the toggle its own name.
+	@Test @MainActor func keyboardMenuNamesEveryItemOnce() {
+		let keyboard = KeyCaptureMenu.keyboardMenuItem(target: WindowPresenter())
+		let titles = keyboard.submenu?.items.map(\.title) ?? []
+		#expect(titles == [
+			"Capture System Keys", "Off", "Always", "In Full Screen", "",
+			"Send System Keys to Guest",
+		])
+		let named = titles.filter { !$0.isEmpty }
+		#expect(Set(named).count == named.count)
+	}
+
 	// AppKit's documented presentation-option rules — an invalid set raises, which would
 	// take the vmhost (and its VM) down, so every output must satisfy all of them.
 	private func isValid(_ o: NSApplication.PresentationOptions) -> Bool {

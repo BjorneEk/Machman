@@ -135,13 +135,12 @@ enum KeyCaptureMenu {
 		let item = NSMenuItem()
 		let menu = NSMenu(title: "Keyboard")
 		item.submenu = menu
+		// The header names the setting; its modes pick the run's default, and the toggle
+		// below flips capture now (checked while keys go to the guest).
 		menu.addItem(NSMenuItem.sectionHeader(title: "Capture System Keys"))
-		let modes: [(String, SystemKeyCapture)] = [
-			("Off", .off), ("Always", .always), ("In Full Screen", .fullScreen),
-		]
-		for (title, mode) in modes {
+		for mode in [SystemKeyCapture.off, .always, .fullScreen] {
 			let modeItem = NSMenuItem(
-				title: title, action: #selector(WindowPresenter.selectCaptureMode(_:)),
+				title: mode.displayLabel, action: #selector(WindowPresenter.selectCaptureMode(_:)),
 				keyEquivalent: "")
 			modeItem.representedObject = mode.rawValue
 			modeItem.target = target
@@ -149,7 +148,8 @@ enum KeyCaptureMenu {
 		}
 		menu.addItem(.separator())
 		let toggle = NSMenuItem(
-			title: "Capture System Keys", action: #selector(WindowPresenter.toggleCapture(_:)),
+			title: "Send System Keys to Guest",
+			action: #selector(WindowPresenter.toggleCapture(_:)),
 			keyEquivalent: KeyCapturePolicy.ReservedKey.toggleCapture.keyEquivalent)
 		toggle.keyEquivalentModifierMask = KeyCapturePolicy.reservedModifiers
 		toggle.target = target

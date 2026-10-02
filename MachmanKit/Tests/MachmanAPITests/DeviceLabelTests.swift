@@ -18,4 +18,11 @@ struct DeviceLabelTests {
 		#expect(DeviceKind.displayLabel(raw: "graphics") == "Display")
 		#expect(DeviceKind.displayLabel(raw: "future") == "\u{201C}future\u{201D}")
 	}
+
+	@Test func captureModesReadTheirLabels() {
+		#expect(SystemKeyCapture.off.displayLabel == "Off")
+		#expect(SystemKeyCapture.always.displayLabel == "Always")
+		#expect(SystemKeyCapture.fullScreen.displayLabel == "In Full Screen")
+		#expect(SystemKeyCapture.unknown.displayLabel == "Newer Mode")
+	}
 }
