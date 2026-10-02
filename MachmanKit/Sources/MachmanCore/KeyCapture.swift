@@ -188,14 +188,10 @@ final class KeyCaptureController {
 	private weak var view: VZVirtualMachineView?
 	private let readMode: () -> SystemKeyCapture
 	private let writeMode: (SystemKeyCapture) -> Void
-	// Full screen as capture sees it: set once the transition has finished, cleared as soon
-	// as the exit begins — Full Screen Only releases at the start of the way out.
-	private(set) var inFullScreen = false
-	private(set) var isCapturing = false
-	private var loggedMode: SystemKeyCapture?
-	// The key of a chord we consumed: its key-up is consumed too, so the guest never sees a
-	// release without a press.
-	private var consumedKeyCode: UInt16?
+	// The decisions (KeyCaptureState.swift); this class carries out their effects.
+	private var state = KeyCaptureState()
+	var inFullScreen: Bool { state.inFullScreen }
+	var isCapturing: Bool { state.isCapturing }
 	// Main-menu shortcuts parked while capturing, so ⌘Q/⌘W reach the guest too.
 	private var parkedKeyEquivalents: [(NSMenuItem, String, NSEvent.ModifierFlags)] = []
 
@@ -222,7 +218,7 @@ final class KeyCaptureController {
 	}
 
 	func toggle(cause: String) {
-		setMode(KeyCapturePolicy.toggled(mode: mode, fullScreen: inFullScreen), cause: cause)
+		setMode(state.toggled(mode: mode), cause: cause)
 	}
 
 	func windowDidBecomeKey() {
@@ -239,14 +235,13 @@ final class KeyCaptureController {
 	}
 
 	func windowDidEnterFullScreen() {
-		inFullScreen = true
+		let effects = state.didEnterFullScreen(mode: mode)
 		focusView()
-		refresh(cause: "entered full screen")
+		apply(effects, cause: "entered full screen")
 	}
 
 	func windowWillExitFullScreen() {
-		inFullScreen = false
-		refresh(cause: "leaving full screen")
+		apply(state.willExitFullScreen(mode: mode), cause: "leaving full screen")
 	}
 
 	// Belt: full screen is over, so no hidden-Dock/menu-bar option may outlive it.
@@ -257,14 +252,13 @@ final class KeyCaptureController {
 	}
 
 	func windowDidFailToEnterFullScreen() {
-		inFullScreen = false
-		refresh(cause: "full screen failed")
+		apply(state.didFailToEnterFullScreen(mode: mode), cause: "full screen failed")
 	}
 
 	// The window is going away: never leave a dangling capture or parked menu.
 	func tearDown() {
 		view?.capturesSystemKeys = false
-		isCapturing = false
+		state.tearDown()
 		restoreKeyEquivalents()
 	}
 
@@ -272,21 +266,24 @@ final class KeyCaptureController {
 	// monitor and the menus. Returns true when the event was a reserved chord (or its
 	// release) and is consumed; held keys are consumed without repeating the action.
 	func interceptKey(_ event: NSEvent) -> Bool {
+		let action: KeyCaptureState.KeyAction
 		if event.type == .keyUp {
-			guard event.keyCode == consumedKeyCode else { return false }
-			consumedKeyCode = nil
+			action = state.keyUp(keyCode: event.keyCode)
+		} else {
+			let reserved = KeyCapturePolicy.reservedKey(
+				characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags)
+			action = state.keyDown(
+				keyCode: event.keyCode, reserved: reserved, isRepeat: event.isARepeat)
+		}
+		switch action {
+		case .pass:
+			return false
+		case .consume:
+			return true
+		case .perform(let key):
+			perform(key)
 			return true
 		}
-		guard let key = KeyCapturePolicy.reservedKey(
-			characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags)
-		else {
-			return false
-		}
-		consumedKeyCode = event.keyCode
-		if !event.isARepeat {
-			perform(key)
-		}
-		return true
 	}
 
 	private func perform(_ key: KeyCapturePolicy.ReservedKey) {
@@ -332,23 +329,26 @@ final class KeyCaptureController {
 	}
 
 	private func refresh(cause: String) {
-		let mode = self.mode
-		let capturing = KeyCapturePolicy.isCapturing(mode: mode, fullScreen: inFullScreen)
-		view?.capturesSystemKeys = capturing
-		if capturing {
+		apply(state.refresh(mode: mode), cause: cause)
+	}
+
+	private func apply(_ effects: KeyCaptureState.Effects, cause: String) {
+		view?.capturesSystemKeys = effects.capturing
+		if effects.capturing {
 			parkKeyEquivalents()
 		} else {
 			restoreKeyEquivalents()
 		}
-		let flipped = capturing != isCapturing
-		guard flipped || mode != loggedMode else { return }
-		isCapturing = capturing
-		loggedMode = mode
-		MachmanLogger.log(.log, "key capture: \(window.title) mode=\(mode.rawValue) "
-			+ "capturing=\(capturing) (\(cause))")
-		applyFullScreenChrome(capturing: capturing)
-		if flipped {
-			status.show(capturing ? "System keys → guest · ⌃⌥⌘K releases" : "System keys → Mac")
+		if effects.changed {
+			MachmanLogger.log(.log, "key capture: \(window.title) mode=\(mode.rawValue) "
+				+ "capturing=\(effects.capturing) (\(cause))")
+		}
+		if effects.reconcileChrome {
+			applyFullScreenChrome(capturing: effects.capturing)
+		}
+		if effects.flipped {
+			status.show(effects.capturing
+				? "System keys → guest · ⌃⌥⌘K releases" : "System keys → Mac")
 		}
 	}
 
@@ -357,7 +357,7 @@ final class KeyCaptureController {
 	// never mid-transition, where AppKit owns the options.
 	private func applyFullScreenChrome(capturing: Bool) {
 		let current = NSApp.presentationOptions
-		guard inFullScreen, current.contains(.fullScreen) else { return }
+		guard state.inFullScreen, current.contains(.fullScreen) else { return }
 		let options = KeyCapturePolicy.fullScreenOptions(current, capturing: capturing)
 		guard options != current else { return }
 		NSApp.presentationOptions = options
