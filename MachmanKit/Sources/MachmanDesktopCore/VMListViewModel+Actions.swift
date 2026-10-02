@@ -19,37 +19,56 @@ struct ActionToast {
 	let message: String
 }
 
+// What an action refreshes once its call went through, before its `refreshed` step: the VM
+// list, so the affordances flip straight to the new state, or the host's capabilities.
+enum ActionRefresh {
+	case list
+	case capabilities
+}
+
 extension VMListViewModel {
 	// MARK: - The runner (Q1)
 
 	// The one shape a request to the daemon runs in. The call goes out off the click, on the
 	// api alone: a view model that went with its connection sends nothing, and a call in
-	// flight doesn't keep it alive. A success runs `then` with the reply, then shows
-	// `toast`. A refusal runs `failed` first (undoing what the click set up), then `recover`
-	// may answer a MachmanError that isn't a failure (true: nothing more is said); anything
-	// else goes to the field that asked (`refused`) or to an alert titled "<action> failed".
-	// Every step runs only while the view model is still here.
+	// flight doesn't keep it alive. A success runs `then` with the reply, `refresh` (holding
+	// only the store), `refreshed`, then shows `toast`. A refusal runs `failed` first
+	// (undoing what the click set up), then `recover` may answer a MachmanError that isn't a
+	// failure (true: nothing more is said); anything else goes to the field that asked
+	// (`refused`) or to an alert titled "<action> failed". Every step after an await runs
+	// only while the view model is still here.
 	func perform<Value>(
 		_ action: String, toast: ActionToast? = nil,
 		refused: (@MainActor (String) -> Void)? = nil,
+		refresh: ActionRefresh? = nil,
 		failed: (@MainActor (VMListViewModel) -> Void)? = nil,
 		recover: (@MainActor (VMListViewModel, MachmanError) -> Bool)? = nil,
 		_ call: @escaping @MainActor (any MachmanControlling) async throws -> Value,
-		then: (@MainActor (VMListViewModel, Value) -> Void)? = nil
+		then: (@MainActor (VMListViewModel, Value) -> Void)? = nil,
+		refreshed: (@MainActor (VMListViewModel, Value) -> Void)? = nil
 	) {
 		Task { [weak self] in
 			guard let api = self?.api else { return }
+			let value: Value
 			do {
-				let value = try await call(api)
-				guard let self else { return }
-				then?(self, value)
-				if let toast { self.pushToast(symbol: toast.symbol, message: toast.message) }
+				value = try await call(api)
 			} catch {
 				guard let self else { return }
 				failed?(self)
 				if let error = error as? MachmanError, recover?(self, error) == true { return }
 				self.refuse(error, while: action, to: refused)
+				return
 			}
+			guard let store = self?.store else { return }
+			if let self { then?(self, value) }
+			switch refresh {
+			case .list?: await store.reload()
+			case .capabilities?: await store.refreshCapabilities()
+			case nil: break
+			}
+			guard let self else { return }
+			refreshed?(self, value)
+			if let toast { self.pushToast(symbol: toast.symbol, message: toast.message) }
 		}
 	}
 
@@ -75,22 +94,24 @@ extension VMListViewModel {
 	) {
 		guard !pendingStarts.contains(name) else { return }
 		pendingStarts.insert(name)
-		Task { [weak self] in
-			defer { self?.pendingStarts.remove(name) }
-			do {
-				try await self?.api.start(
-					vm: name,
-					options: StartOptions(openWindow: !headless, force: force, safe: safe))
-				// A fresh list before the flag drops, so the affordances flip straight
-				// from pending to the running controls, never through a stale Start.
-				await self?.reload()
-			} catch let error as MachmanError where error.code == .macConflict {
+		perform(
+			"Starting \u{201C}\(name)\u{201D}",
+			// A fresh list before the flag drops, so the affordances flip straight from
+			// pending to the running controls, never through a stale Start.
+			refresh: .list,
+			failed: { $0.pendingStarts.remove(name) },
+			recover: { model, error in
 				// Not a dead end: the same start succeeds with force, so offer it.
-				self?.pendingForceStart = PendingForceStart(
+				guard error.code == .macConflict else { return false }
+				model.pendingForceStart = PendingForceStart(
 					name: name, headless: headless, safe: safe, message: error.message)
-			} catch {
-				self?.present(error, while: "Starting \u{201C}\(name)\u{201D}")
+				return true
 			}
+		) {
+			try await $0.start(
+				vm: name, options: StartOptions(openWindow: !headless, force: force, safe: safe))
+		} refreshed: { model, _ in
+			model.pendingStarts.remove(name)
 		}
 	}
 
@@ -257,18 +278,17 @@ extension VMListViewModel {
 		guard !copyInFlight else { return }
 		copyInFlight = true
 		copyRequest = nil   // the sheet closes now; the corner card tracks the copy
-		Task { [weak self] in
-			do {
-				let copy = try await self?.api.copyVM(
-					vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
-					regenerateMAC: true)
-				self?.copyInFlight = false
-				await self?.reload()
-				if let copy { self?.select(name: copy.name) }
-			} catch {
-				self?.copyInFlight = false
-				self?.present(error, while: "Duplicating \u{201C}\(name)\u{201D}")
-			}
+		perform(
+			"Duplicating \u{201C}\(name)\u{201D}", refresh: .list,
+			failed: { $0.copyInFlight = false }
+		) {
+			try await $0.copyVM(
+				vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
+				regenerateMAC: true)
+		} then: { model, _ in
+			model.copyInFlight = false
+		} refreshed: { model, copy in
+			model.select(name: copy.name)
 		}
 	}
 
@@ -290,26 +310,25 @@ extension VMListViewModel {
 	public func safeSave(_ name: String, to newName: String) {
 		guard !safeSaveInFlight else { return }
 		safeSaveInFlight = true
-		Task { [weak self] in
-			do {
-				let saved = try await self?.api.safeSave(vm: name, to: newName)
-				// The run continues as the new VM (the daemon re-keys the live host and keeps
-				// the original, stopped), so its terminals, sessions, layout, torn windows and
-				// last frame go with it — as a rename's do. The original starts fresh and
-				// connects anew when it is started (T17).
-				if let saved { self?.migrateClientState(from: name, to: saved.name) }
-				self?.safeSaveInFlight = false
-				self?.safeSaveRequest = nil        // item binding dismisses the sheet
-				await self?.reload()
-				if let saved {
-					self?.select(name: saved.name)
-					self?.reopenTornWindows(from: name, to: saved.name)
-				}
-			} catch {
-				self?.safeSaveInFlight = false
-				self?.safeSaveRequest = nil        // dismiss first; alert isn't sheet-blocked
-				self?.present(error, while: "Saving \u{201C}\(name)\u{201D} as a new VM")
+		perform(
+			"Saving \u{201C}\(name)\u{201D} as a new VM", refresh: .list,
+			failed: { model in
+				model.safeSaveInFlight = false
+				model.safeSaveRequest = nil        // dismiss first; alert isn't sheet-blocked
 			}
+		) {
+			try await $0.safeSave(vm: name, to: newName)
+		} then: { model, saved in
+			// The run continues as the new VM (the daemon re-keys the live host and keeps
+			// the original, stopped), so its terminals, sessions, layout, torn windows and
+			// last frame go with it — as a rename's do. The original starts fresh and
+			// connects anew when it is started (T17).
+			model.migrateClientState(from: name, to: saved.name)
+			model.safeSaveInFlight = false
+			model.safeSaveRequest = nil        // item binding dismisses the sheet
+		} refreshed: { model, saved in
+			model.select(name: saved.name)
+			model.reopenTornWindows(from: name, to: saved.name)
 		}
 	}
 
@@ -330,14 +349,7 @@ extension VMListViewModel {
 	// System-prompted host install; capabilities refresh afterwards so the availability
 	// row flips without a reconnect.
 	public func installRosetta() {
-		Task { [weak self] in
-			do {
-				try await self?.api.installRosetta()
-				await self?.store.refreshCapabilities()
-			} catch {
-				self?.present(error, while: "Installing Rosetta")
-			}
-		}
+		perform("Installing Rosetta", refresh: .capabilities) { try await $0.installRosetta() }
 	}
 
 	// MARK: - Disks

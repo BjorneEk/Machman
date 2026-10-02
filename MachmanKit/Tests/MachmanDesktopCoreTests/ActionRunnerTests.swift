@@ -474,4 +474,21 @@ struct ActionRunnerTests {
 		#expect(!h.stub.calls.contains("openWindow"))
 		#expect(!h.stub.calls.contains("addDisk"))
 	}
+
+	// Nor does a call in flight keep it alive (V12): released while its save is parked in the
+	// daemon, it is gone at once, and the save it sent still lands for everyone else.
+	@Test func aCallInFlightDoesNotHoldTheViewModel() async {
+		let h = await DesktopHarness.make([Samples.linuxSafeRun("Debian")])
+		h.stub.stalled = ["safeSave"]
+		var other: VMListViewModel? = VMListViewModel(
+			api: h.stub, store: h.store, operations: h.operations, terminals: h.terminals,
+			previews: h.previews, canvases: h.canvases, tornTabs: h.tornTabs)
+		weak var gone = other
+		other?.safeSave("Debian", to: "Debian kept")
+		#expect(await eventually { h.stub.calls.contains("safeSave") })
+		other = nil
+		#expect(gone == nil)
+		h.stub.stalled = []
+		#expect(await eventually { h.viewModel.hasVM("Debian kept") })
+	}
 }
