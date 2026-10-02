@@ -294,10 +294,7 @@ public final class VMRegistry {
 
 	// "<base>", "<base> 2", "<base> 3", … probed against the in-memory map.
 	func uniqueName(base: String) -> String {
-		guard vms[base] != nil else { return base }
-		var n = 2
-		while vms["\(base) \(n)"] != nil { n += 1 }
-		return "\(base) \(n)"
+		UniqueName.numbered(base) { vms[$0] != nil }
 	}
 
 	// vm.safeSave's engine half — vmhost-side ONLY (single-writer: the vmhost moves files it
