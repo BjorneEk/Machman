@@ -214,7 +214,10 @@ public enum SystemKeyCapture: String, Codable, Sendable, Equatable {
 // A guest device as served over the API. Settings are flat optionals (only meaningful for
 // some kinds); `unavailable` is computed by the daemon per host and never persisted.
 public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
-	public var kind: DeviceKind
+	// Assigning a known kind drops any held spelling (the systemKeyCapture pattern).
+	public var kind: DeviceKind {
+		didSet { if kind != .unknown { unknownKindSpelling = nil } }
+	}
 	// Disabled devices stay configured but are not attached at the next start. Non-optional
 	// with a default-true decode (the windowOpen pattern) — daemons always populate it.
 	public var enabled: Bool
@@ -229,8 +232,16 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 	public var unavailable: UnavailabilityInfo?
 	// The wire spelling behind a .unknown systemKeyCapture (a newer peer's mode); nil otherwise.
 	private var unknownCaptureSpelling: String?
+	// The wire spelling behind a .unknown kind (a newer peer's device); nil otherwise (A7).
+	private var unknownKindSpelling: String?
 
-	public var id: String { kind.rawValue }
+	// The kind as the wire spells it: a newer peer's device keeps its own name, so it can be
+	// shown, told apart from another unknown one, and sent back unchanged.
+	public var kindSpelling: String {
+		kind == .unknown ? unknownKindSpelling ?? kind.rawValue : kind.rawValue
+	}
+
+	public var id: String { kindSpelling }
 
 	// systemKeyCapture as the wire (or the daemon's config) spells it. Setting a spelling this
 	// build can't name keeps it verbatim behind .unknown, so a client editing another setting
@@ -263,7 +274,9 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
-		self.kind = try c.decode(DeviceKind.self, forKey: .kind)
+		let spelling = try c.decode(String.self, forKey: .kind)
+		self.kind = DeviceKind(rawValue: spelling) ?? .unknown
+		self.unknownKindSpelling = kind == .unknown ? spelling : nil
 		self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
 		self.displayWidthPixels = try c.decodeIfPresent(Int.self, forKey: .displayWidthPixels)
 		self.displayHeightPixels =
@@ -276,11 +289,12 @@ public struct DeviceInfo: Codable, Sendable, Equatable, Identifiable {
 			try c.decodeIfPresent(String.self, forKey: .systemKeyCapture)
 	}
 
-	// Hand-written only for systemKeyCapture: the spelling, never "unknown". Every other key
-	// encodes exactly as the synthesized conformance did (WireFixtureTests pins the shape).
+	// Hand-written only for the spellings: kind and systemKeyCapture go out as they came in,
+	// never as "unknown". Every other key encodes exactly as the synthesized conformance did
+	// (WireFixtureTests pins the shape).
 	public func encode(to encoder: Encoder) throws {
 		var c = encoder.container(keyedBy: CodingKeys.self)
-		try c.encode(kind, forKey: .kind)
+		try c.encode(kindSpelling, forKey: .kind)
 		try c.encode(enabled, forKey: .enabled)
 		try c.encodeIfPresent(displayWidthPixels, forKey: .displayWidthPixels)
 		try c.encodeIfPresent(displayHeightPixels, forKey: .displayHeightPixels)

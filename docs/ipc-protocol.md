@@ -157,7 +157,7 @@ displayHeightPixels?, displayPixelsPerInch?, systemKeyCapture?, sharesClipboard?
 unavailable?}`; kinds:
 `keyboard, trackpad, pointer, graphics, audioInput, audioOutput, network, clipboard,
 entropy, rosetta, consoleLoginInstaller, sshInstaller, guestSetup` (treat unknown kinds
-as a device you don't recognize). One device per kind. `guestSetup` (1.0.7+, any boot
+as a device you don't recognize, and send its `kind` back unchanged). One device per kind. `guestSetup` (1.0.7+, any boot
 mode) is THE installer: a read-only `GuestSetup` share directory carrying one generated
 script that sets up everything guest-side — console logins, kernel console output, SSH,
 guest→host SSH, sshfs, and boot automounts — plus a writable `GuestReport` drop-box the

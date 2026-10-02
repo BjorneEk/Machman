@@ -1037,8 +1037,9 @@ public final class LocalMachman: MachmanControlling {
 				automounts: state.automounts.isEmpty ? nil : state.automounts,
 				reinstallRequested: state.reinstallRequested)
 		}
-		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served —
-		// they would collide on DeviceInfo's kind-derived id and can't be edited here anyway.
+		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served:
+		// this engine can't edit them, and an older client would still collide them on
+		// DeviceInfo's kind-derived id (A7 keeps the spelling only from this build on).
 		let devices = config.devices.compactMap { device -> DeviceInfo? in
 			guard device.deviceKind != .unknown else { return nil }
 			return Self.deviceInfo(from: device, macGuest: macGuest)
