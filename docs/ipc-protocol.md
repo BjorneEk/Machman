@@ -11,9 +11,11 @@ $TMPDIR/<suite>/machman.sock       suite: $MACHMAN_SUITE_ID, else the process's 
 
 Sockets live in the runtime dir, deliberately **not** in the VM library: `sun_path` is 104 bytes
 and a per-VM socket under the library path would exceed it, and the library is relocatable —
-possibly onto a volume that cannot host a socket at all. The library itself defaults to
-`~/Library/Application Support/<suite>/VMs` and is overridable via the `MachmanDataDir` user
-default.
+possibly onto a volume that cannot host a socket at all. The library is the `VMs` folder of
+the data dir, which defaults to `~/Library/Application Support/<suite>`. The `MachmanDataDir`
+user default overrides the data dir; MachmanAgent reads it from its own defaults domain
+(`<suite>.agent`, e.g. `defaults write com.gustaffranzen.Machman.agent MachmanDataDir
+/Volumes/Big/Machman`) and passes the result to every vmhost it spawns.
 
 Mode 0600 — filesystem permissions are the auth boundary (same user only). One daemon per
 socket: a second instance probes, finds a live listener, and refuses to start; a stale socket
@@ -95,9 +97,9 @@ keep working — nothing is rejected at load.
 | `vm.setHardware` | `{name, cpuCount?, memoryBytes?, nestedVirtualization?}` | `{}` (clamped to host + boot floors; nested virt is 1.0.4+, EFI/kernel boots on supporting hardware — skipped with a warning event otherwise) |
 | `vm.regenerateMAC` | `{name}` | `VMInfo` (new random MAC persisted; refused while running) |
 | `vm.disk.add` | `{name, disk: NewDisk}` | `{}` (a storage disk's name follows the name rules and must be new to the VM — an existing disk or file is never replaced; `sizeBytes` is a positive multiple of 512) |
-| `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected; `invalidState` while another VM uses the owned file) |
+| `vm.disk.remove` | `{name, diskID}` | `{}` (owned files — storage raws and in-dir isos — are deleted with the entry; external files are only disconnected; `invalidState` while the VM runs (1.0.8+) or while another VM uses the owned file) |
 | `vm.disk.import` | `{name, path}` | `VMInfo` (copies the file INTO the VM as an owned disk; format by magic bytes — ISO9660 → iso, qcow2 refused, else raw storage validated as a non-empty 512-multiple; emits `copyProgress`) |
-| `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`; emits `copyProgress`) |
+| `vm.disk.promote` | `{name, diskID}` | `VMInfo` (copies a referenced external disk into the VM and swaps the entry in place, safe flag and position preserved; owned entries refuse with `invalidState`, and so does a running VM (1.0.9+); emits `copyProgress`) |
 | `vm.mount.add` | `{name, path, tag, kind?}` | `{}` (`tag` follows the mount-tag rules; `kind` (1.0.7+): `"virtiofs"` (default) rides the share device, `"sshfs"` is mounted by the guest over its SSH link; sshfs refused for macOS guests) |
 | `vm.mount.remove` | `{name, mountID}` | `{}` |
 | `vm.console.add` | `{name}` | `{}` (appends a virtio console port, guest `/dev/hvcN`; refused while running) |
@@ -114,7 +116,7 @@ keep working — nothing is rejected at load.
 | `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached — a disk switched off on a running VM stays attached until it stops — which `force` does not override; `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
 | `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's unsafe storage disks it attached, whatever their flags say now) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs; like `vm.copy`, the saved VM forgets the last guest-setup run and serves the installer at its next boot, when its SSH keypair is re-minted) |
-| `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
+| `vm.window.open` | `{name}` | `{}` (the VM's vmhost shows its window) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
 | `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` (refused with `invalidState` once macOS is installed or while that VM's install is already running; a retry after a failed or cancelled install starts over) |
@@ -270,8 +272,10 @@ while a safe run impersonates the VM.
 you don't recognize, not an error. The same tolerance applies to every closed string set in
 this document (1.0.8) — `disks[].type`, `boot.mode`, `macInstallState.kind`,
 `ownedKernels[].role`, serial-port `kind`, …: new values may appear as the daemon grows, so
-render them as "unknown", never fail the payload. The daemon rejects values it doesn't know
-in requests with `invalidArgument`. Dates are ISO 8601. New optional fields may appear at any
+render them as "unknown", never fail the payload. The daemon refuses values it doesn't know
+in requests: an unknown value of one of these sets answers `invalidArgument`, while
+`vm.stop`'s `mode` is strict and an unknown one answers -32602 invalid params. Dates are
+ISO 8601. New optional fields may appear at any
 time; absent fields you rely on mean an older daemon.
 
 `InstallPhase`: `{kind: idle|resolving|downloading|installing|installed|failed|interrupted,
@@ -349,6 +353,28 @@ installer to a running VM), removed at VM stop after the final report ingest, an
 at daemon startup for non-hosted VMs — a stopped VM's share holds no payload, so a stale
 script from an older build cannot outlive the run that served it.
 
+**1.0.8 compatibility note**: `vm.disk.remove` refuses while the VM runs (an older daemon
+still unlinks the live attachment's backing file), notifications are never answered, and the
+closed string sets decode unknown values tolerantly. Hence the floor bump.
+
+**1.0.9 compatibility note**: `vm.disk.promote` refuses while the VM runs — an older daemon
+still copies the image under the live attachment's writes and rewires the config beneath it,
+so the next boot silently switches disks. Hence the floor bump; the `timeout` error code is
+additive.
+
+**1.0.10 compatibility note**: the graphics device gained `systemKeyCapture`. An older daemon
+drops it on its next config rewrite and its vmhosts never apply it. Hence the floor bump.
+
+**1.0.11 compatibility note**: `vm.safeSave` moves the disks a safe run wrote directly into
+the saved VM and rewrites the original to reference them. An older daemon never reloads the
+original, so its stale copy can be saved over the rewrite, and it lacks the refusals around
+the save. Hence the floor bump; `vm.copy mountIDs` and `setup.notes` are additive.
+
+**1.0.12 compatibility note**: `vm.setEnabled` gained `devices` (an older daemon ignores the
+key, so a batch toggle silently skips devices), and the daemon refuses setting changes on VMs
+still run by an older vmhost (`outdatedHost`), which is why the vmhost floor is the daemon's
+own version. Hence the floor bump; the other 1.0.12 changes above are additive.
+
 ## Safe runs (invisible on the wire except `safeRun`)
 
 `vm.start {safe: true}` clones the VM into a hidden shadow (safe disks → discardable
@@ -409,8 +435,8 @@ runs on its socket — stop … before starting …").
 
 ## What is deliberately NOT here
 
-The VM display. `VZVirtualMachineView` cannot leave the daemon's process, so VM windows
-are presented by MachmanAgent itself; clients only command them (`vm.window.*`) and poll
+The VM display. `VZVirtualMachineView` cannot leave the process that runs the VM, so each
+VM's window is presented by its vmhost; clients only command it (`vm.window.*`) and poll
 `vm.preview` for thumbnails.
 
 Interactive serial text runs on a separate **data plane**, not the JSON-RPC control socket.
