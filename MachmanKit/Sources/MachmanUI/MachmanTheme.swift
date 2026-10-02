@@ -18,6 +18,8 @@ public enum MachmanColors {
 	public static let stateError = Color.red
 	public static let safeMode = Color.yellow              // kept from StatusIcon's shield
 	public static let warning = Color.orange
+	public static let accepted = Color.green               // a drop that will land
+	public static let problem = Color.red                  // a refused drop, a copy that won't fit
 	public static let destructiveConfirm = Color.red       // dialogs only; buttons stay mono
 	// The accent tokens read Color.accentColor, which follows Settings ▸ Accent through
 	// machmanThemed's .accentColor — except inside a sidebar List's rows, which reset it to

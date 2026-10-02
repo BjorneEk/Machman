@@ -185,7 +185,7 @@ struct MenuBarView: View {
 				}
 				.disabled(!vm.state.isRunning)
 			} label: {
-				// Menu rendering may flatten StatusIcon's blue to a template glyph — the
+				// Menu rendering may flatten StatusIcon's green to a template glyph — the
 				// window/terminal/pause shapes still differentiate the states.
 				Label {
 					Text(vm.name)

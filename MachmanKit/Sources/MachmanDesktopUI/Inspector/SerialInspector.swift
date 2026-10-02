@@ -81,7 +81,7 @@ struct SerialInspector: View {
 			if reloadNeeded {
 				Text("Startup settings changed — reload to apply.")
 					.font(.caption)
-					.foregroundColor(.orange)
+					.foregroundColor(MachmanColors.warning)
 			}
 		}
 	}

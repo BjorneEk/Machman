@@ -111,7 +111,7 @@ struct TreeDropPreviewRow: View {
 	let icon: String
 	@Environment(\.machmanTheme) private var theme
 
-	private var color: Color { preview.isInvalid ? .red : .green }
+	private var color: Color { preview.isInvalid ? MachmanColors.problem : MachmanColors.accepted }
 
 	// Names what the drop adds; a refused drop names what was dragged.
 	private var title: String {

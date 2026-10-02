@@ -115,7 +115,7 @@ struct CopyVMSheet: View {
 						+ "\(ByteSize.display(free)) free"
 					: "\(ByteSize.display(free)) free")
 					.font(.caption)
-					.foregroundColor(bytesNeeded > free ? .red : .secondary)
+					.foregroundColor(bytesNeeded > free ? MachmanColors.problem : .secondary)
 			}
 			HStack {
 				Spacer()
