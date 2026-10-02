@@ -71,6 +71,12 @@ public struct ProgressCardModel: Identifiable, Equatable {
 		self.finished = finished
 		self.cancellable = cancellable
 	}
+
+	// What the bar shows: the fraction; once finished without one (a failure, a cancel
+	// before any progress), an empty bar that holds still; nil spins (still working).
+	public var barValue: Double? {
+		fraction ?? (finished ? 0 : nil)
+	}
 }
 
 public struct ToastStack: View {
@@ -168,7 +174,7 @@ public struct ProgressCard: View {
 					.accessibilityLabel(card.finished ? "Dismiss" : "Cancel")
 				}
 			}
-			if let value = card.fraction {
+			if let value = card.barValue {
 				ProgressView(value: value)
 					.controlSize(.small)
 			} else {
