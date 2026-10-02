@@ -136,11 +136,22 @@ final class UDSListener {
 	// For tests that need to simulate a kill: drop the socket but keep the file, exactly
 	// what SIGKILL leaves behind. The source is cancelled first — a bare close() would free
 	// the fd NUMBER under a still-armed source, which then watches whatever unrelated
-	// socket a parallel test binds to that number (a real in-suite flake).
-	func simulateKillForTesting() {
+	// socket a parallel test binds to that number (a real in-suite flake). A process another
+	// test spawns holds a copy of every descriptor from fork until exec (FD_CLOEXEC does not
+	// shorten that), so the closed socket can go on accepting for a moment and a probe right
+	// after would read it live: this returns once a probe finds it dead, or after awaitDeath.
+	var descriptorForTesting: Int32 { fd }
+
+	func simulateKillForTesting(awaitDeath: Duration = .seconds(5)) {
 		keepAliveTimer.cancel()
 		source.cancel()
 		close(fd)
+		let served = queue.sync { path }
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: awaitDeath)
+		while Self.isLive(path: served), clock.now < deadline {
+			usleep(2_000)
+		}
 	}
 
 	// Sets the socket's and its directory's access and modification times to now; false when

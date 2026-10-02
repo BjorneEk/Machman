@@ -38,6 +38,26 @@ struct CrashRecoveryTests {
 		#expect(UDSListener.isLive(path: path) == true)
 	}
 
+	// A process a parallel test forks holds a copy of the listener until it execs, and the
+	// closed socket goes on accepting meanwhile: a probe right after the kill read it live.
+	// The simulated kill waits that out.
+	@Test func aSimulatedKillOutwaitsACopyOfTheSocket() throws {
+		let path = TestEnvironment.scratch + "mm-copy-\(UUID().uuidString).sock"
+		defer { unlink(path) }
+		let listener = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
+		let copy = dup(listener.descriptorForTesting)   // the forked child's
+		try #require(copy >= 0)
+		DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { close(copy) }   // its exec
+		let clock = ContinuousClock()
+		let start = clock.now
+
+		listener.simulateKillForTesting()
+
+		#expect(!UDSListener.isLive(path: path))
+		#expect(start.duration(to: clock.now) >= .milliseconds(250))
+		#expect(FileManager.default.fileExists(atPath: path))   // what SIGKILL leaves
+	}
+
 	@Test func aSecondLiveListenerIsRefused() throws {
 		let path = TestEnvironment.scratch + "mm-dup-\(UUID().uuidString).sock"
 		let first = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
