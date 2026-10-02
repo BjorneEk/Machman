@@ -256,12 +256,8 @@ struct GuestSetupInspector: View {
 				setupCommands
 				GuideButton(isPresented: $showGuide)
 			}
-			// The serve boundary, stated where it is decided: on = filled live, off =
-			// content leaves with the run (never yanked from under the guest).
 			if installed, vm.state.isRunning {
-				Text(allowReinstall || lastRunFailed
-					? "Serving — the installer is in the share."
-					: "Not serving — clears at shutdown if present.")
+				Text(serveCaption)
 					.font(.caption)
 					.foregroundStyle(.tertiary)
 			}
@@ -278,6 +274,15 @@ struct GuestSetupInspector: View {
 				viewModel.setSetupServed(vm.name, serve: serve)
 			}
 		}
+	}
+
+	// The serve boundary, stated where it is decided: on = filled live, off = content leaves
+	// with the run (never yanked from under the guest). A failed last run serves whatever
+	// the toggle says, so the caption names the failure, not the toggle, as the reason.
+	private var serveCaption: String {
+		if allowReinstall { return "Serving — the installer is in the share." }
+		if lastRunFailed { return "Serving because the last run failed." }
+		return "Not serving — clears at shutdown if present."
 	}
 
 	// The share automounts (either transport): mounting instructions would contradict
