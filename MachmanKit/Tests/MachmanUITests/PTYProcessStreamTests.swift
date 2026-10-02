@@ -179,6 +179,38 @@ struct PTYProcessStreamTests {
 		#expect(sink.text.contains("45 123"), "got \(sink.text)")
 	}
 
+	// P34: a resize drag is a run of sizes; the child hears one SIGWINCH, for the last one.
+	@Test @MainActor func aRunOfSizesReachesTheChildOnceAsTheLast() async throws {
+		var due: [() -> Void] = []
+		let stream = PTYProcessStream(
+			executablePath: "/bin/sh",
+			arguments: ["-c", "trap 'echo WINCH $(stty size)' WINCH; echo READY; "
+				+ "while kill -0 $PPID 2>/dev/null; do sleep 0.05; done"],
+			environmentOverrides: [:], schedule: { _, body in due.append(body) })
+		let sink = StreamSink()
+		stream.onData = { sink.append($0) }
+		defer { stream.stop() }
+		#expect(stream.connect())
+		#expect(await eventually { sink.text.contains("READY") })
+		for step in 0..<20 { stream.setWindowSize(cols: 80 + step, rows: 30) }
+		#expect(stream.windowSizeWrites == 0)
+		due.forEach { $0() }
+		#expect(stream.windowSizeWrites == 1)
+		#expect(await eventually { sink.text.contains("WINCH 30 99") }, "got \(sink.text)")
+	}
+
+	@Test @MainActor func aSizeStillSettlingWhenStoppedNeverReachesThePTY() {
+		var due: [() -> Void] = []
+		let stream = PTYProcessStream(
+			executablePath: "/bin/cat", arguments: [], environmentOverrides: [:],
+			schedule: { _, body in due.append(body) })
+		#expect(stream.connect())
+		stream.setWindowSize(cols: 100, rows: 30)
+		stream.stop()
+		due.forEach { $0() }
+		#expect(stream.windowSizeWrites == 0)
+	}
+
 	// No other descriptor of the app reaches ssh (forkpty would hand it every one).
 	@Test @MainActor func noStrayDescriptorReachesTheChild() async throws {
 		let stray = open("/dev/null", O_RDONLY)   // deliberately not close-on-exec

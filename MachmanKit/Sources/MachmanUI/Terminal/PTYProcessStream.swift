@@ -20,19 +20,42 @@ public final class PTYProcessStream: TerminalByteStream {
 	private var channel: TerminalFDChannel?
 	private var size: winsize?
 	private var finished = false
+	// A size change reaches the child once it has settled this long: each TIOCSWINSZ is a
+	// SIGWINCH, and a full-screen guest app (vim, tmux, htop) repaints for every one (P34).
+	// Longer than the terminal container's 100 ms resize cadence, so a drag in progress sends
+	// nothing until it stops.
+	static let resizeSettle: TimeInterval = 0.15
+	private let schedule: (TimeInterval, @escaping () -> Void) -> Void
+	private var resizeGeneration = 0
+	// Test seam: the window sizes actually handed to the pty after connect().
+	private(set) var windowSizeWrites = 0
 
 	public var onData: ((Data) -> Void)?
 	public var onClose: (() -> Void)?
 
 	// environmentOverrides ride on top of the app's environment — a GUI app carries no
 	// TERM, and without one ssh advertises TERM=dumb to the guest.
-	public init(
+	public convenience init(
 		executablePath: String, arguments: [String],
 		environmentOverrides: [String: String] = [:]
+	) {
+		self.init(
+			executablePath: executablePath, arguments: arguments,
+			environmentOverrides: environmentOverrides,
+			schedule: { delay, body in
+				DispatchQueue.main.asyncAfter(deadline: .now() + delay) { body() }
+			})
+	}
+
+	// `schedule` runs a body on the main thread after a delay (tests run it by hand).
+	init(
+		executablePath: String, arguments: [String], environmentOverrides: [String: String],
+		schedule: @escaping (TimeInterval, @escaping () -> Void) -> Void
 	) {
 		self.executablePath = executablePath
 		self.arguments = arguments
 		self.environmentOverrides = environmentOverrides
+		self.schedule = schedule
 	}
 
 	// One process per stream: a second connect() is refused.
@@ -78,16 +101,24 @@ public final class PTYProcessStream: TerminalByteStream {
 		child?.terminate()
 	}
 
-	// Before connect() the size is kept as the pty's first size.
+	// Before connect() the size is kept as the pty's first size. After it, only the last of
+	// a run of changes reaches the pty, resizeSettle after the run ends. Main thread.
 	public func setWindowSize(cols: Int, rows: Int) {
 		guard cols > 0, rows > 0 else { return }
-		let next = winsize(
+		size = winsize(
 			ws_row: UInt16(clamping: rows), ws_col: UInt16(clamping: cols),
 			ws_xpixel: 0, ws_ypixel: 0)
-		size = next
-		channel?.perform { fd in
-			var value = next
-			_ = ioctl(fd, TIOCSWINSZ, &value)
+		guard channel != nil else { return }
+		resizeGeneration += 1
+		let generation = resizeGeneration
+		schedule(Self.resizeSettle) { [weak self] in
+			guard let self, generation == self.resizeGeneration, !self.finished,
+				let channel = self.channel, let next = self.size else { return }
+			self.windowSizeWrites += 1
+			channel.perform { fd in
+				var value = next
+				_ = ioctl(fd, TIOCSWINSZ, &value)
+			}
 		}
 	}
 
