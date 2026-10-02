@@ -1663,13 +1663,23 @@ public final class RoutingMachman: MachmanControlling {
 			unlink(host.identity.socketPath)
 			throw error
 		}
+		hostStarted(host, name: name, unattached: unattached)
+	}
+
+	// A spawned host whose start returned joins the hosted map, and the router announces the
+	// run: the host's own running state came while it was not hosted, so it was not passed on
+	// (O-6a). Clients that follow states (the desktop's previews) need the stateChanged; the
+	// listChanged after it finds the VM running already, so a start still toasts once.
+	// Internal for tests.
+	func hostStarted(_ host: HostedVM, name: String, unattached: Set<String>) {
 		host.unattachedDisks = unattached
 		hosted[name] = host
 		// Explicit kick, not the event filter: the vmhost emitted .running while start()
 		// was still in flight — before the host was in `hosted`, where the filter looks it
 		// up — so a fresh start would otherwise never discover (the filter still covers guest
-		// reboots).
+		// reboots). A safe run's shadow impersonates the VM's MAC, so this covers it too.
 		startSSHDiscovery(host)
+		registry.events.emit(.stateChanged(vm: name, state: .running))
 		registry.events.emit(.listChanged)
 	}
 
@@ -1814,12 +1824,7 @@ public final class RoutingMachman: MachmanControlling {
 			throw error
 		}
 		// The shadow keeps every entry's flag, so it left these unattached too.
-		host.unattachedDisks = unattached
-		hosted[name] = host
-		// Same missed-running reasoning as the plain start path; the shadow impersonates
-		// the VM's MAC, so discovery works for safe runs too.
-		startSSHDiscovery(host)
-		registry.events.emit(.listChanged)
+		hostStarted(host, name: name, unattached: unattached)
 	}
 
 	// Internal seam (tests inject their own socket path): probe a socket that exists, adopt

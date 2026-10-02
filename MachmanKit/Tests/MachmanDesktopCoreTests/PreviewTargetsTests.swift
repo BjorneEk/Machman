@@ -61,6 +61,22 @@ struct PreviewTargetsTests {
 		previews.detach()
 	}
 
+	// RR3-1: the selected VM starts; the daemon announces the run with a running stateChanged,
+	// and its preview polls from then on, focus unchanged.
+	@Test func aStartedSelectedVMPolls() async {
+		let h = await DesktopHarness.make()
+		let subscribed = h.stub.calls.filter { $0 == "events" }.count
+		let previews = previews(h)
+		#expect(previews.pollingNames.isEmpty)
+		// The service subscribes from a task; an event before that would reach nobody.
+		#expect(await eventually(timeout: .seconds(5)) {
+			h.stub.calls.filter { $0 == "events" }.count > subscribed
+		})
+		h.stub.emit(.stateChanged(vm: "Alpine", state: .running))
+		#expect(await eventually(timeout: .seconds(5)) { previews.pollingNames == ["Alpine"] })
+		previews.detach()
+	}
+
 	// The selection still counts on its own, and a VM both selected and torn polls once.
 	@Test func theSelectionAndTornWindowsShareOneLoopPerVM() async {
 		let h = await DesktopHarness.make()
