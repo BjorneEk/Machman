@@ -78,19 +78,17 @@ struct DeviceImplementationSection: View {
 		Section("Implementation") {
 			if let variant = device.kind.variantLabel(macGuest: macGuest) {
 				LabeledContent("Variant", value: variant)
+					.help(bootModeChoosesVariant
+						? "Set by the boot mode: macOS guests get the Mac device, others the "
+							+ "generic one"
+						: "")
 			}
 			if let className = device.kind.vzClassName(macGuest: macGuest) {
-				LabeledContent("Class") {
-					HStack(spacing: 4) {
-						Text(className)
-							.font(.system(.caption, design: .monospaced))
-							.textSelection(.enabled)
-							.lineLimit(1)
-							.truncationMode(.middle)
-							.help(className)
-						CopyToClipboardButton(className, tooltip: "Copy class name")
-					}
-				}
+				classRow("Class", className)
+			}
+			// The pasteboard rides a spice agent port on the clipboard's console device.
+			if device.kind == .clipboard {
+				classRow("Port", "VZSpiceAgentPortAttachment")
 			}
 			Text(caption)
 				.font(.caption)
@@ -99,20 +97,32 @@ struct DeviceImplementationSection: View {
 		}
 	}
 
+	// One sentence (X1); the clipboard names two classes, its device's and the Port row's.
 	private var caption: String {
-		var text = "The Virtualization framework class this device instantiates — "
-			+ "searchable in Apple's developer documentation."
-		switch device.kind {
-		case .keyboard, .graphics:
-			text += " Chosen by the VM's boot mode: macOS guests get the Mac device, EFI "
-				+ "and kernel boots the generic one."
-		case .clipboard:
-			text += " The sharing itself is a spice agent port (VZSpiceAgentPortAttachment) "
-				+ "on this console device."
-		default:
-			break
+		device.kind == .clipboard
+			? "The Virtualization framework classes behind this device, to look up in Apple’s "
+				+ "documentation."
+			: "The Virtualization framework class behind this device, to look up in Apple’s "
+				+ "documentation."
+	}
+
+	// Why a keyboard or display is the Mac or the generic one; the Variant row's tooltip.
+	private var bootModeChoosesVariant: Bool {
+		device.kind == .keyboard || device.kind == .graphics
+	}
+
+	private func classRow(_ label: String, _ className: String) -> some View {
+		LabeledContent(label) {
+			HStack(spacing: 4) {
+				Text(className)
+					.font(.system(.caption, design: .monospaced))
+					.textSelection(.enabled)
+					.lineLimit(1)
+					.truncationMode(.middle)
+					.help(className)
+				CopyToClipboardButton(className, tooltip: "Copy class name")
+			}
 		}
-		return text
 	}
 }
 
@@ -175,7 +185,7 @@ struct GraphicsInspector: View {
 		Form {
 			Section("Display") {
 				Picker("Resolution", selection: resolutionBinding) {
-					Text("Auto (host screen)").tag(Resolution.auto)
+					Text("Auto (Host Screen)").tag(Resolution.auto)
 					ForEach(commonPresets) { preset in
 						Text(presetLabel(preset.width, preset.height))
 							.tag(Resolution.preset(preset.width, preset.height))
@@ -206,6 +216,13 @@ struct GraphicsInspector: View {
 							.frame(width: 70)
 					}
 				}
+				Text("Auto follows the host screen at each start, and changes apply at the "
+					+ "next boot.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+			}
+			Section {
 				Picker("Capture system keys", selection: captureBinding) {
 					ForEach(
 						GraphicsChoices.captureModes(current: device.systemKeyCapture),
@@ -214,12 +231,8 @@ struct GraphicsInspector: View {
 						Text(captureLabel(mode)).tag(mode)
 					}
 				}
-				.help("Sends shortcuts like ⌘Space and ⌘Tab to the guest; ⌃⌥⌘K toggles it "
-					+ "while running.")
-				Text("Auto sizes from the host screen at start. Changes apply at the "
-					+ "next boot.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
+				.help("Sends shortcuts like ⌘Space and ⌘Tab to the guest, and ⌃⌥⌘K turns "
+					+ "it on or off while the VM runs")
 			}
 			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .graphics)
@@ -230,7 +243,7 @@ struct GraphicsInspector: View {
 	private func presetLabel(_ w: Int, _ h: Int) -> String {
 		let host = viewModel.capabilities?.hostDisplayWidthPixels == w
 			&& viewModel.capabilities?.hostDisplayHeightPixels == h
-		return host ? "Host display (\(w) × \(h))" : "\(w) × \(h)"
+		return host ? "Host Display (\(w) × \(h))" : "\(w) × \(h)"
 	}
 
 	private var resolutionBinding: Binding<Resolution> {
@@ -285,8 +298,8 @@ struct GraphicsInspector: View {
 		switch mode {
 		case .off: return "Off"
 		case .always: return "Always"
-		case .fullScreen: return "Full screen only"
-		case .unknown: return "Newer mode"
+		case .fullScreen: return "In Full Screen"
+		case .unknown: return "Newer Mode"
 		}
 	}
 
@@ -327,7 +340,7 @@ struct NetworkInspector: View {
 								symbol: MachmanSymbols.regenerate,
 								tooltip: vm.state.isRunning
 									? "Stop the VM to change its MAC address"
-									: "New MAC address (guest sees it on next boot)",
+									: "Regenerate MAC address…",
 								font: .callout, flat: true
 							) {
 								regenConfirm = true
@@ -347,8 +360,8 @@ struct NetworkInspector: View {
 			Button("Regenerate") { viewModel.regenerateMAC(vm.name) }
 			Button("Cancel", role: .cancel) {}
 		} message: {
-			Text("\(vm.name) gets a new random MAC. DHCP leases and MAC-based network "
-				+ "rules tied to the old address will stop matching.")
+			Text("\(vm.name) gets a new random MAC address, so DHCP leases and network rules "
+				+ "tied to the old one stop matching.")
 		}
 	}
 }
@@ -363,7 +376,7 @@ struct ClipboardInspector: View {
 
 	var body: some View {
 		Form {
-			Section("Clipboard Sharing") {
+			Section("Clipboard sharing") {
 				Toggle("Share clipboard with guest", isOn: Binding(
 					get: { device.sharesClipboard ?? true },
 					set: { value in
@@ -371,9 +384,7 @@ struct ClipboardInspector: View {
 						updated.sharesClipboard = value
 						viewModel.updateDevice(vm.name, device: updated)
 					}))
-				Text("Spice agent port — Linux/EFI guests only (macOS guests don't "
-					+ "support it). The guest needs spice-vdagent running. Applies at "
-					+ "the next boot.")
+				Text("Needs spice-vdagent running in the guest and applies at the next boot.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
@@ -418,8 +429,8 @@ struct RosettaInspector: View {
 						viewModel.installRosetta()
 					}
 					.liveWhileSettingsLocked()   // installs on this Mac, not in the VM
-					.help("macOS prompts for the download; the VM's share attaches on "
-						+ "the next boot once installed")
+					.help("macOS asks before downloading, and the share attaches at the VM’s "
+						+ "next boot")
 				}
 				if let gate = device.unavailable {
 					Text(gate.message)
@@ -460,7 +471,7 @@ struct NetworkAddressSection: View {
 	let vm: VMInfo
 
 	var body: some View {
-		Section("Guest Address") {
+		Section("Guest address") {
 			LabeledContent("IP") {
 				HStack(spacing: 4) {
 					if let address = vm.ssh?.address {
@@ -468,7 +479,7 @@ struct NetworkAddressSection: View {
 							.font(.system(.callout, design: .monospaced))
 						CopyToClipboardButton(address, tooltip: "Copy address")
 					} else {
-						Text(vm.state.isRunning ? "discovering…" : "— (start the VM)")
+						Text(vm.state.isRunning ? "Discovering…" : "— (start the VM)")
 							.foregroundStyle(.secondary)
 					}
 					if vm.state.isRunning {
@@ -482,7 +493,8 @@ struct NetworkAddressSection: View {
 				}
 			}
 			if let source = vm.ssh?.addressSource {
-				Text(source == "dhcp" ? "via the host's DHCP leases" : "via the ARP table")
+				Text(source == "dhcp"
+					? "Found in this Mac’s DHCP leases." : "Found in the ARP table.")
 					.font(.caption2)
 					.foregroundStyle(.tertiary)
 			}
