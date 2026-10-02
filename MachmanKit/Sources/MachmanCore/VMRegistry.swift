@@ -112,30 +112,27 @@ public final class VMRegistry {
 		presenter.setCaptureMode = { [weak self] name, mode in
 			self?.vms[name]?.runtime?.systemKeyCapture = mode
 		}
+		// Only a vmhost captures, and its registry is restricted to its one VM: that names
+		// the VM the warning is about (F6). The raw window id stays in the unified log
+		// (WindowPresenter.report); one sentence each, the desktop prefixes the VM's name.
 		presenter.onCaptureFailed = { [weak self] failure in
+			guard let self else { return }
+			let message: String
 			switch failure {
-			case .windowNotFound(let id):
-				self?.events.emit(.log(
-					vm: nil, level: .warning,
-					message: "VM window \(id) was not found on screen — preview is blank."))
-				return
+			case .windowNotFound:
+				message = "Its window isn't on screen, so the preview is blank."
 			case .captureReturnedNothing:
-				self?.events.emit(.log(
-					vm: nil, level: .warning,
-					message: "ScreenCaptureKit returned no image — preview is blank."))
-				return
+				message = "ScreenCaptureKit returned no image, so the preview is blank."
 			case .noPermission:
-				// Vmhosts launch as standalone apps, so TCC attributes capture requests to
-				// MachmanVMHost itself — that is the row in System Settings (dev builds show
-				// "MachmanVMHost (Dev)"). macOS caches the answer per process, so a fresh
-				// grant is invisible until this VM's host process is relaunched.
-				self?.events.emit(.log(
-					vm: nil, level: .warning,
-					message: "Screen Recording is not granted — VM previews will be blank. "
-						+ "Enable it for MachmanVMHost in System Settings > Privacy & Security > "
-						+ "Screen Recording, then stop and start this VM: a running process "
-						+ "cannot see a grant it was launched without."))
+				// Vmhosts launch as standalone apps, so TCC attributes capture requests to the
+				// vmhost app itself — "Machman VM" in System Settings ("Machman VM (Dev)" in
+				// dev builds). macOS caches the answer per process, so a fresh grant is
+				// invisible until this VM's host process is relaunched.
+				message = "Screen Recording is off for Machman VM, so previews are blank: "
+					+ "allow it in System Settings › Privacy & Security › Screen Recording, "
+					+ "then stop and start this VM."
 			}
+			self.events.emit(.log(vm: self.restrictedName, level: .warning, message: message))
 		}
 		scan()
 	}
