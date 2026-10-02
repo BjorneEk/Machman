@@ -72,6 +72,45 @@ extension VMListViewModel {
 		}
 	}
 
+	// A batch, one item after another in one task (one disk-heavy copy at a time): a refused
+	// item gets its own alert, titled by `action` for that item, and the rest carry on; `then`
+	// hears how many went through. A view model that went stops the batch.
+	func performEach<Item>(
+		_ items: [Item], action: @escaping (Item) -> String,
+		_ call: @escaping @MainActor (any MachmanControlling, Item) async throws -> Void,
+		then: (@MainActor (VMListViewModel, Int) -> Void)? = nil
+	) {
+		Task { [weak self] in
+			var succeeded = 0
+			for item in items {
+				guard let api = self?.api else { return }
+				do {
+					try await call(api, item)
+					succeeded += 1
+				} catch {
+					self?.refuse(error, while: action(item), to: nil)
+				}
+			}
+			guard let self else { return }
+			then?(self, succeeded)
+		}
+	}
+
+	// The awaited form, for a caller that needs the outcome: the reply, or nil once the
+	// refusal went to the field that asked or to an alert. Its callers are the view model's
+	// own async methods, which hold it for the call as they always did.
+	func attempt<Value>(
+		_ action: String, refused: (@MainActor (String) -> Void)? = nil,
+		_ call: @MainActor (any MachmanControlling) async throws -> Value
+	) async -> Value? {
+		do {
+			return try await call(api)
+		} catch {
+			refuse(error, while: action, to: refused)
+			return nil
+		}
+	}
+
 	// MARK: - VM
 
 	public func toggleRun(_ vm: VMInfo) {
@@ -129,14 +168,10 @@ extension VMListViewModel {
 	}
 
 	public func createVM(template: VMTemplate? = nil) async -> String? {
-		do {
-			let vm = try await api.createVM(template: template)
-			await reload()
-			return vm.name
-		} catch {
-			present(error, while: "Creating a VM")
-			return nil
-		}
+		let created = await attempt("Creating a VM") { try await $0.createVM(template: template) }
+		guard let created else { return nil }
+		await reload()
+		return created.name
 	}
 
 	// The New VM picker's macOS template (H21, decision 15): it opens straight into the
@@ -182,19 +217,17 @@ extension VMListViewModel {
 	func rename(
 		from oldName: String, to newName: String, refused: (@MainActor (String) -> Void)?
 	) async -> Bool {
-		do {
-			try await api.renameVM(named: oldName, to: newName)
-			// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
-			// old-keyed session would look like a vanished VM and its terminals get closed).
-			migrateClientState(from: oldName, to: newName)
-			await reload()
-			select(name: newName)
-			reopenTornWindows(from: oldName, to: newName)
-			return true
-		} catch {
-			refuse(error, while: "Renaming \u{201C}\(oldName)\u{201D}", to: refused)
-			return false
-		}
+		let renamed: Void? = await attempt(
+			"Renaming \u{201C}\(oldName)\u{201D}", refused: refused
+		) { try await $0.renameVM(named: oldName, to: newName) }
+		guard renamed != nil else { return false }
+		// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
+		// old-keyed session would look like a vanished VM and its terminals get closed).
+		migrateClientState(from: oldName, to: newName)
+		await reload()
+		select(name: newName)
+		reopenTornWindows(from: oldName, to: newName)
+		return true
 	}
 
 	// A VM's client-side state follows it to a new name: live terminals and ssh sessions,
@@ -367,17 +400,11 @@ extension VMListViewModel {
 	// before wave 2 picked each name when its copy started. A failed file gets its own
 	// alert and the rest carry on.
 	public func importDisks(_ name: String, paths: [String]) {
-		Task { [weak self] in
-			for path in paths {
-				guard let api = self?.api else { return }
-				do {
-					_ = try await api.importDisk(vm: name, path: path)
-				} catch {
-					let file = (path as NSString).lastPathComponent
-					let action = "Importing \u{201C}\(file)\u{201D} into \u{201C}\(name)\u{201D}"
-					self?.present(error, while: action)
-				}
-			}
+		performEach(paths, action: { path in
+			let file = (path as NSString).lastPathComponent
+			return "Importing \u{201C}\(file)\u{201D} into \u{201C}\(name)\u{201D}"
+		}) { api, path in
+			_ = try await api.importDisk(vm: name, path: path)
 		}
 	}
 
@@ -439,21 +466,14 @@ extension VMListViewModel {
 
 	// References for a batch, one toast for all of them.
 	public func addDisks(_ name: String, _ disks: [NewDisk]) {
-		Task { [weak self] in
-			var added = 0
-			for disk in disks {
-				guard let api = self?.api else { return }
-				do {
-					try await api.addDisk(vm: name, disk)
-					added += 1
-				} catch {
-					let file = disk.path.map { ($0 as NSString).lastPathComponent }
-					let action = file.map { "Adding \u{201C}\($0)\u{201D}" } ?? "Adding a disk"
-					self?.present(error, while: action)
-				}
-			}
+		performEach(disks, action: { disk in
+			let file = disk.path.map { ($0 as NSString).lastPathComponent }
+			return file.map { "Adding \u{201C}\($0)\u{201D}" } ?? "Adding a disk"
+		}) { api, disk in
+			try await api.addDisk(vm: name, disk)
+		} then: { model, added in
 			guard added > 0 else { return }
-			self?.pushToast(
+			model.pushToast(
 				symbol: MachmanSymbols.diskStorage,
 				message: added == 1 ? "Added disk" : "Added \(added) disks")
 		}
@@ -672,13 +692,10 @@ extension VMListViewModel {
 	}
 
 	public func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
-		do {
-			try await api.setKernelBoot(vm: name, enabled: enabled)
-			return true
-		} catch {
-			present(error, while: "Switching boot mode")
-			return false
+		let switched: Void? = await attempt("Switching boot mode") {
+			try await $0.setKernelBoot(vm: name, enabled: enabled)
 		}
+		return switched != nil
 	}
 
 	// Select/deselect an active kernel or initramfs file by rewiring the kernel-boot draft
