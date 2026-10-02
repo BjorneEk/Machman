@@ -107,3 +107,16 @@ struct RoutingRunningVMTests {
 		#expect(routing.runningVMNames == ["beta"])
 	}
 }
+
+// X7: the agent's replace prompt ran three sentences and called the old agent "daemon".
+struct AgentPromptTests {
+	@Test func theReplacePromptIsOneSentence() throws {
+		let prompt = AgentPrompt.replaceOlder(running: "1.0.11", mine: "1.0.12")
+		#expect(prompt.message == "An older Machman Agent is still running")
+		#expect(prompt.info == "Replacing version 1.0.11 with 1.0.12 keeps its VMs running.")
+		#expect(prompt.buttons == ["Replace", "Cancel"])
+		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
+		#expect(prompt.info.matches(of: sentenceEnd).count == 1)
+		#expect(!prompt.info.lowercased().contains("daemon"))
+	}
+}

@@ -74,7 +74,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			NSApp.setActivationPolicy(.regular)
 			NSApp.activate(ignoringOtherApps: true)
 			let alert = NSAlert()
-			alert.messageText = "Machman Agent cannot start"
+			alert.messageText = "Machman Agent can’t start"
 			alert.informativeText = MachmanError.userMessage(for: error)
 			alert.alertStyle = .critical
 			alert.runModal()
@@ -128,16 +128,12 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			NSApp.terminate(nil)
 			return
 		}
-		NSApp.setActivationPolicy(.regular)
-		NSApp.activate(ignoringOtherApps: true)
-		let alert = NSAlert()
-		alert.messageText = "An older Machman Agent is still running"
-		alert.informativeText = "The running daemon is version \(running); this one is "
-			+ "\(mine). Replace it? Its VMs keep running and are re-adopted."
-		alert.addButton(withTitle: "Replace")
-		alert.addButton(withTitle: "Cancel")
-		let replace = alert.runModal() == .alertFirstButtonReturn
-		NSApp.setActivationPolicy(.accessory)
+		// From a run-loop callout, never a modal inside this main-actor Task (which would hold
+		// every other main-actor job behind the alert).
+		let prompt = AgentPrompt.replaceOlder(running: running, mine: mine)
+		let replace = await MainRunLoopCallout.run {
+			runInFront(prompt) == .alertFirstButtonReturn
+		}
 		guard replace else {
 			await client.disconnect()
 			MachmanLogger.log(.log, "keeping the older daemon; exiting")
@@ -163,6 +159,21 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		MachmanLogger.log(.passiveError, "takeover failed: the old daemon did not release "
 			+ "\(path); exiting")
 		NSApp.terminate(nil)
+	}
+
+	// Lends the menu-bar agent a Dock icon and brings the prompt to the front while it shows:
+	// an LSUIElement app's alert can otherwise sit behind every window.
+	private static func runInFront(_ prompt: AgentPrompt) -> NSApplication.ModalResponse {
+		NSApp.setActivationPolicy(.regular)
+		NSApp.activate(ignoringOtherApps: true)
+		defer { NSApp.setActivationPolicy(.accessory) }
+		let alert = NSAlert()
+		alert.messageText = prompt.message
+		alert.informativeText = prompt.info
+		for title in prompt.buttons {
+			alert.addButton(withTitle: title)
+		}
+		return alert.runModal()
 	}
 
 	// VM windows come and go; the daemon lives in the menu bar.

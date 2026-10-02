@@ -21,3 +21,20 @@ public enum AgentQuitDecision: Equatable, Sendable {
 		return reason == .userQuit ? .ask : .cancelQuietly
 	}
 }
+
+// The agent's questions as values (decision 16: one sentence each); the agent turns one into
+// an alert in front of other windows.
+public struct AgentPrompt: Equatable, Sendable {
+	public let message: String
+	public let info: String
+	// The first is the default (Return).
+	public let buttons: [String]
+
+	// A newly launched agent that finds an older one serving: replace it, or leave it be.
+	public static func replaceOlder(running: String, mine: String) -> AgentPrompt {
+		AgentPrompt(
+			message: "An older Machman Agent is still running",
+			info: "Replacing version \(running) with \(mine) keeps its VMs running.",
+			buttons: ["Replace", "Cancel"])
+	}
+}
