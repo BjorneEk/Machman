@@ -117,7 +117,8 @@ struct TerminalTabContent: View {
 // Observes the controller, so a terminal whose socket closed or refused says so and offers to
 // connect again (T25), where a dead terminal used to stay silently empty. The banner waits out
 // a grace period: a normal stop closes the socket a moment before the list drops it, and the
-// tab then shows why there is no terminal instead.
+// tab then shows why there is no terminal instead. The grace runs from when the controller
+// disconnected, so a remount (a tear-off, a tab switch back) of a dead tab says so at once.
 struct SerialSessionSurface: View {
 	@ObservedObject var controller: SerialTerminalController
 	let vmIsStopping: Bool
@@ -133,7 +134,13 @@ struct SerialSessionSurface: View {
 		self.vmIsStopping = vmIsStopping
 		self.grace = grace
 		self.reconnect = reconnect
-		_graceOver = State(initialValue: grace == .zero)
+		_graceOver = State(initialValue: Self.downFor(controller) >= grace)
+	}
+
+	// How long the controller has been without a connection (zero while it has one).
+	private static func downFor(_ controller: SerialTerminalController) -> Duration {
+		guard !controller.connected, let since = controller.disconnectedAt else { return .zero }
+		return .seconds(Date().timeIntervalSince(since))
 	}
 
 	var body: some View {
@@ -150,10 +157,17 @@ struct SerialSessionSurface: View {
 			// Restarted on every flip: a connection resets the grace, a drop starts it.
 			.task(id: controller.connected) {
 				guard grace > .zero else { return }
-				graceOver = false
-				guard !controller.connected else { return }
-				try? await Task.sleep(for: grace)
-				if !Task.isCancelled { graceOver = true }
+				guard !controller.connected else {
+					graceOver = false
+					return
+				}
+				let down = Self.downFor(controller)
+				if down < grace {
+					graceOver = false
+					try? await Task.sleep(for: grace - down)
+					if Task.isCancelled { return }
+				}
+				graceOver = true
 			}
 	}
 }
