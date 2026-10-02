@@ -1,6 +1,6 @@
 //
-//  SSHReportTests.swift
-//  MachmanTests
+//  GuestReportTests.swift
+//  MachmanCoreTests
 //
 //  The guest report parser (defensive: the drop-box is guest-writable) and the state
 //  transitions apply() drives — pending promotion, new-key re-approval, uninstall clear.
@@ -30,6 +30,44 @@ struct GuestReportTests {
 		#expect(report.values["NOT_A_KEY"] == nil)           // whitelist
 		#expect(report.values["IP "] == nil)                 // "IP " is not a key
 		#expect(report.values["HOST_KEY"] == "ssh-ed25519 AAAA guest=host")   // = in value
+	}
+
+	// W2: keys the script writes that no host code reads are not kept; the keys apply()
+	// reads still parse and apply from the same report.
+	@Test @MainActor func unreadReportKeysAreDroppedAndTheRestApplies() throws {
+		let report = GuestReport.parse("""
+			SCRIPT_VERSION=5
+			STATUS=ok
+			FAILED_STEPS=sshd
+			OS_ID=debian
+			HOSTNAME=deb
+			IP=192.168.64.7
+			GATEWAY=192.168.64.1
+			SSHD=1
+			USER=admin
+			HOME=/home/admin
+			TWO_WAY=1
+			SSHFS=1
+			SSHFS_VERSION=3.7.3
+			KERNEL_CONSOLE=hvc0
+			KERNEL_CONSOLE_METHOD=grubby
+			""")
+		for key in [
+			"HOME", "GATEWAY", "TWO_WAY", "SSHD", "SSHFS_VERSION", "FAILED_STEPS",
+			"KERNEL_CONSOLE", "KERNEL_CONSOLE_METHOD",
+		] {
+			#expect(report.values[key] == nil, "\(key) is kept but nothing reads it")
+		}
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "unread-keys")
+			let vm = try VMConfig(name: "unread-keys", memorySize: 1 << 30, cpuCount: 2)
+			#expect(try report.apply(to: vm, stampedAt: Date()).any)
+			#expect(vm.ssh?.guestUser == "admin")
+			#expect(vm.ssh?.guestHostname == "deb")
+			#expect(vm.ssh?.lastAddress == "192.168.64.7")
+			#expect(vm.ssh?.sshfsAvailable == true)
+			#expect(vm.setup?.lastRunStatus == "ok")
+		}
 	}
 
 	@Test func oversizedValuesAndFilesAreRefused() {

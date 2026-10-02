@@ -34,16 +34,16 @@ struct GuestReport {
 	// A hostile guest could fill the 64 KB with section lines; nothing legitimate has
 	// more than a handful per section.
 	static let maxSectionEntries = 64
-	// Whitelist, so a v2 report still applies to a v3 daemon and a future report's extra
-	// keys are ignored rather than fatal.
+	// Whitelist: the keys apply() reads, so a v2 report still applies to a v3 daemon and any
+	// other key is ignored rather than fatal — a future report's extras, and the keys the
+	// script writes that nothing here reads (HOME, GATEWAY, TWO_WAY, SSHD, SSHFS_VERSION,
+	// FAILED_STEPS, KERNEL_CONSOLE, KERNEL_CONSOLE_METHOD).
 	static let allowedKeys: Set<String> = [
-		"SCRIPT_VERSION", "MARKER", "OS_ID", "USER", "HOME", "HOSTNAME",
-		"IP", "GATEWAY", "TWO_WAY", "HOST_KEY", "REVERSE_PUBKEY", "UNINSTALLED",
+		"SCRIPT_VERSION", "MARKER", "OS_ID", "USER", "HOSTNAME",
+		"IP", "HOST_KEY", "REVERSE_PUBKEY", "UNINSTALLED",
 		// 1.0.6: what the run achieved, how it got here, and what the guest can do.
-		"STATUS", "NOTE", "FAILED_STEPS", "TRANSPORT", "OS_FAMILY", "OS_VERSION", "INIT",
-		"SSHD", "SSHFS", "SSHFS_VERSION", "SSHFS_MOUNT_OK", "SSHFS_MOUNTROOT",
-		// 1.0.7: the unified installer's extras.
-		"KERNEL_CONSOLE", "KERNEL_CONSOLE_METHOD",
+		"STATUS", "NOTE", "TRANSPORT", "OS_FAMILY", "OS_VERSION", "INIT",
+		"SSHFS", "SSHFS_MOUNT_OK", "SSHFS_MOUNTROOT",
 	]
 	// Section keys: FEATURE_<wire id>, and CONSOLE_/AUTOMOUNT_/ERROR_/NOTE_<n> (NOTE_<n>:
 	// informational lines; the exact key NOTE is the run's one-sentence summary).

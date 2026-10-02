@@ -175,7 +175,8 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("USER_OVERRIDE"))
 		#expect(s.contains("Which user should Machman set up SSH for?"))
 		#expect(s.contains("candidate_users"))
-		// Report keys the vmhost parser consumes: the v2 vocabulary verbatim, plus the v3
+		// Report keys the script writes (the vmhost parser reads a subset, see
+		// GuestReport.allowedKeys): the v2 vocabulary verbatim, plus the v3
 		// feature/console/automount/error sections and the state file.
 		for key in [
 			"SCRIPT_VERSION=", "MARKER=", "OS_ID=", "USER=", "HOME=", "HOSTNAME=",
