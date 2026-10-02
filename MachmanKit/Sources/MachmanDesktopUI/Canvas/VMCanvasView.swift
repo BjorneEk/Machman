@@ -67,10 +67,13 @@ struct VMCanvasView: View {
 	var body: some View {
 		GeometryReader { geo in
 			let c = canvas
+			// Panes plus dividers always sum to the canvas width (L2).
+			let widths = CanvasPaneLayout.widths(
+				fractions: c.fractions, total: geo.size.width, divider: dividerWidth)
 			HStack(spacing: 0) {
 				ForEach(Array(c.panes.enumerated()), id: \.element.id) { index, pane in
 					paneView(pane, canvas: c)
-						.frame(width: paneWidth(index, canvas: c, total: geo.size.width))
+						.frame(width: widths.indices.contains(index) ? widths[index] : 0)
 					if index < c.panes.count - 1 {
 						paneDivider(index)
 					}
@@ -122,13 +125,6 @@ struct VMCanvasView: View {
 	}
 
 	// MARK: - Layout
-
-	private func paneWidth(_ index: Int, canvas: CanvasState, total: CGFloat) -> CGFloat {
-		let available = total - dividerWidth * CGFloat(canvas.panes.count - 1)
-		let fraction = canvas.fractions.indices.contains(index)
-			? canvas.fractions[index] : 1.0 / Double(canvas.panes.count)
-		return max(120, available * CGFloat(fraction))
-	}
 
 	private func paneDivider(_ index: Int) -> some View {
 		ZStack {

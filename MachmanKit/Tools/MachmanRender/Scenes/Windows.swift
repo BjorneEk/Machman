@@ -71,6 +71,33 @@ enum WindowScenes {
 
 	static let uart = SerialPortRef(kind: .uart, index: 0)
 
+	// Kernel Lab's canvas split into three panes (configuration, Console 0, UART 0) with the
+	// first divider dragged right, as far as the minimum pane width lets it go (L2).
+	@MainActor
+	static func threePanes(_ ctx: SceneContext) {
+		ctx.viewModel.select(name: "Kernel Lab")
+		var canvas = ctx.canvases.canvas(for: "Kernel Lab")
+		canvas.open(.config)
+		canvas.open(.terminal(InspectorScenes.console))
+		canvas.open(.terminal(uart))
+		canvas.split(.terminal(InspectorScenes.console))
+		canvas.split(.terminal(uart))
+		canvas.setFraction(0.7, at: 0)
+		ctx.canvases.setCanvas(canvas, for: "Kernel Lab")
+	}
+
+	// The tree and the inspector, painted over the main window's glass columns.
+	@MainActor
+	static func treeAndInspector(_ ctx: SceneContext) -> [AnyView] {
+		[
+			tree(ctx),
+			AnyView(InspectorView(
+				viewModel: ctx.viewModel, sessions: ctx.terminals,
+				profiles: ctx.profiles, vm: ctx.vm)
+				.padding(.top, 52)),
+		]
+	}
+
 	private static let refusedDetail = "cannot reach MachmanAgent at /var/folders/7k/"
 		+ "0q8n1x52l3gr5mhkzz1y7rr0000gn/T/com.gustaffranzen.Machman/machman.sock: "
 		+ "Connection refused"
@@ -215,6 +242,16 @@ enum WindowScenes {
 			canvas.open(.config)
 			canvas.open(.terminal(InspectorScenes.console))
 			ctx.canvases.setCanvas(canvas, for: "Debian")
+			return mainWindow(ctx, inspector: true)
+		},
+		// L2: three panes with the first divider at its limit stay inside the canvas.
+		RenderScene(
+			"window.main.three-panes",
+			"VMNavigationView, Kernel Lab's canvas in three panes, first divider dragged right",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			panels: treeAndInspector
+		) { ctx in
+			threePanes(ctx)
 			return mainWindow(ctx, inspector: true)
 		},
 		RenderScene(
