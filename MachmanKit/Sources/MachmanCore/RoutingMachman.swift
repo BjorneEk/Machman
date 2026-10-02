@@ -509,6 +509,14 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
+	// A start that never connected. Its reason reads as a sentence, like the relayed errors
+	// that can take its place ("Can’t connect: …", "It speaks API version 2 instead of 1").
+	nonisolated static let hostNeverAnswered = "It never answered"
+	nonisolated static let hostQuitWhileStarting = "It quit while starting"
+	nonisolated static func hostDidNotStart(_ name: String, reason: String) -> String {
+		"Machman VM for \(name) didn’t start: \(reason)"
+	}
+
 	// The identity is minted by the CALLER (safe starts pre-set isSafe/shadowRoot) before
 	// any closure is built: termination and disconnect handlers capture the identity's id,
 	// never the (re-keyable) name. dataDir is the vmhost's scan root — the library for a
@@ -556,11 +564,11 @@ public final class RoutingMachman: MachmanControlling {
 			}
 		}
 
-		var lastError = "it never answered"
+		var lastError = Self.hostNeverAnswered
 		for _ in 0..<40 {
 			try? await Task.sleep(for: .milliseconds(250))
 			guard !app.isTerminated else {
-				lastError = "it quit while starting"
+				lastError = Self.hostQuitWhileStarting
 				break
 			}
 			do {
@@ -574,7 +582,7 @@ public final class RoutingMachman: MachmanControlling {
 		deathWatch.invalidate()
 		app.forceTerminate()
 		throw MachmanError(
-			code: .internalError, message: "Machman VM for \(name) didn’t start: \(lastError)")
+			code: .internalError, message: Self.hostDidNotStart(name, reason: lastError))
 	}
 
 	func connectHost(identity: HostIdentity) async throws -> RemoteMachman {

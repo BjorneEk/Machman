@@ -22,6 +22,25 @@ struct VMRefusalTextTests {
 		#expect(RoutingMachman.safeRunLabel == "Preparing a safe run")
 	}
 
+	// A VM's process that never connected: the reason after the colon reads as a sentence
+	// whether it is the router's own or a relayed connection error.
+	@Test func aHostThatNeverStartedSaysWhyInASentence() {
+		#expect(RoutingMachman.hostDidNotStart("dev", reason: RoutingMachman.hostNeverAnswered)
+			== "Machman VM for dev didn\u{2019}t start: It never answered")
+		#expect(RoutingMachman.hostQuitWhileStarting == "It quit while starting")
+		let reasons = [
+			RoutingMachman.hostNeverAnswered,
+			RoutingMachman.hostQuitWhileStarting,
+			MachmanError.userMessage(
+				for: RPCConnection.ConnectionError.connectFailed("/vm.sock", ECONNREFUSED)),
+			MachmanError.userMessage(
+				for: RemoteMachman.APIVersionMismatch(daemonAPI: 2, clientAPI: 1)),
+		]
+		for reason in reasons {
+			#expect(reason.first?.isUppercase == true, "\(reason)")
+		}
+	}
+
 	@Test @MainActor func operationRefusalsShowNoIDs() {
 		let center = OperationCenter(events: EventBus())
 		let id = center.begin(kind: OperationInfo.Kind.importDisk, label: "Importing a.raw")
