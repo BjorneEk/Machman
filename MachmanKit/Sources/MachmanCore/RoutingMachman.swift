@@ -75,6 +75,12 @@ public final class RoutingMachman: MachmanControlling {
 		// Whether this host ever ran its VM (E12): an idle host from a start whose forward
 		// never happened can take a new start; one whose run stopped is exiting.
 		var sawRun = false
+		// The disk files a start this daemon made left unattached (its disabled entries), or
+		// nil for a start it did not make (an adopted host). The run attached every other
+		// entry, whatever the flags say now: vm.setEnabled edits a running VM's config but
+		// detaches nothing (C5). These paths never move — Save as New VM moves only what
+		// the run attached — so they survive its re-keying.
+		var unattachedDisks: Set<String>?
 
 		init(
 			identity: HostIdentity, client: RemoteMachman,
@@ -1556,6 +1562,8 @@ public final class RoutingMachman: MachmanControlling {
 		let identity = HostIdentity(
 			id: UUID(), name: name, socketPath: hostSocketPath(for: name),
 			macInUse: vm.config.macAddress)
+		// The config the vmhost loads: nothing edits it while the start is reserved.
+		let unattached = vm.config.unattachedDiskFiles
 		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
 		do {
 			try await host.client.start(vm: name, options: options)
@@ -1568,6 +1576,7 @@ public final class RoutingMachman: MachmanControlling {
 			unlink(host.identity.socketPath)
 			throw error
 		}
+		host.unattachedDisks = unattached
 		hosted[name] = host
 		subscribeEvents(host)
 		// Explicit kick, not the event filter: the vmhost emitted .running while start()
@@ -1606,20 +1615,34 @@ public final class RoutingMachman: MachmanControlling {
 
 	// No second writer of one disk file (C5): a VM saved from a safe run owns disks its
 	// original references, and any VM may attach another's image. Running and starting VMs
-	// count; isos (read-only) and disabled disks do not. `force` does NOT override it — lost
-	// networking recovers, a disk written by two VMs does not. A hosted VM's daemon copy can
-	// be stale and a safe run's real config names files its shadow cloned: both only ever
-	// over-refuse. Internal for tests.
+	// count; isos (read-only) do not. `force` does NOT override it — lost networking
+	// recovers, a disk written by two VMs does not. The starting VM attaches its enabled
+	// entries, and so does a start still in flight (nothing edits its config meanwhile). A
+	// running VM's flags can't decide: a disk switched off mid-run stays attached until it
+	// stops, so every entry counts except the ones its start left disabled — known only for
+	// a start this daemon made; for an adopted host each entry counts. Entries are never
+	// removed or renamed while a VM runs, so the daemon's copy, however old, names all it
+	// attached; a safe run's real config names files its shadow cloned, which only ever
+	// over-refuses. Internal for tests.
 	func checkSharedDisks(name: String) throws {
 		guard let mine = registry.vm(named: name)?.config.writableDiskFiles, !mine.isEmpty
 		else { return }
 		for other in Set(hosted.keys).union(pendingStarts).subtracting([name]).sorted() {
-			guard let theirs = registry.vm(named: other)?.config.writableDiskFiles,
-				let file = mine.intersection(theirs).sorted().first else { continue }
+			guard let config = registry.vm(named: other)?.config else { continue }
+			let host = hosted[other]
+			let theirs = host.map {
+				config.everyWritableDiskFile.subtracting($0.unattachedDisks ?? [])
+			} ?? config.writableDiskFiles
+			guard let file = mine.intersection(theirs).sorted().first else { continue }
+			let disk = (file as NSString).lastPathComponent
+			// Only an adopted host's disabled entries name a file it may never have attached.
+			let surely = host?.unattachedDisks != nil || config.writableDiskFiles.contains(file)
 			throw MachmanError(
 				code: .invalidState,
-				message: "\(other) is running with \((file as NSString).lastPathComponent) "
-					+ "attached — stop \(other) before starting \(name)")
+				message: (surely
+					? "\(other) is running with \(disk) attached"
+					: "\(other) may still have \(disk) attached")
+					+ " — stop \(other) before starting \(name)")
 		}
 	}
 
@@ -1629,6 +1652,7 @@ public final class RoutingMachman: MachmanControlling {
 	// its absence makes a vmhost refuse safeSave (the misattribution backstop).
 	private func startSafe(vm: VirtualMachine, name: String, options: StartOptions) async throws {
 		let runRoot = machmanSafeDir + "/" + SafeRun.runPrefix + UUID().uuidString
+		let unattached = vm.config.unattachedDiskFiles   // the config the shadow copies
 		do {
 			try FileManager.default.createDirectory(
 				atPath: runRoot, withIntermediateDirectories: true)
@@ -1700,6 +1724,8 @@ public final class RoutingMachman: MachmanControlling {
 			try? FileManager.default.removeItem(atPath: runRoot)
 			throw error
 		}
+		// The shadow keeps every entry's flag, so it left these unattached too.
+		host.unattachedDisks = unattached
 		hosted[name] = host
 		subscribeEvents(host)
 		// Same missed-running reasoning as the plain start path; the shadow impersonates

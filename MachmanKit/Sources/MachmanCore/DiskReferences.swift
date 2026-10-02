@@ -32,8 +32,18 @@ extension VMConfig {
 
 	// The files a start attaches writable: enabled storage raws and fromUrl images (isos
 	// attach read-only), standardized for comparison.
-	var writableDiskFiles: Set<String> {
-		Set(disks.filter(\.enabled).compactMap { disk -> String? in
+	var writableDiskFiles: Set<String> { writableFiles(of: disks.filter(\.enabled)) }
+
+	// The files a start leaves unattached: the ones only disabled entries name.
+	var unattachedDiskFiles: Set<String> {
+		everyWritableDiskFile.subtracting(writableDiskFiles)
+	}
+
+	// Every file the entries attach writable once enabled, whatever their flags say now.
+	var everyWritableDiskFile: Set<String> { writableFiles(of: disks) }
+
+	private func writableFiles(of entries: [VMDisk]) -> Set<String> {
+		Set(entries.compactMap { disk -> String? in
 			switch disk.kind {
 			case .storage(let name, _): return configFilePath(file: "\(name).raw")
 			case .fromUrl(let url): return url.path

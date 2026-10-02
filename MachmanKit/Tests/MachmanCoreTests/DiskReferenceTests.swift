@@ -11,6 +11,8 @@
 import Testing
 import Foundation
 import MachmanAPI
+import MachmanClient
+import MachmanFixtures
 import MachmanTestSupport
 @testable import MachmanCore
 
@@ -124,6 +126,70 @@ struct DiskReferenceTests {
 			routing.reserveStart("kept", mac: nil)
 			try routing.checkSharedDisks(name: "alpha")
 		}
+	}
+
+	// kept runs on a vmhost this daemon adopted: a stub answering on a scratch socket.
+	@MainActor
+	private func adoptRunning(
+		_ name: String, into routing: RoutingMachman
+	) async throws -> (MachmanServer, RemoteMachman) {
+		let socketPath = TestEnvironment.scratch
+			+ "mm-disk-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms[name] = StubMachman.makeInfo(name, state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		let identity = RoutingMachman.HostIdentity(id: UUID(), name: name, socketPath: socketPath)
+		let client = try await routing.connectHost(identity: identity)
+		routing.adopt(identity: identity, client: client)
+		return (server, client)
+	}
+
+	// vm.setEnabled edits a running VM's config but detaches nothing: a disk switched off
+	// mid-run still blocks a second writer. What a start left unattached is known only for
+	// a start this daemon made. Both VMs name one scratch image, so nothing below depends
+	// on the redirected library.
+	@Test @MainActor func aDiskSwitchedOffMidRunStillBlocksASecondWriter() async throws {
+		let image = TestEnvironment.scratch + "shared-\(UUID().uuidString).img"
+		let file = (image as NSString).lastPathComponent
+		var registry: VMRegistry!
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			for name in ["alpha", "kept"] {
+				try VMConfig.createNewVMDirectory(name: name)
+				let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+				try cfg.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: image))))
+			}
+			registry = VMRegistry()
+			routing = RoutingMachman(registry: registry, daemonVersion: "test")
+		}
+		let (server, client) = try await adoptRunning("kept", into: routing)
+		defer { server.stop() }
+		// The daemon's copy carries the switch after a reload or its own restart.
+		let kept = try #require(registry.vm(named: "kept"))
+		kept.config.disks[0].enabled = false
+		let host = try #require(routing.hostForTesting("kept"))
+
+		// Adopted: what its start attached is unknown, so the switched-off entry counts.
+		var error = try #require(throws: MachmanError.self) {
+			try routing.checkSharedDisks(name: "alpha")
+		}
+		#expect(error.code == .invalidState)
+		#expect(error.message
+			== "kept may still have \(file) attached — stop kept before starting alpha")
+
+		// A start this daemon made with the disk on attached it, whatever the flag says now.
+		host.unattachedDisks = []
+		error = try #require(throws: MachmanError.self) {
+			try routing.checkSharedDisks(name: "alpha")
+		}
+		#expect(error.message
+			== "kept is running with \(file) attached — stop kept before starting alpha")
+
+		// One that left it off attached nothing.
+		host.unattachedDisks = [(image as NSString).standardizingPath]
+		try routing.checkSharedDisks(name: "alpha")
+		await client.disconnect()
 	}
 
 	// The whole start refuses before it spawns anything, force or not. Both VMs name one

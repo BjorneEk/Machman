@@ -105,9 +105,9 @@ keep working — nothing is rejected at load.
 | `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — `path` must name one of the VM's listed owned files once `..` is resolved, else `notFound` — and clears any field referencing it) |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
-| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached, which `force` does not override; `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
+| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached — a disk switched off on a running VM stays attached until it stops — which `force` does not override; `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
-| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's enabled unsafe storage disks) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs; like `vm.copy`, the saved VM forgets the last guest-setup run and serves the installer at its next boot, when its SSH keypair is re-minted) |
+| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's unsafe storage disks it attached, whatever their flags say now) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs; like `vm.copy`, the saved VM forgets the last guest-setup run and serves the installer at its next boot, when its SSH keypair is re-minted) |
 | `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
@@ -334,13 +334,14 @@ shadow AS the VM: name, events, socket, and window are all the real VM's, and th
 deleted on stop (a clean stop copies last-ran and total-runtime back). The ONLY wire
 evidence is `VMInfo.safeRun: true` while the run lives. `vm.setSafety` during a safe run
 edits the discardable shadow; `vm.setStartPolicy` is refused. `vm.safeSave` turns the
-running shadow into a real VM (see the method table). The disks the run wrote directly move
-into the saved VM's folder as its own; the original lists them as references into that
-folder, so the saved VM cannot be deleted or renamed, nor those disks removed or renamed,
-while the original uses them. A save that fails is undone; if a moved disk cannot go back,
-the saved VM stays in the library holding it, both VMs' configs say where each disk is, and
-the daemon lists it at once. Until the promoted VM reboots onto its fresh MAC, starting the
-ORIGINAL requires `force` (macConflict). Safe runs survive
+running shadow into a real VM (see the method table). The disks the run attached directly
+(switching one off mid-run does not detach it) move into the saved VM's folder as its own;
+the original lists them as references into that folder, so the saved VM cannot be deleted
+or renamed, nor those disks removed or renamed, while the original uses them. A save that
+fails is undone; if a moved disk cannot go back, the saved VM stays in the library holding
+it, both VMs' configs say where each disk is, and the daemon lists it at once. Until the
+promoted VM reboots onto its fresh MAC, starting the ORIGINAL requires `force`
+(macConflict). Safe runs survive
 daemon restarts (the daemon re-attaches by matching the shadow's recorded vmhost pid
 against the socket peer) and reset on host reboot.
 

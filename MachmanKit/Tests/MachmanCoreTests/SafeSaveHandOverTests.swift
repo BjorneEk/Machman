@@ -359,6 +359,57 @@ struct SafeSaveHandOverTests {
 		await client.disconnect()
 	}
 
+	// The run switched data off after its start, so data stayed attached and moved with the
+	// save. kept, adopted from disk with the flag off, still blocks alpha from writing it.
+	@Test @MainActor func aSavedRunStillBlocksTheDiskItSwitchedOff() async throws {
+		var registry: VMRegistry!
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			let cfg = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+			try cfg.addNewStorageDisk(name: "data", size: 4096)
+			registry = VMRegistry()
+			routing = RoutingMachman(registry: registry, daemonVersion: "test")
+		}
+		let socketPath = TestEnvironment.scratch
+			+ "mm-off-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath,
+			isSafe: true, shadowRoot: "/nonexistent")
+		let client = try await routing.connectHost(identity: identity)
+		let host = routing.adopt(identity: identity, client: client)
+		host.unattachedDisks = []   // as the safe start recorded it: data was on
+
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "kept")
+			let kept = try VMConfig(name: "kept", memorySize: 2048, cpuCount: 2)
+			try kept.addNewStorageDisk(name: "data", size: 4096)
+			try kept.setEnabled(
+				disks: [kept.disks[0].id: false], mounts: [:], console: [:], uart: [:])
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			let alpha = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+			let moved = url(machmanVMDir + "/kept/data.raw")
+			try alpha.addDisk(disk: VMDisk(kind: .fromUrl(moved), safe: false))
+
+			_ = routing.finishSafeSave(
+				host, from: "alpha", to: "kept",
+				reply: StubMachman.makeInfo("kept", state: .running))
+
+			#expect(registry.vm(named: "kept")?.config.disks.map(\.enabled) == [false])
+			let error = try #require(throws: MachmanError.self) {
+				try routing.checkSharedDisks(name: "alpha")
+			}
+			#expect(error.message
+				== "kept is running with data.raw attached — stop kept before starting alpha")
+		}
+		await client.disconnect()
+	}
+
 	// A save the vmhost could not undo left kept in the library holding alpha's disk, and
 	// rewrote both configs. The daemon lists them at once, not after its next start.
 	@Test @MainActor func theDaemonListsAHalfSavedVMAtOnce() throws {
