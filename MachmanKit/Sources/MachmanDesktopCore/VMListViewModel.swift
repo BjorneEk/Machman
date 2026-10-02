@@ -146,15 +146,25 @@ public final class VMListViewModel: ObservableObject {
 	// Tests shorten a toast's life without touching the user's setting.
 	var toastLifetimeOverride: Duration?
 
+	// MARK: List announcer (VMListViewModel+ListAnnouncer.swift)
+
+	// Last state seen per VM, for outcome toasts: diffing the store's list catches changes
+	// that arrive via reload (no discrete event) and dedupes doubled events.
+	var knownStates: [String: VMState] = [:]
+	var knownSSH: [String: SSHSnapshot] = [:]
+	// Re-run Address Discovery / Check Connection (F4): the VMs waiting on an answer (each
+	// with its timeout) and those that heard one, so even "nothing changed" is said.
+	var rediscovering: [String: Task<Void, Never>] = [:]
+	var rediscoveryAnswered: Set<String> = []
+	// How long a re-run waits before saying the daemon keeps looking (tests shorten it).
+	var rediscoveryWait: Duration = .seconds(30)
+
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
 	private var operationsForwarder: AnyCancellable?
 	private var canvasForwarder: AnyCancellable?
 	private var activeTabReactor: AnyCancellable?
 	private var listReactor: AnyCancellable?
-	// Last state seen per VM, for outcome toasts: diffing the store's list catches changes
-	// that arrive via reload (no discrete event) and dedupes doubled events.
-	private var knownStates: [String: VMState] = [:]
 
 	public var selected: VMInfo? {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
@@ -241,8 +251,7 @@ public final class VMListViewModel: ObservableObject {
 		hasRefreshedList = true
 		reconcileTornTabs(list: list)
 		operationsStore.primeInstallPhases(for: list)
-		diffStatesAndToast(list)
-		diffSSHAndToast(list)
+		announce(list)
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
 		// falls over to the first. (Renames pass through here with the old name still
@@ -256,228 +265,6 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	// Outcome toasts off the list itself (every patch and reload lands here): a VM newly
-	// running/stopped/errored toasts exactly once, transitions stay quiet, and a first
-	// sighting (launch, reconnect, creation) never toasts.
-	private func diffStatesAndToast(_ list: [VMInfo]) {
-		for vm in list {
-			let previous = knownStates[vm.name]
-			knownStates[vm.name] = vm.state
-			guard let previous, previous != vm.state else { continue }
-			// unknown = the daemon could not tell (a vmhost not adopted yet, or one that
-			// never answered): whatever it turns out to be was already so.
-			guard previous != .unknown else { continue }
-			switch vm.state {
-			case .running:
-				pushToast(symbol: MachmanSymbols.start, message: "\(vm.name) started")
-			case .stopped where previous == .running || previous == .stopping:
-				pushToast(symbol: MachmanSymbols.shutDown, message: "\(vm.name) stopped")
-			case .error:
-				pushProblem(
-					symbol: MachmanSymbols.warning, message: "\(vm.name) hit an error",
-					tint: MachmanColors.warning, vm: vm.name, detail: "Stopped with an error",
-					severity: .failure)
-			default:
-				break
-			}
-		}
-		let names = Set(list.map(\.name))
-		knownStates = knownStates.filter { names.contains($0.key) }
-	}
-
-	// What the SSH half of a VM looked like last time, so only MOVEMENT is reported.
-	private struct SSHSnapshot: Equatable {
-		var running = false
-		var address: String?
-		var reachability: SSHInfo.Reachability?
-		var lastReportAt: Date?
-		var reverseState: SSHInfo.ReverseState = .none
-		var setupReportAt: Date?
-		var setupRun: SetupRun?
-	}
-
-	// What a setup RUN decided, as opposed to what any report re-probes (features, consoles,
-	// automounts, OS facts): a boot-time refresh replays the last run's outcome unchanged,
-	// so only a change here is a run worth a toast.
-	private struct SetupRun: Equatable {
-		var installed: Bool?
-		var status: String?
-		var note: String?
-		var errors: [GuestSetupError]?
-		var notes: [GuestSetupNote]?
-		var scriptVersion: Int?
-
-		init?(_ setup: GuestSetupInfo?) {
-			guard let setup else { return nil }
-			installed = setup.installed
-			status = setup.lastRunStatus
-			note = setup.lastRunNote
-			errors = setup.errors
-			notes = setup.notes
-			scriptVersion = setup.scriptVersion
-		}
-	}
-	private var knownSSH: [String: SSHSnapshot] = [:]
-	// Re-run Address Discovery / Check Connection (F4): the VMs waiting on an answer (each
-	// with its timeout) and those that heard one, so even "nothing changed" is said.
-	private var rediscovering: [String: Task<Void, Never>] = [:]
-	private var rediscoveryAnswered: Set<String> = []
-	// How long a re-run waits before saying the daemon keeps looking (tests shorten it).
-	var rediscoveryWait: Duration = .seconds(30)
-
-	public static func sshWaitToastKey(_ vm: String) -> String { "ssh-wait-\(vm)" }
-	public static func rediscoveryToastKey(_ vm: String) -> String { "rediscover-\(vm)" }
-	public static func logToastKey(_ text: String) -> String { "log:" + text }
-
-	// The SSH story, told through toasts: the guest answering at all, then whether its
-	// sshd does, then what its setup run achieved. Same rule as the state diff — a first
-	// sighting (launch, reconnect) never toasts, only a change does.
-	private func diffSSHAndToast(_ list: [VMInfo]) {
-		for vm in list {
-			let now = SSHSnapshot(
-				running: vm.state.isRunning,
-				address: vm.ssh?.address,
-				reachability: vm.ssh?.reachability,
-				lastReportAt: vm.ssh?.lastReportAt,
-				reverseState: vm.ssh?.reverseState ?? .none,
-				setupReportAt: vm.setup?.lastReportAt,
-				setupRun: SetupRun(vm.setup))
-			let previous = knownSSH[vm.name]
-			knownSSH[vm.name] = now
-			// A re-run discovery that heard back says what it found, unchanged or not.
-			if rediscovering[vm.name] != nil, rediscoveryAnswered.contains(vm.name),
-				let address = now.address {
-				endRediscovery(vm.name)
-				if previous?.address == address {
-					pushToast(
-						symbol: MachmanSymbols.network,
-						message: "\(vm.name) is still at \(address)",
-						key: Self.rediscoveryToastKey(vm.name))
-				}   // else the "answered" toast below says it
-			}
-			guard let previous, previous != now else { continue }
-
-			// The guest is on the network — the first sign of life Machman gets.
-			if let address = now.address, previous.address != address, now.running {
-				pushToast(
-					symbol: MachmanSymbols.network, message: "\(vm.name) answered — \(address)")
-			}
-			if previous.reachability != now.reachability {
-				switch now.reachability {
-				case .waiting:
-					pushToast(
-						symbol: MachmanSymbols.deviceSSHSetup,
-						message: "\(vm.name): SSH connecting…",
-						key: Self.sshWaitToastKey(vm.name), spinner: true, sticky: true)
-				case .ready:
-					pushToast(
-						symbol: MachmanSymbols.confirm, message: "\(vm.name): SSH ready",
-						tint: MachmanColors.connected, key: Self.sshWaitToastKey(vm.name))
-				case .unreachable:
-					pushToast(
-						symbol: MachmanSymbols.warning,
-						message: "\(vm.name): SSH not answering"
-							+ (vm.ssh?.reachabilityDetail.map { " — \($0)" } ?? ""),
-						tint: MachmanColors.warning, key: Self.sshWaitToastKey(vm.name))
-				case .unknown, nil:
-					dismissToast(key: Self.sshWaitToastKey(vm.name))
-				}
-			}
-			// A setup run landed. One toast per run: the unified (v3) report speaks for
-			// the whole run; the SSH-only phrasing survives for v2 guests, whose reports
-			// carry no setup half. Every boot re-sends the report: a refresh that changed
-			// only what it probes, not the run's outcome, stays quiet.
-			let setupLanded = now.setupReportAt != nil
-				&& previous.setupReportAt != now.setupReportAt
-				&& previous.setupRun != now.setupRun
-			if setupLanded {
-				if vm.setup?.installed == false {
-					pushToast(
-						symbol: MachmanSymbols.deviceGuestSetup,
-						message: "\(vm.name): guest setup removed")
-				} else if let status = vm.setup?.lastRunStatus, status != GuestRunStatus.ok {
-					pushProblem(
-						symbol: MachmanSymbols.warning,
-						message: "\(vm.name): guest setup \(status) — details in the "
-							+ "inspector",
-						tint: MachmanColors.warning, vm: vm.name,
-						detail: "Guest setup \(status) — details in the inspector",
-						severity: .warning)
-				} else {
-					pushToast(
-						symbol: MachmanSymbols.deviceGuestSetup,
-						message: "\(vm.name): guest setup complete")
-				}
-			} else if vm.setup?.lastReportAt == nil, let stamp = now.lastReportAt,
-				previous.lastReportAt != stamp {
-				let user = vm.ssh?.guestUser ?? "the guest"
-				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
-				if let status = vm.ssh?.lastRunStatus, status != GuestRunStatus.ok {
-					let note = vm.ssh?.lastRunNote.map { " — \($0)" } ?? ""
-					pushProblem(
-						symbol: MachmanSymbols.warning,
-						message: "\(vm.name): SSH setup \(status)\(note)",
-						tint: MachmanColors.warning, vm: vm.name,
-						detail: "SSH setup \(status)\(note)", severity: .warning)
-				} else {
-					pushToast(
-						symbol: MachmanSymbols.deviceSSHSetup,
-						message: "\(vm.name): SSH set up for \(user)\(os)")
-				}
-			}
-			if previous.reverseState != .pending, now.reverseState == .pending {
-				pushProblem(
-					symbol: MachmanSymbols.deviceSSHSetup,
-					message: "\(vm.name) asks to log in to this Mac — approve it in the "
-						+ "SSH section",
-					tint: MachmanColors.warning, vm: vm.name,
-					detail: "Asks to log in to this Mac — approve it in the SSH section",
-					severity: .warning)
-			}
-		}
-		// A VM that stopped or vanished has no pending SSH wait to report on.
-		let names = Set(list.map(\.name))
-		for name in knownSSH.keys where !names.contains(name) {
-			knownSSH[name] = nil
-			dismissToast(key: Self.sshWaitToastKey(name))
-		}
-		for vm in list where !vm.state.isRunning {
-			dismissToast(key: Self.sshWaitToastKey(vm.name))
-		}
-		// …nor a re-run discovery to wait on.
-		let running = Set(list.filter { $0.state.isRunning }.map(\.name))
-		for name in rediscovering.keys where !running.contains(name) {
-			endRediscovery(name)
-		}
-	}
-
-	// The spinner goes up before the RPC: an answer can beat its reply.
-	private func beginRediscovery(_ name: String) {
-		rediscovering[name]?.cancel()
-		rediscoveryAnswered.remove(name)
-		pushToast(
-			symbol: MachmanSymbols.network, message: "Looking for \(name)’s address…",
-			key: Self.rediscoveryToastKey(name), spinner: true, sticky: true)
-		let wait = rediscoveryWait
-		rediscovering[name] = Task { [weak self] in
-			try? await Task.sleep(for: wait)
-			guard !Task.isCancelled, let self else { return }
-			self.rediscovering[name] = nil
-			self.rediscoveryAnswered.remove(name)
-			self.pushToast(
-				symbol: MachmanSymbols.network,
-				message: "No address for \(name) yet — Machman keeps looking",
-				key: Self.rediscoveryToastKey(name))
-		}
-	}
-
-	// The wait is over; its toast is replaced by whoever says how it ended.
-	private func endRediscovery(_ name: String) {
-		rediscovering.removeValue(forKey: name)?.cancel()
-		rediscoveryAnswered.remove(name)
-		dismissToast(key: Self.rediscoveryToastKey(name))
-	}
-
 	private func handle(event: VMEvent) {
 		switch event {
 		case .stateChanged:
@@ -487,20 +274,7 @@ public final class VMListViewModel: ObservableObject {
 		case .installPhaseChanged:
 			break   // OperationsStore owns phases on its own stream
 		case .log(let vm, let level, let message):
-			// The engine logs these in its own process too, but that process is auto-launched —
-			// relaying through the client's logger keeps engine warnings visible from the app
-			// the user actually runs.
-			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
-			if level == .warning || level == .error {
-				// Keyed by its text: a warning repeated while its toast shows restarts that
-				// toast instead of stacking another copy (P15).
-				let text = Self.engineLogText(vm: vm, message: message)
-				pushToast(
-					symbol: MachmanSymbols.warning, message: text, tint: MachmanColors.warning,
-					key: Self.logToastKey(text))
-				// The toast goes in seconds; the activity list keeps the whole text (F6).
-				activity.record(.engineLog(vm: vm, level: level, message: message, at: Date()))
-			}
+			announceEngineLog(vm: vm, level: level, message: message)
 		case .copyProgress:
 			break   // legacy wire event; the operation cards carry all copy progress
 		case .operationChanged:
@@ -550,18 +324,6 @@ public final class VMListViewModel: ObservableObject {
 			try? await Task.sleep(for: Self.representDelay)
 			guard let self else { return }
 			step(self)
-		}
-	}
-
-	// Settings files a store could not read at launch and set aside as a .bak (P19): one
-	// toast each, the first time a view model asks (a reconnect's never repeats it).
-	public func announceSetAsideSettings(_ stores: [any SetAsideReporting]) {
-		for store in stores {
-			guard let file = store.takeSetAsideNotice() else { continue }
-			pushToast(
-				symbol: MachmanSymbols.info,
-				message: "Couldn’t read your \(file.what) — the old file is kept as "
-					+ file.backup.lastPathComponent)
 		}
 	}
 
