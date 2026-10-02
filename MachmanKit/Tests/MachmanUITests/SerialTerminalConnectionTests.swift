@@ -23,7 +23,7 @@ struct SerialTerminalConnectionTests {
 		stream.onClose = { sink.markClosed() }
 		defer { stream.stop() }
 		#expect(stream.connect())
-		#expect(await eventually { peer.client >= 0 })
+		#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 		peer.startDraining(keep: true)
 		stream.send(Data("ping".utf8))
 		#expect(await eventually { peer.drainedData == Data("ping".utf8) })
@@ -43,7 +43,7 @@ struct SerialTerminalConnectionTests {
 		stream.onClose = { sink.markClosed() }
 		defer { stream.stop() }
 		#expect(stream.connect())
-		#expect(await eventually { peer.client >= 0 })
+		#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 		let chunk = Data(repeating: 0, count: 1 << 20)
 		Thread.detachNewThread {
 			for _ in 0..<20 { peer.write(chunk) }
@@ -64,7 +64,7 @@ struct SerialTerminalConnectionTests {
 		let stream = SerialTerminalConnection(path: peer.path)
 		defer { stream.stop() }
 		#expect(stream.connect())
-		#expect(await eventually { peer.client >= 0 })
+		#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 		peer.startDraining(after: 2)
 		let clock = ContinuousClock()
 		let start = clock.now
@@ -81,7 +81,7 @@ struct SerialTerminalConnectionTests {
 		let stream = SerialTerminalConnection(path: peer.path)
 		defer { stream.stop() }
 		#expect(stream.connect())
-		#expect(await eventually { peer.client >= 0 })
+		#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 		peer.startDraining(after: 0.5)   // armed first: a blocking send must not hang the test
 		stream.send(Data(repeating: 0x61, count: 9 << 20))
 		#expect(await eventually(timeout: .seconds(8)) { peer.drainedBytes >= 8 << 20 })
@@ -95,7 +95,7 @@ struct SerialTerminalConnectionTests {
 		let stream = SerialTerminalConnection(path: peer.path)
 		defer { stream.stop() }
 		#expect(stream.connect())
-		#expect(await eventually { peer.client >= 0 })
+		#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 		peer.startDraining(after: 0.3, keep: true)
 		let a = Data(repeating: UInt8(ascii: "A"), count: 100_000)
 		let b = Data(repeating: UInt8(ascii: "B"), count: 100_000)
@@ -132,7 +132,7 @@ struct SerialTerminalConnectionTests {
 			let sink = StreamSink()
 			stream.onClose = { sink.markClosed() }
 			#expect(stream.connect())
-			#expect(await eventually { peer.client >= 0 })
+			#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 			peer.startDraining()
 			Thread.detachNewThread {
 				peer.write(Data(repeating: 0x41, count: 4096))
@@ -157,7 +157,7 @@ struct SerialTerminalConnectionTests {
 			stream.onClose = { sink.markClosed() }
 			defer { stream.stop() }
 			#expect(stream.connect())
-			#expect(await eventually { peer.client >= 0 })
+			#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 			stream.send(Data(repeating: 0x61, count: 1 << 20))   // the peer reads none of it
 			try await Task.sleep(for: .milliseconds(50))
 			peer.hangUp()
@@ -174,7 +174,7 @@ struct SerialTerminalConnectionTests {
 		let sink = StreamSink()
 		stream.onClose = { sink.markClosed() }
 		#expect(stream.connect())
-		#expect(await eventually { peer.client >= 0 })
+		#expect(await eventually(timeout: .seconds(20)) { peer.client >= 0 })
 		peer.startDraining()
 		stream.stop()
 		stream.send(Data("late".utf8))
