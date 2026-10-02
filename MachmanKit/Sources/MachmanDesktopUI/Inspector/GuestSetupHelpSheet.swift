@@ -77,20 +77,9 @@ struct GuestSetupHelpSheet: View {
 			// One choice for the whole page, stated once at the top: every command below
 			// follows it.
 			if tab != .info {
-				HStack(spacing: 10) {
-					Text("Run commands as")
-						.font(.system(size: HelpSheetType.small))
-						.foregroundStyle(.secondary)
-					Picker("Run commands as", selection: Binding(
-						get: { resolved }, set: { escalation = $0 })) {
-						ForEach(escalations) { Text($0.label).tag($0) }
-					}
-					.pickerStyle(.segmented)
-					.labelsHidden()
-					.frame(width: 190)
-					Spacer()
-				}
-				.padding(.top, 2)
+				HelpRunAsPicker(
+					choices: escalations,
+					selection: Binding(get: { resolved }, set: { escalation = $0 }))
 			}
 		} page: {
 			GuestSetupGuidePage(vm: vm, tab: tab, escalation: resolved)

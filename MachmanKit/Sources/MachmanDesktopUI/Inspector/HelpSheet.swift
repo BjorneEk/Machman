@@ -10,6 +10,7 @@
 
 import SwiftUI
 import MachmanUI
+import MachmanDesktopCore
 
 enum HelpSheetType {
 	static let title: CGFloat = 19
@@ -68,6 +69,29 @@ struct HelpSheetFrame<Header: View, Page: View>: View {
 }
 
 // MARK: - Building blocks
+
+// How the page's commands get root: one choice, stated once above the page, that every
+// command below follows (a root console needs no prefix, OpenBSD ships doas).
+struct HelpRunAsPicker: View {
+	let choices: [GuestEscalation]
+	@Binding var selection: GuestEscalation
+
+	var body: some View {
+		HStack(spacing: 10) {
+			Text("Run commands as")
+				.font(.system(size: HelpSheetType.small))
+				.foregroundStyle(.secondary)
+			Picker("Run commands as", selection: $selection) {
+				ForEach(choices) { Text($0.label).tag($0) }
+			}
+			.pickerStyle(.segmented)
+			.labelsHidden()
+			.frame(width: 190)
+			Spacer()
+		}
+		.padding(.top, 2)
+	}
+}
 
 struct HelpIntro: View {
 	let text: String
