@@ -118,13 +118,16 @@ struct TerminalTabContent: View {
 // connect again (T25), where a dead terminal used to stay silently empty. The banner waits out
 // a grace period: a normal stop closes the socket a moment before the list drops it, and the
 // tab then shows why there is no terminal instead. The grace runs from when the controller
-// disconnected, so a remount (a tear-off, a tab switch back) of a dead tab says so at once.
+// disconnected, so a remount (a tear-off, a tab switch back) of a dead tab says so soon — but
+// never before remountMinimum: a mount's own deferred reconnect (a VM just started again)
+// lands first, and a banner that would vanish a frame later never draws.
 struct SerialSessionSurface: View {
 	@ObservedObject var controller: SerialTerminalController
 	let vmIsStopping: Bool
 	let grace: Duration
 	let reconnect: () -> Void
 	@State private var graceOver: Bool
+	static let remountMinimum: Duration = .milliseconds(250)
 
 	init(
 		controller: SerialTerminalController, vmIsStopping: Bool, grace: Duration,
@@ -134,13 +137,13 @@ struct SerialSessionSurface: View {
 		self.vmIsStopping = vmIsStopping
 		self.grace = grace
 		self.reconnect = reconnect
-		_graceOver = State(initialValue: Self.downFor(controller) >= grace)
+		_graceOver = State(initialValue: grace == .zero)
 	}
 
 	// How long the controller has been without a connection (zero while it has one).
-	private static func downFor(_ controller: SerialTerminalController) -> Duration {
+	private var down: Duration {
 		guard !controller.connected, let since = controller.disconnectedAt else { return .zero }
-		return .seconds(Date().timeIntervalSince(since))
+		return .now - since
 	}
 
 	var body: some View {
@@ -157,17 +160,10 @@ struct SerialSessionSurface: View {
 			// Restarted on every flip: a connection resets the grace, a drop starts it.
 			.task(id: controller.connected) {
 				guard grace > .zero else { return }
-				guard !controller.connected else {
-					graceOver = false
-					return
-				}
-				let down = Self.downFor(controller)
-				if down < grace {
-					graceOver = false
-					try? await Task.sleep(for: grace - down)
-					if Task.isCancelled { return }
-				}
-				graceOver = true
+				graceOver = false
+				guard !controller.connected else { return }
+				try? await Task.sleep(for: max(grace - down, Self.remountMinimum))
+				if !Task.isCancelled { graceOver = true }
 			}
 	}
 }

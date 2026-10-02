@@ -24,7 +24,8 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	@Published var connected = false
 	// When the terminal lost its connection, or first failed to get one: a tab mounted again
 	// later (torn off, switched back to) counts its banner's grace from here, not from its mount.
-	private(set) var disconnectedAt: Date?
+	// A monotonic clock, so a system clock set back can't stretch the grace.
+	private(set) var disconnectedAt: ContinuousClock.Instant?
 	// Which container is currently responsible for showing this terminal. There is only
 	// ever ONE TerminalView, and SwiftUI can update a mount that is on its way out AFTER
 	// its replacement has adopted the view — tearing a tab into its own window does
@@ -127,7 +128,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 			guard let self else { return }
 			if let c { self.lastStream = c }
 			self.connection = nil
-			self.disconnectedAt = Date()
+			self.disconnectedAt = .now
 			self.connected = false
 		}
 		// The terminal's current size is the new session's first size: a reconnect, or a
@@ -140,7 +141,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 			disconnectedAt = nil
 			connected = true
 		} else if disconnectedAt == nil {
-			disconnectedAt = Date()   // a failed retry keeps the first failure's time
+			disconnectedAt = .now   // a failed retry keeps the first failure's time
 		}
 	}
 
