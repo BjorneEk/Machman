@@ -44,3 +44,19 @@ extension Samples {
 		linux(name, state: .stopping)
 	}
 }
+
+extension Samples {
+	// A disk import that failed part-way, with the copier's error as its message (L4).
+	public static func failedImport(
+		vm: String = "Debian", file: String = "big-archive-disk-image-2026.raw"
+	) -> OperationInfo {
+		OperationInfo(
+			id: "op-import-failed", kind: OperationInfo.Kind.importDisk, vm: vm,
+			label: "Importing \(file)", fraction: 0.62,
+			completedBytes: 40 << 30, totalBytes: 64 << 30,
+			startedAt: now.addingTimeInterval(-300), state: OperationInfo.State.failed,
+			message: "The file \u{201C}\(file)\u{201D} couldn\u{2019}t be copied because there "
+				+ "isn\u{2019}t enough space on the volume.",
+			cancellable: true)
+	}
+}

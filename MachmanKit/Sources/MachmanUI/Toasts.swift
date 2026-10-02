@@ -138,6 +138,7 @@ public struct ProgressCard: View {
 				Text(card.title)
 					.font(.system(size: 12, weight: .medium))
 					.lineLimit(1)
+					.help(card.title)
 				Spacer(minLength: 8)
 				if card.finished || card.cancellable {
 					Button(action: dismiss) {
@@ -161,10 +162,14 @@ public struct ProgressCard: View {
 					.controlSize(.small)
 			}
 			HStack {
+				// A finished card's phase is its outcome, often a failure's sentence: it wraps
+				// (L4); the activity list keeps the whole text.
 				Text(card.phase)
 					.font(.caption)
 					.foregroundStyle(.secondary)
-					.lineLimit(1)
+					.lineLimit(card.finished ? 3 : 1)
+					.fixedSize(horizontal: false, vertical: true)
+					.help(card.phase)
 				Spacer(minLength: 8)
 				if let eta = card.etaSeconds, eta > 0.5 {
 					Text(Self.etaString(eta))

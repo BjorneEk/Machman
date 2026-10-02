@@ -90,5 +90,15 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		RenderScene(
+			"overlay.cards.failed-long",
+			"NotificationOverlay: a failed import whose message is a whole sentence",
+			widths: [420], height: 320
+		) { ctx in
+			ctx.stub.emit(.operationChanged(op: Samples.failedImport()))
+			Offscreen.pump(until: { !ctx.operations.operations.isEmpty })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }
