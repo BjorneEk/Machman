@@ -166,10 +166,7 @@ public final class TerminalProfileStore: ObservableObject {
 
 	private func uniqueName(basedOn base: String) -> String {
 		let used = Set(profiles.map(\.name))
-		if !used.contains(base) { return base }
-		var n = 2
-		while used.contains("\(base) \(n)") { n += 1 }
-		return "\(base) \(n)"
+		return UniqueName.numbered(base, isTaken: used.contains)
 	}
 
 	private func save() {

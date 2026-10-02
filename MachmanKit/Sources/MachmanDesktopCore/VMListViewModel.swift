@@ -954,11 +954,7 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	public func defaultCopyName(for name: String) -> String {
-		let base = "\(name) copy"
-		guard hasVM(base) else { return base }
-		var n = 2
-		while hasVM("\(base) \(n)") { n += 1 }
-		return "\(base) \(n)"
+		UniqueName.numbered("\(name) copy") { hasVM($0) }
 	}
 
 	public func askDiskAdd(vm: String, urls: [URL]) {
@@ -1120,11 +1116,7 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	public func defaultSafeSaveName(for name: String) -> String {
-		let base = "\(name) saved"
-		guard hasVM(base) else { return base }
-		var n = 2
-		while hasVM("\(base) \(n)") { n += 1 }
-		return "\(base) \(n)"
+		UniqueName.numbered("\(name) saved") { hasVM($0) }
 	}
 
 	public func safeSave(_ name: String, to newName: String) {

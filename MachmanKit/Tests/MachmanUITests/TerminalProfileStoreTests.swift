@@ -68,6 +68,16 @@ struct TerminalProfileStoreTests {
 		#expect(store.profiles.contains { $0.id == copy.id })
 	}
 
+	// Q4: new and duplicated profiles number past the names already taken.
+	@Test func newAndDuplicatedProfilesNumberPastTakenNames() {
+		let store = TerminalProfileStore(fileURL: tempURL())
+		let first = store.addProfile()
+		#expect(first.name == "New Profile")
+		#expect(store.addProfile().name == "New Profile 2")
+		#expect(store.duplicate(id: first.id).name == "New Profile copy")
+		#expect(store.duplicate(id: first.id).name == "New Profile copy 2")
+	}
+
 	@Test func deleteRefusesDefaultAndPrunesAssociations() {
 		let store = TerminalProfileStore(fileURL: tempURL())
 		store.delete(id: store.defaultProfile.id)
