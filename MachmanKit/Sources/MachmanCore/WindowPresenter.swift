@@ -272,7 +272,7 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		do {
 			try await stop(name, .force)
 		} catch {
-			_ = await ask(.forceStopFailed(name, reason: error.localizedDescription))
+			_ = await ask(.forceStopFailed(name, reason: MachmanError.userMessage(for: error)))
 		}
 	}
 

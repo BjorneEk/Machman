@@ -119,7 +119,10 @@ enum VMCopier {
 			config = try JSONDecoder().decode(
 				VMConfig.self, from: try Data(contentsOf: URL(fileURLWithPath: src + "/config")))
 		} catch {
-			throw MachmanError(code: .ioFailure, message: "unreadable config at \(src): \(error)")
+			throw MachmanError(
+				code: .ioFailure,
+				message: "Couldn’t read the settings of \((src as NSString).lastPathComponent): "
+					+ MachmanError.userMessage(for: error))
 		}
 		let staging = request.destinationParent + "/" + stagingPrefix + UUID().uuidString
 		do {

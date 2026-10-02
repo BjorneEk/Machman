@@ -96,7 +96,9 @@ public final class VMRegistry {
 			do {
 				try await self.stop(vm, mode: mode)
 			} catch {
-				vm.log(error: "Failed to stop VM: \(name): \(error)")
+				// An engine refusal already names the VM and says what to do.
+				let reason = MachmanError.userMessage(for: error)
+				vm.log(error: error is MachmanError ? reason : "Couldn’t stop: \(reason)")
 				throw error
 			}
 		}
@@ -490,7 +492,9 @@ public final class VMRegistry {
 			config = try VMConfig.load(name: name, library: library)
 		} catch {
 			throw MachmanError(
-				code: .ioFailure, message: "cannot read the new VM '\(name)': \(error)")
+				code: .ioFailure,
+				message: "Couldn’t read the new VM \u{201C}\(name)\u{201D}: "
+					+ MachmanError.userMessage(for: error))
 		}
 		config.excludeDiskImagesFromBackup()
 		let vm = VirtualMachine(config: config, events: events)

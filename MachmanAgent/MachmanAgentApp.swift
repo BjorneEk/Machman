@@ -75,7 +75,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			NSApp.activate(ignoringOtherApps: true)
 			let alert = NSAlert()
 			alert.messageText = "Machman Agent cannot start"
-			alert.informativeText = "\(error)"
+			alert.informativeText = MachmanError.userMessage(for: error)
 			alert.alertStyle = .critical
 			alert.runModal()
 			NSApp.terminate(nil)

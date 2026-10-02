@@ -66,7 +66,8 @@ public struct ConnectionProblem: Equatable {
 		default:
 			// RPCConnection.ConnectionError (connect refused, connection lost) and anything
 			// unforeseen: the agent is, as far as this client can tell, not there.
-			return ConnectionProblem(kind: .unreachable, detail: String(describing: error))
+			return ConnectionProblem(
+				kind: .unreachable, detail: MachmanError.userMessage(for: error))
 		}
 	}
 }

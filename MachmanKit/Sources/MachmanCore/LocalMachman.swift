@@ -155,7 +155,7 @@ public final class LocalMachman: MachmanControlling {
 				opID,
 				state: cancelFlag.get()
 					? OperationInfo.State.cancelled : OperationInfo.State.failed,
-				message: "\(error)")
+				message: MachmanError.userMessage(for: error))
 			throw error
 		}
 		center.finish(opID, state: OperationInfo.State.succeeded)
@@ -338,7 +338,7 @@ public final class LocalMachman: MachmanControlling {
 				opID,
 				state: cancelFlag.get()
 					? OperationInfo.State.cancelled : OperationInfo.State.failed,
-				message: "\(error)")
+				message: MachmanError.userMessage(for: error))
 			throw error
 		}
 	}
@@ -415,7 +415,8 @@ public final class LocalMachman: MachmanControlling {
 			}.value
 		} catch {
 			operationCenter.finish(
-				opID, state: OperationInfo.State.failed, message: "\(error)")
+				opID, state: OperationInfo.State.failed,
+				message: MachmanError.userMessage(for: error))
 			throw error
 		}
 		operationCenter.finish(opID, state: OperationInfo.State.succeeded)
@@ -853,7 +854,8 @@ public final class LocalMachman: MachmanControlling {
 			vm = try registry.promoteRestrictedVM(to: newName)
 		} catch {
 			operationCenter.finish(
-				opID, state: OperationInfo.State.failed, message: "\(error)")
+				opID, state: OperationInfo.State.failed,
+				message: MachmanError.userMessage(for: error))
 			throw error
 		}
 		operationCenter.finish(opID, state: OperationInfo.State.succeeded)

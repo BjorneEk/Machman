@@ -541,7 +541,7 @@ public final class RoutingMachman: MachmanControlling {
 				return HostedVM(
 					identity: identity, client: client, app: app, deathWatch: deathWatch)
 			} catch {
-				lastError = "\(error)"
+				lastError = MachmanError.userMessage(for: error)
 			}
 		}
 		deathWatch.invalidate()
@@ -1589,7 +1589,7 @@ public final class RoutingMachman: MachmanControlling {
 				if let error {
 					center.finish(
 						opID, state: OperationInfo.State.failed,
-						message: error.localizedDescription)
+						message: MachmanError.userMessage(for: error))
 				} else {
 					center.finish(opID, state: OperationInfo.State.succeeded)
 				}
@@ -1781,7 +1781,8 @@ public final class RoutingMachman: MachmanControlling {
 				}.value
 			} catch {
 				center.finish(
-					opID, state: OperationInfo.State.failed, message: "\(error)")
+					opID, state: OperationInfo.State.failed,
+					message: MachmanError.userMessage(for: error))
 				throw error
 			}
 			center.finish(opID, state: OperationInfo.State.succeeded)

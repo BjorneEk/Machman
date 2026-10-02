@@ -14,8 +14,15 @@ import Foundation
 import Virtualization
 import MachmanAPI
 
-enum VirtualMachineError: Error {
+enum VirtualMachineError: Error, LocalizedError {
 	case critical(String)
+
+	// The sentence itself, so every user-facing path (MachmanError.userMessage) shows it.
+	var errorDescription: String? {
+		switch self {
+		case .critical(let message): return message
+		}
+	}
 }
 
 struct HostMountPoint: Codable, Identifiable {
@@ -857,7 +864,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 				to: URL(fileURLWithPath: vmIdentifierPath), options: .atomic)
 		} catch {
 			throw VirtualMachineError.critical(
-				"Failed to store the machine identifier '\(vmIdentifierPath)': \(error)")
+				"Couldn’t save \(name)’s machine identifier: "
+					+ MachmanError.userMessage(for: error))
 		}
 		return machineIdentifier
 	}
@@ -870,8 +878,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			return try createVmIdentifier(vmIdentifierPath)
 		}
 		guard let machineIdentifier = VZGenericMachineIdentifier(dataRepresentation: data) else {
-			throw VirtualMachineError.critical(
-				"Failed to create the machine identifier: '\(vmIdentifierPath)'")
+			throw VirtualMachineError.critical("\(name)’s machine identifier can’t be read")
 		}
 		return machineIdentifier
 	}
@@ -881,7 +888,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			return try VZEFIVariableStore(creatingVariableStoreAt: URL(fileURLWithPath: efiVarsPath))
 		} catch {
 			throw VirtualMachineError.critical(
-				"Failed to create the EFI variable store '\(efiVarsPath)': \(error)")
+				"Couldn’t create \(name)’s EFI variable store: "
+					+ MachmanError.userMessage(for: error))
 		}
 	}
 
@@ -915,19 +923,27 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	func isoImageDeviceConfig(isoPath: URL) throws -> VZUSBMassStorageDeviceConfiguration {
-		guard let intallerDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: isoPath, readOnly: true) else {
-			throw VirtualMachineError.critical("Failed to create iso disk: '\(isoPath)' attachment for: \(name)")
+		let attachment: VZDiskImageStorageDeviceAttachment
+		do {
+			attachment = try VZDiskImageStorageDeviceAttachment(url: isoPath, readOnly: true)
+		} catch {
+			throw VirtualMachineError.critical(
+				"Couldn’t attach \(isoPath.lastPathComponent): "
+					+ MachmanError.userMessage(for: error))
 		}
-		return VZUSBMassStorageDeviceConfiguration(attachment: intallerDiskAttachment)
+		return VZUSBMassStorageDeviceConfiguration(attachment: attachment)
 	}
 
 	func diskDeviceConfig(diskUrl: URL) throws -> VZVirtioBlockDeviceConfiguration {
-		guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: diskUrl, readOnly: false) else {
-			throw VirtualMachineError.critical("Failed to create disk: '\(diskUrl)' attachment for: \(name)")
+		let attachment: VZDiskImageStorageDeviceAttachment
+		do {
+			attachment = try VZDiskImageStorageDeviceAttachment(url: diskUrl, readOnly: false)
+		} catch {
+			throw VirtualMachineError.critical(
+				"Couldn’t attach \(diskUrl.lastPathComponent): "
+					+ MachmanError.userMessage(for: error))
 		}
-
-		let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
-		return mainDisk
+		return VZVirtioBlockDeviceConfiguration(attachment: attachment)
 	}
 	static func formatUrl(from url: URL, _ n: Int) -> String {
 		let components = url.pathComponents.filter { $0 != "/" }

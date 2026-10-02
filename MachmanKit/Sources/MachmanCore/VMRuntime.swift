@@ -150,9 +150,10 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 
 	nonisolated func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
 		Task { @MainActor in
+			// The desktop names the VM ("<VM>: …"), so the sentence doesn't.
 			self.events.emit(.log(
 				vm: self.config.name, level: .error,
-				message: "\(self.config.name) stopped with error: \(error)"))
+				message: "Stopped with an error: \(MachmanError.userMessage(for: error))"))
 			self.teardown()
 		}
 	}

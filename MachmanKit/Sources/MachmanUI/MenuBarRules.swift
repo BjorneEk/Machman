@@ -51,8 +51,9 @@ public struct MenuBarFailure: Equatable, Sendable {
 			title = "Couldn't close \(vm)'s window"
 			forceStart = nil
 		}
-		// The desktop's rule: the daemon's own sentence, never NSError boilerplate.
-		message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+		// The desktop's rule (MachmanError.userMessage): the daemon's own sentence, never a
+		// struct dump or NSError boilerplate.
+		message = MachmanError.userMessage(for: error)
 	}
 }
 

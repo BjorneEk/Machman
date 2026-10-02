@@ -657,11 +657,10 @@ public final class VMListViewModel: ObservableObject {
 		present(message: Self.message(for: error), while: action)
 	}
 
-	// localizedDescription on a non-LocalizedError is NSError-bridge boilerplate ("The
-	// operation couldn't be completed…"); String(describing:) picks up the connection
-	// errors' CustomStringConvertible instead.
+	// The shared rule (MachmanError.userMessage): the error's own sentence, never a struct
+	// dump or an NSError's "Error Domain=… Code=…".
 	static func message(for error: Error) -> String {
-		(error as? LocalizedError)?.errorDescription ?? String(describing: error)
+		MachmanError.userMessage(for: error)
 	}
 
 	// MARK: - Install phases

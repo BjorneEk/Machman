@@ -57,6 +57,15 @@ struct MenuBarRulesTests {
 			.message == "the agent's socket is gone")
 	}
 
+	// E28: an NSError reads its own sentence, never "Error Domain=… Code=…".
+	@Test func anNSErrorUsesItsLocalizedDescription() {
+		let error = NSError(domain: "VZErrorDomain", code: 1, userInfo: [
+			NSLocalizedDescriptionKey: "The window can’t open.",
+		])
+		let failure = MenuBarFailure(vm: "Debian", action: .openWindow, error: error)
+		#expect(failure.message == "The window can’t open.")
+	}
+
 	@Test func startWaitsForAMacOSInstall() {
 		var mac = VMInfo(
 			name: "Sequoia", state: .stopped, created: Date(timeIntervalSince1970: 1_700_000_000),

@@ -393,7 +393,7 @@ public final class MachmanServer {
 			send(client, RPCErrorReply(id: id, error: RPCErrorBody(error)))
 		} catch {
 			send(client, RPCErrorReply(id: id, error: RPCErrorBody(
-				code: JSONRPC.applicationError, message: "\(error)")))
+				code: JSONRPC.applicationError, message: MachmanError.userMessage(for: error))))
 		}
 	}
 
