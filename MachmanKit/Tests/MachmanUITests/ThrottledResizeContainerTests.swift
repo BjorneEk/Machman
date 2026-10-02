@@ -131,6 +131,25 @@ struct ThrottledResizeContainerTests {
 		#expect(child.resizes == 2)
 	}
 
+	// An apply that costs more than the calm (a deep scrollback in a Debug build) blocks the
+	// main thread past it, so the next drag event, 16 ms after the handler returns, must still
+	// count as the same burst: 1.2 s apart, not one resize per event.
+	@Test func aResizeCostlierThanTheCalmStillSpacesTheNextOneOut() {
+		let clock = FakeClock()
+		let (container, child) = mount(clock: clock)
+		child.onResize = { clock.now += 0.3 }
+		let end = clock.now + 1.0
+		var width = 800.0
+		while clock.now < end {
+			width += 10
+			container.setFrameSize(NSSize(width: width, height: 480))
+			clock.advance(by: 0.016)
+		}
+		#expect(child.resizes <= 2, "resized \(child.resizes) times in a second")
+		clock.advance(by: 0.2)
+		#expect(child.frame.size == container.bounds.size)   // the snap still lands
+	}
+
 	@Test func theEndOfALiveResizeSnapsAtOnce() {
 		let clock = FakeClock()
 		let (container, child) = mount(clock: clock)

@@ -117,7 +117,9 @@ public final class ThrottledResizeContainer: NSView {
 	private func sizeChanged() {
 		guard let held, held.frame.size != bounds.size else { return }
 		let now = clock.now()
-		let inBurst = lastChange.map { now - $0 < Self.calm } ?? false
+		// Calm is counted from when the last change was dealt with: an apply that held the
+		// main thread past the calm must not make the next event look like a fresh start.
+		let inBurst = lastChange.map { now - max($0, lastApplyEnd) < Self.calm } ?? false
 		lastChange = now
 		let spacing = max(Self.interval, Self.costFactor * lastApplyCost)
 		if !inBurst || now - lastApplyEnd >= spacing {
