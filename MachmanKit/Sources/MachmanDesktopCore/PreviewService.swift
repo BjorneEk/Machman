@@ -7,8 +7,9 @@
 //  The visible set is the sidebar selection plus every VM with a torn-off Configuration window
 //  (T18; read from TornTabRegistry). Polls only while the app is focused (active, with any of
 //  its windows key — DaemonConnection's FocusMonitor says so), restarts a VM's loop on its
-//  stateChanged (keyed off the event's state so a not-yet-patched row can't stall it), and
-//  keeps the last frame across reconnects — DaemonConnection re-attaches it per connection.
+//  stateChanged (keyed off the event's state so a not-yet-patched row can't stall it), starts
+//  a shown VM's loop when a list reload shows it running, and keeps the last frame across
+//  reconnects — DaemonConnection re-attaches it per connection.
 //
 
 import AppKit
@@ -29,6 +30,7 @@ public final class PreviewService: ObservableObject {
 	private var selection: Set<String> = []
 	private var torn: Set<String> = []
 	private var tornSink: AnyCancellable?
+	private var listSink: AnyCancellable?
 	private var focused = true
 	private let interval: Double = 4
 
@@ -39,6 +41,12 @@ public final class PreviewService: ObservableObject {
 		// $open emits the incoming set (willSet) — use it, never tornTabs.open here.
 		tornSink = tornTabs?.$open.sink { [weak self] open in
 			self?.setTorn(open)
+		}
+		// A reload can show a VM running that no stateChanged announced: a vmhost adopted
+		// late, a list fetched after a reconnect, a selection the list itself made. $vms
+		// emits on willSet and the selection may follow the same list, so look a turn later.
+		listSink = store.$vms.receive(on: DispatchQueue.main).sink { [weak self] _ in
+			self?.startMissedLoops()
 		}
 	}
 
@@ -121,6 +129,14 @@ public final class PreviewService: ObservableObject {
 				}
 				try? await Task.sleep(for: .seconds(self.interval))
 			}
+		}
+	}
+
+	// Starts only: a stop comes as its own stateChanged, and a stale row must never cut a loop
+	// a newer event started.
+	private func startMissedLoops() {
+		for name in visible where tasks[name] == nil {
+			restart(name)
 		}
 	}
 

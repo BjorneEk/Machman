@@ -77,6 +77,17 @@ struct PreviewTargetsTests {
 		previews.detach()
 	}
 
+	// A reload alone can show the selected VM running (a vmhost adopted late, the list after
+	// a reconnect): its preview polls then too, with no stateChanged of its own.
+	@Test func aReloadThatShowsTheSelectedVMRunningPolls() async {
+		let h = await DesktopHarness.make()
+		let previews = previews(h)
+		h.stub.vms["Alpine"]?.state = .running
+		await h.store.reload()
+		#expect(await eventually(timeout: .seconds(5)) { previews.pollingNames == ["Alpine"] })
+		previews.detach()
+	}
+
 	// The selection still counts on its own, and a VM both selected and torn polls once.
 	@Test func theSelectionAndTornWindowsShareOneLoopPerVM() async {
 		let h = await DesktopHarness.make()
