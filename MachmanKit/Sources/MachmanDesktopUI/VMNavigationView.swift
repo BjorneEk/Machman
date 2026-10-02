@@ -206,14 +206,14 @@ private struct ConfirmationDialogs: ViewModifier {
 	func body(content: Content) -> some View {
 		content
 			.confirmationDialog(
-				"Delete \u{201C}\(viewModel.pendingVMDelete?.name ?? "")\u{201D}?",
+				VMListViewModel.deleteVMTitle(viewModel.pendingVMDelete?.name ?? ""),
 				isPresented: presenting($viewModel.pendingVMDelete),
 				presenting: viewModel.pendingVMDelete
 			) { vm in
 				Button("Delete VM", role: .destructive) { viewModel.performDeleteVM(vm) }
 				Button("Cancel", role: .cancel) {}
-			} message: { vm in
-				Text("\(vm.name) and its owned files are deleted. This cannot be undone.")
+			} message: { _ in
+				Text(VMListViewModel.deleteVMMessage)
 			}
 			// One question per drop/paste/pick, for all its files; later ones queue.
 			.confirmationDialog(

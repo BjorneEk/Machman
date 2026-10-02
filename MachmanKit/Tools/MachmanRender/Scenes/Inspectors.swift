@@ -99,6 +99,19 @@ enum InspectorScenes {
 					memoryNote: "Lowered to this Mac's maximum")
 					.formStyle(.grouped))
 		},
+		// The same note as the view model words it (memory-clamped above passes a literal).
+		RenderScene(
+			"inspector.vm.memory-lowered", "VMInspector, the view model's lowered-memory note",
+			widths: RenderScene.inspectorWidths, height: height,
+			vms: { [Samples.linuxMemoryAtMaximum()] }
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				VMInspector(
+					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
+					memoryNote: ctx.viewModel.memoryEntry("2048", floor: 0).note)
+					.formStyle(.grouped))
+		},
 		RenderScene(
 			"inspector.vm.name-taken", "VMInspector, a name another VM has",
 			widths: RenderScene.inspectorWidths, height: height

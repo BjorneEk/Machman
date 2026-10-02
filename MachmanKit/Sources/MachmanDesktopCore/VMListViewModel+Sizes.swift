@@ -34,10 +34,10 @@ extension VMListViewModel {
 		let rounded = ByteSize.roundToMiB(parsed)
 		let clamped = clampMemory(rounded, floor: floor)
 		if clamped > rounded {
-			return MemoryEntry(bytes: clamped, note: "Raised to this VM's minimum")
+			return MemoryEntry(bytes: clamped, note: "Raised to this VM’s minimum")
 		}
 		if clamped < rounded {
-			return MemoryEntry(bytes: clamped, note: "Lowered to this Mac's maximum")
+			return MemoryEntry(bytes: clamped, note: "Lowered to this Mac’s maximum")
 		}
 		return MemoryEntry(bytes: clamped, note: nil)
 	}

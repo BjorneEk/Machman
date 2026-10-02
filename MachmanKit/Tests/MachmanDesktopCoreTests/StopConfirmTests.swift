@@ -40,7 +40,7 @@ struct StopConfirmTests {
 	@Test func forceStopNamesItself() {
 		let soft = PendingStop(vm: "Debian", mode: .soft)
 		#expect(soft.title == "Shut down \u{201C}Debian\u{201D}?")
-		#expect(soft.message == "Debian's guest is asked to shut down.")
+		#expect(soft.message == "Debian’s guest is asked to shut down.")
 		#expect(soft.confirmLabel == "Shut Down")
 		let force = PendingStop(vm: "Debian", mode: .force)
 		#expect(force.title == "Force stop \u{201C}Debian\u{201D}?")

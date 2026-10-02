@@ -36,7 +36,7 @@ struct AddFlowTests {
 		#expect(AddFlows.handleFileURLs([file], viewModel: h.viewModel, vm: "Debian"))
 		let pending = try #require(h.viewModel.pendingDiskAdd)
 		#expect(pending.urls == [file])
-		#expect(pending.title == "Add \(file.lastPathComponent)?")
+		#expect(pending.title == "Add \u{201C}\(file.lastPathComponent)\u{201D}?")
 		AddFlows.addDiskReferences(viewModel: h.viewModel, pending)
 		#expect(await eventually { h.stub.addedDisks.count == 1 })
 		#expect(h.stub.addedDisks.first?.disk == .iso(path: file.path))
@@ -58,7 +58,7 @@ struct AddFlowTests {
 		#expect(pending.urls == files)
 		#expect(pending.title == "Copy or reference these 3 files?")
 		#expect(pending.message
-			== "Copies travel with Debian; references use the originals in place.")
+			== "Copies travel with Debian, and references use the originals in place.")
 		AddFlows.addDiskCopies(viewModel: h.viewModel, pending)
 		#expect(await eventually { count("importDisk", in: h) == 3 })
 		let imported = h.stub.vms["Debian"]?.disks.filter { $0.id == "storage:imported" }
@@ -120,7 +120,8 @@ struct AddFlowTests {
 		h.stub.fail("importDisk", with: MachmanError(code: .ioFailure, message: "disk full"))
 		h.viewModel.importDisks("Debian", paths: ["/x/a.raw", "/x/b.raw", "/x/c.raw"])
 		#expect(await eventually { count("importDisk", in: h) == 3 })
-		#expect(h.viewModel.presentedError?.title == "Importing a.raw into Debian failed")
+		#expect(h.viewModel.presentedError?.title
+			== "Importing \u{201C}a.raw\u{201D} into \u{201C}Debian\u{201D} failed")
 		#expect(h.viewModel.presentedError?.message == "disk full")
 	}
 }

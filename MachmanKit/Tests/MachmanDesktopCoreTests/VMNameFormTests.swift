@@ -53,7 +53,7 @@ struct VMNameFormTests {
 		h.viewModel.requestRename(alpine, to: "a/b", profiles: h.profiles)
 		#expect(h.viewModel.presentedError?.message
 			== "A VM name can’t contain \u{201C}/\u{201D}")
-		#expect(h.viewModel.presentedError?.title == "Renaming Alpine failed")
+		#expect(h.viewModel.presentedError?.title == "Renaming \u{201C}Alpine\u{201D} failed")
 		try await Task.sleep(for: .milliseconds(50))
 		#expect(!h.stub.calls.contains("renameVM"))
 	}

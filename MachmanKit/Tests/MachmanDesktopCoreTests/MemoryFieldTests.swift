@@ -43,13 +43,13 @@ struct MemoryFieldTests {
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
 		let sequoia = try #require(h.viewModel.vms.first { $0.name == "Sequoia" })
 		#expect(h.viewModel.submitMemory(alpine, text: "2048")
-			== MemoryEntry(bytes: 24 << 30, note: "Lowered to this Mac's maximum"))
+			== MemoryEntry(bytes: 24 << 30, note: "Lowered to this Mac’s maximum"))
 		#expect(await eventually { h.stub.vms["Alpine"]?.memoryBytes == 24 << 30 })
 		#expect(h.viewModel.submitMemory(sequoia, text: "2")
-			== MemoryEntry(bytes: 4 << 30, note: "Raised to this VM's minimum"))
+			== MemoryEntry(bytes: 4 << 30, note: "Raised to this VM’s minimum"))
 		#expect(await eventually { h.stub.vms["Sequoia"]?.memoryBytes == 4 << 30 })
 		#expect(h.viewModel.memoryEntry("100m", floor: 0)
-			== MemoryEntry(bytes: 512 << 20, note: "Raised to this VM's minimum"))
+			== MemoryEntry(bytes: 512 << 20, note: "Raised to this VM’s minimum"))
 	}
 
 	@Test func unreadableSendsNothing() async throws {

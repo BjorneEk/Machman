@@ -85,7 +85,7 @@ public final class VMListViewModel: ObservableObject {
 
 		public var title: String {
 			urls.count == 1
-				? "Add \(urls[0].lastPathComponent)?"
+				? "Add \u{201C}\(urls[0].lastPathComponent)\u{201D}?"
 				: "Copy or reference these \(urls.count) files?"
 		}
 
@@ -93,7 +93,7 @@ public final class VMListViewModel: ObservableObject {
 			urls.count == 1
 				? "Copy \(urls[0].lastPathComponent) into \(vm) (an independent copy that "
 					+ "travels with the VM), or reference the original in place?"
-				: "Copies travel with \(vm); references use the originals in place."
+				: "Copies travel with \(vm), and references use the originals in place."
 		}
 	}
 	public struct PendingDiskDelete: Identifiable {
@@ -750,7 +750,7 @@ public final class VMListViewModel: ObservableObject {
 				self?.pendingForceStart = PendingForceStart(
 					name: name, headless: headless, safe: safe, message: error.message)
 			} catch {
-				self?.present(error, while: "Starting \(name)")
+				self?.present(error, while: "Starting \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -760,7 +760,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.openWindow(vm: name)
 			} catch {
-				self?.present(error, while: "Opening the \(name) window")
+				self?.present(error, while: "Opening the \u{201C}\(name)\u{201D} window")
 			}
 		}
 	}
@@ -770,7 +770,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.closeWindow(vm: name)
 			} catch {
-				self?.present(error, while: "Closing the \(name) window")
+				self?.present(error, while: "Closing the \u{201C}\(name)\u{201D} window")
 			}
 		}
 	}
@@ -780,7 +780,8 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.stop(vm: name, mode: mode)
 			} catch {
-				self?.present(error, while: "Stopping \(name)")
+				let action = mode == .soft ? "Shutting down" : "Force stopping"
+				self?.present(error, while: "\(action) \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -811,7 +812,7 @@ public final class VMListViewModel: ObservableObject {
 					self?.select(name: nil)
 				}
 			} catch {
-				self?.present(error, while: "Deleting \(vm.name)")
+				self?.present(error, while: "Deleting \u{201C}\(vm.name)\u{201D}")
 			}
 		}
 	}
@@ -847,7 +848,7 @@ public final class VMListViewModel: ObservableObject {
 			reopenTornWindows(from: oldName, to: newName)
 			return true
 		} catch {
-			refuse(error, while: "Renaming \(oldName)", to: refused)
+			refuse(error, while: "Renaming \u{201C}\(oldName)\u{201D}", to: refused)
 			vmName = oldName
 			return false
 		}
@@ -882,7 +883,7 @@ public final class VMListViewModel: ObservableObject {
 					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
 					nestedVirtualization: nested)
 			} catch {
-				self?.present(error, while: "Updating hardware for \(name)")
+				self?.present(error, while: "Updating hardware for \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -905,7 +906,7 @@ public final class VMListViewModel: ObservableObject {
 			return
 		}
 		if let problem = newVMNameProblem(newName) {
-			refuse(problem, while: "Renaming \(old)", to: refused)
+			refuse(problem, while: "Renaming \u{201C}\(old)\u{201D}", to: refused)
 			reverted()
 			return
 		}
@@ -948,7 +949,7 @@ public final class VMListViewModel: ObservableObject {
 				if let copy { self?.select(name: copy.name) }
 			} catch {
 				self?.copyInFlight = false
-				self?.present(error, while: "Duplicating \(name)")
+				self?.present(error, while: "Duplicating \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -973,7 +974,8 @@ public final class VMListViewModel: ObservableObject {
 					_ = try await api.importDisk(vm: name, path: path)
 				} catch {
 					let file = (path as NSString).lastPathComponent
-					self?.present(error, while: "Importing \(file) into \(name)")
+					self?.present(
+						error, while: "Importing \u{201C}\(file)\u{201D} into \u{201C}\(name)\u{201D}")
 				}
 			}
 		}
@@ -984,7 +986,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				_ = try await self?.api.importDisk(vm: name, path: path)
 			} catch {
-				self?.present(error, while: "Importing a disk into \(name)")
+				self?.present(error, while: "Importing a disk into \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -994,7 +996,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				_ = try await self?.api.promoteDisk(vm: name, diskID: diskID)
 			} catch {
-				self?.present(error, while: "Promoting a disk on \(name)")
+				self?.present(error, while: "Promoting a disk on \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -1044,7 +1046,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				_ = try await self?.api.setMountKind(vm: name, mountID: mountID, kind: kind)
 			} catch {
-				self?.present(error, while: "Changing a mount's kind")
+				self?.present(error, while: "Changing a mount’s kind")
 			}
 		}
 	}
@@ -1140,7 +1142,7 @@ public final class VMListViewModel: ObservableObject {
 			} catch {
 				self?.safeSaveInFlight = false
 				self?.safeSaveRequest = nil        // dismiss first; alert isn't sheet-blocked
-				self?.present(error, while: "Saving \(name) as a new VM")
+				self?.present(error, while: "Saving \u{201C}\(name)\u{201D} as a new VM")
 			}
 		}
 	}
@@ -1150,7 +1152,8 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				try await self?.api.setStartPolicy(vm: name, policy: policy)
 			} catch {
-				self?.present(error, while: "Updating run defaults for \(name)")
+				self?.present(
+					error, while: "Updating the default start for \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -1206,7 +1209,8 @@ public final class VMListViewModel: ObservableObject {
 					added += 1
 				} catch {
 					let file = disk.path.map { ($0 as NSString).lastPathComponent }
-					self?.present(error, while: "Adding \(file ?? "a disk")")
+					self?.present(
+						error, while: file.map { "Adding \u{201C}\($0)\u{201D}" } ?? "Adding a disk")
 				}
 			}
 			guard added > 0 else { return }
@@ -1239,7 +1243,7 @@ public final class VMListViewModel: ObservableObject {
 				self?.pushToast(
 					symbol: MachmanSymbols.mount, message: "Added mount \u{201C}\(tag)\u{201D}")
 			} catch {
-				self?.present(error, while: "Adding a mount point")
+				self?.present(error, while: "Adding a mount")
 			}
 		}
 	}
@@ -1250,7 +1254,7 @@ public final class VMListViewModel: ObservableObject {
 				try await self?.api.removeMount(vm: name, mountID: mountID)
 				self?.pushToast(symbol: MachmanSymbols.mount, message: "Removed mount")
 			} catch {
-				self?.present(error, while: "Removing a mount point")
+				self?.present(error, while: "Removing a mount")
 			}
 		}
 	}
@@ -1286,13 +1290,19 @@ public final class VMListViewModel: ObservableObject {
 
 	// MARK: - SSH (1.0.5)
 
+	// A failure is titled by what the toggle did: added or removed the alias.
 	public func setSSHIntegration(_ name: String, enabled: Bool) {
+		let alias = vms.first { $0.name == name }.map(SSHCommand.hostKeyAlias(for:))
+			?? SSHAliasRule.defaultAlias(for: name)
+		let action = enabled
+			? "Adding \u{201C}\(alias)\u{201D} to your SSH config"
+			: "Removing \u{201C}\(alias)\u{201D} from your SSH config"
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.setSSH(
 					vm: name, integrationEnabled: enabled, reverseApproved: nil, alias: nil)
 			}
-			catch { self?.present(error, while: "Updating the SSH alias") }
+			catch { self?.present(error, while: action) }
 		}
 	}
 
@@ -1332,7 +1342,7 @@ public final class VMListViewModel: ObservableObject {
 				try await self?.api.refreshSSH(vm: name)
 			} catch {
 				self?.endRediscovery(name)
-				self?.present(error, while: "Refreshing the SSH address")
+				self?.present(error, while: "Looking for the address of \u{201C}\(name)\u{201D}")
 			}
 		}
 	}
@@ -1357,7 +1367,7 @@ public final class VMListViewModel: ObservableObject {
 					symbol: MachmanSymbols.deviceGuestSetup,
 					message: "Guest setup state reset for \(name)")
 			}
-			catch { self?.present(error, while: "Resetting guest-setup state") }
+			catch { self?.present(error, while: "Resetting guest setup state") }
 		}
 	}
 
@@ -1365,7 +1375,7 @@ public final class VMListViewModel: ObservableObject {
 	public func setSetupServed(_ name: String, serve: Bool) {
 		Task { [weak self] in
 			do { _ = try await self?.api.setSetupServed(vm: name, serve: serve) }
-			catch { self?.present(error, while: "Updating the setup payload") }
+			catch { self?.present(error, while: "Changing the reinstall setting") }
 		}
 	}
 

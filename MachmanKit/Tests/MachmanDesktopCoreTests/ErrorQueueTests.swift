@@ -39,7 +39,7 @@ struct ErrorQueueTests {
 		#expect(h.viewModel.presentedError?.message == "a")
 		h.viewModel.isErrorPresented = false
 		#expect(await eventually { h.viewModel.presentedError?.message == "b" })
-		#expect(h.viewModel.presentedError?.title == "Starting Fedora failed")
+		#expect(h.viewModel.presentedError?.title == "Starting \u{201C}Fedora\u{201D} failed")
 	}
 
 	@Test func theQueueIsFirstInFirstOut() {

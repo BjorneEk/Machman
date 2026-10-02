@@ -33,7 +33,7 @@ public struct PendingStop: Identifiable, Equatable {
 
 	public var message: String {
 		switch mode {
-		case .soft: return "\(vm)'s guest is asked to shut down."
+		case .soft: return "\(vm)’s guest is asked to shut down."
 		case .force: return "\(vm) stops at once, like pulling its power cord."
 		}
 	}
