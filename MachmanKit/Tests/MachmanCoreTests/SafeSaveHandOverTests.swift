@@ -35,34 +35,58 @@ struct SafeSaveHandOverTests {
 		try VMTestDir.withRedirectedDir {
 			let host = try SafeRunFixture.make(disks: [
 				unsafe("data"), VMDisk(kind: .storage("system", 8192)),
-				unsafe("scratch", enabled: false),
 			])
 			defer { host.removeLibrary() }
-			// The real shadow kept the original's flags (C19).
-			let vm = try #require(host.registry.vm(named: "alpha"))
-			#expect(vm.config.disks.map(\.enabled) == [true, true, false])
 
 			let promoted = try host.registry.promoteRestrictedVM(to: "kept")
 
 			let kept = host.library + "/kept"
 			#expect(contents(kept + "/data.raw") == "raw-data")
-			#expect(contents(kept + "/scratch.raw") == "raw-scratch")
 			#expect(contents(kept + "/system.raw") == "raw-system")   // the safe clone
 			#expect(!FileManager.default.fileExists(atPath: host.originalDir + "/data.raw"))
 			#expect(contents(host.originalDir + "/system.raw") == "raw-system")
 			let saved = try SafeRunFixture.load(kept)
-			#expect(saved.disks == [
-				unsafe("data"), VMDisk(kind: .storage("system", 8192)),
-				unsafe("scratch", enabled: false),
-			])
+			#expect(saved.disks == [unsafe("data"), VMDisk(kind: .storage("system", 8192))])
 			#expect(promoted.config.disks == saved.disks)
-			var reference = VMDisk(kind: .fromUrl(url(kept + "/scratch.raw")), safe: false)
-			reference.enabled = false
 			#expect(try SafeRunFixture.load(host.originalDir).disks == [
 				VMDisk(kind: .fromUrl(url(kept + "/data.raw")), safe: false),
 				VMDisk(kind: .storage("system", 8192)),
-				reference,
 			])
+		}
+	}
+
+	// C19: the real shadow keeps a disabled disk disabled, so the run never attached or
+	// wrote it. It stays the original's, and the saved VM keeps it as a disabled reference
+	// there, which the cross-VM guards protect.
+	@Test @MainActor func aDisabledDiskStaysWithTheOriginal() throws {
+		try VMTestDir.withRedirectedDir {
+			let host = try SafeRunFixture.make(disks: [
+				unsafe("data"), unsafe("scratch", enabled: false),
+			])
+			defer { host.removeLibrary() }
+			let original = host.originalDir
+			var reference = VMDisk(kind: .fromUrl(url(original + "/scratch.raw")), safe: false)
+			reference.enabled = false
+			let vm = try #require(host.registry.vm(named: "alpha"))
+			#expect(vm.config.disks == [
+				VMDisk(kind: .fromUrl(url(original + "/data.raw")), safe: false), reference,
+			])
+
+			_ = try host.registry.promoteRestrictedVM(to: "kept")
+
+			let kept = host.library + "/kept"
+			#expect(!FileManager.default.fileExists(atPath: kept + "/scratch.raw"))
+			#expect(contents(original + "/scratch.raw") == "raw-scratch")
+			#expect(try SafeRunFixture.load(kept).disks == [unsafe("data"), reference])
+			#expect(try SafeRunFixture.load(original).disks == [
+				VMDisk(kind: .fromUrl(url(kept + "/data.raw")), safe: false),
+				unsafe("scratch", enabled: false),
+			])
+			let daemon = VMRegistry()   // machmanVMDir is the library now
+			let error = try #require(throws: MachmanError.self) {
+				try daemon.delete(try #require(daemon.vm(named: "alpha")))
+			}
+			#expect(error.message.contains("kept uses scratch.raw from alpha's folder"))
 		}
 	}
 

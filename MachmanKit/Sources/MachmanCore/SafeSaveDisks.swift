@@ -23,11 +23,12 @@ struct DirectDiskMove: Equatable {
 	var sourceFile: String { storage + ".raw" }
 	var targetFile: String { target + ".raw" }
 
-	// What moves, and under which names. A run entry moves when it references a storage
-	// raw the original's config owns and that file exists; external files and isos never
-	// move. A name taken in the saved folder — a file there or a storage disk of the run —
-	// gets the first free "<n>-<k>" (k = 2, 3, …), compared case-insensitively like the
-	// volume.
+	// What moves, and under which names. A run entry moves when it is enabled, references
+	// a storage raw the original's config owns and that file exists; external files and
+	// isos never move. A disabled entry was never attached, so the run never wrote it: it
+	// stays a reference into the original's folder, which the cross-VM guards keep (C19).
+	// A name taken in the saved folder — a file there or a storage disk of the run — gets
+	// the first free "<n>-<k>" (k = 2, 3, …), compared case-insensitively like the volume.
 	static func plan(
 		run: VMConfig, original: VMConfig, originalDir: String, savedFiles: Set<String>,
 		fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
@@ -40,7 +41,7 @@ struct DirectDiskMove: Equatable {
 		}
 		var moves: [DirectDiskMove] = []
 		for disk in run.disks {
-			guard case .fromUrl(let url) = disk.kind else { continue }
+			guard disk.enabled, case .fromUrl(let url) = disk.kind else { continue }
 			let path = (url.path as NSString).standardizingPath
 			let file = (path as NSString).lastPathComponent
 			guard (path as NSString).deletingLastPathComponent == dir, file.hasSuffix(".raw")

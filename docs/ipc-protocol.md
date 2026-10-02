@@ -107,7 +107,7 @@ keep working — nothing is rejected at load.
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
 | `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached, which `force` does not override; `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
-| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's unsafe storage disks) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs) |
+| `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's enabled unsafe storage disks) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs) |
 | `vm.window.open` | `{name}` | `{}` (window appears from the daemon) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
@@ -328,7 +328,8 @@ script from an older build cannot outlive the run that served it.
 ## Safe runs (invisible on the wire except `safeRun`)
 
 `vm.start {safe: true}` clones the VM into a hidden shadow (safe disks → discardable
-clones, unsafe disks → the real files, ISOs referenced, safe mounts omitted) and runs the
+clones, unsafe disks → the real files, ISOs referenced, safe mounts omitted; every entry
+keeps its enabled flag, so a disabled disk stays unattached) and runs the
 shadow AS the VM: name, events, socket, and window are all the real VM's, and the shadow is
 deleted on stop (a clean stop copies last-ran and total-runtime back). The ONLY wire
 evidence is `VMInfo.safeRun: true` while the run lives. `vm.setSafety` during a safe run
