@@ -665,6 +665,9 @@ public final class RoutingMachman: MachmanControlling {
 			for await forwarded in stream {
 				guard let self = self else { return }
 				let event = forwarded.event
+				guard self.host(withID: id) != nil || Self.passesBeforeHosted(event) else {
+					continue
+				}
 				if case .stateChanged(_, let state) = event, state.isRunning,
 					let host = self.host(withID: id) {
 					host.sawRun = true
@@ -685,6 +688,21 @@ public final class RoutingMachman: MachmanControlling {
 				}
 				self.registry.events.emit(event, line: forwarded.line)
 			}
+		}
+	}
+
+	// What a spawned host's events may say before it is hosted (its spawn and start window):
+	// its boot's log lines (E9) and a newer host's unknown events. Its own state and list
+	// changes are not passed on: until the start returns, the router lists the VM as starting
+	// and then announces the run itself, and a running state or a reload in between would
+	// flicker the state and toast a start twice (O-6a).
+	static func passesBeforeHosted(_ event: VMEvent) -> Bool {
+		switch event {
+		case .log, .unknown:
+			return true
+		case .stateChanged, .listChanged, .installPhaseChanged, .copyProgress,
+			.operationChanged, .sshChanged, .setupChanged:
+			return false
 		}
 	}
 

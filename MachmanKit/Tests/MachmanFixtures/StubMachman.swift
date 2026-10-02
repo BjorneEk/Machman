@@ -503,6 +503,9 @@ public final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		emit(.listChanged)
 	}
+	// What a start emits while it boots, before its stateChanged(running): a vmhost's boot
+	// warnings, say (E9).
+	public var bootEvents: [VMEvent] = []
 	public func start(vm name: String, options: StartOptions) async throws {
 		try gate()
 		starts.append((name, options))
@@ -514,6 +517,7 @@ public final class StubMachman: MachmanControlling {
 		vm.state = .running
 		vm.windowOpen = options.openWindow
 		vms[name] = vm
+		bootEvents.forEach(emit)
 		emit(.stateChanged(vm: name, state: .running))
 	}
 	public func stop(vm name: String, mode: StopMode) async throws {
