@@ -20,8 +20,16 @@ struct DiskInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let diskID: String
-	@State private var growGB = 0
+	@State private var growText: String
 	@State private var draftName = ""
+
+	// `growText` opens the Grow-to field on a typed size (render scenes).
+	init(viewModel: VMListViewModel, vm: VMInfo, diskID: String, growText: String = "") {
+		self.viewModel = viewModel
+		self.vm = vm
+		self.diskID = diskID
+		_growText = State(initialValue: growText)
+	}
 
 	var body: some View {
 		if let disk = vm.disks.first(where: { $0.id == diskID }) {
@@ -54,14 +62,7 @@ struct DiskInspector: View {
 				}
 				Section("Actions") {
 					if disk.type == .storage && disk.owned != false {
-						LabeledContent("Grow") {
-							HStack {
-								Stepper("+\(growGB) GB", value: $growGB, in: 0...256, step: 8)
-								Button("Apply") { grow(disk) }
-									.disabled(growGB == 0 || vm.refusal(.resizeDisk) != nil)
-							}
-						}
-						.help(vm.refusal(.resizeDisk) ?? "Grow-only; shrink refuses")
+						growRow(disk)
 					}
 					HStack(spacing: 6) {
 						if disk.owned == false {
@@ -114,12 +115,35 @@ struct DiskInspector: View {
 		disk.path.map { ($0 as NSString).lastPathComponent } ?? disk.id
 	}
 
-	private func grow(_ disk: DiskInfo) {
-		guard let current = disk.sizeBytes else { return }
-		viewModel.resizeDisk(
-			vm.name, diskID: diskID,
-			sizeBytes: current + UInt64(growGB) << 30)
-		growGB = 0
+	// The target size, not a step: the Size row above says where it starts. No default
+	// action on Grow — Return belongs to the field, never to the window.
+	private func growRow(_ disk: DiskInfo) -> some View {
+		let problem = viewModel.growDiskProblem(growText, disk: disk)
+		let typed = !growText.trimmingCharacters(in: .whitespaces).isEmpty
+		return VStack(alignment: .leading, spacing: 3) {
+			LabeledContent("Grow to") {
+				HStack(spacing: 6) {
+					TextField("", text: $growText, prompt: Text("New size"))
+						.textFieldStyle(.roundedBorder)
+						.multilineTextAlignment(.trailing)
+						.frame(width: 80)
+						.onSubmit(grow)
+					Button("Grow", action: grow)
+						.disabled(!typed || problem != nil)
+				}
+			}
+			if let problem {
+				FieldProblem(problem)
+			}
+		}
+		.disabled(vm.refusal(.resizeDisk) != nil)
+		.help(vm.refusal(.resizeDisk) ?? "Disks only grow; a bare number is GB")
+	}
+
+	private func grow() {
+		if viewModel.submitGrowDisk(vm, diskID: diskID, text: growText) {
+			growText = ""
+		}
 	}
 
 	private func remove(_ disk: DiskInfo) {

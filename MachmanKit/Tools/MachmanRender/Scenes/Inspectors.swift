@@ -49,6 +49,18 @@ enum InspectorScenes {
 		}
 	}
 
+	// Alpine's (stopped) system disk with `text` typed into Grow to.
+	static func diskGrow(_ name: String, _ summary: String, text: String) -> RenderScene {
+		RenderScene(name, summary, widths: RenderScene.inspectorWidths, height: height) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				DiskInspector(
+					viewModel: ctx.viewModel, vm: ctx.vm, diskID: "storage:system",
+					growText: text)
+					.formStyle(.grouped))
+		}
+	}
+
 	static func device(
 		_ kind: DeviceKind, _ summary: String, select vm: String = "Debian"
 	) -> RenderScene {
@@ -92,6 +104,13 @@ enum InspectorScenes {
 			nodes: [.disk("storage:system"), .disk(iso)]),
 		inspector("disk", "DiskInspector, owned storage disk", node: .disk("storage:system")),
 		inspector("disk-iso", "DiskInspector, referenced ISO", node: .disk(iso)),
+		diskGrow("inspector.disk.grow", "DiskInspector, the Grow-to field", text: ""),
+		diskGrow(
+			"inspector.disk.grow-smaller", "DiskInspector, a grow size under the disk's own",
+			text: "16"),
+		diskGrow(
+			"inspector.disk.grow-too-big", "DiskInspector, a grow past the free space",
+			text: "500"),
 		inspector(
 			"disk.never-answered", "DiskInspector, a VM whose vmhost never answered",
 			vms: { [Samples.neverAnswered()] }, select: "Alpine", node: .disk("storage:system")),
