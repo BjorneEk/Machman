@@ -201,8 +201,6 @@ public final class RoutingMachman: MachmanControlling {
 	// path does) without fabricating run roots.
 	func hostForTesting(_ name: String) -> HostedVM? { hosted[name] }
 
-	public var hasHostedVMs: Bool { !hosted.isEmpty }
-
 	// The VMs that run now, by name: a hosted one whose VM the host last reported running
 	// (starting and stopping count) or that stopped answering, and every start in flight. An
 	// idle host, or one exiting after its run, holds nothing up: it quits with the session.
