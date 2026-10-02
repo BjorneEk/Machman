@@ -83,6 +83,15 @@ extension VMListViewModel {
 		return true
 	}
 
+	// What those two sheets suggest: the first free numbered name.
+	public func defaultCopyName(for name: String) -> String {
+		UniqueName.numbered("\(name) copy") { hasVM($0) }
+	}
+
+	public func defaultSafeSaveName(for name: String) -> String {
+		UniqueName.numbered("\(name) saved") { hasVM($0) }
+	}
+
 	// MARK: - SSH alias
 
 	// Why the alias field's draft can't be sent, or nil. Empty means "back to the default".

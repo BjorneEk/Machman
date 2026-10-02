@@ -26,6 +26,10 @@ public struct MemoryEntry: Equatable, Sendable {
 extension VMListViewModel {
 	// MARK: - Memory
 
+	public func clampMemory(_ bytes: UInt64, floor: UInt64) -> UInt64 {
+		ByteSize.clampMemory(bytes, floor: floor, capabilities: capabilities)
+	}
+
 	// `floor` is the VM's own minimum (macOS guests carry install minimums).
 	public func memoryEntry(_ text: String, floor: UInt64) -> MemoryEntry {
 		guard let parsed = ByteSize.parse(text, bareUnit: .gibibyte) else {
