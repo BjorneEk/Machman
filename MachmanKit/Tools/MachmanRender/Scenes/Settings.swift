@@ -3,7 +3,7 @@
 //  MachmanRender
 //
 //  The Settings window (⌘,): its root TabView and each pane on its own, at the window's
-//  fixed 760 × 560.
+//  fixed 760 × 600.
 //
 
 import SwiftUI
@@ -16,7 +16,7 @@ enum SettingsScenes {
 		_ name: String, _ summary: String,
 		_ make: @escaping @MainActor (SceneContext) -> AnyView
 	) -> RenderScene {
-		RenderScene("settings.\(name)", summary, widths: [760], height: 560, make: make)
+		RenderScene("settings.\(name)", summary, widths: [760], height: 600, make: make)
 	}
 
 	static let all: [RenderScene] = [

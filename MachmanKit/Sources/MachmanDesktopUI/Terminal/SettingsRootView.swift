@@ -26,6 +26,8 @@ public struct SettingsRootView: View {
 			BehaviourSettingsView()
 				.tabItem { Label("Behaviour", systemImage: MachmanSymbols.tabConfig) }
 		}
-		.frame(width: 760, height: 560)
+		// 600 pt: Appearance's four sections fit with room to spare (at 560 the Tab Bar
+		// section reached the bottom edge); a larger text size scrolls the Form.
+		.frame(width: 760, height: 600)
 	}
 }
