@@ -87,7 +87,7 @@ extension VMConfig {
 	// carries two empty reserved dirs — mountable, nothing inside.
 	var servesSetupPayload: Bool {
 		setup?.installed != true || setup?.reinstallRequested == true
-			|| setup?.lastRunStatus == "failed"
+			|| setup?.lastRunStatus == GuestRunStatus.failed
 	}
 }
 

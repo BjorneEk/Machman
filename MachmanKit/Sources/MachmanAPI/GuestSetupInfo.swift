@@ -31,6 +31,24 @@ public enum MountKind {
 	public static let sshfs = "sshfs"
 }
 
+// A console's login state as the script reports it (GuestConsoleInfo.login). Plain strings
+// (see GuestFeature): a newer script's state renders verbatim.
+public enum GuestConsoleLogin {
+	public static let active = "active"            // a getty is running
+	public static let activeAuto = "active-auto"   // running, started by the guest on its own
+	public static let configured = "configured"    // set up for the next boot
+	public static let none = "none"
+	public static let missing = "missing"          // the device is not in the guest
+}
+
+// What the last script run achieved: GuestSetupInfo.lastRunStatus and SSHInfo.lastRunStatus.
+// Plain strings (see GuestFeature).
+public enum GuestRunStatus {
+	public static let ok = "ok"
+	public static let partial = "partial"          // some steps failed, the rest applied
+	public static let failed = "failed"
+}
+
 // One error a script run reported: the named step that failed and its one-sentence message.
 public struct GuestSetupError: Codable, Sendable, Equatable {
 	public var step: String
@@ -78,9 +96,8 @@ public struct GuestFeatureInfo: Codable, Sendable, Equatable, Identifiable {
 }
 
 // One console interface as the script found it: the guest device name, its login state
-// ("active" — a getty is running, "configured" — one is set up for the next boot,
-// "none"), whether it is the kernel console (console= points at it), and whether the
-// login was configured OUTSIDE Machman (present, unmarked, left as is).
+// (a GuestConsoleLogin value), whether it is the kernel console (console= points at it), and
+// whether the login was configured OUTSIDE Machman (present, unmarked, left as is).
 public struct GuestConsoleInfo: Codable, Sendable, Equatable, Identifiable {
 	public var device: String        // "hvc0", "ttyV0.0", "cu.virtio"
 	public var login: String
@@ -106,7 +123,7 @@ public struct GuestConsoleInfo: Codable, Sendable, Equatable, Identifiable {
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.device = try c.decode(String.self, forKey: .device)
-		self.login = try c.decodeIfPresent(String.self, forKey: .login) ?? "none"
+		self.login = try c.decodeIfPresent(String.self, forKey: .login) ?? GuestConsoleLogin.none
 		self.kernelConsole = try c.decodeIfPresent(Bool.self, forKey: .kernelConsole)
 		self.kernelConsolePending =
 			try c.decodeIfPresent(Bool.self, forKey: .kernelConsolePending)
@@ -139,7 +156,7 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 	public var lastReportAt: Date?         // stamped by the HOST at ingestion
 	public var scriptVersion: Int?         // the script version that produced the report
 	public var currentScriptVersion: Int?  // the version this app ships (server-resolved)
-	public var lastRunStatus: String?      // "ok" | "partial" | "failed" — plain string
+	public var lastRunStatus: String?      // a GuestRunStatus value — plain string
 	public var lastRunNote: String?
 	public var lastTransport: String?      // "virtiofs" | "sshfs" | "local"
 	public var errors: [GuestSetupError]?

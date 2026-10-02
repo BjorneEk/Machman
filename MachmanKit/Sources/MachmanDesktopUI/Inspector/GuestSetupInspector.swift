@@ -28,7 +28,7 @@ struct GuestSetupInspector: View {
 	private var installed: Bool { setup?.installed == true }
 	// A failed last run keeps the installer served (the daemon's serve rule) until a run
 	// gets through: its commands stay out, whatever the reinstall toggle says.
-	private var lastRunFailed: Bool { setup?.lastRunStatus == "failed" }
+	private var lastRunFailed: Bool { setup?.lastRunStatus == GuestRunStatus.failed }
 
 	var body: some View {
 		Form {
@@ -135,11 +135,11 @@ struct GuestSetupInspector: View {
 			switch (installed, setup?.lastRunStatus) {
 			case (false, _):
 				Text("Not installed").foregroundStyle(.secondary)
-			case (true, "partial"):
+			case (true, GuestRunStatus.partial):
 				Image(systemName: MachmanSymbols.warning)
 					.foregroundStyle(MachmanColors.warning)
 				Text("Installed, with gaps")
-			case (true, "failed"):
+			case (true, GuestRunStatus.failed):
 				Image(systemName: MachmanSymbols.warning)
 					.foregroundStyle(MachmanColors.warning)
 				Text("Last run failed")

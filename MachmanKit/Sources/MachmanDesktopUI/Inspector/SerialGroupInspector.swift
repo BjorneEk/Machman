@@ -87,11 +87,11 @@ struct SerialGroupInspector: View {
 		let reported = reportedInfo(for: port)
 		let external = reported?.external == true ? " (outside Machman)" : ""
 		switch reported?.login {
-		case "active-auto": return "login active (automatic)"
-		case "active": return "login active" + external
-		case "configured": return "login configured (next boot)" + external
-		case "missing": return "not present in the guest"
-		case "none": return "no login"
+		case GuestConsoleLogin.activeAuto: return "login active (automatic)"
+		case GuestConsoleLogin.active: return "login active" + external
+		case GuestConsoleLogin.configured: return "login configured (next boot)" + external
+		case GuestConsoleLogin.missing: return "not present in the guest"
+		case GuestConsoleLogin.none: return "no login"
 		case .some(let other): return other   // a newer script's state renders verbatim
 		case nil: return "no report yet"
 		}

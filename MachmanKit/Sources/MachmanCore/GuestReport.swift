@@ -125,7 +125,7 @@ struct GuestReport {
 			var login = words[1]
 			let flags = words.dropFirst(2)
 			if flags.contains("auto") {
-				login = "active-auto"
+				login = GuestConsoleLogin.activeAuto
 			}
 			return GuestConsoleInfo(
 				device: words[0], login: login,
