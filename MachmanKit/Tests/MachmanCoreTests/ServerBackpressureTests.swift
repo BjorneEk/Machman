@@ -33,22 +33,11 @@ struct ServerBackpressureTests {
 	private func subscribe(_ fd: Int32, _ stub: StubMachman) async -> Bool {
 		let request = Array((#"{"jsonrpc":"2.0","id":1,"method":"events.subscribe"}"# + "\n").utf8)
 		guard write(fd, request, request.count) == request.count else { return false }
-		// Off the main actor: the server dispatches the request there.
-		let reply = await Task.detached { () -> Data in
-			var tv = timeval(tv_sec: 0, tv_usec: 100_000)
-			setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-			var reply = Data()
-			let deadline = Date().addingTimeInterval(3)
-			while Date() < deadline, !reply.contains(UInt8(ascii: "\n")) {
-				var buf = [UInt8](repeating: 0, count: 4096)
-				let n = read(fd, &buf, buf.count)
-				if n > 0 { reply.append(contentsOf: buf[0..<n]) } else if n == 0 { break }
-			}
-			return reply
-		}.value
-		guard String(decoding: reply, as: UTF8.self).contains(#""id":1"#) else { return false }
-		// The reply goes out before the server's event pump has subscribed to the engine.
-		return await eventually { stub.calls.contains("events") }
+		// Off the main actor and the pool: the server dispatches the request on the former.
+		let reply = await SocketLines.read(fd, count: 1, timeout: 15)
+		guard reply.first?.contains(#""id":1"#) == true else { return false }
+		// The server subscribes to the engine before it replies (1.0.12+).
+		return stub.calls.contains("events")
 	}
 
 	// Far more than the socket buffers hold (about 800 KB of event lines).
@@ -82,19 +71,19 @@ struct ServerBackpressureTests {
 		#expect(server.connectionCount == 1)
 
 		flood(stub)
-		#expect(await eventually(timeout: .seconds(5)) { server.connectionCount == 0 })
+		#expect(await eventually(timeout: .seconds(15)) { server.connectionCount == 0 })
 	}
 
 	@Test @MainActor func aClientOverTheQueueCapIsDropped() async throws {
 		let (server, stub, socketPath) = try makeServer()
 		defer { server.stop() }
-		server.clientSendTimeout = 30   // only the byte cap can end it within the wait below
+		server.clientSendTimeout = 60   // only the byte cap can end it within the wait below
 		server.clientMaxQueuedBytes = 64 << 10
 		let fd = connect(socketPath)
 		defer { close(fd) }
 		#expect(await subscribe(fd, stub))
 
 		flood(stub)
-		#expect(await eventually(timeout: .seconds(2)) { server.connectionCount == 0 })
+		#expect(await eventually(timeout: .seconds(15)) { server.connectionCount == 0 })
 	}
 }

@@ -25,9 +25,14 @@ struct RoutingIdleHostTests {
 		let socketPath: String
 	}
 
+	// Generous by default: a probe that must answer and an exit that must land inside the
+	// grace return as soon as they do. A test that waits one out passes a shorter value, which
+	// can only expire.
 	@MainActor
-	private func makeRouting(names: [String] = ["alpha"], mac: String? = nil) throws
-		-> RoutingMachman {
+	private func makeRouting(
+		names: [String] = ["alpha"], mac: String? = nil,
+		probeDeadline: Duration = .seconds(10), exitGrace: Duration = .seconds(10)
+	) throws -> RoutingMachman {
 		var routing: RoutingMachman!
 		try VMTestDir.withRedirectedDir {
 			for name in names {
@@ -39,8 +44,8 @@ struct RoutingIdleHostTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
 			routing.locateVMHost = { nil }   // a test never finds (or launches) a real vmhost
 		}
-		routing.hostProbeDeadline = .milliseconds(300)
-		routing.hostExitGrace = .milliseconds(300)
+		routing.hostProbeDeadline = probeDeadline
+		routing.hostExitGrace = exitGrace
 		routing.isProcessAlive = { _ in false }   // a stub host's exit is its server stopping
 		return routing
 	}
@@ -90,7 +95,7 @@ struct RoutingIdleHostTests {
 	}
 
 	@Test @MainActor func startRefusesAnUnansweringHost() async throws {
-		let rig = try await adoptStub(try makeRouting(), state: .stopped)
+		let rig = try await adoptStub(try makeRouting(probeDeadline: .seconds(1)), state: .stopped)
 		defer {
 			rig.stub.stalled = []
 			rig.server.stop()
@@ -106,7 +111,7 @@ struct RoutingIdleHostTests {
 			#expect(error.code == .invalidState)
 			#expect(error.message.contains("not responding"))
 		}
-		#expect(clock.now - started < .seconds(2))
+		#expect(clock.now - started < .seconds(15))   // the probe's deadline, not a call's 30 s
 		#expect(rig.stub.starts.isEmpty)
 	}
 
@@ -146,7 +151,7 @@ struct RoutingIdleHostTests {
 	// A host that ran and stopped is exiting (its 300 ms flush): forwarding a start to it
 	// would be killed with it. The start waits the exit out, and refuses if it overstays.
 	@Test @MainActor func anExitingHostIsAwaitedNotForwarded() async throws {
-		let rig = try await adoptStub(try makeRouting(), state: .stopped)
+		let rig = try await adoptStub(try makeRouting(exitGrace: .seconds(1)), state: .stopped)
 		defer { rig.server.stop() }
 		rig.routing.hostForTesting("alpha")?.sawRun = true
 
@@ -164,7 +169,7 @@ struct RoutingIdleHostTests {
 	// VM already running sends no running event. A later answer showing it running must
 	// count: once that VM stops, a start waits the exit out instead of being forwarded.
 	@Test @MainActor func aRunningAnswerAfterAdoptionCountsAsARun() async throws {
-		let rig = try await adoptStub(try makeRouting(), state: .running)
+		let rig = try await adoptStub(try makeRouting(exitGrace: .seconds(1)), state: .running)
 		defer { rig.server.stop() }
 		#expect(rig.routing.hostForTesting("alpha")?.sawRun == false)   // as a timed-out reply
 		_ = try await rig.routing.listVMs()

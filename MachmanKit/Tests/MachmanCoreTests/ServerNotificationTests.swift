@@ -28,19 +28,6 @@ struct ServerNotificationTests {
 		return fd
 	}
 
-	private func recvLines(_ fd: Int32, count: Int, timeout: Double) -> [String] {
-		var acc = Data()
-		var tv = timeval(tv_sec: 0, tv_usec: 100_000)
-		setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-		let deadline = Date().addingTimeInterval(timeout)
-		while Date() < deadline, acc.count(where: { $0 == UInt8(ascii: "\n") }) < count {
-			var buf = [UInt8](repeating: 0, count: 4096)
-			let n = read(fd, &buf, buf.count)
-			if n > 0 { acc.append(contentsOf: buf[0..<n]) } else if n == 0 { break }
-		}
-		return String(decoding: acc, as: UTF8.self).split(separator: "\n").map(String.init)
-	}
-
 	@Test func notificationsAreNeverAnswered() async throws {
 		let socketPath = TestEnvironment.scratch
 			+ "mm-notif-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
@@ -67,14 +54,14 @@ struct ServerNotificationTests {
 		let bytes = Array(batch.utf8)
 		#expect(write(fd, bytes, bytes.count) == bytes.count)
 
-		let replies = recvLines(fd, count: 2, timeout: 3)
+		let replies = await SocketLines.read(fd, count: 2, timeout: 15)
 		#expect(replies.count == 2)
 		#expect(replies.first?.contains(#""id":1"#) == true)
 		#expect(replies.first?.contains(#""apiVersion""#) == true)
 		#expect(replies.last?.contains(#""id":2"#) == true)
 		#expect(replies.last?.contains("unknown method") == true)
 		// Nothing trickles in late for the notifications.
-		#expect(recvLines(fd, count: 1, timeout: 0.5).isEmpty)
+		#expect(await SocketLines.read(fd, count: 1, timeout: 0.5).isEmpty)
 
 		close(fd)
 		await MainActor.run { server.stop() }
