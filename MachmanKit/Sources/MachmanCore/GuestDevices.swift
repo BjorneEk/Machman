@@ -148,11 +148,11 @@ extension VMConfig {
 		devices deviceFlags: [String: Bool] = [:]
 	) throws {
 		for id in diskFlags.keys where !disks.contains(where: { $0.id == id }) {
-			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		for id in mountFlags.keys
 			where !mountPoints.contains(where: { $0.id.uuidString == id }) {
-			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
 		for kind in deviceFlags.keys where !devices.contains(where: { $0.kind == kind }) {
 			throw MachmanError(
@@ -196,7 +196,7 @@ extension VMConfig {
 	func setKernelOverride(forFileAt path: String, commandLine: String?, enabled: Bool?) throws {
 		guard let file = ownedKernelFiles().first(where: { $0.path == path }) else {
 			throw MachmanError(
-				code: .notFound, message: "no owned kernel file at '\(path)' on \(name)")
+				code: .notFound, message: "\(name) no longer has that kernel file")
 		}
 		let key = VMConfig.kernelOverrideKey(for: file)
 		var override = kernelOverrides[key]
@@ -224,23 +224,26 @@ extension VMConfig {
 	// (the disk's id is derived from the name, so callers re-resolve after this).
 	func renameStorageDisk(id: String, to newName: String) throws {
 		guard let index = disks.firstIndex(where: { $0.id == id }) else {
-			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		guard case .storage(let oldName, let size) = disks[index].kind else {
 			throw MachmanError(
-				code: .invalidArgument, message: "only owned storage disks can be renamed")
+				code: .invalidArgument, message: "Only owned disks can be renamed")
 		}
 		let trimmed = try NameRule.diskName.normalized(newName)
 		guard trimmed != oldName else { return }
 		guard !disks.contains(where: { $0.id == "storage:\(trimmed)" }) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "a disk named '\(trimmed)' already exists")
+				code: .alreadyExists,
+				message: "This VM already has a disk named \u{201C}\(trimmed)\u{201D}")
 		}
 		let oldPath = configFilePath(file: "\(oldName).raw")
 		let newPath = configFilePath(file: "\(trimmed).raw")
 		guard !FileManager.default.fileExists(atPath: newPath) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "a file named '\(trimmed).raw' already exists")
+				code: .alreadyExists,
+				message: "A file named \u{201C}\(trimmed).raw\u{201D} is already in the "
+					+ "VM’s folder")
 		}
 		try FileManager.default.moveItem(atPath: oldPath, toPath: newPath)
 		disks[index].kind = .storage(trimmed, size)
@@ -251,7 +254,7 @@ extension VMConfig {
 	// caller's (LocalMachman.validateMountKind — only it can name the error well).
 	func setMountKind(id: String, kind: String) throws {
 		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
-			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
 		guard mountPoints[index].kind != kind else { return }
 		mountPoints[index].kind = kind
@@ -261,13 +264,14 @@ extension VMConfig {
 	// Change a mount's guest tag (what the guest passes to mount -t virtiofs).
 	func setMountTag(id: String, tag: String) throws {
 		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
-			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
 		let trimmed = try VMConfig.normalizedShareTag(tag)
 		guard mountPoints[index].tag != trimmed else { return }
 		guard !mountPoints.contains(where: { $0.tag == trimmed }) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "a mount tagged '\(trimmed)' already exists")
+				code: .alreadyExists,
+				message: "This VM already has a mount tagged \u{201C}\(trimmed)\u{201D}")
 		}
 		mountPoints[index].tag = trimmed
 		try saveVMConfig()
@@ -307,19 +311,18 @@ extension VMConfig {
 
 	func growStorageDisk(id: String, to newSize: UInt64) throws {
 		guard let index = disks.firstIndex(where: { $0.id == id }) else {
-			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		guard case .storage(let storageName, _) = disks[index].kind else {
 			throw MachmanError(
-				code: .invalidArgument, message: "only owned storage disks can be resized")
+				code: .invalidArgument, message: "Only owned disks can grow")
 		}
 		let path = configFilePath(file: "\(storageName).raw")
 		let current = getDiskSize(disk: disks[index]) ?? 0
 		guard newSize > current else {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "resize can only grow (\(storageName).raw is already "
-					+ "\(current) bytes)")
+				message: "Disks only grow — enter more than \(ByteSize.display(current))")
 		}
 		let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
 		defer { try? handle.close() }

@@ -57,7 +57,7 @@ extension VMConfig {
 			return loader
 		case .linuxKernel(let k):
 			guard FileManager.default.fileExists(atPath: k.kernelPath) else {
-				throw VirtualMachineError.critical("Kernel image not found: '\(k.kernelPath)'")
+				throw VirtualMachineError.critical("Kernel image not found: \(k.kernelPath)")
 			}
 			let loader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: k.kernelPath))
 			if let initrd = k.initialRamdiskPath {

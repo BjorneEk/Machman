@@ -233,21 +233,21 @@ public final class LocalMachman: MachmanControlling {
 		case .storage:
 			guard let diskName = disk.name, !diskName.isEmpty, let size = disk.sizeBytes else {
 				throw MachmanError(
-					code: .invalidArgument, message: "storage disk requires name and sizeBytes")
+					code: .invalidArgument, message: "A new disk needs a name and a size")
 			}
 			try vm.config.addNewStorageDisk(name: diskName, size: size)
 		case .iso:
 			guard let path = disk.path, !path.isEmpty else {
-				throw MachmanError(code: .invalidArgument, message: "iso disk requires a path")
+				throw MachmanError(code: .invalidArgument, message: "An ISO disk needs a path")
 			}
 			try vm.config.addIsoDisk(isoUrl: URL(fileURLWithPath: path))
 		case .image:
 			guard let path = disk.path, !path.isEmpty else {
-				throw MachmanError(code: .invalidArgument, message: "image disk requires a path")
+				throw MachmanError(code: .invalidArgument, message: "A disk image needs a path")
 			}
 			try vm.config.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: path))))
 		case .unknown:
-			throw MachmanError(code: .invalidArgument, message: "unknown disk type")
+			throw MachmanError(code: .invalidArgument, message: "Unknown disk type")
 		}
 		registry.events.emit(.listChanged)
 	}
@@ -255,7 +255,7 @@ public final class LocalMachman: MachmanControlling {
 	public func removeDisk(vm name: String, diskID: String) async throws {
 		let vm = try lookup(name)
 		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
-			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		try registry.removeDisk(disk, from: vm)
 		registry.events.emit(.listChanged)
@@ -273,18 +273,18 @@ public final class LocalMachman: MachmanControlling {
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
 		let vm = try lookup(name)
 		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
-			throw MachmanError(code: .notFound, message: "no disk '\(diskID)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		let vmDir = vm.config.vmDirPath()
 		let sourcePath: String
 		switch disk.kind {
 		case .storage:
 			throw MachmanError(
-				code: .invalidState, message: "this disk is already owned by the VM")
+				code: .invalidState, message: "This disk is already owned by the VM")
 		case .iso(let url):
 			guard !url.path.hasPrefix(vmDir + "/") else {
 				throw MachmanError(
-					code: .invalidState, message: "this disk is already owned by the VM")
+					code: .invalidState, message: "This disk is already owned by the VM")
 			}
 			sourcePath = url.path
 		case .fromUrl(let url):
@@ -355,7 +355,8 @@ public final class LocalMachman: MachmanControlling {
 	// macOS guests automount the share and have no scriptable FUSE.
 	static func validateMountKind(_ kind: String, for config: VMConfig) throws {
 		guard kind == MountKind.virtiofs || kind == MountKind.sshfs else {
-			throw MachmanError(code: .invalidArgument, message: "unknown mount kind '\(kind)'")
+			throw MachmanError(
+				code: .invalidArgument, message: "Unknown mount kind \u{201C}\(kind)\u{201D}")
 		}
 		if case .macOS = config.boot, kind == MountKind.sshfs {
 			throw MachmanError(
@@ -367,7 +368,7 @@ public final class LocalMachman: MachmanControlling {
 	public func removeMount(vm name: String, mountID: String) async throws {
 		let vm = try lookup(name)
 		guard let mount = vm.config.mountPoints.first(where: { $0.id.uuidString == mountID }) else {
-			throw MachmanError(code: .notFound, message: "no mount '\(mountID)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
 		try vm.config.removeMountPoint(mount)
 		registry.events.emit(.listChanged)
@@ -380,7 +381,7 @@ public final class LocalMachman: MachmanControlling {
 		} catch is BootConfigError {
 			throw MachmanError(
 				code: .invalidState,
-				message: "This VM has macOS installed; its boot mode is locked.")
+				message: "This VM has macOS installed, so its boot mode can’t change")
 		}
 		registry.events.emit(.listChanged)
 	}
@@ -398,7 +399,7 @@ public final class LocalMachman: MachmanControlling {
 		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
 		guard role != .unknown else {
-			throw MachmanError(code: .invalidArgument, message: "unknown kernel role")
+			throw MachmanError(code: .invalidArgument, message: "Unknown kernel role")
 		}
 		let vm = try lookup(name)
 		let kernelsDir = vm.config.kernelsDirPath()
@@ -406,7 +407,7 @@ public final class LocalMachman: MachmanControlling {
 		// operation (KernelStore reports no byte progress); previously fully silent.
 		let opID = operationCenter.begin(
 			kind: OperationInfo.Kind.kernelImport, vm: name,
-			label: "Importing \(role.rawValue) '\(tag)'")
+			label: "Importing \(role.rawValue) \u{201C}\(tag)\u{201D}")
 		let dest: String
 		do {
 			dest = try await Task.detached(priority: .userInitiated) {
@@ -437,7 +438,7 @@ public final class LocalMachman: MachmanControlling {
 		let vm = try lookup(name)
 		guard !vm.state.isRunning else {
 			throw MachmanError(
-				code: .invalidState, message: "stop \(name) before renaming its disks")
+				code: .invalidState, message: "Stop \(name) before renaming its disks")
 		}
 		try registry.renameStorageDisk(id: diskID, of: vm, to: newName)
 		registry.events.emit(.listChanged)
@@ -466,7 +467,7 @@ public final class LocalMachman: MachmanControlling {
 		let vm = try lookup(name)
 		guard !vm.state.isRunning else {
 			throw MachmanError(
-				code: .invalidState, message: "stop \(name) before renaming its kernel files")
+				code: .invalidState, message: "Stop \(name) before renaming its kernel files")
 		}
 		try vm.config.renameKernelFile(path: path, to: tag)
 		registry.events.emit(.listChanged)
@@ -480,7 +481,7 @@ public final class LocalMachman: MachmanControlling {
 		let wanted = URL(fileURLWithPath: path).standardized.path
 		guard let owned = vm.config.ownedKernelFiles().first(where: { $0.path == wanted })
 		else {
-			throw MachmanError(code: .notFound, message: "No owned kernel file at \(path)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that kernel file")
 		}
 		let ownedPath = owned.path
 		try await Task.detached(priority: .userInitiated) {

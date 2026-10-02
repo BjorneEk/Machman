@@ -52,7 +52,7 @@ enum DiskImport {
 	) throws -> VMDisk {
 		let fm = FileManager.default
 		guard fm.fileExists(atPath: src) else {
-			throw MachmanError(code: .notFound, message: "no file at \(src)")
+			throw MachmanError(code: .notFound, message: "No file at \(src)")
 		}
 		let size = (try? fm.attributesOfItem(atPath: src)[.size] as? UInt64)
 			.flatMap { $0 } ?? 0
@@ -60,16 +60,16 @@ enum DiskImport {
 		case .qcow:
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "qcow2 images are not supported by Virtualization.framework — "
-					+ "convert to raw first (qemu-img convert -O raw)")
+				message: "Machman can’t use qcow2 images — convert to raw first "
+					+ "(qemu-img convert -O raw)")
 		case .unreadable:
-			throw MachmanError(code: .invalidArgument, message: "cannot read \(src)")
+			throw MachmanError(code: .invalidArgument, message: "Couldn’t read \(src)")
 		case .raw:
 			guard size > 0, size % 512 == 0 else {
 				throw MachmanError(
 					code: .invalidArgument,
-					message: "raw disk images must be a non-empty multiple of 512 bytes "
-						+ "(\(src) is \(size))")
+					message: "Raw disk images must be a non-empty multiple of 512 bytes, and "
+						+ "\((src as NSString).lastPathComponent) is \(size) bytes")
 			}
 			let placed = try stagedCopy(
 				src: src, vmDir: vmDir,
@@ -137,7 +137,7 @@ enum DiskImport {
 				}
 			}
 			throw MachmanError(
-				code: .alreadyExists, message: "no free name for the imported disk in \(vmDir)")
+				code: .alreadyExists, message: "No free name is left for the imported disk")
 		} catch {
 			try? fm.removeItem(atPath: staging)
 			throw error
@@ -165,7 +165,8 @@ enum DiskImport {
 		default:
 			throw MachmanError(
 				code: .ioFailure,
-				message: "placing \(path): \(String(cString: strerror(code)))")
+				message: "Couldn’t place \((path as NSString).lastPathComponent): "
+					+ String(cString: strerror(code)))
 		}
 	}
 

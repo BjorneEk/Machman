@@ -32,4 +32,15 @@ extension Samples {
 	public static func olderDaemonBootWarning(_ vm: String) -> String {
 		"\(vm) has no display device \u{2014} started headless"
 	}
+
+	// A refused qcow2 import's card: DiskImport's refusal word for word.
+	public static func failedQcow2Import(vm: String = "Debian") -> OperationInfo {
+		OperationInfo(
+			id: "op-import-qcow2", kind: OperationInfo.Kind.importDisk, vm: vm,
+			label: "Importing ubuntu.qcow2", fraction: nil,
+			startedAt: now.addingTimeInterval(-5), state: OperationInfo.State.failed,
+			message: "Machman can’t use qcow2 images — convert to raw first "
+				+ "(qemu-img convert -O raw)",
+			cancellable: true)
+	}
 }

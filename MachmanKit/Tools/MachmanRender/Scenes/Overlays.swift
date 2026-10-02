@@ -113,6 +113,17 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		// W3: the import refusal's card reads the engine's sentence (E28: was a struct dump).
+		RenderScene(
+			"overlay.cards.failed-qcow2",
+			"NotificationOverlay: a refused qcow2 import",
+			widths: [420], height: 320
+		) { ctx in
+			ctx.stub.emit(.operationChanged(op: Samples.failedQcow2Import()))
+			Offscreen.pump(until: { !ctx.operations.operations.isEmpty })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 		// W3: a boot warning names its VM once, from a current daemon and from an older one.
 		RenderScene(
 			"overlay.toasts.boot-warning",

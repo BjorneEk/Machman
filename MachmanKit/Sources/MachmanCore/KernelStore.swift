@@ -85,7 +85,7 @@ enum KernelStore {
 	) throws -> String {
 		let fm = FileManager.default
 		guard fm.fileExists(atPath: sourcePath) else {
-			throw MachmanError(code: .notFound, message: "no file at '\(sourcePath)'")
+			throw MachmanError(code: .notFound, message: "No file at \(sourcePath)")
 		}
 		let trimmed = try NameRule.kernelTag.normalized(tag)
 		let tagDir = kernelsDir + "/" + role.rawValue + "/" + trimmed
@@ -93,7 +93,9 @@ enum KernelStore {
 		let dest = tagDir + "/" + basename
 		guard !fm.fileExists(atPath: dest) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "'\(trimmed)/\(basename)' already exists")
+				code: .alreadyExists,
+				message: "\u{201C}\(trimmed)\u{201D} already holds a file named "
+					+ "\u{201C}\(basename)\u{201D}")
 		}
 		try fm.createDirectory(atPath: tagDir, withIntermediateDirectories: true)
 		try fm.copyItem(atPath: sourcePath, toPath: dest)
@@ -112,7 +114,9 @@ enum KernelStore {
 		let kernelsDir = URL(fileURLWithPath: rawKernelsDir).standardized.path
 		guard isOwned(path, kernelsDir: kernelsDir) else {
 			throw MachmanError(
-				code: .invalidArgument, message: "'\(path)' is not an owned kernel file")
+				code: .invalidArgument,
+				message: "\((path as NSString).lastPathComponent) isn’t a kernel file this VM "
+					+ "owns")
 		}
 		let rel = path.dropFirst(kernelsDir.count + 1).split(separator: "/").map(String.init)
 		guard rel.count == 3,
@@ -120,7 +124,7 @@ enum KernelStore {
 		else {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "legacy-layout kernel file — re-import it to rename")
+				message: "This kernel file uses an old layout — import it again to rename it")
 		}
 		let trimmed = try NameRule.kernelTag.normalized(newTag)
 		guard trimmed != rel[1] else { return path }
@@ -128,7 +132,9 @@ enum KernelStore {
 		let newPath = newDir + "/" + rel[2]
 		guard !fm.fileExists(atPath: newPath) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "'\(trimmed)/\(rel[2])' already exists")
+				code: .alreadyExists,
+				message: "\u{201C}\(trimmed)\u{201D} already holds a file named "
+					+ "\u{201C}\(rel[2])\u{201D}")
 		}
 		try fm.createDirectory(atPath: newDir, withIntermediateDirectories: true)
 		try fm.moveItem(atPath: path, toPath: newPath)
@@ -150,7 +156,9 @@ enum KernelStore {
 		let exists = fm.fileExists(atPath: path, isDirectory: &isDirectory)
 		guard isOwned(path, kernelsDir: kernelsDir), !(exists && isDirectory.boolValue) else {
 			throw MachmanError(
-				code: .invalidArgument, message: "'\(rawPath)' is not an owned kernel file")
+				code: .invalidArgument,
+				message: "\((rawPath as NSString).lastPathComponent) isn’t a kernel file this VM "
+					+ "owns")
 		}
 		if exists {
 			try fm.removeItem(atPath: path)

@@ -409,7 +409,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// enabled) stay; only the kind changes.
 	func replaceDisk(id: String, kind: VMDiskKind) throws {
 		guard let index = disks.firstIndex(where: { $0.id == id }) else {
-			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		disks[index] = disks[index].withKind(kind)
 		try saveVMConfig()
@@ -467,7 +467,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		mount.tag = try VMConfig.normalizedShareTag(mount.tag)
 		guard !mountPoints.contains(where: { $0.tag == mount.tag }) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "a mount tagged '\(mount.tag)' already exists")
+				code: .alreadyExists,
+				message: "This VM already has a mount tagged \u{201C}\(mount.tag)\u{201D}")
 		}
 		mountPoints.append(mount)
 		try saveVMConfig()
@@ -497,7 +498,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		guard size > 0, size % 512 == 0, size <= UInt64(Int64.max) else {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "A new disk's size must be a positive multiple of 512 bytes")
+				message: "A new disk’s size must be a positive multiple of 512 bytes")
 		}
 		let taken = disks.contains {
 			if case .storage(let existing, _) = $0.kind { return existing == name }
@@ -530,11 +531,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 				throw MachmanError(
 					code: .alreadyExists,
 					message: "A file named \u{201C}\(name).raw\u{201D} is already in the "
-						+ "VM's folder")
+						+ "VM’s folder")
 			}
 			throw MachmanError(
 				code: .ioFailure,
-				message: "creating \(name).raw: \(String(cString: strerror(code)))")
+				message: "Couldn’t create \(name).raw: \(String(cString: strerror(code)))")
 		}
 		defer { close(fd) }
 		guard ftruncate(fd, off_t(size)) == 0 else {
@@ -542,7 +543,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			unlink(path)
 			throw MachmanError(
 				code: .ioFailure,
-				message: "sizing \(name).raw: \(String(cString: strerror(code)))")
+				message: "Couldn’t size \(name).raw: \(String(cString: strerror(code)))")
 		}
 	}
 
@@ -626,11 +627,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// batch BEFORE any write, so a stale client id can't half-apply it.
 	func setSafety(disks diskSafety: [String: Bool], mounts mountSafety: [String: Bool]) throws {
 		for id in diskSafety.keys where !disks.contains(where: { $0.id == id }) {
-			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
 		}
 		for id in mountSafety.keys
 			where !mountPoints.contains(where: { $0.id.uuidString == id }) {
-			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
 		for i in disks.indices {
 			if let safe = diskSafety[disks[i].id] { disks[i].safe = safe }
