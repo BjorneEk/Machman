@@ -15,6 +15,9 @@ import MachmanFixtures
 import MachmanTestSupport
 @testable import MachmanDesktopCore
 
+// Q7: the retry tests ran on the standard 1/2/5 s back-off inside 5 s windows, which left
+// 4 s of slack that a machine at load ~19 used up. They retry after 50 ms now and wait up to
+// eventually's default 10 s.
 @MainActor
 struct StoreRetryTests {
 	private static let listTimeout = MachmanError(
@@ -25,11 +28,9 @@ struct StoreRetryTests {
 	@Test func aListThatFailedOnceLoadsWithoutAnEvent() async {
 		let stub = StubMachman.serving(Samples.library())
 		stub.fail("listVMs", with: Self.listTimeout)
-		let store = VMStore()
+		let store = VMStore(retryDelays: [.milliseconds(50)])
 		store.attach(api: stub)
-		#expect(await eventually(timeout: .seconds(5)) {
-			store.vms.count == Samples.library().count
-		})
+		#expect(await eventually { store.vms.count == Samples.library().count })
 		#expect(store.listProblem == nil)
 		store.detach()
 	}
@@ -39,7 +40,7 @@ struct StoreRetryTests {
 		stub.fail("listVMs", with: Self.listTimeout)
 		let store = VMStore(retryDelays: [.seconds(30)])
 		store.attach(api: stub)
-		#expect(await eventually(timeout: .seconds(5)) { store.listProblem != nil })
+		#expect(await eventually { store.listProblem != nil })
 		#expect(store.vms.isEmpty)
 		await store.reload()
 		#expect(store.listProblem == nil)
@@ -53,7 +54,7 @@ struct StoreRetryTests {
 		h.stub.fail("listVMs", with: Self.listTimeout)
 		await h.store.reload()
 		#expect(h.viewModel.statusToasts.map(\.message)
-			== ["Couldn't refresh the VM list — retrying"])
+			== [VMListViewModel.listProblemMessage])
 		#expect(h.viewModel.statusToasts.first?.id == VMListViewModel.listProblemToastID)
 		#expect(h.viewModel.statusToasts.first?.sticky == true)
 		#expect(h.viewModel.vms.count == Samples.library().count)   // the last good list stays
@@ -66,11 +67,9 @@ struct StoreRetryTests {
 		stub.ops = [Samples.copyOperation()]
 		stub.fail("operations", with: MachmanError(
 			code: .timeout, message: "no reply to host.operations after 30s"))
-		let operations = OperationsStore()
+		let operations = OperationsStore(retryDelays: [.milliseconds(50)])
 		operations.attach(api: stub)
-		#expect(await eventually(timeout: .seconds(5)) {
-			operations.operations.map(\.id) == ["op-1"]
-		})
+		#expect(await eventually { operations.operations.map(\.id) == ["op-1"] })
 		operations.detach()
 	}
 
@@ -79,7 +78,7 @@ struct StoreRetryTests {
 		stub.fail("listVMs", with: Self.listTimeout)
 		let store = VMStore(retryDelays: [.milliseconds(50)])
 		store.attach(api: stub)
-		#expect(await eventually(timeout: .seconds(5)) { store.listProblem != nil })
+		#expect(await eventually { store.listProblem != nil })
 		store.detach()
 		let calls = stub.calls.filter { $0 == "listVMs" }.count
 		try? await Task.sleep(for: .milliseconds(300))
