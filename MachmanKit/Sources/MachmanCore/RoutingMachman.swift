@@ -637,12 +637,15 @@ public final class RoutingMachman: MachmanControlling {
 		return host
 	}
 
+	// Each event goes on by the line the host sent it in, so a newer vmhost's event types and
+	// fields reach clients whole (A10); the side effects here read the decoded event.
 	private func subscribeEvents(_ host: HostedVM) {
 		let id = host.identity.id
 		host.eventTask = Task { [weak self] in
-			let stream = await host.client.events()
-			for await event in stream {
+			let stream = await host.client.eventLines()
+			for await forwarded in stream {
 				guard let self = self else { return }
+				let event = forwarded.event
 				if case .stateChanged(_, let state) = event, state.isRunning,
 					let host = self.host(withID: id) {
 					host.sawRun = true
@@ -661,7 +664,7 @@ public final class RoutingMachman: MachmanControlling {
 					// Report ingestion may have changed users/keys the managed file pins.
 					self.scheduleSSHHostConfigWrite()
 				}
-				self.registry.events.emit(event)
+				self.registry.events.emit(event, line: forwarded.line)
 			}
 		}
 	}
@@ -2049,5 +2052,11 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func events() async -> AsyncStream<VMEvent> {
 		registry.events.stream()
+	}
+}
+
+extension RoutingMachman: EventLineSource {
+	func eventLines() -> AsyncStream<EventLine> {
+		registry.events.lineStream()
 	}
 }

@@ -124,3 +124,16 @@ extension VMEvent: Codable {
 		}
 	}
 }
+
+// An event with the notification line it arrived in (A10). The daemon passes a vmhost's
+// events on by that line, so a newer vmhost's event types and fields reach clients whole;
+// `line` is nil for an event made in this process, which goes out encoded.
+public struct EventLine: Sendable, Equatable {
+	public let event: VMEvent
+	public let line: Data?
+
+	public init(event: VMEvent, line: Data? = nil) {
+		self.event = event
+		self.line = line
+	}
+}

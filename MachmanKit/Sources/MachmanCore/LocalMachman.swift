@@ -1161,3 +1161,9 @@ public final class LocalMachman: MachmanControlling {
 		return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7])
 	}
 }
+
+extension LocalMachman: EventLineSource {
+	func eventLines() -> AsyncStream<EventLine> {
+		registry.events.lineStream()
+	}
+}

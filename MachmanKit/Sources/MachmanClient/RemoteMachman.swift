@@ -438,12 +438,25 @@ public final class RemoteMachman: MachmanControlling {
 
 	public func events() async -> AsyncStream<VMEvent> {
 		// Subscribe on the wire (idempotent server-side), then hand out a local fan-out stream.
+		await subscribeLogged()
+		return await connection.events()
+	}
+
+	// events(), each with the line it arrived in (A10). The local stream comes first, then the
+	// subscription on the wire: an event the server sends right after its reply already has a
+	// stream to land in.
+	public func eventLines() async -> AsyncStream<EventLine> {
+		let stream = await connection.eventLines()
+		await subscribeLogged()
+		return stream
+	}
+
+	private func subscribeLogged() async {
 		do {
 			try await subscribeEvents()
 		} catch {
 			MachmanLogger.log(.passiveWarning, "events.subscribe failed: \(error)")
 		}
-		return await connection.events()
 	}
 }
 

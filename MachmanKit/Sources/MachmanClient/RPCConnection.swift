@@ -101,6 +101,9 @@ public actor RPCConnection {
 	private var nextID = 1
 	private var pending: [Int: PendingCall] = [:]
 	private var eventSubscribers: [UUID: AsyncStream<VMEvent>.Continuation] = [:]
+	// Subscribers that also want each event's line as it arrived (A10: the daemon passes a
+	// vmhost's events on by that line).
+	private var lineSubscribers: [UUID: AsyncStream<EventLine>.Continuation] = [:]
 	private var closed = false
 	// What the connection's death cut off: the calls still waiting for a reply at teardown,
 	// oldest first (P12). Empty while the connection lives.
@@ -294,6 +297,9 @@ public actor RPCConnection {
 				for continuation in eventSubscribers.values {
 					continuation.yield(event)
 				}
+				for continuation in lineSubscribers.values {
+					continuation.yield(EventLine(event: event, line: line))
+				}
 			}
 			return
 		}
@@ -318,8 +324,20 @@ public actor RPCConnection {
 		}
 	}
 
+	// Every event from now on with the line it arrived in, in arrival order.
+	public func eventLines() -> AsyncStream<EventLine> {
+		AsyncStream { continuation in
+			let id = UUID()
+			self.lineSubscribers[id] = continuation
+			continuation.onTermination = { _ in
+				Task { await self.removeSubscriber(id) }
+			}
+		}
+	}
+
 	private func removeSubscriber(_ id: UUID) {
 		eventSubscribers[id] = nil
+		lineSubscribers[id] = nil
 	}
 
 	// MARK: - Teardown
@@ -343,6 +361,10 @@ public actor RPCConnection {
 			continuation.finish()
 		}
 		eventSubscribers.removeAll()
+		for continuation in lineSubscribers.values {
+			continuation.finish()
+		}
+		lineSubscribers.removeAll()
 		onDisconnect()
 	}
 

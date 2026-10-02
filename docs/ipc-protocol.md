@@ -132,7 +132,7 @@ keep working — nothing is rejected at load.
 | `host.operations` | — | `[OperationInfo]` (1.0.4+; live long-running operations for resync after reconnect — events have no replay; terminal states linger briefly) |
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
-| `events.subscribe` | — | `{}`; events then arrive on this connection |
+| `events.subscribe` | — | `{}`; events then arrive on this connection (1.0.12+: the subscription is in place before the reply) |
 | `daemon.retire` | — | `{}`; the daemon then stops serving and exits, leaving vmhosts (and their VMs) running for a successor to re-adopt. Only the daemon honors it; a vmhost refuses with `invalidState` |
 
 ## DTOs (abridged)
@@ -281,6 +281,10 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 `vm.copy` with vm = the copy being created, and by `vm.disk.import`, `vm.disk.promote`,
 and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
 
+The daemon passes each event a vmhost emits on in the line the vmhost sent it (1.0.12+), so
+event types and fields the daemon itself doesn't know reach clients unchanged; older daemons
+re-encoded them, which cut an unknown type down to `{"type"}`.
+
 `operationChanged {op: OperationInfo}` (1.0.4+): a long-running operation started,
 progressed, or reached a terminal state. `OperationInfo` = `{id, kind, vm?, label,
 fraction?, completedBytes?, totalBytes?, startedAt, state, message?, cancellable?}` with open
@@ -351,7 +355,7 @@ against the socket peer) and reset on host reboot.
 
 Every running VM lives in its own `MachmanVMHost` process, which serves this same protocol on
 `$TMPDIR/<suite>/vm-<hash>.sock` (hashed because a VM name may be any length); MachmanAgent proxies
-per-VM operations to it and re-emits its events. The hash is of the VM's CURRENT name: after
+per-VM operations to it and passes its events on as sent. The hash is of the VM's CURRENT name: after
 `vm.safeSave` the run answers on the saved VM's path.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the

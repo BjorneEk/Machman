@@ -34,6 +34,7 @@ public final class MachmanServer {
 
 	private final class Client {
 		let connection: UDSConnection
+		var subscribed = false
 		var eventTask: Task<Void, Never>?
 
 		init(connection: UDSConnection) {
@@ -364,7 +365,9 @@ public final class MachmanServer {
 				try await api.installRosetta()
 				reply(client, id, RPCEmpty())
 			case .eventsSubscribe:
-				subscribe(client)
+				// Registered before the reply: whatever happens after the client hears it —
+				// a start it forwards next, the boot that start runs — reaches it (E9).
+				await subscribe(client)
 				reply(client, id, RPCEmpty())
 			case .safeSave:
 				let p: RPCParams.Rename = try params(line)
@@ -391,13 +394,32 @@ public final class MachmanServer {
 		}
 	}
 
-	private func subscribe(_ client: Client) {
-		guard client.eventTask == nil else { return }
+	private func subscribe(_ client: Client) async {
+		guard !client.subscribed else { return }
+		client.subscribed = true
+		let stream: AsyncStream<EventLine>
+		if let source = api as? EventLineSource {
+			stream = source.eventLines()
+		} else {
+			let events = await api.events()
+			stream = AsyncStream { continuation in
+				let pump = Task {
+					for await event in events { continuation.yield(EventLine(event: event)) }
+					continuation.finish()
+				}
+				continuation.onTermination = { _ in pump.cancel() }
+			}
+		}
 		client.eventTask = Task { [weak self, weak client] in
-			guard let stream = await self?.api.events() else { return }
-			for await event in stream {
-				guard let client = client else { return }
-				self?.send(client, RPCCall(id: nil, method: RPCMethod.event.rawValue, params: event))
+			for await forwarded in stream {
+				guard let self, let client else { return }
+				if let line = forwarded.line {
+					// A vmhost's own line, verbatim (A10): its newer types and fields intact.
+					client.connection.send(line)
+				} else {
+					self.send(client, RPCCall(
+						id: nil, method: RPCMethod.event.rawValue, params: forwarded.event))
+				}
 			}
 		}
 	}
