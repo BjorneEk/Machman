@@ -4,14 +4,46 @@
 //
 //  What the user asks of the daemon: every request a view, a menu or the Dock sends, with
 //  the question that confirms it first when it destroys something (request →
-//  confirmationDialog → perform), sectioned by what it acts on.
+//  confirmationDialog → perform), sectioned by what it acts on. Every request runs in one
+//  shape, perform (Q1): how it goes out, and what it says when it succeeds or is refused,
+//  is decided there once.
 //
 
 import Foundation
 import MachmanUI
 import MachmanAPI
 
+// What an action toasts when it went through.
+struct ActionToast {
+	let symbol: String
+	let message: String
+}
+
 extension VMListViewModel {
+	// MARK: - The runner (Q1)
+
+	// The one shape a request to the daemon runs in. The call goes out off the click, on the
+	// api alone: a view model that went with its connection sends nothing, and a call in
+	// flight doesn't keep it alive. A success shows `toast`. A refusal goes to the field that
+	// asked (`refused`) or to an alert titled "<action> failed" — each only while the view
+	// model is still here to say it.
+	func perform<Value>(
+		_ action: String, toast: ActionToast? = nil,
+		refused: (@MainActor (String) -> Void)? = nil,
+		_ call: @escaping @MainActor (any MachmanControlling) async throws -> Value
+	) {
+		Task { [weak self] in
+			guard let api = self?.api else { return }
+			do {
+				_ = try await call(api)
+				guard let self, let toast else { return }
+				self.pushToast(symbol: toast.symbol, message: toast.message)
+			} catch {
+				self?.refuse(error, while: action, to: refused)
+			}
+		}
+	}
+
 	// MARK: - VM
 
 	public func toggleRun(_ vm: VMInfo) {
@@ -54,34 +86,16 @@ extension VMListViewModel {
 	}
 
 	public func openWindow(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.openWindow(vm: name)
-			} catch {
-				self?.present(error, while: "Opening the \u{201C}\(name)\u{201D} window")
-			}
-		}
+		perform("Opening the \u{201C}\(name)\u{201D} window") { try await $0.openWindow(vm: name) }
 	}
 
 	public func closeWindow(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.closeWindow(vm: name)
-			} catch {
-				self?.present(error, while: "Closing the \u{201C}\(name)\u{201D} window")
-			}
-		}
+		perform("Closing the \u{201C}\(name)\u{201D} window") { try await $0.closeWindow(vm: name) }
 	}
 
 	public func stopVM(_ name: String, mode: StopMode = .force) {
-		Task { [weak self] in
-			do {
-				try await self?.api.stop(vm: name, mode: mode)
-			} catch {
-				let action = mode == .soft ? "Shutting down" : "Force stopping"
-				self?.present(error, while: "\(action) \u{201C}\(name)\u{201D}")
-			}
-		}
+		let action = mode == .soft ? "Shutting down" : "Force stopping"
+		perform("\(action) \u{201C}\(name)\u{201D}") { try await $0.stop(vm: name, mode: mode) }
 	}
 
 	public func createVM(template: VMTemplate? = nil) async -> String? {
@@ -215,14 +229,10 @@ extension VMListViewModel {
 	public func setHardware(
 		_ name: String, cpuCount: Int? = nil, memoryBytes: UInt64? = nil, nested: Bool? = nil
 	) {
-		Task { [weak self] in
-			do {
-				try await self?.api.setHardware(
-					vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
-					nestedVirtualization: nested)
-			} catch {
-				self?.present(error, while: "Updating hardware for \u{201C}\(name)\u{201D}")
-			}
+		perform("Updating hardware for \u{201C}\(name)\u{201D}") {
+			try await $0.setHardware(
+				vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
+				nestedVirtualization: nested)
 		}
 	}
 
@@ -298,26 +308,17 @@ extension VMListViewModel {
 	}
 
 	public func setStartPolicy(_ name: String, policy: StartPolicy) {
-		Task { [weak self] in
-			do {
-				try await self?.api.setStartPolicy(vm: name, policy: policy)
-			} catch {
-				self?.present(
-					error, while: "Updating the default start for \u{201C}\(name)\u{201D}")
-			}
+		perform("Updating the default start for \u{201C}\(name)\u{201D}") {
+			try await $0.setStartPolicy(vm: name, policy: policy)
 		}
 	}
 
 	public func regenerateMAC(_ name: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.regenerateMAC(vm: name)
-				self?.pushToast(
-					symbol: MachmanSymbols.regenerate, message: "MAC address regenerated")
-			} catch {
-				self?.present(error, while: "Regenerating the MAC address")
-			}
-		}
+		perform(
+			"Regenerating the MAC address",
+			toast: ActionToast(
+				symbol: MachmanSymbols.regenerate, message: "MAC address regenerated")
+		) { try await $0.regenerateMAC(vm: name) }
 	}
 
 	// System-prompted host install; capabilities refresh afterwards so the availability
@@ -363,22 +364,14 @@ extension VMListViewModel {
 	}
 
 	public func importDisk(_ name: String, path: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.importDisk(vm: name, path: path)
-			} catch {
-				self?.present(error, while: "Importing a disk into \u{201C}\(name)\u{201D}")
-			}
+		perform("Importing a disk into \u{201C}\(name)\u{201D}") {
+			try await $0.importDisk(vm: name, path: path)
 		}
 	}
 
 	public func promoteDisk(_ name: String, diskID: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.promoteDisk(vm: name, diskID: diskID)
-			} catch {
-				self?.present(error, while: "Promoting a disk on \u{201C}\(name)\u{201D}")
-			}
+		perform("Promoting a disk on \u{201C}\(name)\u{201D}") {
+			try await $0.promoteDisk(vm: name, diskID: diskID)
 		}
 	}
 
@@ -407,38 +400,25 @@ extension VMListViewModel {
 	}
 
 	public func resizeDisk(_ name: String, diskID: String, sizeBytes: UInt64) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.resizeDisk(
-					vm: name, diskID: diskID, sizeBytes: sizeBytes)
-				self?.pushToast(
-					symbol: MachmanSymbols.diskSize,
-					message: "Disk grown to \(ByteSize.display(sizeBytes))")
-			} catch {
-				self?.present(error, while: "Growing a disk")
-			}
-		}
+		perform(
+			"Growing a disk",
+			toast: ActionToast(
+				symbol: MachmanSymbols.diskSize,
+				message: "Disk grown to \(ByteSize.display(sizeBytes))")
+		) { try await $0.resizeDisk(vm: name, diskID: diskID, sizeBytes: sizeBytes) }
 	}
 
 	public func setDiskSafety(_ name: String, diskID: String, safe: Bool) {
-		Task { [weak self] in
-			do {
-				try await self?.api.setSafety(vm: name, disks: [diskID: safe], mounts: nil)
-			} catch {
-				self?.present(error, while: "Updating disk safety")
-			}
+		perform("Updating disk safety") {
+			try await $0.setSafety(vm: name, disks: [diskID: safe], mounts: nil)
 		}
 	}
 
 	public func addDisk(_ name: String, _ disk: NewDisk) {
-		Task { [weak self] in
-			do {
-				try await self?.api.addDisk(vm: name, disk)
-				self?.pushToast(symbol: MachmanSymbols.diskStorage, message: "Added disk")
-			} catch {
-				self?.present(error, while: "Adding a disk")
-			}
-		}
+		perform(
+			"Adding a disk",
+			toast: ActionToast(symbol: MachmanSymbols.diskStorage, message: "Added disk")
+		) { try await $0.addDisk(vm: name, disk) }
 	}
 
 	// References for a batch, one toast for all of them.
@@ -464,14 +444,10 @@ extension VMListViewModel {
 	}
 
 	public func removeDisk(_ name: String, diskID: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.removeDisk(vm: name, diskID: diskID)
-				self?.pushToast(symbol: MachmanSymbols.diskStorage, message: "Removed disk")
-			} catch {
-				self?.present(error, while: "Removing a disk")
-			}
-		}
+		perform(
+			"Removing a disk",
+			toast: ActionToast(symbol: MachmanSymbols.diskStorage, message: "Removed disk")
+		) { try await $0.removeDisk(vm: name, diskID: diskID) }
 	}
 
 	// MARK: - Mounts
@@ -482,148 +458,98 @@ extension VMListViewModel {
 		let rule = NameRule.mountTag
 		let tag = rule.problem(rule.trimmed(tag)) == nil
 			? tag : rule.suggestion(from: tag, fallback: "share")
-		Task { [weak self] in
-			do {
-				try await self?.api.addMount(vm: name, path: path, tag: tag, kind: kind)
-				self?.pushToast(
-					symbol: MachmanSymbols.mount, message: "Added mount \u{201C}\(tag)\u{201D}")
-			} catch {
-				self?.present(error, while: "Adding a mount")
-			}
-		}
+		perform(
+			"Adding a mount",
+			toast: ActionToast(
+				symbol: MachmanSymbols.mount, message: "Added mount \u{201C}\(tag)\u{201D}")
+		) { try await $0.addMount(vm: name, path: path, tag: tag, kind: kind) }
 	}
 
 	public func removeMount(_ name: String, mountID: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.removeMount(vm: name, mountID: mountID)
-				self?.pushToast(symbol: MachmanSymbols.mount, message: "Removed mount")
-			} catch {
-				self?.present(error, while: "Removing a mount")
-			}
-		}
+		perform(
+			"Removing a mount",
+			toast: ActionToast(symbol: MachmanSymbols.mount, message: "Removed mount")
+		) { try await $0.removeMount(vm: name, mountID: mountID) }
 	}
 
 	public func setMountTag(
 		_ name: String, mountID: String, tag: String,
 		refused: (@MainActor (String) -> Void)? = nil
 	) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.setMountTag(vm: name, mountID: mountID, tag: tag)
-				self?.pushToast(
-					symbol: MachmanSymbols.rename,
-					message: ToastWording.renamed(to: tag))
-			} catch {
-				self?.refuse(error, while: "Changing a mount tag", to: refused)
-			}
-		}
+		perform(
+			"Changing a mount tag",
+			toast: ActionToast(
+				symbol: MachmanSymbols.rename, message: ToastWording.renamed(to: tag)),
+			refused: refused
+		) { try await $0.setMountTag(vm: name, mountID: mountID, tag: tag) }
 	}
 
 	public func setMountKind(_ name: String, mountID: String, kind: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.setMountKind(vm: name, mountID: mountID, kind: kind)
-			} catch {
-				self?.present(error, while: "Changing a mount’s kind")
-			}
+		perform("Changing a mount’s kind") {
+			try await $0.setMountKind(vm: name, mountID: mountID, kind: kind)
 		}
 	}
 
 	public func setMountSafety(_ name: String, mountID: String, safe: Bool) {
-		Task { [weak self] in
-			do {
-				try await self?.api.setSafety(vm: name, disks: nil, mounts: [mountID: safe])
-			} catch {
-				self?.present(error, while: "Updating mount safety")
-			}
+		perform("Updating mount safety") {
+			try await $0.setSafety(vm: name, disks: nil, mounts: [mountID: safe])
 		}
 	}
 
 	// MARK: - Devices and serial ports
 
 	public func addDevice(_ name: String, kind: DeviceKind) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.addDevice(vm: name, kind: kind)
-				self?.pushToast(
-					symbol: kind.displaySymbol, message: "Added \(kind.inlineLabel)")
-			}
-			catch { self?.present(error, while: "Adding a device") }
-		}
+		perform(
+			"Adding a device",
+			toast: ActionToast(symbol: kind.displaySymbol, message: "Added \(kind.inlineLabel)")
+		) { try await $0.addDevice(vm: name, kind: kind) }
 	}
 
 	public func removeDevice(_ name: String, kind: DeviceKind) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.removeDevice(vm: name, kind: kind)
-				self?.pushToast(
-					symbol: kind.displaySymbol, message: "Removed \(kind.inlineLabel)")
-			}
-			catch { self?.present(error, while: "Removing a device") }
-		}
+		perform(
+			"Removing a device",
+			toast: ActionToast(symbol: kind.displaySymbol, message: "Removed \(kind.inlineLabel)")
+		) { try await $0.removeDevice(vm: name, kind: kind) }
 	}
 
 	public func updateDevice(_ name: String, device: DeviceInfo) {
-		Task { [weak self] in
-			do { _ = try await self?.api.updateDevice(vm: name, device: device) }
-			catch { self?.present(error, while: "Updating a device") }
-		}
+		perform("Updating a device") { try await $0.updateDevice(vm: name, device: device) }
 	}
 
 	public func addConsolePort(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.addConsolePort(vm: name)
-				self?.pushToast(
-					symbol: MachmanSymbols.serialConsole, message: "Added console port")
-			}
-			catch { self?.present(error, while: "Adding a console port") }
-		}
+		perform(
+			"Adding a console port",
+			toast: ActionToast(symbol: MachmanSymbols.serialConsole, message: "Added console port")
+		) { try await $0.addConsolePort(vm: name) }
 	}
 
 	public func removeConsolePort(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.removeConsolePort(vm: name)
-				self?.pushToast(
-					symbol: MachmanSymbols.serialConsole, message: "Removed console port")
-			}
-			catch { self?.present(error, while: "Removing a console port") }
-		}
+		perform(
+			"Removing a console port",
+			toast: ActionToast(
+				symbol: MachmanSymbols.serialConsole, message: "Removed console port")
+		) { try await $0.removeConsolePort(vm: name) }
 	}
 
 	public func addUartPort(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.addUartPort(vm: name)
-				self?.pushToast(symbol: MachmanSymbols.serialUart, message: "Added UART port")
-			}
-			catch { self?.present(error, while: "Adding a UART port") }
-		}
+		perform(
+			"Adding a UART port",
+			toast: ActionToast(symbol: MachmanSymbols.serialUart, message: "Added UART port")
+		) { try await $0.addUartPort(vm: name) }
 	}
 
 	public func removeUartPort(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.removeUartPort(vm: name)
-				self?.pushToast(
-					symbol: MachmanSymbols.serialUart, message: "Removed UART port")
-			}
-			catch { self?.present(error, while: "Removing a UART port") }
-		}
+		perform(
+			"Removing a UART port",
+			toast: ActionToast(symbol: MachmanSymbols.serialUart, message: "Removed UART port")
+		) { try await $0.removeUartPort(vm: name) }
 	}
 
 	public func setSerialLogging(
 		_ name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
 	) {
-		Task { [weak self] in
-			do {
-				try await self?.api.setSerialLogging(
-					vm: name, kind: kind, index: index, config: config)
-			} catch {
-				self?.present(error, while: "Updating serial logging")
-			}
+		perform("Updating serial logging") {
+			try await $0.setSerialLogging(vm: name, kind: kind, index: index, config: config)
 		}
 	}
 
@@ -681,14 +607,10 @@ extension VMListViewModel {
 		console: [String: Bool]? = nil, uart: [String: Bool]? = nil,
 		devices: [String: Bool]? = nil
 	) {
-		Task { [weak self] in
-			do {
-				try await self?.api.setEnabled(
-					vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
-					devices: devices)
-			} catch {
-				self?.present(error, while: "Updating enabled state")
-			}
+		perform("Updating enabled state") {
+			try await $0.setEnabled(
+				vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
+				devices: devices)
 		}
 	}
 
@@ -727,21 +649,13 @@ extension VMListViewModel {
 	}
 
 	public func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, tag: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.promoteKernelFile(
-					vm: name, role: role, sourcePath: sourcePath, tag: tag)
-			} catch {
-				self?.present(error, while: "Promoting a kernel file")
-			}
+		perform("Promoting a kernel file") {
+			try await $0.promoteKernelFile(vm: name, role: role, sourcePath: sourcePath, tag: tag)
 		}
 	}
 
 	public func deleteKernel(_ name: String, path: String) {
-		Task { [weak self] in
-			do { _ = try await self?.api.deleteKernelFile(vm: name, path: path) }
-			catch { self?.present(error, while: "Deleting a kernel file") }
-		}
+		perform("Deleting a kernel file") { try await $0.deleteKernelFile(vm: name, path: path) }
 	}
 
 	public func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
@@ -770,25 +684,15 @@ extension VMListViewModel {
 	public func setKernelOverride(
 		_ name: String, path: String, commandLine: String? = nil, overrideEnabled: Bool? = nil
 	) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.setKernelOverride(
-					vm: name, path: path, commandLine: commandLine,
-					overrideEnabled: overrideEnabled)
-			} catch {
-				self?.present(error, while: "Updating the kernel override")
-			}
+		perform("Updating the kernel override") {
+			try await $0.setKernelOverride(
+				vm: name, path: path, commandLine: commandLine,
+				overrideEnabled: overrideEnabled)
 		}
 	}
 
 	public func updateKernelSettings(_ name: String, _ settings: KernelSettings) {
-		Task { [weak self] in
-			do {
-				try await self?.api.updateKernelSettings(vm: name, settings)
-			} catch {
-				self?.present(error, while: "Saving kernel settings")
-			}
-		}
+		perform("Saving kernel settings") { try await $0.updateKernelSettings(vm: name, settings) }
 	}
 
 	// MARK: - SSH and guest setup (1.0.5)
@@ -800,23 +704,17 @@ extension VMListViewModel {
 		let action = enabled
 			? "Adding \u{201C}\(alias)\u{201D} to your SSH config"
 			: "Removing \u{201C}\(alias)\u{201D} from your SSH config"
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.setSSH(
-					vm: name, integrationEnabled: enabled, reverseApproved: nil, alias: nil)
-			}
-			catch { self?.present(error, while: action) }
+		perform(action) {
+			try await $0.setSSH(
+				vm: name, integrationEnabled: enabled, reverseApproved: nil, alias: nil)
 		}
 	}
 
 	// An empty alias resets the VM to its default "<vm>.machman" name.
 	public func setSSHAlias(_ name: String, alias: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.setSSH(
-					vm: name, integrationEnabled: nil, reverseApproved: nil, alias: alias)
-			}
-			catch { self?.present(error, while: "Renaming the SSH alias") }
+		perform("Renaming the SSH alias") {
+			try await $0.setSSH(
+				vm: name, integrationEnabled: nil, reverseApproved: nil, alias: alias)
 		}
 	}
 
@@ -824,15 +722,14 @@ extension VMListViewModel {
 	public func setSSHReverseApproved(_ name: String, approved: Bool) {
 		let wasPending = vms.first { $0.name == name }?.ssh?.reverseState == .pending
 		let verb = approved ? "Approved" : wasPending ? "Denied" : "Revoked"
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.setSSH(
-					vm: name, integrationEnabled: nil, reverseApproved: approved, alias: nil)
-				self?.pushToast(
-					symbol: MachmanSymbols.deviceSSHSetup,
-					message: "\(verb) \(name)’s access to this Mac")
-			}
-			catch { self?.present(error, while: "Updating guest access") }
+		perform(
+			"Updating guest access",
+			toast: ActionToast(
+				symbol: MachmanSymbols.deviceSSHSetup,
+				message: "\(verb) \(name)’s access to this Mac")
+		) {
+			try await $0.setSSH(
+				vm: name, integrationEnabled: nil, reverseApproved: approved, alias: nil)
 		}
 	}
 
@@ -851,56 +748,38 @@ extension VMListViewModel {
 	}
 
 	public func resetSSH(_ name: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.resetSSH(vm: name)
-				self?.pushToast(
-					symbol: MachmanSymbols.deviceSSHSetup,
-					message: "SSH state reset for \(name)")
-			}
-			catch { self?.present(error, while: "Resetting SSH state") }
-		}
+		perform(
+			"Resetting SSH state",
+			toast: ActionToast(
+				symbol: MachmanSymbols.deviceSSHSetup, message: "SSH state reset for \(name)")
+		) { try await $0.resetSSH(vm: name) }
 	}
 
 	public func resetSetup(_ name: String) {
-		Task { [weak self] in
-			do {
-				_ = try await self?.api.resetSetup(vm: name)
-				self?.pushToast(
-					symbol: MachmanSymbols.deviceGuestSetup,
-					message: "Guest setup state reset for \(name)")
-			}
-			catch { self?.present(error, while: "Resetting guest setup state") }
-		}
+		perform(
+			"Resetting guest setup state",
+			toast: ActionToast(
+				symbol: MachmanSymbols.deviceGuestSetup,
+				message: "Guest setup state reset for \(name)")
+		) { try await $0.resetSetup(vm: name) }
 	}
 
 	// The Allow-reinstall toggle made real: serving on demand, clean share otherwise.
 	public func setSetupServed(_ name: String, serve: Bool) {
-		Task { [weak self] in
-			do { _ = try await self?.api.setSetupServed(vm: name, serve: serve) }
-			catch { self?.present(error, while: "Changing the reinstall setting") }
+		perform("Changing the reinstall setting") {
+			try await $0.setSetupServed(vm: name, serve: serve)
 		}
 	}
 
 	// MARK: - macOS install
 
 	public func startInstall(_ name: String, source: InstallSource) {
-		Task { [weak self] in
-			do {
-				try await self?.api.startMacInstall(vm: name, source: source)
-			} catch {
-				self?.present(error, while: "Starting the macOS install")
-			}
+		perform("Starting the macOS install") {
+			try await $0.startMacInstall(vm: name, source: source)
 		}
 	}
 
 	public func cancelInstall(_ name: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.cancelMacInstall(vm: name)
-			} catch {
-				self?.present(error, while: "Canceling the macOS install")
-			}
-		}
+		perform("Canceling the macOS install") { try await $0.cancelMacInstall(vm: name) }
 	}
 }

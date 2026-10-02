@@ -340,6 +340,25 @@ public final class VMListViewModel: ObservableObject {
 		MachmanError.userMessage(for: error)
 	}
 
+	// A refusal goes to the field that asked when it passed `refused` (logged as an alert
+	// would be), else to an alert.
+	func refuse(
+		_ message: String, while action: String, to refused: (@MainActor (String) -> Void)?
+	) {
+		guard let refused else {
+			present(message: message, while: action)
+			return
+		}
+		MachmanLogger.log(.interactionError, "\(action) refused: \(message)")
+		refused(message)
+	}
+
+	func refuse(
+		_ error: Error, while action: String, to refused: (@MainActor (String) -> Void)?
+	) {
+		refuse(Self.message(for: error), while: action, to: refused)
+	}
+
 	public func askDiskAdd(vm: String, urls: [URL]) {
 		guard !urls.isEmpty else { return }
 		diskAddQueue.enqueue(PendingDiskAdd(vm: vm, urls: urls))

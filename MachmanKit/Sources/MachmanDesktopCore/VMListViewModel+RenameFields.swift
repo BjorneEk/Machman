@@ -15,27 +15,6 @@ import MachmanUI
 import MachmanAPI
 
 extension VMListViewModel {
-	// MARK: - Refusals
-
-	// A refusal goes to the field that asked when it passed `refused` (logged as an alert
-	// would be), else to an alert.
-	func refuse(
-		_ message: String, while action: String, to refused: (@MainActor (String) -> Void)?
-	) {
-		guard let refused else {
-			present(message: message, while: action)
-			return
-		}
-		MachmanLogger.log(.interactionError, "\(action) refused: \(message)")
-		refused(message)
-	}
-
-	func refuse(
-		_ error: Error, while action: String, to refused: (@MainActor (String) -> Void)?
-	) {
-		refuse(Self.message(for: error), while: action, to: refused)
-	}
-
 	// MARK: - VM name
 
 	// Why the Name field's draft can't be sent, or nil — nil for the VM's own name too.
