@@ -166,10 +166,9 @@ enum VMCopier {
 				clonedRaws.insert("\(name).raw")
 				disks.append(disk)
 			case (.storage(let name, _), .reference):
-				// The safe-run mechanism: same entry, now pointing at the real file.
-				disks.append(VMDisk(
-					kind: .fromUrl(URL(fileURLWithPath: src + "/\(name).raw")),
-					safe: disk.safe))
+				// The safe-run mechanism: same entry, now pointing at the real file. A disabled
+				// one stays disabled: the run must not attach what the VM would not (C19).
+				disks.append(disk.withKind(.fromUrl(URL(fileURLWithPath: src + "/\(name).raw"))))
 			case (_, .omit):
 				continue
 			case (.fromUrl(let url), .clone):
@@ -180,16 +179,14 @@ enum VMCopier {
 				let name = storageName(for: url, taken: takenNames)
 				takenNames.insert(name)
 				externalClones.append((url.path, "\(name).raw", size))
-				disks.append(VMDisk(kind: .storage(name, size), safe: disk.safe))
+				disks.append(disk.withKind(.storage(name, size)))
 			case (.iso(let url), _) where url.path.hasPrefix(src + "/"):
 				// An OWNED iso (imported/promoted into the dir) travels with the sidecar
 				// walk — its entry must follow the directory or the copy points back at
 				// the source. fromUrl references deliberately keep pointing at the source.
 				let relative = String(url.path.dropFirst(src.count + 1))
 				let final = request.destinationParent + "/" + request.newName
-				disks.append(VMDisk(
-					kind: .iso(URL(fileURLWithPath: final + "/" + relative)),
-					safe: disk.safe))
+				disks.append(disk.withKind(.iso(URL(fileURLWithPath: final + "/" + relative))))
 			case (.fromUrl, _), (.iso, _):
 				disks.append(disk)   // referenced entries carry verbatim; the file stays put
 			}

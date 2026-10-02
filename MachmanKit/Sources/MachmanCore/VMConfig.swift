@@ -82,6 +82,14 @@ struct VMDisk: Codable, Identifiable, Equatable {
 		self.safe = safe
 	}
 
+	// The same entry pointing at another file. Every rebuild (a copy, a shadow, a promote)
+	// goes through here, so the entry's flags — safe and enabled alike — always carry.
+	func withKind(_ kind: VMDiskKind) -> VMDisk {
+		var disk = self
+		disk.kind = kind
+		return disk
+	}
+
 	var id: String {
 		switch kind {
 		case .storage(let name, _): return "storage:\(name)"
@@ -388,13 +396,13 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
-	// Swap a disk entry in place (vm.disk.promote): position and the caller-preserved safe
-	// flag stay; only the kind changes.
-	func replaceDisk(id: String, with newDisk: VMDisk) throws {
+	// Swap a disk entry in place (vm.disk.promote): position and the entry's flags (safe,
+	// enabled) stay; only the kind changes.
+	func replaceDisk(id: String, kind: VMDiskKind) throws {
 		guard let index = disks.firstIndex(where: { $0.id == id }) else {
 			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
 		}
-		disks[index] = newDisk
+		disks[index] = disks[index].withKind(kind)
 		try saveVMConfig()
 	}
 

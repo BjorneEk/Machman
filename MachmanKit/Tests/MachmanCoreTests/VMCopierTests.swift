@@ -516,6 +516,53 @@ struct VMCopierTests {
 		#expect(stayURL.path == "/isos/outside.iso")  // external references stay put
 	}
 
+	// C19: every rebuilt entry keeps its flags. A disabled unsafe disk came back enabled in
+	// the shadow, which then attached it writable and wrote the original's real file.
+	@Test func disabledEntriesStayDisabledThroughEveryRebuild() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let external = library + "/ext.img"
+		try Data("ext".utf8).write(to: URL(fileURLWithPath: external))
+		func disabled(_ kind: VMDiskKind, safe: Bool) -> VMDisk {
+			var disk = VMDisk(kind: kind, safe: safe)
+			disk.enabled = false
+			return disk
+		}
+		let src = try makeSourceVM(
+			in: library,
+			disks: [
+				disabled(.storage("data", 0), safe: false),
+				disabled(.fromUrl(URL(fileURLWithPath: external)), safe: true),
+			],
+			extraFiles: ["cd.iso": Data("iso".utf8)])
+		let config = try loadConfig(src)
+		config.disks.append(disabled(.iso(URL(fileURLWithPath: src + "/cd.iso")), safe: true))
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+
+		// A safe run's shadow, built the way a start builds it.
+		let runRoot = library + "/run"
+		try FileManager.default.createDirectory(atPath: runRoot, withIntermediateDirectories: true)
+		let shadow = try VMCopier.copy(SafeRun.shadowRequest(
+			config: config, sourceDir: src, runRoot: runRoot))
+		let shadowDisks = try loadConfig(shadow).disks
+		#expect(shadowDisks.map(\.kind) == [
+			.fromUrl(URL(fileURLWithPath: src + "/data.raw")), .storage("ext", 3),
+			.iso(URL(fileURLWithPath: shadow + "/cd.iso")),
+		])
+		#expect(shadowDisks.map(\.enabled) == [false, false, false])
+
+		// A Duplicate that clones the image.
+		let dup = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup",
+			diskPolicies: [config.disks[1].id: .clone]))
+		let dupDisks = try loadConfig(dup).disks
+		#expect(dupDisks.map(\.kind) == [
+			.storage("data", 0), .storage("ext", 3), .iso(URL(fileURLWithPath: dup + "/cd.iso")),
+		])
+		#expect(dupDisks.map(\.enabled) == [false, false, false])
+		#expect(dupDisks.map(\.safe) == [false, true, true])
+	}
+
 	// C1: owned kernel paths embed the source directory; the copy must re-point them (both
 	// the draft and the live boot payload) while external kernel paths stay put.
 	@Test func ownedKernelPathsFollowTheCopy() throws {

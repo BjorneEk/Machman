@@ -223,17 +223,18 @@ struct DiskImportTests {
 			try VMConfig.createNewVMDirectory(name: "alpha")
 			let cfg = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
 			let vmDir = cfg.vmDirPath()
-			let external = VMDisk(
+			var external = VMDisk(
 				kind: .fromUrl(URL(fileURLWithPath: "/imgs/a.img")), safe: false)
+			external.enabled = false
 			let ownedIso = VMDisk(kind: .iso(URL(fileURLWithPath: vmDir + "/boot.iso")))
 			let externalIso = VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/ext.iso")))
 			cfg.disks = [VMDisk(kind: .storage("data", 0)), external, ownedIso, externalIso]
 			try cfg.saveVMConfig()
 			try Data("iso".utf8).write(to: URL(fileURLWithPath: vmDir + "/boot.iso"))
 
-			// Promote-style swap: position 1 keeps its slot, safe flag carried by caller.
-			try cfg.replaceDisk(
-				id: external.id, with: VMDisk(kind: .storage("a", 512), safe: false))
+			// Promote-style swap: position 1 keeps its slot and both flags (C19: a promote
+			// once enabled a disabled disk).
+			try cfg.replaceDisk(id: external.id, kind: .storage("a", 512))
 			let reloaded = try VMConfig.load(name: "alpha")
 			guard case .storage(let name, _) = reloaded.disks[1].kind else {
 				Issue.record("expected the swap in place")
@@ -241,13 +242,14 @@ struct DiskImportTests {
 			}
 			#expect(name == "a")
 			#expect(reloaded.disks[1].safe == false)
+			#expect(reloaded.disks[1].enabled == false)
 
 			// Residency-aware delete: the in-dir iso file dies with its entry…
 			try cfg.deleteDisk(disk: ownedIso)
 			#expect(!FileManager.default.fileExists(atPath: vmDir + "/boot.iso"))
 			// …while unknown ids still refuse the swap.
 			#expect(throws: MachmanError.self) {
-				try cfg.replaceDisk(id: "bogus", with: external)
+				try cfg.replaceDisk(id: "bogus", kind: external.kind)
 			}
 		}
 	}

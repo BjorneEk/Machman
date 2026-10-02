@@ -38,9 +38,9 @@ struct SafeSaveHandOverTests {
 				unsafe("scratch", enabled: false),
 			])
 			defer { host.removeLibrary() }
-			// The saved entry keeps the RUN's flags; set them on the run's own entry.
+			// The real shadow kept the original's flags (C19).
 			let vm = try #require(host.registry.vm(named: "alpha"))
-			vm.config.disks[2].enabled = false
+			#expect(vm.config.disks.map(\.enabled) == [true, true, false])
 
 			let promoted = try host.registry.promoteRestrictedVM(to: "kept")
 

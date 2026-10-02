@@ -288,10 +288,9 @@ public final class LocalMachman: MachmanControlling {
 		case .fromUrl(let url):
 			sourcePath = url.path
 		}
-		var promoted = try await copyIntoVM(
+		let promoted = try await copyIntoVM(
 			vm, name: name, sourcePath: sourcePath, kind: OperationInfo.Kind.promoteDisk)
-		promoted.safe = disk.safe   // the entry swaps in place; the policy carries
-		try vm.config.replaceDisk(id: diskID, with: promoted)
+		try vm.config.replaceDisk(id: diskID, kind: promoted.kind)   // the flags carry
 		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}
