@@ -53,6 +53,22 @@ struct TerminalProfileTests {
 		#expect(try decode(#"{"name": "c", "scrollback": 60000}"#).scrollback == 60_000)
 	}
 
+	// P38: what an open terminal takes on at once — and nothing a Reload is for.
+	@Test func liveSettingsCoverOnlyTheLiveFields() {
+		let base = TerminalProfile(name: "a")
+		var startupOnly = base
+		startupOnly.scrollback = 2_000
+		startupOnly.cursor = .bar
+		startupOnly.name = "renamed"
+		#expect(startupOnly.liveSettings == base.liveSettings)
+		var font = base
+		font.fontSize += 1
+		#expect(font.liveSettings != base.liveSettings)
+		var colors = base
+		colors.colors.background = "#123456"
+		#expect(colors.liveSettings != base.liveSettings)
+	}
+
 	// The crash repeated on every relaunch: the bad value was already in the file.
 	@MainActor
 	@Test func aStoreWithANegativeScrollbackLoadsUsable() throws {

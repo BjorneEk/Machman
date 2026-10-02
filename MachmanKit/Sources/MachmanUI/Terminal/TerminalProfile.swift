@@ -43,6 +43,16 @@ public struct TerminalStartupSignature: Hashable, Sendable {
 	public let tabStopWidth: Int
 }
 
+// The subset of a profile an open terminal takes on at once. Equatable so a terminal can skip
+// what didn't change: re-setting SwiftTerm's font drops its glyph caches and the selection.
+public struct TerminalLiveSettings: Equatable, Sendable {
+	public let fontName: String
+	public let fontSize: Double
+	public let colors: TerminalColors
+	public let optionAsMeta: Bool
+	public let mouseReporting: Bool
+}
+
 public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 	public var id: UUID
 	public var name: String
@@ -91,6 +101,12 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 		TerminalStartupSignature(
 			scrollback: scrollback, convertEol: convertEol, termName: termName,
 			cursor: cursor, tabStopWidth: tabStopWidth)
+	}
+
+	public var liveSettings: TerminalLiveSettings {
+		TerminalLiveSettings(
+			fontName: fontName, fontSize: fontSize, colors: colors, optionAsMeta: optionAsMeta,
+			mouseReporting: mouseReporting)
 	}
 
 	// Tolerant decode: a field that is absent, retyped or unknown to this build (a cursor style

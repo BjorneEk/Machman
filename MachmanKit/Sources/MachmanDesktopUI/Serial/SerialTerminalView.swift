@@ -31,6 +31,8 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// The last connection's transcript, retained when it closes (VM stop, daemon bounce) so
 	// File → Save Terminal can still save what is on screen. A reconnect starts fresh.
 	private var lastTranscript = Data()
+	// What applyLive last set, so a repeat sets nothing.
+	private var appliedLive: TerminalLiveSettings?
 
 	// The startup-only settings baked into terminalView at creation. The info panel compares this
 	// against the current profile to decide whether a Reload is needed (font/colours apply live;
@@ -58,10 +60,28 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 
 	// Re-apply the LIVE settings (font, colours, key/mouse behaviour) to the existing terminal.
 	// Safe to call any time; the startup-only settings are ignored here (they need a Reload).
+	// Only what changed since the last call is set: SwiftTerm's font setter drops the glyph
+	// caches and the selection, and the colour setters redraw the whole screen (P38).
 	func applyLive(_ profile: TerminalProfile) {
-		let size = CGFloat(profile.fontSize)
-		terminalView.font = TerminalFonts.font(named: profile.fontName, size: size)
-		let c = profile.colors
+		let live = profile.liveSettings
+		let last = appliedLive
+		appliedLive = live
+		if live.fontName != last?.fontName || live.fontSize != last?.fontSize {
+			let size = CGFloat(live.fontSize)
+			terminalView.font = TerminalFonts.font(named: live.fontName, size: size)
+		}
+		if live.colors != last?.colors {
+			applyColors(live.colors)
+		}
+		if live.optionAsMeta != last?.optionAsMeta {
+			terminalView.optionAsMetaKey = live.optionAsMeta
+		}
+		if live.mouseReporting != last?.mouseReporting {
+			terminalView.allowMouseReporting = live.mouseReporting
+		}
+	}
+
+	private func applyColors(_ c: TerminalColors) {
 		if let fg = NSColor(hexColor: c.foreground) { terminalView.nativeForegroundColor = fg }
 		if let bg = NSColor(hexColor: c.background) { terminalView.nativeBackgroundColor = bg }
 		if let caret = NSColor(hexColor: c.cursor) { terminalView.caretColor = caret }
@@ -71,8 +91,6 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		}
 		let palette = c.ansi.compactMap { SwiftTerm.Color.from(hexColor: $0) }
 		if palette.count == 16 { terminalView.installColors(palette) }
-		terminalView.optionAsMetaKey = profile.optionAsMeta
-		terminalView.allowMouseReporting = profile.mouseReporting
 	}
 
 	private static func cursorStyle(_ cursor: TerminalCursor) -> CursorStyle {
