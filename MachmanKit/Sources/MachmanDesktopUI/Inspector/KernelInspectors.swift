@@ -233,19 +233,11 @@ private struct KernelFileActionsSection: View {
 	let vm: VMInfo
 	let entry: KernelEntry
 
+	// The entity inspectors' one pattern: the icon action leads the last row (the disk
+	// and mount trash), the text button trails it.
 	var body: some View {
 		Section {
 			HStack(spacing: 6) {
-				if entry.active {
-					Button("Deselect") {
-						viewModel.setActiveKernelFile(vm, role: entry.role, path: nil)
-					}
-				} else {
-					Button("Select") {
-						viewModel.setActiveKernelFile(vm, role: entry.role, path: entry.path)
-					}
-				}
-				Spacer()
 				if !entry.owned {
 					IconButton(
 						symbol: MachmanSymbols.promoteDisk,
@@ -257,9 +249,19 @@ private struct KernelFileActionsSection: View {
 								.deletingPathExtension().lastPathComponent)
 					}
 				} else {
-					IconButton(symbol: MachmanSymbols.delete, tooltip: "Delete…") {
+					IconButton(symbol: MachmanSymbols.delete, tooltip: "Delete file…") {
 						viewModel.requestDeleteKernel(
 							vm.name, path: entry.path, fileName: entry.fileName)
+					}
+				}
+				Spacer()
+				if entry.active {
+					Button("Deselect") {
+						viewModel.setActiveKernelFile(vm, role: entry.role, path: nil)
+					}
+				} else {
+					Button("Select") {
+						viewModel.setActiveKernelFile(vm, role: entry.role, path: entry.path)
 					}
 				}
 			}

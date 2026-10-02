@@ -84,7 +84,7 @@ struct DiskInspector: View {
 						IconButton(
 							symbol: MachmanSymbols.delete,
 							tooltip: vm.refusal(.removeDisk) ?? (disk.owned == true
-								? "Delete… (removes the file)" : "Disconnect (file is kept)")
+								? "Delete disk…" : "Remove disk — the file stays")
 						) {
 							remove(disk)
 						}
@@ -288,7 +288,7 @@ struct MountInspector: View {
 					HStack {
 						IconButton(
 							symbol: MachmanSymbols.delete,
-							tooltip: "Remove mount (folder is kept)"
+							tooltip: "Remove mount — the folder stays"
 						) {
 							viewModel.removeMount(vm.name, mountID: mountID)
 						}
