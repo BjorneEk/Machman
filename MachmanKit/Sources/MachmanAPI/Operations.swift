@@ -42,11 +42,15 @@ public struct OperationInfo: Codable, Sendable, Equatable, Identifiable {
 	public var startedAt: Date
 	public var state: String              // OperationInfo.State.* (open set)
 	public var message: String?           // failure/cancel detail
+	// false when op.cancel would refuse (no cancel hook); nil = a daemon from before the
+	// flag, where every running operation offered Cancel (1.0.12+, F7).
+	public var cancellable: Bool?
 
 	public init(
 		id: String, kind: String, vm: String? = nil, label: String,
 		fraction: Double? = nil, completedBytes: Int64? = nil, totalBytes: Int64? = nil,
-		startedAt: Date, state: String = State.running, message: String? = nil
+		startedAt: Date, state: String = State.running, message: String? = nil,
+		cancellable: Bool? = nil
 	) {
 		self.id = id
 		self.kind = kind
@@ -58,7 +62,10 @@ public struct OperationInfo: Codable, Sendable, Equatable, Identifiable {
 		self.startedAt = startedAt
 		self.state = state
 		self.message = message
+		self.cancellable = cancellable
 	}
 
 	public var isFinished: Bool { state != State.running }
+	// An older daemon never says, and offered Cancel on every running operation.
+	public var isCancellable: Bool { cancellable ?? true }
 }

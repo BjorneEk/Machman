@@ -4,7 +4,8 @@
 //
 //  Bottom-right passive feedback (1.0.4 UI): transient toasts for confirmations/warnings
 //  and persistent progress cards for long-running operations (step text, determinate bar,
-//  live ETA, and a × that cancels a running operation and dismisses a finished one). The
+//  live ETA, and a × that cancels a running operation — absent while the engine can't
+//  cancel it — and dismisses a finished one). The
 //  HIG feedback pattern: passive status near the corner beats interrupting dialogs; a small
 //  indicator stays near the control that started the work while the detailed card lives
 //  here.
@@ -53,10 +54,13 @@ public struct ProgressCardModel: Identifiable, Equatable {
 	public var etaSeconds: Double?
 	// Showing its outcome: the × only dismisses the card (nothing left to cancel).
 	public var finished: Bool
+	// Running work the engine can't stop shows no × until it finishes (F7).
+	public var cancellable: Bool
 
 	public init(
 		id: String, title: String, symbol: String, phase: String,
-		fraction: Double? = nil, etaSeconds: Double? = nil, finished: Bool = false
+		fraction: Double? = nil, etaSeconds: Double? = nil, finished: Bool = false,
+		cancellable: Bool = true
 	) {
 		self.id = id
 		self.title = title
@@ -65,6 +69,7 @@ public struct ProgressCardModel: Identifiable, Equatable {
 		self.fraction = fraction
 		self.etaSeconds = etaSeconds
 		self.finished = finished
+		self.cancellable = cancellable
 	}
 }
 
@@ -134,17 +139,19 @@ public struct ProgressCard: View {
 					.font(.system(size: 12, weight: .medium))
 					.lineLimit(1)
 				Spacer(minLength: 8)
-				Button(action: dismiss) {
-					Image(systemName: MachmanSymbols.closeTab)
-						.font(.system(size: 8, weight: .bold))
-						.frame(width: 14, height: 14)
-						.background(Circle()
-							.fill(Color.primary.opacity(hoveringClose ? 0.18 : 0.08)))
+				if card.finished || card.cancellable {
+					Button(action: dismiss) {
+						Image(systemName: MachmanSymbols.closeTab)
+							.font(.system(size: 8, weight: .bold))
+							.frame(width: 14, height: 14)
+							.background(Circle()
+								.fill(Color.primary.opacity(hoveringClose ? 0.18 : 0.08)))
+					}
+					.buttonStyle(.plain)
+					.onHover { hoveringClose = $0 }
+					.help(card.finished ? "Dismiss" : "Cancel")
+					.accessibilityLabel(card.finished ? "Dismiss" : "Cancel")
 				}
-				.buttonStyle(.plain)
-				.onHover { hoveringClose = $0 }
-				.help(card.finished ? "Dismiss" : "Cancel")
-				.accessibilityLabel(card.finished ? "Dismiss" : "Cancel")
 			}
 			if let value = card.fraction {
 				ProgressView(value: value)

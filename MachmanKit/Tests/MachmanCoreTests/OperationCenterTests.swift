@@ -67,4 +67,16 @@ struct OperationCenterTests {
 		center.finish(id, state: OperationInfo.State.failed, message: "late")
 		#expect(center.list().first { $0.id == id }?.state == OperationInfo.State.cancelled)
 	}
+
+	// F7: clients learn up front whether op.cancel would refuse, so they don't offer it.
+	@Test func cancellableFollowsTheHook() {
+		let center = OperationCenter(events: EventBus())
+		let fixed = center.begin(kind: OperationInfo.Kind.rosettaInstall, label: "Installing")
+		let stoppable = center.begin(
+			kind: OperationInfo.Kind.copyVM, label: "Copying", cancel: {})
+		#expect(center.list().first { $0.id == fixed }?.cancellable == false)
+		#expect(center.list().first { $0.id == stoppable }?.cancellable == true)
+		center.update(stoppable, fraction: 0.5)
+		#expect(center.list().first { $0.id == stoppable }?.cancellable == true)
+	}
 }

@@ -283,9 +283,11 @@ and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
 
 `operationChanged {op: OperationInfo}` (1.0.4+): a long-running operation started,
 progressed, or reached a terminal state. `OperationInfo` = `{id, kind, vm?, label,
-fraction?, completedBytes?, totalBytes?, startedAt, state, message?}` with open string sets
-for `kind` (`copyVM, importDisk, promoteDisk, shadowBuild, safeSave, kernelImport, rosettaInstall`, …)
-and `state` (`running, succeeded, failed, cancelled`). Terminal states are emitted once;
+fraction?, completedBytes?, totalBytes?, startedAt, state, message?, cancellable?}` with open
+string sets for `kind` (`copyVM, importDisk, promoteDisk, shadowBuild, safeSave, kernelImport, rosettaInstall`, …)
+and `state` (`running, succeeded, failed, cancelled`). `cancellable` (1.0.12+, additive) is
+false when `op.cancel` would refuse with `invalidState`; absent from older daemons, which
+clients treat as cancellable. Terminal states are emitted once;
 resync after reconnect with `host.operations`. `copyProgress` keeps being emitted in
 parallel for older clients. ETA stays consumer math. `host.operations` keeps terminal states
 listed for about 10 s; a resyncing client ages them out as it would after the terminal event.

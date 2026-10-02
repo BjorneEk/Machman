@@ -34,7 +34,8 @@ struct NotificationOverlay: View {
 				phase: phase(for: op),
 				fraction: op.fraction,
 				etaSeconds: eta(for: op),
-				finished: op.isFinished)
+				finished: op.isFinished,
+				cancellable: op.isCancellable)
 		}
 		// Running macOS installs ride the richer install-phase flow, not OperationInfo.
 		for (vm, phase) in operations.installPhases {

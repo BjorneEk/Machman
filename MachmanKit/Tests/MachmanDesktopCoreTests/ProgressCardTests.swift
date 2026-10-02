@@ -81,6 +81,25 @@ struct ProgressCardTests {
 		#expect(h.operations.operations.isEmpty)
 	}
 
+	// F7: work the engine can't stop shows no ✕; a stale click sends nothing and raises no
+	// "cannot be cancelled" alert.
+	@Test func aRunningCardThatCantCancelHasNoCancel() async {
+		let h = await DesktopHarness.make()
+		let op = Samples.rosettaInstallOperation()
+		h.stub.ops = [op]
+		h.stub.fail("cancelOperation", with: MachmanError(
+			code: .invalidState, message: "operation '\(op.id)' cannot be cancelled"))
+		h.stub.emit(.operationChanged(op: op))
+		#expect(await eventually(timeout: .seconds(5)) {
+			h.operations.operations.map(\.id) == [op.id]
+		})
+		h.viewModel.closeProgressCard(op.id)
+		try? await Task.sleep(for: .milliseconds(300))
+		#expect(!h.stub.calls.contains("cancelOperation"))
+		#expect(h.viewModel.presentedError == nil)
+		#expect(h.operations.operations.map(\.id) == [op.id])
+	}
+
 	// A running install's card cancels the install.
 	@Test func anInstallCardsCloseCancelsTheInstall() async {
 		let h = await DesktopHarness.make()

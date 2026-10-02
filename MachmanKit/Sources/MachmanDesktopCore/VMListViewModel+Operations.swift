@@ -3,7 +3,8 @@
 //  MachmanDesktopCore
 //
 //  The progress cards' ✕: it cancels work that is still running and only dismisses a card
-//  that already shows its outcome (decision 13, F2).
+//  that already shows its outcome (decision 13, F2). Running work the engine can't cancel
+//  shows no ✕ at all (F7).
 //
 
 import Foundation
@@ -16,8 +17,14 @@ extension VMListViewModel {
 	public func closeProgressCard(_ id: String) {
 		if id.hasPrefix(Self.installCardPrefix) {
 			cancelInstall(String(id.dropFirst(Self.installCardPrefix.count)))
-		} else if operationsStore.operations.contains(where: { $0.id == id && $0.isFinished }) {
+			return
+		}
+		let op = operationsStore.operations.first { $0.id == id }
+		if op?.isFinished == true {
 			operationsStore.dismiss(id: id)
+		} else if op?.isCancellable == false {
+			// Its card shows no ✕; a stale click must not raise "cannot be cancelled".
+			return
 		} else {
 			cancelOperation(id: id)
 		}

@@ -68,5 +68,17 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		RenderScene(
+			"overlay.cards.not-cancellable",
+			"NotificationOverlay: a running copy beside a Rosetta install that can't be cancelled",
+			widths: [420], height: 300
+		) { ctx in
+			for op in [Samples.copyOperation(), Samples.rosettaInstallOperation()] {
+				ctx.stub.emit(.operationChanged(op: op))
+			}
+			Offscreen.pump(until: { ctx.operations.operations.count == 2 })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }

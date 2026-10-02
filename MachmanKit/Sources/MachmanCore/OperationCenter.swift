@@ -50,12 +50,15 @@ final class OperationCenter {
 
 	// Registers a running operation and broadcasts it. The cancel hook (optional — some
 	// operations genuinely can't stop) must drive the operation to a terminal state via its
-	// own failure path; cancel() only pulls the trigger.
+	// own failure path; cancel() only pulls the trigger. Whether there is one rides along as
+	// `cancellable`, so clients don't offer a Cancel that cancel() would refuse (F7).
 	func begin(
 		kind: String, vm: String? = nil, label: String, cancel: (() -> Void)? = nil
 	) -> String {
 		let id = "op-" + UUID().uuidString.lowercased()
-		let op = OperationInfo(id: id, kind: kind, vm: vm, label: label, startedAt: Date())
+		let op = OperationInfo(
+			id: id, kind: kind, vm: vm, label: label, startedAt: Date(),
+			cancellable: cancel != nil)
 		operations[id] = op
 		if let cancel { cancelHooks[id] = cancel }
 		events.emit(.operationChanged(op: op))
