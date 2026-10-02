@@ -25,6 +25,6 @@ struct RestartToUpdateBanner: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.padding(.horizontal, 20)
 		.padding(.vertical, 10)
-		.help("It still runs on an older Machman; its settings unlock after a restart")
+		.help("It still runs on an older Machman, so its settings stay locked until it restarts")
 	}
 }

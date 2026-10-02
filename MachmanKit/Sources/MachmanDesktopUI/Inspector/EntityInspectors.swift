@@ -167,7 +167,7 @@ struct DiskInspector: View {
 			}
 		}
 		.disabled(vm.refusal(.resizeDisk) != nil)
-		.help(vm.refusal(.resizeDisk) ?? "Disks only grow; a bare number is GB")
+		.help(vm.refusal(.resizeDisk) ?? "Disks only grow, and a bare number means GB")
 	}
 
 	private func grow() {

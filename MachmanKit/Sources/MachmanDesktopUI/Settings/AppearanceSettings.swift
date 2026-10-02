@@ -141,7 +141,7 @@ struct AppearanceSettingsView: View {
 					tabHeight = 0
 					tabFontSize = 0
 				}
-				.help("Clears the explicit sizes; tabs derive from the sliders above again")
+				.help("Clears the explicit sizes so tabs follow the Density sliders again")
 			}
 		}
 		.formStyle(.grouped)
