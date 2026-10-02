@@ -24,7 +24,7 @@ struct GlassLevelTests {
 	}
 
 	@Test func theControlOffersBothLevelsByTheirLabels() {
-		#expect(MachmanGlassLevel.allCases.map(\.label) == ["Standard chrome", "Extra glass"])
+		#expect(MachmanGlassLevel.allCases.map(\.label) == ["Standard Chrome", "Extra Glass"])
 		#expect(MachmanTheme().glass == .standard)
 	}
 }

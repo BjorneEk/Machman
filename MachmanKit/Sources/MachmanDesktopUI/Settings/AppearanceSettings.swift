@@ -85,7 +85,7 @@ struct AppearanceSettingsView: View {
 						Text(level.label).tag(level.rawValue)
 					}
 				}
-				.help("Extra glass makes Machman’s own glass surfaces clearer")
+				.help("Extra Glass makes Machman’s own glass surfaces clearer")
 			}
 			Section("Density") {
 				LabeledContent("Spacing") {

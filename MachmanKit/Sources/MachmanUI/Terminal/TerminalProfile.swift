@@ -23,11 +23,11 @@ public enum TerminalCursor: String, Codable, CaseIterable, Sendable {
 
 	public var label: String {
 		switch self {
-		case .blinkBlock: return "Block (blinking)"
+		case .blinkBlock: return "Block (Blinking)"
 		case .block: return "Block"
-		case .blinkUnderline: return "Underline (blinking)"
+		case .blinkUnderline: return "Underline (Blinking)"
 		case .underline: return "Underline"
-		case .blinkBar: return "Bar (blinking)"
+		case .blinkBar: return "Bar (Blinking)"
 		case .bar: return "Bar"
 		}
 	}

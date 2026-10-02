@@ -96,7 +96,7 @@ public enum MachmanTabStyle: String, CaseIterable, Identifiable, Codable {
 public enum MachmanGlassLevel: String, CaseIterable, Identifiable, Codable {
 	case standard, extra
 	public var id: String { rawValue }
-	public var label: String { self == .standard ? "Standard chrome" : "Extra glass" }
+	public var label: String { self == .standard ? "Standard Chrome" : "Extra Glass" }
 
 	// The Liquid Glass a MachmanGlassSurface draws on macOS 26: Extra glass is the clearer
 	// variant; prominent surfaces react to the pointer; a tint washes either.
