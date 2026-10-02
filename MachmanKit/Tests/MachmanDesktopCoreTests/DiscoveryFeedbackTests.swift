@@ -26,7 +26,7 @@ struct DiscoveryFeedbackTests {
 		let h = await DesktopHarness.make()
 		h.viewModel.refreshSSH("Debian")
 		#expect(h.viewModel.toasts.first { $0.key == key }?.spinner == true)
-		#expect(message(h) == "Looking for Debian's address…")
+		#expect(message(h) == "Looking for Debian’s address…")
 		h.stub.emit(.sshChanged(vm: "Debian"))
 		#expect(await eventually { message(h) == "Debian is still at 192.168.64.7" })
 	}
@@ -52,7 +52,7 @@ struct DiscoveryFeedbackTests {
 		await h.store.reload()
 		#expect(h.stub.calls.filter { $0 == "listVMs" }.count > reloads)
 		try? await Task.sleep(for: .milliseconds(300))
-		#expect(message(h) == "Looking for Debian's address…")
+		#expect(message(h) == "Looking for Debian’s address…")
 	}
 
 	@Test func noAnswerSaysMachmanKeepsLooking() async {

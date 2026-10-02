@@ -363,7 +363,7 @@ public final class VMListViewModel: ObservableObject {
 				case .waiting:
 					pushToast(
 						symbol: MachmanSymbols.deviceSSHSetup,
-						message: "SSH: connecting to \(vm.name)…",
+						message: "\(vm.name): SSH connecting…",
 						key: Self.sshWaitToastKey(vm.name), spinner: true, sticky: true)
 				case .ready:
 					pushToast(
@@ -452,7 +452,7 @@ public final class VMListViewModel: ObservableObject {
 		rediscovering[name]?.cancel()
 		rediscoveryAnswered.remove(name)
 		pushToast(
-			symbol: MachmanSymbols.network, message: "Looking for \(name)'s address…",
+			symbol: MachmanSymbols.network, message: "Looking for \(name)’s address…",
 			key: Self.rediscoveryToastKey(name), spinner: true, sticky: true)
 		let wait = rediscoveryWait
 		rediscovering[name] = Task { [weak self] in
@@ -630,8 +630,8 @@ public final class VMListViewModel: ObservableObject {
 			guard let file = store.takeSetAsideNotice() else { continue }
 			pushToast(
 				symbol: MachmanSymbols.info,
-				message: "Couldn't read your \(file.what) — kept them as "
-					+ "\(file.backup.lastPathComponent).")
+				message: "Couldn’t read your \(file.what) — the old file is kept as "
+					+ file.backup.lastPathComponent)
 		}
 	}
 
@@ -916,7 +916,7 @@ public final class VMListViewModel: ObservableObject {
 				self.log(message: "Renamed \(old) to \(newName)")
 				self.pushToast(
 					symbol: MachmanSymbols.rename,
-					message: "Renamed to \u{201C}\(newName)\u{201D}")
+					message: ToastWording.renamed(to: newName))
 			} else {
 				reverted()
 			}
@@ -1016,7 +1016,7 @@ public final class VMListViewModel: ObservableObject {
 				}
 				self?.pushToast(
 					symbol: MachmanSymbols.rename,
-					message: "Disk renamed to \u{201C}\(newName)\u{201D}")
+					message: ToastWording.renamed(to: newName))
 			} catch {
 				self?.refuse(error, while: "Renaming a disk", to: refused)
 			}
@@ -1032,7 +1032,7 @@ public final class VMListViewModel: ObservableObject {
 				_ = try await self?.api.setMountTag(vm: name, mountID: mountID, tag: tag)
 				self?.pushToast(
 					symbol: MachmanSymbols.rename,
-					message: "Mount tag changed to \u{201C}\(tag)\u{201D}")
+					message: ToastWording.renamed(to: tag))
 			} catch {
 				self?.refuse(error, while: "Changing a mount tag", to: refused)
 			}
@@ -1070,7 +1070,7 @@ public final class VMListViewModel: ObservableObject {
 				}
 				self?.pushToast(
 					symbol: MachmanSymbols.rename,
-					message: "Re-tagged \u{201C}\(tag)\u{201D}")
+					message: ToastWording.renamed(to: tag))
 			} catch {
 				self?.refuse(error, while: "Renaming a kernel file", to: refused)
 			}
@@ -1260,7 +1260,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				_ = try await self?.api.addDevice(vm: name, kind: kind)
 				self?.pushToast(
-					symbol: kind.displaySymbol, message: "Added \(kind.displayLabel)")
+					symbol: kind.displaySymbol, message: "Added \(kind.inlineLabel)")
 			}
 			catch { self?.present(error, while: "Adding a device") }
 		}
@@ -1271,7 +1271,7 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				_ = try await self?.api.removeDevice(vm: name, kind: kind)
 				self?.pushToast(
-					symbol: kind.displaySymbol, message: "Removed \(kind.displayLabel)")
+					symbol: kind.displaySymbol, message: "Removed \(kind.inlineLabel)")
 			}
 			catch { self?.present(error, while: "Removing a device") }
 		}
@@ -1307,16 +1307,17 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Deny answers a pending request; Revoke takes back an approved key.
 	public func setSSHReverseApproved(_ name: String, approved: Bool) {
+		let wasPending = vms.first { $0.name == name }?.ssh?.reverseState == .pending
+		let verb = approved ? "Approved" : wasPending ? "Denied" : "Revoked"
 		Task { [weak self] in
 			do {
 				_ = try await self?.api.setSSH(
 					vm: name, integrationEnabled: nil, reverseApproved: approved, alias: nil)
 				self?.pushToast(
 					symbol: MachmanSymbols.deviceSSHSetup,
-					message: approved
-						? "\(name) can now log in to this Mac"
-						: "Revoked \(name)'s access to this Mac")
+					message: "\(verb) \(name)’s access to this Mac")
 			}
 			catch { self?.present(error, while: "Updating guest access") }
 		}
@@ -1354,7 +1355,7 @@ public final class VMListViewModel: ObservableObject {
 				_ = try await self?.api.resetSetup(vm: name)
 				self?.pushToast(
 					symbol: MachmanSymbols.deviceGuestSetup,
-					message: "Guest-setup state reset for \(name)")
+					message: "Guest setup state reset for \(name)")
 			}
 			catch { self?.present(error, while: "Resetting guest-setup state") }
 		}

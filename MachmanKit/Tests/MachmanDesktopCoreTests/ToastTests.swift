@@ -33,13 +33,13 @@ struct ToastTests {
 	@Test func stickyWaitsSurviveTheCap() async {
 		let h = await DesktopHarness.make()
 		h.viewModel.pushToast(
-			symbol: MachmanSymbols.deviceSSHSetup, message: "SSH: connecting to Debian…",
+			symbol: MachmanSymbols.deviceSSHSetup, message: "Debian: SSH connecting…",
 			key: VMListViewModel.sshWaitToastKey("Debian"), spinner: true, sticky: true)
 		for n in 1...6 {
 			h.viewModel.pushToast(symbol: MachmanSymbols.warning, message: "w\(n)")
 		}
 		#expect(h.viewModel.toasts.count == VMListViewModel.maxToasts)
-		#expect(h.viewModel.toasts.first?.message == "SSH: connecting to Debian…")
+		#expect(h.viewModel.toasts.first?.message == "Debian: SSH connecting…")
 		#expect(h.viewModel.toasts.last?.message == "w6")
 	}
 
@@ -77,7 +77,8 @@ struct ToastTests {
 		let profiles = TerminalProfileStore(fileURL: url)
 		h.viewModel.announceSetAsideSettings([profiles, h.canvases])
 		#expect(h.viewModel.toasts.map(\.message) == [
-			"Couldn't read your terminal profiles — kept them as TerminalProfiles.json.bak.",
+			"Couldn’t read your terminal profiles — the old file is kept as "
+				+ "TerminalProfiles.json.bak",
 		])
 		h.viewModel.announceSetAsideSettings([profiles, h.canvases])   // as after a reconnect
 		#expect(h.viewModel.toasts.count == 1)
