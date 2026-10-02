@@ -14,6 +14,7 @@
 //
 
 import Foundation
+import Combine
 import MachmanAPI
 import MachmanUI
 
@@ -31,6 +32,12 @@ public final class TerminalSessions: ObservableObject {
 	}
 	private var creating: Set<PendingKey> = []
 	private let makeController: @MainActor (TerminalProfile) -> any TerminalController
+	// Per tab, the live settings this registry last gave its controller (made, reloaded or
+	// re-applied with), so a store change that leaves a tab's live settings alone applies
+	// nothing to it (P38).
+	private var appliedLive: [String: [VMPaneTab: TerminalLiveSettings]] = [:]
+	private var profileWatch: AnyCancellable?
+	private var reapplyScheduled = false
 
 	public init(makeController: @escaping @MainActor (TerminalProfile) -> any TerminalController) {
 		self.makeController = makeController
@@ -63,6 +70,7 @@ public final class TerminalSessions: ObservableObject {
 			guard stillWanted() else { return }
 			let c = self.makeController(profile)
 			self.live[vm, default: [:]][tab] = c
+			self.appliedLive[vm, default: [:]][tab] = profile.liveSettings
 			start(c)
 			self.objectWillChange.send()   // swap the spinner for the terminal
 		}
@@ -93,6 +101,7 @@ public final class TerminalSessions: ObservableObject {
 		guard let c = live[vm]?[tab] else { return }
 		c.disconnect()
 		live[vm]?[tab] = nil
+		appliedLive[vm]?[tab] = nil
 		objectWillChange.send()
 	}
 
@@ -105,18 +114,39 @@ public final class TerminalSessions: ObservableObject {
 		live[vm]?[.terminal(ref)]?.disconnect()
 		let c = makeController(profile)
 		live[vm, default: [:]][.terminal(ref)] = c
+		appliedLive[vm, default: [:]][.terminal(ref)] = profile.liveSettings
 		if let path = socketPath { c.connect(path: path) }
 		objectWillChange.send()
 	}
 
-	// Re-apply live profile settings to every open serial controller (profile edited).
-	// Covers hidden VMs too, so an edit is reflected everywhere at once. SSH sessions keep
-	// their own per-session pick (applySSHProfile).
+	// Keeps every open serial terminal on its profile as the store changes, whichever window
+	// shows it, or none: the registry listens itself, for the app's lifetime, never a view.
+	public func follow(_ profiles: TerminalProfileStore) {
+		profileWatch = profiles.objectWillChange.sink { [weak self, weak profiles] _ in
+			// objectWillChange fires before the change lands: read it a turn later, once
+			// however many fields changed in this one.
+			guard let self, !self.reapplyScheduled else { return }
+			self.reapplyScheduled = true
+			DispatchQueue.main.async { [weak self, weak profiles] in
+				guard let self else { return }
+				self.reapplyScheduled = false
+				if let profiles { self.reapplyLiveProfiles(profiles) }
+			}
+		}
+	}
+
+	// Re-apply live profile settings to every open serial controller whose resolved profile's
+	// live settings changed — an edit, a port's new profile, a deleted one. Covers hidden VMs
+	// too, so an edit is reflected everywhere at once. SSH sessions keep their own
+	// per-session pick (applySSHProfile).
 	public func reapplyLiveProfiles(_ store: TerminalProfileStore) {
 		for (vm, byTab) in live {
 			for (tab, c) in byTab {
 				guard case .terminal(let ref) = tab else { continue }
-				c.applyLive(store.profile(vm: vm, ref: ref))
+				let profile = store.profile(vm: vm, ref: ref)
+				guard appliedLive[vm]?[tab] != profile.liveSettings else { continue }
+				c.applyLive(profile)
+				appliedLive[vm, default: [:]][tab] = profile.liveSettings
 			}
 		}
 	}
@@ -222,6 +252,7 @@ public final class TerminalSessions: ObservableObject {
 		for vm in Array(live.keys) where !names.contains(vm) {
 			live[vm]?.values.forEach { $0.disconnect() }
 			live[vm] = nil
+			appliedLive[vm] = nil
 		}
 		for vm in Array(sshMeta.keys) where !names.contains(vm) {
 			sshMeta[vm] = nil
@@ -234,6 +265,10 @@ public final class TerminalSessions: ObservableObject {
 		if let c = live[old] {
 			live[new] = c
 			live[old] = nil
+		}
+		if let applied = appliedLive[old] {
+			appliedLive[new] = applied
+			appliedLive[old] = nil
 		}
 		if let m = sshMeta[old] {
 			sshMeta[new] = m

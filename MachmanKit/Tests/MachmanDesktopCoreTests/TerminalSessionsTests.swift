@@ -82,8 +82,55 @@ struct TerminalSessionsTests {
 			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
 		let ssh = try #require(
 			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		var edited = h.profiles.defaultProfile
+		edited.fontSize += 2
+		h.profiles.update(edited)
 		h.terminals.reapplyLiveProfiles(h.profiles)
 		#expect(serial.liveApplies == 1)
+		#expect(ssh.liveApplies == 0)
+	}
+
+	// Runs once everything the main queue already holds has run (the registry's deferred
+	// re-apply included).
+	private func mainQueueTurn() async {
+		await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
+	}
+
+	// P38: the registry follows the store itself, so no view has to be mounted (a torn window
+	// with the main window closed), and a tab is re-applied only when its own live settings
+	// change: re-setting a font clears the terminal's selection.
+	@Test func profileChangesReachATerminalOnlyWhenItsLiveSettingsChange() async throws {
+		let h = await harnessWithBothKinds()
+		h.terminals.follow(h.profiles)
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		let ssh = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		var edited = h.profiles.defaultProfile
+		edited.fontSize += 2
+		h.profiles.update(edited)
+		#expect(await eventually { serial.liveApplies == 1 })
+
+		// Nothing live changed for this port: another profile to edit, a pending delete, a
+		// startup-only edit.
+		var other = h.profiles.addProfile()
+		h.profiles.editingProfileID = other.id
+		h.profiles.requestDelete(id: other.id)
+		var startupOnly = h.profiles.defaultProfile
+		startupOnly.scrollback = 2_000
+		h.profiles.update(startupOnly)
+		await mainQueueTurn()
+		#expect(serial.liveApplies == 1)
+
+		// The port moves to a profile with other colours, then to its twin.
+		other.colors.background = "#123456"
+		h.profiles.update(other)
+		h.profiles.associate(vm: "Debian", ref: console, to: other.id)
+		#expect(await eventually { serial.liveApplies == 2 })
+		let twin = h.profiles.duplicate(id: other.id)
+		h.profiles.associate(vm: "Debian", ref: console, to: twin.id)
+		await mainQueueTurn()
+		#expect(serial.liveApplies == 2)
 		#expect(ssh.liveApplies == 0)
 	}
 

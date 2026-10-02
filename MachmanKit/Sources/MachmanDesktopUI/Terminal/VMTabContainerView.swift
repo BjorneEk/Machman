@@ -5,7 +5,7 @@
 //  The detail pane: the selected VM's canvas (VMCanvasView), or "Select a VM" with none
 //  selected; the toolbar and the inspector column belong to VMNavigationView. Mounted once
 //  and following viewModel.selected, so open terminals — held in TerminalSessions — survive
-//  switching between VMs; it also pushes terminal-profile edits to every open terminal.
+//  switching between VMs. Profile edits reach open terminals through TerminalSessions.follow.
 //
 
 import SwiftUI
@@ -29,11 +29,6 @@ struct VMTabContainerView: View {
 					.foregroundColor(.secondary)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
-		}
-		.onReceive(profiles.objectWillChange) {
-			// A profile edit pushes its live settings to every open terminal. objectWillChange
-			// fires before the mutation lands, so defer a tick to read the new values.
-			DispatchQueue.main.async { sessions.reapplyLiveProfiles(profiles) }
 		}
 	}
 

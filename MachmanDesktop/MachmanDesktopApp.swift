@@ -35,6 +35,7 @@ struct MachmanDesktopApp: App {
 		let profiles = TerminalProfileStore()
 		_profiles = StateObject(wrappedValue: profiles)
 		AppDelegate.profiles = profiles       // flushed on quit
+		connection.terminals.follow(profiles)   // edits reach every open terminal, torn windows too
 	}
 
 	private var connectedDaemonVersion: String? {
