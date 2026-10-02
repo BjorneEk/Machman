@@ -168,8 +168,10 @@ public enum VMHostBootstrap {
 	private static var appDelegate: VMHostAppDelegate?
 
 	// Icon-less on purpose, and no Edit/Window menus — the keyboard belongs to the guest.
-	// macOS may render the bold app-menu title from the bundle's display name; the items and
-	// the window title carry the VM name regardless.
+	// The bundle's display name is "Machman VM" (Dock, ⌘-Tab, Screen Recording). The bold
+	// app-menu title may still read CFBundleName — MachmanVMHost, from PRODUCT_NAME, which
+	// stays because VMHostLocator and the launch agents depend on it; the items and the window
+	// title carry the VM name regardless.
 	@MainActor
 	private static func buildMainMenu(
 		vmName: String, delegate: VMHostAppDelegate, presenter: WindowPresenter
