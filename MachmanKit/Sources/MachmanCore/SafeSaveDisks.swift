@@ -78,6 +78,39 @@ extension DirectDiskMove {
 	}
 }
 
+extension DirectDiskMove {
+	// A failed save that left disks in the saved VM's folder (their way back failed): each
+	// config says where every planned disk is now. The saved VM owns the stranded ones and
+	// references the rest in the original's folder again, as the run did; the original
+	// references the stranded ones. No disk drops out of both configs, and the cross-VM
+	// guards keep the saved VM's folder while the original uses it. A config that cannot
+	// be written is named.
+	static func settleStranded(
+		_ stranded: [DirectDiskMove], of moves: [DirectDiskMove],
+		originalDir: String, savedDir: String
+	) {
+		let back = moves.filter { !stranded.contains($0) }
+		rewriteConfig(in: savedDir) { $0.returnMovedDisks(back, to: originalDir) }
+		rewriteConfig(in: originalDir) { $0.referenceMovedDisks(stranded, in: savedDir) }
+	}
+
+	// The persistence coder at an explicit folder: neither VM is this registry's to save.
+	private static func rewriteConfig(in dir: String, _ change: (VMConfig) -> Void) {
+		let url = URL(fileURLWithPath: dir + "/config")
+		do {
+			let config = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: url))
+			change(config)
+			let encoder = JSONEncoder()
+			encoder.outputFormatting = .prettyPrinted
+			try encoder.encode(config).write(to: url, options: .atomic)
+		} catch {
+			MachmanLogger.log(.passiveError,
+				"Save as New VM rollback: \(url.path) does not list where its disks are now: "
+					+ "\(error)")
+		}
+	}
+}
+
 extension VMConfig {
 	fileprivate func storageSize(of storage: String) -> UInt64? {
 		for disk in disks {
@@ -96,6 +129,17 @@ extension VMConfig {
 			guard let move = moves.first(where: { dir + "/" + $0.sourceFile == path })
 			else { continue }
 			disks[index].kind = .storage(move.target, move.size)
+		}
+	}
+
+	// adoptMovedDisks undone for moves that went back (or never went): the saved VM
+	// references those files in the original's folder again, as the run did.
+	fileprivate func returnMovedDisks(_ moves: [DirectDiskMove], to originalDir: String) {
+		for index in disks.indices {
+			guard case .storage(let name, _) = disks[index].kind,
+				let move = moves.first(where: { $0.target == name }) else { continue }
+			disks[index].kind = .fromUrl(
+				URL(fileURLWithPath: originalDir + "/" + move.sourceFile))
 		}
 	}
 

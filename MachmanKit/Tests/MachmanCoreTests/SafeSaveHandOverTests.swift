@@ -226,7 +226,9 @@ struct SafeSaveHandOverTests {
 		}
 	}
 
-	// A disk that cannot go back must not ride the saved folder back into the run root.
+	// A disk that cannot go back must not ride the saved folder back into the run root, and
+	// both configs then say where each disk is: kept owns the stranded one, alpha references
+	// it there, and kept references the one that never moved, as the run did.
 	@Test @MainActor func aDiskThatCannotGoBackKeepsTheSavedFolderInTheLibrary() throws {
 		try VMTestDir.withRedirectedDir {
 			let host = try SafeRunFixture.make(disks: [unsafe("a"), unsafe("b")])
@@ -244,6 +246,19 @@ struct SafeSaveHandOverTests {
 			#expect(try SafeRunFixture.load(kept).disks.map(\.kind).contains(.storage("a", 4096)))
 			#expect(!FileManager.default.fileExists(atPath: host.shadowDir))
 			#expect(contents(original + "/b.raw") == "raw-b")
+			#expect(try SafeRunFixture.load(kept).disks == [
+				unsafe("a"), VMDisk(kind: .fromUrl(url(original + "/b.raw")), safe: false),
+			])
+			#expect(try SafeRunFixture.load(original).disks == [
+				VMDisk(kind: .fromUrl(url(kept + "/a.raw")), safe: false), unsafe("b"),
+			])
+			// The daemon's view of the library: kept holds alpha's disk, so it stays put.
+			machmanVMDir = host.library
+			let daemon = VMRegistry()
+			let error = try #require(throws: MachmanError.self) {
+				try daemon.delete(try #require(daemon.vm(named: "kept")))
+			}
+			#expect(error.message.contains("alpha uses a.raw from kept's folder"))
 		}
 	}
 

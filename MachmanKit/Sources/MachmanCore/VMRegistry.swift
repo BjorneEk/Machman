@@ -387,16 +387,21 @@ public final class VMRegistry {
 					to: URL(fileURLWithPath: originalDir + "/config"), options: .atomic)
 			}
 		} catch {
-			var stranded = false
+			var stranded: [DirectDiskMove] = []
 			for move in moved.reversed() {
 				let back = originalDir + "/" + move.sourceFile
-				if !restore(destination + "/" + move.targetFile, to: back) { stranded = true }
+				if !restore(destination + "/" + move.targetFile, to: back) {
+					stranded.append(move)
+				}
 			}
 			snapshot.restore(vm.config)
 			machmanVMDir = runRoot
 			// A disk that could not go back keeps the saved folder in the library, where its
-			// config lists it: the run root is deleted when the run ends.
-			if stranded {
+			// config lists it: the run root is deleted when the run ends. Both configs then
+			// say where each disk is, so the guards keep the folder while the original uses it.
+			if !stranded.isEmpty {
+				DirectDiskMove.settleStranded(
+					stranded, of: moves, originalDir: originalDir, savedDir: destination)
 				MachmanLogger.log(.passiveError,
 					"Save as New VM failed half-way: \(newName) stays in the library with the "
 						+ "disks that could not go back to \(oldName)")
