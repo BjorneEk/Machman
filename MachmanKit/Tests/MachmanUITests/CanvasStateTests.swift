@@ -3,9 +3,9 @@ import Foundation
 import MachmanAPI
 import MachmanUI
 
-// The split-canvas layout rules (CanvasState generalizes VMTabState): open/focus, close
-// fallbacks, pane collapse, moves with drag-style indices, the 3-pane cap, reconciliation,
-// fraction clamps, and the persistence round-trip.
+// The split-canvas layout rules: open/focus, close fallbacks, pane collapse, moves with
+// drag-style indices, the 3-pane cap, reconciliation, fraction clamps, and the persistence
+// round-trip.
 struct CanvasStateTests {
 
 	private let hvc0 = SerialPortRef(kind: .console, index: 0)
@@ -25,7 +25,7 @@ struct CanvasStateTests {
 		#expect(canvas.activeTab == .config)
 	}
 
-	@Test func closeFallsBackLikeVMTabState() {
+	@Test func closeFallsBackToANeighbour() {
 		var canvas = CanvasState()
 		canvas.open(.terminal(hvc0))
 		canvas.open(.terminal(hvc1))

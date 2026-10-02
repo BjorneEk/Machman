@@ -3,10 +3,9 @@
 //  MachmanUI
 //
 //  The pure editor-canvas layout for one VM (1.0.4 UI): panes of ordered tabs, an active
-//  pane, and divider fractions. Generalizes VMTabState from one implicit pane to the
-//  overhaul's split canvas; same philosophy — value-only, SwiftTerm-free, unit-testable,
-//  and Codable so each VM's canvas persists and is restored as it last appeared. The live
-//  controllers the terminal tabs point at stay in the app target (TerminalSessions).
+//  pane, and divider fractions. Value-only, SwiftTerm-free, unit-testable, and Codable so
+//  each VM's canvas persists and is restored as it last appeared. The live controllers the
+//  terminal tabs point at stay in TerminalSessions (MachmanDesktopCore).
 //
 
 import Foundation
@@ -100,7 +99,7 @@ public struct CanvasPane: Equatable, Sendable, Codable, Identifiable {
 			active: active.flatMap { tabs.contains($0) ? $0 : nil })
 	}
 
-	// VMTabState's activation rules, per pane: only open tabs can be active.
+	// Only an open tab can be active.
 	mutating func activate(_ tab: VMPaneTab) {
 		guard tabs.contains(tab) else { return }
 		active = tab
@@ -115,7 +114,7 @@ public struct CanvasPane: Equatable, Sendable, Codable, Identifiable {
 		active = tab
 	}
 
-	// VMTabState's close fallback: the right neighbour slides in, else the left, else nil.
+	// Close fallback: the right neighbour slides in, else the left, else nil.
 	mutating func close(_ tab: VMPaneTab) {
 		guard let i = tabs.firstIndex(of: tab) else { return }
 		let wasActive = active == tab
@@ -275,7 +274,7 @@ public struct CanvasState: Equatable, Sendable, Codable {
 		fractions[index + 1] = pair - clamped
 	}
 
-	// Drop terminal tabs whose port no longer exists (VMTabState.reconcile, across panes);
+	// Drop terminal tabs whose port no longer exists, in every pane;
 	// returns the closed refs so the caller tears down their controllers.
 	@discardableResult
 	public mutating func reconcile(existing: Set<SerialPortRef>) -> [SerialPortRef] {
