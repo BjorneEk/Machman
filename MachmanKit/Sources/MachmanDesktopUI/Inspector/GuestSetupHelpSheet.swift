@@ -10,7 +10,7 @@
 //  neither sudo nor doas, OpenBSD ships doas, most Linux ships sudo, and a root console
 //  needs none — so the guide adapts instead of assuming.
 //
-//  Fixed frame on purpose (sheets must not renegotiate layout) and the +20% type scale.
+//  The frame, the +20% type scale and the building blocks are HelpSheet.swift's.
 //
 
 import SwiftUI
@@ -20,7 +20,6 @@ import MachmanDesktopCore
 
 struct GuestSetupHelpSheet: View {
 	let vm: VMInfo
-	@Environment(\.dismiss) private var dismiss
 	@State private var tab: GuestTab
 	// The page's pick; nil until the user picks, which means the tab's usual one.
 	@State private var escalation: GuestEscalation?
@@ -38,10 +37,6 @@ struct GuestSetupHelpSheet: View {
 		case bsd = "BSD"
 		case info = "Info"
 	}
-
-	private static let titleSize: CGFloat = 19
-	private static let textSize: CGFloat = 15.5
-	private static let smallSize: CGFloat = 13
 
 	// macOS guests never see the Linux/BSD paths; a kernel boot IS Linux. An unknown mode
 	// proves nothing, like EFI.
@@ -69,15 +64,12 @@ struct GuestSetupHelpSheet: View {
 	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			HStack(spacing: 8) {
-				Image(systemName: MachmanSymbols.deviceGuestSetup)
-					.font(.system(size: 24))
-					.foregroundStyle(.secondary)
-				Text("Guest Setup")
-					.font(.system(size: Self.titleSize, weight: .semibold))
-				Spacer()
-			}
+		HelpSheetFrame(
+			symbol: MachmanSymbols.deviceGuestSetup, title: "Guest Setup",
+			footer: "The script runs inside the virtual machine and asks before every "
+				+ "change. On this Mac, Machman only touches ~/.ssh — and only with "
+				+ "your confirmation."
+		) {
 			Picker("Guest OS", selection: $tab) {
 				ForEach(tabs, id: \.self) { Text($0.rawValue).tag($0) }
 			}
@@ -88,7 +80,7 @@ struct GuestSetupHelpSheet: View {
 			if tab != .info {
 				HStack(spacing: 10) {
 					Text("Run commands as")
-						.font(.system(size: Self.smallSize))
+						.font(.system(size: HelpSheetType.small))
 						.foregroundStyle(.secondary)
 					Picker("Run commands as", selection: Binding(
 						get: { resolved }, set: { escalation = $0 })) {
@@ -101,36 +93,25 @@ struct GuestSetupHelpSheet: View {
 				}
 				.padding(.top, 2)
 			}
-			ScrollView {
-				VStack(alignment: .leading, spacing: 12) {
-					switch tab {
-					case .linux: linuxSteps
-					case .macOS: macOSSteps
-					case .bsd: bsdSteps
-					case .info: infoPage
-					}
-				}
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.padding(.vertical, 2)
-			}
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
-			Divider()
-			HStack(alignment: .firstTextBaseline) {
-				Text("The script runs inside the virtual machine and asks before every "
-					+ "change. On this Mac, Machman only touches ~/.ssh — and only with "
-					+ "your confirmation.")
-					.font(.system(size: Self.smallSize))
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-				Spacer()
-				Button("Done") { dismiss() }
-					.keyboardShortcut(.defaultAction)
-			}
+		} page: {
+			GuestSetupGuidePage(vm: vm, tab: tab, escalation: resolved)
 		}
-		.padding(22)
-		// FIXED size on purpose: a flexible ScrollView inside a sheet makes the AppKit
-		// hosting view renegotiate during layout.
-		.frame(width: 560, height: 620)
+	}
+}
+
+// One tab of the guide, apart from the sheet so a render can show a whole page.
+struct GuestSetupGuidePage: View {
+	let vm: VMInfo
+	let tab: GuestSetupHelpSheet.GuestTab
+	let escalation: GuestEscalation
+
+	var body: some View {
+		switch tab {
+		case .linux: linuxSteps
+		case .macOS: macOSSteps
+		case .bsd: bsdSteps
+		case .info: infoPage
+		}
 	}
 
 	// MARK: - Linux (steps only)
@@ -147,18 +128,18 @@ struct GuestSetupHelpSheet: View {
 
 	@ViewBuilder
 	private var linuxSteps: some View {
-		step(1, "Add (+) → Installers → Guest Setup, then boot the guest.")
+		HelpStep(1, "Add (+) → Installers → Guest Setup, then boot the guest.")
 		if let auto = shareAutomount {
-			step(2, "The share automounts (\(auto.kind)) at \(auto.path) — run the script:")
+			HelpStep(2, "The share automounts (\(auto.kind)) at \(auto.path) — run the script:")
 			command(GuestSetupInstallerInfo.runCommand())
 		} else {
-			step(2, "Mount the share and run the script:")
+			HelpStep(2, "Mount the share and run the script:")
 			command(GuestPaths.mountShareCommand + " && "
 				+ GuestSetupInstallerInfo.runCommand())
 		}
-		note("It asks per feature — console logins, kernel boot output, SSH, boot "
+		HelpNote("It asks per feature — console logins, kernel boot output, SSH, boot "
 			+ "automounts — and re-running it later reconfigures.")
-		step(3, "Undo it later:")
+		HelpStep(3, "Undo it later:")
 		command(GuestSetupInstallerInfo.runCommand() + " --uninstall")
 	}
 
@@ -166,13 +147,13 @@ struct GuestSetupHelpSheet: View {
 
 	@ViewBuilder
 	private var macOSSteps: some View {
-		step(1, "Add (+) → Installers → Guest Setup, then boot the guest — the share "
+		HelpStep(1, "Add (+) → Installers → Guest Setup, then boot the guest — the share "
 			+ "automounts (macOS 13+).")
-		step(2, "In the guest's Terminal, run the script:")
+		HelpStep(2, "In the guest's Terminal, run the script:")
 		command(GuestSetupInstallerInfo.runFromAutomountCommand)
-		note("Volume missing (macOS 12 guests)? "
+		HelpNote("Volume missing (macOS 12 guests)? "
 			+ ConsoleLoginInstallerInfo.fallbackMountCommand)
-		step(3, "Undo it later:")
+		HelpStep(3, "Undo it later:")
 		command(GuestSetupInstallerInfo.runFromAutomountCommand + " --uninstall")
 	}
 
@@ -185,12 +166,12 @@ struct GuestSetupHelpSheet: View {
 	@ViewBuilder
 	private var bsdSteps: some View {
 		if let auto = shareAutomount {
-			intro("This guest automounts the share over \(auto.kind) at boot — no "
+			HelpIntro("This guest automounts the share over \(auto.kind) at boot — no "
 				+ "bootstrap needed while that holds.")
-			step(1, "Start the VM — the share appears at \(auto.path).")
-			step(2, "Run the installer:")
+			HelpStep(1, "Start the VM — the share appears at \(auto.path).")
+			HelpStep(2, "Run the installer:")
 			command(GuestSetupInstallerInfo.runCommand())
-			step(3, "Undo it later:")
+			HelpStep(3, "Undo it later:")
 			command(GuestSetupInstallerInfo.runCommand() + " --uninstall")
 		} else {
 			bsdBootstrapSteps
@@ -199,36 +180,36 @@ struct GuestSetupHelpSheet: View {
 
 	@ViewBuilder
 	private var bsdBootstrapSteps: some View {
-		intro("FreeBSD and OpenBSD have no virtiofs driver, so the setup folder is mounted "
+		HelpIntro("FreeBSD and OpenBSD have no virtiofs driver, so the setup folder is mounted "
 			+ "over SSH instead — then the same script runs.")
-		step(1, "Start the VM — the payload is generated fresh at boot and served only "
+		HelpStep(1, "Start the VM — the payload is generated fresh at boot and served only "
 			+ "while it runs.")
-		step(2, "Turn on Remote Login on this Mac (System Settings → General → Sharing).")
-		step(3, "Install sshfs in the guest:")
+		HelpStep(2, "Turn on Remote Login on this Mac (System Settings → General → Sharing).")
+		HelpStep(3, "Install sshfs in the guest:")
 		command("pkg install fusefs-sshfs")
-		note("OpenBSD: pkg_add sshfs-fuse — and skip step 4; fuse is already in its kernel.")
-		step(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
+		HelpNote("OpenBSD: pkg_add sshfs-fuse — and skip step 4; fuse is already in its kernel.")
+		HelpStep(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
 		command(GuestSetupCommands.bsdFuseLoad)
 		let approvedUser = reverseApproved ? vm.ssh?.guestUser : nil
 		if approvedUser != nil {
-			step(5, "Mount Machman's setup folder — this guest's key is approved, so the "
+			HelpStep(5, "Mount Machman's setup folder — this guest's key is approved, so the "
 				+ "'mac' alias works without a password:")
 		} else {
-			step(5, "Mount Machman's setup folder. This asks for your Mac account "
+			HelpStep(5, "Mount Machman's setup folder. This asks for your Mac account "
 				+ "password — once, because keys are what the script is about to set up:")
 		}
 		command(GuestSetupCommands.bsdShareMount(
 			approvedGuestUser: approvedUser, hostUser: hostUser, hostAddress: hostAddress,
 			sharePath: sharePath))
-		note("Same folder Linux mounts over virtiofs, same path — so step 6 is the same "
+		HelpNote("Same folder Linux mounts over virtiofs, same path — so step 6 is the same "
 			+ "command on every guest.")
 		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
-			note("Boot the VM once so Machman can fill in this Mac's address and the real "
+			HelpNote("Boot the VM once so Machman can fill in this Mac's address and the real "
 				+ "path above.")
 		}
-		step(6, "Run the installer:")
+		HelpStep(6, "Run the installer:")
 		command(GuestSetupInstallerInfo.runCommand())
-		note("Mounting as root needs no system changes. The script keeps the fuse driver "
+		HelpNote("Mounting as root needs no system changes. The script keeps the fuse driver "
 			+ "across reboots by itself, and can allow user mounts later if you ask it to.")
 	}
 
@@ -236,121 +217,53 @@ struct GuestSetupHelpSheet: View {
 
 	@ViewBuilder
 	private var infoPage: some View {
-		sectionTitle("Where the details live")
-		intro("The Guest Setup inspector shows the report: install status, per-feature "
+		HelpSectionTitle("Where the details live")
+		HelpIntro("The Guest Setup inspector shows the report: install status, per-feature "
 			+ "state, and errors. SSH specifics (address, alias, guest → Mac approval) "
 			+ "live in the SSH section.")
-		sectionTitle("What the script does")
-		bullet("One script for everything guest-side: console logins, kernel boot output, "
+		HelpSectionTitle("What the script does")
+		HelpBullet("One script for everything guest-side: console logins, kernel boot output, "
 			+ "SSH, guest → host SSH, sshfs, and boot automounts.")
-		bullet("Probes before offering: a feature the guest cannot do is skipped with the "
+		HelpBullet("Probes before offering: a feature the guest cannot do is skipped with the "
 			+ "reason, never a failure.")
-		bullet("Asks first, always: it prints the whole plan, then does it. Run it with -n "
+		HelpBullet("Asks first, always: it prints the whole plan, then does it. Run it with -n "
 			+ "to see that plan and change nothing.")
-		bullet("Remembers its choices in the guest, so re-running offers reconfiguration "
+		HelpBullet("Remembers its choices in the guest, so re-running offers reconfiguration "
 			+ "and repairs older versions.")
-		sectionTitle("Options")
-		optionRow("-n, --dry-run", "print the plan and exit")
-		optionRow("-y, --yes", "never ask; take the defaults")
-		optionRow("--user <name>", "set SSH up for this user")
-		optionRow("--consoles \"…\"", "logins on exactly these consoles")
-		optionRow("--kernel-console", "send kernel boot messages to a console — EDITS THE "
+		HelpSectionTitle("Options")
+		HelpOptionRow("-n, --dry-run", "print the plan and exit")
+		HelpOptionRow("-y, --yes", "never ask; take the defaults")
+		HelpOptionRow("--user <name>", "set SSH up for this user")
+		HelpOptionRow("--consoles \"…\"", "logins on exactly these consoles")
+		HelpOptionRow("--kernel-console", "send kernel boot messages to a console — EDITS THE "
 			+ "BOOT LOADER, so it is flag-only, keeps the display on tty0, and backs up "
 			+ "grub.cfg; test in a safe run first")
-		optionRow("--two-way", "also configure guest → host SSH")
-		optionRow("--sshfs", "install sshfs (implies --two-way)")
-		optionRow("--automount-virtiofs", "mount the share at boot")
-		optionRow("--automount-sshfs", "mount sshfs folders at boot")
-		optionRow("--install", "install missing packages")
-		optionRow("--report-only", "refresh Machman's report, change nothing — a boot hook "
+		HelpOptionRow("--two-way", "also configure guest → host SSH")
+		HelpOptionRow("--sshfs", "install sshfs (implies --two-way)")
+		HelpOptionRow("--automount-virtiofs", "mount the share at boot")
+		HelpOptionRow("--automount-sshfs", "mount sshfs folders at boot")
+		HelpOptionRow("--install", "install missing packages")
+		HelpOptionRow("--report-only", "refresh Machman's report, change nothing — a boot hook "
 			+ "runs this so \"next boot\" states flip after a reboot")
-		optionRow("--uninstall", "remove everything it installed")
-		note("Every question the script can ask has a flag, so the same script runs "
+		HelpOptionRow("--uninstall", "remove everything it installed")
+		HelpNote("Every question the script can ask has a flag, so the same script runs "
 			+ "unattended.")
-		sectionTitle("Consoles")
-		intro("Linux with systemd usually gives the first console a login on its own; the "
+		HelpSectionTitle("Consoles")
+		HelpIntro("Linux with systemd usually gives the first console a login on its own; the "
 			+ "script verifies, covers the rest, and can put kernel boot messages on one. "
 			+ "OpenBSD has no virtio-console driver — the script says so and moves on.")
-		sectionTitle("Automounts")
-		intro("The share is one fstab line (every mount is a folder inside it); sshfs "
+		HelpSectionTitle("Automounts")
+		HelpIntro("The share is one fstab line (every mount is a folder inside it); sshfs "
 			+ "folders ride the guest → host link, so approve the key in the SSH section "
 			+ "before they connect.")
-		sectionTitle("Undoing it")
-		intro("--uninstall removes what the script installed in the guest; “Reset Setup "
+		HelpSectionTitle("Undoing it")
+		HelpIntro("--uninstall removes what the script installed in the guest; “Reset Setup "
 			+ "State” in the inspector forgets the report on the Mac side.")
-	}
-
-	// MARK: - Building blocks
-
-	private func intro(_ text: String) -> some View {
-		Text(text)
-			.font(.system(size: Self.textSize))
-			.foregroundStyle(.secondary)
-			.fixedSize(horizontal: false, vertical: true)
-	}
-
-	private func sectionTitle(_ text: String) -> some View {
-		Text(text)
-			.font(.system(size: Self.textSize, weight: .semibold))
-			.padding(.top, 2)
-	}
-
-	private func bullet(_ text: String) -> some View {
-		HStack(alignment: .firstTextBaseline, spacing: 8) {
-			Text("•").font(.system(size: Self.textSize))
-			Text(text)
-				.font(.system(size: Self.textSize))
-				.fixedSize(horizontal: false, vertical: true)
-		}
-	}
-
-	private func optionRow(_ flag: String, _ meaning: String) -> some View {
-		HStack(alignment: .firstTextBaseline, spacing: 8) {
-			Text(flag)
-				.font(.system(size: Self.smallSize, design: .monospaced))
-				.frame(width: 160, alignment: .leading)
-			Text(meaning)
-				.font(.system(size: Self.smallSize))
-				.foregroundStyle(.secondary)
-				.fixedSize(horizontal: false, vertical: true)
-		}
-	}
-
-	private func step(_ number: Int, _ text: String) -> some View {
-		HStack(alignment: .firstTextBaseline, spacing: 8) {
-			Text("\(number)")
-				.font(.system(size: Self.smallSize, weight: .semibold))
-				.monospacedDigit()
-				.frame(width: 20, height: 20)
-				.background(Circle().fill(Color.primary.opacity(0.08)))
-			Text(text)
-				.font(.system(size: Self.textSize))
-				.fixedSize(horizontal: false, vertical: true)
-		}
 	}
 
 	// A copyable command, carrying the page's escalation on every command in the line —
 	// a chained "sudo a && b" would run b as the user. `raw` is never escalated itself.
 	private func command(_ raw: String, escalate: Bool = true) -> some View {
-		let text = escalate ? resolved.apply(raw) : raw
-		return HStack(alignment: .top) {
-			Text(text)
-				.font(.system(size: Self.smallSize, design: .monospaced))
-				.textSelection(.enabled)
-				.fixedSize(horizontal: false, vertical: true)
-			Spacer(minLength: 6)
-			CopyToClipboardButton(text, tooltip: "Copy")
-		}
-		.padding(7)
-		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
-		.padding(.leading, 28)
-	}
-
-	private func note(_ text: String) -> some View {
-		Text(text)
-			.font(.system(size: Self.smallSize))
-			.foregroundStyle(.secondary)
-			.fixedSize(horizontal: false, vertical: true)
-			.padding(.leading, 28)
+		HelpCommand(escalate ? escalation.apply(raw) : raw)
 	}
 }

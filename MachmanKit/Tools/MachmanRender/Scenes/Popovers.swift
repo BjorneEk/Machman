@@ -31,6 +31,27 @@ enum PopoverScenes {
 			.padding(12))
 	}
 
+	// One guide page alone, at the sheet's text width (560 − 2 × 22), fitting height.
+	static func guidePage(
+		_ name: String, _ summary: String, tab: GuestSetupHelpSheet.GuestTab,
+		vms: @escaping () -> [VMInfo]
+	) -> RenderScene {
+		RenderScene(
+			"sheet.guest-setup-help.page.\(name)", "GuestSetupGuidePage, \(summary)",
+			widths: [nil], vms: vms
+		) { ctx in
+			let escalation = GuestSetupCommands.escalations(
+				for: tab == .bsd ? .bsd : tab == .macOS ? .macOS : .linux)[0]
+			return AnyView(
+				VStack(alignment: .leading, spacing: 12) {
+					GuestSetupGuidePage(vm: ctx.vm, tab: tab, escalation: escalation)
+				}
+				.frame(width: 516, alignment: .leading)
+				.fixedSize(horizontal: false, vertical: true)
+				.padding(.vertical, 8))
+		}
+	}
+
 	// The activity list as the real flows fill it (PR5): a cancelled copy, a finished and a
 	// failed import (operation events), then Debian's Screen Recording warning (a log event).
 	@MainActor
@@ -167,6 +188,14 @@ enum PopoverScenes {
 		) { ctx in
 			AnyView(GuestSetupHelpSheet(vm: ctx.vm, tab: .bsd, escalation: .root))
 		},
+		// Whole guide pages at the sheet's text width, below the fold included.
+		guidePage("linux", "Linux", tab: .linux, vms: { [Samples.linux("Debian")] }),
+		guidePage("macos", "macOS", tab: .macOS, vms: { [Samples.macOS("Sequoia")] }),
+		guidePage("bsd", "BSD, key not approved", tab: .bsd, vms: { [Samples.linux("Debian")] }),
+		guidePage(
+			"bsd-approved", "BSD, approved key", tab: .bsd,
+			vms: { [Samples.linuxReverseApproved()] }),
+		guidePage("info", "Info", tab: .info, vms: { [Samples.linux("Debian")] }),
 		RenderScene("sheet.mac-switch", "MacSwitchSheet (switch a VM to macOS)") { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
 		},
