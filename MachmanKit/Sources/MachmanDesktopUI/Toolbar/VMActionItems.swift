@@ -27,7 +27,7 @@ struct WindowToggleItem: View {
 		}
 		.toggleStyle(.button)
 		.disabled(vm.state != .running)
-		.help(tooltip)
+		.help(VMListViewModel.windowToggleHelp(vm))
 	}
 
 	private var policy: StartPolicy { vm.startPolicy ?? StartPolicy() }
@@ -38,13 +38,6 @@ struct WindowToggleItem: View {
 		} else {
 			viewModel.openWindow(vm.name)
 		}
-	}
-
-	private var tooltip: String {
-		if vm.state != .running {
-			return "Window opens on start (default: \(policy.windowed ? "on" : "off"))"
-		}
-		return vm.windowOpen ? "Close the VM window (keeps running)" : "Open the VM window"
 	}
 }
 
@@ -61,7 +54,7 @@ struct StartStopGroup: View {
 			case .stopped, .error, .unknown:
 				// The click set pendingStarts synchronously; the state event is seconds out.
 				if viewModel.isStartPending(vm.name) {
-					transition("Starting…")
+					transition(.starting)
 				} else {
 					ControlGroup {
 						Button {
@@ -69,7 +62,7 @@ struct StartStopGroup: View {
 						} label: {
 							Image(systemName: MachmanSymbols.start)
 						}
-						.help(startHelp)
+						.help(viewModel.startHelp(vm))
 						Button {
 							viewModel.startPolicyDriven(vm, .safe)
 						} label: {
@@ -80,12 +73,12 @@ struct StartStopGroup: View {
 					.disabled(!viewModel.canStart(vm))
 				}
 			case .starting:
-				transition("Starting…")
+				transition(.starting)
 			case .stopping:
 				// A guest that ignores the shutdown request: Force Stop stays in reach (F3).
 				// Immediate, like the running state's; only the ⌘. chords ask (P26).
 				HStack(spacing: 4) {
-					transition("Stopping…")
+					transition(.stopping)
 					ControlGroup {
 						Button {
 							viewModel.stopVM(vm.name, mode: .force)
@@ -116,17 +109,12 @@ struct StartStopGroup: View {
 		.animation(.snappy(duration: 0.25), value: vm.state)
 	}
 
-	private var startHelp: String {
-		if viewModel.isInstalling(vm) { return "macOS is installing; wait for it to finish" }
-		let policy = vm.startPolicy ?? StartPolicy()
-		return "Start" + (policy.windowed ? "" : " (headless)") + (policy.safe ? " (safe)" : "")
-	}
-
-	private func transition(_ label: String) -> some View {
+	// The state's own progress word (H8), as the canvas shows it.
+	private func transition(_ state: VMState) -> some View {
 		HStack(spacing: 6) {
 			ProgressView()
 				.controlSize(.small)
-			Text(label)
+			Text(state.progressLabel ?? state.displayLabel)
 				.font(.system(size: 11))
 				.foregroundStyle(.secondary)
 		}

@@ -40,4 +40,12 @@ struct VMStatusDisplayTests {
 		#expect(VMState.allCases.map(\.displayLabel)
 			== ["Stopped", "Starting", "Running", "Stopping", "Paused", "Error", "Unknown"])
 	}
+
+	// W4: the toolbar said "Stopping…" and the canvas "Shutting down…"; both use this now.
+	@Test func transitionsShowTheirWordWithAnEllipsis() {
+		#expect(VMState.starting.progressLabel == "Starting\u{2026}")
+		#expect(VMState.stopping.progressLabel == "Stopping\u{2026}")
+		let settled = VMState.allCases.filter { $0 != .starting && $0 != .stopping }
+		#expect(settled.allSatisfy { $0.progressLabel == nil })
+	}
 }

@@ -93,7 +93,7 @@ struct VMPickerPopover: View {
 						VMPickerRow(viewModel: viewModel, vm: vm) { dismiss() }
 					}
 					if filtered.isEmpty {
-						Text("No VMs match “\(query)”")
+						Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VMs match “\(query)”")
 							.font(.callout)
 							.foregroundStyle(.secondary)
 							.padding(12)

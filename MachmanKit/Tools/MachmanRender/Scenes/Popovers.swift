@@ -138,6 +138,10 @@ enum PopoverScenes {
 		) { ctx in
 			AnyView(VMPickerPopover(viewModel: ctx.viewModel))
 		},
+		// W4: with no VMs at all the list says so, not “No VMs match “””.
+		RenderScene("popover.vm-picker.empty", "VMPickerPopover with no VMs", vms: { [] }) { ctx in
+			AnyView(VMPickerPopover(viewModel: ctx.viewModel))
+		},
 		RenderScene("sheet.copy-vm", "CopyVMSheet") { ctx in
 			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel))
 		},

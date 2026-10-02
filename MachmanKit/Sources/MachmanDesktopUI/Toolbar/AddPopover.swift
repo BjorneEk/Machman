@@ -26,7 +26,7 @@ struct AddButton: View {
 		} label: {
 			Image(systemName: MachmanSymbols.add)
 		}
-		.help("Add disk, mount, serial port, or device")
+		.help("Add Disk, Mount, Serial Port, or Device")
 		.popover(isPresented: $shown, arrowEdge: .bottom) {
 			AddPopover(viewModel: viewModel, vm: vm)
 		}

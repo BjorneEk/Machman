@@ -23,6 +23,15 @@ extension VMState {
 		case .unknown: return "Unknown"
 		}
 	}
+
+	// The word a transition shows beside its spinner: the display word and an ellipsis
+	// ("Stopping…"), so the toolbar and the canvas say the same; nil for a settled state.
+	public var progressLabel: String? {
+		switch self {
+		case .starting, .stopping: return displayLabel + "\u{2026}"
+		case .stopped, .running, .paused, .error, .unknown: return nil
+		}
+	}
 }
 
 extension VMInfo {
