@@ -38,6 +38,11 @@ final class InstallSession {
 
 	var isInstalling: Bool { installer != nil }
 
+	// The error event a failed install sends (a toast and an Activity entry), H31.
+	nonisolated static func failureEvent(for error: Error) -> String {
+		"The macOS install failed: \(MachmanError.userMessage(for: error))"
+	}
+
 	// `run` nil = the real installer. Resolved in the body: a default argument is evaluated
 	// outside the main actor, where runInstaller is out of reach.
 	init(
@@ -138,7 +143,7 @@ final class InstallSession {
 					self.phase = Self.phase(for: self.config.boot, hasActiveInstall: false)
 				} else {
 					self.phase = InstallPhase(
-						kind: .failed, message: error.localizedDescription)
+						kind: .failed, message: MachmanError.userMessage(for: error))
 				}
 				if cancelled {
 					self.events.emit(.log(
@@ -146,9 +151,12 @@ final class InstallSession {
 						message: "macOS install cancelled"))
 				} else {
 					// Log the full error: NSError domain/code (VZErrorDomain 10006) matter.
+					// The event says it in words.
+					MachmanLogger.log(
+						.passiveError, "macOS install of \(self.config.name) failed: \(error)")
 					self.events.emit(.log(
 						vm: self.config.name, level: .error,
-						message: "macOS install failed: \(error)"))
+						message: Self.failureEvent(for: error)))
 				}
 			}
 			self.finishSession()

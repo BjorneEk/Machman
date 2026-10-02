@@ -30,6 +30,12 @@ final class MacInstaller {
 	private var downloadTask: URLSessionDownloadTask?
 	private var cancelled = false
 
+	// What a failed install stores as its reason, which the canvas and the Activity list
+	// show (H31): the error's own sentence, never an NSError dump.
+	nonisolated static func failedReason(for error: Error, cancelled: Bool) -> String {
+		cancelled ? "The macOS install was canceled." : MachmanError.userMessage(for: error)
+	}
+
 	// Stage callbacks for a UI controller.
 	var onResolved: ((_ version: String, _ build: String) -> Void)?
 	var onDownloadProgress: ((Progress) -> Void)?
@@ -85,7 +91,7 @@ final class MacInstaller {
 			onInstallProgress?(installer.progress)
 			try await installer.install()
 		} catch {
-			let reason = cancelled ? "cancelled by user" : "\(error)"
+			let reason = Self.failedReason(for: error, cancelled: cancelled)
 			config.boot = .macOS(MacOSBoot(installState: .failed(reason),
 				minimumCPUCount: minCPU, minimumMemorySize: minMem))
 			try? config.saveVMConfig()

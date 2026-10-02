@@ -174,6 +174,23 @@ enum WindowScenes {
 			mainWindow(ctx, inspector: true)
 		},
 		RenderScene(
+			"window.main.mac-install-failed.readable",
+			"VMNavigationView, a Mac whose install failed, with the reason it stores now",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			vms: { [Samples.macOSFailedInstallReadable()] },
+			panels: { ctx in
+				[
+					tree(ctx),
+					AnyView(InspectorView(
+						viewModel: ctx.viewModel, sessions: ctx.terminals,
+						profiles: ctx.profiles, vm: ctx.vm)
+						.padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			mainWindow(ctx, inspector: true)
+		},
+		RenderScene(
 			"window.main.mac-install-failed",
 			"VMNavigationView, a Mac whose install failed with a long reason",
 			widths: RenderScene.windowWidths, height: 820, chrome: .window,
