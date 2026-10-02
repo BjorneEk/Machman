@@ -64,6 +64,9 @@ struct MachmanDesktopApp: App {
 				}
 			}
 		}
+		// The window's minimum follows its content's (L1): VMNavigationView's regions while
+		// connected, ConnectionStatusView's otherwise.
+		.windowResizability(.contentMinSize)
 		// Every menu command, aimed at the key window (MachmanCommands.swift).
 		.commands {
 			MachmanCommands(

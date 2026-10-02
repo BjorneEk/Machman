@@ -73,11 +73,17 @@ public struct VMNavigationView: View {
 			.safeAreaInset(edge: .bottom, spacing: 0) {
 				daemonFooter
 			}
-			// The tree needs room for entry names + badges; the system minimum is too tight.
-			.navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 420)
+			.navigationSplitViewColumnWidth(
+				min: MainWindowLayout.sidebar.min, ideal: MainWindowLayout.sidebar.ideal,
+				max: MainWindowLayout.sidebar.max)
 		} detail: {
 			VMTabContainerView(
 				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
+				// The canvas's minimum, from which SwiftUI derives the window's floor (L1):
+				// the sidebar's width plus this. While the inspector shows, SwiftUI already
+				// keeps 300 pt for the content beside it and would count this on top (a
+				// 900 pt window then drew 1198), so the floor is sidebar + 300 + inspector.
+				.frame(minWidth: viewModel.showInfoPanel ? nil : MainWindowLayout.canvas.width)
 		}
 		// The NATIVE inspector column (demo design): full height beside the toolbar with
 		// the system's glass treatment, not a panel embedded in the detail pane.
@@ -91,8 +97,13 @@ public struct VMNavigationView: View {
 					NoSelectionInspector()
 				}
 			}
-			.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
+			.inspectorColumnWidth(
+				min: MainWindowLayout.inspector.min, ideal: MainWindowLayout.inspector.ideal,
+				max: MainWindowLayout.inspector.max)
 		}
+		// The canvas's height floor, under the toolbar (L1). On the whole split view: on the
+		// detail column the same 300 pt made a 456 pt window floor.
+		.frame(minHeight: MainWindowLayout.canvas.height)
 		// WINDOW-LEVEL toolbar (not the detail pane's): items keep one home however the
 		// sidebar/inspector columns move, and the pinned background stops the bar's style
 		// flipping with scroll-under content. The indicator stays with no VM selected —

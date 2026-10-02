@@ -139,6 +139,31 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: false)
 		},
+		// L1: the window at its fitting size is the floor its regions derive (a smaller
+		// --widths proposal comes out at this size too).
+		RenderScene(
+			"window.main.floor", "VMNavigationView at its minimum size, inspector open",
+			chrome: .window,
+			panels: { ctx in
+				[
+					tree(ctx),
+					AnyView(InspectorView(
+						viewModel: ctx.viewModel, sessions: ctx.terminals,
+						profiles: ctx.profiles, vm: ctx.vm)
+						.padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			mainWindow(ctx, inspector: true)
+		},
+		RenderScene(
+			"window.main.no-inspector.floor",
+			"VMNavigationView at its minimum size, inspector closed",
+			chrome: .window,
+			panels: { ctx in [tree(ctx)] }
+		) { ctx in
+			mainWindow(ctx, inspector: false)
+		},
 		// T8: the active canvas tab selects its tree row, and the inspector follows it. The
 		// sample console socket is under /var/empty, so the terminal's connect fails there.
 		RenderScene(
