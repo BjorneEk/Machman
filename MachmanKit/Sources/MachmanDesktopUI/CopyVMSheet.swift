@@ -73,7 +73,8 @@ struct CopyVMSheet: View {
 							includedDiskIDs.remove(disk.id)
 						}
 					})) {
-					// A long name or reference path truncates in the middle; the sheet keeps its width.
+					// A long name or reference path truncates in the middle; the sheet keeps
+					// its width.
 					Text(disk.name ?? Self.shortPath(disk.path ?? "", 2))
 						.lineLimit(1)
 						.truncationMode(.middle)
