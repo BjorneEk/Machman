@@ -1378,7 +1378,8 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	// Batch enable/disable everything in the tree selection that carries the flag
-	// (multi-select context menus + the multi-selection inspector).
+	// (multi-select context menus + the multi-selection inspector), in one vm.setEnabled:
+	// one config write, all or nothing (devices ride it since 1.0.12).
 	public func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
 		// Only what still exists (T15): a stale selection must not send gone ids.
 		let current = vms.first { $0.name == vm.name } ?? vm
@@ -1386,6 +1387,7 @@ public final class VMListViewModel: ObservableObject {
 		var mounts: [String: Bool] = [:]
 		var console: [String: Bool] = [:]
 		var uart: [String: Bool] = [:]
+		var devices: [String: Bool] = [:]
 		let live = Self.liveNodes(
 			treeSelection, in: current, openSessions: openSSHSessions(vm: current.name))
 		for node in live {
@@ -1401,32 +1403,37 @@ public final class VMListViewModel: ObservableObject {
 					uart[String(ref.index)] = enabled
 				}
 			case .device(let kind):
-				if var device = current.devices?.first(where: { $0.kind == kind }) {
-					device.enabled = enabled
-					updateDevice(vm.name, device: device)
+				// .unknown can't name the device it stands for; leave it out.
+				if kind != .unknown, current.devices?.contains(where: { $0.kind == kind }) == true {
+					devices[kind.rawValue] = enabled
 				}
 			default:
 				break
 			}
 		}
-		if !disks.isEmpty || !mounts.isEmpty || !console.isEmpty || !uart.isEmpty {
+		if !disks.isEmpty || !mounts.isEmpty || !console.isEmpty || !uart.isEmpty
+			|| !devices.isEmpty {
 			setEnabled(
 				vm.name, disks: disks.isEmpty ? nil : disks,
 				mounts: mounts.isEmpty ? nil : mounts,
 				console: console.isEmpty ? nil : console,
-				uart: uart.isEmpty ? nil : uart)
+				uart: uart.isEmpty ? nil : uart,
+				devices: devices.isEmpty ? nil : devices)
 		}
 	}
 
-	// Batch per-entity enabled flags; serial ports are keyed by their string index.
+	// Batch per-entity enabled flags; serial ports are keyed by their string index, devices
+	// by their kind.
 	public func setEnabled(
 		_ name: String, disks: [String: Bool]? = nil, mounts: [String: Bool]? = nil,
-		console: [String: Bool]? = nil, uart: [String: Bool]? = nil
+		console: [String: Bool]? = nil, uart: [String: Bool]? = nil,
+		devices: [String: Bool]? = nil
 	) {
 		Task { [weak self] in
 			do {
 				try await self?.api.setEnabled(
-					vm: name, disks: disks, mounts: mounts, console: console, uart: uart)
+					vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
+					devices: devices)
 			} catch {
 				self?.present(error, while: "Updating enabled state")
 			}
