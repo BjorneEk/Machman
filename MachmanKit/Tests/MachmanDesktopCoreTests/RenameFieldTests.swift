@@ -133,4 +133,40 @@ struct RenameFieldTests {
 		#expect(!h.stub.calls.contains("renameVM"))
 		#expect(!h.stub.calls.contains("renameDisk"))
 	}
+
+	// Step 6b: the kernel file's Tag field, the same way.
+	@Test func theKernelTagFieldExplainsAndKeepsRefusals() async throws {
+		let h = await DesktopHarness.make([Samples.kernelBoot()])
+		let lab = try #require(h.viewModel.vms.first)
+		let files = try #require(lab.boot.ownedKernels)
+		let vmlinuz = files[0].path
+		let tag = { (draft: String) in
+			h.viewModel.kernelTagProblem(draft, path: vmlinuz, on: lab)
+		}
+		#expect(tag("6.12") == nil)
+		#expect(tag("6.13/rc1") == "A kernel tag can't contain \u{201C}/\u{201D}")
+		#expect(tag(".x") == "A kernel tag can't start with a dot")
+		#expect(tag("6.6-lts") == nil)   // that tag holds "Image", not "vmlinuz"
+		#expect(!h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: ".x") { _ in })
+		#expect(!h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: " 6.12 ") { _ in })
+		var got: String?
+		h.stub.fail(
+			"renameKernelFile", with: MachmanError(code: .alreadyExists, message: "taken"))
+		#expect(h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: "6.13") { got = $0 })
+		#expect(await eventually { got == "taken" })
+		#expect(h.viewModel.presentedError == nil)
+		#expect(h.stub.calls.filter { $0 == "renameKernelFile" }.count == 1)
+	}
+
+	@Test func aKernelTagTakenByTheSameFileNameIsRefused() async throws {
+		var vm = Samples.kernelBoot()
+		let dir = "\(Samples.vmsRoot)/Kernel Lab/kernels/kernel"
+		vm.boot.ownedKernels?.append(OwnedKernelFile(
+			role: .kernel, tag: "6.13", fileName: "vmlinuz", path: "\(dir)/6.13/vmlinuz"))
+		let h = await DesktopHarness.make([vm])
+		let lab = try #require(h.viewModel.vms.first)
+		let vmlinuz = try #require(lab.boot.ownedKernels?[0].path)
+		#expect(h.viewModel.kernelTagProblem("6.13", path: vmlinuz, on: lab)
+			== "\u{201C}6.13\u{201D} already holds a file named \u{201C}vmlinuz\u{201D}")
+	}
 }

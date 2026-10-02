@@ -2,7 +2,8 @@
 //  VMListViewModel+RenameFields.swift
 //  MachmanDesktopCore
 //
-//  The inspector's rename fields (PR8): the VM name, a disk's name and a mount's tag say
+//  The inspector's rename fields (PR8): the VM name, a disk's name, a mount's tag and an
+//  owned kernel file's tag say
 //  why a draft can't be used while it is typed, in the daemon's own words, and a refusal
 //  the daemon sends back shows under the field instead of as an alert. Return sends only
 //  a draft the field shows as valid. The tree's rename-in-place keeps its alert: it has no
@@ -117,6 +118,44 @@ extension VMListViewModel {
 			mountTagProblem(draft, mountID: mountID, on: vm) == nil
 		else { return false }
 		setMountTag(vm.name, mountID: mountID, tag: tag, refused: refused)
+		return true
+	}
+
+	// MARK: - Kernel tag
+
+	// Why an owned kernel file's Tag field draft can't be sent, or nil — nil for its own
+	// tag too. A tag directory holds one file of each name per role (KernelStore's layout).
+	public func kernelTagProblem(_ draft: String, path: String, on vm: VMInfo) -> String? {
+		let rule = NameRule.kernelTag
+		let tag = rule.trimmed(draft)
+		let owned = vm.boot.ownedKernels ?? []
+		guard let file = owned.first(where: { $0.path == path }), tag != file.tag else {
+			return nil
+		}
+		if let problem = rule.problem(tag) { return problem }
+		if owned.contains(where: {
+			$0.path != path && $0.role == file.role && $0.tag == tag
+				&& $0.fileName == file.fileName
+		}) {
+			return "\u{201C}\(tag)\u{201D} already holds a file named "
+				+ "\u{201C}\(file.fileName)\u{201D}"
+		}
+		return nil
+	}
+
+	// The kernel Tag field's Return: false (nothing sent) while the draft has a problem, is
+	// the file's own tag, or the VM must stop first.
+	@discardableResult
+	public func submitKernelTag(
+		_ vm: VMInfo, path: String, draft: String,
+		refused: @escaping @MainActor (String) -> Void
+	) -> Bool {
+		let tag = NameRule.kernelTag.trimmed(draft)
+		guard vm.refusal(.renameKernelFile) == nil,
+			let file = vm.boot.ownedKernels?.first(where: { $0.path == path }), tag != file.tag,
+			kernelTagProblem(draft, path: path, on: vm) == nil
+		else { return false }
+		renameKernelTag(vm.name, path: path, tag: tag, refused: refused)
 		return true
 	}
 }

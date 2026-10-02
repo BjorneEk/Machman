@@ -204,6 +204,18 @@ enum InspectorScenes {
 		inspector(
 			"kernel.entry", "KernelEntryInspector, active kernel with an override",
 			select: "Kernel Lab", node: .kernel(kernelLab.boot.ownedKernels![0].path)),
+		RenderScene(
+			"inspector.kernel.entry.tag-invalid", "KernelEntryInspector, a tag it can't use",
+			widths: RenderScene.inspectorWidths, height: height,
+			vms: { [Samples.kernelBoot()] }
+		) { ctx in
+			ctx.viewModel.select(name: "Kernel Lab")
+			return AnyView(
+				KernelEntryInspector(
+					viewModel: ctx.viewModel, vm: ctx.vm,
+					path: kernelLab.boot.ownedKernels![0].path, tagDraft: "6.13/rc1")
+					.formStyle(.grouped))
+		},
 		inspector(
 			"initramfs.entry", "InitramfsEntryInspector, the active initramfs",
 			select: "Kernel Lab", node: .initramfs(kernelLab.boot.ownedKernels![2].path)),

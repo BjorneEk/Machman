@@ -79,11 +79,14 @@ struct KernelEntryInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let path: String
+	// Opens the Tag field on an unsent draft (render scenes).
+	var tagDraft: String?
 
 	var body: some View {
 		if let entry = KernelEntry(vm: vm, role: .kernel, path: path) {
 			Form {
-				KernelFileInfoSection(viewModel: viewModel, vm: vm, entry: entry)
+				KernelFileInfoSection(
+					viewModel: viewModel, vm: vm, entry: entry, initialTagDraft: tagDraft)
 				Section("Command Line Override") {
 					Toggle("Override VM command line", isOn: overrideBinding(entry))
 					CmdlineEditor(
@@ -162,19 +165,15 @@ private struct KernelFileInfoSection: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let entry: KernelEntry
+	var initialTagDraft: String?
 	@State private var draftTag = ""
+	// The daemon's reason for refusing the last re-tag, until the next edit.
+	@State private var tagRefusal: String?
 
 	var body: some View {
 		Section(entry.role == .kernel ? "Kernel File" : "Initramfs File") {
 			if entry.owned {
-				TextField("Tag", text: $draftTag)
-					.onSubmit { commitTag() }
-					.onAppear { draftTag = entry.label }
-					.onChange(of: entry.label) { draftTag = entry.label }
-					.disabled(vm.state.isRunning)
-					.help(vm.state.isRunning
-						? "Stop the VM to rename its kernel files"
-						: "Re-tags the file (it moves within the VM directory)")
+				tagField
 			} else {
 				LabeledContent("Tag", value: entry.label)
 			}
@@ -194,13 +193,38 @@ private struct KernelFileInfoSection: View {
 		}
 	}
 
-	private func commitTag() {
-		let tag = draftTag.trimmingCharacters(in: .whitespaces)
-		guard !tag.isEmpty, tag != entry.label else {
-			draftTag = entry.label
-			return
+	// The VM Name field's pattern (PR8): the reason under the field, no alert; a daemon
+	// refusal restores the tag and keeps its reason until the next edit.
+	private var tagField: some View {
+		let refusal = vm.refusal(.renameKernelFile)
+		let problem = tagRefusal
+			?? viewModel.kernelTagProblem(draftTag, path: entry.path, on: vm)
+		return VStack(alignment: .leading, spacing: 3) {
+			TextField("Tag", text: $draftTag)
+				.onSubmit { commitTag() }
+				.disabled(refusal != nil)
+				.help(refusal ?? "Re-tags the file (it moves within the VM directory)")
+			if let problem {
+				FieldProblem(problem)
+			}
 		}
-		viewModel.renameKernelTag(vm.name, path: entry.path, tag: tag)
+		.onAppear { draftTag = initialTagDraft ?? entry.label }
+		.onChange(of: entry.label) { draftTag = entry.label }
+		.onChange(of: draftTag) {
+			if draftTag != entry.label { tagRefusal = nil }
+		}
+	}
+
+	private func commitTag() {
+		let current = entry.label
+		let sent = viewModel.submitKernelTag(vm, path: entry.path, draft: draftTag) { reason in
+			draftTag = current
+			tagRefusal = reason
+		}
+		// Only padded, or unchanged: tidy the field back to the tag.
+		if !sent, viewModel.kernelTagProblem(draftTag, path: entry.path, on: vm) == nil {
+			draftTag = current
+		}
 	}
 }
 

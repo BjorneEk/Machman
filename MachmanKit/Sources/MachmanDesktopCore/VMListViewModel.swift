@@ -921,7 +921,11 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	// The file's path changes with its tag — repoint a selection that was on the old path.
-	public func renameKernelTag(_ name: String, path: String, tag: String) {
+	// `refused` takes a refusal to the field instead of an alert.
+	public func renameKernelTag(
+		_ name: String, path: String, tag: String,
+		refused: (@MainActor (String) -> Void)? = nil
+	) {
 		let fileName = (path as NSString).lastPathComponent
 		Task { [weak self] in
 			do {
@@ -939,7 +943,7 @@ public final class VMListViewModel: ObservableObject {
 					symbol: MachmanSymbols.rename,
 					message: "Re-tagged \u{201C}\(tag)\u{201D}")
 			} catch {
-				self?.present(error, while: "Renaming a kernel file")
+				self?.refuse(error, while: "Renaming a kernel file", to: refused)
 			}
 		}
 	}
