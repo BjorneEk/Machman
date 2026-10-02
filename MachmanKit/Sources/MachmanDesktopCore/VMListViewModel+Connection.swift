@@ -13,7 +13,7 @@ import MachmanClient
 
 extension VMListViewModel {
 	public static let listProblemToastID = UUID()
-	public static let listProblemMessage = "Couldn't refresh the VM list — retrying"
+	public static let listProblemMessage = "Couldn’t refresh the VM list — retrying"
 
 	// The list on screen may be stale: shown until a refresh lands (P13).
 	public var statusToasts: [MachmanToast] {

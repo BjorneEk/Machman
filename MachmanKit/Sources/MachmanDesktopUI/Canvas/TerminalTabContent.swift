@@ -42,7 +42,7 @@ struct TerminalTabContent: View {
 				? "Enable \(guestName) and restart the VM to open it."
 				: "Enable \(guestName) and start the VM to open it.")
 		case .unavailable(let reason):
-			placeholder("\(guestName) isn't available on this Mac.", warning: true)
+			placeholder("\(guestName) isn’t available on this Mac.", warning: true)
 				.help(reason)
 		}
 	}

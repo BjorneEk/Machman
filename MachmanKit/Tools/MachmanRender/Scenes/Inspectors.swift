@@ -96,7 +96,7 @@ enum InspectorScenes {
 			return AnyView(
 				VMInspector(
 					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
-					memoryNote: "Lowered to this Mac's maximum")
+					memoryNote: "Lowered to this Mac’s maximum")
 					.formStyle(.grouped))
 		},
 		// The same note as the view model words it (memory-clamped above passes a literal).
@@ -172,7 +172,7 @@ enum InspectorScenes {
 			return AnyView(
 				DiskInspector(
 					viewModel: ctx.viewModel, vm: ctx.vm, diskID: "storage:system",
-					refusal: "kept uses system.raw from Alpine's folder \u{2014} remove that "
+					refusal: "kept uses system.raw from Alpine’s folder \u{2014} remove that "
 						+ "disk from kept first")
 					.formStyle(.grouped))
 		},

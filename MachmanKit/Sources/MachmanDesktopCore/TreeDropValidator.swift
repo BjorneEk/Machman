@@ -122,7 +122,7 @@ public enum TreeDropValidator {
 		switch section {
 		case .disks:
 			if isDirectory(url) {
-				return "Folders mount — they don't attach as disks"
+				return "Folders mount — they don’t attach as disks"
 			}
 			if unsupportedDiskExtensions.contains(url.pathExtension.lowercased()) {
 				return "\(url.lastPathComponent) is not a supported disk format — "
@@ -136,7 +136,7 @@ public enum TreeDropValidator {
 		case .kernel(let role):
 			guard isDirectory(url) else { return nil }
 			return role == .kernel
-				? "Folders can't be kernels" : "Folders can't be initramfs images"
+				? "Folders can’t be kernels" : "Folders can’t be initramfs images"
 		}
 	}
 }

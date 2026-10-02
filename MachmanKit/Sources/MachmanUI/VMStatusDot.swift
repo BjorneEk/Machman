@@ -79,6 +79,6 @@ public struct NotRespondingBadge: View {
 		}
 		.font(.system(size: size))
 		.foregroundStyle(MachmanColors.warning)
-		.help("Machman can't reach this VM's process right now")
+		.help("Machman can’t reach this VM’s process right now")
 	}
 }

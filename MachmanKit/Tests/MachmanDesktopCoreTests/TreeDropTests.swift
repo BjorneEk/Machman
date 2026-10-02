@@ -55,7 +55,7 @@ struct TreeDropTests {
 		let mounts = Self.resolve(.mounts, [Self.file("a.raw")])
 		#expect(mounts.verdict == .invalid("Only folders can be shared as mounts"))
 		let kernels = Self.resolve(.kernel(.initramfs), [Self.folder("boot")])
-		#expect(kernels.verdict == .invalid("Folders can't be initramfs images"))
+		#expect(kernels.verdict == .invalid("Folders can’t be initramfs images"))
 	}
 
 	@Test func anUnresolvedPayloadIsLoading() {

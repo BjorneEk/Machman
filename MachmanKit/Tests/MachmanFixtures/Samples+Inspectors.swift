@@ -63,7 +63,7 @@ extension Samples {
 		let since = SerialPortSupport.privateUARTGatedSinceDisplay
 		vm.uartPorts?[0].unavailable = UnavailabilityInfo(
 			reason: .privateUARTGated,
-			message: "Since macOS \(since), only Apple's own apps can attach UART ports, so VMs "
+			message: "Since macOS \(since), only Apple’s own apps can attach UART ports, so VMs "
 				+ "start without them.",
 			sinceOSVersion: since)
 		return vm
