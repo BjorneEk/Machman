@@ -51,9 +51,7 @@ public enum AddFlows {
 		guard !urls.isEmpty else { return false }
 		var files: [URL] = []
 		for url in urls {
-			var isDir: ObjCBool = false
-			FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-			if isDir.boolValue {
+			if TreeDropValidator.isDirectory(url) {
 				viewModel.addMount(vm, path: url.path, tag: url.lastPathComponent)
 			} else {
 				files.append(url)
