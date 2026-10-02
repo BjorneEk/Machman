@@ -22,7 +22,9 @@ struct ResizeClock {
 
 	static let live = ResizeClock(
 		now: { ProcessInfo.processInfo.systemUptime },
-		after: { delay, body in DispatchQueue.main.asyncAfter(deadline: .now() + delay) { body() } })
+		after: { delay, body in
+			DispatchQueue.main.asyncAfter(deadline: .now() + delay) { body() }
+		})
 }
 
 public final class ThrottledResizeContainer: NSView {
