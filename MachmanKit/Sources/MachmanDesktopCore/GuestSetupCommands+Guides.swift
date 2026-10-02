@@ -2,8 +2,8 @@
 //  GuestSetupCommands+Guides.swift
 //  MachmanDesktopCore
 //
-//  Where a host folder lands in the guest (X5), next to the other copyable guest commands so
-//  the inspectors and the guides cannot disagree.
+//  Where a host folder lands in the guest (X5) and the Rosetta guest commands (X4), next
+//  to the other copyable guest commands so the inspectors and the guides cannot disagree.
 //
 
 import Foundation
@@ -21,4 +21,30 @@ extension GuestSetupCommands {
 		let root = vm.boot.mode == .macOS ? GuestPaths.macOSAutomount : GuestPaths.share
 		return root + "/" + mount.tag
 	}
+
+	// MARK: - Rosetta (Linux guests)
+
+	// Apple's documented mount point for the Rosetta share; the tag is the engine's.
+	public static let rosettaMountPoint = "/media/rosetta"
+
+	public static func rosettaMount(_ escalation: GuestEscalation = .sudo) -> String {
+		escalation.apply(
+			"mkdir -p \(rosettaMountPoint) && mount -t virtiofs rosetta \(rosettaMountPoint)")
+	}
+
+	// Registers Rosetta for x86-64 ELF binaries straight through binfmt_misc: Apple's
+	// update-binfmts magic and mask with its credentials and fix-binary flags (C, F), so no
+	// distro package is needed. printf '%s' hands the \x escapes over literally in every
+	// shell (zsh's and macOS sh's echo would turn them into bytes). Lasts until the guest
+	// restarts.
+	public static func rosettaRegister(_ escalation: GuestEscalation = .sudo) -> String {
+		"printf '%s\\n' '\(rosettaBinfmtRule)' | \(escalation.prefix)tee "
+			+ "/proc/sys/fs/binfmt_misc/register"
+	}
+
+	static let rosettaBinfmtRule = ":rosetta:M::"
+		+ #"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00"#
+		+ ":"
+		+ #"\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff"#
+		+ ":\(rosettaMountPoint)/rosetta:CF"
 }

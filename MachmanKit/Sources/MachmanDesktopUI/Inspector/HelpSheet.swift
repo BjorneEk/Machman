@@ -2,7 +2,7 @@
 //  HelpSheet.swift
 //  MachmanDesktopUI
 //
-//  The help sheets' one look (the Guest Setup guide, the mount guide): a fixed frame, the
+//  The help sheets' one look (the Guest Setup, mount and Rosetta guides): a fixed frame, the
 //  +20% type scale, a title row, whatever the sheet puts above its page (tabs, the run-as
 //  choice), the page scrolling, and a footer line beside Done. The building blocks below
 //  are the only things a page is made of, so the sheets cannot drift apart.

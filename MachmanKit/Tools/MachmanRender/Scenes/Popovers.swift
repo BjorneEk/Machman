@@ -214,6 +214,7 @@ enum PopoverScenes {
 			".sshfs", "an sshfs folder", vms: { [Samples.linuxWithMounts()] },
 			mount: Samples.notesMountID),
 		mountGuide(".macos", "a macOS guest", vms: { [Samples.macOSWithMount()] }),
+		RenderScene("sheet.rosetta-help", "RosettaHelpSheet") { _ in AnyView(RosettaHelpSheet()) },
 		RenderScene("sheet.mac-switch", "MacSwitchSheet (switch a VM to macOS)") { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
 		},

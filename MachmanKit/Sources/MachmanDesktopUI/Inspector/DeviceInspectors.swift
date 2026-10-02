@@ -397,11 +397,12 @@ struct ClipboardInspector: View {
 // MARK: - Rosetta -----------------------------------------------------------------------------
 
 // Host availability from capabilities (host.installRosetta flips it), the fixed mount tag,
-// and the guest binfmt setup.
+// and the guide to set it up in the guest.
 struct RosettaInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let device: DeviceInfo
+	@State private var showGuide = false
 
 	private var availability: String? { viewModel.capabilities?.rosettaAvailability }
 
@@ -440,26 +441,23 @@ struct RosettaInspector: View {
 				}
 				LabeledContent("Mount tag", value: "rosetta")
 			}
-			// "Guest Commands", not "Guest Setup" — that name belongs to the installer.
-			Section("Guest Commands") {
-				VStack(alignment: .leading, spacing: 6) {
-					Text("Mount the share, then register the binfmt handler:")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-					CommandBlock(Self.setupCommand, tooltip: "Copy commands")
-					Text("Lets Linux guests run x86-64 binaries through Rosetta.")
-						.font(.caption)
-						.foregroundStyle(.tertiary)
-				}
+			// The commands live in the guide (RosettaHelpSheet): a copy button copies only a
+			// command, never prose. Not "Guest Setup" — that name belongs to the installer.
+			Section("In the guest") {
+				Text("Linux guests run x86-64 binaries once they mount the share and register "
+					+ "Rosetta.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				GuideButton(isPresented: $showGuide, help: "How to set Rosetta up in the guest")
 			}
 			DeviceImplementationSection(vm: vm, device: device)
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .rosetta)
 		}
+		.sheet(isPresented: $showGuide) {
+			RosettaHelpSheet().liveWhileSettingsLocked()
+		}
 	}
-
-	private static let setupCommand = "mount -t virtiofs rosetta /media/rosetta\n"
-		+ "/media/rosetta/rosetta must be registered with binfmt_misc "
-		+ "(see Apple's VZLinuxRosettaDirectoryShare docs)"
 }
 
 // MARK: - Guest address ---------------------------------------------------------------------

@@ -2,9 +2,10 @@
 //  GuideCommandTests.swift
 //  MachmanDesktopCoreTests
 //
-//  X5: the mount inspector named a mount's guest folder only in prose, and its macOS copy
-//  button copied a path. The inspector's Guest path row and the mount guide now take it from
-//  GuestSetupCommands.guestPath.
+//  X4: the Rosetta inspector's copy button copied an English sentence ("…must be registered
+//  with binfmt_misc (see Apple's … docs)") after a mount with no mkdir and no root. X5: the
+//  mount inspector named a mount's guest folder only in prose, and its macOS copy button
+//  copied a path. The guides and the inspector now take both from GuestSetupCommands.
 //
 
 import Testing
@@ -14,6 +15,27 @@ import MachmanFixtures
 @testable import MachmanDesktopCore
 
 struct GuideCommandTests {
+	@Test func rosettaMountsWithMkdirAndRoot() {
+		#expect(GuestSetupCommands.rosettaMount()
+			== "sudo mkdir -p /media/rosetta && sudo mount -t virtiofs rosetta /media/rosetta")
+		#expect(GuestSetupCommands.rosettaMount(.root)
+			== "mkdir -p /media/rosetta && mount -t virtiofs rosetta /media/rosetta")
+	}
+
+	// Apple's update-binfmts magic and mask, credentials + fix-binary, written with printf %s
+	// so no shell turns the escapes into bytes; nothing in it is prose.
+	@Test func rosettaRegistersThroughBinfmtMisc() {
+		let rule = ":rosetta:M::"
+			+ #"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00"#
+			+ ":"
+			+ #"\xff\xff\xff\xff\xff\xfe\xfe\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff"#
+			+ ":/media/rosetta/rosetta:CF"
+		#expect(GuestSetupCommands.rosettaRegister()
+			== "printf '%s\\n' '\(rule)' | sudo tee /proc/sys/fs/binfmt_misc/register")
+		#expect(GuestSetupCommands.rosettaRegister(.root)
+			== "printf '%s\\n' '\(rule)' | tee /proc/sys/fs/binfmt_misc/register")
+	}
+
 	@Test func aMountsGuestPathFollowsItsKindAndGuest() {
 		let manual = Samples.linuxManualMount()
 		#expect(GuestSetupCommands.guestPath(of: manual.mounts[0], on: manual)
