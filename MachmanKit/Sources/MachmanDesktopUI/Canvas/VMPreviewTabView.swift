@@ -121,15 +121,30 @@ struct VMPreviewTabView: View {
 		.shadow(color: .black.opacity(0.35), radius: 16, y: 8)
 	}
 
+	// One line at any pane width: a narrow pane drops the boot badge, then cuts the state;
+	// the tooltip keeps both.
 	private var caption: some View {
+		ViewThatFits(in: .horizontal) {
+			captionLine(withBoot: true)
+			captionLine(withBoot: false)
+		}
+		.help("\(vm.stateLabel) · \(vm.boot.mode.displayLabel)")
+	}
+
+	private func captionLine(withBoot: Bool) -> some View {
 		HStack(spacing: 6) {
 			VMStatusDot(vm: vm, size: 7)
 			Text(vm.stateLabel)
 				.font(.callout)
 				.foregroundStyle(.secondary)
-			Text("·").foregroundStyle(.tertiary)
-			BootBadge(mode: vm.boot.mode, size: 10)
+				.lineLimit(1)
+			if withBoot {
+				Text("·").foregroundStyle(.tertiary)
+				BootBadge(mode: vm.boot.mode, size: 10)
+					.fixedSize()
+			}
 		}
+		.padding(.horizontal, 8)
 	}
 
 	private var noDisplayPlaceholder: some View {
