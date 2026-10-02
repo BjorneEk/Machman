@@ -245,6 +245,16 @@ enum InspectorScenes {
 				SSHInspector(viewModel: ctx.viewModel, vm: ctx.vm, aliasDraft: "dev box")
 					.formStyle(.grouped))
 		},
+		RenderScene(
+			"inspector.ssh.alias-draft", "SSHInspector, an unsent valid alias",
+			widths: RenderScene.inspectorWidths, height: height
+		) { ctx in
+			ctx.viewModel.select(name: "Debian")
+			return AnyView(
+				SSHInspector(
+					viewModel: ctx.viewModel, vm: ctx.vm, aliasDraft: "debian-box.machman")
+					.formStyle(.grouped))
+		},
 		inspector(
 			"ssh-session", "SSHSessionInspector, an open session tab",
 			node: .sshSession(sshSession)

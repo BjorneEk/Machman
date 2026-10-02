@@ -75,7 +75,7 @@ struct NetworkSSHSection: View {
 	@ViewBuilder
 	private var statusRows: some View {
 		LabeledContent("Guest user") {
-			Text(vm.ssh?.guestUser ?? "— run the setup script in the guest")
+			Text(vm.ssh?.guestUser ?? "— run Guest Setup in the guest")
 				.font(.system(.callout, design: .monospaced))
 				.foregroundStyle(vm.ssh?.guestUser == nil ? .secondary : .primary)
 		}
@@ -95,6 +95,8 @@ struct NetworkSSHSection: View {
 	// The name this VM answers to — in ~/.ssh and in the session tabs' host-key pin.
 	// A plain Form TextField (the Machine section's Name field, same shape): a value the
 	// user types has to LOOK typed-in, not like a label that happens to be selectable.
+	// Every inspector rename works alike (PR8): Return renames, a problem shows under the
+	// field while it is typed, and nothing else is said.
 	private var aliasField: some View {
 		VStack(alignment: .leading, spacing: 3) {
 			TextField("Alias", text: $aliasDraft)
@@ -102,10 +104,6 @@ struct NetworkSSHSection: View {
 			if aliasDraft != alias {
 				if let problem = viewModel.sshAliasProblem(aliasDraft, for: vm) {
 					FieldProblem(problem)
-				} else {
-					Text("Press Return to rename.")
-						.font(.caption2)
-						.foregroundStyle(.tertiary)
 				}
 			} else if !aliasDraft.contains(".") && !aliasDraft.isEmpty {
 				Text("A plain name can shadow a real host in your SSH config.")
@@ -135,7 +133,7 @@ struct NetworkSSHSection: View {
 			}
 		}
 		.confirmationDialog(
-			"Add \(alias) to your SSH config?", isPresented: $integrationConsent
+			"Add “\(alias)” to your SSH config?", isPresented: $integrationConsent
 		) {
 			Button("Add to ~/.ssh") { viewModel.setSSHIntegration(vm.name, enabled: true) }
 			Button("Cancel", role: .cancel) {}
@@ -150,7 +148,7 @@ struct NetworkSSHSection: View {
 		switch vm.ssh?.reverseState ?? SSHInfo.ReverseState.none {
 		case .pending:
 			LabeledContent("Guest → Mac") {
-				Text("awaiting your approval").foregroundStyle(.secondary)
+				Text("Awaiting your approval").foregroundStyle(.secondary)
 			}
 			fingerprintRow
 			HStack {
@@ -161,29 +159,29 @@ struct NetworkSSHSection: View {
 			}
 		case .denied:
 			LabeledContent("Guest → Mac") {
-				Text("denied").foregroundStyle(.secondary)
+				Text("Denied").foregroundStyle(.secondary)
 			}
 			// A denied key stays served, so a later approval still shows what it adds.
 			fingerprintRow
 			approveButton
 		case .approved:
 			LabeledContent("Guest → Mac") {
-				Text("approved").foregroundStyle(MachmanColors.connected)
+				Text("Approved").foregroundStyle(MachmanColors.connected)
 			}
 			Button("Revoke Guest Access…", role: .destructive) { revokeConsent = true }
 				.confirmationDialog(
-					"Revoke \(vm.name)'s access?", isPresented: $revokeConsent
+					"Revoke guest access for “\(vm.name)”?", isPresented: $revokeConsent
 				) {
 					Button("Revoke", role: .destructive) {
 						viewModel.setSSHReverseApproved(vm.name, approved: false)
 					}
 					Button("Cancel", role: .cancel) {}
 				} message: {
-					Text("Removes exactly this VM's key line from ~/.ssh/authorized_keys.")
+					Text("Removes exactly this VM’s key line from ~/.ssh/authorized_keys.")
 				}
 		case .none, .unknown:
-			Text("Two-way SSH: run the setup script with --two-way in the guest, then "
-				+ "approve it here.")
+			Text("For guest → Mac SSH, run Guest Setup with --two-way, then approve the key "
+				+ "here.")
 				.font(.caption2)
 				.foregroundStyle(.tertiary)
 				.fixedSize(horizontal: false, vertical: true)
@@ -204,7 +202,7 @@ struct NetworkSSHSection: View {
 	private var approveButton: some View {
 		Button("Approve…") { approveConsent = true }
 			.confirmationDialog(
-				"Let \(vm.name) log in to this Mac as you?", isPresented: $approveConsent
+				"Let “\(vm.name)” log in to this Mac as you?", isPresented: $approveConsent
 			) {
 				Button("Approve") {
 					viewModel.setSSHReverseApproved(vm.name, approved: true)
@@ -243,7 +241,7 @@ struct SSHInspector: View {
 					LabeledContent("Public key") {
 						CopyToClipboardButton(
 							pub.trimmingCharacters(in: .whitespacesAndNewlines),
-							tooltip: "Copy this Mac's public key")
+							tooltip: "Copy this Mac’s public key")
 					}
 				}
 				if vm.ssh?.sshfsAvailable != nil {
@@ -256,7 +254,7 @@ struct SSHInspector: View {
 						Button("Reset", role: .destructive) { viewModel.resetSSH(vm.name) }
 						Button("Cancel", role: .cancel) {}
 					} message: {
-						Text("Forgets this VM's keys, pinned identity, ~/.ssh entry, and "
+						Text("Forgets this VM’s keys, pinned identity, ~/.ssh entry, and "
 							+ "approvals — the guest keeps what the script installed.")
 					}
 			}
@@ -266,13 +264,13 @@ struct SSHInspector: View {
 	// Mounting host folders needs sshfs in the guest AND the guest→Mac link it rides on,
 	// so the capability is only usable once that access is approved.
 	private var sshfsSummary: String {
-		guard vm.ssh?.sshfsAvailable == true else { return "not installed" }
+		guard vm.ssh?.sshfsAvailable == true else { return "Not installed" }
 		if vm.ssh?.reverseState != .approved {
-			return "available — needs guest → Mac approval"
+			return "Available — needs guest → Mac approval"
 		}
 		if vm.ssh?.sshfsMountReady == false {
-			return "available — mounts need root"
+			return "Available — mounts need root"
 		}
-		return "available"
+		return "Available"
 	}
 }
