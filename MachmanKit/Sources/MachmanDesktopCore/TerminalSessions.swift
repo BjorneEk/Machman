@@ -94,11 +94,18 @@ public final class TerminalSessions: ObservableObject {
 
 	// A serial tab's own Reconnect, from its banner: the same controller, so the scrollback
 	// stays, with Machman's line marking where the socket's replay of recent output starts. A
-	// connected tab is left alone.
+	// connected tab is left alone; a refused one gets no line (it didn't reconnect).
 	public func reconnectSerial(vm: String, ref: SerialPortRef, socketPath: String) {
 		guard let c = live[vm]?[.terminal(ref)], !c.connected else { return }
-		c.note("reconnected " + Date().formatted(date: .omitted, time: .shortened))
 		c.connect(path: socketPath)
+		noteReconnected(c)
+	}
+
+	// After a connect that worked. Output reaches the terminal on a later main-queue turn, so
+	// the line still lands before the first of it.
+	private func noteReconnected(_ c: any TerminalController) {
+		guard c.connected else { return }
+		c.note("reconnected " + Date().formatted(date: .omitted, time: .shortened))
 	}
 
 	// Tear down a tab's controller: tab closed, port removed, or VM deleted. An ssh tab's
@@ -233,10 +240,10 @@ public final class TerminalSessions: ObservableObject {
 		vm: String, ref: SSHSessionRef, arguments: [String], profile: TerminalProfile
 	) {
 		guard let controller = live[vm]?[.ssh(ref)], !controller.connected else { return }
-		controller.note("reconnected " + Date().formatted(date: .omitted, time: .shortened))
 		controller.connect(stream: PTYProcessStream(
 			executablePath: "/usr/bin/ssh", arguments: arguments,
 			environmentOverrides: ["TERM": profile.termName]))
+		noteReconnected(controller)
 		objectWillChange.send()
 	}
 

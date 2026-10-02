@@ -149,6 +149,21 @@ struct TerminalSessionsTests {
 		#expect(h.terminals.controller(vm: "Debian", ref: console) === serial)
 	}
 
+	// A refused socket (the vmhost is gone, the list still has its path): no "reconnected"
+	// line however often Reconnect is clicked.
+	@Test func aRefusedSerialReconnectLeavesNoLine() async throws {
+		let h = await harnessWithBothKinds()
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		serial.disconnect()
+		serial.refusesConnect = true
+		let path = "/var/empty/c0.sock"
+		for _ in 0..<3 { h.terminals.reconnectSerial(vm: "Debian", ref: console, socketPath: path) }
+		#expect(!serial.connected)
+		#expect(serial.connectedPaths.suffix(3) == [path, path, path])
+		#expect(serial.notes.isEmpty)
+	}
+
 	@Test func aConnectedSerialTabIgnoresReconnect() async throws {
 		let h = await harnessWithBothKinds()
 		let serial = try #require(
@@ -186,7 +201,24 @@ struct TerminalSessionsTests {
 		fake.disconnect()
 		#expect(h.terminals.reconnectSSHSession(vm: vm, ref: session, profiles: h.profiles))
 		#expect(fake.connected)
+		#expect(fake.notes.count == 1)
 		#expect(h.terminals.sshController(vm: "Debian", ref: session) === fake)
+	}
+
+	@Test func aDeadSessionWhoseSSHCantStartGetsNoLine() async throws {
+		let vm = Samples.sshReadyLinux()
+		let h = await DesktopHarness.make([vm])
+		let arguments = try #require(SSHCommand.arguments(for: vm))
+		h.terminals.ensureSSHController(
+			vm: "Debian", ref: session, arguments: arguments, profile: h.profiles.defaultProfile)
+		#expect(await eventually { h.terminals.sshController(vm: "Debian", ref: session) != nil })
+		let fake = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		fake.disconnect()
+		fake.refusesConnect = true
+		#expect(h.terminals.reconnectSSHSession(vm: vm, ref: session, profiles: h.profiles))
+		#expect(!fake.connected)
+		#expect(fake.notes.isEmpty)
 	}
 
 	@Test func aSessionWithoutAnAddressStaysDown() async throws {

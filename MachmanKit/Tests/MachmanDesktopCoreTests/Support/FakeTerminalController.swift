@@ -18,6 +18,8 @@ final class FakeTerminalController: TerminalController {
 	private(set) var disconnects = 0
 	private(set) var liveApplies = 0
 	private(set) var notes: [String] = []
+	// A socket that refuses, a process that can't start: connects are recorded, never made.
+	var refusesConnect = false
 
 	init(profile: TerminalProfile) {
 		startupSignature = profile.startupSignature
@@ -25,11 +27,11 @@ final class FakeTerminalController: TerminalController {
 
 	func connect(path: String) {
 		connectedPaths.append(path)
-		connected = true
+		connected = !refusesConnect
 	}
 
 	func connect(stream: TerminalByteStream) {
-		connected = true   // the stream is never started: no ssh process
+		connected = !refusesConnect   // the stream is never started: no ssh process
 	}
 
 	func disconnect() {
