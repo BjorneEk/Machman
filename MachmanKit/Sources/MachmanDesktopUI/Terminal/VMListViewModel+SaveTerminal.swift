@@ -17,16 +17,20 @@ extension VMListViewModel {
 		saveTerminalTranscript(of: terminal)
 	}
 
-	// Save one terminal's transcript through a save panel. Used by File → Save Terminal.
+	// Save one terminal's transcript through a save panel. Used by File → Save Terminal. The
+	// transcript (up to 8 MiB) is taken here, the write to a possibly slow or network volume
+	// happens off the main thread (P11).
 	public func saveTerminalTranscript(of terminal: any TerminalController) {
 		let panel = NSSavePanel()
 		panel.nameFieldStringValue = "terminal.log"
 		panel.allowedContentTypes = [.plainText]
-		if panel.runModal() == .OK, let url = panel.url {
+		guard panel.runModal() == .OK, let url = panel.url else { return }
+		let transcript = terminal.transcript()
+		Task.detached(priority: .userInitiated) { [weak self] in
 			do {
-				try terminal.transcript().write(to: url)
+				try transcript.write(to: url)
 			} catch {
-				present(error, while: "Saving the terminal log")
+				await self?.present(error, while: "Saving the terminal log")
 			}
 		}
 	}
