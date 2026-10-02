@@ -133,6 +133,9 @@ final class UDSListener {
 		unlink(queue.sync { path })   // closing never unlinks: the CURRENT path goes
 	}
 
+	// For tests that stand in for a forked child holding a copy of the listener.
+	var descriptorForTesting: Int32 { fd }
+
 	// For tests that need to simulate a kill: drop the socket but keep the file, exactly
 	// what SIGKILL leaves behind. The source is cancelled first — a bare close() would free
 	// the fd NUMBER under a still-armed source, which then watches whatever unrelated
@@ -140,8 +143,6 @@ final class UDSListener {
 	// test spawns holds a copy of every descriptor from fork until exec (FD_CLOEXEC does not
 	// shorten that), so the closed socket can go on accepting for a moment and a probe right
 	// after would read it live: this returns once a probe finds it dead, or after awaitDeath.
-	var descriptorForTesting: Int32 { fd }
-
 	func simulateKillForTesting(awaitDeath: Duration = .seconds(5)) {
 		keepAliveTimer.cancel()
 		source.cancel()
