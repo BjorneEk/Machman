@@ -6,9 +6,10 @@
 //  Xcode-like tab strips, a custom drag system — live in-strip reorder, pull down (or off
 //  the strip) to detach into a ghost with measured drop zones (move between panes, split a
 //  new edge pane), release outside the canvas to tear the tab off into its own window —
-//  and draggable pane dividers. Layout is the CanvasState value persisted per VM by
-//  CanvasStateStore; live terminals stay in TerminalSessions and reparent wherever the tab
-//  goes.
+//  and draggable pane dividers. The drag's rules are the CanvasTabDrag value (MachmanUI):
+//  this view feeds it gestures and measured frames and applies what it decides. Layout is
+//  the CanvasState value persisted per VM by CanvasStateStore; live terminals stay in
+//  TerminalSessions and reparent wherever the tab goes.
 //
 
 import SwiftUI
@@ -19,24 +20,6 @@ import MachmanDesktopCore
 
 private let dividerWidth = MainWindowLayout.paneDivider
 
-// The in-flight tab drag: translation drives in-strip reorder until the tab detaches
-// (pulled down or off its strip), after which the ghost + drop zones take over.
-private struct TabDragState {
-	var tab: VMPaneTab
-	var paneID: UUID
-	var location: CGPoint
-	var translation: CGSize
-	var detached = false
-	// Widths of siblings crossed during live reorder, so the tab stays under the cursor.
-	var baselineShift: CGFloat = 0
-}
-
-private enum CanvasDropZone: Equatable {
-	case pane(UUID)
-	case newLeading
-	case newTrailing
-}
-
 struct VMCanvasView: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var sessions: TerminalSessions
@@ -44,7 +27,9 @@ struct VMCanvasView: View {
 	@ObservedObject var profiles: TerminalProfileStore
 	let vm: VMInfo
 
-	@State private var tabDrag: TabDragState?
+	// The in-flight tab drag: translation drives in-strip reorder until the tab detaches
+	// (pulled down or off its strip), after which the ghost + drop zones take over.
+	@State private var tabDrag: CanvasTabDrag?
 	// Measured geometry lives in PLAIN REFERENCE storage: writing frames back into
 	// @State re-enters layout, which oscillates during live resize ("Geometry action is
 	// cycling between duplicate values"). The drag system reads these imperatively from
@@ -55,6 +40,11 @@ struct VMCanvasView: View {
 		var panes: [UUID: CGRect] = [:]
 		var strips: [UUID: CGRect] = [:]
 		var tabs: [VMPaneTab: CGRect] = [:]
+
+		// The rects as the drag rules read them.
+		var measured: CanvasTabDrag.Frames {
+			CanvasTabDrag.Frames(canvasSize: canvasSize, panes: panes, strips: strips, tabs: tabs)
+		}
 	}
 	@State private var frames = FrameStore()
 	// Divider drags apply fractions absolutely from the drag-start snapshot.
@@ -231,10 +221,7 @@ struct VMCanvasView: View {
 	}
 
 	private func dragOffset(for tab: VMPaneTab) -> CGSize {
-		guard let drag = tabDrag, drag.tab == tab, !drag.detached else { return .zero }
-		return CGSize(
-			width: drag.translation.width - drag.baselineShift,
-			height: max(-4, min(4, drag.translation.height * 0.2)))
+		tabDrag?.offset(for: tab) ?? .zero
 	}
 
 	// MARK: - Tab actions
@@ -261,49 +248,21 @@ struct VMCanvasView: View {
 
 	// MARK: - Drag logic (demo parity)
 
+	// The rules live in CanvasTabDrag; a live reorder it reports moves the tab, animated,
+	// before the drag state is stored.
 	private func updateTabDrag(tab: VMPaneTab, pane: UUID, value: DragGesture.Value) {
-		var drag = tabDrag ?? TabDragState(
+		var drag = tabDrag ?? CanvasTabDrag(
 			tab: tab, paneID: pane, location: value.location,
 			translation: value.translation)
-		drag.location = value.location
-		drag.translation = value.translation
-		// Ghost mode when pulled down OR whenever the cursor leaves the source strip — the
-		// strips are clipping ScrollViews, so only the top-level ghost can cross panes.
-		let inSourceStrip = frames.strips[drag.paneID]?
-			.insetBy(dx: -8, dy: -8).contains(value.location) ?? true
-		let shouldDetach = abs(value.translation.height) > 42 || !inSourceStrip
-		if shouldDetach != drag.detached {
-			withAnimation(.snappy(duration: 0.18)) { drag.detached = shouldDetach }
-		}
-		if !drag.detached {
-			reorderIfNeeded(&drag)
+		if let target = drag.update(
+			location: value.location, translation: value.translation,
+			canvas: canvas, frames: frames.measured) {
+			let tab = drag.tab
+			withAnimation(.snappy(duration: 0.18)) {
+				mutate { $0.reorder(tab, to: target) }
+			}
 		}
 		tabDrag = drag
-	}
-
-	// Live reorder: when the cursor passes a sibling tab's midpoint, move the tab and add
-	// the sibling's width to the baseline so the dragged tab stays under the cursor.
-	private func reorderIfNeeded(_ drag: inout TabDragState) {
-		let c = canvas
-		guard let holder = c.pane(holding: drag.tab),
-			let pane = c.panes.first(where: { $0.id == holder }),
-			let ti = pane.tabs.firstIndex(of: drag.tab) else { return }
-		let x = drag.location.x
-		var target = ti
-		if ti + 1 < pane.tabs.count,
-			let next = frames.tabs[pane.tabs[ti + 1]], x > next.midX + 2 {
-			target = ti + 1
-			drag.baselineShift += next.width
-		} else if ti > 0,
-			let prev = frames.tabs[pane.tabs[ti - 1]], x < prev.midX - 2 {
-			target = ti - 1
-			drag.baselineShift -= prev.width
-		}
-		guard target != ti else { return }
-		let tab = drag.tab
-		withAnimation(.snappy(duration: 0.18)) {
-			mutate { $0.reorder(tab, to: target) }
-		}
 	}
 
 	private func completeTabDrag() {
@@ -311,97 +270,30 @@ struct VMCanvasView: View {
 		defer {
 			withAnimation(.snappy(duration: 0.2)) { tabDrag = nil }
 		}
-		guard drag.detached else { return }
-		let loc = drag.location
-		// Released outside the canvas (with margin) → tear off into its own window.
-		let canvasRect = CGRect(origin: .zero, size: frames.canvasSize).insetBy(dx: -40, dy: -40)
-		if !canvasRect.contains(loc) {
-			tearOff(drag.tab)
-			return
-		}
-		// Released over a strip → insert at that position.
-		if let (paneID, index) = stripInsertion(at: loc, excluding: drag.tab) {
-			mutate { $0.move(drag.tab, toPane: paneID, at: index) }
-			return
-		}
-		switch zone(at: loc) {
-		case .pane(let id):
-			if id != drag.paneID {
-				mutate { c in
-					let count = c.panes.first { $0.id == id }?.tabs
-						.filter { $0 != drag.tab }.count ?? 0
-					c.move(drag.tab, toPane: id, at: count)
-				}
-			}
-		case .newLeading:
-			mutate { $0.split(drag.tab, trailing: false) }
-		case .newTrailing:
-			mutate { $0.split(drag.tab, trailing: true) }
-		case nil:
+		switch drag.release(canvas: canvas, frames: frames.measured) {
+		case .stay:
 			break
+		case .tearOff:
+			tearOff(drag.tab)
+		case .move(let paneID, let index):
+			mutate { $0.move(drag.tab, toPane: paneID, at: index) }
+		case .split(let trailing):
+			mutate { $0.split(drag.tab, trailing: trailing) }
 		}
-	}
-
-	// Which strip is under the cursor, and the insertion index among its tabs (computed
-	// EXCLUDING the dragged tab, so it stays valid after removal).
-	private func stripInsertion(
-		at loc: CGPoint, excluding dragged: VMPaneTab
-	) -> (UUID, Int)? {
-		for pane in canvas.panes {
-			guard let strip = frames.strips[pane.id],
-				strip.insetBy(dx: 0, dy: -6).contains(loc) else { continue }
-			let index = pane.tabs
-				.filter { $0 != dragged }
-				.filter { tab in
-					guard let frame = frames.tabs[tab] else { return false }
-					return frame.midX < loc.x
-				}
-				.count
-			return (pane.id, index)
-		}
-		return nil
-	}
-
-	// Zone rects in canvas space, from MEASURED pane frames (immune to sidebar/inspector
-	// state); edge split-zones first, they win overlaps.
-	private func dropZones() -> [(CanvasDropZone, CGRect)] {
-		let size = frames.canvasSize
-		guard size.width > 0 else { return [] }
-		let c = canvas
-		var zones: [(CanvasDropZone, CGRect)] = []
-		let edge = max(56, size.width * 0.11)
-		if c.panes.count < CanvasState.maxPanes {
-			zones.append((.newLeading,
-				CGRect(x: 4, y: 4, width: edge, height: size.height - 8)))
-			zones.append((.newTrailing,
-				CGRect(x: size.width - edge - 4, y: 4, width: edge, height: size.height - 8)))
-		}
-		for (i, pane) in c.panes.enumerated() {
-			guard let measured = frames.panes[pane.id] else { continue }
-			let edgePane = i == 0 || i == c.panes.count - 1
-			let inset: CGFloat = c.panes.count < CanvasState.maxPanes && edgePane
-				? (edge + 10) * 0.5 : 12
-			zones.append((.pane(pane.id), measured.insetBy(dx: inset, dy: 24)))
-		}
-		return zones
-	}
-
-	private func zone(at location: CGPoint) -> CanvasDropZone? {
-		dropZones().first { $0.1.contains(location) }?.0
 	}
 
 	// MARK: - Drop-zone overlay + ghost
 
 	private func dropZonesOverlay() -> some View {
-		let zones = dropZones()
+		let zones = CanvasTabDrag.dropZones(canvas: canvas, frames: frames.measured)
 		let location = tabDrag?.location ?? .zero
-		let hovered = zone(at: location)
+		let hovered = zones.first { $0.rect.contains(location) }?.zone
 		// Full-size top-leading root: children are positioned by absolute canvas rects, so
 		// the overlay must never be center-aligned by its container.
 		return ZStack(alignment: .topLeading) {
 			Color.clear
 			ForEach(Array(zones.enumerated()), id: \.offset) { _, zone in
-				let isHovered = hovered == zone.0
+				let isHovered = hovered == zone.zone
 				RoundedRectangle(cornerRadius: theme.metrics.radiusM, style: .continuous)
 					.fill(MachmanColors.selection.opacity(isHovered ? 0.16 : 0.05))
 					.overlay {
@@ -412,11 +304,11 @@ struct VMCanvasView: View {
 								style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
 					}
 					.overlay {
-						zoneLabel(zone.0)
+						zoneLabel(zone.zone)
 							.opacity(isHovered ? 1 : 0.55)
 					}
-					.frame(width: zone.1.width, height: zone.1.height)
-					.offset(x: zone.1.minX, y: zone.1.minY)
+					.frame(width: zone.rect.width, height: zone.rect.height)
+					.offset(x: zone.rect.minX, y: zone.rect.minY)
 					.animation(.easeOut(duration: 0.12), value: isHovered)
 			}
 			ghost(at: location)
@@ -425,7 +317,7 @@ struct VMCanvasView: View {
 	}
 
 	@ViewBuilder
-	private func zoneLabel(_ zone: CanvasDropZone) -> some View {
+	private func zoneLabel(_ zone: CanvasTabDrag.Zone) -> some View {
 		switch zone {
 		case .pane:
 			Label("Move Here", systemImage: MachmanSymbols.moveHere)
