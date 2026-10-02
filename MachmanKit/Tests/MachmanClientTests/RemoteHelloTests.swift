@@ -28,9 +28,12 @@ struct RemoteHelloTests {
 		} catch let error as RemoteMachman.APIVersionMismatch {
 			#expect(error == RemoteMachman.APIVersionMismatch(
 				daemonAPI: 999, clientAPI: MachmanProtocol.apiVersion))
-			// The text every log and alert showed before the type existed.
+			// The log keeps the text it had before the type existed.
 			#expect("\(error)"
 				== "daemon speaks api v999, client needs v\(MachmanProtocol.apiVersion)")
+			// A person reads a sentence (a failed start's reason relays it).
+			#expect(MachmanError.userMessage(for: error)
+				== "It speaks API version 999 instead of \(MachmanProtocol.apiVersion)")
 		}
 		try await Task.sleep(for: .milliseconds(300))
 		#expect(drops.count == 0)

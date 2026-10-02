@@ -11,11 +11,12 @@ import MachmanAPI
 
 // Public: hosts need to tell "someone else is already serving" — a benign race when a client
 // auto-launches a daemon — apart from a genuine failure to bind.
-public enum UDSError: Error, CustomStringConvertible {
+public enum UDSError: Error, CustomStringConvertible, LocalizedError {
 	case alreadyRunning(String)
 	case pathTooLong(String)
 	case systemError(String, Int32)
 
+	// For the log: the path and the failing call.
 	public var description: String {
 		switch self {
 		case .alreadyRunning(let path):
@@ -24,6 +25,20 @@ public enum UDSError: Error, CustomStringConvertible {
 			return "socket path too long for sockaddr_un: \(path)"
 		case .systemError(let op, let err):
 			return "\(op) failed: \(String(cString: strerror(err)))"
+		}
+	}
+
+	// For a person (the agent's “can’t start” alert, via MachmanError.userMessage): the
+	// agent and the VM processes both serve sockets, so it names neither.
+	public var errorDescription: String? {
+		switch self {
+		case .alreadyRunning:
+			return "Another copy is already serving its socket"
+		case .pathTooLong:
+			return "Its socket path is too long"
+		case .systemError(let op, let err):
+			let verb = op == "rename" ? "move" : "open"
+			return "Couldn’t \(verb) its socket: \(String(cString: strerror(err)))"
 		}
 	}
 }

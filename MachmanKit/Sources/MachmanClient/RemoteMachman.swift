@@ -17,7 +17,7 @@ public final class RemoteMachman: MachmanControlling {
 
 	// The daemon serves a different wire generation than this client speaks. Its own type so
 	// a caller can tell "wrong version" from "not there" or "not answering" (P1).
-	public struct APIVersionMismatch: Error, Equatable, CustomStringConvertible {
+	public struct APIVersionMismatch: Error, Equatable, CustomStringConvertible, LocalizedError {
 		public let daemonAPI: Int
 		public let clientAPI: Int
 
@@ -26,8 +26,15 @@ public final class RemoteMachman: MachmanControlling {
 			self.clientAPI = clientAPI
 		}
 
+		// For the log.
 		public var description: String {
 			"daemon speaks api v\(daemonAPI), client needs v\(clientAPI)"
+		}
+
+		// For a person (a failed start's reason, via MachmanError.userMessage). The server
+		// may be the agent or a VM's process, so "it"; the connect screen words its own.
+		public var errorDescription: String? {
+			"It speaks API version \(daemonAPI) instead of \(clientAPI)"
 		}
 	}
 
