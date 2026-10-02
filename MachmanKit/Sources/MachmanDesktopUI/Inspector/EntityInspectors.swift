@@ -236,8 +236,8 @@ struct MountInspector: View {
 							Text("virtiofs").tag(MountKind.virtiofs)
 							Text("sshfs").tag(MountKind.sshfs)
 						}
-						.help("virtiofs rides the share device; sshfs is mounted by the "
-							+ "guest over its SSH link (no driver needed)")
+						.help("virtiofs rides the share device, and sshfs mounts over the "
+							+ "guest’s SSH link (no driver needed)")
 						if mount.effectiveKind == MountKind.sshfs,
 							vm.ssh?.sshfsAvailable != true {
 							Text("The guest hasn’t reported sshfs yet — run Guest Setup in it.")
