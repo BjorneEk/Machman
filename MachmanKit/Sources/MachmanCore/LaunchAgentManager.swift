@@ -61,8 +61,9 @@ public struct LaunchAgentManager {
 	}
 
 	// Pure — this IS the contract the manual autostart matrix exercises. No
-	// EnvironmentVariables on purpose: the vmhost self-identifies from its bundle id, and
-	// the socket's parent directory is created by MachmanServer.start at serve time.
+	// EnvironmentVariables on purpose: the vmhost self-identifies from its bundle (id and
+	// version), and the socket's parent directory is created by MachmanServer.start at serve
+	// time.
 	func plistDictionary(for name: String) -> [String: Any] {
 		[
 			"Label": label(for: name),

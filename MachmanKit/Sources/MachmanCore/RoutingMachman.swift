@@ -493,7 +493,8 @@ public final class RoutingMachman: MachmanControlling {
 		] + extraArguments
 		// OpenConfiguration.environment REPLACES the child's environment (no inheritance),
 		// which scrubs any MACHMAN_DATA_DIR override for free. The bundle id identifies the
-		// suite; only the version handshake still travels by env.
+		// suite and the bundle version the vmhost's build (E22); MACHMAN_VERSION is only the
+		// fallback for an unversioned build.
 		configuration.environment = ["MACHMAN_VERSION": daemonVersion]
 
 		let app: NSRunningApplication

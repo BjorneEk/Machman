@@ -49,7 +49,8 @@ guard let dataDir = dataDir, let vmName = vmName, let socketPath = socketPath el
 	usage()
 }
 
-let version = ProcessInfo.processInfo.environment["MACHMAN_VERSION"] ?? "dev"
+// The vmhost's own bundle version, never the spawning daemon's (E22).
+let version = VMHostVersion.current()
 MainActor.assumeIsolated {
 	VMHostBootstrap.run(
 		dataDir: dataDir, vmName: vmName, socketPath: socketPath, daemonVersion: version,
