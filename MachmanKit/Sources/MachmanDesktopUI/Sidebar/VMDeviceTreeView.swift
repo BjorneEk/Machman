@@ -243,7 +243,7 @@ struct VMDeviceTreeView: View {
 					Button("Add Existing Disk…") {
 						AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
 					}
-					Button("Paste") { pasteIntoDisks() }
+					Button("Paste") { paste(into: .disks) }
 						.disabled(!pasteboard.snapshot.canPaste(into: .disks))
 				}) {
 				ForEach(disks) { disk in
@@ -283,7 +283,7 @@ struct VMDeviceTreeView: View {
 			}
 			.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
 				section: .disks, preview: $dragPreview,
-				touched: { dragGeneration &+= 1 }, perform: performDiskDrop))
+				touched: { dragGeneration &+= 1 }, perform: { drop($0, on: .disks) }))
 		}
 	}
 
@@ -346,7 +346,7 @@ struct VMDeviceTreeView: View {
 					Button("Add Mount Folder…") {
 						AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
 					}
-					Button("Paste") { pasteIntoMounts() }
+					Button("Paste") { paste(into: .mounts) }
 						.disabled(!pasteboard.snapshot.canPaste(into: .mounts))
 				}) {
 				ForEach(mounts) { mount in
@@ -401,7 +401,7 @@ struct VMDeviceTreeView: View {
 			}
 			.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
 				section: .mounts, preview: $dragPreview,
-				touched: { dragGeneration &+= 1 }, perform: performMountDrop))
+				touched: { dragGeneration &+= 1 }, perform: { drop($0, on: .mounts) }))
 		}
 	}
 
@@ -832,7 +832,7 @@ struct VMDeviceTreeView: View {
 				Button("Add From Disk…") {
 					AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
 				}
-				Button("Paste") { pasteIntoKernels(role: role) }
+				Button("Paste") { paste(into: .kernel(role)) }
 					.disabled(!pasteboard.snapshot.canPaste(into: .kernel(role)))
 			}
 		}
@@ -841,7 +841,7 @@ struct VMDeviceTreeView: View {
 		let droppable = dg.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
 			section: .kernel(role), preview: $dragPreview,
 			touched: { dragGeneration &+= 1 },
-			perform: { performKernelDrop($0, role: role) }))
+			perform: { drop($0, on: .kernel(role)) }))
 		if role == .kernel {
 			droppable
 				.tag(SidebarNode.group("Kernel"))
@@ -959,28 +959,19 @@ struct VMDeviceTreeView: View {
 		open(node)
 	}
 
-	// MARK: - Section drops (validated by the hovering preview; routed here on release)
-	// Each receives only the items that fit its section (TreeDragPreview.adds).
+	// MARK: - Section drops and paste (AddFlows+Sections)
+	// A drop receives only the items that fit its section (TreeDragPreview.adds); paste
+	// takes the section's own copied kind, else the pasteboard's files that fit it.
 
-	private func performDiskDrop(_ urls: [URL]) {
-		AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, urls: urls)
+	private func drop(_ urls: [URL], on section: TreeDragPreview.Section) {
+		AddFlows.add(urls, to: section, vm: vm.name, viewModel: viewModel)
 	}
 
-	private func performMountDrop(_ urls: [URL]) {
-		for url in urls {
-			viewModel.addMount(vm.name, path: url.path, tag: url.lastPathComponent)
-		}
+	private func paste(into section: TreeDragPreview.Section) {
+		AddFlows.paste(
+			into: section, entities: EntityClipboard.read(),
+			fileURLs: AddFlows.pasteboardFileURLs(), vm: vm.name, viewModel: viewModel)
 	}
-
-	private func performKernelDrop(_ urls: [URL], role: KernelRole) {
-		for url in urls {
-			viewModel.promoteKernel(
-				vm.name, role: role, sourcePath: url.path,
-				tag: url.deletingPathExtension().lastPathComponent)
-		}
-	}
-
-	// MARK: - Section paste (each group takes only what fits it)
 
 	// Everything on the clipboard pastes into this VM: entities by their own kinds,
 	// plain file URLs by the Finder routing.
@@ -988,48 +979,6 @@ struct VMDeviceTreeView: View {
 		AddFlows.paste(
 			entities: EntityClipboard.read(), fileURLs: AddFlows.pasteboardFileURLs(),
 			into: vm.name, viewModel: viewModel)
-	}
-
-	// The pasteboard's file URLs that fit a section (the drop rules).
-	private func pastedFiles(fitting section: TreeDragPreview.Section) -> [URL] {
-		TreeDropValidator.fitting(section: section, urls: AddFlows.pasteboardFileURLs())
-	}
-
-	private func pasteIntoDisks() {
-		let matching = EntityClipboard.read().filter { $0.kind == .disk }
-		if !matching.isEmpty {
-			EntityClipboard.paste(matching, into: vm.name, viewModel: viewModel)
-			return
-		}
-		let files = pastedFiles(fitting: .disks)
-		if !files.isEmpty {
-			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm.name, urls: files)
-		}
-	}
-
-	private func pasteIntoMounts() {
-		let matching = EntityClipboard.read().filter { $0.kind == .mount }
-		if !matching.isEmpty {
-			EntityClipboard.paste(matching, into: vm.name, viewModel: viewModel)
-			return
-		}
-		for url in pastedFiles(fitting: .mounts) {
-			viewModel.addMount(vm.name, path: url.path, tag: url.lastPathComponent)
-		}
-	}
-
-	private func pasteIntoKernels(role: KernelRole) {
-		let kind: EntityClipboard.Kind = role == .kernel ? .kernel : .initramfs
-		let matching = EntityClipboard.read().filter { $0.kind == kind }
-		if !matching.isEmpty {
-			EntityClipboard.paste(matching, into: vm.name, viewModel: viewModel)
-			return
-		}
-		for url in pastedFiles(fitting: .kernel(role)) {
-			viewModel.promoteKernel(
-				vm.name, role: role, sourcePath: url.path,
-				tag: url.deletingPathExtension().lastPathComponent)
-		}
 	}
 
 	private func mutateCanvas(_ change: (inout CanvasState) -> Void) {

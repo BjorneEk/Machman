@@ -50,14 +50,7 @@ public struct PasteboardSnapshot {
 	// the file URLs that fit the section, by the drop rules.
 	public func canPaste(into section: TreeDragPreview.Section) -> Bool {
 		guard entities.isEmpty else {
-			let kind: EntityClipboard.Kind
-			switch section {
-			case .disks: kind = .disk
-			case .mounts: kind = .mount
-			case .kernel(.kernel): kind = .kernel
-			case .kernel(.initramfs): kind = .initramfs
-			case .kernel: return false
-			}
+			guard let kind = EntityClipboard.Kind(section: section) else { return false }
 			return entities.contains { $0.kind == kind }
 		}
 		return fits[section] ?? false
