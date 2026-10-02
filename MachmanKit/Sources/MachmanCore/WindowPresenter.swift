@@ -286,6 +286,8 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		answerPrompt?(prompt) ?? runAlert(prompt)
 	}
 
+	// Brought to the front (PromptActivation): a windowless host is lent a Dock icon for the
+	// prompt, and bounces it if activation doesn't take — a log out drives other apps too.
 	private func runAlert(_ prompt: HostPrompt) -> HostChoice {
 		let alert = NSAlert()
 		alert.messageText = prompt.message
@@ -293,7 +295,20 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		for button in prompt.buttons {
 			alert.addButton(withTitle: button.title)
 		}
+		if let escape = prompt.escapeButton {
+			alert.buttons[escape].keyEquivalent = "\u{1b}"
+		}
+		let lent = PromptActivation.lendsDockIcon(
+			managesPolicy: managesActivationPolicy, current: NSApp.activationPolicy())
+		if lent {
+			NSApp.setActivationPolicy(.regular)
+		}
+		NSApp.activate(ignoringOtherApps: true)
+		NSApp.requestUserAttention(.criticalRequest)
 		let response = alert.runModal()
+		if PromptActivation.returnsToAccessory(lent: lent, windowsOpen: !windows.isEmpty) {
+			NSApp.setActivationPolicy(.accessory)
+		}
 		return prompt.choice(forButtonAt:
 			response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue)
 	}

@@ -239,7 +239,9 @@ final class VMHostLifecycle {
 // Quit semantics for a process that IS its VM: quitting while running has no "leave it
 // running" option (that would be a lie — the VM dies with the host), so the prompt offers
 // the two stop modes and Cancel, always answers .terminateCancel, and lets the existing
-// stopped→exit(0) watcher stay the single teardown path.
+// stopped→exit(0) watcher stay the single teardown path. A log out, restart or shut down
+// of the Mac is cancelled the same way (decision 6: never stop a guest on its own
+// initiative), but visibly: the prompt comes to the front and says what to do.
 @MainActor
 final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	// A provider, not a value: safeSave promotion renames the VM mid-run, and every action
@@ -259,17 +261,17 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-		terminateReply()
+		terminateReply(for: .current())
 	}
 
 	// The quit decision, apart from AppKit's call so tests can answer the prompt.
-	func terminateReply() -> NSApplication.TerminateReply {
+	func terminateReply(for reason: VMHostQuitReason) -> NSApplication.TerminateReply {
 		let name = vmName()
 		guard presenter.isRunning?(name) ?? false else {
 			server.stop()
 			return .terminateNow
 		}
-		switch presenter.present(.quitWhileRunning(name)) {
+		switch presenter.present(.quitWhileRunning(name, reason: reason)) {
 		case .shutDown:
 			Task { await presenter.requestShutDown(name) }
 		case .forceStop:

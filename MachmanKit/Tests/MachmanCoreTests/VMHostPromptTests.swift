@@ -2,8 +2,9 @@
 //  VMHostPromptTests.swift
 //  MachmanTests
 //
-//  The vmhost's prompts as values (VMHostPrompts.swift) and the quit decision behind them,
-//  on a TestVMHost whose answerPrompt seam stands in for the modal alert.
+//  The vmhost's prompts as values (VMHostPrompts.swift) and the ⌘Q decision behind them,
+//  on a TestVMHost whose answerPrompt seam stands in for the modal alert. A log out's
+//  prompt is VMHostQuitTests'.
 //
 
 import Testing
@@ -35,10 +36,13 @@ struct VMHostPromptTests {
 	}
 
 	@Test func theQuitPromptOffersBothStopsAndCancel() {
-		let quit = HostPrompt.quitWhileRunning("alpha")
+		let quit = HostPrompt.quitWhileRunning("alpha", reason: .userQuit)
 		#expect(quit.message == "alpha is running")
+		#expect(quit.info
+			== "Quitting stops the VM: ask the guest to shut down, or stop it now.")
 		#expect(titles(quit) == ["Shut Down", "Force Stop", "Cancel"])
 		#expect(quit.buttons.map(\.choice) == [.shutDown, .forceStop, .cancel])
+		#expect(quit.escapeButton == nil)   // AppKit gives "Cancel" Esc itself
 	}
 
 	// V5: a refused or failed stop is said at once; Cancel is the refusal's safe default.
@@ -75,16 +79,16 @@ struct VMHostPromptTests {
 		answer: HostChoice, stops: [StopMode]
 	) async {
 		let host = TestVMHost {
-			$0 == .quitWhileRunning("alpha") ? answer : .keepWaiting
+			$0 == .quitWhileRunning("alpha", reason: .userQuit) ? answer : .keepWaiting
 		}
-		#expect(host.delegate.terminateReply() == .terminateCancel)
-		#expect(host.prompts.first == .quitWhileRunning("alpha"))
+		#expect(host.delegate.terminateReply(for: .userQuit) == .terminateCancel)
+		#expect(host.prompts.first == .quitWhileRunning("alpha", reason: .userQuit))
 		#expect(await eventually { host.stops == stops })
 	}
 
 	@Test func anIdleHostQuitsAtOnce() {
 		let host = TestVMHost(running: false) { _ in .shutDown }
-		#expect(host.delegate.terminateReply() == .terminateNow)
+		#expect(host.delegate.terminateReply(for: .userQuit) == .terminateNow)
 		#expect(host.prompts.isEmpty)
 		#expect(host.stops.isEmpty)
 	}

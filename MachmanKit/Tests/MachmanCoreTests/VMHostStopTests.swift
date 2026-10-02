@@ -36,12 +36,13 @@ struct VMHostStopTests {
 
 	@Test func theQuitPromptsShutDownFollowsUp() async {
 		let host = TestVMHost { prompt in
-			if prompt == .quitWhileRunning("alpha") { return .shutDown }
+			if prompt == .quitWhileRunning("alpha", reason: .userQuit) { return .shutDown }
 			return prompt == .notShutDownYet("alpha") ? .forceStop : .cancel
 		}
-		#expect(host.delegate.terminateReply() == .terminateCancel)
+		#expect(host.delegate.terminateReply(for: .userQuit) == .terminateCancel)
 		#expect(await eventually { host.stops == [.soft, .force] })
-		#expect(host.prompts == [.quitWhileRunning("alpha"), .notShutDownYet("alpha")])
+		#expect(host.prompts
+			== [.quitWhileRunning("alpha", reason: .userQuit), .notShutDownYet("alpha")])
 	}
 
 	@Test func aRefusedShutDownSaysSoAtOnce() async {
