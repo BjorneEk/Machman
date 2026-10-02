@@ -3,10 +3,11 @@
 //  MachmanDesktopUI
 //
 //  The terminal-profile editor (the Terminal tab of the app Settings window). Pick a profile to
-//  edit, rename / duplicate / delete it, or start from a colour preset; edit its font, colours,
-//  cursor and behaviour. Every edit writes straight through to the store, which republishes so any
-//  open terminal picks up the live changes at once (startup-only changes wait for a Reload). A
-//  live preview terminal on the right shows the result as you type.
+//  edit, rename / duplicate / delete it (deleting asks first), or start from a colour preset;
+//  edit its font, colours, cursor and behaviour. Every edit writes straight through to the
+//  store, which republishes so any open terminal picks up the live changes at once
+//  (startup-only changes wait for a Reload). A live preview terminal on the right shows the
+//  result as you type.
 //
 
 import SwiftUI
@@ -41,6 +42,22 @@ struct TerminalSettingsView: View {
 		}
 		.onAppear { preview.apply(current) }
 		.onChange(of: current) { _, p in preview.apply(p) }
+		// H9: a profile is deleted only after this asks; there is no undo.
+		.confirmationDialog(
+			"Delete “\(store.pendingDeletion?.name ?? "")”?", isPresented: deletionShown,
+			titleVisibility: .visible, presenting: store.pendingDeletion
+		) { p in
+			Button("Delete", role: .destructive) { store.delete(id: p.id) }
+			Button("Cancel", role: .cancel) {}
+		} message: { _ in
+			Text("Ports that use it switch to \(store.defaultProfile.name).")
+		}
+	}
+
+	private var deletionShown: Binding<Bool> {
+		Binding(
+			get: { store.pendingDeletion != nil },
+			set: { if !$0 { store.pendingDeletion = nil } })
 	}
 
 	// MARK: - Header (choose / manage the profile)
@@ -68,11 +85,11 @@ struct TerminalSettingsView: View {
 				Image(systemName: MachmanSymbols.duplicateVM)
 			}
 			.help("Duplicate profile")
-			Button(role: .destructive) { store.delete(id: current.id) } label: {
+			Button(role: .destructive) { store.requestDelete(id: current.id) } label: {
 				Image(systemName: MachmanSymbols.delete)
 			}
-			.help("Delete profile")
-			.disabled(current.isDefault || store.profiles.count <= 1)
+			.help("Delete Profile…")
+			.disabled(!store.canDelete(id: current.id))
 		}
 	}
 

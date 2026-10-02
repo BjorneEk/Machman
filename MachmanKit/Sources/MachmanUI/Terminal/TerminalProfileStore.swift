@@ -20,6 +20,9 @@ public final class TerminalProfileStore: ObservableObject {
 	@Published private var associations: [String: UUID]
 	// Which profile the settings view is currently editing (drives its picker).
 	@Published public var editingProfileID: UUID?
+	// The profile whose delete waits for confirmation (H9; the settings view asks). UI state,
+	// never persisted.
+	@Published public var pendingDeletion: TerminalProfile?
 
 	// Persisted off the main thread with writes coalesced, so a rapid edit stream (colour-picker
 	// drags, typing) neither blocks the UI nor writes per change; flush() writes what is
@@ -117,10 +120,22 @@ public final class TerminalProfileStore: ObservableObject {
 		return p
 	}
 
+	// The default and the last remaining profile can't be deleted.
+	public func canDelete(id: UUID) -> Bool {
+		id != defaultProfile.id && profiles.count > 1
+	}
+
+	// Ask before deleting (H9): a user-built profile is gone for good once deleted.
+	public func requestDelete(id: UUID) {
+		guard canDelete(id: id), let p = profile(id: id) else { return }
+		pendingDeletion = p
+	}
+
 	// Delete a profile; refuses the default and the last remaining one. Associations that pointed
 	// at it are pruned, so those ports fall back to the default.
 	public func delete(id: UUID) {
-		guard id != defaultProfile.id, profiles.count > 1 else { return }
+		if pendingDeletion?.id == id { pendingDeletion = nil }
+		guard canDelete(id: id) else { return }
 		profiles.removeAll { $0.id == id }
 		associations = associations.filter { $0.value != id }
 		if editingProfileID == id { editingProfileID = nil }
