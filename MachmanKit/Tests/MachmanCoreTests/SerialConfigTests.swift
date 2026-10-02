@@ -221,7 +221,10 @@ struct SerialConfigTests {
 			let issue = VMConfig.uartUnavailability()
 			#expect(issue?.reason == .privateUARTGated)
 			#expect(issue?.sinceOSVersion == SerialPortSupport.privateUARTGatedSinceDisplay)
-			#expect(issue?.message.contains("com.apple.private.virtualization") == true)
+			// User text (H15): the version, never the entitlement id.
+			let since = SerialPortSupport.privateUARTGatedSinceDisplay
+			#expect(issue?.message.contains(since) == true)
+			#expect(issue?.message.contains("com.apple.private") == false)
 		}
 	}
 

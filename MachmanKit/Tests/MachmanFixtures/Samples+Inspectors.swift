@@ -55,4 +55,17 @@ extension Samples {
 					+ "macOS is installed."))]
 		return vm
 	}
+
+	// A kernel-boot guest on a host where uarts are gated (macOS 26.6.1 and later): its uart
+	// port carries the engine's gate, worded as VMConfig.uartUnavailability words it.
+	public static func kernelBootGatedUART(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name)
+		let since = SerialPortSupport.privateUARTGatedSinceDisplay
+		vm.uartPorts?[0].unavailable = UnavailabilityInfo(
+			reason: .privateUARTGated,
+			message: "Since macOS \(since), only Apple's own apps can attach UART ports, so VMs "
+				+ "start without them.",
+			sinceOSVersion: since)
+		return vm
+	}
 }

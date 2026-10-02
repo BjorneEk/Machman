@@ -248,23 +248,25 @@ extension VMConfig {
 	// here. The single source for the VZ-builder skip log, the start-time warning event, and the
 	// wire's SerialPortInfo.unavailable — so a client that queries a VM learns exactly why a
 	// configured uart is inert. Checks the macOS version gate first, then the class's presence.
-	static func uartUnavailability() -> SerialPortUnavailability? {
-		if privateSerialRejected() {
-			let v = ProcessInfo.processInfo.operatingSystemVersion
-			let host = "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+	// The message is user text (an inspector, a toast, a tooltip): one sentence that names UART
+	// ports, never the entitlement id (com.apple.private.virtualization, see above).
+	static func uartUnavailability(
+		gated: Bool = VMConfig.privateSerialRejected(),
+		classPresent: Bool = NSClassFromString("_VZPL011SerialPortConfiguration") != nil
+	) -> SerialPortUnavailability? {
+		if gated {
+			let since = SerialPortSupport.privateUARTGatedSinceDisplay
 			return SerialPortUnavailability(
 				reason: .privateUARTGated,
-				message: "UART unavailable: macOS \(host) gates the private PL011 device "
-					+ "(com.apple.private.virtualization required, since macOS "
-					+ "\(SerialPortSupport.privateUARTGatedSinceDisplay)); configured uart ports "
-					+ "are left unattached.",
-				sinceOSVersion: SerialPortSupport.privateUARTGatedSinceDisplay)
+				message: "Since macOS \(since), only Apple's own apps can attach UART ports, so "
+					+ "VMs start without them.",
+				sinceOSVersion: since)
 		}
-		if NSClassFromString("_VZPL011SerialPortConfiguration") == nil {
+		if !classPresent {
 			return SerialPortUnavailability(
 				reason: .classUnavailable,
-				message: "UART unavailable: the private PL011 device class is not present in this "
-					+ "macOS build; configured uart ports are left unattached.")
+				message: "This version of macOS has no UART device, so VMs start without UART "
+					+ "ports.")
 		}
 		return nil
 	}
