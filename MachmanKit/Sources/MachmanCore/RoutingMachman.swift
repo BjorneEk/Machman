@@ -202,11 +202,13 @@ public final class RoutingMachman: MachmanControlling {
 	func hostForTesting(_ name: String) -> HostedVM? { hosted[name] }
 
 	// The VMs that run now, by name: a hosted one whose VM the host last reported running
-	// (starting and stopping count) or that stopped answering, and every start in flight. An
-	// idle host, or one exiting after its run, holds nothing up: it quits with the session.
+	// (starting and stopping count), that stopped answering, or that has not answered yet (an
+	// adoption whose first ask stalled — unknown, never stopped), and every start in flight.
+	// An idle host, or one exiting after its run, has answered: it holds nothing up and quits
+	// with the session.
 	public var runningVMNames: [String] {
 		let hostedRunning = hosted.values
-			.filter { $0.unresponsive || $0.lastState?.isRunning == true }
+			.filter { $0.unresponsive || ($0.lastState?.isRunning ?? true) }
 			.map(\.identity.name)
 		return Set(hostedRunning).union(pendingStarts).sorted()
 	}

@@ -66,13 +66,16 @@ struct RoutingRunningVMTests {
 	}
 
 	// A host serving alpha in `state`, adopted the way a late host is: by the next list.
+	// `stalled`: it never answers vm.get (until the test lifts it), so the adoption's first
+	// ask runs out its deadline.
 	@MainActor
-	private func adopt(_ routing: RoutingMachman, state: VMState) async throws
-		-> (StubMachman, MachmanServer) {
+	private func adopt(_ routing: RoutingMachman, state: VMState, stalled: Bool = false)
+		async throws -> (StubMachman, MachmanServer) {
 		let socketPath = TestEnvironment.socketPath("mm-run")
 		routing.socketPathForVM = { $0 == "alpha" ? socketPath : socketPath + ".none" }
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: state)
+		if stalled { stub.stalled = ["vm"] }
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
 		try startServing(server)
 		_ = try await routing.listVMs()
@@ -99,6 +102,36 @@ struct RoutingRunningVMTests {
 		defer { server.stop() }
 		#expect(routing.hostedNames == ["alpha"])
 		#expect(routing.runningVMNames.isEmpty)
+	}
+
+	// An adoption whose first ask stalled has no state yet: unknown, never stopped, so it
+	// holds a log out up until its host answers (O-2: it counted as stopped until a probe).
+	@Test @MainActor func aHostThatNeverAnsweredCounts() async throws {
+		let routing = try makeRouting()
+		routing.hostProbeDeadline = .seconds(1)   // the stalled ask runs it out
+		let (stub, server) = try await adopt(routing, state: .stopped, stalled: true)
+		defer {
+			stub.stalled = []
+			server.stop()
+		}
+		#expect(routing.hostForTesting("alpha")?.lastState == nil)
+		#expect(routing.runningVMNames == ["alpha"])
+	}
+
+	// A host that stops answering counts, whatever it said last.
+	@Test @MainActor func anUnresponsiveHostCounts() async throws {
+		let routing = try makeRouting()
+		let (stub, server) = try await adopt(routing, state: .stopped)
+		defer {
+			stub.stalled = []
+			server.stop()
+		}
+		#expect(routing.runningVMNames.isEmpty)
+		routing.hostProbeDeadline = .seconds(1)   // the stalled ask runs it out
+		stub.stalled = ["vm"]
+		_ = try await routing.listVMs()
+		#expect(routing.hostForTesting("alpha")?.unresponsive == true)
+		#expect(routing.runningVMNames == ["alpha"])
 	}
 
 	@Test @MainActor func aStartInFlightCounts() throws {
