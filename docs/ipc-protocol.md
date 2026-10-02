@@ -58,7 +58,7 @@ A client must keep reading: one that leaves the daemon's writes blocked for 10 s
 ### Errors
 
 ```
-<-- {"error":{"code":-32000,"data":{"machmanCode":"notFound"},"message":"no VM named 'x'"},"id":2,"jsonrpc":"2.0"}
+<-- {"error":{"code":-32000,"data":{"machmanCode":"notFound"},"message":"No VM named “x”"},"id":2,"jsonrpc":"2.0"}
 ```
 
 Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not found,
@@ -66,7 +66,9 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 `notFound`, `alreadyExists`, `invalidState`, `macConflict`, `invalidArgument`,
 `ioFailure`, `virtualizationFailure`, `installFailure`, `internalError`, `timeout`
 (1.0.9+: the daemon's own bounded call to a vmhost got no reply — the vmhost is left
-alone; unknown codes decode as `internalError`, so the list is additively extensible).
+alone; its message names the deadline, e.g. "No answer within 30 seconds"; unknown codes decode as
+`internalError`, so the list is additively extensible). Messages are one sentence for people
+to read; match on the code, never on the text, which a newer daemon may reword.
 
 ### Names
 
@@ -162,7 +164,7 @@ stalled vmhost's operations are left out until it answers).
 
 `outdatedHost` (1.0.12+) is a daemon overlay too: `true` while the VM runs under a vmhost older
 than the daemon (one that outlived an update of the app). Its setting changes answer
-`invalidState` ("restart … to finish updating") until it restarts; stop, its window, preview
+`invalidState` ("Restart … to finish updating") until it restarts; stop, its window, preview
 and `vm.safeSave` keep working. Absent otherwise.
 
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
@@ -420,15 +422,15 @@ list; until then the VM lists with state `unknown`, plus `unresponsive` once an 
 `vm.start` asks a vmhost the daemon already holds for the VM before spawning one. A running
 VM answers `invalidState` ("… is already running"). An idle host — spawned for a start that
 was never forwarded because its daemon died in between; it exits on its own after 3 minutes —
-runs this start, MAC check included; a safe start there answers `invalidState` ("… has an idle
-vmhost from an earlier start — start it normally, or wait up to 3 minutes to start it safe"),
+runs this start, MAC check included; a safe start there answers `invalidState` ("… is still
+prepared from an earlier start — start it normally, or wait up to 3 minutes to start it safe"),
 since that host runs the real VM, never a shadow. An idle host older than the daemon (1.0.12+)
 is ended instead and the start spawns a current one, so the run does not start locked by
 `outdatedHost`; one the daemon has no process to end by still runs the start, locked.
 A host whose VM just stopped is exiting: the
 start waits up to 3 s for it to go and then starts normally; if the host is still there, the
 start answers `invalidState` ("… is still shutting down — try again in a moment"). A host that
-misses its answer deadline answers `invalidState` ("…'s vmhost is not responding"). A vmhost
+misses its answer deadline answers `invalidState` ("… is not responding"). A vmhost
 answering on one VM's socket for another — a run an older vmhost saved as a new VM — is adopted
 as the VM it serves, and starting the original answers `invalidState` ("… saved from …, still
 runs on its socket — stop … before starting …").
