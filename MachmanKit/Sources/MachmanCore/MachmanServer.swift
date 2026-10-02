@@ -111,7 +111,10 @@ public final class MachmanServer {
 		nextConnectionID += 1
 		connections[id] = client
 		// Weak client: the connection holds this closure and the Client holds the
-		// connection, so a strong capture kept every closed client alive for good.
+		// connection, so a strong capture kept every closed client alive for good. Each line
+		// is its own task, so one connection's requests run concurrently — on purpose (A5):
+		// a client's quick calls must not queue behind its own slow start or copy. The
+		// protocol doc tells clients to wait for a reply when they need an order.
 		connection.onLine = { [weak self, weak client] line in
 			Task { @MainActor [weak self] in
 				guard let client else { return }

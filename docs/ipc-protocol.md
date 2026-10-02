@@ -44,6 +44,12 @@ call may still complete server-side (watch events for the outcome); clients must
 timeout as a dead connection. A dropped connection says as little about the calls in flight:
 each may or may not have run, so re-read state after reconnecting.
 
+Requests on one connection run concurrently: each is answered when it finishes, matched by
+id, so replies can arrive out of order, and two requests in flight may take effect in either
+order (a `vm.disk.add` and a `vm.start` sent back to back can boot without the disk). A client
+that needs an order waits for one reply before sending the next request. An event a request
+causes can arrive before or after that request's reply.
+
 A client must keep reading: one that leaves the daemon's writes blocked for 10 s, or lets
 32 MiB queue up (an event subscription it stopped draining), is disconnected.
 
