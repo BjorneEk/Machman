@@ -41,7 +41,8 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		startupSignature = profile.startupSignature
 		// convertEol: a bare-metal UART emits bare LF with no CR (QEMU's stdio adds it via ONLCR;
 		// our raw socket does not), so without it each line staircases. scrollback: a chatty
-		// kernel swamps the 500-line default, so profiles default to a deep history.
+		// kernel swamps SwiftTerm's 500-line default, so profiles keep 10,000 lines (bounded:
+		// a deeper history slows every resize, and Save Terminal writes its own 8 MiB).
 		let options = TerminalOptions(
 			convertEol: profile.convertEol,
 			termName: profile.termName,

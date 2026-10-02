@@ -38,9 +38,35 @@ struct TerminalProfileTests {
 		#expect(try decode(#"{"name": "b", "scrollback": 50000000}"#).scrollback == 100_000)
 	}
 
+	// P31: every resize step costs SwiftTerm in proportion to the capacity.
+	@Test func newProfilesKeepTenThousandLines() throws {
+		#expect(TerminalProfile(name: "a").scrollback == 10_000)
+		#expect(TerminalProfile.oneDarkDefault.scrollback == 10_000)
+		#expect(try decode(#"{"name": "a"}"#).scrollback == 10_000)
+		#expect(try decode(#"{"name": "a", "scrollback": "deep"}"#).scrollback == 10_000)
+	}
+
+	// Every saved profile carried the old default, so a new default alone reached nobody.
+	@Test func theOldDefaultMovesToTheNewOne() throws {
+		#expect(try decode(#"{"name": "a", "scrollback": 500000}"#).scrollback == 10_000)
+		#expect(try decode(#"{"name": "b", "scrollback": 250000}"#).scrollback == 100_000)
+		#expect(try decode(#"{"name": "c", "scrollback": 60000}"#).scrollback == 60_000)
+	}
+
 	// The crash repeated on every relaunch: the bad value was already in the file.
 	@MainActor
 	@Test func aStoreWithANegativeScrollbackLoadsUsable() throws {
+		let url = try storeFile(scrollback: -1000)
+		#expect(TerminalProfileStore(fileURL: url).defaultProfile.scrollback == 0)
+	}
+
+	@MainActor
+	@Test func aStoreSavedWithTheOldDefaultLoadsTheNewOne() throws {
+		let url = try storeFile(scrollback: 500_000)
+		#expect(TerminalProfileStore(fileURL: url).defaultProfile.scrollback == 10_000)
+	}
+
+	private func storeFile(scrollback: Int) throws -> URL {
 		let url = TestEnvironment.scratchURL
 			.appendingPathComponent("tp-\(UUID().uuidString)")
 			.appendingPathComponent("TerminalProfiles.json")
@@ -48,9 +74,9 @@ struct TerminalProfileTests {
 			at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 		let json = """
 			{"profiles": [{"id": "\(TerminalProfile.defaultID)", "name": "OneDark",
-			  "scrollback": -1000}]}
+			  "scrollback": \(scrollback)}]}
 			"""
 		try Data(json.utf8).write(to: url)
-		#expect(TerminalProfileStore(fileURL: url).defaultProfile.scrollback == 0)
+		return url
 	}
 }

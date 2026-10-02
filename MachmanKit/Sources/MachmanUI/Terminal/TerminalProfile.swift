@@ -66,7 +66,8 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 	public var mouseReporting: Bool
 
 	public init(
-		id: UUID = UUID(), name: String, scrollback: Int = 500_000, convertEol: Bool = true,
+		id: UUID = UUID(), name: String, scrollback: Int = TerminalProfile.defaultScrollback,
+		convertEol: Bool = true,
 		termName: String = "xterm-256color", cursor: TerminalCursor = .block,
 		tabStopWidth: Int = 8, fontName: String = TerminalProfile.defaultFontName,
 		fontSize: Double = 13, colors: TerminalColors = TerminalTheme.oneDark.colors,
@@ -99,8 +100,7 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.id = c.decodeTolerant(UUID.self, forKey: .id) ?? UUID()
 		self.name = c.decodeTolerant(String.self, forKey: .name) ?? "Profile"
-		self.scrollback = Self.clampedScrollback(
-			c.decodeTolerant(Int.self, forKey: .scrollback) ?? 500_000)
+		self.scrollback = Self.loadedScrollback(c.decodeTolerant(Int.self, forKey: .scrollback))
 		self.convertEol = c.decodeTolerant(Bool.self, forKey: .convertEol) ?? true
 		self.termName = c.decodeTolerant(String.self, forKey: .termName) ?? "xterm-256color"
 		self.cursor = c.decodeTolerant(TerminalCursor.self, forKey: .cursor) ?? .block
@@ -130,10 +130,20 @@ public extension TerminalProfile {
 
 	var isDefault: Bool { id == TerminalProfile.defaultID }
 
-	// The lines of scrollback a profile may ask for.
+	// The lines of scrollback a profile may ask for, and what it gets unasked. Every resize
+	// step costs SwiftTerm time and memory in proportion to the capacity, not to what was
+	// printed (P31); the 8 MiB transcript Save Terminal writes doesn't depend on it.
 	static let scrollbackRange = 0...100_000
+	static let defaultScrollback = 10_000
 
 	static func clampedScrollback(_ lines: Int) -> Int {
 		min(max(lines, scrollbackRange.lowerBound), scrollbackRange.upperBound)
+	}
+
+	// A stored value: absent → the default; exactly the old 500,000 default → the new one (the
+	// user never chose it); anything else clamped.
+	static func loadedScrollback(_ stored: Int?) -> Int {
+		guard let stored, stored != 500_000 else { return defaultScrollback }
+		return clampedScrollback(stored)
 	}
 }
