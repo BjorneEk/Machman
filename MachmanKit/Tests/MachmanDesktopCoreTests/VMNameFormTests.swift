@@ -33,7 +33,8 @@ struct VMNameFormTests {
 		#expect(h.viewModel.newVMNameProblem(" Sequoia ")
 			== "A VM named \u{201C}Sequoia\u{201D} already exists")
 		#expect(h.viewModel.newVMNameProblem(".x") == "A VM name can’t start with a dot")
-		#expect(h.viewModel.newVMNameProblem("a/b") == "A VM name can’t contain \u{201C}/\u{201D}")
+		#expect(h.viewModel.newVMNameProblem("a/b")
+			== "A VM name can’t contain \u{201C}/\u{201D}")
 		#expect(h.viewModel.newVMNameProblem("  ") == "A VM name can’t be empty")
 		#expect(h.viewModel.newVMNameProblem("dev copy") == nil)
 	}
