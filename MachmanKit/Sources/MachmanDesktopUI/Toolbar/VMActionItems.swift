@@ -82,7 +82,20 @@ struct StartStopGroup: View {
 			case .starting:
 				transition("Starting…")
 			case .stopping:
-				transition("Stopping…")
+				// A guest that ignores the shutdown request: Force Stop stays in reach (F3).
+				// Immediate, like the running state's; only the ⌘. chords ask (P26).
+				HStack(spacing: 4) {
+					transition("Stopping…")
+					ControlGroup {
+						Button {
+							viewModel.stopVM(vm.name, mode: .force)
+						} label: {
+							Image(systemName: MachmanSymbols.forceStop)
+						}
+						.help("Force Stop")
+						.accessibilityLabel("Force Stop")
+					}
+				}
 			case .running, .paused:
 				ControlGroup {
 					Button {

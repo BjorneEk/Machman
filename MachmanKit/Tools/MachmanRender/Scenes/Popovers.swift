@@ -160,6 +160,12 @@ enum PopoverScenes {
 				AnyView(StartStopGroup(viewModel: ctx.viewModel, vm: vm!))
 			}
 		},
+		RenderScene(
+			"toolbar.start-stop.stopping", "StartStopGroup while a guest shuts down",
+			vms: { [Samples.stoppingLinux()] }
+		) { ctx in
+			AnyView(StartStopGroup(viewModel: ctx.viewModel, vm: ctx.vm).padding(12))
+		},
 		RenderScene("toolbar.window-toggle", "WindowToggleItem per VM") { ctx in
 			perVM(ctx) { vm in
 				AnyView(WindowToggleItem(viewModel: ctx.viewModel, vm: vm!))
