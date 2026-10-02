@@ -61,10 +61,9 @@ struct NotificationOverlay: View {
 	private func phase(for op: OperationInfo) -> String {
 		if let outcome = op.outcomeText { return outcome }
 		if let done = op.completedBytes, let total = op.totalBytes, total > 0 {
-			let f = ByteCountFormatter.string(
-				fromByteCount: done, countStyle: .file)
-			let t = ByteCountFormatter.string(
-				fromByteCount: total, countStyle: .file)
+			// Binary units, like every other size (decision 14).
+			let f = ByteSize.display(UInt64(clamping: done))
+			let t = ByteSize.display(UInt64(clamping: total))
 			return "\(f) of \(t)"
 		}
 		return "Working…"
