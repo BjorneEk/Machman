@@ -391,7 +391,7 @@ public final class VMListViewModel: ObservableObject {
 					pushToast(
 						symbol: MachmanSymbols.deviceGuestSetup,
 						message: "\(vm.name): guest setup removed")
-				} else if let status = vm.setup?.lastRunStatus, status != "ok" {
+				} else if let status = vm.setup?.lastRunStatus, status != GuestRunStatus.ok {
 					pushProblem(
 						symbol: MachmanSymbols.warning,
 						message: "\(vm.name): guest setup \(status) — details in the "
@@ -408,7 +408,7 @@ public final class VMListViewModel: ObservableObject {
 				previous.lastReportAt != stamp {
 				let user = vm.ssh?.guestUser ?? "the guest"
 				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
-				if let status = vm.ssh?.lastRunStatus, status != "ok" {
+				if let status = vm.ssh?.lastRunStatus, status != GuestRunStatus.ok {
 					let note = vm.ssh?.lastRunNote.map { " — \($0)" } ?? ""
 					pushProblem(
 						symbol: MachmanSymbols.warning,
