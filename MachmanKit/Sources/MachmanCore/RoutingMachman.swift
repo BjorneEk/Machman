@@ -1266,10 +1266,11 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
-		console: [String: Bool]?, uart: [String: Bool]?
+		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
 	) async throws {
 		try await proxy(name).setEnabled(
-			vm: name, disks: disks, mounts: mounts, console: console, uart: uart)
+			vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
+			devices: devices)
 	}
 
 	public func setKernelOverride(

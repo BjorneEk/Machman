@@ -182,7 +182,7 @@ public final class StubMachman: MachmanControlling {
 	)] = []
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
-		console: [String: Bool]?, uart: [String: Bool]?
+		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
 	) async throws {
 		try gate()
 		enabledChanges.append((name, disks, mounts, console, uart))
@@ -192,6 +192,12 @@ public final class StubMachman: MachmanControlling {
 				throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
 			}
 			vm.disks[index].enabled = value ? nil : false
+		}
+		for (kind, value) in devices ?? [:] {
+			guard let index = vm.devices?.firstIndex(where: { $0.kindSpelling == kind }) else {
+				throw MachmanError(code: .notFound, message: "no \(kind) device on \(name)")
+			}
+			vm.devices?[index].enabled = value
 		}
 		vms[name] = vm
 	}

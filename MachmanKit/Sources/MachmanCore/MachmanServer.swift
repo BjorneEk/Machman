@@ -309,7 +309,7 @@ public final class MachmanServer {
 				let p: RPCParams.SetEnabled = try params(line)
 				try await api.setEnabled(
 					vm: p.name, disks: p.disks, mounts: p.mounts,
-					console: p.console, uart: p.uart)
+					console: p.console, uart: p.uart, devices: p.devices)
 				reply(client, id, RPCEmpty())
 			case .kernelSetOverride:
 				let p: RPCParams.KernelOverride = try params(line)

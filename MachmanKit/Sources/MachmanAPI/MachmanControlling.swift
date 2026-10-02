@@ -68,10 +68,12 @@ public protocol MachmanControlling: AnyObject {
 	func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo
 	func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo
 	func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo
-	// Batch per-entity enabled flags (setSafety twin); serial ports keyed by string index.
+	// Batch per-entity enabled flags (setSafety twin); serial ports keyed by string index,
+	// devices (1.0.12+) by their kind's wire spelling. Conformers give `devices` no default:
+	// the four-map form below is the extension's, and a default would make it ambiguous.
 	func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
-		console: [String: Bool]?, uart: [String: Bool]?
+		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
 	) async throws
 	// Per-owned-kernel-file command-line override (replaces KernelSettings.commandLine while
 	// that file is the active kernel and the override is enabled). nil fields = unchanged.
@@ -171,6 +173,15 @@ public protocol MachmanControlling: AnyObject {
 }
 
 extension MachmanControlling {
+	// vm.setEnabled before devices joined the batch.
+	public func setEnabled(
+		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	) async throws {
+		try await setEnabled(
+			vm: name, disks: disks, mounts: mounts, console: console, uart: uart, devices: nil)
+	}
+
 	// vm.copy before the mount choice: every mount travels.
 	public func copyVM(
 		vm name: String, newName: String?, diskIDs: [String]?, regenerateMAC: Bool

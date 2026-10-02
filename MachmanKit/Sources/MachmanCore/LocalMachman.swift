@@ -639,12 +639,12 @@ public final class LocalMachman: MachmanControlling {
 
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
-		console: [String: Bool]?, uart: [String: Bool]?
+		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
 	) async throws {
 		let vm = try lookup(name)
 		try vm.config.setEnabled(
 			disks: disks ?? [:], mounts: mounts ?? [:],
-			console: console ?? [:], uart: uart ?? [:])
+			console: console ?? [:], uart: uart ?? [:], devices: devices ?? [:])
 		registry.events.emit(.listChanged)
 	}
 

@@ -139,9 +139,11 @@ extension VMConfig {
 
 	// MARK: - Enabled flags (vm.setEnabled) — setSafety twin: all-or-nothing precheck.
 
+	// Devices (1.0.12) are keyed by kind, as stored (a newer daemon's kind is addressable too).
 	func setEnabled(
 		disks diskFlags: [String: Bool], mounts mountFlags: [String: Bool],
-		console consoleFlags: [String: Bool], uart uartFlags: [String: Bool]
+		console consoleFlags: [String: Bool], uart uartFlags: [String: Bool],
+		devices deviceFlags: [String: Bool] = [:]
 	) throws {
 		for id in diskFlags.keys where !disks.contains(where: { $0.id == id }) {
 			throw MachmanError(code: .notFound, message: "no disk '\(id)' on \(name)")
@@ -149,6 +151,9 @@ extension VMConfig {
 		for id in mountFlags.keys
 			where !mountPoints.contains(where: { $0.id.uuidString == id }) {
 			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
+		}
+		for kind in deviceFlags.keys where !devices.contains(where: { $0.kind == kind }) {
+			throw MachmanError(code: .notFound, message: "no \(kind) device on \(name)")
 		}
 		// Serial ports arrive as string indices ("0", "1"…) — JSON-object keys on the wire.
 		func parsed(_ flags: [String: Bool], count: Int, what: String) throws -> [Int: Bool] {
@@ -174,6 +179,9 @@ extension VMConfig {
 		}
 		for (index, value) in consoleByIndex { consolePorts[index].enabled = value }
 		for (index, value) in uartByIndex { uartPorts[index].enabled = value }
+		for i in devices.indices {
+			if let value = deviceFlags[devices[i].kind] { devices[i].enabled = value }
+		}
 		try saveVMConfig()
 	}
 

@@ -367,23 +367,27 @@ public enum RPCParams {
 	// vm.setEnabled: batch per-entity enabled flags (vm.setSafety twin — unknown ids/indices
 	// refuse the WHOLE batch). Serial ports are addressed by their index within the family,
 	// as STRING keys ("0", "1", …) — Codable would encode [Int: Bool] as a JSON array,
-	// which is not obvious JSON.
+	// which is not obvious JSON. Devices (1.0.12+) are keyed by their kind's wire spelling;
+	// an older daemon ignores the key.
 	public struct SetEnabled: Codable, Equatable, Sendable {
 		public var name: String
 		public var disks: [String: Bool]?
 		public var mounts: [String: Bool]?
 		public var console: [String: Bool]?
 		public var uart: [String: Bool]?
+		public var devices: [String: Bool]?
 
 		public init(
 			name: String, disks: [String: Bool]? = nil, mounts: [String: Bool]? = nil,
-			console: [String: Bool]? = nil, uart: [String: Bool]? = nil
+			console: [String: Bool]? = nil, uart: [String: Bool]? = nil,
+			devices: [String: Bool]? = nil
 		) {
 			self.name = name
 			self.disks = disks
 			self.mounts = mounts
 			self.console = console
 			self.uart = uart
+			self.devices = devices
 		}
 	}
 
