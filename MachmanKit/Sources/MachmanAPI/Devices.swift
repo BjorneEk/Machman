@@ -52,6 +52,36 @@ public enum DeviceKind: String, Codable, Sendable, Equatable {
 	}
 }
 
+// The one display label per kind: the tree, the add popover and the inspectors show it, and
+// the engine's refusals name a device by it (W3), so the two never drift.
+public extension DeviceKind {
+	var displayLabel: String {
+		switch self {
+		case .graphics: return "Display"
+		case .keyboard: return "Keyboard"
+		case .trackpad: return "Trackpad"
+		case .pointer: return "Pointer"
+		case .audioInput: return "Mic"
+		case .audioOutput: return "Audio"
+		case .network: return "Network"
+		case .clipboard: return "Clipboard"
+		case .entropy: return "Entropy"
+		case .rosetta: return "Rosetta"
+		case .consoleLoginInstaller: return "Console Login"
+		case .sshInstaller: return "SSH Setup"
+		case .guestSetup: return "Guest Setup"
+		case .unknown: return "Unknown"
+		}
+	}
+
+	// A kind as stored or sent: a known kind's label, else a newer Machman's own spelling,
+	// quoted.
+	static func displayLabel(raw: String) -> String {
+		let kind = DeviceKind(rawValue: raw) ?? .unknown
+		return kind == .unknown ? "\u{201C}\(raw)\u{201D}" : kind.displayLabel
+	}
+}
+
 // Shared vocabulary for the login installer: the reserved directory name it appears
 // under inside the automounting share ("My Shared Files" is the ONE volume macOS guests
 // mount on their own — its name is fixed by the OS, so the installer rides it as a

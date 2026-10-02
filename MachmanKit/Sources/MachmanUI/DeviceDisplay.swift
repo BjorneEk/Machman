@@ -2,10 +2,12 @@
 //  DeviceDisplay.swift
 //  MachmanUI
 //
-//  The shared display vocabulary for guest device kinds (1.0.4 UI): one symbol + label per
-//  kind, plus the VZ class/variant the engine resolves it to, used by the sidebar tree, the
-//  add popover, and the device inspectors, so the mapping never forks. Every real kind is
-//  selectable in the tree; kinds without settings get the generic info inspector.
+//  The shared display vocabulary for guest device kinds (1.0.4 UI): one symbol per kind,
+//  plus the VZ class/variant the engine resolves it to, used by the sidebar tree, the add
+//  popover, and the device inspectors, so the mapping never forks. The label
+//  (DeviceKind.displayLabel) lives in MachmanAPI, so the engine words refusals the same way.
+//  Every real kind is selectable in the tree; kinds without settings get the generic info
+//  inspector.
 //
 
 import MachmanAPI
@@ -37,25 +39,6 @@ extension DeviceKind {
 		case .sshInstaller: return MachmanSymbols.deviceSSHSetup
 		case .guestSetup: return MachmanSymbols.deviceGuestSetup
 		case .unknown: return MachmanSymbols.warning
-		}
-	}
-
-	public var displayLabel: String {
-		switch self {
-		case .graphics: return "Display"
-		case .keyboard: return "Keyboard"
-		case .trackpad: return "Trackpad"
-		case .pointer: return "Pointer"
-		case .audioInput: return "Mic"
-		case .audioOutput: return "Audio"
-		case .network: return "Network"
-		case .clipboard: return "Clipboard"
-		case .entropy: return "Entropy"
-		case .rosetta: return "Rosetta"
-		case .consoleLoginInstaller: return "Console Login"
-		case .sshInstaller: return "SSH Setup"
-		case .guestSetup: return "Guest Setup"
-		case .unknown: return "Unknown"
 		}
 	}
 

@@ -246,8 +246,8 @@ public final class VMRegistry {
 		guard !vz.graphicsDevices.isEmpty else {
 			throw MachmanError(
 				code: .invalidState,
-				message: "\(vm.config.name) has no display device — add a graphics "
-					+ "device and restart to use a window")
+				message: "\(vm.config.name) has no display — add one and restart it to use a "
+					+ "window")
 		}
 		presenter.openWindow(name: vm.config.name, vz: vz)
 	}

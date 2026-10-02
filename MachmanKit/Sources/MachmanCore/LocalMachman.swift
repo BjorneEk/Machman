@@ -524,7 +524,7 @@ public final class LocalMachman: MachmanControlling {
 
 	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
 		guard kind != .unknown else {
-			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
+			throw MachmanError(code: .invalidArgument, message: "Unknown device kind")
 		}
 		var kind = kind
 		if kind == .sshInstaller || kind == .consoleLoginInstaller {
@@ -555,7 +555,7 @@ public final class LocalMachman: MachmanControlling {
 		guard let stored = vm.config.devices.first(where: { $0.deviceKind == device.kind })
 		else {
 			throw MachmanError(
-				code: .notFound, message: "no \(device.kind.rawValue) device on \(name)")
+				code: .notFound, message: "\(name) has no \(device.kind.displayLabel) device")
 		}
 		try vm.config.updateDevice(Self.guestDevice(from: device, replacing: stored))
 		registry.events.emit(.listChanged)
@@ -599,23 +599,21 @@ public final class LocalMachman: MachmanControlling {
 		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
 		switch kind {
 		case .unknown:
-			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
+			throw MachmanError(code: .invalidArgument, message: "Unknown device kind")
 		case .trackpad where !macGuest:
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "the Mac trackpad needs a macOS guest — install macOS first")
+				message: "The Mac trackpad needs a macOS guest — install macOS first")
 		case .consoleLoginInstaller:
 			throw MachmanError(
-				code: .invalidArgument,
-				message: "superseded by the Guest Setup installer (1.0.7)")
+				code: .invalidArgument, message: "Replaced by Guest Setup in Machman 1.0.7")
 		case .sshInstaller:
 			throw MachmanError(
-				code: .invalidArgument,
-				message: "superseded by the Guest Setup installer (1.0.7)")
+				code: .invalidArgument, message: "Replaced by Guest Setup in Machman 1.0.7")
 		case .clipboard where macGuest, .rosetta where macGuest:
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "\(kind.rawValue) is not supported for macOS guests")
+				message: "\(kind.displayLabel) isn’t supported for macOS guests")
 		default:
 			break
 		}
@@ -623,18 +621,18 @@ public final class LocalMachman: MachmanControlling {
 
 	private static func validateDeviceSettings(_ device: DeviceInfo) throws {
 		guard device.kind != .unknown else {
-			throw MachmanError(code: .invalidArgument, message: "unknown device kind")
+			throw MachmanError(code: .invalidArgument, message: "Unknown device kind")
 		}
 		for value in [device.displayWidthPixels, device.displayHeightPixels] {
 			if let value, !(640...8192).contains(value) {
 				throw MachmanError(
 					code: .invalidArgument,
-					message: "display size must be between 640 and 8192 pixels")
+					message: "Display size must be between 640 and 8192 pixels")
 			}
 		}
 		if let ppi = device.displayPixelsPerInch, !(40...300).contains(ppi) {
 			throw MachmanError(
-				code: .invalidArgument, message: "pixels per inch must be between 40 and 300")
+				code: .invalidArgument, message: "Pixels per inch must be between 40 and 300")
 		}
 	}
 

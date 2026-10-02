@@ -652,7 +652,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		guard consolePorts.count + uartPorts.count < Self.maxSerialPorts else {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "a VM can have at most \(Self.maxSerialPorts) serial ports")
+				message: "A VM can have at most \(Self.maxSerialPorts) serial ports")
 		}
 	}
 
@@ -710,16 +710,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		switch kind {
 		case .console:
 			guard consolePorts.indices.contains(index) else {
-				throw MachmanError(code: .notFound, message: "no console port \(index) on \(name)")
+				throw MachmanError(code: .notFound, message: "\(name) has no console port \(index)")
 			}
 			ports = \.consolePorts
 		case .uart:
 			guard uartPorts.indices.contains(index) else {
-				throw MachmanError(code: .notFound, message: "no UART port \(index) on \(name)")
+				throw MachmanError(code: .notFound, message: "\(name) has no UART port \(index)")
 			}
 			ports = \.uartPorts
 		case .unknown:
-			throw MachmanError(code: .invalidArgument, message: "unknown serial port kind")
+			throw MachmanError(code: .invalidArgument, message: "Unknown serial port kind")
 		}
 		// Checked as a cap enters: a larger one the port already holds (written by a script)
 		// keeps working, and clients send it back unchanged with every other logging edit.
@@ -727,7 +727,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			cap != self[keyPath: ports][index].logging.maxBytes {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "a serial log can be capped at 1 GB at most — omit maxBytes for no cap")
+				message: "A serial log can be capped at 1 GB at most")
 		}
 		self[keyPath: ports][index].logging = config
 		try saveVMConfig()

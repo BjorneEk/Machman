@@ -112,8 +112,9 @@ extension VMConfig {
 
 	func addDevice(_ device: GuestDevice) throws {
 		guard !devices.contains(where: { $0.kind == device.kind }) else {
+			let label = DeviceKind.displayLabel(raw: device.kind)
 			throw MachmanError(
-				code: .alreadyExists, message: "\(name) already has a \(device.kind) device")
+				code: .alreadyExists, message: "\(name) already has the \(label) device")
 		}
 		devices.append(device)
 		try saveVMConfig()
@@ -122,7 +123,7 @@ extension VMConfig {
 	func removeDevice(kind: DeviceKind) throws {
 		guard devices.contains(where: { $0.deviceKind == kind }) else {
 			throw MachmanError(
-				code: .notFound, message: "no \(kind.rawValue) device on \(name)")
+				code: .notFound, message: "\(name) has no \(kind.displayLabel) device")
 		}
 		devices.removeAll { $0.deviceKind == kind }
 		try saveVMConfig()
@@ -131,7 +132,8 @@ extension VMConfig {
 	func updateDevice(_ updated: GuestDevice) throws {
 		guard let index = devices.firstIndex(where: { $0.kind == updated.kind }) else {
 			throw MachmanError(
-				code: .notFound, message: "no \(updated.kind) device on \(name)")
+				code: .notFound,
+				message: "\(name) has no \(DeviceKind.displayLabel(raw: updated.kind)) device")
 		}
 		devices[index] = updated
 		try saveVMConfig()
@@ -153,7 +155,9 @@ extension VMConfig {
 			throw MachmanError(code: .notFound, message: "no mount '\(id)' on \(name)")
 		}
 		for kind in deviceFlags.keys where !devices.contains(where: { $0.kind == kind }) {
-			throw MachmanError(code: .notFound, message: "no \(kind) device on \(name)")
+			throw MachmanError(
+				code: .notFound,
+				message: "\(name) has no \(DeviceKind.displayLabel(raw: kind)) device")
 		}
 		// Serial ports arrive as string indices ("0", "1"…) — JSON-object keys on the wire.
 		func parsed(_ flags: [String: Bool], count: Int, what: String) throws -> [Int: Bool] {
@@ -161,7 +165,7 @@ extension VMConfig {
 			for (key, value) in flags {
 				guard let index = Int(key), (0..<count).contains(index) else {
 					throw MachmanError(
-						code: .notFound, message: "no \(what) port \(key) on \(name)")
+						code: .notFound, message: "\(name) has no \(what) port \(key)")
 				}
 				out[index] = value
 			}
