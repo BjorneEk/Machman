@@ -150,6 +150,21 @@ struct ThrottledResizeContainerTests {
 		#expect(child.frame.size == container.bounds.size)   // the snap still lands
 	}
 
+	// SwiftUI re-adopts on every update of the mount; one landing mid-burst must not resize the
+	// terminal past the throttle.
+	@Test func reAdoptingMidBurstLeavesTheLagToTheThrottle() {
+		let clock = FakeClock()
+		let (container, child) = mount(clock: clock)
+		container.setFrameSize(NSSize(width: 820, height: 480))
+		clock.advance(by: 0.01)
+		container.setFrameSize(NSSize(width: 860, height: 480))
+		container.adopt(child)
+		#expect(child.frame.width == 820)
+		clock.advance(by: 0.2)
+		#expect(child.frame.width == 860)
+		#expect(child.resizes == 2)
+	}
+
 	@Test func theEndOfALiveResizeSnapsAtOnce() {
 		let clock = FakeClock()
 		let (container, child) = mount(clock: clock)

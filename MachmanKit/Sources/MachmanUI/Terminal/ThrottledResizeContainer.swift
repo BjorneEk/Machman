@@ -69,12 +69,16 @@ public final class ThrottledResizeContainer: NSView {
 	// Re-parents the terminal here. The explicit removeFromSuperview (rather than relying on
 	// addSubview's implicit move) and the immediate frame are belt and braces for the
 	// tab-to-window move: the new container may be sized after the fact, and a terminal left
-	// at 0×0 is indistinguishable from "gone".
+	// at 0×0 is indistinguishable from "gone". Adopting a terminal already here (every update
+	// of the mount) leaves a lag in progress to the throttle.
 	public func adopt(_ view: NSView) {
-		if view.superview !== self {
-			view.removeFromSuperview()
-			addSubview(view)
+		guard view.superview !== self else {
+			child = view
+			settleIfIdle()
+			return
 		}
+		view.removeFromSuperview()
+		addSubview(view)
 		child = view
 		if view.frame.size != bounds.size {
 			view.frame = bounds
@@ -102,9 +106,14 @@ public final class ThrottledResizeContainer: NSView {
 		sizeChanged()
 	}
 
-	// A child left mismatched with nothing pending (sized before it was adopted) is fixed now.
 	public override func layout() {
 		super.layout()
+		settleIfIdle()
+	}
+
+	// A child left mismatched with nothing pending (sized before it was adopted) is fixed now;
+	// one that lags behind a burst waits for the snap already armed.
+	private func settleIfIdle() {
 		guard !snapArmed, let held, held.frame.size != bounds.size else { return }
 		apply()
 	}
