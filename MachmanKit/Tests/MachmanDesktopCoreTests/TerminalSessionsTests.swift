@@ -86,4 +86,35 @@ struct TerminalSessionsTests {
 		#expect(serial.liveApplies == 1)
 		#expect(ssh.liveApplies == 0)
 	}
+
+	// MARK: - Reconnect (Q4: the tab's banner and the session inspector share it)
+
+	@Test func aDeadSessionReconnectsOnItsOwnController() async throws {
+		let vm = Samples.sshReadyLinux()
+		let h = await DesktopHarness.make([vm])
+		let arguments = try #require(SSHCommand.arguments(for: vm))
+		h.terminals.ensureSSHController(
+			vm: "Debian", ref: session, arguments: arguments, profile: h.profiles.defaultProfile)
+		#expect(await eventually { h.terminals.sshController(vm: "Debian", ref: session) != nil })
+		let fake = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		fake.disconnect()
+		#expect(h.terminals.reconnectSSHSession(vm: vm, ref: session, profiles: h.profiles))
+		#expect(fake.connected)
+		#expect(h.terminals.sshController(vm: "Debian", ref: session) === fake)
+	}
+
+	@Test func aSessionWithoutAnAddressStaysDown() async throws {
+		let vm = Samples.linux("Debian")
+		let h = await DesktopHarness.make([vm])
+		h.terminals.ensureSSHController(
+			vm: "Debian", ref: session, arguments: ["debian.machman"],
+			profile: h.profiles.defaultProfile)
+		#expect(await eventually { h.terminals.sshController(vm: "Debian", ref: session) != nil })
+		let fake = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		fake.disconnect()
+		#expect(!h.terminals.reconnectSSHSession(vm: vm, ref: session, profiles: h.profiles))
+		#expect(!fake.connected)
+	}
 }

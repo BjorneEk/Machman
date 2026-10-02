@@ -73,11 +73,7 @@ struct SSHSessionInspector: View {
 	}
 
 	private func reconnect() {
-		guard let arguments = SSHCommand.arguments(for: vm) else { return }
-		sessions.reconnectSSHSession(
-			vm: vm.name, ref: ref, arguments: arguments,
-			profile: sessions.sshSessionProfileID(vm: vm.name, ref: ref)
-				.flatMap { profiles.profile(id: $0) } ?? profiles.defaultProfile)
+		sessions.reconnectSSHSession(vm: vm, ref: ref, profiles: profiles)
 	}
 
 	private var profileBinding: Binding<UUID> {

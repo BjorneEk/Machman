@@ -201,6 +201,20 @@ public final class TerminalSessions: ObservableObject {
 		objectWillChange.send()
 	}
 
+	// The session's own reconnect, from its tab's banner and its inspector alike: the VM's
+	// current ssh argv and the session's own profile, else the default. False when the VM
+	// can't be reached over ssh yet (no address, user or key); nothing starts then.
+	@discardableResult
+	public func reconnectSSHSession(
+		vm: VMInfo, ref: SSHSessionRef, profiles: TerminalProfileStore
+	) -> Bool {
+		guard let arguments = SSHCommand.arguments(for: vm) else { return false }
+		let profile = sshSessionProfileID(vm: vm.name, ref: ref)
+			.flatMap { profiles.profile(id: $0) } ?? profiles.defaultProfile
+		reconnectSSHSession(vm: vm.name, ref: ref, arguments: arguments, profile: profile)
+		return true
+	}
+
 	// Drop every controller (and session name) of VMs that no longer exist. Per-port
 	// pruning is the canvas reconcile's job — it reports removed refs into drop.
 	public func reconcile(vms: [VMInfo]) {

@@ -17,4 +17,12 @@ extension Samples {
 				fraction: 0.25, completedBytes: 4 << 30, totalBytes: 16 << 30),
 			downloadStartedAt: now.addingTimeInterval(-120))
 	}
+
+	// A running Linux VM ssh can reach: address, user and key. Tests only: an SSH tab
+	// rendered with it would spawn /usr/bin/ssh.
+	public static func sshReadyLinux(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name, state: .running)
+		vm.ssh?.identityFilePath = "\(vmsRoot)/\(name)/ssh/id_ed25519"
+		return vm
+	}
 }
