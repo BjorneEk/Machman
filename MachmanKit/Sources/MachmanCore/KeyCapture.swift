@@ -315,8 +315,10 @@ final class KeyCaptureController {
 		case .toggleCapture:
 			toggle(cause: "⌃⌥⌘K")
 		case .toggleFullScreen:
-			// Outside the event dispatch: the transition runs its own event loop.
-			DispatchQueue.main.async { [weak window] in
+			// Outside the event dispatch: the transition runs its own event loop. A main-actor
+			// Task, not a plain GCD block, so MainRunLoopCallout sees the job and holds a prompt
+			// that comes due mid-transition until the transition ends.
+			Task { @MainActor [weak window] in
 				window?.toggleFullScreen(nil)
 			}
 		}
