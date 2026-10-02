@@ -92,7 +92,7 @@ struct InspectorIdentity: Hashable {
 struct NoSelectionInspector: View {
 	var body: some View {
 		VStack(spacing: 8) {
-			Image(systemName: MachmanSymbols.infoPanel)
+			Image(systemName: MachmanSymbols.inspectorToggle)
 				.font(.system(size: 26))
 				.foregroundStyle(.tertiary)
 			Text("No details for this selection")

@@ -30,26 +30,18 @@ public enum MachmanSymbols {
 
 	// MARK: - Generic actions
 	public static let add = "plus"
-	public static let addFilled = "plus.circle.fill"
 	public static let delete = "trash"
-	public static let browse = "folder.fill.badge.plus"
 	public static let copy = "doc.on.doc"
 	public static let copyDone = "checkmark"
 	public static let duplicateVM = "plus.square.on.square"
-	public static let cancel = "xmark.circle.fill"
 	public static let info = "info.circle"
 	// Opens a setup-guide sheet (the console Setup Guide button).
 	public static let help = "questionmark.circle"
-	// Reserved: rendered by the MAC-regenerate button (phase 3.2).
+	// Do it again: a new MAC address, address discovery, an SSH retry.
 	public static let regenerate = "arrow.clockwise"
 
 	// MARK: - Boot config
-	public static let bootDefaultTab = "gearshape"
 	public static let bootMacTab = "apple.logo"
-	public static let macOSInstalled = "apple.logo"
-	public static let kernelBootToggle = "bolt.fill"
-	public static let kernelCommandLine = "terminal.fill"
-	public static let macInstallDownload = "icloud.and.arrow.down"
 
 	// MARK: - Hardware
 	public static let cpu = "cpu.fill"
@@ -68,44 +60,23 @@ public enum MachmanSymbols {
 	// MARK: - Serial ports
 	public static let serialConsole = "terminal"
 	public static let serialUart = "cable.connector"
-	public static let serialPort = "rectangle.connected.to.line.below"
 	public static let saveToFile = "arrow.down.doc"
-	public static let serialConnect = "bolt.horizontal.circle"
-	public static let serialDisconnect = "bolt.horizontal.circle.fill"
-	// Serial detail tabs
-	public static let tabInfo = "info.circle"
+	// Canvas tabs and terminals
 	public static let tabTerminal = "terminal"
-	public static let tabAdvanced = "wrench.and.screwdriver"
-	// Per-VM tabbed pane
 	public static let tabConfig = "gearshape"
 	public static let closeTab = "xmark"
-	public static let infoPanel = "sidebar.right"
-	public static let terminalProfile = "paintpalette"
 	public static let reloadTerminal = "arrow.clockwise.circle"
-	// Sidebar disclosure chevrons
-	public static let disclosureCollapsed = "chevron.right"
-	public static let disclosureExpanded = "chevron.down"
 
-	// MARK: - History
-	public static let uptime = "clock"
-	public static let totalRuntime = "hourglass"
-	public static let lastUsed = "clock.arrow.circlepath"
-	public static let created = "calendar.badge.plus"
-
-	// MARK: - Start policy & safe mode (unsafe reserved: rendered by phase 6)
+	// MARK: - Safe mode
 	public static let safe = "shield.lefthalf.filled"
-	public static let unsafe = "shield.slash"
-	public static let autostart = "power.circle"
 
 	// MARK: - App chrome
 	public static let menuBarExtra = "desktopcomputer"
 	public static let daemonUnreachable = "bolt.horizontal.circle"
 
-	// MARK: - Overhaul additions (1.0.4 UI). Additive only: existing tokens keep their
-	// glyphs until the redesigned views that adopt new values land with them.
+	// MARK: - Overhaul additions (1.0.4 UI)
 	public static let vm = "desktopcomputer"            // tree root / picker rows
 	public static let shield = "shield"                 // outline for the safe-start glyph
-	public static let paste = "doc.on.clipboard"
 	public static let rename = "pencil"
 	public static let showInFinder = "arrow.up.forward.app"
 	public static let search = "magnifyingglass"
@@ -123,8 +94,7 @@ public enum MachmanSymbols {
 	public static let installDownload = "arrow.down.circle" // download-latest install
 	public static let installFromFile = "doc"           // install from an IPSW file
 	public static let newWindow = "macwindow.on.rectangle"
-	public static let sidebarToggle = "sidebar.left"
-	public static let inspectorToggle = "sidebar.right" // successor name for infoPanel
+	public static let inspectorToggle = "sidebar.right" // also the empty inspector's glyph
 	public static let activity = "clock.arrow.circlepath"   // toolbar activity list
 	public static let bootEFI = "gearshape.2"           // EFI boot-kind badge
 	public static let mount = "folder.fill"
@@ -132,7 +102,6 @@ public enum MachmanSymbols {
 	public static let automounted = "arrow.triangle.2.circlepath" // boot-automounted badge
 	public static let initramfs = "archivebox.fill"
 	public static let kernelFile = "doc.text"           // kernel-file drop preview row
-	public static let logging = "doc.text.below.ecg"
 
 	// Guest devices (mirrors MachmanCore/VMDevices assembly; SF has no trackpad/penguin —
 	// trackpad approximates, the kernel penguin is the custom TuxIcon view).
