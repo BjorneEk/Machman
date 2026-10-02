@@ -234,6 +234,8 @@ private struct NewDiskForm: View {
 				}
 				.buttonStyle(.plain)
 				.machmanHoverable()
+				.help("Back to the add menu")
+				.accessibilityLabel("Back")
 				Text("New Disk")
 					.font(.system(size: 12, weight: .semibold))
 				Spacer()

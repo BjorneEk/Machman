@@ -139,6 +139,8 @@ private struct VMPickerRow: View {
 			.menuIndicator(.hidden)
 			.frame(width: 22)
 			.opacity(hovering ? 1 : 0.35)
+			.help("Actions for \(vm.name)")
+			.accessibilityLabel("Actions for \(vm.name)")
 		}
 		.padding(.horizontal, 8)
 		.padding(.vertical, 5)
@@ -196,6 +198,8 @@ private struct NewVMTemplateView: View {
 				}
 				.buttonStyle(.plain)
 				.machmanHoverable()
+				.help("Back to the VM list")
+				.accessibilityLabel("Back")
 				Text("New VM")
 					.font(.system(size: 12, weight: .semibold))
 				Spacer()
