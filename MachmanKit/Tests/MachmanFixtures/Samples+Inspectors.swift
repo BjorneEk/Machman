@@ -130,4 +130,22 @@ extension Samples {
 		vm.ssh?.setupSharePath = "\(vmsRoot)/\(name)/share"
 		return vm
 	}
+
+	// A Linux guest whose disks have long labels: an image referenced from deep in iCloud
+	// Drive (labelled by its last two path components) and a long-named owned disk.
+	public static func linuxLongDiskNames(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name)
+		let image = "/Users/demo/Library/Mobile Documents/com~apple~CloudDocs/VM Images/"
+			+ "ubuntu-24.04.2-live-server-arm64-with-build-tools.img"
+		let scratch = "scratch-space-for-nightly-build-artifacts-and-their-caches"
+		vm.disks += [
+			DiskInfo(
+				id: "url:" + URL(fileURLWithPath: image).absoluteString, type: .image,
+				name: nil, path: image, sizeBytes: 20 << 30, owned: false),
+			DiskInfo(
+				id: "storage:\(scratch)", type: .storage, name: scratch,
+				path: "\(vmsRoot)/\(name)/\(scratch).raw", sizeBytes: 64 << 30, owned: true),
+		]
+		return vm
+	}
 }

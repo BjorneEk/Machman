@@ -96,6 +96,12 @@ enum PopoverScenes {
 			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel))
 		},
 		RenderScene(
+			"sheet.copy-vm.long-names", "CopyVMSheet, disks with long names and paths",
+			vms: { [Samples.linuxLongDiskNames()] }
+		) { ctx in
+			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
+		RenderScene(
 			"sheet.safe-save", "SafeSaveSheet, a running safe run",
 			vms: {
 				var vm = Samples.linux("Debian", state: .running)

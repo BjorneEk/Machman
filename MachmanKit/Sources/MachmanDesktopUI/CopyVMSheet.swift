@@ -51,6 +51,8 @@ struct CopyVMSheet: View {
 		VStack(alignment: .leading, spacing: 12) {
 			Text("Duplicate \(vm.name)")
 				.font(.headline)
+				.lineLimit(1)
+				.truncationMode(.middle)
 			TextField("New name", text: $newName)
 				.textFieldStyle(.roundedBorder)
 			if let problem {
@@ -71,7 +73,11 @@ struct CopyVMSheet: View {
 							includedDiskIDs.remove(disk.id)
 						}
 					})) {
+					// A long name or reference path truncates in the middle; the sheet keeps its width.
 					Text(disk.name ?? Self.shortPath(disk.path ?? "", 2))
+						.lineLimit(1)
+						.truncationMode(.middle)
+						.frame(maxWidth: .infinity, alignment: .leading)
 				}
 				.toggleStyle(.checkbox)
 				.help(disk.type == .storage
@@ -126,7 +132,7 @@ struct CopyVMSheet: View {
 			}
 		}
 		.padding(20)
-		.frame(minWidth: 380)
+		.frame(width: 400)
 	}
 
 	// Last `n` path components, for compact disk labels ("isos/debian.iso").
