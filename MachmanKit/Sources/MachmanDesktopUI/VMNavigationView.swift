@@ -192,22 +192,10 @@ public struct VMNavigationView: View {
 		}
 	}
 
-	// Quiet status line under the tree: daemon version + how much is running.
+	// Quiet status line under the tree: the agent's version + how much is running.
 	private var daemonFooter: some View {
-		let running = viewModel.vms.filter { $0.state.isRunning }.count
-		return HStack(spacing: 6) {
-			Circle()
-				.fill(MachmanColors.stateRunning)
-				.frame(width: 6, height: 6)
-			Text(daemonVersion.map { "Daemon \($0)" } ?? "Daemon")
-			Text("·").foregroundStyle(.tertiary)
-			Text("\(running) running")
-			Spacer()
-		}
-		.font(.caption)
-		.foregroundStyle(.secondary)
-		.padding(.horizontal, 12)
-		.padding(.vertical, 6)
+		AgentFooter(
+			version: daemonVersion, running: viewModel.vms.filter { $0.state.isRunning }.count)
 	}
 }
 

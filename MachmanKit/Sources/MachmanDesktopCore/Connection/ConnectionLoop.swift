@@ -160,6 +160,8 @@ public final class ConnectionLoop<Session: DaemonSession> {
 				resolving.remove(id)
 				_ = drops.take(id)
 				guard isLive(cycle) else { return }
+				// The screen says it in words; the log keeps the error, socket path and all.
+				MachmanLogger.log(.passiveWarning, "connect attempt \(attempt) failed: \(error)")
 				last = ConnectionProblem.classify(error)
 				switch last.kind {
 				case .incompatible:
@@ -232,8 +234,8 @@ public final class ConnectionLoop<Session: DaemonSession> {
 		guard quickDrops < policy.maxQuickDrops else {
 			finish(ConnectionProblem(
 				kind: .unreachable,
-				detail: "Machman Agent closed the connection right after connecting "
-					+ "\(quickDrops) times"))
+				detail: "It closed the connection right after connecting, \(quickDrops) "
+					+ "times in a row."))
 			return
 		}
 		startCycle(launched: false)
@@ -262,8 +264,8 @@ public final class ConnectionLoop<Session: DaemonSession> {
 }
 
 // A session that died between its connect and its attach.
-private struct ClosedWhileConnecting: Error, CustomStringConvertible {
-	var description: String { "Machman Agent closed the connection while connecting" }
+private struct ClosedWhileConnecting: Error, LocalizedError {
+	var errorDescription: String? { "It closed the connection while connecting." }
 }
 
 // Drops as sessions report them, recorded on the reporting thread: the attempt still vetting

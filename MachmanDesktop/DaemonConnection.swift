@@ -196,24 +196,19 @@ final class DaemonConnection: ObservableObject {
 		}
 		let embedded = Bundle.main.bundleURL
 			.appendingPathComponent("Contents/Library/LoginItems/MachmanAgent.app")
-		guard Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID else {
-			// Nothing newer to launch — explain instead of offering a dead end.
-			let alert = NSAlert()
-			alert.messageText = "Machman Agent is too old"
-			alert.informativeText = "The running daemon is version \(running); this app "
-				+ "needs \(Self.oldestCompatibleDaemonVersion) or newer, and no newer "
-				+ "Machman Agent is embedded in this app. Reinstall or rebuild."
-			alert.runModal()
-			return
-		}
+		let canReplace = Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID
+		let prompt = DaemonVersionPrompt.tooOld(
+			running: running, floor: Self.oldestCompatibleDaemonVersion, canReplace: canReplace)
 		let alert = NSAlert()
-		alert.messageText = "The running Machman Agent is too old"
-		alert.informativeText = "It is version \(running); this app needs "
-			+ "\(Self.oldestCompatibleDaemonVersion) or newer. Start the new one? Running "
-			+ "VMs keep running and are re-adopted."
-		alert.addButton(withTitle: "Replace")
-		alert.addButton(withTitle: "Not Now")
-		guard alert.runModal() == .alertFirstButtonReturn else {
+		alert.messageText = prompt.title
+		alert.informativeText = prompt.message
+		for title in prompt.buttons {
+			alert.addButton(withTitle: title)
+		}
+		let response = alert.runModal()
+		// Nothing newer to launch: the alert explained instead of offering a dead end.
+		guard canReplace else { return }
+		guard response == .alertFirstButtonReturn else {
 			MachmanLogger.log(.passiveWarning,
 				"daemon \(running) is below the floor "
 					+ "\(Self.oldestCompatibleDaemonVersion); newer features may fail")

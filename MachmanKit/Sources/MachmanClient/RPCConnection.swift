@@ -63,16 +63,28 @@ private final class SocketLifetime: @unchecked Sendable {
 }
 
 public actor RPCConnection {
-	public enum ConnectionError: Error, CustomStringConvertible {
+	// Every process links this (the desktop and the agent to the agent, the agent to its
+	// vmhosts), so neither text names the peer. The description, with the socket path, is
+	// for logs; the localized text is what a person reads.
+	public enum ConnectionError: Error, CustomStringConvertible, LocalizedError {
 		case connectFailed(String, Int32)
 		case disconnected
 
 		public var description: String {
 			switch self {
 			case .connectFailed(let path, let err):
-				return "cannot reach MachmanAgent at \(path): \(String(cString: strerror(err)))"
+				return "cannot connect to \(path): \(String(cString: strerror(err)))"
 			case .disconnected:
-				return "the daemon connection was lost"
+				return "the connection was lost"
+			}
+		}
+
+		public var errorDescription: String? {
+			switch self {
+			case .connectFailed(_, let err):
+				return "Can’t connect: \(String(cString: strerror(err)))"
+			case .disconnected:
+				return "The connection was lost"
 			}
 		}
 	}
@@ -250,12 +262,22 @@ public actor RPCConnection {
 		}
 	}
 
+	// The message reaches alerts and the connect screen, so it says how long without the
+	// method's wire name; the log keeps the method. Clients key on the timeout code.
 	private func expire(id: Int, method: RPCMethod, deadline: Duration) {
 		guard let call = pending.removeValue(forKey: id) else { return }
+		MachmanLogger.log(.passiveWarning,
+			"no reply to \(method.rawValue) after \(deadline) — the call was abandoned")
 		call.continuation.resume(throwing: MachmanError(
-			code: .timeout,
-			message: "no reply to \(method.rawValue) after "
-				+ "\(deadline.components.seconds)s — the serving process may be hung"))
+			code: .timeout, message: "No answer within \(Self.spoken(deadline))"))
+	}
+
+	// "300 ms", "1 second", "30 seconds".
+	static func spoken(_ deadline: Duration) -> String {
+		let (seconds, attoseconds) = deadline.components
+		guard seconds >= 1 else { return "\(attoseconds / 1_000_000_000_000_000) ms" }
+		let whole = seconds + (attoseconds >= 500_000_000_000_000_000 ? 1 : 0)
+		return whole == 1 ? "1 second" : "\(whole) seconds"
 	}
 
 	private func abandon(id: Int) {

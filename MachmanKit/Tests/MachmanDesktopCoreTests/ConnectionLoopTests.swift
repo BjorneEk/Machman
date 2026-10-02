@@ -56,7 +56,7 @@ struct ConnectionLoopTests {
 		loop.start()
 		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
 		#expect(loop.status == .unavailable(ConnectionProblem(
-			kind: .incompatible, detail: "daemon speaks api v2, client needs v1")))
+			kind: .incompatible, detail: "It speaks API version 2, and this app needs version 1.")))
 		#expect(connector.connects == 1)
 		#expect(connector.launches == 0)
 	}

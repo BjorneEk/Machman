@@ -4,8 +4,9 @@
 //
 //  The main window while the app has no agent connection: a spinner while the connect loop
 //  works and, once it stopped, what went wrong and what to do — the problem, a one-sentence
-//  remedy, the underlying error, and Retry (plus Launch Daemon when the agent isn't there at
-//  all). Stateless: the app's ConnectingView feeds it DaemonConnection's state.
+//  remedy, the cause in one sentence, and Retry (plus Launch Machman Agent when the agent
+//  isn't there at all). Stateless: the app's ConnectingView feeds it DaemonConnection's
+//  state.
 //
 
 import SwiftUI
@@ -84,7 +85,7 @@ public struct ConnectionStatusView: View {
 			// Launching helps only when nothing serves; a hung or other-version agent holds the
 			// socket, and a second one would just concede to it.
 			if problem.kind == .unreachable {
-				Button("Launch Daemon") { launchDaemon() }
+				Button("Launch Machman Agent") { launchDaemon() }
 			}
 			Button("Retry") { retry() }
 		}

@@ -9,6 +9,7 @@
 
 import SwiftUI
 import MachmanAPI
+import MachmanClient
 import MachmanUI
 import MachmanFixtures
 @testable import MachmanDesktopCore
@@ -401,6 +402,38 @@ enum WindowScenes {
 		) { _ in
 			connecting(.unavailable(ConnectionProblem(
 				kind: .incompatible, detail: "daemon speaks api v2, client needs v1")))
+		},
+		// W4: the connect screen's detail, as ConnectionProblem.classify words real errors.
+		RenderScene(
+			"window.connecting.unreachable.classified",
+			"ConnectionStatusView, a refused connect as the screen words it",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(.unavailable(ConnectionProblem.classify(
+				RPCConnection.ConnectionError.connectFailed(
+					"/var/empty/machman.sock", ECONNREFUSED))))
+		},
+		RenderScene(
+			"window.connecting.not-answering.classified",
+			"ConnectionStatusView, a timed-out hello as the screen words it",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(.unavailable(ConnectionProblem.classify(
+				MachmanError(code: .timeout, message: "No answer within 10 seconds"))))
+		},
+		RenderScene(
+			"window.connecting.incompatible.classified",
+			"ConnectionStatusView, an API mismatch as the screen words it",
+			widths: [480, 900], height: 420
+		) { _ in
+			connecting(.unavailable(ConnectionProblem.classify(
+				RemoteMachman.APIVersionMismatch(daemonAPI: 2, clientAPI: 3))))
+		},
+		RenderScene(
+			"sidebar.agent-footer", "AgentFooter, the agent's version and the running count",
+			widths: [220, 270]
+		) { _ in
+			AnyView(AgentFooter(version: "1.0.12", running: 2))
 		},
 		RenderScene("sidebar.tree", "VMDeviceTreeView", widths: [270], height: 760) { ctx in
 			tree(ctx)

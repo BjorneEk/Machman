@@ -126,7 +126,8 @@ struct RPCTimeoutTests {
 			Issue.record("expected a timeout")
 		} catch let error as MachmanError {
 			#expect(error.code == .timeout)
-			#expect(error.message.contains("vm.list"))
+			// Words, not the wire: the method name goes to the log only (W4).
+			#expect(error.message == "No answer within 300 ms")
 		}
 		#expect(disconnects.count == 0)
 

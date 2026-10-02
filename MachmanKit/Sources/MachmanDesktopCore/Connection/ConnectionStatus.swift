@@ -26,7 +26,9 @@ public struct ConnectionProblem: Equatable {
 	}
 
 	public var kind: Kind
-	public var detail: String   // the underlying error, as logged
+	// One sentence about the cause, in words ("It isn’t running."); the raw error, socket
+	// path and all, goes to the log at each failed attempt.
+	public var detail: String
 
 	public init(kind: Kind, detail: String) {
 		self.kind = kind
@@ -36,13 +38,13 @@ public struct ConnectionProblem: Equatable {
 	// What the connect screen says: the problem, then the one thing to do about it.
 	public var title: String {
 		switch kind {
-		case .unreachable: return "Can't reach Machman Agent"
+		case .unreachable: return "Can’t reach Machman Agent"
 		case .notAnswering: return "Machman Agent is not answering"
 		case .incompatible: return "The running Machman Agent is a different version"
 		}
 	}
 
-	// nil when the screen's own Launch Daemon and Retry buttons say it all.
+	// nil when the screen's own Launch Machman Agent and Retry buttons say it all.
 	public var hint: String? {
 		switch kind {
 		case .unreachable:
@@ -55,17 +57,29 @@ public struct ConnectionProblem: Equatable {
 		}
 	}
 
+	// The detail is a caption under the title, about the agent the title names ("It …").
 	public static func classify(_ error: Error) -> ConnectionProblem {
 		switch error {
 		case let mismatch as RemoteMachman.APIVersionMismatch:
-			return ConnectionProblem(kind: .incompatible, detail: mismatch.description)
+			return ConnectionProblem(
+				kind: .incompatible,
+				detail: "It speaks API version \(mismatch.daemonAPI), and this app needs "
+					+ "version \(mismatch.clientAPI).")
 		case let error as MachmanError where error.code == .timeout:
-			return ConnectionProblem(kind: .notAnswering, detail: error.message)
+			return ConnectionProblem(
+				kind: .notAnswering, detail: "It accepted the connection but didn’t answer.")
 		case let error as MachmanError:
 			return ConnectionProblem(kind: .unreachable, detail: error.message)
+		case RPCConnection.ConnectionError.connectFailed(_, let err):
+			// No socket, or nothing listening on it: the agent isn't there.
+			let detail = err == ENOENT || err == ECONNREFUSED
+				? "It isn’t running." : "\(String(cString: strerror(err)))."
+			return ConnectionProblem(kind: .unreachable, detail: detail)
+		case RPCConnection.ConnectionError.disconnected:
+			return ConnectionProblem(
+				kind: .unreachable, detail: "The connection closed before it answered.")
 		default:
-			// RPCConnection.ConnectionError (connect refused, connection lost) and anything
-			// unforeseen: the agent is, as far as this client can tell, not there.
+			// Anything unforeseen: the agent is, as far as this client can tell, not there.
 			return ConnectionProblem(
 				kind: .unreachable, detail: MachmanError.userMessage(for: error))
 		}
