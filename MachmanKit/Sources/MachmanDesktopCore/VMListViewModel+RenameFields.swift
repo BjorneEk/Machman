@@ -49,10 +49,7 @@ extension VMListViewModel {
 		let name = rule.trimmed(draft)
 		guard name != vm.disks.first(where: { $0.id == diskID })?.name else { return nil }
 		if let problem = rule.problem(name) { return problem }
-		if vm.disks.contains(where: { $0.type == .storage && $0.id != diskID && $0.name == name }) {
-			return "This VM already has a disk named \u{201C}\(name)\u{201D}"
-		}
-		return nil
+		return Self.diskNameProblem(name, on: vm, except: diskID)
 	}
 
 	// The disk Name field's Return: false (nothing sent) while the draft has a problem, is

@@ -27,9 +27,7 @@ extension VMListViewModel {
 		let rule = NameRule.diskName
 		let trimmed = rule.trimmed(name)
 		if let problem = rule.problem(trimmed) { return problem }
-		if vm.disks.contains(where: { $0.type == .storage && $0.name == trimmed }) {
-			return "This VM already has a disk named \u{201C}\(trimmed)\u{201D}"
-		}
+		if let taken = Self.diskNameProblem(trimmed, on: vm) { return taken }
 		if sizeText.trimmingCharacters(in: .whitespaces).isEmpty {
 			return "Enter a size in GB"
 		}
@@ -40,6 +38,15 @@ extension VMListViewModel {
 			return "Only \(ByteSize.display(free)) is free"
 		}
 		return nil
+	}
+
+	// Storage disk names are unique per VM (decision 5): the one check New Disk and a disk's
+	// Name field share. `except` is the disk being renamed, whose own name is no clash.
+	static func diskNameProblem(
+		_ name: String, on vm: VMInfo, except diskID: String? = nil
+	) -> String? {
+		let taken = vm.disks.contains { $0.type == .storage && $0.id != diskID && $0.name == name }
+		return taken ? "This VM already has a disk named \u{201C}\(name)\u{201D}" : nil
 	}
 
 	// Sends the disk the form shows as valid; false (nothing sent) while it has a problem.
