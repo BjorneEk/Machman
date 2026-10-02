@@ -338,10 +338,10 @@ running shadow into a real VM (see the method table). The disks the run attached
 (switching one off mid-run does not detach it) move into the saved VM's folder as its own;
 the original lists them as references into that folder, so the saved VM cannot be deleted
 or renamed, nor those disks removed or renamed, while the original uses them. A save that
-fails is undone; if a moved disk cannot go back, the saved VM stays in the library holding
-it, both VMs' configs say where each disk is, and the daemon lists it at once. Until the
-promoted VM reboots onto its fresh MAC, starting the ORIGINAL requires `force`
-(macConflict). Safe runs survive
+fails is undone; if the saved folder or a moved disk cannot go back, the saved VM stays in
+the library with a machine identity of its own, both VMs' configs say where each disk is,
+and the daemon lists it at once. Until the promoted VM reboots onto its fresh MAC, starting
+the ORIGINAL requires `force` (macConflict). Safe runs survive
 daemon restarts (the daemon re-attaches by matching the shadow's recorded vmhost pid
 against the socket peer) and reset on host reboot.
 

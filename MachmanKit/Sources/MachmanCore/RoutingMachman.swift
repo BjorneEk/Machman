@@ -1958,9 +1958,9 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	// A save the vmhost could neither finish nor wholly undo (a moved disk, or the saved
-	// folder, could not go back) leaves the saved VM in the library, and for a stranded disk
-	// the vmhost rewrote both VMs' configs to say where it is. List them as they are now, not
-	// after the next daemon start. Internal so tests can run it under the redirect lock.
+	// folder, could not go back) leaves the saved VM in the library, and the vmhost rewrote
+	// the configs to say where each disk is. List them as they are now, not after the next
+	// daemon start. Internal so tests can run it under the redirect lock.
 	func listHalfSavedVM(
 		_ newName: String, from name: String, savedConfig: String, existedBefore: Bool
 	) {

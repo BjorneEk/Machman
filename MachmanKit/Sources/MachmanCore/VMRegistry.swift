@@ -398,17 +398,22 @@ public final class VMRegistry {
 			snapshot.restore(vm.config)
 			machmanVMDir = runRoot
 			// A disk that could not go back keeps the saved folder in the library, where its
-			// config lists it: the run root is deleted when the run ends. Both configs then
-			// say where each disk is, so the guards keep the folder while the original uses it.
-			if !stranded.isEmpty {
-				DirectDiskMove.settleStranded(
-					stranded, of: moves, originalDir: originalDir, savedDir: destination)
-				MachmanLogger.log(.passiveError,
-					"Save as New VM failed half-way: \(newName) stays in the library with the "
-						+ "disks that could not go back to \(oldName)")
-			} else if restore(destination, to: shadow) {
+			// config lists it: the run root is deleted when the run ends. So does a folder
+			// whose own way back fails. Either way the saved VM stays a VM of its own: both
+			// configs say where each disk is, so the guards keep the folder while the original
+			// uses it, and it never boots as the original's machine.
+			if stranded.isEmpty, restore(destination, to: shadow) {
 				try? shadowConfig?.write(
 					to: URL(fileURLWithPath: shadow + "/config"), options: .atomic)
+			} else {
+				DirectDiskMove.settleStranded(
+					stranded, of: moves, originalDir: originalDir, savedDir: destination)
+				Self.mintMachineIdentity(in: destination, boot: vm.config.boot)
+				MachmanLogger.log(.passiveError,
+					"Save as New VM failed half-way: \(newName) stays in the library "
+						+ (stranded.isEmpty
+							? "because its folder could not go back"
+							: "with the disks that could not go back to \(oldName)"))
 			}
 			throw error
 		}
@@ -416,10 +421,7 @@ public final class VMRegistry {
 		vms[oldName] = nil
 		vms[newName] = vm
 		presenter.rekey(from: oldName, to: newName)
-		try? FileManager.default.removeItem(atPath: destination + "/vm_identifier")
-		if case .macOS = vm.config.boot {
-			try? VMConfig.mintMacMachineIdentifier(at: destination + "/mac_machine_id")
-		}
+		Self.mintMachineIdentity(in: destination, boot: vm.config.boot)
 		// With the pin reset this just drops the traveled known_hosts, which was keyed to
 		// the source's alias; the next guest report re-pins under the new alias.
 		SSHSetupInstaller.writeKnownHosts(for: vm.config)
@@ -430,6 +432,15 @@ public final class VMRegistry {
 		}
 		onPromoted?(oldName, newName)
 		return vm
+	}
+
+	// A saved VM's own machine, vm.copy's rule: its identifier is recreated at the next boot
+	// and a macOS VM gets a fresh machine id. The running guest keeps the one it booted with.
+	private static func mintMachineIdentity(in dir: String, boot: BootConfig) {
+		try? FileManager.default.removeItem(atPath: dir + "/vm_identifier")
+		if case .macOS = boot {
+			try? VMConfig.mintMacMachineIdentifier(at: dir + "/mac_machine_id")
+		}
 	}
 
 	// One exclusive rename for Save as New VM, or the save's error for it.

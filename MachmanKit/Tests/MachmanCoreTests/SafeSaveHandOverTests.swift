@@ -294,6 +294,51 @@ struct SafeSaveHandOverTests {
 		}
 	}
 
+	// The same when the saved folder's own way back fails: every disk went home, so kept
+	// references them there and alpha's config stays as it was, and kept is a machine of
+	// its own — no identifier of alpha's, a fresh macOS machine id.
+	@Test @MainActor func aFolderThatCannotGoBackStaysAVMOfItsOwn() throws {
+		try VMTestDir.withRedirectedDir {
+			let host = try SafeRunFixture.make(disks: [unsafe("a"), unsafe("b")])
+			defer { host.removeLibrary() }
+			let vm = try #require(host.registry.vm(named: "alpha"))
+			vm.config.boot = .macOS(MacOSBoot(
+				installState: .installed, minimumCPUCount: 2, minimumMemorySize: 2048))
+			let shadow = host.shadowDir
+			let sourceID = Data("alpha's machine".utf8)
+			try sourceID.write(to: url(shadow + "/mac_machine_id"))
+			try Data("vmid".utf8).write(to: url(shadow + "/vm_identifier"))
+			let original = host.originalDir
+			let originalConfig = bytes(original + "/config")
+			let rename = host.registry.renameExclusive
+			host.registry.renameExclusive = { from, to in
+				if from.hasSuffix("/b.raw") || to == shadow { return EIO }
+				return rename(from, to)
+			}
+
+			#expect(throws: MachmanError.self) { try host.registry.promoteRestrictedVM(to: "kept") }
+			let kept = host.library + "/kept"
+			#expect(!FileManager.default.fileExists(atPath: shadow))
+			#expect(contents(original + "/a.raw") == "raw-a")   // moved, then back
+			#expect(contents(original + "/b.raw") == "raw-b")
+			#expect(try SafeRunFixture.load(kept).disks == [
+				VMDisk(kind: .fromUrl(url(original + "/a.raw")), safe: false),
+				VMDisk(kind: .fromUrl(url(original + "/b.raw")), safe: false),
+			])
+			#expect(bytes(original + "/config") == originalConfig)
+			#expect(!FileManager.default.fileExists(atPath: kept + "/vm_identifier"))
+			let minted = try #require(bytes(kept + "/mac_machine_id"))
+			#expect(minted != sourceID)
+			// The daemon's view of the library: kept uses alpha's disks, so alpha stays put.
+			machmanVMDir = host.library
+			let daemon = VMRegistry()
+			let error = try #require(throws: MachmanError.self) {
+				try daemon.delete(try #require(daemon.vm(named: "alpha")))
+			}
+			#expect(error.message.contains("kept uses a.raw from alpha's folder"))
+		}
+	}
+
 	// Afterwards, in the daemon's registry: the saved VM is protected while the original
 	// uses its disk; the original goes freely and leaves the disk with the saved VM.
 	@Test @MainActor func theSavedVMIsProtectedAndTheOriginalIsFree() throws {

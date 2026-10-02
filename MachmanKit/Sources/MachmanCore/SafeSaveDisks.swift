@@ -82,11 +82,12 @@ extension DirectDiskMove {
 }
 
 extension DirectDiskMove {
-	// A failed save that left disks in the saved VM's folder (their way back failed): each
-	// config says where every planned disk is now. The saved VM owns the stranded ones and
-	// references the rest in the original's folder again, as the run did; the original
-	// references the stranded ones. No disk drops out of both configs, and the cross-VM
-	// guards keep the saved VM's folder while the original uses it. A config that cannot
+	// A failed save that left the saved VM in the library — a disk's way back failed and
+	// stranded it in the saved VM's folder, or the folder's own did: each config says where
+	// every planned disk is now. The saved VM owns the stranded ones and references the rest
+	// in the original's folder again, as the run did; the original references the stranded
+	// ones (with none stranded, its config is as before). No disk drops out of both configs,
+	// and the cross-VM guards keep whichever folder the other VM uses. A config that cannot
 	// be written is named.
 	static func settleStranded(
 		_ stranded: [DirectDiskMove], of moves: [DirectDiskMove],
@@ -94,6 +95,7 @@ extension DirectDiskMove {
 	) {
 		let back = moves.filter { !stranded.contains($0) }
 		rewriteConfig(in: savedDir) { $0.returnMovedDisks(back, to: originalDir) }
+		guard !stranded.isEmpty else { return }
 		rewriteConfig(in: originalDir) { $0.referenceMovedDisks(stranded, in: savedDir) }
 	}
 
