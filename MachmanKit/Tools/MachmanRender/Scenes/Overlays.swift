@@ -113,5 +113,18 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		// W3: a boot warning names its VM once, from a current daemon and from an older one.
+		RenderScene(
+			"overlay.toasts.boot-warning",
+			"NotificationOverlay: boot warnings from a current and an older daemon",
+			widths: [420, 900], height: 300
+		) { ctx in
+			ctx.stub.emit(.log(vm: "Debian", level: .warning, message: Samples.bootWarning))
+			ctx.stub.emit(.log(
+				vm: "Alpine", level: .warning, message: Samples.olderDaemonBootWarning("Alpine")))
+			Offscreen.pump(until: { ctx.viewModel.toasts.count == 2 })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }

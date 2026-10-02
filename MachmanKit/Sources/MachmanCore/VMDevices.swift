@@ -75,6 +75,7 @@ extension VMConfig {
 	// The devices that actually attach at this start: the configured list minus disabled
 	// entries (silently honored — that's what disabling means) minus entries this host or
 	// boot mode cannot carry (warned, so the user learns the VM started with fewer devices).
+	// A warning is one sentence without the VM's name: the desktop shows it as "<VM>: …".
 	func resolvedDevices() -> (attach: [DeviceKind: GuestDevice], warnings: [String]) {
 		var attach: [DeviceKind: GuestDevice] = [:]
 		var warnings: [String] = []
@@ -84,21 +85,20 @@ extension VMConfig {
 			switch device.deviceKind {
 			case .unknown:
 				warnings.append(
-					"skipping unknown device '\(device.kind)' on \(name) "
-						+ "(written by a newer Machman)")
+					"A newer Machman added the device \u{201C}\(device.kind)\u{201D}, so it "
+						+ "isn’t attached.")
 			case .trackpad where !macGuest:
-				warnings.append("skipping trackpad on \(name): it needs a macOS guest")
+				warnings.append("The Mac trackpad needs a macOS guest, so it isn’t attached.")
 			case .consoleLoginInstaller where !macGuest:
-				warnings.append(
-					"skipping the console login installer on \(name): it needs a macOS guest")
+				warnings.append("Console Login needs a macOS guest, so it isn’t attached.")
 			case .clipboard where macGuest:
 				warnings.append(
-					"skipping clipboard sharing on \(name): not supported for macOS guests")
+					"Clipboard sharing isn’t supported for macOS guests, so it isn’t attached.")
 			case .rosetta where macGuest:
-				warnings.append("skipping rosetta on \(name): not supported for macOS guests")
-			case .rosetta where VZLinuxRosettaDirectoryShare.availability != .installed:
 				warnings.append(
-					"skipping rosetta on \(name): Rosetta is not installed on this host")
+					"Rosetta isn’t supported for macOS guests, so it isn’t attached.")
+			case .rosetta where VZLinuxRosettaDirectoryShare.availability != .installed:
+				warnings.append("Rosetta isn’t installed on this Mac, so it isn’t attached.")
 			case let kind:
 				attach[kind] = device
 			}
@@ -327,7 +327,7 @@ extension VMConfig {
 					VZSharedDirectory(url: report, readOnly: false)
 			} catch {
 				warnings.append(
-					"skipping the guest setup on \(name): \(error.localizedDescription)")
+					"Guest Setup isn’t attached: \(MachmanError.userMessage(for: error))")
 			}
 		}
 		var shares: [VZDirectorySharingDeviceConfiguration] =
@@ -336,7 +336,8 @@ extension VMConfig {
 			do {
 				shares.append(try rosettaShareDeviceConfig())
 			} catch {
-				warnings.append("skipping rosetta on \(name): \(error.localizedDescription)")
+				warnings.append(
+					"Rosetta isn’t attached: \(MachmanError.userMessage(for: error))")
 			}
 		}
 		vmConfig.directorySharingDevices = shares
@@ -346,8 +347,8 @@ extension VMConfig {
 				generic.isNestedVirtualizationEnabled = true
 			} else {
 				warnings.append(
-					"skipping nested virtualization on \(name): "
-						+ "not supported for this host or boot mode")
+					"Nested virtualization isn’t supported on this Mac or for this boot mode, "
+						+ "so it’s off.")
 			}
 		}
 		do {

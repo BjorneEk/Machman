@@ -490,7 +490,7 @@ public final class VMListViewModel: ObservableObject {
 			if level == .warning || level == .error {
 				// Keyed by its text: a warning repeated while its toast shows restarts that
 				// toast instead of stacking another copy (P15).
-				let text = "\(vm.map { "\($0): " } ?? "")\(message)"
+				let text = Self.engineLogText(vm: vm, message: message)
 				pushToast(
 					symbol: MachmanSymbols.warning, message: text, tint: MachmanColors.warning,
 					key: Self.logToastKey(text))

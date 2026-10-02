@@ -22,4 +22,14 @@ extension Samples {
 				+ "installation.")
 		return vm
 	}
+
+	// A boot-time warning as the engine words it now: one sentence, without the VM's name
+	// (the desktop shows "<VM>: …"), from VMDevices.resolvedDevices.
+	public static let bootWarning =
+		"The Mac trackpad needs a macOS guest, so it isn’t attached."
+
+	// The same kind of warning from a 1.0.12 daemon, which started with the VM's name.
+	public static func olderDaemonBootWarning(_ vm: String) -> String {
+		"\(vm) has no display device \u{2014} started headless"
+	}
 }

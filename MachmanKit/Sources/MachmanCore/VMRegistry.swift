@@ -54,6 +54,9 @@ public final class VirtualMachine: NSObject, Identifiable {
 
 @MainActor
 public final class VMRegistry {
+	// A windowed start of a display-less VM (a warning: the desktop shows "<VM>: …").
+	nonisolated static let headlessStartWarning = "It has no display, so it started headless."
+
 	let events = EventBus()
 	let presenter = WindowPresenter()
 	private(set) var vms: [String: VirtualMachine] = [:]
@@ -219,8 +222,7 @@ public final class VMRegistry {
 				// A windowed start of a display-less VM starts headless and says so —
 				// the configured preference is preserved, not silently rewritten.
 				events.emit(.log(
-					vm: vm.config.name, level: .warning,
-					message: "\(vm.config.name) has no display device — started headless"))
+					vm: vm.config.name, level: .warning, message: Self.headlessStartWarning))
 			} else {
 				presenter.openWindow(name: vm.config.name, vz: vz)
 			}

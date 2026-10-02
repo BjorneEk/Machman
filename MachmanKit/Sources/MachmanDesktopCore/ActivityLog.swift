@@ -67,7 +67,7 @@ public struct ActivityEntry: Identifiable, Equatable, Sendable, Codable {
 	public static func engineLog(
 		vm: String?, level: LogLevel, message: String, at date: Date
 	) -> ActivityEntry {
-		let text = "\(vm.map { "\($0): " } ?? "")\(message)"
+		let text = VMListViewModel.engineLogText(vm: vm, message: message)
 		return ActivityEntry(
 			key: VMListViewModel.logToastKey(text), date: date, vm: vm,
 			title: vm ?? "Machman", detail: message, symbol: MachmanSymbols.warning,
