@@ -129,8 +129,10 @@ struct RoutingAdoptionTests {
 		defer { host.close() }
 
 		var alpha: VMInfo?
+		// The loop ends at the first list that says so; the bound only has to stay under the
+		// 10 s default hello deadline, which an adoption ignoring the 200 ms one would wait out.
 		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: .seconds(3))
+		let deadline = clock.now.advanced(by: .seconds(8))
 		while clock.now < deadline {
 			alpha = try await routing.listVMs().first { $0.name == "alpha" }
 			if alpha?.unresponsive == true { break }
