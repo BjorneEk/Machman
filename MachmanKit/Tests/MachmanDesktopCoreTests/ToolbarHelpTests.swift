@@ -47,7 +47,8 @@ struct ToolbarHelpTests {
 			== "The VM starts without a window")
 		var running = Samples.linux("Debian", state: .running)
 		running.windowOpen = true
-		#expect(VMListViewModel.windowToggleHelp(running) == "Close Window — the VM keeps running")
+		#expect(VMListViewModel.windowToggleHelp(running)
+			== "Close Window — the VM keeps running")
 		running.windowOpen = false
 		#expect(VMListViewModel.windowToggleHelp(running) == "Open Window")
 	}
