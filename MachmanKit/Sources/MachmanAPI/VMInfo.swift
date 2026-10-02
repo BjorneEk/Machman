@@ -45,6 +45,10 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 	// (E20): the rest of the entry is its last answer, or the daemon's config copy with state
 	// unknown. nil = answering, or an older daemon.
 	public var unresponsive: Bool?
+	// Set by the daemon only, and only while this VM runs under a vmhost older than the
+	// daemon (E22, 1.0.12): its setting changes are refused until it restarts. nil = current,
+	// or an older daemon.
+	public var outdatedHost: Bool?
 
 	public var id: String { name }
 	public var isUnresponsive: Bool { unresponsive == true }
@@ -57,7 +61,8 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		totalRuntimeSeconds: Double? = nil,
 		consolePorts: [SerialPortInfo]? = nil, uartPorts: [SerialPortInfo]? = nil,
 		devices: [DeviceInfo]? = nil, nestedVirtualization: Bool? = nil,
-		ssh: SSHInfo? = nil, setup: GuestSetupInfo? = nil, unresponsive: Bool? = nil
+		ssh: SSHInfo? = nil, setup: GuestSetupInfo? = nil, unresponsive: Bool? = nil,
+		outdatedHost: Bool? = nil
 	) {
 		self.name = name
 		self.state = state
@@ -80,6 +85,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.ssh = ssh
 		self.setup = setup
 		self.unresponsive = unresponsive
+		self.outdatedHost = outdatedHost
 	}
 
 	// Hand-written decode so payloads predating the optional fields (and clients that omit
@@ -109,6 +115,7 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 		self.ssh = try c.decodeIfPresent(SSHInfo.self, forKey: .ssh)
 		self.setup = try c.decodeIfPresent(GuestSetupInfo.self, forKey: .setup)
 		self.unresponsive = try c.decodeIfPresent(Bool.self, forKey: .unresponsive)
+		self.outdatedHost = try c.decodeIfPresent(Bool.self, forKey: .outdatedHost)
 	}
 }
 

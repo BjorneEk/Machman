@@ -88,6 +88,10 @@ public final class RoutingMachman: MachmanControlling {
 		// the run attached — so they survive its re-keying.
 		var unattachedDisks: Set<String>?
 
+		// What the vmhost answered hello with: "<its own bundle version>-vmhost" since 1.0.12;
+		// an older one echoed the spawning daemon's version, or "dev" under a launch agent.
+		var version: String { client.hello.daemonVersion }
+
 		init(
 			identity: HostIdentity, client: RemoteMachman,
 			app: NSRunningApplication?, deathWatch: NSKeyValueObservation?
@@ -634,6 +638,11 @@ public final class RoutingMachman: MachmanControlling {
 		let host = HostedVM(identity: identity, client: client, app: nil, deathWatch: nil)
 		hosted[identity.name] = host
 		subscribeEvents(host)
+		if isOutdated(host) {
+			MachmanLogger.log(.passiveWarning,
+				"\(identity.name)'s vmhost runs \(host.version), older than this daemon's "
+					+ "\(daemonVersion) — its settings are locked until it restarts")
+		}
 		// Adopted hosts are already running and may never emit another stateChanged —
 		// this is how discovery (daemon memory) survives a daemon restart mid-run.
 		startSSHDiscovery(host)
@@ -884,6 +893,26 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
+	// E22 (decision 9): a vmhost older than this daemon runs old code — its decoder drops
+	// config keys this daemon's clients rely on. Its VM keeps running, stops and opens its
+	// window as before, but its setting changes are refused until it restarts under a
+	// current vmhost. The floor is this daemon's own version (the version pair moves only
+	// for changes an old+new mix can't take). A vmhost that reports no usable version counts
+	// as older; a daemon without one of its own (tests, an unversioned build) has no floor.
+	func isOutdated(_ host: HostedVM) -> Bool {
+		MachmanVersion.isOlder(host.version, than: daemonVersion)
+	}
+
+	// The owner of a setting change: proxy()'s, refused while it is an outdated vmhost.
+	private func settingsOwner(_ name: String) async throws -> MachmanControlling {
+		let target = try await proxy(name)
+		if let host = hosted[name], isOutdated(host) {
+			throw MachmanError(
+				code: .invalidState, message: "restart \(name) to finish updating")
+		}
+		return target
+	}
+
 	// Whole-VM edits the framework fixes at start (files moved, ports, MAC) refuse rather
 	// than proxy unless the VM is stopped — and stopped means no start in flight and no
 	// vmhost answering on its socket either, whether this daemon adopted it or not.
@@ -1019,6 +1048,7 @@ public final class RoutingMachman: MachmanControlling {
 			info.state = .unknown
 		}
 		info.unresponsive = host.unresponsive ? true : nil
+		info.outdatedHost = isOutdated(host) ? true : nil
 		if host.identity.isSafe { info.safeRun = true }
 		overlaySSH(&info, from: host)
 		return info
@@ -1134,7 +1164,7 @@ public final class RoutingMachman: MachmanControlling {
 	public func setHardware(
 		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
 	) async throws {
-		try await proxy(name).setHardware(
+		try await settingsOwner(name).setHardware(
 			vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
 			nestedVirtualization: nestedVirtualization)
 	}
@@ -1158,7 +1188,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
-		try await proxy(name).addDisk(vm: name, disk)
+		try await settingsOwner(name).addDisk(vm: name, disk)
 	}
 
 	public func removeDisk(vm name: String, diskID: String) async throws {
@@ -1172,7 +1202,7 @@ public final class RoutingMachman: MachmanControlling {
 	// external file no attachment references, the owned image is NEW, and the config
 	// addition is the hosted vmhost's to make (next-boot effect, like addDisk/addMount).
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
-		try await proxy(name).importDisk(vm: name, path: path)
+		try await settingsOwner(name).importDisk(vm: name, path: path)
 	}
 
 	// Refused while hosted, not proxied or deferred: the copy reads an image the live VZ
@@ -1184,11 +1214,11 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
-		try await proxy(name).addMount(vm: name, path: path, tag: tag, kind: kind)
+		try await settingsOwner(name).addMount(vm: name, path: path, tag: tag, kind: kind)
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
-		try await proxy(name).removeMount(vm: name, mountID: mountID)
+		try await settingsOwner(name).removeMount(vm: name, mountID: mountID)
 	}
 
 	// Serial ports are fixed at VM start, so add/remove is refused while hosted (like MAC), but
@@ -1216,31 +1246,32 @@ public final class RoutingMachman: MachmanControlling {
 	public func setSerialLogging(
 		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
 	) async throws {
-		try await proxy(name).setSerialLogging(vm: name, kind: kind, index: index, config: config)
+		try await settingsOwner(name).setSerialLogging(
+			vm: name, kind: kind, index: index, config: config)
 	}
 
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
-		try await proxy(name).setKernelBoot(vm: name, enabled: enabled)
+		try await settingsOwner(name).setKernelBoot(vm: name, enabled: enabled)
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
-		try await proxy(name).updateKernelSettings(vm: name, settings)
+		try await settingsOwner(name).updateKernelSettings(vm: name, settings)
 	}
 
 	public func promoteKernelFile(
 		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
-		try await proxy(name).promoteKernelFile(
+		try await settingsOwner(name).promoteKernelFile(
 			vm: name, role: role, sourcePath: sourcePath, tag: tag)
 	}
 
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
-		try await proxy(name).deleteKernelFile(vm: name, path: path)
+		try await settingsOwner(name).deleteKernelFile(vm: name, path: path)
 	}
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
-		let target = try await proxy(name)
+		let target = try await settingsOwner(name)
 		// Policy has a daemon-side launchd side effect that must never reconcile against a
 		// discardable shadow write — refuse rather than half-apply.
 		if let host = hosted[name], host.identity.isSafe {
@@ -1268,28 +1299,28 @@ public final class RoutingMachman: MachmanControlling {
 	public func setSafety(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
 	) async throws {
-		try await proxy(name).setSafety(vm: name, disks: disks, mounts: mounts)
+		try await settingsOwner(name).setSafety(vm: name, disks: disks, mounts: mounts)
 	}
 
 	// MARK: - Guest devices (1.0.4) — config-plane edits proxy like disks (next-boot effect).
 
 	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		try await proxy(name).addDevice(vm: name, kind: kind)
+		try await settingsOwner(name).addDevice(vm: name, kind: kind)
 	}
 
 	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		try await proxy(name).removeDevice(vm: name, kind: kind)
+		try await settingsOwner(name).removeDevice(vm: name, kind: kind)
 	}
 
 	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
-		try await proxy(name).updateDevice(vm: name, device: device)
+		try await settingsOwner(name).updateDevice(vm: name, device: device)
 	}
 
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
 		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
 	) async throws {
-		try await proxy(name).setEnabled(
+		try await settingsOwner(name).setEnabled(
 			vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
 			devices: devices)
 	}
@@ -1297,7 +1328,7 @@ public final class RoutingMachman: MachmanControlling {
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {
-		try await proxy(name).setKernelOverride(
+		try await settingsOwner(name).setKernelOverride(
 			vm: name, path: path, commandLine: commandLine, overrideEnabled: overrideEnabled)
 	}
 
@@ -1316,12 +1347,12 @@ public final class RoutingMachman: MachmanControlling {
 	public func setMountTag(vm name: String, mountID: String, tag: String) async throws
 		-> VMInfo {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
-		try await proxy(name).setMountTag(vm: name, mountID: mountID, tag: tag)
+		try await settingsOwner(name).setMountTag(vm: name, mountID: mountID, tag: tag)
 	}
 	public func setMountKind(vm name: String, mountID: String, kind: String) async throws
 		-> VMInfo {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
-		try await proxy(name).setMountKind(vm: name, mountID: mountID, kind: kind)
+		try await settingsOwner(name).setMountKind(vm: name, mountID: mountID, kind: kind)
 	}
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
 		-> VMInfo {
@@ -1348,7 +1379,7 @@ public final class RoutingMachman: MachmanControlling {
 		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
 		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
-		let target = try await proxy(name)
+		let target = try await settingsOwner(name)
 		try refuseSSHWhileSafe(name)
 		// Uniqueness is checkable only here: a vmhost sees exactly one VM, and two VMs
 		// sharing a Host name would make `ssh <alias>` reach whichever block came first.
@@ -1390,7 +1421,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func resetSSH(vm name: String) async throws -> VMInfo {
-		let target = try await proxy(name)
+		let target = try await settingsOwner(name)
 		try refuseSSHWhileSafe(name)
 		let marker = existingSSHMarker(name)
 		let info = try await target.resetSSH(vm: name)
@@ -1405,13 +1436,13 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func resetSetup(vm name: String) async throws -> VMInfo {
 		// Config-plane only (no daemon-side effects) — plain proxy, like device edits.
-		try await proxy(name).resetSetup(vm: name)
+		try await settingsOwner(name).resetSetup(vm: name)
 	}
 
 	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
 		// Routed to the vmhost while running: it owns the config there AND does the
 		// live fill when serving turns on.
-		try await proxy(name).setSetupServed(vm: name, serve: serve)
+		try await settingsOwner(name).setSetupServed(vm: name, serve: serve)
 	}
 
 	// The marker labeling this VM's host-side artifacts — a read-only derivation from

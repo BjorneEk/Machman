@@ -144,13 +144,18 @@ boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
-devices?, nestedVirtualization?, ssh?, setup?, unresponsive?}`.
+devices?, nestedVirtualization?, ssh?, setup?, unresponsive?, outdatedHost?}`.
 
 `unresponsive` is a daemon overlay, like `safeRun`: `true` while the VM's vmhost misses its 3 s
 answer deadline. The rest of the entry is then that vmhost's last answer (state `unknown` if it
 never answered), and a `listChanged` follows when it answers again; absent otherwise.
 `vm.list`, `vm.get` and `host.operations` never wait longer than that deadline per vmhost (a
 stalled vmhost's operations are left out until it answers).
+
+`outdatedHost` (1.0.12+) is a daemon overlay too: `true` while the VM runs under a vmhost older
+than the daemon (one that outlived an update of the app). Its setting changes answer
+`invalidState` ("restart … to finish updating") until it restarts; stop, its window, preview
+and `vm.safeSave` keep working. Absent otherwise.
 
 `devices` (1.0.4+) is an array of `DeviceInfo` `{kind, enabled, displayWidthPixels?,
 displayHeightPixels?, displayPixelsPerInch?, systemKeyCapture?, sharesClipboard?,
@@ -360,7 +365,7 @@ Every running VM lives in its own `MachmanVMHost` process, which serves this sam
 per-VM operations to it and passes its events on as sent. The hash is of the VM's CURRENT name: after
 `vm.safeSave` the run answers on the saved VM's path. A vmhost answers `machman.hello` with its
 own bundle version plus `-vmhost` (1.0.12+; earlier ones echoed the spawning daemon's version,
-or `dev` when a launch agent started them).
+or `dev` when a launch agent started them); one older than the daemon lists `outdatedHost`.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
 daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them. A dropped
