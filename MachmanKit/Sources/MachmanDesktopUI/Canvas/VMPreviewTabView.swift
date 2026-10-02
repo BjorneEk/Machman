@@ -204,6 +204,7 @@ struct VMPreviewTabView: View {
 			.padding(10)
 			.machmanGlass(cornerRadius: 8)
 			.frame(maxWidth: 480)
+			.padding(.horizontal, 24)   // off the pane edges, like installProblem
 		case .failed:
 			installProblem(phase.message ?? "The macOS install failed")
 		case .interrupted:
