@@ -1,8 +1,11 @@
 //
-//  ContentView.swift
-//  Machman
+//  VMView.swift
+//  MachmanCore
 //
 //  Created by Gustaf Franzen on 2025-03-27.
+//
+//  A running VM's display in its vmhost window (WindowPresenter): VZVirtualMachineView with
+//  the key-capture toast over it.
 //
 
 import SwiftUI
@@ -18,7 +21,6 @@ struct VirtualMachineView: NSViewRepresentable {
 		if #available(macOS 14.0, *) {
 			view.automaticallyReconfiguresDisplay = true
 		}
-		view.virtualMachine = virtualMachine
 		DispatchQueue.main.async {
 			onCreate?(view)
 			view.window?.makeFirstResponder(view)
@@ -52,7 +54,4 @@ struct VMView: View {
 				}
 			}
 	}
-}
-
-#Preview {
 }
