@@ -234,6 +234,8 @@ final class KeyCaptureController {
 			? KeyCapturePolicy.fullScreenOptions(proposed, capturing: true) : proposed
 	}
 
+	// Also where a capture flip made during the entry animation reaches the chrome (V2): the
+	// entry options above were chosen before it.
 	func windowDidEnterFullScreen() {
 		let effects = state.didEnterFullScreen(mode: mode)
 		focusView()
@@ -352,9 +354,10 @@ final class KeyCaptureController {
 		}
 	}
 
-	// A capture change INSIDE full screen swaps the Dock/menu-bar options live. Only between
-	// didEnter and willExit (inFullScreen) and only while AppKit itself reports full screen —
-	// never mid-transition, where AppKit owns the options.
+	// A capture change INSIDE full screen swaps the Dock/menu-bar options live, and the end of
+	// the entry reconciles them with a flip made during its animation. Only between didEnter
+	// and willExit (inFullScreen) and only while AppKit itself reports full screen — never
+	// mid-transition, where AppKit owns the options. Options that already match stay silent.
 	private func applyFullScreenChrome(capturing: Bool) {
 		let current = NSApp.presentationOptions
 		guard state.inFullScreen, current.contains(.fullScreen) else { return }

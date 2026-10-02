@@ -45,9 +45,15 @@ struct KeyCaptureState {
 		KeyCapturePolicy.toggled(mode: mode, fullScreen: inFullScreen)
 	}
 
+	// The entry's Dock/menu-bar options were chosen at willUseFullScreenPresentationOptions,
+	// from the mode at that moment, and a capture flip during the animation can't touch them
+	// (AppKit owns the options until didEnter). So the end of the entry is the first moment
+	// the chrome can follow capture — reconcile it whether or not anything changed now.
 	mutating func didEnterFullScreen(mode: SystemKeyCapture) -> Effects {
 		inFullScreen = true
-		return refresh(mode: mode)
+		var effects = refresh(mode: mode)
+		effects.reconcileChrome = true
+		return effects
 	}
 
 	mutating func willExitFullScreen(mode: SystemKeyCapture) -> Effects {

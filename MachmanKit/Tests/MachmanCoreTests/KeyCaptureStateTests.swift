@@ -81,4 +81,101 @@ struct KeyCaptureStateTests {
 		state.tearDown()
 		#expect(!state.isCapturing)
 	}
+
+	// V2: ⌃⌥⌘K during the entry animation. The entry's chrome was chosen from the mode at
+	// willUseFullScreenPresentationOptions; the flip lands while AppKit owns the options, so
+	// the end of the entry must bring the chrome in line — both ways.
+	@Test(arguments: [SystemKeyCapture.always, .off])
+	func aCaptureFlipMidEntryIsReconciledWhenEntryEnds(start: SystemKeyCapture) {
+		var state = KeyCaptureState()
+		_ = state.refresh(mode: start)
+		let entryHidesChrome = KeyCapturePolicy.isCapturing(mode: start, fullScreen: true)
+		let flipped = state.toggled(mode: start)             // mid-animation: still windowed
+		_ = state.refresh(mode: flipped)
+		let entered = state.didEnterFullScreen(mode: flipped)
+		#expect(entered.reconcileChrome)
+		#expect(entered.capturing == !entryHidesChrome)
+	}
+
+	// Every mash of ⌃⌥⌘K and ⌃⌥⌘F (K8) up to six steps, from each mode: whenever the window
+	// sits in full screen, the Dock and menu bar are hidden exactly when capture is on.
+	@Test func everyMashEndsWithTheChromeCaptureAsksFor() {
+		var failures: [String] = []
+		for start in [SystemKeyCapture.off, .always, .fullScreen] {
+			for sequence in ChromeMash.sequences(upTo: 6) {
+				var run = ChromeMash(mode: start)
+				for step in sequence {
+					run.step(step)
+					if run.phase == .fullScreen, run.chromeHidden != run.state.isCapturing {
+						failures.append("\(start): "
+							+ sequence.map { "\($0)" }.joined(separator: " → "))
+						break
+					}
+				}
+			}
+		}
+		let count = failures.count
+		#expect(count == 0, "first: \(failures.prefix(3).joined(separator: "; "))")
+	}
+}
+
+// A VM window's full-screen life as AppKit drives it, with the chrome the Dock and menu bar
+// actually show: chosen at entry, then changed only through the effects' reconcile.
+private struct ChromeMash {
+	enum Phase { case windowed, entering, fullScreen, exiting }
+	enum Step: CaseIterable { case toggle, fullScreenKey, animationEnds, entryFails }
+
+	var state = KeyCaptureState()
+	var mode: SystemKeyCapture
+	var phase = Phase.windowed
+	var chromeHidden: Bool?
+
+	init(mode: SystemKeyCapture) {
+		self.mode = mode
+		_ = state.refresh(mode: mode)   // the window opened
+	}
+
+	mutating func step(_ step: Step) {
+		switch (step, phase) {
+		case (.toggle, _):
+			mode = state.toggled(mode: mode)
+			apply(state.refresh(mode: mode))
+		case (.fullScreenKey, .windowed):
+			// willUseFullScreenPresentationOptions: the entry's chrome, from the mode now.
+			chromeHidden = KeyCapturePolicy.isCapturing(mode: mode, fullScreen: true)
+			phase = .entering
+		case (.fullScreenKey, .fullScreen):
+			phase = .exiting
+			apply(state.willExitFullScreen(mode: mode))
+		case (.animationEnds, .entering):
+			phase = .fullScreen
+			apply(state.didEnterFullScreen(mode: mode))
+		case (.animationEnds, .exiting):
+			phase = .windowed
+			chromeHidden = nil
+		case (.entryFails, .entering):
+			phase = .windowed
+			chromeHidden = nil
+			apply(state.didFailToEnterFullScreen(mode: mode))
+		default:
+			break   // AppKit ignores the key mid-transition; nothing else applies
+		}
+	}
+
+	// applyFullScreenChrome acts only while AppKit reports full screen.
+	private mutating func apply(_ effects: KeyCaptureState.Effects) {
+		if effects.reconcileChrome, phase == .fullScreen {
+			chromeHidden = effects.capturing
+		}
+	}
+
+	static func sequences(upTo length: Int) -> [[Step]] {
+		var all: [[Step]] = [[]]
+		var frontier: [[Step]] = [[]]
+		for _ in 0..<length {
+			frontier = frontier.flatMap { prefix in Step.allCases.map { prefix + [$0] } }
+			all += frontier
+		}
+		return all
+	}
 }
