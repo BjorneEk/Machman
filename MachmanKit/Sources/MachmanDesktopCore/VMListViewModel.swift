@@ -933,6 +933,9 @@ public final class VMListViewModel: ObservableObject {
 			do {
 				_ = try await self?.api.resizeDisk(
 					vm: name, diskID: diskID, sizeBytes: sizeBytes)
+				self?.pushToast(
+					symbol: MachmanSymbols.diskSize,
+					message: "Disk grown to \(ByteSize.display(sizeBytes))")
 			} catch {
 				self?.present(error, while: "Growing a disk")
 			}
