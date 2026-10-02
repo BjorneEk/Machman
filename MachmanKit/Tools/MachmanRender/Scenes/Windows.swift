@@ -94,6 +94,19 @@ enum WindowScenes {
 		ctx.canvases.setCanvas(canvas, for: "Kernel Lab")
 	}
 
+	// Kernel Lab's console open in the second of two panes, its strip active (H20).
+	@MainActor
+	static func kernelLabConsoleSplit(_ ctx: SceneContext) {
+		ctx.viewModel.select(name: "Kernel Lab")
+		var canvas = ctx.canvases.canvas(for: "Kernel Lab")
+		canvas.open(.config)
+		canvas.open(.terminal(InspectorScenes.console))
+		canvas.split(.terminal(InspectorScenes.console))
+		ctx.canvases.setCanvas(canvas, for: "Kernel Lab")
+	}
+
+	static let orange = MachmanTheme(accent: .orange)
+
 	// The tree and the inspector, painted over the main window's glass columns.
 	@MainActor
 	static func treeAndInspector(_ ctx: SceneContext) -> [AnyView] {
@@ -262,6 +275,15 @@ enum WindowScenes {
 			threePanes(ctx)
 			return mainWindow(ctx, inspector: true)
 		},
+		// H20: the canvas's active-pane strip, the tree's dots and checks follow the accent.
+		RenderScene(
+			"window.main.accent", "VMNavigationView, Kernel Lab split in two, orange accent",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			panels: { ctx in treeAndInspector(ctx).map { AnyView($0.machmanThemed(orange)) } }
+		) { ctx in
+			kernelLabConsoleSplit(ctx)
+			return AnyView(mainWindow(ctx, inspector: true).machmanThemed(orange))
+		},
 		RenderScene(
 			"window.torn", "TornTabWindowView, Debian's config tab torn off",
 			widths: [800], height: 520, chrome: .window
@@ -392,6 +414,15 @@ enum WindowScenes {
 			widths: [270], height: 760, vms: { [Samples.bareLinux()] }
 		) { ctx in
 			tree(ctx)
+		},
+		// H20: Settings ▸ Accent ▸ Orange recolors Machman's own accent elements — inside the
+		// tree's List rows too (live dots, the active kernel and initramfs checks).
+		RenderScene(
+			"sidebar.tree.accent", "VMDeviceTreeView, Kernel Lab with an orange accent",
+			widths: [270], height: 1000
+		) { ctx in
+			kernelLabConsoleSplit(ctx)
+			return AnyView(tree(ctx).machmanThemed(orange))
 		},
 		RenderScene(
 			"sidebar.tree.drop-mixed", "VMDeviceTreeView, files and a folder dragged onto Disks",

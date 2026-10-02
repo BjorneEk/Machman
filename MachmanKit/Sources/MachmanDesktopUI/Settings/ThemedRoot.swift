@@ -35,7 +35,7 @@ public final class ThemeStore: ObservableObject {
 }
 
 // Window-level theme application: environment for MachmanUI, the color scheme, and the
-// accent tint.
+// accent (MachmanTheme.swift's machmanThemed).
 public struct ThemedRoot<Content: View>: View {
 	@ObservedObject var store: ThemeStore
 	@ViewBuilder var content: Content
@@ -46,9 +46,6 @@ public struct ThemedRoot<Content: View>: View {
 	}
 
 	public var body: some View {
-		content
-			.environment(\.machmanTheme, store.theme)
-			.preferredColorScheme(store.theme.scheme.colorScheme)
-			.tint(store.theme.accent.color)
+		content.machmanThemed(store.theme)
 	}
 }

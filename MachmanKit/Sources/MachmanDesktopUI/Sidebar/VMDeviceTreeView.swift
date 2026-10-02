@@ -479,7 +479,8 @@ struct VMDeviceTreeView: View {
 					.foregroundStyle(.tertiary)
 					.help("Open in its own window")
 			}
-			Circle().fill(MachmanColors.connected)
+			// theme.accentColor: List rows reset Color.accentColor to the system's (H20).
+			Circle().fill(theme.accentColor)
 				.frame(width: 5, height: 5)
 				.help("Session open")
 		}
@@ -607,7 +608,7 @@ struct VMDeviceTreeView: View {
 					.help(port.unavailable?.message ?? "Unavailable on this host")
 			}
 			if open {
-				Circle().fill(MachmanColors.connected)
+				Circle().fill(theme.accentColor)
 					.frame(width: 5, height: 5)
 					.help("Terminal open")
 			}
@@ -791,7 +792,7 @@ struct VMDeviceTreeView: View {
 					if file.active {
 						Image(systemName: MachmanSymbols.activeEntry)
 							.font(.system(size: 10))
-							.foregroundStyle(MachmanColors.activeEntry)
+							.foregroundStyle(theme.accentColor)
 							.help("Active")
 					}
 				}

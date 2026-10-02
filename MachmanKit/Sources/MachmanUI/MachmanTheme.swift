@@ -19,6 +19,9 @@ public enum MachmanColors {
 	public static let safeMode = Color.yellow              // kept from StatusIcon's shield
 	public static let warning = Color.orange
 	public static let destructiveConfirm = Color.red       // dialogs only; buttons stay mono
+	// The accent tokens read Color.accentColor, which follows Settings ▸ Accent through
+	// machmanThemed's .accentColor — except inside a sidebar List's rows, which reset it to
+	// the system accent: code there reads the theme's accentColor instead (H20).
 	public static let connected = Color.accentColor        // live serial dot
 	public static let selection = Color.accentColor        // must track the user's accent
 	public static let activeEntry = Color.accentColor      // active kernel / initramfs
@@ -167,5 +170,19 @@ extension EnvironmentValues {
 	public var machmanTheme: MachmanTheme {
 		get { self[MachmanThemeKey.self] }
 		set { self[MachmanThemeKey.self] = newValue }
+	}
+}
+
+extension View {
+	// A window's theme: the environment for MachmanUI, the color scheme and the accent.
+	// Color.accentColor (MachmanColors' accent tokens) follows only .accentColor, never
+	// .tint, so both are set — always, never behind an if, so changing the accent never
+	// rebuilds the window's content; nil is the system accent. (.accentColor is soft-
+	// deprecated without a replacement that reaches Color.accentColor.)
+	public func machmanThemed(_ theme: MachmanTheme) -> some View {
+		environment(\.machmanTheme, theme)
+			.preferredColorScheme(theme.scheme.colorScheme)
+			.tint(theme.accent.color)
+			.accentColor(theme.accent.color)
 	}
 }
