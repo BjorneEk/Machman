@@ -76,14 +76,18 @@ struct RPCWriteBoundTests {
 		let connection = try RPCConnection(
 			socketPath: server.socketPath, sendTimeout: .milliseconds(300))
 		let finished = Flag()
-		// About 1 MiB in one request line: far more than the socket buffers take.
-		let call = Task {
+		// About 1 MiB in one request line: far more than the socket buffers take. Detached:
+		// the call needs only the connection's actor, never a main actor the parallel suite
+		// keeps busy.
+		let call = Task.detached {
 			defer { finished.raise() }
 			_ = try await connection.call(
 				.vmGet, RPCParams.Name(name: String(repeating: "x", count: 1 << 20)),
 				expecting: RPCEmpty.self, deadline: .seconds(30))
 		}
-		#expect(await eventually(timeout: .seconds(3)) { finished.isRaised })
+		// The 300 ms send timeout ends it at once; the bound only has to stay under the 10 s
+		// default, which a write ignoring the parameter would wait out.
+		#expect(await eventually(timeout: .seconds(8)) { finished.isRaised })
 
 		server.close()   // frees a write that is still blocked, so the task can end
 		let outcome = await call.result
