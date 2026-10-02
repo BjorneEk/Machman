@@ -30,7 +30,7 @@ struct RoutingIdleHostTests {
 	// can only expire.
 	@MainActor
 	private func makeRouting(
-		names: [String] = ["alpha"], mac: String? = nil,
+		names: [String] = ["alpha"], mac: String? = nil, daemonVersion: String = "test",
 		probeDeadline: Duration = .seconds(10), exitGrace: Duration = .seconds(10)
 	) throws -> RoutingMachman {
 		var routing: RoutingMachman!
@@ -41,7 +41,7 @@ struct RoutingIdleHostTests {
 				if let mac { cfg.macAddress = mac }
 				try cfg.saveVMConfig()
 			}
-			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: daemonVersion)
 			routing.locateVMHost = { nil }   // a test never finds (or launches) a real vmhost
 		}
 		routing.hostProbeDeadline = probeDeadline
@@ -54,13 +54,13 @@ struct RoutingIdleHostTests {
 	@MainActor
 	private func adoptStub(
 		_ routing: RoutingMachman, _ name: String = "alpha", state: VMState,
-		mac: String? = nil
+		mac: String? = nil, version: String = "test"
 	) async throws -> Rig {
 		let socketPath = TestEnvironment.scratch
 			+ "mm-idle-\(name)-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
 		stub.vms[name] = StubMachman.makeInfo(name, state: state)
-		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: version)
 		try server.start()
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: name, socketPath: socketPath, macInUse: mac)
@@ -205,6 +205,41 @@ struct RoutingIdleHostTests {
 		}
 		#expect(rig.stub.starts.isEmpty)
 		#expect(rig.routing.hostedNames.isEmpty)
+	}
+
+	// R3-3: an idle host an older daemon left behind runs older code than this one; handed
+	// the start, the VM would boot locked ("Restart this VM to finish updating"). It is ended
+	// instead and the start spawns a current host (which a test host cannot finish).
+	@Test @MainActor func anOutdatedIdleHostIsEndedForAFreshSpawn() async throws {
+		let routing = try makeRouting(daemonVersion: "1.0.12")
+		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.11-vmhost")
+		defer { rig.server.stop() }
+		var ended: [String] = []
+		routing.endIdleHost = { host in
+			ended.append(host.identity.name)
+			rig.server.stop()   // the host exits
+		}
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+			Issue.record("expected the fresh-start path to fail in the test host")
+		} catch let error as MachmanError {
+			#expect(error.message.contains("MachmanVMHost.app not found"))
+		}
+		#expect(ended == ["alpha"])
+		#expect(rig.stub.starts.isEmpty)
+		#expect(routing.hostedNames.isEmpty)
+	}
+
+	// A current idle host still takes the start.
+	@Test @MainActor func aCurrentIdleHostStillTakesTheStart() async throws {
+		let routing = try makeRouting(daemonVersion: "1.0.12")
+		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.12-vmhost")
+		defer { rig.server.stop() }
+		routing.endIdleHost = { _ in Issue.record("a current host must not be ended") }
+
+		try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+		#expect(rig.stub.starts.count == 1)
 	}
 
 	@Test @MainActor func anIdleHostsMACStillConflicts() async throws {

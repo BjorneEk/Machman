@@ -144,6 +144,16 @@ public final class RoutingMachman: MachmanControlling {
 	// Whether a vmhost process still exists (E8). A seam: an in-process test host's peer is
 	// the test itself, so a test that ends a host says so here.
 	var isProcessAlive: (Int32) -> Bool = SafeRun.defaultPidAlive
+	// Ends an idle vmhost that runs older code than this daemon, before a start spawns a
+	// current one (R3-3). It runs no VM, so a kill loses nothing. A seam for the same reason
+	// as isProcessAlive: an in-process test host's peer is the test.
+	var endIdleHost: (HostedVM) -> Void = { host in
+		if let app = host.app {
+			app.forceTerminate()
+		} else if let pid = host.client.peerPID {
+			kill(pid, SIGKILL)
+		}
+	}
 
 	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
 	// names whose live vmhost did not answer the last attempt (listed as not responding
@@ -1611,11 +1621,13 @@ public final class RoutingMachman: MachmanControlling {
 		defer { releaseStart(name) }
 		if let host = hosted[name] {
 			// An idle host from an earlier start whose forward never happened (the daemon
-			// died in between, E12): it takes this start instead of idling out.
-			try await startOnExistingHost(
+			// died in between, E12): it takes this start instead of idling out — unless it
+			// runs older code, and was ended for a fresh spawn below.
+			if try await startOnExistingHost(
 				host, name: name, mac: host.identity.macInUse ?? vm.config.macAddress,
-				options: options)
-			return
+				options: options) {
+				return
+			}
 		}
 		purgeDeadShadows(for: name)
 		// A live vmhost may already own this VM's socket — launchd autostart, or a spawn
@@ -1835,10 +1847,10 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		guard host.identity.name == name else { throw heldSocket(name, by: host.identity.name) }
 		// Other start failures propagate with the host still adopted: it is live and owns
-		// the VM; its own lifecycle (or the user) cleans up.
-		try await startOnExistingHost(
+		// the VM; its own lifecycle (or the user) cleans up. An outdated idle host was ended:
+		// the caller spawns a current one.
+		return try await startOnExistingHost(
 			host, name: name, mac: host.identity.macInUse, options: options)
-		return true
 	}
 
 	// E27: a run an older vmhost saved as a new VM still serves on its original's socket, so
@@ -1887,10 +1899,17 @@ public final class RoutingMachman: MachmanControlling {
 	// at probe-adopt. Its last answer decides. A running VM is a fact — adopt it as it is,
 	// safe or not (a run cannot become safe retroactively). An idle host runs the real VM,
 	// never a shadow, so a safe start is refused rather than quietly run unsafe, and the
-	// MAC guard applies like any start.
+	// MAC guard applies like any start. False when the host was idle but runs older code
+	// than this daemon (E22): the run would start locked, so the host is ended instead and
+	// the caller spawns a current one (R3-3).
 	private func startOnExistingHost(
 		_ host: HostedVM, name: String, mac: String?, options: StartOptions
-	) async throws {
+	) async throws -> Bool {
+		if let answer = host.lastAnswer, answer.state == .stopped || answer.state == .error,
+			!host.sawRun, isOutdated(host) {
+			try await endOutdatedIdleHost(host, name: name)
+			return false
+		}
 		if host.lastAnswer?.state.isRunning == true {
 			if options.safe {
 				MachmanLogger.log(.passiveWarning,
@@ -1918,13 +1937,26 @@ public final class RoutingMachman: MachmanControlling {
 			if options.openWindow {
 				try? await host.client.openWindow(vm: name)
 			}
-			return
+			return true
 		}
 		host.sawRun = true
 		// The host emitted .running while start() was in flight — the subscription may have
 		// seen it, but a kick is cheap and never misses (the plain start path's reasoning).
 		startSSHDiscovery(host)
 		registry.events.emit(.listChanged)
+		return true
+	}
+
+	private func endOutdatedIdleHost(_ host: HostedVM, name: String) async throws {
+		MachmanLogger.log(.log,
+			"ending \(name)'s idle vmhost \(host.version), older than this daemon's "
+				+ "\(daemonVersion), so the start runs on a current one")
+		endIdleHost(host)
+		guard await waitForHostGone(id: host.identity.id, timeout: hostExitGrace) else {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is still shutting down — try again in a moment")
+		}
 	}
 
 	// Launch agents rot when nobody is looking: DerivedData moves change the vmhost path,
