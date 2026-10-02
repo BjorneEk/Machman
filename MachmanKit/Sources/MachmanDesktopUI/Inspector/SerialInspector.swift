@@ -68,7 +68,7 @@ struct SerialInspector: View {
 				}
 				IconButton(
 					symbol: MachmanSymbols.reloadTerminal,
-					tooltip: "Reload the terminal — rebuilds it with the profile's "
+					tooltip: "Reload the terminal — rebuilds it with the profile’s "
 						+ "startup settings (scrollback, TERM, cursor) and reconnects",
 					flat: true
 				) {
@@ -106,8 +106,7 @@ struct SerialInspector: View {
 		}
 		.buttonStyle(.plain)
 		.machmanHoverable()
-		.help("Terminal Settings — edit profiles (colors, font, behavior); the picker "
-			+ "chooses this port's profile")
+		.help("Edit this port’s profile in Settings")
 	}
 
 	private var profileBinding: Binding<UUID> {
@@ -154,7 +153,7 @@ struct SerialInspector: View {
 		Section("Logging") {
 			Picker("Mode", selection: modeBinding) {
 				Text("Disabled").tag(SerialLogMode.disabled)
-				Text("Reset on boot").tag(SerialLogMode.resetOnBoot)
+				Text("Reset on Boot").tag(SerialLogMode.resetOnBoot)
 				Text("Continuous").tag(SerialLogMode.continuous)
 			}
 			Picker("Max size", selection: sizeBinding) {
@@ -218,10 +217,10 @@ struct SerialInspector: View {
 
 	// Device rows match the boot mode: a kernel boot IS Linux, a macOS guest is macOS, and
 	// an EFI guest can boot anything — show the plausible conventions UNTIL the guest has
-	// reported the real name, which then replaces the speculation with one row. Consoles
-	// on EFI and macOS get the Setup Guide sheet instead of a cramped caption.
+	// reported the real name, which then replaces the speculation with one row. Every
+	// console gets the Setup Guide sheet; a kernel-boot console keeps one sentence too.
 	private var guestDeviceSection: some View {
-		Section("Guest Device") {
+		Section("Guest device") {
 			if let name = port?.guestName {
 				LabeledContent(vm.setup?.guestOS ?? "Reported") {
 					Text("/dev/" + name)
@@ -245,7 +244,14 @@ struct SerialInspector: View {
 						.font(.caption)
 						.foregroundColor(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
-				case (.console, .linuxKernel), (.uart, _):
+				case (.console, .linuxKernel):
+					deviceRow("Linux", os: .linux)
+					Text(setupNote)
+						.font(.caption)
+						.foregroundColor(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
+					setupGuideButton
+				case (.uart, _):
 					deviceRow("Linux", os: .linux)
 					Text(setupNote)
 						.font(.caption)
@@ -271,7 +277,7 @@ struct SerialInspector: View {
 
 	// From the generated platform info the daemon serves for uarts.
 	private var platformSection: some View {
-		Section("Probed Platform Info") {
+		Section("Probed platform info") {
 			if let mmio = port?.mmioBase {
 				LabeledContent("MMIO base") {
 					Text(mmio).font(.system(.callout, design: .monospaced))
@@ -285,20 +291,19 @@ struct SerialInspector: View {
 		}
 	}
 
-	// Only the caption cases remain: kernel-boot consoles + uarts (consoles on EFI/macOS
-	// route to the Setup Guide sheet instead).
+	// Only the caption cases remain: kernel-boot consoles (beside their Setup Guide button)
+	// and uarts; consoles on EFI/macOS have the Setup Guide sheet alone.
 	private var setupNote: String {
 		switch (kind, macGuest) {
 		case (.console, _):
-			return "Linux (systemd) starts a login on hvc\(guestIndex) automatically. Add "
-				+ "console=hvc\(guestIndex) to the kernel command line to also see boot "
-				+ "messages."
+			return "Add console=hvc\(guestIndex) to the kernel command line to see boot "
+				+ "messages here too."
 		case (.uart, false):
 			return "Drivable by a bare-metal kernel, or add console=ttyAMA\(guestIndex) to a "
 				+ "Linux kernel command line."
 		case (.uart, true):
-			return "On a macOS guest the PL011 is the kernel debug UART; it needs reduced "
-				+ "security in the guest (boot-args serial=3) and has no userland device."
+			return "A macOS guest uses it as the kernel’s debug UART, set up with boot-args "
+				+ "serial=3 under reduced security."
 		case (.unknown, _):
 			return ""   // unknown kinds never reach the caption branch
 		}

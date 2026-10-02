@@ -193,10 +193,25 @@ enum InspectorScenes {
 			node: .mount(Samples.srcMountID)),
 		inspector("serial-group", "SerialGroupInspector", node: .group("Serial")),
 		inspector(
+			"serial-group.kernel", "SerialGroupInspector, a console and a UART",
+			select: "Kernel Lab", node: .group("Serial")),
+		inspector(
+			"serial-group.gated", "SerialGroupInspector, a UART this Mac gates",
+			vms: { [Samples.kernelBootGatedUART()] }, select: "Kernel Lab",
+			node: .group("Serial")),
+		inspector(
+			"serial-group.reported", "SerialGroupInspector, login states the guest reported",
+			vms: { [Samples.linuxConsolesReported()] }, node: .group("Serial")),
+		inspector(
 			"serial", "SerialInspector, console port of a running VM", node: .serial(console)),
 		inspector(
 			"serial.logging", "SerialInspector, a running console logging to a file",
 			vms: { [Samples.linuxConsoleLog()] }, node: .serial(console)),
+		inspector(
+			"serial.kernel-console",
+			"SerialInspector, a kernel-boot console the guest hasn't reported",
+			vms: { [Samples.kernelBootConsoleUnreported()] }, select: "Kernel Lab",
+			node: .serial(console)),
 		inspector(
 			"uart", "SerialInspector, uart port of a kernel-boot VM", select: "Kernel Lab",
 			node: .serial(SerialPortRef(kind: .uart, index: 0))),

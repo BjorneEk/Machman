@@ -34,16 +34,17 @@ struct SerialGroupInspector: View {
 					LabeledContent {
 						Text(summary(for: port))
 							.foregroundStyle(port.unavailable == nil ? .secondary : .tertiary)
+							.help(port.unavailable?.message ?? "")
 					} label: {
 						HStack(spacing: 5) {
 							Text(port.deviceLabel(mode: vm.boot.mode))
 								.font(.system(.callout, design: .monospaced))
 							if reportedInfo(for: port)?.kernelConsole == true {
-								Text("kernel")
+								Text("Kernel")
 									.font(.caption2)
 									.foregroundStyle(.tertiary)
 							} else if reportedInfo(for: port)?.kernelConsolePending == true {
-								Text("kernel (next boot)")
+								Text("Kernel (next boot)")
 									.font(.caption2)
 									.foregroundStyle(.tertiary)
 							}
@@ -53,7 +54,7 @@ struct SerialGroupInspector: View {
 			}
 			if !reported.isEmpty {
 				Section {
-					Text("Login states come from the guest-setup script's last run.")
+					Text("Login states come from the last guest setup run.")
 						.font(.caption)
 						.foregroundStyle(.tertiary)
 				}
@@ -76,24 +77,24 @@ struct SerialGroupInspector: View {
 
 	private func summary(for port: SerialPortInfo) -> String {
 		if let gate = port.unavailable {
-			return gate.sinceOSVersion.map { "unavailable ≥ \($0)" } ?? "unavailable"
+			return gate.sinceOSVersion.map { "Unavailable ≥ \($0)" } ?? "Unavailable"
 		}
 		if !port.isEnabled {
-			return "disabled"
+			return "Disabled"
 		}
 		guard port.kind == .console else {
-			return "uart"
+			return "UART"
 		}
 		let reported = reportedInfo(for: port)
 		let external = reported?.external == true ? " (outside Machman)" : ""
 		switch reported?.login {
-		case GuestConsoleLogin.activeAuto: return "login active (automatic)"
-		case GuestConsoleLogin.active: return "login active" + external
-		case GuestConsoleLogin.configured: return "login configured (next boot)" + external
-		case GuestConsoleLogin.missing: return "not present in the guest"
-		case GuestConsoleLogin.none: return "no login"
+		case GuestConsoleLogin.activeAuto: return "Login active (automatic)"
+		case GuestConsoleLogin.active: return "Login active" + external
+		case GuestConsoleLogin.configured: return "Login configured (next boot)" + external
+		case GuestConsoleLogin.missing: return "Not present in the guest"
+		case GuestConsoleLogin.none: return "No login"
 		case .some(let other): return other   // a newer script's state renders verbatim
-		case nil: return "no report yet"
+		case nil: return "No report yet"
 		}
 	}
 }

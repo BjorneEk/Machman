@@ -2,7 +2,8 @@
 //  Samples+Wording.swift
 //  MachmanFixtures
 //
-//  Lane 4a's samples (inspector and guide text): the mount cases the mount guide covers.
+//  Lane 4a's samples (inspector and guide text): the mount cases the mount guide covers, a
+//  kernel-boot console the guest hasn't named and consoles whose login states it reported.
 //
 
 import Foundation
@@ -28,6 +29,36 @@ extension Samples {
 	public static func macOSWithMount(_ name: String = "Sequoia") -> VMInfo {
 		var vm = macOS(name)
 		vm.mounts = [MountInfo(id: srcMountID, path: "/Users/demo/src", tag: "src")]
+		return vm
+	}
+
+	// A Linux guest with four consoles whose login states the setup report carries: the
+	// kernel console with systemd's own login, one set up for the next boot (and the kernel
+	// console there next), one without a login and one the guest doesn't have.
+	public static func linuxConsolesReported(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name)
+		vm.consolePorts = (0..<4).map { index in
+			SerialPortInfo(
+				kind: .console, index: index,
+				guestDevice: SerialPortKind.console.guestDevice(index: index, os: .linux),
+				logging: SerialLogConfig(), guestIndex: index, guestName: "hvc\(index)")
+		}
+		vm.setup?.consoles = [
+			GuestConsoleInfo(
+				device: "hvc0", login: GuestConsoleLogin.activeAuto, kernelConsole: true),
+			GuestConsoleInfo(
+				device: "hvc1", login: GuestConsoleLogin.configured, kernelConsolePending: true),
+			GuestConsoleInfo(device: "hvc2", login: GuestConsoleLogin.none),
+			GuestConsoleInfo(device: "hvc3", login: GuestConsoleLogin.missing),
+		]
+		return vm
+	}
+
+	// A kernel-boot guest whose console the guest hasn't reported yet, so the inspector shows
+	// the Linux device row and the kernel command-line hint.
+	public static func kernelBootConsoleUnreported(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name)
+		vm.consolePorts?[0].guestName = nil
 		return vm
 	}
 }
