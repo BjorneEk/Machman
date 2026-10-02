@@ -114,6 +114,18 @@ enum PopoverScenes {
 		RenderScene("sheet.guest-setup-help", "GuestSetupHelpSheet, Linux guest") { ctx in
 			AnyView(GuestSetupHelpSheet(vm: ctx.vm))
 		},
+		RenderScene(
+			"sheet.guest-setup-help.bsd", "GuestSetupHelpSheet, the BSD tab (opens on doas)",
+			vms: { [Samples.linuxReverseApproved()] }
+		) { ctx in
+			AnyView(GuestSetupHelpSheet(vm: ctx.vm, tab: .bsd))
+		},
+		RenderScene(
+			"sheet.guest-setup-help.bsd-root", "GuestSetupHelpSheet, the BSD tab run as root",
+			vms: { [Samples.linuxReverseApproved()] }
+		) { ctx in
+			AnyView(GuestSetupHelpSheet(vm: ctx.vm, tab: .bsd, escalation: .root))
+		},
 		RenderScene("sheet.mac-switch", "MacSwitchSheet (switch a VM to macOS)") { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
 		},

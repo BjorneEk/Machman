@@ -22,27 +22,21 @@ struct GuestSetupHelpSheet: View {
 	let vm: VMInfo
 	@Environment(\.dismiss) private var dismiss
 	@State private var tab: GuestTab
-	@State private var escalation: Escalation = .sudo
+	// The page's pick; nil until the user picks, which means the tab's usual one.
+	@State private var escalation: GuestEscalation?
 
-	init(vm: VMInfo) {
+	// `tab` and `escalation` open the sheet on that page and choice (render scenes).
+	init(vm: VMInfo, tab: GuestTab? = nil, escalation: GuestEscalation? = nil) {
 		self.vm = vm
-		_tab = State(initialValue: vm.boot.mode == .macOS ? .macOS : .linux)
+		_tab = State(initialValue: tab ?? (vm.boot.mode == .macOS ? .macOS : .linux))
+		_escalation = State(initialValue: escalation)
 	}
 
-	private enum GuestTab: String, CaseIterable {
+	enum GuestTab: String, CaseIterable {
 		case linux = "Linux"
 		case macOS = "macOS"
 		case bsd = "BSD"
 		case info = "Info"
-	}
-
-	// How a command gets root in this guest.
-	private enum Escalation: String, CaseIterable, Identifiable {
-		case sudo, doas, root
-
-		var id: String { rawValue }
-		var label: String { self == .root ? "root" : rawValue }
-		var prefix: String { self == .root ? "" : rawValue + " " }
 	}
 
 	private static let titleSize: CGFloat = 19
@@ -59,17 +53,19 @@ struct GuestSetupHelpSheet: View {
 		}
 	}
 
-	// FreeBSD/OpenBSD lead with doas (neither ships sudo in base); macOS has no doas.
-	private var escalations: [Escalation] {
+	// The tab's choices, its usual one first (GuestSetupCommands: FreeBSD/OpenBSD lead with
+	// doas, macOS has none) — the inspector's commands use that first one too.
+	private var escalations: [GuestEscalation] {
 		switch tab {
-		case .macOS: return [.sudo, .root]
-		case .bsd: return [.doas, .sudo, .root]
-		default: return [.sudo, .doas, .root]
+		case .macOS: return GuestSetupCommands.escalations(for: .macOS)
+		case .bsd: return GuestSetupCommands.escalations(for: .bsd)
+		case .linux, .info: return GuestSetupCommands.escalations(for: .linux)
 		}
 	}
 
-	private var resolved: Escalation {
-		escalations.contains(escalation) ? escalation : (escalations.first ?? .sudo)
+	// The user's pick where this tab offers it, else the tab's usual one.
+	private var resolved: GuestEscalation {
+		escalation.flatMap { escalations.contains($0) ? $0 : nil } ?? escalations[0]
 	}
 
 	var body: some View {
@@ -94,7 +90,8 @@ struct GuestSetupHelpSheet: View {
 					Text("Run commands as")
 						.font(.system(size: Self.smallSize))
 						.foregroundStyle(.secondary)
-					Picker("Run commands as", selection: $escalation) {
+					Picker("Run commands as", selection: Binding(
+						get: { resolved }, set: { escalation = $0 })) {
 						ForEach(escalations) { Text($0.label).tag($0) }
 					}
 					.pickerStyle(.segmented)
@@ -184,8 +181,6 @@ struct GuestSetupHelpSheet: View {
 	private var hostUser: String { vm.ssh?.hostUser ?? "<mac-user>" }
 	private var hostAddress: String { vm.ssh?.hostAddressForGuest ?? "<mac-address>" }
 	private var sharePath: String { vm.ssh?.setupSharePath ?? "<machman-share>" }
-	// The same guest path Linux mounts the share at — only the mount verb differs.
-	private var mountPoint: String { GuestPaths.share }
 
 	@ViewBuilder
 	private var bsdSteps: some View {
@@ -213,21 +208,18 @@ struct GuestSetupHelpSheet: View {
 		command("pkg install fusefs-sshfs")
 		note("OpenBSD: pkg_add sshfs-fuse — and skip step 4; fuse is already in its kernel.")
 		step(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
-		command("kldstat -q -m fusefs || kldload fusefs")
-		if reverseApproved, let guestUser = vm.ssh?.guestUser {
-			// Root resolves ~root/.ssh/config, so the user's 'mac' alias rides in via -F
-			// (it carries the key and the pinned host key too — no password, no prompt).
+		command(GuestSetupCommands.bsdFuseLoad)
+		let approvedUser = reverseApproved ? vm.ssh?.guestUser : nil
+		if approvedUser != nil {
 			step(5, "Mount Machman's setup folder — this guest's key is approved, so the "
 				+ "'mac' alias works without a password:")
-			command("doas mkdir -p \(mountPoint) && doas sshfs "
-				+ "-F /home/\(guestUser)/.ssh/config mac:'\(sharePath)' \(mountPoint) "
-				+ "-o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
 		} else {
 			step(5, "Mount Machman's setup folder. This asks for your Mac account "
 				+ "password — once, because keys are what the script is about to set up:")
-			command("mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
-				+ "\(mountPoint) -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
 		}
+		command(GuestSetupCommands.bsdShareMount(
+			approvedGuestUser: approvedUser, hostUser: hostUser, hostAddress: hostAddress,
+			sharePath: sharePath))
 		note("Same folder Linux mounts over virtiofs, same path — so step 6 is the same "
 			+ "command on every guest.")
 		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
@@ -338,10 +330,9 @@ struct GuestSetupHelpSheet: View {
 	}
 
 	// A copyable command, carrying the page's escalation on every command in the line —
-	// a chained "sudo a && b" would run b as the user.
+	// a chained "sudo a && b" would run b as the user. `raw` is never escalated itself.
 	private func command(_ raw: String, escalate: Bool = true) -> some View {
-		let text = escalate
-			? SSHSetupInfo.escalated(raw, with: resolved.prefix) : raw
+		let text = escalate ? resolved.apply(raw) : raw
 		return HStack(alignment: .top) {
 			Text(text)
 				.font(.system(size: Self.smallSize, design: .monospaced))

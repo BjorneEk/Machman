@@ -119,4 +119,15 @@ extension Samples {
 		]
 		return vm
 	}
+
+	// A Linux (EFI) guest whose reverse key is approved and that has booted once, so the
+	// guide's BSD bootstrap can fill in this Mac's address and the real share path.
+	public static func linuxReverseApproved(_ name: String = "Debian") -> VMInfo {
+		var vm = linuxReverse(.approved, name)
+		vm.setup?.automounts = []
+		vm.ssh?.hostUser = "demo"
+		vm.ssh?.hostAddressForGuest = "192.168.64.1"
+		vm.ssh?.setupSharePath = "\(vmsRoot)/\(name)/share"
+		return vm
+	}
 }

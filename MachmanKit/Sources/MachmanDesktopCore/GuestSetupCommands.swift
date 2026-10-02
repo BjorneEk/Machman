@@ -71,4 +71,26 @@ public enum GuestSetupCommands {
 	public static func mountShare(_ family: Family) -> String {
 		escalations(for: family)[0].apply(GuestPaths.mountShareCommand)
 	}
+
+	// MARK: - The guide's BSD bootstrap (unescalated: the page's choice escalates them)
+
+	// FreeBSD's fuse driver, loaded unless it already is.
+	public static let bsdFuseLoad = "kldstat -q -m fusefs || kldload fusefs"
+
+	// Mounts Machman's setup folder over sshfs at the share's guest path. With the guest's
+	// key approved it goes through the user's 'mac' alias — root reads ~root/.ssh/config, so
+	// -F brings the user's in (key and pinned host key, no password); otherwise it asks for
+	// the Mac account's password once.
+	public static func bsdShareMount(
+		approvedGuestUser: String?, hostUser: String, hostAddress: String, sharePath: String
+	) -> String {
+		let mountPoint = GuestPaths.share
+		let options = "-o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3"
+		guard let user = approvedGuestUser else {
+			return "mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):'\(sharePath)' "
+				+ "\(mountPoint) \(options)"
+		}
+		return "mkdir -p \(mountPoint) && sshfs -F /home/\(user)/.ssh/config "
+			+ "mac:'\(sharePath)' \(mountPoint) \(options)"
+	}
 }
