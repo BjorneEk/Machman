@@ -123,8 +123,8 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		guard vz.canRequestStop else {
 			throw MachmanError(
 				code: .invalidState,
-				message: "\(config.name) can’t take a shutdown request right now — force stop it "
-					+ "instead")
+				message: "\(config.name) can’t take a shutdown request right now — force "
+					+ "stop it instead")
 		}
 		try vz.requestStop()
 	}

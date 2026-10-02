@@ -22,7 +22,7 @@ enum SSHSetupInstaller {
 		_ = try config.getVmIdentifier()   // creates + persists the identity file
 		guard let minted = existingMarker(for: config) else {
 			throw VirtualMachineError.critical(
-				"no machine identity to derive \(config.name)'s SSH marker from")
+				"\(config.name) has no machine identity to derive its SSH marker from")
 		}
 		return minted
 	}

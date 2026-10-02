@@ -53,9 +53,9 @@ struct NewDiskFormTests {
 		#expect(problem("data", "0") == "Enter a size like 64 or 1.5 GB")
 		#expect(problem("data", "") == "Enter a size in GB")
 		#expect(problem("data", "500") == "Only 412 GB is free")
-		#expect(problem(".x", "8") == "A disk name can't start with a dot")
-		#expect(problem("a/b", "8") == "A disk name can't contain \u{201C}/\u{201D}")
-		#expect(problem("", "8") == "A disk name can't be empty")
+		#expect(problem(".x", "8") == "A disk name can’t start with a dot")
+		#expect(problem("a/b", "8") == "A disk name can’t contain \u{201C}/\u{201D}")
+		#expect(problem("", "8") == "A disk name can’t be empty")
 		#expect(problem("data", "64") == nil)
 	}
 

@@ -32,9 +32,9 @@ struct VMNameFormTests {
 			== "A VM named \u{201C}Sequoia\u{201D} already exists")
 		#expect(h.viewModel.newVMNameProblem(" Sequoia ")
 			== "A VM named \u{201C}Sequoia\u{201D} already exists")
-		#expect(h.viewModel.newVMNameProblem(".x") == "A VM name can't start with a dot")
-		#expect(h.viewModel.newVMNameProblem("a/b") == "A VM name can't contain \u{201C}/\u{201D}")
-		#expect(h.viewModel.newVMNameProblem("  ") == "A VM name can't be empty")
+		#expect(h.viewModel.newVMNameProblem(".x") == "A VM name can’t start with a dot")
+		#expect(h.viewModel.newVMNameProblem("a/b") == "A VM name can’t contain \u{201C}/\u{201D}")
+		#expect(h.viewModel.newVMNameProblem("  ") == "A VM name can’t be empty")
 		#expect(h.viewModel.newVMNameProblem("dev copy") == nil)
 	}
 
@@ -51,7 +51,7 @@ struct VMNameFormTests {
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
 		h.viewModel.requestRename(alpine, to: "a/b", profiles: h.profiles)
 		#expect(h.viewModel.presentedError?.message
-			== "A VM name can't contain \u{201C}/\u{201D}")
+			== "A VM name can’t contain \u{201C}/\u{201D}")
 		#expect(h.viewModel.presentedError?.title == "Renaming Alpine failed")
 		try await Task.sleep(for: .milliseconds(50))
 		#expect(!h.stub.calls.contains("renameVM"))

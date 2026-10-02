@@ -40,7 +40,7 @@ struct DiskReferenceTests {
 
 			let error = try #require(throws: MachmanError.self) { try registry.delete(kept) }
 			#expect(error.code == .invalidState)
-			#expect(error.message.contains("alpha uses data.raw from kept's folder"))
+			#expect(error.message.contains("alpha uses data.raw from kept’s folder"))
 			#expect(FileManager.default.fileExists(atPath: raw))
 			#expect(registry.vm(named: "kept") === kept)
 

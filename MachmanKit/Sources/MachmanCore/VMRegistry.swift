@@ -125,7 +125,7 @@ public final class VMRegistry {
 			let message: String
 			switch failure {
 			case .windowNotFound:
-				message = "Its window isn't on screen, so the preview is blank."
+				message = "Its window isn’t on screen, so the preview is blank."
 			case .captureReturnedNothing:
 				message = "ScreenCaptureKit returned no image, so the preview is blank."
 			case .noPermission:

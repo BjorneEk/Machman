@@ -20,17 +20,17 @@ struct MenuBarRulesTests {
 
 	@Test func eachActionNamesWhatFailed() {
 		let start = MenuBarFailure(vm: "Debian", action: .start(StartOptions()), error: refused)
-		#expect(start.title == "Couldn't start \u{201C}Debian\u{201D}")
+		#expect(start.title == "Couldn’t start \u{201C}Debian\u{201D}")
 		#expect(start.message == "Debian is installing")
 		#expect(start.forceStart == nil)
 		#expect(MenuBarFailure(vm: "Debian", action: .stop(.soft), error: refused).title
-			== "Couldn't shut down \u{201C}Debian\u{201D}")
+			== "Couldn’t shut down \u{201C}Debian\u{201D}")
 		#expect(MenuBarFailure(vm: "Debian", action: .stop(.force), error: refused).title
-			== "Couldn't force stop \u{201C}Debian\u{201D}")
+			== "Couldn’t force stop \u{201C}Debian\u{201D}")
 		#expect(MenuBarFailure(vm: "Debian", action: .openWindow, error: refused).title
-			== "Couldn't open Debian's window")
+			== "Couldn’t open Debian’s window")
 		#expect(MenuBarFailure(vm: "Debian", action: .closeWindow, error: refused).title
-			== "Couldn't close Debian's window")
+			== "Couldn’t close Debian’s window")
 	}
 
 	// As the desktop: a MAC conflict offers the same start, forced.

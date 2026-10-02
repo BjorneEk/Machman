@@ -15,13 +15,13 @@ struct NameRulesTests {
 
 	@Test func vmNamesRefuseWhatBreaksADirectory() {
 		let rule = NameRule.vmName
-		#expect(rule.problem("") == "A VM name can't be empty")
-		#expect(rule.problem(" x") == "A VM name can't start or end with a space")
-		#expect(rule.problem("x ") == "A VM name can't start or end with a space")
-		#expect(rule.problem(".x") == "A VM name can't start with a dot")
-		#expect(rule.problem("..") == "A VM name can't start with a dot")
-		#expect(rule.problem("a/b") == "A VM name can't contain \u{201C}/\u{201D}")
-		let control = "A VM name can't contain tabs, line breaks or other control characters"
+		#expect(rule.problem("") == "A VM name can’t be empty")
+		#expect(rule.problem(" x") == "A VM name can’t start or end with a space")
+		#expect(rule.problem("x ") == "A VM name can’t start or end with a space")
+		#expect(rule.problem(".x") == "A VM name can’t start with a dot")
+		#expect(rule.problem("..") == "A VM name can’t start with a dot")
+		#expect(rule.problem("a/b") == "A VM name can’t contain \u{201C}/\u{201D}")
+		let control = "A VM name can’t contain tabs, line breaks or other control characters"
 		#expect(rule.problem("a\tb") == control)
 		#expect(rule.problem("a\nb") == control)
 		#expect(rule.problem("a\u{2028}b") == control)
@@ -35,7 +35,7 @@ struct NameRulesTests {
 	@Test func mountTagsAlsoFollowTheShareNameRules() throws {
 		let rule = NameRule.mountTag
 		for c in [":", "\\", "*", "?", "|", "<", ">"] {
-			#expect(rule.problem("a\(c)b") == "A mount tag can't contain \u{201C}\(c)\u{201D}")
+			#expect(rule.problem("a\(c)b") == "A mount tag can’t contain \u{201C}\(c)\u{201D}")
 		}
 		for reserved in ReservedShareNames.all {
 			#expect(rule.problem(reserved) == "\u{201C}\(reserved)\u{201D} is reserved by Machman")
@@ -53,7 +53,7 @@ struct NameRulesTests {
 		#expect(NameRule.diskName.problem(String(repeating: "d", count: 252))
 			== "A disk name is too long")
 		#expect(NameRule.diskName.problem(String(repeating: "d", count: 251)) == nil)
-		#expect(NameRule.kernelTag.problem(".x") == "A kernel tag can't start with a dot")
+		#expect(NameRule.kernelTag.problem(".x") == "A kernel tag can’t start with a dot")
 	}
 
 	@Test func normalizedTrimsThenValidates() throws {

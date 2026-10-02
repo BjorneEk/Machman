@@ -95,8 +95,8 @@ struct HostPrompt: Equatable {
 	// A shutdown request the guest hasn't acted on within the grace period.
 	static func notShutDownYet(_ name: String) -> HostPrompt {
 		HostPrompt(
-			message: "\(name) hasn't shut down yet",
-			info: "The guest hasn't responded to the shutdown request.",
+			message: "\(name) hasn’t shut down yet",
+			info: "The guest hasn’t responded to the shutdown request.",
 			buttons: [
 				Button(choice: .keepWaiting, title: "Keep Waiting"),
 				Button(choice: .forceStop, title: "Force Stop"),
@@ -107,8 +107,8 @@ struct HostPrompt: Equatable {
 	// default: a force stop loses unsaved work in the guest.
 	static func shutDownRefused(_ name: String) -> HostPrompt {
 		HostPrompt(
-			message: "\(name) can't be asked to shut down",
-			info: "The guest can't take a shutdown request right now — force stop it instead?",
+			message: "\(name) can’t be asked to shut down",
+			info: "The guest can’t take a shutdown request right now — force stop it instead?",
 			buttons: [
 				Button(choice: .cancel, title: "Cancel"),
 				Button(choice: .forceStop, title: "Force Stop"),
@@ -118,7 +118,7 @@ struct HostPrompt: Equatable {
 	// reason: the engine's own sentence.
 	static func forceStopFailed(_ name: String, reason: String) -> HostPrompt {
 		HostPrompt(
-			message: "\(name) couldn't be stopped",
+			message: "\(name) couldn’t be stopped",
 			info: reason,
 			buttons: [Button(choice: .cancel, title: "OK")])
 	}

@@ -258,7 +258,7 @@ extension VMConfig {
 			let since = SerialPortSupport.privateUARTGatedSinceDisplay
 			return SerialPortUnavailability(
 				reason: .privateUARTGated,
-				message: "Since macOS \(since), only Apple's own apps can attach UART ports, so "
+				message: "Since macOS \(since), only Apple’s own apps can attach UART ports, so "
 					+ "VMs start without them.",
 				sinceOSVersion: since)
 		}

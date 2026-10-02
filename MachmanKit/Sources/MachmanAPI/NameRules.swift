@@ -44,23 +44,23 @@ public enum NameRule: Sendable {
 	// The reason `name`, exactly as given, can't be used — nil when it can.
 	public func problem(_ name: String) -> String? {
 		guard let first = name.unicodeScalars.first, let last = name.unicodeScalars.last else {
-			return "\(subject) can't be empty"
+			return "\(subject) can’t be empty"
 		}
 		if CharacterSet.whitespaces.contains(first) || CharacterSet.whitespaces.contains(last) {
-			return "\(subject) can't start or end with a space"
+			return "\(subject) can’t start or end with a space"
 		}
 		if name.hasPrefix(".") {
-			return "\(subject) can't start with a dot"
+			return "\(subject) can’t start with a dot"
 		}
 		if name.contains("/") {
-			return "\(subject) can't contain \u{201C}/\u{201D}"
+			return "\(subject) can’t contain \u{201C}/\u{201D}"
 		}
 		if Self.hasControlCharacters(name) {
-			return "\(subject) can't contain tabs, line breaks or other control characters"
+			return "\(subject) can’t contain tabs, line breaks or other control characters"
 		}
 		if self == .mountTag,
 			let refused = name.unicodeScalars.first(where: { Self.shareNameRefused.contains($0) }) {
-			return "A mount tag can't contain \u{201C}\(refused)\u{201D}"
+			return "A mount tag can’t contain \u{201C}\(refused)\u{201D}"
 		}
 		if name.utf8.count > maxBytes {
 			return "\(subject) is too long"

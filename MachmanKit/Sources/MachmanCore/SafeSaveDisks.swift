@@ -73,10 +73,10 @@ extension DirectDiskMove {
 		guard !moves.isEmpty else { return nil }
 		let files = moves.map(\.targetFile).joined(separator: ", ")
 		return moves.count == 1
-			? "\(original)’s disk \(files) now lives in this VM’s folder, so this VM can’t be "
-				+ "deleted while \(original) uses it."
-			: "\(original)’s disks \(files) now live in this VM’s folder, so this VM can’t be "
-				+ "deleted while \(original) uses them."
+			? "\(original)’s disk \(files) now lives in this VM’s folder, so this VM "
+				+ "can’t be deleted while \(original) uses it."
+			: "\(original)’s disks \(files) now live in this VM’s folder, so this VM "
+				+ "can’t be deleted while \(original) uses them."
 	}
 }
 

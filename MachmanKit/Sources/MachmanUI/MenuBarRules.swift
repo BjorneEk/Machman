@@ -37,18 +37,18 @@ public struct MenuBarFailure: Equatable, Sendable {
 				forceStart = StartOptions(
 					openWindow: options.openWindow, force: true, safe: options.safe)
 			} else {
-				title = "Couldn't start \(quoted)"
+				title = "Couldn’t start \(quoted)"
 				forceStart = nil
 			}
 		case .stop(let mode):
 			title = mode == .force
-				? "Couldn't force stop \(quoted)" : "Couldn't shut down \(quoted)"
+				? "Couldn’t force stop \(quoted)" : "Couldn’t shut down \(quoted)"
 			forceStart = nil
 		case .openWindow:
-			title = "Couldn't open \(vm)'s window"
+			title = "Couldn’t open \(vm)’s window"
 			forceStart = nil
 		case .closeWindow:
-			title = "Couldn't close \(vm)'s window"
+			title = "Couldn’t close \(vm)’s window"
 			forceStart = nil
 		}
 		// The desktop's rule (MachmanError.userMessage): the daemon's own sentence, never a

@@ -86,7 +86,7 @@ struct SafeSaveHandOverTests {
 			let error = try #require(throws: MachmanError.self) {
 				try daemon.delete(try #require(daemon.vm(named: "alpha")))
 			}
-			#expect(error.message.contains("kept uses scratch.raw from alpha's folder"))
+			#expect(error.message.contains("kept uses scratch.raw from alpha’s folder"))
 		}
 	}
 
@@ -290,7 +290,7 @@ struct SafeSaveHandOverTests {
 			let error = try #require(throws: MachmanError.self) {
 				try daemon.delete(try #require(daemon.vm(named: "kept")))
 			}
-			#expect(error.message.contains("alpha uses a.raw from kept's folder"))
+			#expect(error.message.contains("alpha uses a.raw from kept’s folder"))
 		}
 	}
 
@@ -335,7 +335,7 @@ struct SafeSaveHandOverTests {
 			let error = try #require(throws: MachmanError.self) {
 				try daemon.delete(try #require(daemon.vm(named: "alpha")))
 			}
-			#expect(error.message.contains("kept uses a.raw from alpha's folder"))
+			#expect(error.message.contains("kept uses a.raw from alpha’s folder"))
 		}
 	}
 
@@ -350,7 +350,7 @@ struct SafeSaveHandOverTests {
 
 			let kept = try #require(daemon.vm(named: "kept"))
 			let error = try #require(throws: MachmanError.self) { try daemon.delete(kept) }
-			#expect(error.message.contains("alpha uses data.raw from kept's folder"))
+			#expect(error.message.contains("alpha uses data.raw from kept’s folder"))
 			try daemon.delete(try #require(daemon.vm(named: "alpha")))
 			#expect(contents(host.library + "/kept/data.raw") == "raw-data")
 			try daemon.delete(kept)

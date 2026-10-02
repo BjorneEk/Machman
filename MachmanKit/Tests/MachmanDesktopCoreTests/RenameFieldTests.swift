@@ -25,7 +25,7 @@ struct RenameFieldTests {
 		#expect(h.viewModel.vmRenameProblem("Alpine", for: alpine) == nil)
 		#expect(h.viewModel.vmRenameProblem(" Alpine ", for: alpine) == nil)
 		#expect(h.viewModel.vmRenameProblem("a/b", for: alpine)
-			== "A VM name can't contain \u{201C}/\u{201D}")
+			== "A VM name can’t contain \u{201C}/\u{201D}")
 		#expect(h.viewModel.vmRenameProblem("Sequoia", for: alpine)
 			== "A VM named \u{201C}Sequoia\u{201D} already exists")
 		let disk = { (draft: String) in
@@ -33,15 +33,15 @@ struct RenameFieldTests {
 		}
 		#expect(disk("system") == nil)
 		#expect(disk("data") == "This VM already has a disk named \u{201C}data\u{201D}")
-		#expect(disk(".x") == "A disk name can't start with a dot")
-		#expect(disk("") == "A disk name can't be empty")
+		#expect(disk(".x") == "A disk name can’t start with a dot")
+		#expect(disk("") == "A disk name can’t be empty")
 		#expect(disk("scratch") == nil)
 		let tag = { (draft: String) in
 			h.viewModel.mountTagProblem(draft, mountID: mountID, on: alpine)
 		}
 		#expect(tag("src") == nil)
 		#expect(tag("GuestSetup") == "\u{201C}GuestSetup\u{201D} is reserved by Machman")
-		#expect(tag("a:b") == "A mount tag can't contain \u{201C}:\u{201D}")
+		#expect(tag("a:b") == "A mount tag can’t contain \u{201C}:\u{201D}")
 		#expect(tag("code") == nil)
 	}
 
@@ -144,8 +144,8 @@ struct RenameFieldTests {
 			h.viewModel.kernelTagProblem(draft, path: vmlinuz, on: lab)
 		}
 		#expect(tag("6.12") == nil)
-		#expect(tag("6.13/rc1") == "A kernel tag can't contain \u{201C}/\u{201D}")
-		#expect(tag(".x") == "A kernel tag can't start with a dot")
+		#expect(tag("6.13/rc1") == "A kernel tag can’t contain \u{201C}/\u{201D}")
+		#expect(tag(".x") == "A kernel tag can’t start with a dot")
 		#expect(tag("6.6-lts") == nil)   // that tag holds "Image", not "vmlinuz"
 		#expect(!h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: ".x") { _ in })
 		#expect(!h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: " 6.12 ") { _ in })

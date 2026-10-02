@@ -29,8 +29,8 @@ struct VMHostPromptTests {
 		#expect(close.buttons.map(\.choice) == [.closeWindow, .shutDown, .forceStop, .cancel])
 
 		let followUp = HostPrompt.notShutDownYet("alpha")
-		#expect(followUp.message == "alpha hasn't shut down yet")
-		#expect(followUp.info == "The guest hasn't responded to the shutdown request.")
+		#expect(followUp.message == "alpha hasn’t shut down yet")
+		#expect(followUp.info == "The guest hasn’t responded to the shutdown request.")
 		#expect(titles(followUp) == ["Keep Waiting", "Force Stop"])
 		#expect(followUp.buttons.map(\.choice) == [.keepWaiting, .forceStop])
 	}
@@ -48,14 +48,14 @@ struct VMHostPromptTests {
 	// V5: a refused or failed stop is said at once; Cancel is the refusal's safe default.
 	@Test func theStopFailurePromptsSayWhatHappened() {
 		let refused = HostPrompt.shutDownRefused("alpha")
-		#expect(refused.message == "alpha can't be asked to shut down")
+		#expect(refused.message == "alpha can’t be asked to shut down")
 		#expect(refused.info
-			== "The guest can't take a shutdown request right now — force stop it instead?")
+			== "The guest can’t take a shutdown request right now — force stop it instead?")
 		#expect(titles(refused) == ["Cancel", "Force Stop"])
 		#expect(refused.buttons.map(\.choice) == [.cancel, .forceStop])
 
 		let failed = HostPrompt.forceStopFailed("alpha", reason: "The VM refused to stop.")
-		#expect(failed.message == "alpha couldn't be stopped")
+		#expect(failed.message == "alpha couldn’t be stopped")
 		#expect(failed.info == "The VM refused to stop.")
 		#expect(titles(failed) == ["OK"])
 	}

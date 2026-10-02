@@ -455,7 +455,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		} catch {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "\u{201C}\(tag)\u{201D} can't name a shared folder")
+				message: "\u{201C}\(tag)\u{201D} can’t name a shared folder")
 		}
 		return tag
 	}

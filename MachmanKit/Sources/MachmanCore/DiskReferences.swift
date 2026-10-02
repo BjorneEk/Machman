@@ -93,7 +93,7 @@ extension VMRegistry {
 		MachmanError(
 			code: .invalidState,
 			message: "\(ref.vm) uses \((ref.path as NSString).lastPathComponent) from "
-				+ "\(owner)'s folder — remove that disk from \(ref.vm) first")
+				+ "\(owner)’s folder — remove that disk from \(ref.vm) first")
 	}
 
 	// vm.disk.remove: deleting an owned file another VM uses would destroy its disk.
