@@ -175,11 +175,17 @@ public final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return vm
 	}
+	// vm.setEnabled requests as sent (past the gate), in order — unknown ids included.
+	public private(set) var enabledChanges: [(
+		vm: String, disks: [String: Bool]?, mounts: [String: Bool]?,
+		console: [String: Bool]?, uart: [String: Bool]?
+	)] = []
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
 		console: [String: Bool]?, uart: [String: Bool]?
 	) async throws {
 		try gate()
+		enabledChanges.append((name, disks, mounts, console, uart))
 		var vm = try get(name)
 		for (id, value) in disks ?? [:] {
 			guard let index = vm.disks.firstIndex(where: { $0.id == id }) else {

@@ -230,6 +230,7 @@ public final class VMListViewModel: ObservableObject {
 				tabClosed(.terminal(ref), vm: vm.name)
 			}
 		}
+		pruneTreeSelection(incoming: list)   // T15: rows whose entity went away
 		// Torn tabs live in their windows, not the canvas — reconcile them too (T6): a
 		// torn tab whose VM or port left the list gets a close order its own window
 		// resolves (dismissWindow is a view environment action; models can only post).
@@ -1379,11 +1380,15 @@ public final class VMListViewModel: ObservableObject {
 	// Batch enable/disable everything in the tree selection that carries the flag
 	// (multi-select context menus + the multi-selection inspector).
 	public func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
+		// Only what still exists (T15): a stale selection must not send gone ids.
+		let current = vms.first { $0.name == vm.name } ?? vm
 		var disks: [String: Bool] = [:]
 		var mounts: [String: Bool] = [:]
 		var console: [String: Bool] = [:]
 		var uart: [String: Bool] = [:]
-		for node in treeSelection {
+		let live = Self.liveNodes(
+			treeSelection, in: current, openSessions: openSSHSessions(vm: current.name))
+		for node in live {
 			switch node {
 			case .disk(let id):
 				disks[id] = enabled
@@ -1396,7 +1401,7 @@ public final class VMListViewModel: ObservableObject {
 					uart[String(ref.index)] = enabled
 				}
 			case .device(let kind):
-				if var device = vm.devices?.first(where: { $0.kind == kind }) {
+				if var device = current.devices?.first(where: { $0.kind == kind }) {
 					device.enabled = enabled
 					updateDevice(vm.name, device: device)
 				}
