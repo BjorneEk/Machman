@@ -24,22 +24,31 @@ extension VMListViewModel {
 
 	// The one shape a request to the daemon runs in. The call goes out off the click, on the
 	// api alone: a view model that went with its connection sends nothing, and a call in
-	// flight doesn't keep it alive. A success shows `toast`. A refusal goes to the field that
-	// asked (`refused`) or to an alert titled "<action> failed" — each only while the view
-	// model is still here to say it.
+	// flight doesn't keep it alive. A success runs `then` with the reply, then shows
+	// `toast`. A refusal runs `failed` first (undoing what the click set up), then `recover`
+	// may answer a MachmanError that isn't a failure (true: nothing more is said); anything
+	// else goes to the field that asked (`refused`) or to an alert titled "<action> failed".
+	// Every step runs only while the view model is still here.
 	func perform<Value>(
 		_ action: String, toast: ActionToast? = nil,
 		refused: (@MainActor (String) -> Void)? = nil,
-		_ call: @escaping @MainActor (any MachmanControlling) async throws -> Value
+		failed: (@MainActor (VMListViewModel) -> Void)? = nil,
+		recover: (@MainActor (VMListViewModel, MachmanError) -> Bool)? = nil,
+		_ call: @escaping @MainActor (any MachmanControlling) async throws -> Value,
+		then: (@MainActor (VMListViewModel, Value) -> Void)? = nil
 	) {
 		Task { [weak self] in
 			guard let api = self?.api else { return }
 			do {
-				_ = try await call(api)
-				guard let self, let toast else { return }
-				self.pushToast(symbol: toast.symbol, message: toast.message)
+				let value = try await call(api)
+				guard let self else { return }
+				then?(self, value)
+				if let toast { self.pushToast(symbol: toast.symbol, message: toast.message) }
 			} catch {
-				self?.refuse(error, while: action, to: refused)
+				guard let self else { return }
+				failed?(self)
+				if let error = error as? MachmanError, recover?(self, error) == true { return }
+				self.refuse(error, while: action, to: refused)
 			}
 		}
 	}
@@ -133,16 +142,13 @@ extension VMListViewModel {
 	public static let deleteVMMessage = "The VM and the files it owns are deleted permanently."
 
 	public func performDeleteVM(_ vm: VMInfo) {
-		Task { [weak self] in
-			do {
-				try await self?.api.deleteVM(named: vm.name)
-				// The picker can delete a VM that isn't the shown one — keep the selection
-				// unless it was the one deleted.
-				if self?.selectedName == vm.name {
-					self?.select(name: nil)
-				}
-			} catch {
-				self?.present(error, while: "Deleting \u{201C}\(vm.name)\u{201D}")
+		perform("Deleting \u{201C}\(vm.name)\u{201D}") {
+			try await $0.deleteVM(named: vm.name)
+		} then: { model, _ in
+			// The picker can delete a VM that isn't the shown one — keep the selection
+			// unless it was the one deleted.
+			if model.selectedName == vm.name {
+				model.select(name: nil)
 			}
 		}
 	}
@@ -382,19 +388,17 @@ extension VMListViewModel {
 		_ name: String, diskID: String, newName: String,
 		refused: (@MainActor (String) -> Void)? = nil
 	) {
-		Task { [weak self] in
-			do {
-				guard let updated = try await self?.api.renameDisk(
-					vm: name, diskID: diskID, newName: newName) else { return }
-				if self?.treeSelection == [.disk(diskID)],
-					let newID = updated.disks.first(where: { $0.name == newName })?.id {
-					self?.treeSelection = [.disk(newID)]
-				}
-				self?.pushToast(
-					symbol: MachmanSymbols.rename,
-					message: ToastWording.renamed(to: newName))
-			} catch {
-				self?.refuse(error, while: "Renaming a disk", to: refused)
+		perform(
+			"Renaming a disk",
+			toast: ActionToast(
+				symbol: MachmanSymbols.rename, message: ToastWording.renamed(to: newName)),
+			refused: refused
+		) {
+			try await $0.renameDisk(vm: name, diskID: diskID, newName: newName)
+		} then: { model, updated in
+			if model.treeSelection == [.disk(diskID)],
+				let newID = updated.disks.first(where: { $0.name == newName })?.id {
+				model.treeSelection = [.disk(newID)]
 			}
 		}
 	}
@@ -627,24 +631,21 @@ extension VMListViewModel {
 		refused: (@MainActor (String) -> Void)? = nil
 	) {
 		let fileName = (path as NSString).lastPathComponent
-		Task { [weak self] in
-			do {
-				guard let updated = try await self?.api.renameKernelFile(
-					vm: name, path: path, tag: tag) else { return }
-				guard let file = updated.boot.ownedKernels?.first(where: {
-					$0.tag == tag && $0.fileName == fileName
-				}) else { return }
-				let old: SidebarNode = file.role == .kernel ? .kernel(path) : .initramfs(path)
-				if self?.treeSelection == [old] {
-					self?.treeSelection = [file.role == .kernel
-						? .kernel(file.path) : .initramfs(file.path)]
-				}
-				self?.pushToast(
-					symbol: MachmanSymbols.rename,
-					message: ToastWording.renamed(to: tag))
-			} catch {
-				self?.refuse(error, while: "Renaming a kernel file", to: refused)
+		perform("Renaming a kernel file", refused: refused) {
+			try await $0.renameKernelFile(vm: name, path: path, tag: tag)
+		} then: { model, updated in
+			// Said only once the reply holds the file under its new tag.
+			guard let file = updated.boot.ownedKernels?.first(where: {
+				$0.tag == tag && $0.fileName == fileName
+			}) else { return }
+			let old: SidebarNode = file.role == .kernel ? .kernel(path) : .initramfs(path)
+			if model.treeSelection == [old] {
+				model.treeSelection = [file.role == .kernel
+					? .kernel(file.path) : .initramfs(file.path)]
 			}
+			model.pushToast(
+				symbol: MachmanSymbols.rename,
+				message: ToastWording.renamed(to: tag))
 		}
 	}
 
@@ -737,14 +738,10 @@ extension VMListViewModel {
 	// even an unchanged address (F4).
 	public func refreshSSH(_ name: String) {
 		beginRediscovery(name)
-		Task { [weak self] in
-			do {
-				try await self?.api.refreshSSH(vm: name)
-			} catch {
-				self?.endRediscovery(name)
-				self?.present(error, while: "Looking for the address of \u{201C}\(name)\u{201D}")
-			}
-		}
+		perform(
+			"Looking for the address of \u{201C}\(name)\u{201D}",
+			failed: { $0.endRediscovery(name) }
+		) { try await $0.refreshSSH(vm: name) }
 	}
 
 	public func resetSSH(_ name: String) {

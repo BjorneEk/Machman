@@ -31,14 +31,10 @@ extension VMListViewModel {
 	}
 
 	public func cancelOperation(id: String) {
-		Task { [weak self] in
-			do {
-				try await self?.api.cancelOperation(id: id)
-			} catch let error as MachmanError where error.code == .notFound {
-				// It ended meanwhile; its card already shows how.
-			} catch {
-				self?.present(error, while: "Canceling the operation")
-			}
-		}
+		perform(
+			"Canceling the operation",
+			// It ended meanwhile; its card already shows how.
+			recover: { _, error in error.code == .notFound }
+		) { try await $0.cancelOperation(id: id) }
 	}
 }
