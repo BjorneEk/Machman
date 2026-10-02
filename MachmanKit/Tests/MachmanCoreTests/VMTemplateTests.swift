@@ -17,14 +17,14 @@ struct VMTemplateTests {
 			let registry = VMRegistry()
 
 			let blank = try registry.create()
-			try LocalMachman.applyTemplate("blank", to: blank.config)
+			try LocalMachman.applyTemplate(.blank, to: blank.config)
 			#expect(blank.config.devices.isEmpty)
 			#expect(blank.config.consolePorts.isEmpty)
 			#expect(blank.config.uartPorts.isEmpty)
 
 			// The contrast: default keeps the seeded console + implied devices.
 			let dflt = try registry.create()
-			try LocalMachman.applyTemplate("default", to: dflt.config)
+			try LocalMachman.applyTemplate(.default, to: dflt.config)
 			#expect(dflt.config.consolePorts.count == 1)
 			#expect(!dflt.config.devices.isEmpty)
 		}

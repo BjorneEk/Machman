@@ -318,9 +318,9 @@ public enum RPCParams {
 		}
 	}
 
-	// vm.create: template picks the starting device set ("blank" | "default" | "mac");
-	// absent/nil keeps today's behavior (= "default"). Sent as params where the method
-	// previously took none — old daemons ignore params they never read.
+	// vm.create: template picks the starting device set (a VMTemplate raw value); absent/nil
+	// keeps today's behavior (= "default"). Sent as params where the method previously took
+	// none — old daemons ignore params they never read.
 	public struct Create: Codable, Equatable, Sendable {
 		public var template: String?
 

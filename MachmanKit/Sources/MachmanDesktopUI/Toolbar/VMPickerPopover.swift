@@ -187,7 +187,7 @@ private struct VMPickerRow: View {
 // the daemon's template actually seeds (LocalMachman.createVM).
 private struct NewVMTemplateView: View {
 	let back: () -> Void
-	let create: (String?) -> Void
+	let create: (VMTemplate?) -> Void
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -208,15 +208,15 @@ private struct NewVMTemplateView: View {
 			Divider()
 			VStack(spacing: 2) {
 				row(title: "Blank", caption: "No devices — add exactly what you need",
-					template: "blank") {
+					template: .blank) {
 					Image(systemName: MachmanSymbols.templateBlank).font(.system(size: 15))
 				}
 				row(title: "Default", caption: "Keyboard, pointer, display, audio, network, "
-					+ "clipboard — add disks yourself", template: "default") {
+					+ "clipboard — add disks yourself", template: .default) {
 					TuxIcon(size: 16)
 				}
 				row(title: "macOS", caption: "Mac device set — install macOS afterwards",
-					template: "mac") {
+					template: .mac) {
 					Image(systemName: MachmanSymbols.bootMacTab).font(.system(size: 15))
 				}
 			}
@@ -225,7 +225,7 @@ private struct NewVMTemplateView: View {
 	}
 
 	private func row(
-		title: String, caption: String, template: String?,
+		title: String, caption: String, template: VMTemplate?,
 		@ViewBuilder icon: @escaping () -> some View
 	) -> some View {
 		Button {

@@ -1060,7 +1060,7 @@ public final class RoutingMachman: MachmanControlling {
 		info.ssh = ssh
 	}
 
-	public func createVM(template: String?) async throws -> VMInfo {
+	public func createVM(template: VMTemplate?) async throws -> VMInfo {
 		try await local.createVM(template: template)
 	}
 

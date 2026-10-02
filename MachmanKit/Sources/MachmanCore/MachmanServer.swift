@@ -171,9 +171,7 @@ public final class MachmanServer {
 				let p: RPCParams.Name = try params(line)
 				reply(client, id, try await api.vm(named: p.name))
 			case .vmCreate:
-				// Params are optional here (the method predates them): absent = nil template.
-				let p: RPCParams.Create? = try? params(line)
-				reply(client, id, try await api.createVM(template: p?.template))
+				reply(client, id, try await api.createVM(template: try createTemplate(line)))
 			case .vmDelete:
 				let p: RPCParams.Name = try params(line)
 				try await api.deleteVM(named: p.name)
@@ -422,6 +420,27 @@ public final class MachmanServer {
 		} catch {
 			throw ParamsError(message: "invalid params: \(error)")
 		}
+	}
+
+	// vm.create's params are optional (the method predates them): absent, null or {} mean no
+	// template. Anything else must be a template this build knows — a malformed params object
+	// is invalid params and an unknown name is refused, never read as the default (A8).
+	private func createTemplate(_ line: Data) throws -> VMTemplate? {
+		let call: RPCCall<RPCParams.Create>
+		do {
+			call = try MachmanWire.decoder().decode(RPCCall<RPCParams.Create>.self, from: line)
+		} catch {
+			throw ParamsError(message: "invalid params: \(error)")
+		}
+		guard let name = call.params?.template else { return nil }
+		guard let template = VMTemplate(rawValue: name) else {
+			let names = VMTemplate.allCases.map(\.rawValue)
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "unknown VM template '\(name)' — use "
+					+ names.dropLast().joined(separator: ", ") + " or \(names.last ?? "")")
+		}
+		return template
 	}
 
 	private func reply<R: Codable>(_ client: Client, _ id: RPCID, _ result: R) {

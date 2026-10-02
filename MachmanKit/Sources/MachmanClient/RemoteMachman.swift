@@ -111,9 +111,9 @@ public final class RemoteMachman: MachmanControlling {
 			.vmGet, RPCParams.Name(name: name), expecting: VMInfo.self, deadline: deadline)
 	}
 
-	public func createVM(template: String?) async throws -> VMInfo {
+	public func createVM(template: VMTemplate?) async throws -> VMInfo {
 		try await connection.call(
-			.vmCreate, RPCParams.Create(template: template), expecting: VMInfo.self)
+			.vmCreate, RPCParams.Create(template: template?.rawValue), expecting: VMInfo.self)
 	}
 
 	public func deleteVM(named name: String) async throws {

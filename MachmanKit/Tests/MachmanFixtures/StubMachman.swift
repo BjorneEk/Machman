@@ -87,8 +87,8 @@ public final class StubMachman: MachmanControlling {
 		await stallWhileScripted("vm")
 		return try get(name)
 	}
-	public var lastCreateTemplate: String?
-	public func createVM(template: String?) async throws -> VMInfo {
+	public var lastCreateTemplate: VMTemplate?
+	public func createVM(template: VMTemplate?) async throws -> VMInfo {
 		try gate()
 		lastCreateTemplate = template
 		let vm = Self.makeInfo("new-VM\(vms.count + 1)")

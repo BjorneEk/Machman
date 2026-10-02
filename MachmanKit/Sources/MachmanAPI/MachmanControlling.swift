@@ -20,10 +20,9 @@ public protocol MachmanControlling: AnyObject {
 	// MARK: VM lifecycle
 	func listVMs() async throws -> [VMInfo]
 	func vm(named name: String) async throws -> VMInfo
-	// template: "blank" (no devices, no console) | "default" (implied EFI set + one console;
-	// no disk — add your own) | "mac" (mac-guest device set minus trackpad, which needs macOS
-	// boot — add it after install). nil keeps the pre-template behavior (same as "default").
-	func createVM(template: String?) async throws -> VMInfo
+	// template: the starting device set (VMTemplate says what each seeds). nil keeps the
+	// pre-template behavior (same as .default).
+	func createVM(template: VMTemplate?) async throws -> VMInfo
 	func deleteVM(named name: String) async throws
 	func renameVM(named name: String, to newName: String) async throws
 	// Duplicate a stopped VM. diskIDs = writable disks to carry (nil = all); ISOs always

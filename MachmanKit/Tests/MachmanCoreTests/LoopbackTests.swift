@@ -413,8 +413,8 @@ struct LoopbackTests {
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "devices")
 
 		// Templates ride vm.create's new optional params.
-		_ = try await client.createVM(template: "mac")
-		#expect(stub.lastCreateTemplate == "mac")
+		_ = try await client.createVM(template: .mac)
+		#expect(stub.lastCreateTemplate == .mac)
 
 		// Device add → update → remove, VMInfo echoed each time.
 		var info = try await client.addDevice(vm: "Debian", kind: .entropy)

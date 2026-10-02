@@ -786,7 +786,7 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
-	public func createVM(template: String? = nil) async -> String? {
+	public func createVM(template: VMTemplate? = nil) async -> String? {
 		do {
 			let vm = try await api.createVM(template: template)
 			await reload()
