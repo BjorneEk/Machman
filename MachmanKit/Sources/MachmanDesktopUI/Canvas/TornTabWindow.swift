@@ -69,12 +69,14 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		.focusedSceneValue(\.machmanInspector, $showInspector)
 		.toolbar {
 			ToolbarItem(placement: .primaryAction) {
+				let inspectorHelp = showInspector ? "Hide Inspector" : "Show Inspector"
 				Button {
 					showInspector.toggle()
 				} label: {
 					Image(systemName: MachmanSymbols.inspectorToggle)
 				}
-				.help(showInspector ? "Hide Inspector" : "Show Inspector")
+				.help(inspectorHelp)
+				.accessibilityLabel(inspectorHelp)
 			}
 		}
 		.onAppear {

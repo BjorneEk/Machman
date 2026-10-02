@@ -298,6 +298,7 @@ private struct NewMacSourceView: View {
 				.buttonStyle(.plain)
 				.machmanHoverable()
 				.help("Back")
+				.accessibilityLabel("Back")
 				Text("macOS")
 					.font(.system(size: 12, weight: .semibold))
 				Spacer()

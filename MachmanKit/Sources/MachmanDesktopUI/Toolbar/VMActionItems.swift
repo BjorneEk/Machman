@@ -19,6 +19,7 @@ struct WindowToggleItem: View {
 	let vm: VMInfo
 
 	var body: some View {
+		let help = VMListViewModel.windowToggleHelp(vm)
 		Toggle(isOn: Binding(
 			get: { vm.state == .running ? vm.windowOpen : policy.windowed },
 			set: { _ in toggleWindow() })
@@ -27,7 +28,8 @@ struct WindowToggleItem: View {
 		}
 		.toggleStyle(.button)
 		.disabled(vm.state != .running)
-		.help(VMListViewModel.windowToggleHelp(vm))
+		.help(help)
+		.accessibilityLabel(help)   // image-only: VoiceOver reads the help (H32)
 	}
 
 	private var policy: StartPolicy { vm.startPolicy ?? StartPolicy() }
@@ -63,12 +65,14 @@ struct StartStopGroup: View {
 							Image(systemName: MachmanSymbols.start)
 						}
 						.help(viewModel.startHelp(vm))
+						.accessibilityLabel(viewModel.startHelp(vm))
 						Button {
 							viewModel.startPolicyDriven(vm, .safe)
 						} label: {
 							SafeStartGlyph(size: 12)
 						}
 						.help("Start Safe — run on a discardable shadow")
+						.accessibilityLabel("Start Safe — run on a discardable shadow")
 					}
 					.disabled(!viewModel.canStart(vm))
 				}
@@ -97,12 +101,14 @@ struct StartStopGroup: View {
 						Image(systemName: MachmanSymbols.shutDown)
 					}
 					.help("Shut Down")
+					.accessibilityLabel("Shut Down")
 					Button {
 						viewModel.stopVM(vm.name, mode: .force)
 					} label: {
 						Image(systemName: MachmanSymbols.forceStop)
 					}
 					.help("Force Stop")
+					.accessibilityLabel("Force Stop")
 				}
 			}
 		}

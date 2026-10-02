@@ -618,8 +618,11 @@ private struct CanvasTabItem: View {
 			}
 		}
 		.buttonStyle(.plain)
-		.help("Close tab" + (isTerminal ? " (disconnects)" : ""))
+		.help(closeHelp)
+		.accessibilityLabel(closeHelp)   // image-only: VoiceOver reads the help (H32)
 	}
+
+	private var closeHelp: String { "Close tab" + (isTerminal ? " (disconnects)" : "") }
 
 	@ViewBuilder
 	private var tabBackground: some View {

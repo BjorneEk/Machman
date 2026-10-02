@@ -182,12 +182,14 @@ public struct VMNavigationView: View {
 			// No delete in the toolbar (1.0.4 design): it lives in the picker's row menu.
 			ToolbarItemGroup(placement: .primaryAction) {
 				AddButton(viewModel: viewModel, vm: vm)
+				let inspectorHelp = viewModel.showInfoPanel ? "Hide Inspector" : "Show Inspector"
 				Button {
 					viewModel.showInfoPanel.toggle()
 				} label: {
 					Image(systemName: MachmanSymbols.inspectorToggle)
 				}
-				.help(viewModel.showInfoPanel ? "Hide Inspector" : "Show Inspector")
+				.help(inspectorHelp)
+				.accessibilityLabel(inspectorHelp)
 			}
 		}
 	}
