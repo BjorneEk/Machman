@@ -175,7 +175,10 @@ final class DaemonConnection: ObservableObject {
 	// original, so its stale copy can be saved over the rewrite — and the daemon gained the
 	// safety refusals around it (shared disks, dropped vmhost connections, cross-volume
 	// saves, a saved run on its source's socket).
-	static let oldestCompatibleDaemonVersion = "1.0.11"
+	// 1.0.12: vm.setEnabled gained devices (an older daemon drops the key, so a batch toggle
+	// silently skips devices), and the daemon refuses setting changes on VMs still run by an
+	// older vmhost (E22) — whose floor is the daemon's own version.
+	static let oldestCompatibleDaemonVersion = "1.0.12"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
