@@ -79,11 +79,9 @@ public struct VMNavigationView: View {
 		} detail: {
 			VMTabContainerView(
 				viewModel: viewModel, sessions: viewModel.terminals, profiles: profiles)
-				// The canvas's minimum, from which SwiftUI derives the window's floor (L1):
-				// the sidebar's width plus this. While the inspector shows, SwiftUI already
-				// keeps 300 pt for the content beside it and would count this on top (a
-				// 900 pt window then drew 1198), so the floor is sidebar + 300 + inspector.
-				.frame(minWidth: viewModel.showInfoPanel ? nil : MainWindowLayout.canvas.width)
+				.modifier(CanvasFloor(
+					canvases: viewModel.canvases, vm: viewModel.selectedName,
+					inspectorShown: viewModel.showInfoPanel))
 		}
 		// The NATIVE inspector column (demo design): full height beside the toolbar with
 		// the system's glass treatment, not a panel embedded in the detail pane.
@@ -295,4 +293,21 @@ private struct ConfirmationDialogs: ViewModifier {
 
 #Preview {
 	//VMNavigationView()
+}
+
+// The canvas's minimum, from which SwiftUI derives the window's floor (L1): the sidebar's
+// width plus this, which follows the selected VM's open panes (three need more than one).
+// While the inspector shows, SwiftUI already keeps 300 pt for the content beside it and
+// would count this on top (a 900 pt window then drew 1198), so the floor is then sidebar +
+// 300 + inspector and three panes share those 300 pt, each under its own minimum.
+private struct CanvasFloor: ViewModifier {
+	@ObservedObject var canvases: CanvasStateStore
+	let vm: String?
+	let inspectorShown: Bool
+
+	func body(content: Content) -> some View {
+		let panes = vm.map { canvases.canvas(for: $0).panes.count } ?? 1
+		content.frame(
+			minWidth: inspectorShown ? nil : MainWindowLayout.canvasMinWidth(panes: panes))
+	}
 }

@@ -10,6 +10,7 @@
 //
 
 import CoreGraphics
+import MachmanUI
 
 enum MainWindowLayout {
 	struct Column {
@@ -26,4 +27,16 @@ enum MainWindowLayout {
 	// that still holds a stopped VM's Start button and label, and the state caption below
 	// it; at 280 pt the row wraps (renders, wave 3).
 	static let canvas = CGSize(width: 300, height: 300)
+	// The draggable bar between two canvas panes.
+	static let paneDivider: CGFloat = 9
+
+	// The canvas's minimum width with `panes` side by side: each pane's own minimum
+	// (CanvasPaneLayout) and the dividers between them, and never under one pane's canvas.
+	// Three panes need 378 pt, so they raise the floor; one or two keep it at 300 pt.
+	static func canvasMinWidth(panes: Int) -> CGFloat {
+		let count = CGFloat(max(panes, 1))
+		return max(
+			canvas.width,
+			count * CanvasPaneLayout.minimumPaneWidth + (count - 1) * paneDivider)
+	}
 }

@@ -17,7 +17,7 @@ import MachmanUI
 import MachmanAPI
 import MachmanDesktopCore
 
-private let dividerWidth: CGFloat = 9
+private let dividerWidth = MainWindowLayout.paneDivider
 
 // The in-flight tab drag: translation drives in-strip reorder until the tab detaches
 // (pulled down or off its strip), after which the ghost + drop zones take over.

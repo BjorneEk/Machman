@@ -275,6 +275,27 @@ enum WindowScenes {
 			threePanes(ctx)
 			return mainWindow(ctx, inspector: true)
 		},
+		// O-2: with the inspector closed, three panes raise the canvas floor to their own
+		// minimums (3 × 120 pt plus two dividers), so none is squeezed below it.
+		RenderScene(
+			"window.main.three-panes.no-inspector.floor",
+			"VMNavigationView at its minimum size, inspector closed, three canvas panes",
+			chrome: .window,
+			panels: { ctx in [tree(ctx)] }
+		) { ctx in
+			threePanes(ctx)
+			return mainWindow(ctx, inspector: false)
+		},
+		// …and with it open the three share the content's 300 pt, under their minimum.
+		RenderScene(
+			"window.main.three-panes.floor",
+			"VMNavigationView at its minimum size, inspector open, three canvas panes",
+			chrome: .window,
+			panels: treeAndInspector
+		) { ctx in
+			threePanes(ctx)
+			return mainWindow(ctx, inspector: true)
+		},
 		// H20: the canvas's active-pane strip, the tree's dots and checks follow the accent.
 		RenderScene(
 			"window.main.accent", "VMNavigationView, Kernel Lab split in two, orange accent",
