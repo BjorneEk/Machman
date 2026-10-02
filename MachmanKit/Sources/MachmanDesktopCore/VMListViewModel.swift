@@ -4,8 +4,8 @@
 //
 //  The client half of the app: view-facing state fed exclusively through MachmanControlling
 //  and its event stream. Holds no engine objects — only DTOs, selection, preview images, and
-//  install-phase snapshots. Works identically against LocalMachman (in-process) or a future
-//  RemoteMachman (daemon).
+//  install-phase snapshots. The app hands it the daemon connection (RemoteMachman); tests
+//  and the render tool hand it StubMachman.
 //
 
 import Foundation
@@ -500,8 +500,7 @@ public final class VMListViewModel: ObservableObject {
 		case .copyProgress:
 			break   // legacy wire event; the operation cards carry all copy progress
 		case .operationChanged:
-			// The operations UI (progress cards) lands with the desktop overhaul; until
-			// then the legacy copyProgress events above cover the same transfers.
+			// OperationsStore owns operations (the progress cards) on its own stream.
 			break
 		case .sshChanged(let vm):
 			// Discovery answers arrive with no listChanged — refresh the rows ourselves.

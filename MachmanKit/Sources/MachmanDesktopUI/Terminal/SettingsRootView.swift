@@ -2,8 +2,7 @@
 //  SettingsRootView.swift
 //  MachmanDesktopUI
 //
-//  The app Settings window (⌘,). One tab today — the terminal-profile editor — in a TabView so
-//  future settings groups drop in beside it.
+//  The app Settings window (⌘,): a TabView with one tab per settings group.
 //
 
 import SwiftUI

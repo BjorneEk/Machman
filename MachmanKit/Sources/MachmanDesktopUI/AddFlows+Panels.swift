@@ -35,7 +35,7 @@ extension AddFlows {
 		]) as? [URL] ?? []
 	}
 
-	// The guest mount tag defaults to the folder's name (editable in the mounts table).
+	// The guest mount tag defaults to the folder's name (renamable in the mount's inspector).
 	static func chooseMountFolder(viewModel: VMListViewModel, vm: String) {
 		let panel = NSOpenPanel()
 		panel.canChooseFiles = false

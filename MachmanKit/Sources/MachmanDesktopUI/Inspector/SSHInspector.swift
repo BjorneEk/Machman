@@ -2,10 +2,10 @@
 //  SSHInspector.swift
 //  MachmanDesktopUI
 //
-//  EVERYTHING SSH for one VM, in one place: the tree's SSH section is its home, and the
-//  SSH Setup device row routes here too. It used to be spread across the network device
-//  (status, alias, guest access) and the installer device (payload, guide, reset), which
-//  meant reading two inspectors to answer one question.
+//  EVERYTHING SSH for one VM, in one place: the tree's SSH section opens it. It used to be
+//  spread across the network device (status, alias, guest access) and the installer device
+//  (payload, guide, reset), which meant reading two inspectors to answer one question. The
+//  installer itself has its own inspector (GuestSetupInspector.swift).
 //
 
 import SwiftUI

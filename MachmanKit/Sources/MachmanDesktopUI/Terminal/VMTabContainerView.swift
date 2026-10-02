@@ -2,12 +2,10 @@
 //  VMTabContainerView.swift
 //  MachmanDesktopUI
 //
-//  The detail pane: a per-VM tabbed workspace. The window toolbar carries the 1.0.4 header —
-//  VM indicator + picker, safe chip, window toggle, start/stop group, add popover, inspector
-//  toggle (no delete: the picker's row menu owns it). Below it a tab strip switches between
-//  the fixed config tab and any open serial terminals. Mounted once and following
-//  viewModel.selected, so open terminals — held in TerminalSessions — survive switching
-//  between VMs and hidden tabs.
+//  The detail pane: the selected VM's canvas (VMCanvasView), or "Select a VM" with none
+//  selected; the toolbar and the inspector column belong to VMNavigationView. Mounted once
+//  and following viewModel.selected, so open terminals — held in TerminalSessions — survive
+//  switching between VMs; it also pushes terminal-profile edits to every open terminal.
 //
 
 import SwiftUI

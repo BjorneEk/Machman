@@ -6,7 +6,8 @@
 //  preview frames while running, spinner during transitions, a big start button while
 //  stopped — with the safe-run stroke + badge, and the status caption underneath.
 //  Configuration lives wholly in the inspectors. Headless VMs get the add-a-display hint;
-//  a running macOS install shows its phase banner here (corner cards arrive with S7).
+//  a running macOS install shows its phase banner here and a progress card in the corner
+//  (NotificationOverlay).
 //
 
 import SwiftUI

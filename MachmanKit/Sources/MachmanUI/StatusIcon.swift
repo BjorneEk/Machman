@@ -2,8 +2,8 @@
 //  StatusIcon.swift
 //  MachmanUI
 //
-//  One VM's state as a glyph: blue macwindow (running, window open), blue terminal (running
-//  headless), pause otherwise. safeRun is the reserved yellow-shield slot (phase 6).
+//  One VM's state as a glyph (the agent menu's VM rows): macwindow (running, window open),
+//  terminal (running headless), pause otherwise; a safe run adds the shield badge.
 //
 
 import SwiftUI
