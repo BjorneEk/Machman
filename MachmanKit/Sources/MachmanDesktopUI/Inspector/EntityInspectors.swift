@@ -6,7 +6,7 @@
 //  mount's tag rename in place (vm.disk.rename / vm.mount.setTag, the reason under the
 //  field), safety/enabled ride vm.setSafety / vm.setEnabled, grow is vm.disk.resize (owned
 //  storage, stopped VM only), promote copies a referenced image in. The mount inspector
-//  carries the per-OS virtiofs how-tos.
+//  shows where the folder lands in the guest; the per-OS steps are MountHelpSheet's.
 //
 
 import SwiftUI
@@ -206,6 +206,7 @@ struct MountInspector: View {
 	@State private var draftTag = ""
 	// The daemon's reason for refusing the last tag change, until the next edit.
 	@State private var tagRefusal: String?
+	@State private var showGuide = false
 	private let initialTagDraft: String?
 
 	// `tagDraft` opens the Tag field on an unsent draft (render scenes).
@@ -239,8 +240,7 @@ struct MountInspector: View {
 							+ "guest over its SSH link (no driver needed)")
 						if mount.effectiveKind == MountKind.sshfs,
 							vm.ssh?.sshfsAvailable != true {
-							Text("The guest hasn't reported sshfs yet — run the Guest "
-								+ "Setup script.")
+							Text("The guest hasn’t reported sshfs yet — run Guest Setup in it.")
 								.font(.caption2)
 								.foregroundStyle(.tertiary)
 						}
@@ -252,56 +252,37 @@ struct MountInspector: View {
 						get: { mount.isEnabled },
 						set: { viewModel.setEnabled(vm.name, mounts: [mountID: $0]) }))
 				}
-				Section("Mounting from the Guest") {
+				Section("In the guest") {
 					if mount.automounted == true {
 						LabeledContent {
-							Text(mount.automountedAt ?? "at boot")
+							Text(mount.automountedAt ?? "At boot")
 								.font(.system(.caption, design: .monospaced))
 								.foregroundStyle(.secondary)
 								.textSelection(.enabled)
 						} label: {
 							Label("Automount", systemImage: MachmanSymbols.automounted)
 						}
-					}
-					if mount.effectiveKind == MountKind.sshfs {
-						let guestDir = mount.automountedAt
-							?? GuestPaths.sshfsMountPoint(name: mount.tag)
-						Text("The guest mounts this folder itself, at “\(guestDir)”, over "
-							+ "its SSH link — approve guest → Mac access in the SSH section.")
-							.font(.caption)
-							.foregroundStyle(.secondary)
-							.fixedSize(horizontal: false, vertical: true)
-					} else if vm.boot.mode == .macOS {
-						// One virtiofs device carries every mount, each a subdirectory
-						// named by its tag; macOS automounts the share on its own.
-						Text("This VM's mounts automount in the guest — each is a folder "
-							+ "inside the “My Shared Files” volume (macOS 13+).")
-							.font(.caption)
-							.foregroundStyle(.secondary)
-							.fixedSize(horizontal: false, vertical: true)
-						guestHelp(
-							os: "macOS",
-							requirement: "Appears on its own; older guests (macOS 12) "
-								+ "mount it manually: mkdir -p ~/shared && mount_virtiofs "
-								+ "com.apple.virtio-fs.automount ~/shared",
-							command: "/Volumes/My Shared Files/\(mount.tag)")
 					} else {
-						Text("All virtiofs mounts ride one device tagged "
-							+ "“\(GuestPaths.shareTag)”. Mount it once — this folder is the "
-							+ "“\(mount.tag)” subdirectory inside it.")
+						let path = GuestSetupCommands.guestPath(of: mount, on: vm)
+						LabeledContent("Guest path") {
+							HStack(spacing: 2) {
+								Text(path)
+									.font(.system(.caption, design: .monospaced))
+									.truncationMode(.middle)
+									.lineLimit(1)
+									.help(path)
+								CopyToClipboardButton(path, tooltip: "Copy path")
+							}
+						}
+					}
+					if let caption = guestCaption(mount) {
+						Text(caption)
 							.font(.caption)
 							.foregroundStyle(.secondary)
 							.fixedSize(horizontal: false, vertical: true)
-						guestHelp(
-							os: "Linux",
-							requirement: "virtiofs is built into kernels ≥ 5.4 "
-								+ "(CONFIG_VIRTIO_FS); no extra packages.",
-							command: GuestSetupCommands.mountShare(.linux))
-						Text("No virtiofs driver (FreeBSD, OpenBSD)? Switch the kind to "
-							+ "sshfs instead.")
-							.font(.caption)
-							.foregroundStyle(.tertiary)
 					}
+					GuideButton(
+						isPresented: $showGuide, help: "How to reach this folder from the guest")
 				}
 				Section {
 					HStack {
@@ -314,6 +295,9 @@ struct MountInspector: View {
 						Spacer()
 					}
 				}
+			}
+			.sheet(isPresented: $showGuide) {
+				MountHelpSheet(vm: vm, mount: mount).liveWhileSettingsLocked()
 			}
 		} else {
 			NoSelectionInspector()
@@ -350,16 +334,14 @@ struct MountInspector: View {
 		}
 	}
 
-	private func guestHelp(os: String, requirement: String, command: String) -> some View {
-		DisclosureGroup(os) {
-			VStack(alignment: .leading, spacing: 6) {
-				Text(requirement)
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-				CommandBlock(command)
-			}
-			.padding(.vertical, 2)
+	// One sentence on how the folder reaches the guest; the steps live in the guide.
+	private func guestCaption(_ mount: MountInfo) -> String? {
+		if mount.effectiveKind == MountKind.sshfs {
+			return "The guest mounts it over SSH once you approve guest → Mac access in the "
+				+ "SSH section."
 		}
+		if vm.boot.mode == .macOS { return "macOS 13 and later mount the share on their own." }
+		return mount.automounted == true
+			? nil : "Mount Machman’s share in the guest to reach this folder."
 	}
 }

@@ -31,6 +31,17 @@ enum PopoverScenes {
 			.padding(12))
 	}
 
+	// The mount guide for one of the first VM's mounts.
+	static func mountGuide(
+		_ suffix: String, _ summary: String, vms: @escaping () -> [VMInfo],
+		mount id: String = Samples.srcMountID
+	) -> RenderScene {
+		RenderScene("sheet.mount-help\(suffix)", "MountHelpSheet, \(summary)", vms: vms) { ctx in
+			let mount = ctx.vm.mounts.first { $0.id == id }!
+			return AnyView(MountHelpSheet(vm: ctx.vm, mount: mount))
+		}
+	}
+
 	// One guide page alone, at the sheet's text width (560 − 2 × 22), fitting height.
 	static func guidePage(
 		_ name: String, _ summary: String, tab: GuestSetupHelpSheet.GuestTab,
@@ -196,6 +207,13 @@ enum PopoverScenes {
 			"bsd-approved", "BSD, approved key", tab: .bsd,
 			vms: { [Samples.linuxReverseApproved()] }),
 		guidePage("info", "Info", tab: .info, vms: { [Samples.linux("Debian")] }),
+		mountGuide("", "a Linux guest mounting by hand", vms: { [Samples.linuxManualMount()] }),
+		mountGuide(".automounted", "Guest Setup automounts the share", vms: { [Samples.linux()] }),
+		mountGuide(".kernel", "a kernel-boot guest", vms: { [Samples.kernelBoot()] }),
+		mountGuide(
+			".sshfs", "an sshfs folder", vms: { [Samples.linuxWithMounts()] },
+			mount: Samples.notesMountID),
+		mountGuide(".macos", "a macOS guest", vms: { [Samples.macOSWithMount()] }),
 		RenderScene("sheet.mac-switch", "MacSwitchSheet (switch a VM to macOS)") { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
 		},

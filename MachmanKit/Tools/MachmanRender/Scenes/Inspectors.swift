@@ -180,6 +180,17 @@ enum InspectorScenes {
 					mountID: "7B0E4F52-3C1A-4D55-9E0B-2A6C1D9F0A11", tagDraft: "GuestSetup")
 					.formStyle(.grouped))
 		},
+		inspector(
+			"mount.manual", "MountInspector, a virtiofs mount the guest mounts by hand",
+			vms: { [Samples.linuxManualMount()] }, select: "Alpine",
+			node: .mount(Samples.srcMountID)),
+		inspector(
+			"mount.sshfs", "MountInspector, an sshfs mount",
+			vms: { [Samples.linuxWithMounts()] }, node: .mount(Samples.notesMountID)),
+		inspector(
+			"mount.macos", "MountInspector, a macOS guest's mount",
+			vms: { [Samples.macOSWithMount()] }, select: "Sequoia",
+			node: .mount(Samples.srcMountID)),
 		inspector("serial-group", "SerialGroupInspector", node: .group("Serial")),
 		inspector(
 			"serial", "SerialInspector, console port of a running VM", node: .serial(console)),

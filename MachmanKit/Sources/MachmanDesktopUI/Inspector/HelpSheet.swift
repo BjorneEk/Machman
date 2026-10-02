@@ -34,6 +34,8 @@ struct HelpSheetFrame<Header: View, Page: View>: View {
 					.foregroundStyle(.secondary)
 				Text(title)
 					.font(.system(size: HelpSheetType.title, weight: .semibold))
+					.lineLimit(1)
+					.truncationMode(.middle)   // a long mount tag
 				Spacer()
 			}
 			header()
