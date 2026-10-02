@@ -179,18 +179,27 @@ struct VMPreviewTabView: View {
 			.machmanGlass(cornerRadius: 8)
 			.frame(maxWidth: 480)
 		case .failed:
-			Label(phase.message ?? "The macOS install failed",
-				systemImage: MachmanSymbols.warning)
-				.font(.callout)
-				.foregroundStyle(MachmanColors.warning)
+			installProblem(phase.message ?? "The macOS install failed")
 		case .interrupted:
-			Label("The macOS install was interrupted — restart it from the VM's "
-				+ "boot settings", systemImage: MachmanSymbols.warning)
-				.font(.callout)
-				.foregroundStyle(MachmanColors.warning)
+			installProblem("The macOS install was interrupted — restart it from the VM's "
+				+ "boot settings")
 		case .idle, .installed:
 			EmptyView()
 		}
+	}
+
+	// An install that ended badly. The engine's reason is a whole error description (VZ's
+	// run to ~70 characters and more): two lines at most, kept off the canvas edges, the full
+	// text in the tooltip.
+	private func installProblem(_ message: String) -> some View {
+		Label(message, systemImage: MachmanSymbols.warning)
+			.font(.callout)
+			.foregroundStyle(MachmanColors.warning)
+			.lineLimit(2)
+			.truncationMode(.tail)
+			.frame(maxWidth: 480)
+			.padding(.horizontal, 24)
+			.help(message)
 	}
 
 	private func phaseLabel(_ phase: InstallPhase) -> String {
