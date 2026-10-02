@@ -78,12 +78,24 @@ public final class RoutingMachman: MachmanControlling {
 		var sshReadySince: Date?
 		// E20: the host's last vm.get answer — what clients see while it misses its answer
 		// deadline, marked unresponsive — and the watcher that notices it answering again.
-		var lastAnswer: VMInfo?
+		var lastAnswer: VMInfo? {
+			didSet { if let state = lastAnswer?.state { lastState = state } }
+		}
+		// The VM's state as the host last told it: a stateChanged event or an answer (V7:
+		// the agent's quit asks whether VMs run, not whether hosts exist).
+		var lastState: VMState?
 		var unresponsive = false
 		var recoveryTask: Task<Void, Never>?
 		// Whether this host ever ran its VM (E12): an idle host from a start whose forward
 		// never happened can take a new start; one whose run stopped is exiting.
 		var sawRun = false
+
+		// A start this daemon forwarded succeeded: the VM runs, whether or not its running
+		// event got here first (a later event still moves lastState on).
+		func markStarted() {
+			sawRun = true
+			lastState = .running
+		}
 		// The disk files a start this daemon made left unattached (its disabled entries), or
 		// nil for a start it did not make (an adopted host). The run attached every other
 		// entry, whatever the flags say now: vm.setEnabled edits a running VM's config but
@@ -190,6 +202,16 @@ public final class RoutingMachman: MachmanControlling {
 	func hostForTesting(_ name: String) -> HostedVM? { hosted[name] }
 
 	public var hasHostedVMs: Bool { !hosted.isEmpty }
+
+	// The VMs that run now, by name: a hosted one whose VM the host last reported running
+	// (starting and stopping count) or that stopped answering, and every start in flight. An
+	// idle host, or one exiting after its run, holds nothing up: it quits with the session.
+	public var runningVMNames: [String] {
+		let hostedRunning = hosted.values
+			.filter { $0.unresponsive || $0.lastState?.isRunning == true }
+			.map(\.identity.name)
+		return Set(hostedRunning).union(pendingStarts).sorted()
+	}
 
 	// Adopt vmhosts left behind by an earlier daemon: a live host answers on its socket and
 	// keeps running (its VM never noticed the daemon restart); a stale socket is reclaimed.
@@ -683,6 +705,9 @@ public final class RoutingMachman: MachmanControlling {
 				let event = forwarded.event
 				guard self.host(withID: id) != nil || Self.passesBeforeHosted(event) else {
 					continue
+				}
+				if case .stateChanged(_, let state) = event, let host = self.host(withID: id) {
+					host.lastState = state
 				}
 				if case .stateChanged(_, let state) = event, state.isRunning,
 					let host = self.host(withID: id) {
@@ -1659,7 +1684,7 @@ public final class RoutingMachman: MachmanControlling {
 		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
 		do {
 			try await forwardStart(host, name: name, options: options)
-			host.sawRun = true
+			host.markStarted()
 		} catch {
 			host.eventTask?.cancel()
 			host.deathWatch?.invalidate()
@@ -1817,7 +1842,7 @@ public final class RoutingMachman: MachmanControlling {
 		forwarded.safe = false   // the vmhost never knows it runs a shadow
 		do {
 			try await forwardStart(host, name: name, options: forwarded)
-			host.sawRun = true
+			host.markStarted()
 		} catch {
 			host.eventTask?.cancel()
 			host.deathWatch?.invalidate()
@@ -1943,13 +1968,13 @@ public final class RoutingMachman: MachmanControlling {
 		} catch let error as MachmanError where error.code == .invalidState {
 			// Already running (autostart got there first) — the caller still gets what they
 			// asked for.
-			host.sawRun = true
+			host.markStarted()
 			if options.openWindow {
 				try? await host.client.openWindow(vm: name)
 			}
 			return true
 		}
-		host.sawRun = true
+		host.markStarted()
 		// The host emitted .running while start() was in flight — the subscription may have
 		// seen it, but a kick is cheap and never misses (the plain start path's reasoning).
 		startSSHDiscovery(host)

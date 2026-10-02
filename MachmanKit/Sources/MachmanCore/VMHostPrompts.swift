@@ -76,11 +76,11 @@ struct HostPrompt: Equatable {
 					Button(choice: .cancel, title: "Cancel"),
 				])
 		case .logOut:
-			retry = "Log out was cancelled: shut the VM down, then log out again."
+			retry = "Log out was canceled: shut the VM down, then log out again."
 		case .restart:
-			retry = "Restart was cancelled: shut the VM down, then restart again."
+			retry = "Restart was canceled: shut the VM down, then restart again."
 		case .shutDown:
-			retry = "Shut down was cancelled: shut the VM down, then shut down your Mac again."
+			retry = "Shut down was canceled: shut the VM down, then shut down your Mac again."
 		}
 		return HostPrompt(
 			message: "\(name) is still running",
@@ -124,9 +124,10 @@ struct HostPrompt: Equatable {
 	}
 }
 
-// Why the vmhost is asked to quit: the quit Apple event's kAEQuitReason, which loginwindow
-// sets for a log out, restart or shut down. ⌘Q and the Dock's Quit carry none.
-enum VMHostQuitReason: Equatable {
+// Why the vmhost (or the agent, AgentQuitDecision) is asked to quit: the quit Apple event's
+// kAEQuitReason, which loginwindow sets for a log out, restart or shut down. ⌘Q and the
+// Dock's Quit carry none.
+public enum VMHostQuitReason: Equatable, Sendable {
 	case userQuit
 	case logOut
 	case restart
@@ -147,7 +148,7 @@ enum VMHostQuitReason: Equatable {
 
 	// Read while AppKit handles the quit event, i.e. inside applicationShouldTerminate.
 	@MainActor
-	static func current() -> VMHostQuitReason {
+	public static func current() -> VMHostQuitReason {
 		guard let event = NSAppleEventManager.shared().currentAppleEvent,
 			event.eventID == AEEventID(kAEQuitApplication) else {
 			return .userQuit

@@ -171,11 +171,23 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-		guard Daemon.api.hasHostedVMs else {
+		let reason = VMHostQuitReason.current()
+		let running = Daemon.api.runningVMNames
+		switch AgentQuitDecision.decide(reason: reason, runningVMs: running.count) {
+		case .quit:
 			Daemon.server.stop()
 			return .terminateNow
+		case .cancelQuietly:
+			// Each VM's own window cancels the log out too and says what to do (V1).
+			MachmanLogger.log(.log,
+				"\(reason) canceled: \(running.joined(separator: ", ")) still running")
+			return .terminateCancel
+		case .ask:
+			break
 		}
 
+		// The user's own quit: in front, where they can see it.
+		NSApp.activate(ignoringOtherApps: true)
 		let alert = NSAlert()
 		alert.messageText = "VMs are still running"
 		alert.informativeText = "Running VMs live in their own processes: you can quit and "
