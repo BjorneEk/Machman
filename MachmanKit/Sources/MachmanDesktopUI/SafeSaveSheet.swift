@@ -29,8 +29,9 @@ struct SafeSaveSheet: View {
 		VStack(alignment: .leading, spacing: 12) {
 			Label("Save \(vm.name)'s safe run as a new VM", systemImage: MachmanSymbols.safe)
 				.font(.headline)
-			Text("The running copy becomes a new VM without stopping, and \(vm.name) stays as "
-				+ "it was.")
+			// True with or without unshadowed disks: those move to the new VM (C5).
+			Text("The running copy becomes a new VM without stopping; disks it wrote directly "
+				+ "move into it, and \(vm.name) keeps using them from there.")
 				.font(.caption)
 				.foregroundColor(.secondary)
 				.fixedSize(horizontal: false, vertical: true)
