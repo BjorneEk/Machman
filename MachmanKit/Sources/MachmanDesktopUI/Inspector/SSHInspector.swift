@@ -152,26 +152,9 @@ struct NetworkSSHSection: View {
 			LabeledContent("Guest → Mac") {
 				Text("awaiting your approval").foregroundStyle(.secondary)
 			}
-			if let fingerprint = vm.ssh?.reversePublicKey.flatMap(sshKeyFingerprint) {
-				Text(fingerprint)
-					.font(.system(.caption2, design: .monospaced))
-					.foregroundStyle(.tertiary)
-					.textSelection(.enabled)
-			}
+			fingerprintRow
 			HStack {
-				Button("Approve…") { approveConsent = true }
-					.confirmationDialog(
-						"Let \(vm.name) log in to this Mac as you?",
-						isPresented: $approveConsent
-					) {
-						Button("Approve") {
-							viewModel.setSSHReverseApproved(vm.name, approved: true)
-						}
-						Button("Cancel", role: .cancel) {}
-					} message: {
-						Text("Adds the key shown above to ~/.ssh/authorized_keys — needs "
-							+ "Remote Login enabled on this Mac.")
-					}
+				approveButton
 				// An answer, not a postponement: denying stops the asking until the guest
 				// reports a different key.
 				Button("Deny") { viewModel.setSSHReverseApproved(vm.name, approved: false) }
@@ -180,18 +163,9 @@ struct NetworkSSHSection: View {
 			LabeledContent("Guest → Mac") {
 				Text("denied").foregroundStyle(.secondary)
 			}
-			Button("Approve…") { approveConsent = true }
-				.confirmationDialog(
-					"Let \(vm.name) log in to this Mac as you?", isPresented: $approveConsent
-				) {
-					Button("Approve") {
-						viewModel.setSSHReverseApproved(vm.name, approved: true)
-					}
-					Button("Cancel", role: .cancel) {}
-				} message: {
-					Text("Adds the key shown above to ~/.ssh/authorized_keys — needs "
-						+ "Remote Login enabled on this Mac.")
-				}
+			// A denied key stays served, so a later approval still shows what it adds.
+			fingerprintRow
+			approveButton
 		case .approved:
 			LabeledContent("Guest → Mac") {
 				Text("approved").foregroundStyle(MachmanColors.connected)
@@ -214,6 +188,32 @@ struct NetworkSSHSection: View {
 				.foregroundStyle(.tertiary)
 				.fixedSize(horizontal: false, vertical: true)
 		}
+	}
+
+	// The guest's key, as the approval dialog's "key shown above".
+	@ViewBuilder
+	private var fingerprintRow: some View {
+		if let fingerprint = vm.ssh?.reversePublicKey.flatMap(sshKeyFingerprint) {
+			Text(fingerprint)
+				.font(.system(.caption2, design: .monospaced))
+				.foregroundStyle(.tertiary)
+				.textSelection(.enabled)
+		}
+	}
+
+	private var approveButton: some View {
+		Button("Approve…") { approveConsent = true }
+			.confirmationDialog(
+				"Let \(vm.name) log in to this Mac as you?", isPresented: $approveConsent
+			) {
+				Button("Approve") {
+					viewModel.setSSHReverseApproved(vm.name, approved: true)
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: {
+				Text("Adds the key shown above to ~/.ssh/authorized_keys — needs "
+					+ "Remote Login enabled on this Mac.")
+			}
 	}
 }
 

@@ -88,4 +88,23 @@ extension Samples {
 		vm.consolePorts?[0].logPath = "\(vmsRoot)/\(name)/serial-console0.log"
 		return vm
 	}
+
+	// A well-formed ed25519 public-key line (fixed bytes), as a guest reports its reverse
+	// key: the inspector shows its SHA256 fingerprint.
+	public static let reverseKeyLine: String = {
+		var blob = Data([0, 0, 0, 11]) + Data("ssh-ed25519".utf8) + Data([0, 0, 0, 32])
+		blob += Data((0..<32).map { UInt8(($0 * 37 + 11) % 256) })
+		return "ssh-ed25519 \(blob.base64EncodedString()) demo@debian"
+	}()
+
+	// A Linux guest whose reverse (guest → Mac) key is in `state`. The daemon keeps serving
+	// the key after a denial, so a later approval can still show it.
+	public static func linuxReverse(
+		_ state: SSHInfo.ReverseState, _ name: String = "Debian"
+	) -> VMInfo {
+		var vm = linux(name)
+		vm.ssh?.reverseState = state
+		vm.ssh?.reversePublicKey = reverseKeyLine
+		return vm
+	}
 }

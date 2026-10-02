@@ -184,6 +184,12 @@ enum InspectorScenes {
 		inspector(
 			"ssh.spaced-name", "SSHInspector, a VM named with a space",
 			vms: { [Samples.linuxSpacedName()] }, select: "Debian copy", node: .group("SSH")),
+		inspector(
+			"ssh.reverse-pending", "SSHInspector, a guest key awaiting approval",
+			vms: { [Samples.linuxReverse(.pending)] }, node: .group("SSH")),
+		inspector(
+			"ssh.reverse-denied", "SSHInspector, a denied guest key",
+			vms: { [Samples.linuxReverse(.denied)] }, node: .group("SSH")),
 		RenderScene(
 			"inspector.ssh.alias-invalid", "SSHInspector, an alias it can't use",
 			widths: RenderScene.inspectorWidths, height: height
