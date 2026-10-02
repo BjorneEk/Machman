@@ -40,8 +40,8 @@ public final class RoutingMachman: MachmanControlling {
 		let id: UUID
 		var name: String
 		var socketPath: String
-		var isSafe = false           // inert until safe mode (phase 6)
-		var shadowRoot: String?      // inert until safe mode (phase 6)
+		var isSafe = false           // a safe-mode run (vm.start {safe:true})
+		var shadowRoot: String?      // that safe run's shadow copy (SafeRun)
 		// The MAC the guest is actually using — captured at spawn from the config, at adopt
 		// from the host's own reply (they can differ after a safe-save promotion).
 		var macInUse: String?

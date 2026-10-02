@@ -2,9 +2,10 @@
 //  MachmanAgentApp.swift
 //  MachmanAgent
 //
-//  The Machman daemon: a menu-bar agent (LSUIElement) that owns the VM engine, presents
-//  VM windows, and serves the MachmanControlling API over <dataDir>/machman.sock.
-//  MachmanDesktop, the CLI, and any non-Swift client are all just connections to it.
+//  The Machman daemon: a menu-bar agent (LSUIElement) that owns the VM registry, spawns and
+//  supervises one MachmanVMHost process per running VM (each presents its own VM's windows),
+//  and serves the MachmanControlling API over $TMPDIR/<suite>/machman.sock. MachmanDesktop
+//  and any non-Swift client (scripts/machman-smoke.py) are just connections to it.
 //
 
 import SwiftUI

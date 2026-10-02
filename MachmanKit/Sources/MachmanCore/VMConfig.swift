@@ -269,9 +269,9 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	// Explicit Codable so new fields can default when absent from older config files on disk.
-	// Every persisted field is enumerated in CodingKeys AND init(from:) AND encode(to:) —
-	// keep all three in lockstep when adding a field. (load(name:) is a plain decode and
-	// needs nothing.)
+	// Every persisted field appears in four places — its stored property, CodingKeys,
+	// init(from:) and encode(to:) — keep all four in lockstep when adding a field.
+	// (load(name:) is a plain decode and needs nothing.)
 	required init(from decoder: any Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.name = try c.decode(String.self, forKey: .name)
@@ -983,8 +983,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 					VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
 				}
 		)
-		// Engine-reserved directories (the login installer). Mount validation refuses
-		// their names, so the merge cannot shadow a user mount.
+		// Engine-reserved directories (the guest setup payload and its report drop-box).
+		// Mount validation refuses their names, so the merge cannot shadow a user mount.
 		sharedDirectories.merge(extraDirectories) { _, extra in extra }
 		let multipleDirectoryShare = VZMultipleDirectoryShare(directories: sharedDirectories)
 		let sharingConfiguration = VZVirtioFileSystemDeviceConfiguration(tag: mainTag)

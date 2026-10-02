@@ -214,8 +214,9 @@ extension VMConfig {
 	}
 
 	// The private PL011 UART class (a real /dev/ttyAMA* in the guest, drivable by bare-metal
-	// kernels). Present in every SDK since macOS 11 and usable with only the public virtualization
-	// entitlement, but private — guard it and skip cleanly if it ever disappears.
+	// kernels). Present in every SDK since macOS 11; usable with only the public virtualization
+	// entitlement up to macOS 26.6.0, gated since 26.6.1 (privateSerialRejected below). Private,
+	// so guard it and skip cleanly if it ever disappears.
 	private func makePL011SerialPort() -> VZSerialPortConfiguration? {
 		guard !VMConfig.privateSerialRejected() else { return nil }
 		guard let cls = NSClassFromString("_VZPL011SerialPortConfiguration") as? NSObject.Type,
