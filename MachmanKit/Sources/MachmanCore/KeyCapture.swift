@@ -74,8 +74,10 @@ enum KeyCapturePolicy {
 	}
 
 	// The keys Machman keeps for itself, captured or not: ⌃⌥⌘ + a letter, a chord no system
-	// shortcut uses. Matched on characters (like menu key equivalents, so it follows the
-	// keyboard layout) with exactly ⌃⌥⌘ held — Shift makes it a different chord.
+	// shortcut uses, with exactly ⌃⌥⌘ held — Shift makes it a different chord. A key press
+	// matches on what the key types in the layout's ⌘ layer (KeyLayout), like menu key
+	// equivalents, so the chords work on Cyrillic, Greek or Hebrew input and sit at the
+	// QWERTY keys on Dvorak – QWERTY ⌘; a menu item's own key equivalent matches as written.
 	enum ReservedKey: CaseIterable {
 		case toggleCapture      // ⌃⌥⌘K
 		case toggleFullScreen   // ⌃⌥⌘F — the way out when capture holds ⌃⌘F
@@ -97,6 +99,21 @@ enum KeyCapturePolicy {
 			return nil
 		}
 		return ReservedKey.allCases.first { $0.keyEquivalent == characters }
+	}
+
+	// A key press: commandCharacter is the key's ⌘-layer character (KeyLayout), asked only
+	// once exactly ⌃⌥⌘ is held; without layout data the event's characters stand.
+	@MainActor
+	static func reservedKey(
+		keyCode: UInt16, characters: String?, modifiers: NSEvent.ModifierFlags,
+		commandCharacter: @MainActor (UInt16) -> String?
+	) -> ReservedKey? {
+		guard modifiers.intersection([.control, .option, .command, .shift]) == reservedModifiers
+		else {
+			return nil
+		}
+		return reservedKey(
+			characters: commandCharacter(keyCode) ?? characters, modifiers: modifiers)
 	}
 }
 
@@ -277,7 +294,8 @@ final class KeyCaptureController {
 			action = state.keyUp(keyCode: event.keyCode)
 		} else {
 			let reserved = KeyCapturePolicy.reservedKey(
-				characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags)
+				keyCode: event.keyCode, characters: event.charactersIgnoringModifiers,
+				modifiers: event.modifierFlags, commandCharacter: KeyLayout.commandCharacter)
 			action = state.keyDown(
 				keyCode: event.keyCode, reserved: reserved, isRepeat: event.isARepeat)
 		}

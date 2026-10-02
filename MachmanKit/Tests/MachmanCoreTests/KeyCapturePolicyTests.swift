@@ -68,6 +68,44 @@ struct KeyCapturePolicyTests {
 		#expect(KeyCapturePolicy.reservedKey(characters: nil, modifiers: chord) == nil)
 	}
 
+	// V3: a key press matches on the layout's ⌘ layer, which the fake translator plays here.
+	@Test @MainActor func reservedChordsMatchTheCommandLayer() {
+		let chord: NSEvent.ModifierFlags = [.control, .option, .command]
+		func key(_ code: UInt16, _ characters: String?, command: String?)
+			-> KeyCapturePolicy.ReservedKey? {
+			KeyCapturePolicy.reservedKey(
+				keyCode: code, characters: characters, modifiers: chord,
+				commandCharacter: { _ in command })
+		}
+		#expect(key(40, "л", command: "k") == .toggleCapture)        // Russian
+		#expect(key(3, "φ", command: "f") == .toggleFullScreen)      // Greek
+		#expect(key(40, "t", command: "k") == .toggleCapture)        // Dvorak – QWERTY ⌘, K
+		#expect(key(9, "k", command: "v") == nil)                    // …its Dvorak-K key
+		#expect(key(40, "k", command: nil) == .toggleCapture)        // no layout data
+
+		// The bug: the event's characters alone miss the chord on a Cyrillic layout.
+		#expect(KeyCapturePolicy.reservedKey(characters: "л", modifiers: chord) == nil)
+	}
+
+	// Text Input Sources is asked only for an exact ⌃⌥⌘ press.
+	@Test @MainActor func theLayoutIsAskedOnlyForTheChord() {
+		var calls = 0
+		let translate: @MainActor (UInt16) -> String? = { _ in calls += 1; return "k" }
+		for modifiers: NSEvent.ModifierFlags in [
+			.command, [.control, .command], [.option, .command],
+			[.control, .option, .command, .shift],
+		] {
+			#expect(KeyCapturePolicy.reservedKey(
+				keyCode: 40, characters: "k", modifiers: modifiers,
+				commandCharacter: translate) == nil)
+		}
+		#expect(calls == 0)
+		#expect(KeyCapturePolicy.reservedKey(
+			keyCode: 40, characters: "k", modifiers: [.control, .option, .command],
+			commandCharacter: translate) == .toggleCapture)
+		#expect(calls == 1)
+	}
+
 	// The menus show the same chords the monitor matches — one source for both.
 	@Test @MainActor func menuItemsCarryTheReservedChords() {
 		let fullScreen = KeyCaptureMenu.fullScreenItem()
