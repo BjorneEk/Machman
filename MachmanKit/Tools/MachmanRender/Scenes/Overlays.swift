@@ -100,5 +100,18 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		// F6: the engine's warning arrives as a log event; the toast wraps at its cap.
+		RenderScene(
+			"overlay.toasts.long-warning",
+			"NotificationOverlay: a short toast above Debian's Screen Recording warning",
+			widths: [420, 900], height: 300
+		) { ctx in
+			ctx.viewModel.pushToast(symbol: MachmanSymbols.start, message: "Debian started")
+			ctx.stub.emit(.log(
+				vm: "Debian", level: .warning, message: Samples.screenRecordingWarning))
+			Offscreen.pump(until: { ctx.viewModel.toasts.count == 2 })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 	]
 }

@@ -43,6 +43,30 @@ struct ToastTests {
 		#expect(h.viewModel.toasts.last?.message == "w6")
 	}
 
+	// F6: a toast the pointer rests on outlives its timer, then lives a fresh lifetime.
+	@Test func aHoveredToastStays() async {
+		let h = await DesktopHarness.make()
+		h.viewModel.toastLifetimeOverride = .milliseconds(200)
+		h.viewModel.pushToast(symbol: MachmanSymbols.warning, message: "long warning")
+		let id = h.viewModel.toasts.first { $0.message == "long warning" }!.id
+		h.viewModel.holdToast(id, true)
+		try? await Task.sleep(for: .seconds(2))
+		#expect(h.viewModel.toasts.contains { $0.id == id })
+		h.viewModel.holdToast(id, false)
+		#expect(await eventually { !h.viewModel.toasts.contains { $0.id == id } })
+	}
+
+	// A keyed slot replaced under the pointer keeps the hold (the slot is what is hovered).
+	@Test func aReplacedToastKeepsTheHold() async {
+		let h = await DesktopHarness.make()
+		h.viewModel.toastLifetimeOverride = .milliseconds(200)
+		h.viewModel.pushToast(symbol: MachmanSymbols.warning, message: "first", key: "slot")
+		h.viewModel.holdToast(h.viewModel.toasts.first { $0.key == "slot" }!.id, true)
+		h.viewModel.pushToast(symbol: MachmanSymbols.warning, message: "second", key: "slot")
+		try? await Task.sleep(for: .seconds(2))
+		#expect(h.viewModel.toasts.map(\.message) == ["second"])
+	}
+
 	// A settings file set aside at launch is announced once, naming its backup (P19).
 	@Test func anUnreadableSettingsFileIsAnnouncedOnce() async throws {
 		let h = await DesktopHarness.make()

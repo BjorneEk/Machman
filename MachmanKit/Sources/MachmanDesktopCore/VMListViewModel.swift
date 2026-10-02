@@ -459,6 +459,19 @@ public final class VMListViewModel: ObservableObject {
 		}
 	}
 
+	// Toasts the pointer rests on stay until it leaves, then live a fresh lifetime (F6), so a
+	// long warning can be read; each timed toast's expiry is tracked to restart it.
+	private var heldToasts: Set<UUID> = []
+	private var toastExpiries: [UUID: Task<Void, Never>] = [:]
+	// Tests shorten a toast's life without touching the user's setting.
+	var toastLifetimeOverride: Duration?
+
+	private var toastLifetime: Duration {
+		if let toastLifetimeOverride { return toastLifetimeOverride }
+		let stored = UserDefaults.standard.double(forKey: Self.toastSecondsKey)
+		return .seconds(stored > 0 ? stored : Self.defaultToastSeconds)
+	}
+
 	// A bottom-right toast; lifetime comes from the user's setting. A `key` makes it a
 	// named slot: pushing the same key replaces what is showing IN PLACE, so a state that
 	// moves (waiting → ready) reads as one toast changing rather than three piling up.
@@ -472,22 +485,51 @@ public final class VMListViewModel: ObservableObject {
 			symbol: symbol, message: message, tint: tint,
 			key: key, spinner: spinner, sticky: sticky)
 		if let key, let existing = toasts.firstIndex(where: { $0.key == key }) {
+			let replaced = toasts[existing].id
+			let wasHeld = heldToasts.contains(replaced)
 			toasts[existing] = toast
+			forgetToast(replaced)
+			// The pointer still rests on the slot: the hold moves to what replaced it.
+			if wasHeld { heldToasts.insert(toast.id) }
 		} else {
 			toasts.append(toast)
 			// A burst keeps the newest few: the oldest timed toast goes first, waits stay.
 			while toasts.count > Self.maxToasts,
 				let oldest = toasts.firstIndex(where: { !$0.sticky }) {
-				toasts.remove(at: oldest)
+				forgetToast(toasts.remove(at: oldest).id)
 			}
 		}
 		guard !sticky else { return }
-		let stored = UserDefaults.standard.double(forKey: Self.toastSecondsKey)
-		let seconds = stored > 0 ? stored : Self.defaultToastSeconds
-		Task { [weak self] in
-			try? await Task.sleep(for: .seconds(seconds))
-			self?.toasts.removeAll { $0.id == toast.id }
+		scheduleToastExpiry(toast.id)
+	}
+
+	// The overlay's hover: a held toast outlives its timer; letting go restarts it in full.
+	public func holdToast(_ id: UUID, _ held: Bool) {
+		if held {
+			heldToasts.insert(id)
+		} else if heldToasts.remove(id) != nil,
+			toasts.contains(where: { $0.id == id && !$0.sticky }) {
+			scheduleToastExpiry(id)
 		}
+	}
+
+	private func scheduleToastExpiry(_ id: UUID) {
+		toastExpiries[id]?.cancel()
+		let lifetime = toastLifetime
+		toastExpiries[id] = Task { [weak self] in
+			try? await Task.sleep(for: lifetime)
+			guard !Task.isCancelled, let self else { return }
+			self.toastExpiries[id] = nil
+			// Held: the release starts a fresh lifetime.
+			guard !self.heldToasts.contains(id) else { return }
+			self.toasts.removeAll { $0.id == id }
+		}
+	}
+
+	// A toast that left the stack by any other way than its own timer.
+	private func forgetToast(_ id: UUID) {
+		toastExpiries.removeValue(forKey: id)?.cancel()
+		heldToasts.remove(id)
 	}
 
 	// Settings files a store could not read at launch and set aside as a .bak (P19): one
@@ -504,6 +546,7 @@ public final class VMListViewModel: ObservableObject {
 
 	// Retire a named slot without replacing it (the wait ended in nothing worth saying).
 	public func dismissToast(key: String) {
+		for toast in toasts where toast.key == key { forgetToast(toast.id) }
 		toasts.removeAll { $0.key == key }
 	}
 

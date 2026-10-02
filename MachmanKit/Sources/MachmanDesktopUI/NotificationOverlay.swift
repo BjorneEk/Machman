@@ -22,7 +22,8 @@ struct NotificationOverlay: View {
 		ToastStack(
 			toasts: viewModel.statusToasts + viewModel.toasts,
 			progress: cards,
-			dismissProgress: viewModel.closeProgressCard)
+			dismissProgress: viewModel.closeProgressCard,
+			hoverToast: viewModel.holdToast)
 	}
 
 	private var cards: [ProgressCardModel] {

@@ -74,17 +74,24 @@ public struct ProgressCardModel: Identifiable, Equatable {
 }
 
 public struct ToastStack: View {
+	// A toast's text wraps at this width (up to four lines) instead of running across the
+	// window; the tooltip and the activity list keep the whole text (F6).
+	static let maxToastWidth: CGFloat = 340
+
 	private let toasts: [MachmanToast]
 	private let progress: [ProgressCardModel]
 	private let dismissProgress: (String) -> Void
+	private let hoverToast: (UUID, Bool) -> Void
 
 	public init(
 		toasts: [MachmanToast], progress: [ProgressCardModel] = [],
-		dismissProgress: @escaping (String) -> Void = { _ in }
+		dismissProgress: @escaping (String) -> Void = { _ in },
+		hoverToast: @escaping (UUID, Bool) -> Void = { _, _ in }
 	) {
 		self.toasts = toasts
 		self.progress = progress
 		self.dismissProgress = dismissProgress
+		self.hoverToast = hoverToast
 	}
 
 	public var body: some View {
@@ -99,12 +106,19 @@ public struct ToastStack: View {
 							.foregroundStyle(toast.tint.map(AnyShapeStyle.init)
 								?? AnyShapeStyle(.secondary))
 					}
-					Text(toast.message).font(.callout)
+					CappedWidth(max: Self.maxToastWidth) {
+						Text(toast.message)
+							.font(.callout)
+							.lineLimit(4)
+					}
 				}
 				.padding(.horizontal, 12)
 				.padding(.vertical, 7)
-				.machmanGlassCapsule()
-				.allowsHitTesting(false)
+				// A one-line toast still reads as a capsule; a wrapped one as a rounded card.
+				.machmanGlass(cornerRadius: 15)
+				.help(toast.message)
+				// Hit-testable so the pointer can hold it: the owner keeps a hovered toast.
+				.onHover { hoverToast(toast.id, $0) }
 				.transition(.move(edge: .bottom).combined(with: .opacity))
 			}
 			ForEach(progress) { card in
@@ -188,5 +202,27 @@ public struct ProgressCard: View {
 		let formatted = Duration.seconds(seconds).formatted(
 			.units(allowed: [.minutes, .seconds], width: .narrow, maximumUnitCount: 2))
 		return "about \(formatted) left"
+	}
+}
+
+// Its one child at its ideal width, but never wider than `max`: a short line stays snug, a
+// long one wraps at `max` and grows in height. (frame(maxWidth:) stretches the short one to
+// the cap, and adding fixedSize clips the long one to a single line.)
+struct CappedWidth: Layout {
+	let max: CGFloat
+
+	func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+		guard let child = subviews.first else { return .zero }
+		let limit = Swift.min(proposal.width ?? max, max)
+		let ideal = child.sizeThatFits(.unspecified)
+		return child.sizeThatFits(
+			ProposedViewSize(width: Swift.min(ideal.width, limit), height: nil))
+	}
+
+	func placeSubviews(
+		in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+	) {
+		subviews.first?.place(
+			at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
 	}
 }

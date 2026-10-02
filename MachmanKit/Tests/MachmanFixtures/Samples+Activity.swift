@@ -60,3 +60,11 @@ extension Samples {
 			cancellable: true)
 	}
 }
+
+extension Samples {
+	// The vmhost's Screen Recording warning, word for word as VMRegistry's onCaptureFailed
+	// sends it (the fixtures can't import MachmanCore): the longest engine warning (F6).
+	public static let screenRecordingWarning = "Screen Recording is off for Machman VM, so "
+		+ "previews are blank: allow it in System Settings › Privacy & Security › Screen "
+		+ "Recording, then stop and start this VM."
+}
