@@ -10,6 +10,7 @@ import SwiftUI
 import AppKit
 import MachmanUI
 import MachmanAPI
+import MachmanCore
 
 @MainActor
 final class MenuBarModel: ObservableObject {
@@ -95,14 +96,17 @@ final class MenuBarModel: ObservableObject {
 			let failure = MenuBarFailure(vm: name, action: action, error: error)
 			// Logged first: the alert of an LSUIElement app can end up behind everything.
 			MachmanLogger.log(.interactionError, "\(failure.title): \(failure.message)")
-			if present(failure), let forced = failure.forceStart {
+			// Not modal inside this main-actor job: that would hold every other one, the
+			// daemon's request handling included, until the alert is dismissed.
+			let startAnyway = await MainRunLoopCallout.run { Self.present(failure) }
+			if startAnyway, let forced = failure.forceStart {
 				await perform(.start(forced), vm: name)
 			}
 		}
 	}
 
 	// True when the user chose Start Anyway.
-	private func present(_ failure: MenuBarFailure) -> Bool {
+	private static func present(_ failure: MenuBarFailure) -> Bool {
 		NSApp.activate(ignoringOtherApps: true)
 		let alert = NSAlert()
 		alert.messageText = failure.title
