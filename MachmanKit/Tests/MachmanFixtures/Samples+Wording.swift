@@ -3,7 +3,8 @@
 //  MachmanFixtures
 //
 //  Lane 4a's samples (inspector and guide text): the mount cases the mount guide covers, a
-//  kernel-boot console the guest hasn't named and consoles whose login states it reported.
+//  kernel-boot console the guest hasn't named, consoles whose login states it reported and a
+//  one-core VM.
 //
 
 import Foundation
@@ -51,6 +52,13 @@ extension Samples {
 			GuestConsoleInfo(device: "hvc2", login: GuestConsoleLogin.none),
 			GuestConsoleInfo(device: "hvc3", login: GuestConsoleLogin.missing),
 		]
+		return vm
+	}
+
+	// A Linux guest with a single core (the CPU row's count).
+	public static func linuxOneCore(_ name: String = "Alpine") -> VMInfo {
+		var vm = linux(name)
+		vm.cpuCount = 1
 		return vm
 	}
 

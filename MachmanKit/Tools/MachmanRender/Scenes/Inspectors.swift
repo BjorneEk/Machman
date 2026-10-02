@@ -191,6 +191,9 @@ enum InspectorScenes {
 			"mount.macos", "MountInspector, a macOS guest's mount",
 			vms: { [Samples.macOSWithMount()] }, select: "Sequoia",
 			node: .mount(Samples.srcMountID)),
+		inspector(
+			"vm.one-core", "VMInspector, a single-core VM",
+			vms: { [Samples.linuxOneCore()] }, select: "Alpine", node: nil),
 		inspector("serial-group", "SerialGroupInspector", node: .group("Serial")),
 		inspector(
 			"serial-group.kernel", "SerialGroupInspector, a console and a UART",

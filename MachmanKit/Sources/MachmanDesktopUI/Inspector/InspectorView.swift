@@ -110,7 +110,7 @@ struct MultiSelectionInspector: View {
 
 	var body: some View {
 		Form {
-			Section("\(viewModel.treeSelection.count) Items Selected") {
+			Section("\(viewModel.treeSelection.count) items selected") {
 				Button("Enable All") { setAll(true) }
 				Button("Disable All") { setAll(false) }
 			}
@@ -164,7 +164,9 @@ struct VMInspector: View {
 			Section("Machine") {
 				nameField
 				LabeledContent {
-					Stepper("\(vm.cpuCount) cores", value: cpuBinding, in: cpuRange)
+					Stepper(
+						vm.cpuCount == 1 ? "1 core" : "\(vm.cpuCount) cores",
+						value: cpuBinding, in: cpuRange)
 				} label: {
 					Label("CPUs", systemImage: MachmanSymbols.cpu)
 				}
@@ -188,7 +190,7 @@ struct VMInspector: View {
 				} else {
 					Picker("Bootloader", selection: bootBinding) {
 						Text("EFI").tag(BootInfo.Mode.efi)
-						Text("Kernel boot").tag(BootInfo.Mode.linuxKernel)
+						Text("Kernel Boot").tag(BootInfo.Mode.linuxKernel)
 						Text("macOS…").tag(BootInfo.Mode.macOS)
 					}
 					.disabled(viewModel.isInstalling(vm))
@@ -209,19 +211,21 @@ struct VMInspector: View {
 				}
 			}
 
-			Section("Default Start") {
+			Section("Default start") {
 				HStack(spacing: 6) {
 					Toggle("Open window", isOn: policyBinding(\.windowed))
 					if !vm.hasEnabledGraphics {
 						Image(systemName: MachmanSymbols.warning)
 							.font(.system(size: 11))
 							.foregroundStyle(MachmanColors.warning)
-							.help("No display device — the window can't open until one "
+							.help("No display device — the window can’t open until one "
 								+ "is added")
 					}
 				}
 				Toggle("Safe mode", isOn: policyBinding(\.safe))
-				Toggle("Autostart with daemon", isOn: policyBinding(\.autostart))
+				// A per-VM launchd job starts the VM at login (LaunchAgentManager), with no
+				// daemon involved.
+				Toggle("Start at login", isOn: policyBinding(\.autostart))
 			}
 
 			runtimeSection
@@ -254,7 +258,7 @@ struct VMInspector: View {
 					LabeledContent("Safe run") {
 						HStack(spacing: 4) {
 							SafeBadge(compact: true)
-							Text("changes are discarded on stop")
+							Text("Changes are discarded on stop")
 								.foregroundStyle(.secondary)
 						}
 					}
@@ -407,8 +411,7 @@ struct MacSwitchSheet: View {
 				.foregroundStyle(.secondary)
 			Text("Switch to macOS?")
 				.font(.title3.weight(.semibold))
-			Text("Installing macOS replaces this VM's bootloader configuration. "
-				+ "Once installed, the VM cannot switch back to EFI or kernel boot.")
+			Text("Once macOS is installed, this VM can’t switch back to EFI or kernel boot.")
 				.font(.callout)
 				.foregroundStyle(.secondary)
 				.multilineTextAlignment(.center)

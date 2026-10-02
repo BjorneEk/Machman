@@ -49,7 +49,7 @@ struct CopyVMSheet: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
-			Text("Duplicate \(vm.name)")
+			Text("Duplicate “\(vm.name)”")
 				.font(.headline)
 				.lineLimit(1)
 				.truncationMode(.middle)
@@ -83,7 +83,7 @@ struct CopyVMSheet: View {
 				.toggleStyle(.checkbox)
 				.help(disk.type == .storage
 					? "Copies the disk file into the new VM"
-					: "The copy references the same image file — don't run both on it at once")
+					: "The copy references the same image file — don’t run both on it at once")
 			}
 			if !vm.mounts.isEmpty {
 				Text("Mounts")
