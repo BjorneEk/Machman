@@ -67,6 +67,7 @@ struct VMPreviewTabView: View {
 						ProgressView().controlSize(.regular).tint(.white)
 						Text("Waiting for the first frame…")
 							.font(.callout).foregroundStyle(.gray)
+							.fittingDisplayBlock()
 					}
 				}
 			case .starting:
@@ -74,12 +75,14 @@ struct VMPreviewTabView: View {
 					ProgressView().controlSize(.regular).tint(.white)
 					Text(vm.state.progressLabel ?? vm.stateLabel)
 						.font(.callout).foregroundStyle(.gray)
+						.fittingDisplayBlock()
 				}
 			case .stopping:
 				VStack(spacing: 10) {
 					ProgressView().controlSize(.regular).tint(.white)
 					Text(vm.state.progressLabel ?? vm.stateLabel)
 						.font(.callout).foregroundStyle(.gray)
+						.fittingDisplayBlock()
 				}
 			case .stopped, .error, .unknown:
 				VStack(spacing: 12) {
@@ -98,6 +101,7 @@ struct VMPreviewTabView: View {
 					.help("Start \(vm.name)")
 					.accessibilityLabel("Start \(vm.name)")
 					Text(stoppedLine).font(.callout).foregroundStyle(.gray)
+						.fittingDisplayBlock()
 				}
 			}
 		}
@@ -229,5 +233,13 @@ struct VMPreviewTabView: View {
 			.frame(maxWidth: 480)
 			.padding(.horizontal, 24)
 			.help(message)
+	}
+}
+
+private extension Text {
+	// A line inside the display block: one line, shrunk before it is cut ("Startin…"), so a
+	// narrow pane keeps the word; the caption below the block still carries the state.
+	func fittingDisplayBlock() -> some View {
+		lineLimit(1).minimumScaleFactor(0.7)
 	}
 }
