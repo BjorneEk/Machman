@@ -56,8 +56,8 @@ public final class FocusMonitor {
 	}
 }
 
-// The monitor's observer registrations, removed when it goes.
-private final class ObserverTokens: @unchecked Sendable {
+// A watcher's observer registrations, removed when it goes (FocusMonitor, PasteboardWatch).
+final class ObserverTokens: @unchecked Sendable {
 	private let center: NotificationCenter
 	private var tokens: [NSObjectProtocol] = []
 

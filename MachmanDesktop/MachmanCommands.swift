@@ -22,6 +22,8 @@ struct MachmanCommands: Commands {
 	@Binding var selection: String?
 	@FocusedValue(\.machmanWindow) private var window
 	@FocusedBinding(\.machmanInspector) private var inspectorShown
+	// Paste Items' enablement follows the pasteboard (H25); the paste itself reads fresh.
+	@ObservedObject private var pasteboard = PasteboardWatch.general
 	@Environment(\.openWindow) private var openWindow
 
 	var body: some Commands {
@@ -59,9 +61,7 @@ struct MachmanCommands: Commands {
 						viewModel: viewModel)
 				}
 				.keyboardShortcut("v", modifiers: [.option, .command])
-				.disabled(target.vm == nil
-					|| (EntityClipboard.read().isEmpty
-						&& AddFlows.pasteboardFileURLs().isEmpty))
+				.disabled(target.vm == nil || !pasteboard.snapshot.canPasteAnything)
 			}
 		}
 		// Replacing, not before: SwiftUI's own New Window items (the torn-tab group's too)
