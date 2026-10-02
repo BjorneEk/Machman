@@ -120,9 +120,9 @@ enum WindowScenes {
 		]
 	}
 
-	private static let refusedDetail = "cannot reach MachmanAgent at /var/folders/7k/"
-		+ "0q8n1x52l3gr5mhkzz1y7rr0000gn/T/com.gustaffranzen.Machman/machman.sock: "
-		+ "Connection refused"
+	// The connect screen's problems as ConnectionProblem.classify words real errors (W4).
+	private static let refused = ConnectionProblem.classify(
+		RPCConnection.ConnectionError.connectFailed("/var/empty/machman.sock", ECONNREFUSED))
 
 	static let all: [RenderScene] = [
 		RenderScene(
@@ -406,53 +406,24 @@ enum WindowScenes {
 			"window.connecting.unreachable", "ConnectionStatusView, the agent isn't there",
 			widths: [480, 900], height: 420
 		) { _ in
-			connecting(.unavailable(ConnectionProblem(kind: .unreachable, detail: refusedDetail)))
+			connecting(.unavailable(refused))
 		},
 		RenderScene(
 			"window.connecting.unreachable.approval",
 			"ConnectionStatusView, the agent isn't there and its login item needs approval",
 			widths: [480, 900], height: 420
 		) { _ in
-			connecting(
-				.unavailable(ConnectionProblem(kind: .unreachable, detail: refusedDetail)),
-				approval: true)
+			connecting(.unavailable(refused), approval: true)
 		},
 		RenderScene(
 			"window.connecting.not-answering", "ConnectionStatusView, a hung agent",
-			widths: [480, 900], height: 420
-		) { _ in
-			connecting(.unavailable(ConnectionProblem(
-				kind: .notAnswering,
-				detail: "no reply to machman.hello after 10s — the serving process may be hung")))
-		},
-		RenderScene(
-			"window.connecting.incompatible", "ConnectionStatusView, an agent of another api",
-			widths: [480, 900], height: 420
-		) { _ in
-			connecting(.unavailable(ConnectionProblem(
-				kind: .incompatible, detail: "daemon speaks api v2, client needs v1")))
-		},
-		// W4: the connect screen's detail, as ConnectionProblem.classify words real errors.
-		RenderScene(
-			"window.connecting.unreachable.classified",
-			"ConnectionStatusView, a refused connect as the screen words it",
-			widths: [480, 900], height: 420
-		) { _ in
-			connecting(.unavailable(ConnectionProblem.classify(
-				RPCConnection.ConnectionError.connectFailed(
-					"/var/empty/machman.sock", ECONNREFUSED))))
-		},
-		RenderScene(
-			"window.connecting.not-answering.classified",
-			"ConnectionStatusView, a timed-out hello as the screen words it",
 			widths: [480, 900], height: 420
 		) { _ in
 			connecting(.unavailable(ConnectionProblem.classify(
 				MachmanError(code: .timeout, message: "No answer within 10 seconds"))))
 		},
 		RenderScene(
-			"window.connecting.incompatible.classified",
-			"ConnectionStatusView, an API mismatch as the screen words it",
+			"window.connecting.incompatible", "ConnectionStatusView, an agent of another api",
 			widths: [480, 900], height: 420
 		) { _ in
 			connecting(.unavailable(ConnectionProblem.classify(
