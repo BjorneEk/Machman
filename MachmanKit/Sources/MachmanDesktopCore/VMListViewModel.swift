@@ -46,7 +46,6 @@ public final class VMListViewModel: ObservableObject {
 	public let previews: PreviewService
 	public var previewImages: PreviewStore { previews.images }
 	@Published public var selectedName: String? = nil
-	@Published public var vmName: String = ""
 	// The sidebar tree's selection (window UI state); drives the inspector's target.
 	@Published public var treeSelection: Set<SidebarNode> = []
 	// Live terminal controllers (app-scoped, injected): transcripts persist across VM
@@ -709,7 +708,6 @@ public final class VMListViewModel: ObservableObject {
 			treeSelection = []
 		}
 		selectedName = name
-		vmName = name ?? ""
 		previews.setVisible(name.map { [$0] } ?? [])
 	}
 
@@ -848,7 +846,6 @@ public final class VMListViewModel: ObservableObject {
 			return true
 		} catch {
 			refuse(error, while: "Renaming \u{201C}\(oldName)\u{201D}", to: refused)
-			vmName = oldName
 			return false
 		}
 	}

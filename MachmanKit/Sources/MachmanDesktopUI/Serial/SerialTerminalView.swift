@@ -55,12 +55,6 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		applyLive(profile)
 	}
 
-	// Kept for the legacy per-port detail view until the tabbed pane replaces it; defaults to the
-	// built-in OneDark profile.
-	convenience override init() {
-		self.init(profile: .oneDarkDefault)
-	}
-
 	// Re-apply the LIVE settings (font, colours, key/mouse behaviour) to the existing terminal.
 	// Safe to call any time; the startup-only settings are ignored here (they need a Reload).
 	func applyLive(_ profile: TerminalProfile) {
