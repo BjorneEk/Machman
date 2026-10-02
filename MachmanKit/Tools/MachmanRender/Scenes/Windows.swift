@@ -352,6 +352,25 @@ enum WindowScenes {
 			Offscreen.pump(until: { !ctx.operations.installPhases.isEmpty })
 			return AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
 		},
+		// W4: the display block's line under the spinner or start button, per state.
+		RenderScene(
+			"canvas.preview.stopping", "VMPreviewTabView while the guest shuts down",
+			widths: [320, 640], height: 420, vms: { [Samples.stoppingLinux()] }
+		) { ctx in
+			AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
+		RenderScene(
+			"canvas.preview.error", "VMPreviewTabView, a VM that stopped with an error",
+			widths: [320, 640], height: 420, vms: { [Samples.linux("Fedora", state: .error)] }
+		) { ctx in
+			AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
+		RenderScene(
+			"canvas.preview.unknown", "VMPreviewTabView, a VM whose state is unknown",
+			widths: [320, 640], height: 420, vms: { [Samples.linux("Debian", state: .unknown)] }
+		) { ctx in
+			AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
 		// T10: a serial tab without a socket says why, not always "Start the VM".
 		RenderScene(
 			"canvas.serial-tab.disabled", "TerminalTabContent, Console 0 disabled on a running VM",

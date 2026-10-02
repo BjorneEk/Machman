@@ -71,12 +71,14 @@ struct VMPreviewTabView: View {
 			case .starting:
 				VStack(spacing: 10) {
 					ProgressView().controlSize(.regular).tint(.white)
-					Text("Starting…").font(.callout).foregroundStyle(.gray)
+					Text(vm.state.progressLabel ?? vm.stateLabel)
+						.font(.callout).foregroundStyle(.gray)
 				}
 			case .stopping:
 				VStack(spacing: 10) {
 					ProgressView().controlSize(.regular).tint(.white)
-					Text("Shutting down…").font(.callout).foregroundStyle(.gray)
+					Text(vm.state.progressLabel ?? vm.stateLabel)
+						.font(.callout).foregroundStyle(.gray)
 				}
 			case .stopped, .error, .unknown:
 				VStack(spacing: 12) {
@@ -93,7 +95,7 @@ struct VMPreviewTabView: View {
 					.machmanHoverable(radius: 40, scales: true)
 					.disabled(viewModel.isInstalling(vm))
 					.help("Start \(vm.name)")
-					Text("VM is stopped").font(.callout).foregroundStyle(.gray)
+					Text(stoppedLine).font(.callout).foregroundStyle(.gray)
 				}
 			}
 		}
@@ -119,6 +121,15 @@ struct VMPreviewTabView: View {
 			}
 		}
 		.shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+	}
+
+	// Under the start button: a settled state as a sentence (the caption below has its word).
+	private var stoppedLine: String {
+		switch vm.state {
+		case .error: return "VM stopped with an error"
+		case .unknown: return "VM state is unknown"
+		default: return "VM is stopped"
+		}
 	}
 
 	// One line at any pane width: a narrow pane drops the boot badge, then cuts the state;
@@ -196,7 +207,7 @@ struct VMPreviewTabView: View {
 		case .failed:
 			installProblem(phase.message ?? "The macOS install failed")
 		case .interrupted:
-			installProblem("The macOS install was interrupted — restart it from the VM's "
+			installProblem("The macOS install was interrupted — restart it from the VM’s "
 				+ "boot settings")
 		case .idle, .installed:
 			EmptyView()

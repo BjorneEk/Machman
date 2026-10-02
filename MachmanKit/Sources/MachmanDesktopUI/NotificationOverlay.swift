@@ -44,7 +44,7 @@ struct NotificationOverlay: View {
 			case .resolving, .downloading, .installing:
 				cards.append(ProgressCardModel(
 					id: VMListViewModel.installCardPrefix + vm,
-					title: "Installing macOS — \(vm)",
+					title: "\(vm) — Installing macOS",
 					symbol: MachmanSymbols.bootMacTab,
 					phase: phase.displayLabel,
 					fraction: phase.progress?.fraction,

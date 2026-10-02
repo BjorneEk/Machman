@@ -49,7 +49,14 @@ struct SessionNamesTests {
 			== "Debian — " + (port?.displayName(mode: .efi) ?? "?"))
 		// Mid-reconnect (no list): the ref's own EFI name.
 		#expect(torn.windowTitle(vms: nil, terminals: h.terminals) == "Debian — Console 0")
-		#expect(TornTab(vm: "Debian", tab: .config).windowTitle(vms: nil, terminals: h.terminals)
-			== "Debian — Configuration")
+	}
+
+	// W4: the preview tab tore off as “Debian — Configuration”; it shows the preview, and the
+	// canvas tab strip names it by its VM alone.
+	@Test func aPreviewWindowIsTitledByItsVM() async {
+		let h = await DesktopHarness.make()
+		let torn = TornTab(vm: "Debian", tab: .config)
+		#expect(torn.windowTitle(vms: h.viewModel.vms, terminals: h.terminals) == "Debian")
+		#expect(torn.windowTitle(vms: nil, terminals: h.terminals) == "Debian")
 	}
 }
