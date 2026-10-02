@@ -225,7 +225,7 @@ private struct NewVMTemplateView: View {
 				}
 				.buttonStyle(.plain)
 				.machmanHoverable()
-				.help("Back to the VM list")
+				.help("Back")
 				.accessibilityLabel("Back")
 				Text("New VM")
 					.font(.system(size: 12, weight: .semibold))
