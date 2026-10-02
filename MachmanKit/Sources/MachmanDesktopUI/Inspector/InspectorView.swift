@@ -22,7 +22,8 @@ struct InspectorView: View {
 	var body: some View {
 		VStack(spacing: 0) {
 			// E22: settings stay locked while an older vmhost runs the VM; a session's own
-			// inspector (desktop-local) stays live.
+			// inspector (desktop-local) stays live, and so does what changes no setting inside
+			// the others (SettingsLock.swift).
 			if let reason = vm.restartToUpdate {
 				RestartToUpdateBanner(message: reason)
 				Divider()
@@ -35,7 +36,7 @@ struct InspectorView: View {
 					entityInspector(node).id(InspectorIdentity(vm: vm.name, node: node))
 				}
 			}
-			.disabled(vm.restartToUpdate != nil && !showsSession)
+			.settingsLocked(vm.restartToUpdate != nil && !showsSession)
 		}
 		.formStyle(.grouped)
 	}

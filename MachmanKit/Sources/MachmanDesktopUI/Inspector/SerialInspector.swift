@@ -50,7 +50,7 @@ struct SerialInspector: View {
 			}
 		}
 		.sheet(isPresented: $showSetupGuide) {
-			GuestSetupHelpSheet(vm: vm)
+			GuestSetupHelpSheet(vm: vm).liveWhileSettingsLocked()
 		}
 	}
 
@@ -77,6 +77,7 @@ struct SerialInspector: View {
 				.disabled(gate != nil || sessions.controller(vm: vm.name, ref: ref) == nil)
 				terminalSettingsButton
 			}
+			.liveWhileSettingsLocked()   // the desktop's own choice, not the VM's
 			if reloadNeeded {
 				Text("Startup settings changed — reload to apply.")
 					.font(.caption)

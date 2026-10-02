@@ -54,7 +54,7 @@ struct GuestSetupInspector: View {
 			}
 		}
 		.sheet(isPresented: $showGuide) {
-			GuestSetupHelpSheet(vm: vm)
+			GuestSetupHelpSheet(vm: vm).liveWhileSettingsLocked()
 		}
 	}
 

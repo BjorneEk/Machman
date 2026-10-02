@@ -100,5 +100,6 @@ public struct GuideButton: View {
 			Label("Setup Guide…", systemImage: MachmanSymbols.help)
 		}
 		.help(help ?? "")
+		.liveWhileSettingsLocked()
 	}
 }

@@ -417,6 +417,7 @@ struct RosettaInspector: View {
 					Button("Install Rosetta Support…") {
 						viewModel.installRosetta()
 					}
+					.liveWhileSettingsLocked()   // installs on this Mac, not in the VM
 					.help("macOS prompts for the download; the VM's share attaches on "
 						+ "the next boot once installed")
 				}
@@ -476,6 +477,7 @@ struct NetworkAddressSection: View {
 							flat: true) {
 							viewModel.refreshSSH(vm.name)
 						}
+						.liveWhileSettingsLocked()   // allowed on an outdated vmhost
 					}
 				}
 			}

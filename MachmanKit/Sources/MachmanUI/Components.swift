@@ -241,6 +241,7 @@ public struct PathRow: View {
 				IconButton(
 					symbol: MachmanSymbols.showInFinder, tooltip: "Show in Finder",
 					font: .callout, flat: true, action: onReveal)
+				.liveWhileSettingsLocked()
 			}
 		}
 	}

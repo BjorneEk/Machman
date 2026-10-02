@@ -122,6 +122,14 @@ enum InspectorScenes {
 		inspector(
 			"multi.outdated-host", "MultiSelectionInspector, run by an older vmhost",
 			vms: Samples.libraryWithOutdatedHost, nodes: [.disk("storage:system"), .disk(iso)]),
+		// O-4: inside the lock, what changes no setting stays live — copy, reveal, guides,
+		// Re-run Address Discovery and the port's terminal profile.
+		inspector(
+			"serial.outdated-host", "SerialInspector, run by an older vmhost",
+			vms: Samples.libraryWithOutdatedHost, node: .serial(console)),
+		inspector(
+			"device.network.outdated-host", "Network DeviceInspector, run by an older vmhost",
+			vms: Samples.libraryWithOutdatedHost, node: .device(.network)),
 		inspector("disk", "DiskInspector, owned storage disk", node: .disk("storage:system")),
 		inspector("disk-iso", "DiskInspector, referenced ISO", node: .disk(iso)),
 		diskGrow("inspector.disk.grow", "DiskInspector, the Grow-to field", text: ""),

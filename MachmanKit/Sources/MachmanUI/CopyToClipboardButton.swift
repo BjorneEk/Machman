@@ -33,5 +33,6 @@ public struct CopyToClipboardButton: View {
 				copied = false
 			}
 		}
+		.liveWhileSettingsLocked()   // reads, never sets
 	}
 }
