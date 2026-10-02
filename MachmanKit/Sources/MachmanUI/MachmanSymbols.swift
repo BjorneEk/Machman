@@ -74,6 +74,11 @@ public enum MachmanSymbols {
 	public static let menuBarExtra = "desktopcomputer"
 	public static let daemonUnreachable = "bolt.horizontal.circle"
 
+	// MARK: - Settings tabs
+	public static let settingsAppearance = "paintpalette"
+	public static let settingsTerminal = "terminal"
+	public static let settingsBehavior = "gearshape"
+
 	// MARK: - Overhaul additions (1.0.4 UI)
 	public static let vm = "desktopcomputer"            // tree root / picker rows
 	public static let shield = "shield"                 // outline for the safe-start glyph

@@ -19,11 +19,11 @@ public struct SettingsRootView: View {
 	public var body: some View {
 		TabView {
 			AppearanceSettingsView()
-				.tabItem { Label("Appearance", systemImage: MachmanSymbols.deviceGraphics) }
+				.tabItem { Label("Appearance", systemImage: MachmanSymbols.settingsAppearance) }
 			TerminalSettingsView(store: profiles)
-				.tabItem { Label("Terminal", systemImage: MachmanSymbols.tabTerminal) }
+				.tabItem { Label("Terminal", systemImage: MachmanSymbols.settingsTerminal) }
 			BehaviourSettingsView()
-				.tabItem { Label("Behavior", systemImage: MachmanSymbols.tabConfig) }
+				.tabItem { Label("Behavior", systemImage: MachmanSymbols.settingsBehavior) }
 		}
 		// 600 pt: Appearance's four sections fit with room to spare (at 560 the Tab bar
 		// section reached the bottom edge); a larger text size scrolls the Form.
