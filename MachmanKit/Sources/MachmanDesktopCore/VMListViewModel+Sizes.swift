@@ -61,7 +61,7 @@ extension VMListViewModel {
 	public func growDiskProblem(_ text: String, disk: DiskInfo) -> String? {
 		guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
 		guard let bytes = Self.newDiskBytes(text) else {
-			return "Enter a size in GB, like 64 or 1.5"
+			return "Enter a size like 64 or 1.5 GB"
 		}
 		let current = disk.sizeBytes ?? 0
 		if bytes <= current {

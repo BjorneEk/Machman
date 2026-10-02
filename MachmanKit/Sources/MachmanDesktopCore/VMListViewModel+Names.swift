@@ -34,7 +34,7 @@ extension VMListViewModel {
 			return "Enter a size in GB"
 		}
 		guard let bytes = Self.newDiskBytes(sizeText) else {
-			return "Enter a size in GB, like 64 or 1.5"
+			return "Enter a size like 64 or 1.5 GB"
 		}
 		if let free = capabilities?.freeDiskBytes, bytes > free {
 			return "Only \(ByteSize.display(free)) is free"

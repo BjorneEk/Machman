@@ -49,8 +49,8 @@ struct NewDiskFormTests {
 		let problem = { (name: String, size: String) in
 			h.viewModel.newDiskProblem(on: debian, name: name, sizeText: size)
 		}
-		#expect(problem("data", "lots") == "Enter a size in GB, like 64 or 1.5")
-		#expect(problem("data", "0") == "Enter a size in GB, like 64 or 1.5")
+		#expect(problem("data", "lots") == "Enter a size like 64 or 1.5 GB")
+		#expect(problem("data", "0") == "Enter a size like 64 or 1.5 GB")
 		#expect(problem("data", "") == "Enter a size in GB")
 		#expect(problem("data", "500") == "Only 412 GB is free")
 		#expect(problem(".x", "8") == "A disk name can't start with a dot")

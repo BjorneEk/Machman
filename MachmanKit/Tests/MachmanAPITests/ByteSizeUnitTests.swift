@@ -7,6 +7,7 @@
 //
 
 import Testing
+import Foundation
 import MachmanAPI
 
 struct ByteSizeUnitTests {
@@ -22,6 +23,15 @@ struct ByteSizeUnitTests {
 		#expect(ByteSize.parse("8b", bareUnit: .gibibyte) == 8)
 		#expect(ByteSize.parse("lots", bareUnit: .gibibyte) == nil)
 		#expect(ByteSize.parse("1.2.3", bareUnit: .gibibyte) == nil)
+	}
+
+	// R3-2: display steps up to TB from 1024 GB, so a field must take TB back.
+	@Test func terabytesParse() {
+		#expect(ByteSize.parse("2 TB", bareUnit: .gibibyte) == 2048 * gib)
+		#expect(ByteSize.parse("1.5t", bareUnit: .gibibyte) == 1536 * gib)
+		#expect(ByteSize.parse("1T") == 1024 * gib)
+		#expect(ByteSize.parse(ByteSize.display(1536 * gib, locale: Locale(identifier: "en")),
+			bareUnit: .gibibyte) == 1536 * gib)
 	}
 
 	@Test func theDefaultStaysBytes() {

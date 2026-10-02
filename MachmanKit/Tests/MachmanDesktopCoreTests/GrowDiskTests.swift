@@ -48,13 +48,15 @@ struct GrowDiskTests {
 		let problem = { (text: String) in h.viewModel.growDiskProblem(text, disk: system) }
 		#expect(problem("") == nil)
 		#expect(problem("  ") == nil)
-		#expect(problem("lots") == "Enter a size in GB, like 64 or 1.5")
+		#expect(problem("lots") == "Enter a size like 64 or 1.5 GB")
 		#expect(problem("16") == "Disks only grow \u{2014} enter more than 32 GB")
 		#expect(problem("32") == "Disks only grow \u{2014} enter more than 32 GB")
 		#expect(problem("500") == "Only 412 GB is free")
 		#expect(problem("64") == nil)
 		#expect(problem("40.5") == nil)
 		#expect(problem("40960m") == nil)
+		#expect(problem("0.25 TB") == nil)   // R3-2: TB, as display writes it
+		#expect(problem("1t") == "Only 412 GB is free")
 	}
 
 	@Test func aTypedSizeIsSentExactly() async throws {
