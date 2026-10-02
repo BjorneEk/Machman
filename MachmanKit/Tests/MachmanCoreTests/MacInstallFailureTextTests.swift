@@ -36,6 +36,30 @@ struct MacInstallFailureTextTests {
 			== "The macOS install was canceled.")
 	}
 
+	// R4-1: was two sentences naming "a newer host" and "a local .ipsw".
+	@Test func aTooNewImageSaysUpdateThisMac() {
+		let reason = MacInstaller.needsNewerHostReason("15.4")
+		#expect(reason == "macOS 15.4 needs a newer macOS on this Mac — update this Mac, or "
+			+ "install an older version from an IPSW file")
+		#expect(InstallSession.failureEvent(for: VirtualMachineError.critical(reason))
+			== "The macOS install failed: " + reason)
+	}
+
+	// R4-1: was "Restore image download incomplete (… of … bytes)".
+	@Test func aShortDownloadSaysHowFarItGot() {
+		let gib: Int64 = 1 << 30
+		#expect(MacInstaller.incompleteDownloadReason(size: 3 * gib, expected: 13 * gib)
+			== "The restore image download stopped at 3 GB of 13 GB")
+		// A few bytes short would read "13 GB of 13 GB"; longer, or an unread size (-1),
+		// is no "stopped at" either: those say it without numbers.
+		let noNumbers = "The downloaded restore image isn’t the expected size"
+		#expect(MacInstaller.incompleteDownloadReason(size: 13 * gib - 4096, expected: 13 * gib)
+			== noNumbers)
+		#expect(MacInstaller.incompleteDownloadReason(size: 14 * gib, expected: 13 * gib)
+			== noNumbers)
+		#expect(MacInstaller.incompleteDownloadReason(size: -1, expected: 13 * gib) == noNumbers)
+	}
+
 	@Test func theErrorEventSaysItInWords() {
 		#expect(InstallSession.failureEvent(for: vzError)
 			== "The macOS install failed: Installation failed. A software update is required "

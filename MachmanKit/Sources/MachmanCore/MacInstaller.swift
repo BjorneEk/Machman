@@ -36,6 +36,24 @@ final class MacInstaller {
 		cancelled ? "The macOS install was canceled." : MachmanError.userMessage(for: error)
 	}
 
+	// Apple's latest image is newer than this Mac can install (the index was unreachable).
+	nonisolated static func needsNewerHostReason(_ version: String) -> String {
+		"macOS \(version) needs a newer macOS on this Mac — update this Mac, or install an "
+			+ "older version from an IPSW file"
+	}
+
+	// The download ended at a size other than the index's, in the units every size uses
+	// (decision 14). Sizes that round alike would read "13.4 GB of 13.4 GB", and an unread
+	// size (-1) is no size at all, so those say it without numbers.
+	nonisolated static func incompleteDownloadReason(size: Int64, expected: Int64) -> String {
+		let got = ByteSize.display(UInt64(clamping: max(size, 0)))
+		let want = ByteSize.display(UInt64(clamping: max(expected, 0)))
+		guard size >= 0, size < expected, got != want else {
+			return "The downloaded restore image isn’t the expected size"
+		}
+		return "The restore image download stopped at \(got) of \(want)"
+	}
+
 	// Stage callbacks for a UI controller.
 	var onResolved: ((_ version: String, _ build: String) -> Void)?
 	var onDownloadProgress: ((Progress) -> Void)?
@@ -198,8 +216,7 @@ final class MacInstaller {
 			let version = remote.operatingSystemVersion
 			guard Self.isVersion(version, atMost: host) else {
 				throw VirtualMachineError.critical(
-					"macOS \(Self.versionString(version)) requires a newer host. "
-					+ "Update macOS or install an older version from a local .ipsw")
+					Self.needsNewerHostReason(Self.versionString(version)))
 			}
 			onResolved?(Self.versionString(version), remote.buildVersion)
 			return try await downloadAndLoad(from: remote.url)
@@ -216,8 +233,11 @@ final class MacInstaller {
 				let attrs = try FileManager.default.attributesOfItem(atPath: localURL.path)
 				let size = (attrs[.size] as? NSNumber)?.int64Value ?? -1
 				guard size == expectedSize else {
+					// The log keeps the exact byte counts.
+					MachmanLogger.log(.passiveError,
+						"restore image download: \(size) of \(expectedSize) bytes")
 					throw VirtualMachineError.critical(
-						"Restore image download incomplete (\(size) of \(expectedSize) bytes)")
+						Self.incompleteDownloadReason(size: size, expected: expectedSize))
 				}
 			}
 			let image = try await VZMacOSRestoreImage.image(from: localURL)
