@@ -2,16 +2,14 @@
 //  VMHostPromptTests.swift
 //  MachmanTests
 //
-//  The vmhost's prompts as values (VMHostPrompts.swift) and the quit decision behind them:
-//  the presenter's answerPrompt seam stands in for the modal alert. The delegate's server is
-//  never started (MachmanServer.init does not bind), so nothing listens.
+//  The vmhost's prompts as values (VMHostPrompts.swift) and the quit decision behind them,
+//  on a TestVMHost whose answerPrompt seam stands in for the modal alert.
 //
 
 import Testing
 import Foundation
 import AppKit
 import MachmanAPI
-import MachmanFixtures
 import MachmanTestSupport
 @testable import MachmanCore
 
@@ -43,6 +41,21 @@ struct VMHostPromptTests {
 		#expect(quit.buttons.map(\.choice) == [.shutDown, .forceStop, .cancel])
 	}
 
+	// V5: a refused or failed stop is said at once; Cancel is the refusal's safe default.
+	@Test func theStopFailurePromptsSayWhatHappened() {
+		let refused = HostPrompt.shutDownRefused("alpha")
+		#expect(refused.message == "alpha can't be asked to shut down")
+		#expect(refused.info
+			== "The guest can't take a shutdown request right now — force stop it instead?")
+		#expect(titles(refused) == ["Cancel", "Force Stop"])
+		#expect(refused.buttons.map(\.choice) == [.cancel, .forceStop])
+
+		let failed = HostPrompt.forceStopFailed("alpha", reason: "The VM refused to stop.")
+		#expect(failed.message == "alpha couldn't be stopped")
+		#expect(failed.info == "The VM refused to stop.")
+		#expect(titles(failed) == ["OK"])
+	}
+
 	@Test func anAnswerMapsByButtonPosition() {
 		let close = HostPrompt.closeWhileRunning("alpha")
 		#expect((0..<4).map(close.choice(forButtonAt:))
@@ -60,41 +73,19 @@ struct VMHostPromptTests {
 	])
 	func aRunningVMsQuitIsCancelledWhateverTheAnswer(
 		answer: HostChoice, stops: [StopMode]
-	) {
-		let host = QuitHost(running: true, answer: answer)
+	) async {
+		let host = TestVMHost {
+			$0 == .quitWhileRunning("alpha") ? answer : .keepWaiting
+		}
 		#expect(host.delegate.terminateReply() == .terminateCancel)
-		#expect(host.prompts == [.quitWhileRunning("alpha")])
-		#expect(host.stops == stops)
+		#expect(host.prompts.first == .quitWhileRunning("alpha"))
+		#expect(await eventually { host.stops == stops })
 	}
 
 	@Test func anIdleHostQuitsAtOnce() {
-		let host = QuitHost(running: false, answer: .shutDown)
+		let host = TestVMHost(running: false) { _ in .shutDown }
 		#expect(host.delegate.terminateReply() == .terminateNow)
 		#expect(host.prompts.isEmpty)
 		#expect(host.stops.isEmpty)
-	}
-}
-
-// A vmhost's delegate over a presenter whose prompts and stops are recorded.
-@MainActor
-final class QuitHost {
-	let presenter = WindowPresenter()
-	let delegate: VMHostAppDelegate
-	private(set) var prompts: [HostPrompt] = []
-	private(set) var stops: [StopMode] = []
-
-	init(running: Bool, answer: HostChoice) {
-		delegate = VMHostAppDelegate(
-			vmName: { "alpha" }, presenter: presenter,
-			server: MachmanServer(
-				api: StubMachman(),
-				socketPath: TestEnvironment.scratch + "quit-\(UUID().uuidString).sock",
-				daemonVersion: "test"))
-		presenter.isRunning = { _ in running }
-		presenter.stopHandler = { [unowned self] _, mode in stops.append(mode) }
-		presenter.answerPrompt = { [unowned self] prompt in
-			prompts.append(prompt)
-			return answer
-		}
 	}
 }

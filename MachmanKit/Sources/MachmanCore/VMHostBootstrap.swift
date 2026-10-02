@@ -271,20 +271,23 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 		}
 		switch presenter.present(.quitWhileRunning(name)) {
 		case .shutDown:
-			presenter.stopHandler?(name, .soft)
+			Task { await presenter.requestShutDown(name) }
 		case .forceStop:
-			presenter.stopHandler?(name, .force)
+			Task { await presenter.requestForceStop(name) }
 		case .closeWindow, .keepWaiting, .cancel:
 			break
 		}
 		return .terminateCancel
 	}
 
+	// The Stop menu: the same requests, follow-up and refusal alerts as the close prompt.
 	@objc func shutDown(_ sender: Any?) {
-		presenter.stopHandler?(vmName(), .soft)
+		let name = vmName()
+		Task { await presenter.requestShutDown(name) }
 	}
 
 	@objc func forceStop(_ sender: Any?) {
-		presenter.stopHandler?(vmName(), .force)
+		let name = vmName()
+		Task { await presenter.requestForceStop(name) }
 	}
 }

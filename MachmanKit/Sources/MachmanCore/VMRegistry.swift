@@ -89,14 +89,15 @@ public final class VMRegistry {
 	public init(only restrictedName: String?, promotionLibrary: String? = nil) {
 		self.restrictedName = restrictedName
 		self.promotionLibrary = promotionLibrary
+		// The vmhost's own Stop menu and prompts: a refusal goes back to them for an alert, as
+		// well as to the log.
 		presenter.stopHandler = { [weak self] name, mode in
-			guard let self = self, let vm = self.vms[name] else { return }
-			Task {
-				do {
-					try await self.stop(vm, mode: mode)
-				} catch {
-					vm.log(error: "Failed to stop VM: \(name): \(error)")
-				}
+			guard let self, let vm = self.vms[name] else { return }
+			do {
+				try await self.stop(vm, mode: mode)
+			} catch {
+				vm.log(error: "Failed to stop VM: \(name): \(error)")
+				throw error
 			}
 		}
 		presenter.isRunning = { [weak self] name in

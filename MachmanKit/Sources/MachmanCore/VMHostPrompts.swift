@@ -73,4 +73,24 @@ struct HostPrompt: Equatable {
 				Button(choice: .forceStop, title: "Force Stop"),
 			])
 	}
+
+	// The guest can't take a shutdown request (still starting, paused). Cancel is the
+	// default: a force stop loses unsaved work in the guest.
+	static func shutDownRefused(_ name: String) -> HostPrompt {
+		HostPrompt(
+			message: "\(name) can't be asked to shut down",
+			info: "The guest can't take a shutdown request right now — force stop it instead?",
+			buttons: [
+				Button(choice: .cancel, title: "Cancel"),
+				Button(choice: .forceStop, title: "Force Stop"),
+			])
+	}
+
+	// reason: the engine's own sentence.
+	static func forceStopFailed(_ name: String, reason: String) -> HostPrompt {
+		HostPrompt(
+			message: "\(name) couldn't be stopped",
+			info: reason,
+			buttons: [Button(choice: .cancel, title: "OK")])
+	}
 }

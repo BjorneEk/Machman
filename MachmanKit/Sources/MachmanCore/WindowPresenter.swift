@@ -20,8 +20,9 @@ import MachmanAPI
 @MainActor
 final class WindowPresenter: NSObject, NSWindowDelegate {
 	private var windows: [String: NSWindow] = [:]
-	// Injected by the registry: how to stop a VM, and whether it is still running.
-	var stopHandler: ((String, StopMode) -> Void)?
+	// Injected by the registry: how to stop a VM (throwing what the engine refused), and
+	// whether it is still running.
+	var stopHandler: (@MainActor (String, StopMode) async throws -> Void)?
 	var isRunning: ((String) -> Bool)?
 	// Fired whenever a VM window appears or goes away (clients track windowOpen).
 	var onWindowChanged: (() -> Void)?
@@ -36,7 +37,8 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	var onCaptureFailed: ((CaptureFailure) -> Void)?
 	private var reportedFailures: Set<String> = []
 
-	private let softStopGraceSeconds: Double = 30
+	// Every Shut Down this presenter asks for is followed up (SoftStopEscalation.swift).
+	let softStopFollowUp = SoftStopEscalation()
 	private var captureInFlight = false
 
 	// Only the vmhost sets this: with a window open that process is a real app (Dock icon,
@@ -52,6 +54,17 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	var setCaptureMode: ((String, SystemKeyCapture) -> Void)?
 	// Keyed by window, not name: safeSave renames the VM under an open window.
 	private var keyCaptures: [ObjectIdentifier: KeyCaptureController] = [:]
+
+	override init() {
+		super.init()
+		softStopFollowUp.isRunning = { [weak self] name in self?.isRunning?(name) ?? false }
+		softStopFollowUp.askToForce = { [weak self] name in
+			self?.present(.notShutDownYet(name)) == .forceStop
+		}
+		softStopFollowUp.force = { [weak self] name in
+			Task { await self?.requestForceStop(name) }
+		}
+	}
 
 	func openWindow(name: String, vz: VZVirtualMachine) {
 		if let existing = windows[name] {
@@ -91,9 +104,9 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 
 	// Close and forget without prompting (the VM went away on its own).
 	func dropWindow(name: String) {
-		guard let window = windows[name] else { return }
+		let window = windows[name]
 		forget(name)
-		window.close()
+		window?.close()
 	}
 
 	func window(for name: String) -> NSWindow? {
@@ -103,12 +116,16 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	// safeSave promotion: the vmhost's VM changes name mid-run — the window map and title
 	// must follow, or close/stop lookups dead-end on the old key.
 	func rekey(from oldName: String, to newName: String) {
+		softStopFollowUp.rekey(from: oldName, to: newName)
 		guard let window = windows.removeValue(forKey: oldName) else { return }
 		windows[newName] = window
 		window.title = newName
 	}
 
+	// Also ends a pending shutdown follow-up: the user let go of the window (or the VM
+	// stopped), as the close prompt's Close Window says.
 	private func forget(_ name: String) {
+		softStopFollowUp.cancel(name)
 		guard let window = windows[name] else { return }
 		window.delegate = nil
 		windows[name] = nil
@@ -223,29 +240,39 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 			forget(name)
 			return true
 		case .shutDown:         // the window stays to watch it happen
-			stopHandler?(name, .soft)
-			scheduleSoftStopEscalation(name)
+			Task { await requestShutDown(name) }
 			return false
 		case .forceStop:        // teardown closes the window
-			stopHandler?(name, .force)
+			Task { await requestForceStop(name) }
 			return false
 		case .keepWaiting, .cancel:
 			return false
 		}
 	}
 
-	// If the guest ignores the shutdown request, offer force after a grace period.
-	private func scheduleSoftStopEscalation(_ name: String) {
-		Task { [weak self] in
-			try? await Task.sleep(for: .seconds(self?.softStopGraceSeconds ?? 30))
-			guard let self = self,
-				self.windows[name] != nil,
-				self.isRunning?(name) ?? false else {
-				return
+	// MARK: - Stop requests
+
+	// Every Shut Down the vmhost offers: ask the guest, then follow up if it ignores the
+	// request. A request the guest can't take right now (still starting, paused) says so at
+	// once and offers a force stop.
+	func requestShutDown(_ name: String) async {
+		guard let stop = stopHandler else { return }
+		do {
+			try await stop(name, .soft)
+			softStopFollowUp.schedule(name)
+		} catch {
+			if present(.shutDownRefused(name)) == .forceStop {
+				await requestForceStop(name)
 			}
-			if self.present(.notShutDownYet(name)) == .forceStop {
-				self.stopHandler?(name, .force)
-			}
+		}
+	}
+
+	func requestForceStop(_ name: String) async {
+		guard let stop = stopHandler else { return }
+		do {
+			try await stop(name, .force)
+		} catch {
+			_ = present(.forceStopFailed(name, reason: error.localizedDescription))
 		}
 	}
 
