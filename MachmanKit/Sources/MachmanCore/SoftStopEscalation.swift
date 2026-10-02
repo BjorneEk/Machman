@@ -17,7 +17,7 @@ final class SoftStopEscalation {
 	var sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
 	// Wiring (WindowPresenter): whether the VM still runs, the question, the force stop.
 	var isRunning: (String) -> Bool = { _ in false }
-	var askToForce: (String) -> Bool = { _ in false }
+	var askToForce: (String) async -> Bool = { _ in false }
 	var force: (String) -> Void = { _ in }
 
 	// A class, so a rename reaches the wait already in flight.
@@ -50,7 +50,8 @@ final class SoftStopEscalation {
 			}
 			self.pending.removeAll { $0 === entry }
 			let name = entry.name
-			if self.isRunning(name), self.askToForce(name) {
+			// Checked again after the answer: the guest can finish while the question shows.
+			if self.isRunning(name), await self.askToForce(name), self.isRunning(name) {
 				self.force(name)
 			}
 		}

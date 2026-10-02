@@ -58,6 +58,20 @@ struct SoftStopEscalationTests {
 		#expect(r.forced.isEmpty)
 	}
 
+	// The question no longer holds the main actor (R3-1), so the guest can finish shutting
+	// down while it shows: a Force Stop answer then has nothing left to stop.
+	@Test func aGuestThatStopsWhileAskedIsNotForced() async throws {
+		let r = Recorder()
+		r.followUp.askToForce = { [unowned r] name in
+			r.asked.append(name)
+			r.running = false
+			return true
+		}
+		try await #require(r.followUp.schedule("alpha")).value
+		#expect(r.asked == ["alpha"])
+		#expect(r.forced.isEmpty)
+	}
+
 	@Test func oneFollowUpPerVM() async throws {
 		let gate = GraceGate()
 		let r = Recorder(gate: gate)

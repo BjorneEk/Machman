@@ -59,7 +59,7 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		super.init()
 		softStopFollowUp.isRunning = { [weak self] name in self?.isRunning?(name) ?? false }
 		softStopFollowUp.askToForce = { [weak self] name in
-			self?.present(.notShutDownYet(name)) == .forceStop
+			await self?.ask(.notShutDownYet(name)) == .forceStop
 		}
 		softStopFollowUp.force = { [weak self] name in
 			Task { await self?.requestForceStop(name) }
@@ -261,7 +261,7 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 			try await stop(name, .soft)
 			softStopFollowUp.schedule(name)
 		} catch {
-			if present(.shutDownRefused(name)) == .forceStop {
+			if await ask(.shutDownRefused(name)) == .forceStop {
 				await requestForceStop(name)
 			}
 		}
@@ -272,18 +272,27 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		do {
 			try await stop(name, .force)
 		} catch {
-			_ = present(.forceStopFailed(name, reason: error.localizedDescription))
+			_ = await ask(.forceStopFailed(name, reason: error.localizedDescription))
 		}
 	}
 
 	// MARK: - Prompts
 
-	// Every vmhost prompt goes through here (VMHostPrompts.swift). A test seam answers in
-	// place of the modal alert.
+	// Every vmhost prompt goes through here or ask (VMHostPrompts.swift). A test seam
+	// answers in place of the modal alert.
 	var answerPrompt: ((HostPrompt) -> HostChoice)?
 
+	// A prompt AppKit asks for (the close button, a quit), from its own event dispatch.
 	func present(_ prompt: HostPrompt) -> HostChoice {
 		answerPrompt?(prompt) ?? runAlert(prompt)
+	}
+
+	// A prompt a Task asks (a refused or failed stop, the follow-up): modal inside that
+	// main-actor job it would stop this vmhost's server answering the daemon until it is
+	// dismissed, so it starts from a run-loop callout (MainRunLoopCallout).
+	func ask(_ prompt: HostPrompt) async -> HostChoice {
+		if let answerPrompt { return answerPrompt(prompt) }
+		return await MainRunLoopCallout.run { self.runAlert(prompt) }
 	}
 
 	// Brought to the front (PromptActivation): a windowless host is lent a Dock icon for the
