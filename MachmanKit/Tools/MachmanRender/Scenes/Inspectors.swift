@@ -113,6 +113,15 @@ enum InspectorScenes {
 		inspector(
 			"multi", "MultiSelectionInspector, two disks",
 			nodes: [.disk("storage:system"), .disk(iso)]),
+		inspector(
+			"vm.outdated-host", "VMInspector, run by an older vmhost",
+			vms: Samples.libraryWithOutdatedHost, node: nil),
+		inspector(
+			"disk.outdated-host", "DiskInspector, run by an older vmhost",
+			vms: Samples.libraryWithOutdatedHost, node: .disk("storage:system")),
+		inspector(
+			"multi.outdated-host", "MultiSelectionInspector, run by an older vmhost",
+			vms: Samples.libraryWithOutdatedHost, nodes: [.disk("storage:system"), .disk(iso)]),
 		inspector("disk", "DiskInspector, owned storage disk", node: .disk("storage:system")),
 		inspector("disk-iso", "DiskInspector, referenced ISO", node: .disk(iso)),
 		diskGrow("inspector.disk.grow", "DiskInspector, the Grow-to field", text: ""),
@@ -204,6 +213,12 @@ enum InspectorScenes {
 			node: .sshSession(sshSession)
 		) { ctx in
 			// Names the session (and stamps its start) without spawning ssh.
+			ctx.terminals.renameSSHSession(vm: "Debian", ref: sshSession, to: "Session 1")
+		},
+		inspector(
+			"ssh-session.outdated-host", "SSHSessionInspector, live under an older vmhost",
+			vms: Samples.libraryWithOutdatedHost, node: .sshSession(sshSession)
+		) { ctx in
 			ctx.terminals.renameSSHSession(vm: "Debian", ref: sshSession, to: "Session 1")
 		},
 		inspector("guest-setup", "GuestSetupInspector", node: .device(.guestSetup)),

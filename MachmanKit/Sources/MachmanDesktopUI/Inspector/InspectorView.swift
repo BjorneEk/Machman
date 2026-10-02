@@ -20,15 +20,30 @@ struct InspectorView: View {
 	let vm: VMInfo
 
 	var body: some View {
-		Group {
-			if viewModel.treeSelection.count > 1 {
-				MultiSelectionInspector(viewModel: viewModel, vm: vm)
-			} else {
-				let node = viewModel.treeSelection.first
-				entityInspector(node).id(InspectorIdentity(vm: vm.name, node: node))
+		VStack(spacing: 0) {
+			// E22: settings stay locked while an older vmhost runs the VM; a session's own
+			// inspector (desktop-local) stays live.
+			if let reason = vm.restartToUpdate {
+				RestartToUpdateBanner(message: reason)
+				Divider()
 			}
+			Group {
+				if viewModel.treeSelection.count > 1 {
+					MultiSelectionInspector(viewModel: viewModel, vm: vm)
+				} else {
+					let node = viewModel.treeSelection.first
+					entityInspector(node).id(InspectorIdentity(vm: vm.name, node: node))
+				}
+			}
+			.disabled(vm.restartToUpdate != nil && !showsSession)
 		}
 		.formStyle(.grouped)
+	}
+
+	private var showsSession: Bool {
+		guard viewModel.treeSelection.count == 1,
+			case .sshSession = viewModel.treeSelection.first else { return false }
+		return true
 	}
 
 	@ViewBuilder
