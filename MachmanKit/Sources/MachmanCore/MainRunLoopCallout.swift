@@ -25,8 +25,9 @@ public enum MainRunLoopCallout {
 
 	// A loop nested inside a main-actor job runs callouts too: a synchronous Process wait
 	// (ssh-keygen writing a guest setup payload) spins one. A modal from there would hold the
-	// main queue after all, so the work waits for that job to end and is posted again.
-	// Internal for tests.
+	// main queue after all, so the work waits for that job to end and is posted again. Only a
+	// Swift job is seen: a loop nested in a plain main-queue GCD block would still run the
+	// modal there, so nothing may spin one from such a block (nothing does). Internal for tests.
 	@MainActor
 	static func post(_ work: @escaping @MainActor () -> Void) {
 		RunLoop.main.perform(inModes: [.common]) {
