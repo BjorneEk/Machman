@@ -48,7 +48,11 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 	public var name: String
 
 	// Startup-only (require a Reload to take effect on an already-open terminal).
-	public var scrollback: Int
+	// Kept inside scrollbackRange on every write — the Settings field writes through a key
+	// path — since SwiftTerm traps on a negative one and allocates per line of a huge one.
+	public var scrollback: Int {
+		didSet { scrollback = Self.clampedScrollback(scrollback) }
+	}
 	public var convertEol: Bool
 	public var termName: String
 	public var cursor: TerminalCursor
@@ -70,7 +74,7 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 	) {
 		self.id = id
 		self.name = name
-		self.scrollback = scrollback
+		self.scrollback = Self.clampedScrollback(scrollback)
 		self.convertEol = convertEol
 		self.termName = termName
 		self.cursor = cursor
@@ -95,7 +99,8 @@ public struct TerminalProfile: Codable, Identifiable, Equatable, Sendable {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
 		self.id = c.decodeTolerant(UUID.self, forKey: .id) ?? UUID()
 		self.name = c.decodeTolerant(String.self, forKey: .name) ?? "Profile"
-		self.scrollback = c.decodeTolerant(Int.self, forKey: .scrollback) ?? 500_000
+		self.scrollback = Self.clampedScrollback(
+			c.decodeTolerant(Int.self, forKey: .scrollback) ?? 500_000)
 		self.convertEol = c.decodeTolerant(Bool.self, forKey: .convertEol) ?? true
 		self.termName = c.decodeTolerant(String.self, forKey: .termName) ?? "xterm-256color"
 		self.cursor = c.decodeTolerant(TerminalCursor.self, forKey: .cursor) ?? .block
@@ -124,4 +129,11 @@ public extension TerminalProfile {
 	}
 
 	var isDefault: Bool { id == TerminalProfile.defaultID }
+
+	// The lines of scrollback a profile may ask for.
+	static let scrollbackRange = 0...100_000
+
+	static func clampedScrollback(_ lines: Int) -> Int {
+		min(max(lines, scrollbackRange.lowerBound), scrollbackRange.upperBound)
+	}
 }

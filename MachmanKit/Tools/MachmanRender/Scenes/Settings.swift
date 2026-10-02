@@ -43,6 +43,14 @@ enum SettingsScenes {
 			ctx.profiles.editingProfileID = profile.id
 			return AnyView(TerminalSettingsView(store: ctx.profiles))
 		},
+		// P35: the scrollback field names its bound. Taller than the window, so the Behavior
+		// section below the fold is in the picture.
+		RenderScene(
+			"settings.terminal.behavior", "TerminalSettingsView down to its Behavior section",
+			widths: [760], height: 1100
+		) { ctx in
+			AnyView(TerminalSettingsView(store: ctx.profiles))
+		},
 		pane("behaviour", "BehaviourSettingsView") { _ in
 			AnyView(BehaviourSettingsView())
 		},

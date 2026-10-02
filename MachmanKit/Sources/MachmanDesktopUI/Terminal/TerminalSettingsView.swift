@@ -143,7 +143,16 @@ struct TerminalSettingsView: View {
 					.font(.caption2)
 			}
 			Section {
-				TextField("Scrollback (lines)", value: binding(\.scrollback), format: .number)
+				// The profile clamps what is typed; the label says to what. A narrow field leaves
+				// the label its line.
+				LabeledContent {
+					TextField("Scrollback", value: binding(\.scrollback), format: .number)
+						.labelsHidden()
+						.multilineTextAlignment(.trailing)
+						.frame(width: 90)
+				} label: {
+					Text(Self.scrollbackLabel).fixedSize(horizontal: true, vertical: false)
+				}
 				Toggle("Convert newlines (LF → CRLF)", isOn: binding(\.convertEol))
 				TextField("$TERM", text: binding(\.termName))
 				Stepper("Tab width: \(current.tabStopWidth)",
@@ -239,6 +248,9 @@ struct TerminalSettingsView: View {
 		if installed.contains(current.fontName) { return installed }
 		return (installed + [current.fontName]).sorted()
 	}
+
+	private static let scrollbackLabel =
+		"Scrollback (up to \(TerminalProfile.scrollbackRange.upperBound.formatted()) lines)"
 
 	private static func hexString(from color: Color) -> String {
 		let ns = NSColor(color).usingColorSpace(.sRGB) ?? .black
