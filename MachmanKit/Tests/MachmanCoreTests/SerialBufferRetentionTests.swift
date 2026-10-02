@@ -60,8 +60,7 @@ struct SerialBufferRetentionTests {
 	@Test @MainActor func aBridgeRetainsOnlyItsReplayWindow() async throws {
 		let toGuest = Pipe()
 		let fromGuest = Pipe()
-		let base = TestEnvironment.scratch
-			+ "mm-ring-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let base = TestEnvironment.socketPath("mm-ring", suffix: "")
 		let bridge = SerialPortBridge(
 			kind: .console, index: 0, socketPath: base + ".sock",
 			logURL: URL(fileURLWithPath: base + ".log"),

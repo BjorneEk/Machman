@@ -56,12 +56,11 @@ struct RoutingIdleHostTests {
 		_ routing: RoutingMachman, _ name: String = "alpha", state: VMState,
 		mac: String? = nil, version: String = "test"
 	) async throws -> Rig {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-idle-\(name)-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-idle-\(name)")
 		let stub = StubMachman()
 		stub.vms[name] = StubMachman.makeInfo(name, state: state)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: version)
-		try server.start()
+		try startServing(server)
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: name, socketPath: socketPath, macInUse: mac)
 		let client = try await routing.connectHost(identity: identity)
@@ -131,12 +130,11 @@ struct RoutingIdleHostTests {
 
 		// The same through the probe-adopt path (a live socket the daemon has not adopted).
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-idle-probe-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-idle-probe")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .stopped)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		do {
 			_ = try await routing.probeAdoptAndStart(

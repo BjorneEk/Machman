@@ -14,8 +14,7 @@ import MachmanTestSupport
 
 struct UDSListenerKeepAliveTests {
 	private func scratchDir() throws -> String {
-		let dir = TestEnvironment.scratch
-			+ "mm-keep-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let dir = TestEnvironment.socketPath("mm-keep", suffix: "")
 		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		return dir
 	}

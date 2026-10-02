@@ -30,8 +30,7 @@ struct RoutingVersionFloorTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: daemonVersion)
 			routing.locateVMHost = { nil }
 		}
-		let socketPath = TestEnvironment.scratch
-			+ "mm-floor-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-floor")
 		routing.socketPathForVM = { _ in socketPath }
 		routing.helloDeadline = .seconds(10)
 		routing.hostProbeDeadline = .seconds(10)
@@ -45,7 +44,7 @@ struct RoutingVersionFloorTests {
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: version)
-		try server.start()
+		try startServing(server)
 		return (stub, server)
 	}
 

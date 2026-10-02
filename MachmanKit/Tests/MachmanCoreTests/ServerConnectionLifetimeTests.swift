@@ -18,12 +18,11 @@ import MachmanClient
 
 struct ServerConnectionLifetimeTests {
 	@Test @MainActor func aDisconnectedClientIsReleased() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-life-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-life")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "lifetime")

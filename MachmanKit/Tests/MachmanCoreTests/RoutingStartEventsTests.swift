@@ -33,8 +33,7 @@ struct RoutingStartEventsTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
 			routing.locateVMHost = { nil }
 		}
-		let socketPath = TestEnvironment.scratch
-			+ "mm-boot-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-boot")
 		routing.socketPathForVM = { _ in socketPath }
 		routing.helloDeadline = .seconds(10)
 		routing.hostProbeDeadline = .seconds(10)
@@ -49,7 +48,7 @@ struct RoutingStartEventsTests {
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha")   // stopped: the start is forwarded
 		stub.bootEvents = [Self.bootWarning] + extra
 		let server = MachmanServer(api: stub, socketPath: path, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		return (stub, server)
 	}
 

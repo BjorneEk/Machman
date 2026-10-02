@@ -16,8 +16,7 @@ import MachmanClient
 
 struct CopyMountsLoopbackTests {
 	@Test @MainActor func theMountChoiceCrossesTheWire() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-cmount-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-cmount")
 		let stub = StubMachman()
 		var debian = StubMachman.makeInfo("Debian")
 		debian.mounts = [
@@ -26,7 +25,7 @@ struct CopyMountsLoopbackTests {
 		]
 		stub.vms["Debian"] = debian
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "copy-mounts")
 

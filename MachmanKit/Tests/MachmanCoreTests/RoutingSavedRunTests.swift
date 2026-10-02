@@ -28,7 +28,7 @@ struct RoutingSavedRunTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
 			routing.locateVMHost = { nil }
 		}
-		let tag = "\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let tag = UUID().uuidString
 		let paths = [
 			"alpha": TestEnvironment.scratch + "mm-a-\(tag).sock",
 			"kept": TestEnvironment.scratch + "mm-k-\(tag).sock",
@@ -44,7 +44,7 @@ struct RoutingSavedRunTests {
 		stub.vms["kept"] = StubMachman.makeInfo("kept", state: .running)
 		let server = MachmanServer(
 			api: stub, socketPath: paths["alpha"]!, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		await routing.adoptExistingHosts()
@@ -75,7 +75,7 @@ struct RoutingSavedRunTests {
 		stub.vms["ghost"] = StubMachman.makeInfo("ghost", state: .running)
 		let server = MachmanServer(
 			api: stub, socketPath: paths["alpha"]!, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		await routing.adoptExistingHosts()

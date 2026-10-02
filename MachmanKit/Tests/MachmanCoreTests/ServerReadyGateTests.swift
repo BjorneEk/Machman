@@ -23,12 +23,11 @@ struct ServerReadyGateTests {
 	}
 
 	@Test @MainActor func requestsParkUntilTheGateOpensButHelloAndRetireAnswer() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-gate-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-gate")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let (stream, continuation) = AsyncStream<Void>.makeStream()
 		server.holdRequests(until: Task { for await _ in stream {} })
@@ -59,12 +58,11 @@ struct ServerReadyGateTests {
 	}
 
 	@Test @MainActor func aFinishedGateAddsNoHold() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-gate2-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-gate2")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		server.holdRequests(until: Task {})
 

@@ -53,11 +53,10 @@ struct ServerBackpressureTests {
 	private func makeServer() throws -> (MachmanServer, StubMachman, String) {
 		// A write to a peer that is gone must fail with EPIPE, never kill the test runner.
 		signal(SIGPIPE, SIG_IGN)
-		let socketPath = TestEnvironment.scratch
-			+ "mm-bp-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-bp")
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		return (server, stub, socketPath)
 	}
 

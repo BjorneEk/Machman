@@ -13,7 +13,7 @@ import MachmanAPI
 struct SerialPortBridgeTests {
 
 	private func tempPath(_ tag: String, _ ext: String) -> String {
-		TestEnvironment.scratch + "mm-\(tag)-\(getpid())-\(UInt32.random(in: 0..<99999)).\(ext)"
+		TestEnvironment.socketPath("mm-\(tag)", suffix: ".\(ext)")
 	}
 
 	private func makeBridge(

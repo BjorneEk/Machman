@@ -27,8 +27,7 @@ private final class RawVMHostPeer: @unchecked Sendable {
 	private var subscribed = false
 
 	init() throws {
-		socketPath = TestEnvironment.scratch
-			+ "mm-raw-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		socketPath = TestEnvironment.socketPath("mm-raw")
 		listener = socket(AF_UNIX, SOCK_STREAM, 0)
 		var addr = sockaddr_un()
 		addr.sun_family = sa_family_t(AF_UNIX)
@@ -124,10 +123,9 @@ struct EventPassthroughTests {
 			routing.locateVMHost = { nil }
 		}
 		routing.socketPathForVM = { _ in peer.socketPath }
-		let daemonSocket = TestEnvironment.scratch
-			+ "mm-daemon-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let daemonSocket = TestEnvironment.socketPath("mm-daemon")
 		let server = MachmanServer(api: routing, socketPath: daemonSocket, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await RemoteMachman(socketPath: daemonSocket, clientName: "a10")
 		let lines = await client.eventLines()

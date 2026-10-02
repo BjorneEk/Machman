@@ -170,11 +170,10 @@ struct SafeRunTests {
 	}
 
 	@Test @MainActor func peerPIDIsTheServingProcess() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-peer-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-peer")
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "peer")
@@ -203,12 +202,11 @@ struct SafeRunTests {
 			atPath: shadowRoot, withIntermediateDirectories: true)
 		defer { try? FileManager.default.removeItem(atPath: shadowRoot) }
 
-		let socketPath = TestEnvironment.scratch
-			+ "mm-shadow-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-shadow")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath,
@@ -229,12 +227,11 @@ struct SafeRunTests {
 		let routing = try makeRouting()
 		// Adopt a live in-process host for alpha FIRST (async, outside the lock): its
 		// socket peer is this test process.
-		let socketPath = TestEnvironment.scratch
-			+ "mm-sweep-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-sweep")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath)
@@ -301,14 +298,13 @@ struct SafeRunTests {
 			_ = try await routing.safeSave(vm: "alpha", to: "kept")
 		}
 
-		let socketPath = TestEnvironment.scratch
-			+ "mm-save-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-save")
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("alpha", state: .running)
 		info.safeRun = true
 		stub.vms["alpha"] = info
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		// Adopted but NOT safe → invalidState.
@@ -343,12 +339,11 @@ struct SafeRunTests {
 
 	@Test @MainActor func setStartPolicyRefusedWhileSafeHosted() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-pol-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-pol")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let identity = RoutingMachman.HostIdentity(
@@ -368,12 +363,11 @@ struct SafeRunTests {
 
 	@Test @MainActor func safeHostsOverlaySafeRunOnTheWire() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-overlay-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-overlay")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let identity = RoutingMachman.HostIdentity(

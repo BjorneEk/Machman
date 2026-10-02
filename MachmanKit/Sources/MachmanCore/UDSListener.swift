@@ -57,6 +57,8 @@ final class UDSListener {
 		// skip shutdown(), so a stale file is the normal case, not an exceptional one.
 		if FileManager.default.fileExists(atPath: path) {
 			if Self.isLive(path: path) {
+				let holder = Self.holderPID(path: path).map { "pid \($0)" } ?? "an unknown process"
+				MachmanLogger.log(.passiveWarning, "\(path) is already served by \(holder)")
 				throw UDSError.alreadyRunning(path)
 			}
 			unlink(path)
@@ -179,6 +181,26 @@ final class UDSListener {
 				connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
 			}
 		}
+	}
+
+	// The pid of the process listening on this socket, nil when nothing accepts. A connect is
+	// enough: LOCAL_PEERPID answers for the listener before it accepts (probe-checked), so
+	// the probe never waits on the holder.
+	static func holderPID(path: String) -> pid_t? {
+		guard var addr = try? makeAddr(path) else { return nil }
+		let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+		guard probe >= 0 else { return nil }
+		defer { close(probe) }
+		let connected = withUnsafePointer(to: &addr) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+			}
+		}
+		guard connected else { return nil }
+		var pid: pid_t = 0
+		var length = socklen_t(MemoryLayout<pid_t>.size)
+		guard getsockopt(probe, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 else { return nil }
+		return pid
 	}
 
 	static func makeAddr(_ path: String) throws -> sockaddr_un {

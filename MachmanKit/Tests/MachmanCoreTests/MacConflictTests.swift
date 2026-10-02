@@ -36,12 +36,11 @@ struct MacConflictTests {
 		let mac = "aa:bb:cc:00:11:22"
 		let routing = try makeRouting(sharedMAC: mac)
 
-		let socketPath = TestEnvironment.scratch
-			+ "mm-conflict-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-conflict")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await routing.connectHost(identity: RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath))
@@ -65,12 +64,11 @@ struct MacConflictTests {
 		let mac = "aa:bb:cc:00:33:44"
 		let routing = try makeRouting(sharedMAC: mac)
 
-		let socketPath = TestEnvironment.scratch
-			+ "mm-force-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-force")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await routing.connectHost(identity: RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath))

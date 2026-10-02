@@ -28,7 +28,7 @@ private final class Accepted: @unchecked Sendable {
 
 struct SocketFollowsSaveTests {
 	private func scratchDir() throws -> String {
-		let dir = TestEnvironment.scratch + "mm-mv-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let dir = TestEnvironment.socketPath("mm-mv", suffix: "")
 		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		return dir
 	}
@@ -118,7 +118,7 @@ struct SocketFollowsSaveTests {
 			let server = MachmanServer(
 				api: LocalMachman(registry: host.registry), socketPath: alphaPath,
 				daemonVersion: "test")
-			try server.start()
+			try startServing(server)
 			defer { server.stop() }
 			VMHostBootstrap.followPromotions(
 				of: host.registry, server: server, launchedOn: alphaPath)
@@ -147,7 +147,7 @@ struct SocketFollowsSaveTests {
 			let server = MachmanServer(
 				api: LocalMachman(registry: host.registry), socketPath: custom,
 				daemonVersion: "test")
-			try server.start()
+			try startServing(server)
 			defer { server.stop() }
 			VMHostBootstrap.followPromotions(of: host.registry, server: server, launchedOn: custom)
 
@@ -178,7 +178,7 @@ struct SocketFollowsSaveTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
 			routing.locateVMHost = { nil }
 		}
-		let base = TestEnvironment.scratch + "mm-fs-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let base = TestEnvironment.socketPath("mm-fs", suffix: "")
 		let alphaPath = base + "-a.sock"
 		let keptPath = base + "-k.sock"
 		routing.socketPathForVM = { $0 == "kept" ? keptPath : alphaPath }
@@ -187,7 +187,7 @@ struct SocketFollowsSaveTests {
 		info.safeRun = true
 		stub.vms["alpha"] = info
 		let server = MachmanServer(api: stub, socketPath: alphaPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: alphaPath,
 			isSafe: true, shadowRoot: "/nonexistent")
@@ -277,13 +277,13 @@ struct SocketFollowsSaveTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
 			routing.locateVMHost = { nil }
 		}
-		let base = TestEnvironment.scratch + "mm-rs-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let base = TestEnvironment.socketPath("mm-rs", suffix: "")
 		let keptPath = base + "-k.sock"
 		routing.socketPathForVM = { $0 == "kept" ? keptPath : base + "-a.sock" }
 		let stub = StubMachman()
 		stub.vms["kept"] = StubMachman.makeInfo("kept", state: .running)
 		let server = MachmanServer(api: stub, socketPath: keptPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		await routing.adoptExistingHosts()

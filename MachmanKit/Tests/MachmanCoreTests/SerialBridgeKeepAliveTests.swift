@@ -24,8 +24,7 @@ struct SerialBridgeKeepAliveTests {
 	private func makeBridge(_ tag: String, socketPath: String? = nil) -> Bridge {
 		let toGuest = Pipe()
 		let fromGuest = Pipe()
-		let base = TestEnvironment.scratch
-			+ "mm-\(tag)-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let base = TestEnvironment.socketPath("mm-\(tag)", suffix: "")
 		let bridge = SerialPortBridge(
 			kind: .console, index: 0, socketPath: socketPath ?? base + ".sock",
 			logURL: URL(fileURLWithPath: base + ".log"),
@@ -78,8 +77,7 @@ struct SerialBridgeKeepAliveTests {
 	// A path a live run already serves (a hash collision, or a pre-fix run's name-keyed
 	// path) stays that run's: the bridge neither rebinds nor, at stop, unlinks it.
 	@Test @MainActor func aBridgeNeverTakesALiveSocket() async throws {
-		let path = TestEnvironment.scratch
-			+ "mm-ttylive-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let path = TestEnvironment.socketPath("mm-ttylive")
 		let listener = try UDSListener(
 			path: path, queue: DispatchQueue(label: "mm-tty-live")) { fd in close(fd) }
 		defer { listener.shutdown() }

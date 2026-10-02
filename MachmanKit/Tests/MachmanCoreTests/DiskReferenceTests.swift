@@ -133,12 +133,11 @@ struct DiskReferenceTests {
 	private func adoptRunning(
 		_ name: String, into routing: RoutingMachman
 	) async throws -> (MachmanServer, RemoteMachman) {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-disk-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-disk")
 		let stub = StubMachman()
 		stub.vms[name] = StubMachman.makeInfo(name, state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		let identity = RoutingMachman.HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 		let client = try await routing.connectHost(identity: identity)
 		routing.adopt(identity: identity, client: client)

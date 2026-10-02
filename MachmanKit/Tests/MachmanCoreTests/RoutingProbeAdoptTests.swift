@@ -31,12 +31,11 @@ struct RoutingProbeAdoptTests {
 
 	@Test @MainActor func startAdoptsALiveHostAndForwardsTheStart() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-probe-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-probe")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let handled = try await routing.probeAdoptAndStart(
@@ -48,12 +47,11 @@ struct RoutingProbeAdoptTests {
 
 	@Test @MainActor func adoptOfARunningHostToleratesInvalidState() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-probe2-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-probe2")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		// The host refuses the forwarded start (already running); the probe still adopts
@@ -67,8 +65,7 @@ struct RoutingProbeAdoptTests {
 
 	@Test @MainActor func deadSocketIsReclaimedAndNotAdopted() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-dead-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-dead")
 		FileManager.default.createFile(atPath: socketPath, contents: nil)
 
 		let handled = try await routing.probeAdoptAndStart(
@@ -83,8 +80,7 @@ struct RoutingProbeAdoptTests {
 	// owns the VM's directory. A live socket refuses; a dead leftover file does not.
 	@Test @MainActor func deleteRefusesWhileAnUnadoptedVMHostOwnsTheSocket() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-unadopted-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-unadopted")
 		routing.socketPathForVM = { _ in socketPath }
 		let listener = try UDSListener(
 			path: socketPath, queue: DispatchQueue(label: "mm-unadopted-accept")) { fd in
@@ -112,8 +108,7 @@ struct RoutingProbeAdoptTests {
 	// host is serving.
 	@Test @MainActor func wholeVMEditsRefuseWhileAnUnadoptedVMHostOwnsTheSocket() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-unadopted2-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-unadopted2")
 		routing.socketPathForVM = { _ in socketPath }
 		let listener = try UDSListener(
 			path: socketPath, queue: DispatchQueue(label: "mm-unadopted2-accept")) { fd in
@@ -156,8 +151,7 @@ struct RoutingProbeAdoptTests {
 	// either (the host's own saves would revert it).
 	@Test @MainActor func proxiedCallsRefuseAnUnadoptedVMHost() async throws {
 		let routing = try makeRouting()
-		let socketPath = TestEnvironment.scratch
-			+ "mm-unadopted3-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-unadopted3")
 		routing.socketPathForVM = { _ in socketPath }
 		let listener = try UDSListener(
 			path: socketPath, queue: DispatchQueue(label: "mm-unadopted3-accept")) { fd in
@@ -180,8 +174,7 @@ struct RoutingProbeAdoptTests {
 	@Test @MainActor func socketPruneCoversSerialSockets() throws {
 		let routing = try makeRouting()
 		let fm = FileManager.default
-		let dir = TestEnvironment.scratch
-			+ "mm-prune-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let dir = TestEnvironment.socketPath("mm-prune", suffix: "")
 		try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		defer { try? fm.removeItem(atPath: dir) }
 		fm.createFile(atPath: dir + "/vm-dead0000.sock", contents: nil)

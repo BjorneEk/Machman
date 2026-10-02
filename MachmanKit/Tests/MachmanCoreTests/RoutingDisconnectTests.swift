@@ -41,12 +41,11 @@ struct RoutingDisconnectTests {
 		let shadowRoot = TestEnvironment.scratch + "safe-run-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(
 			atPath: shadowRoot, withIntermediateDirectories: true)
-		let socketPath = TestEnvironment.scratch
-			+ "mm-drop-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-drop")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath,
 			isSafe: true, shadowRoot: shadowRoot)
@@ -107,7 +106,7 @@ struct RoutingDisconnectTests {
 		// A new run binds the same path before the old run's teardown runs.
 		let successor = MachmanServer(
 			api: StubMachman(), socketPath: socketPath, daemonVersion: "test")
-		try successor.start()
+		try startServing(successor)
 		defer { successor.stop() }
 		#expect(await eventually(timeout: .seconds(10)) { routing.hostedNames.isEmpty })
 		#expect(UDSListener.isLive(path: socketPath))   // before: unlinked under the successor

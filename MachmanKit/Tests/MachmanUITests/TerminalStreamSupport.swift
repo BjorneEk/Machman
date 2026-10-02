@@ -48,7 +48,7 @@ final class SocketPeer: @unchecked Sendable {
 	private var kept = Data()
 
 	init() throws {
-		path = TestEnvironment.scratch + "tp-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		path = TestEnvironment.socketPath("tp")
 		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 		var addr = sockaddr_un()
 		addr.sun_family = sa_family_t(AF_UNIX)

@@ -154,12 +154,11 @@ struct RoutingPendingStartTests {
 		let mac = "aa:bb:cc:77:11:22"
 		let routing = try makeRouting(names: ["pending-alpha", "pending-beta"], mac: mac)
 
-		let socketPath = TestEnvironment.scratch
-			+ "mm-pend-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-pend")
 		let stub = StubMachman()
 		stub.vms["pending-alpha"] = StubMachman.makeInfo("pending-alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await routing.connectHost(identity: RoutingMachman.HostIdentity(
 			id: UUID(), name: "pending-alpha", socketPath: socketPath))

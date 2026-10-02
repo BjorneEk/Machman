@@ -369,12 +369,11 @@ struct SafeSaveHandOverTests {
 			registry = VMRegistry()
 			routing = RoutingMachman(registry: registry, daemonVersion: "test")
 		}
-		let socketPath = TestEnvironment.scratch
-			+ "mm-hand-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-hand")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath,
@@ -416,12 +415,11 @@ struct SafeSaveHandOverTests {
 			registry = VMRegistry()
 			routing = RoutingMachman(registry: registry, daemonVersion: "test")
 		}
-		let socketPath = TestEnvironment.scratch
-			+ "mm-off-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-off")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath,
@@ -493,13 +491,12 @@ struct SafeSaveHandOverTests {
 	private func adoptSafeRun(
 		into routing: RoutingMachman, library: String, stub: StubMachman
 	) async throws -> (MachmanServer, RemoteMachman) {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-half-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-half")
 		var running = StubMachman.makeInfo("alpha", state: .running)
 		running.safeRun = true
 		stub.vms["alpha"] = running
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath,
 			isSafe: true, shadowRoot: "/nonexistent", library: library)

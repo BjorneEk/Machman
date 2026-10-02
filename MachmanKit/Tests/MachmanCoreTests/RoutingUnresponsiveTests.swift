@@ -50,10 +50,9 @@ struct RoutingUnresponsiveTests {
 		for name in ["alpha", "beta"] {
 			let stub = StubMachman()
 			stub.vms[name] = StubMachman.makeInfo(name, state: .running)
-			let socketPath = TestEnvironment.scratch
-				+ "mm-stall-\(name)-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+			let socketPath = TestEnvironment.socketPath("mm-stall-\(name)")
 			let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-			try server.start()
+			try startServing(server)
 			let identity = RoutingMachman.HostIdentity(
 				id: UUID(), name: name, socketPath: socketPath)
 			let client = try await routing.connectHost(identity: identity)

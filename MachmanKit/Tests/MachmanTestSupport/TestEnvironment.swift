@@ -40,6 +40,14 @@ public enum TestEnvironment {
 
 	public static var scratchURL: URL { URL(fileURLWithPath: scratch, isDirectory: true) }
 
+	// A fresh path in scratch for a socket, or for the base of a test's socket names:
+	// "<prefix>-<UUID><suffix>". Tests used to name them by pid plus a random number below
+	// 99,999, which lets two tests draw the same path (Q7); a UUID can't. Keep prefixes to
+	// about 20 bytes: sun_path holds 103, and scratch plus a UUID already takes about 70.
+	public static func socketPath(_ prefix: String, suffix: String = ".sock") -> String {
+		scratch + "\(prefix)-\(UUID().uuidString)\(suffix)"
+	}
+
 	private struct Sandbox {
 		let suiteID: String
 		let token: String

@@ -60,8 +60,7 @@ struct RoutingAdoptionTests {
 			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
 			routing.locateVMHost = { nil }   // a test never finds (or launches) a real vmhost
 		}
-		let socketPath = TestEnvironment.scratch
-			+ "mm-adopt-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-adopt")
 		routing.socketPathForVM = { _ in socketPath }
 		routing.helloDeadline = helloDeadline
 		routing.hostProbeDeadline = probeDeadline
@@ -73,7 +72,7 @@ struct RoutingAdoptionTests {
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		return (stub, server)
 	}
 
@@ -149,8 +148,7 @@ struct RoutingAdoptionTests {
 		let (routing, socketPath) = try makeRouting()
 		let (_, server) = try serveStub(at: socketPath)
 		defer { server.stop() }
-		let safeDir = TestEnvironment.scratch
-			+ "mm-safe-\(getpid())-\(UInt32.random(in: 0..<99999))"
+		let safeDir = TestEnvironment.socketPath("mm-safe", suffix: "")
 		defer { try? FileManager.default.removeItem(atPath: safeDir) }
 		let other = safeDir + "/" + SafeRun.runPrefix + "other"
 		try FileManager.default.createDirectory(atPath: other, withIntermediateDirectories: true)

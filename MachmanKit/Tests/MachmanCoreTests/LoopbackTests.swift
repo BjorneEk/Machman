@@ -13,12 +13,11 @@ import MachmanClient
 struct LoopbackTests {
 
 	@Test @MainActor func sshSetRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "ssh-loop")
 
@@ -33,14 +32,13 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func mountKindAndSetupResetRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm")
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("Debian")
 		info.setup = GuestSetupInfo(installed: true, guestOS: "debian")
 		stub.vms["Debian"] = info
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "setup-loop")
 
@@ -63,12 +61,11 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func wireRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "loopback")
@@ -122,12 +119,11 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func regenerateMACRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-mac-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-mac")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "mac")
@@ -138,12 +134,11 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func serialPortsRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-ser-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-ser")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "serial")
@@ -183,12 +178,11 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func kernelPromoteRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-krn-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-krn")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "krn")
@@ -204,12 +198,11 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func setStartPolicyRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-pol-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-pol")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "pol")
@@ -220,12 +213,11 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func copyRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-copy-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-copy")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "copy")
@@ -245,15 +237,14 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func setSafetyRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-safe-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-safe")
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("Debian")
 		info.disks = [DiskInfo(
 			id: "storage:disk", type: .storage, name: "disk", path: nil, sizeBytes: nil)]
 		stub.vms["Debian"] = info
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "safe")
@@ -270,8 +261,7 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func diskImportAndPromoteRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-imp-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-imp")
 		let stub = StubMachman()
 		var info = StubMachman.makeInfo("Debian")
 		info.disks = [DiskInfo(
@@ -279,7 +269,7 @@ struct LoopbackTests {
 			sizeBytes: 1024, safe: true, owned: false)]
 		stub.vms["Debian"] = info
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "imp")
@@ -300,15 +290,14 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func safeSaveRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-save-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-save")
 		let stub = StubMachman()
 		var running = StubMachman.makeInfo("Debian", state: .running)
 		running.safeRun = true
 		stub.vms["Debian"] = running
 		stub.vms["Other"] = StubMachman.makeInfo("Other")
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "save")
@@ -327,11 +316,10 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func retireRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-ret-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-ret")
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "ret")
@@ -341,13 +329,12 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func engineErrorsKeepTheirCode() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-err-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-err")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian")
 		stub.fail("openWindow", with: VirtualMachineError.critical("boom"))
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "err")
@@ -364,15 +351,14 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func largeResponsesSurviveTheSocket() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-big-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-big")
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian", state: .running)
 		// 2 MiB of noise ≈ a real VM-window JPEG after base64 — far beyond the socket
 		// buffer, so the server must handle partial writes.
 		stub.previewPayload = Data((0..<(2 * 1024 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "big")
@@ -384,11 +370,10 @@ struct LoopbackTests {
 	}
 
 	@Test @MainActor func secondDaemonIsRefused() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-dup-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-dup")
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 
 		let second = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
@@ -400,15 +385,14 @@ struct LoopbackTests {
 	// The 1.0.4 additions dispatch end to end: devices, enabled, overrides, resize,
 	// operations, templates, nested-virt.
 	@Test @MainActor func devicesAndOperationsRoundTrip() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-dev-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-dev")
 		let stub = StubMachman()
 		var seeded = StubMachman.makeInfo("Debian")
 		seeded.disks = [DiskInfo(
 			id: "storage:disk", type: .storage, name: "disk", path: nil, sizeBytes: 1024)]
 		stub.vms["Debian"] = seeded
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		defer { server.stop() }
 		let client = try await RemoteMachman(socketPath: socketPath, clientName: "devices")
 

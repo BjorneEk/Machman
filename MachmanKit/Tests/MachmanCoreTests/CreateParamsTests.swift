@@ -23,11 +23,10 @@ struct CreateParamsTests {
 
 	@MainActor
 	private func serve() throws -> (StubMachman, MachmanServer, RPCConnection) {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-create-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-create")
 		let stub = StubMachman()
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		try startServing(server)
 		return (stub, server, try RPCConnection(socketPath: socketPath))
 	}
 

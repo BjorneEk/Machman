@@ -30,8 +30,7 @@ final class ScriptedPeer: @unchecked Sendable {
 
 	init(helloAPIVersion: Int? = MachmanProtocol.apiVersion) throws {
 		self.helloAPIVersion = helloAPIVersion
-		socketPath = TestEnvironment.scratch
-			+ "mm-sp-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		socketPath = TestEnvironment.socketPath("mm-sp")
 		listenFD = socket(AF_UNIX, SOCK_STREAM, 0)
 		var addr = sockaddr_un()
 		addr.sun_family = sa_family_t(AF_UNIX)

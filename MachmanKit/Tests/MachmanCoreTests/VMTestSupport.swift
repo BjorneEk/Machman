@@ -34,3 +34,56 @@ enum VMTestDir {
 		return try body()
 	}
 }
+
+// Starts a test server, and when its socket path is already served (Q7: the floor test once
+// found a fresh path taken, 1 in 25 full runs) throws HeldSocket, which says who holds it.
+@MainActor
+func startServing(_ server: MachmanServer) throws {
+	do {
+		try server.start()
+	} catch UDSError.alreadyRunning(let path) {
+		throw HeldSocket(path: path)
+	}
+}
+
+// What a refused test server found at its path: the holder (UDSListener.holderPID), whether
+// that is this test process, the file's inode and birth time, and every scratch entry that
+// shares the path's prefix (a name collision shows up there).
+struct HeldSocket: Error, CustomStringConvertible {
+	let path: String
+	let holder: pid_t?
+	let inode: UInt64?
+	let born: Date?
+	let siblings: [String]
+
+	init(path: String) {
+		self.path = path
+		holder = UDSListener.holderPID(path: path)
+		var info = stat()
+		if stat(path, &info) == 0 {
+			inode = UInt64(info.st_ino)
+			let birth = info.st_birthtimespec
+			born = Date(timeIntervalSince1970:
+				TimeInterval(birth.tv_sec) + TimeInterval(birth.tv_nsec) / 1e9)
+		} else {
+			inode = nil
+			born = nil
+		}
+		let directory = (path as NSString).deletingLastPathComponent
+		let name = (path as NSString).lastPathComponent
+		let prefix = name.split(separator: "-").prefix(2).joined(separator: "-")
+		siblings = ((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [])
+			.filter { $0.hasPrefix(prefix) }
+			.sorted()
+	}
+
+	var description: String {
+		let holderText = holder.map {
+			"holder pid \($0) (this test process: \($0 == getpid() ? "yes" : "no"))"
+		} ?? "no holder answered"
+		let inodeText = inode.map { "inode \($0)" } ?? "no file"
+		let bornText = born.map { "born \(ISO8601DateFormatter().string(from: $0))" } ?? "born ?"
+		return "\(path) is already served: \(holderText), \(inodeText), \(bornText); "
+			+ "scratch entries with this prefix: \(siblings.joined(separator: ", "))"
+	}
+}

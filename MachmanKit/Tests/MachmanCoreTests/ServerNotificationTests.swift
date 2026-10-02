@@ -29,12 +29,11 @@ struct ServerNotificationTests {
 	}
 
 	@Test func notificationsAreNeverAnswered() async throws {
-		let socketPath = TestEnvironment.scratch
-			+ "mm-notif-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let socketPath = TestEnvironment.socketPath("mm-notif")
 		let server = try await MainActor.run {
 			let server = MachmanServer(
 				api: StubMachman(), socketPath: socketPath, daemonVersion: "test")
-			try server.start()
+			try startServing(server)
 			return server
 		}
 		let fd = connect(socketPath)
