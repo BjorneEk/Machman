@@ -75,15 +75,21 @@ extension RoutingMachman {
 			try await forwardStart(host, name: name, options: options)
 			host.markStarted()
 		} catch {
-			host.eventTask?.cancel()
-			host.deathWatch?.invalidate()
-			host.deathWatch = nil
-			host.app?.forceTerminate()
-			await host.client.disconnect()
-			unlink(host.identity.socketPath)
+			await abandonSpawnedHost(host)
 			throw error
 		}
 		hostStarted(host, name: name, unattached: unattached)
+	}
+
+	// A spawned host whose start could not be handed over never joins the hosted map: end
+	// it (the death watch first, so the kill can't re-enter hostGone) and free its socket.
+	private func abandonSpawnedHost(_ host: HostedVM) async {
+		host.eventTask?.cancel()
+		host.deathWatch?.invalidate()
+		host.deathWatch = nil
+		host.app?.forceTerminate()
+		await host.client.disconnect()
+		unlink(host.identity.socketPath)
 	}
 
 	// A spawned host whose start returned joins the hosted map, and the router announces the
@@ -233,12 +239,7 @@ extension RoutingMachman {
 			try await forwardStart(host, name: name, options: forwarded)
 			host.markStarted()
 		} catch {
-			host.eventTask?.cancel()
-			host.deathWatch?.invalidate()
-			host.deathWatch = nil
-			host.app?.forceTerminate()
-			await host.client.disconnect()
-			unlink(host.identity.socketPath)
+			await abandonSpawnedHost(host)
 			try? FileManager.default.removeItem(atPath: runRoot)
 			throw error
 		}
