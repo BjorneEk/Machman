@@ -24,9 +24,9 @@ struct GuestScriptStateTests {
 
 	// Values are user text — a mountpoint, a user name, mount names — and come back byte
 	// for byte: apostrophes, double quotes, backslashes and tabs included.
-	@Test func stateValuesSurviveAnyText() throws {
+	@Test func stateValuesSurviveAnyText() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(Self.stateHere + #"""
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
 				SELECTED_FEATURES="ssh sshfsauto"
 				MOUNTPOINT="/mnt/it's \"here\" \\ now"
 				SSHFSAUTO_SELECTED="my docs"
@@ -50,9 +50,9 @@ struct GuestScriptStateTests {
 	// console and its method (the uninstall's grubby path), the SSH user, the sshfs
 	// automounts (also when selected with nothing chosen) — while a selected feature's
 	// record is this run's.
-	@Test func unselectedFeaturesKeepTheirRecords() throws {
+	@Test func unselectedFeaturesKeepTheirRecords() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(Self.stateHere + #"""
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
 				ST_CONSOLE_LOGINS="hvc0 hvc1"
 				ST_KERNEL_CONSOLE=hvc1
 				ST_KERNEL_CONSOLE_METHOD=grubby
@@ -98,9 +98,9 @@ struct GuestScriptStateTests {
 
 	// S17: the automounts' names are a TAB-separated list (names carry spaces); a version-1
 	// state's space-separated list (names then had none that survived) reads as one.
-	@Test func spacedNamesSurviveTheStateFile() throws {
+	@Test func spacedNamesSurviveTheStateFile() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(Self.stateHere + #"""
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
 				SELECTED_FEATURES="sshfsauto"
 				SSHFSAUTO_SELECTED=x
 				SSHFSAUTO_DONE="my docs${T}@share${T}docs"
@@ -121,16 +121,16 @@ struct GuestScriptStateTests {
 	// S28: a --report-only run (the boot-time refresh) describes the last real run whole —
 	// its status, one-sentence note, failed steps, errors and notes — from the state file,
 	// so after a reboot "partial" still says why.
-	@Test func reportOnlyReplaysTheLastRun() throws {
+	@Test func reportOnlyReplaysTheLastRun() async throws {
 		let dir = try GuestScriptHarness.scratch()
 		for shell in GuestScriptHarness.shells {
-			let run = try GuestScriptHarness.run(Self.stateHere + #"""
+			let run = try await GuestScriptHarness.run(Self.stateHere + #"""
 				step_failed sshd "could not enable the service"
 				report_note report-refresh "rc.local was not executable — re-enabled"
 				write_state "ssh"
 				"""#, under: shell, in: dir)
 			#expect(run.status == 0, "\(shell): \(run.out)")
-			let boot = try GuestScriptHarness.run(Self.stateHere + #"""
+			let boot = try await GuestScriptHarness.run(Self.stateHere + #"""
 				read_state
 				REPORT_ONLY=1
 				FEATURES=""
@@ -153,9 +153,9 @@ struct GuestScriptStateTests {
 
 	// A state file an older script wrote ('…' around raw text, apostrophes unescaped) reads
 	// as it was meant.
-	@Test func olderStateFilesStillRead() throws {
+	@Test func olderStateFilesStillRead() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(Self.stateHere + #"""
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
 				mkdir -p "$STATE_DIR"
 				printf "STATE_VERSION=1\nSCRIPT_VERSION=4\nMARKER='%s'\n" "$MARKER" > "$STATE_FILE"
 				printf "CONFIGURED='ssh sshfsauto'\nLAST_STATUS='ok'\n" >> "$STATE_FILE"

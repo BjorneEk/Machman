@@ -38,22 +38,15 @@ struct EmbeddedScriptTests {
 	// S16: the dev-loop assembler (scripts/guest-regress, shellcheck) builds exactly the bytes
 	// the app ships, so a line number from dist/install.sh is the guest's line number — and
 	// both take the same modules: a part missing from Package.swift fails here.
-	@Test func assembleShMatchesTheSwiftAssembly() throws {
+	@Test func assembleShMatchesTheSwiftAssembly() async throws {
 		let here = URL(fileURLWithPath: #filePath)
 		let assembler = here.deletingLastPathComponent()
 			.appendingPathComponent("../../Sources/MachmanCore/GuestScripts/assemble.sh")
 			.standardizedFileURL
 		let out = TestEnvironment.scratchURL
 			.appendingPathComponent("assemble-\(UUID().uuidString)/install.sh")
-		let process = Process()
-		process.executableURL = URL(fileURLWithPath: "/bin/sh")
-		process.arguments = [assembler.path, out.path]
-		process.standardInput = FileHandle.nullDevice
-		process.standardOutput = FileHandle.nullDevice
-		process.standardError = FileHandle.nullDevice
-		try process.run()
-		process.waitUntilExit()
-		#expect(process.terminationStatus == 0)
+		let assembly = try await Subprocess.run("/bin/sh", [assembler.path, out.path])
+		#expect(assembly.status == 0, "\(assembly.output)")
 		let shipped = Data(GuestSetupScript.assembled.text.utf8)
 		let assembled = try Data(contentsOf: out)
 		#expect(assembled == shipped, """
@@ -71,7 +64,7 @@ struct EmbeddedScriptTests {
 	// We cannot install those here, but three local parsers with different heritage
 	// (bash in POSIX mode, and ksh93, which is strict where bash is forgiving) catch the
 	// dialect slips that would otherwise only surface inside a guest.
-	@Test func assembledScriptParsesUnderEveryLocalShell() throws {
+	@Test func assembledScriptParsesUnderEveryLocalShell() async throws {
 		let parsers = [
 			("/bin/sh", ["-n"]),
 			("/bin/bash", ["--posix", "-n"]),
@@ -83,13 +76,8 @@ struct EmbeddedScriptTests {
 		defer { try? FileManager.default.removeItem(at: url) }
 		for (shell, flags) in parsers {
 			guard FileManager.default.isExecutableFile(atPath: shell) else { continue }
-			let process = Process()
-			process.executableURL = URL(fileURLWithPath: shell)
-			process.arguments = flags + [url.path]
-			process.standardError = FileHandle.nullDevice
-			try process.run()
-			process.waitUntilExit()
-			#expect(process.terminationStatus == 0, "does not parse under \(shell)")
+			let parse = try await Subprocess.run(shell, flags + [url.path])
+			#expect(parse.status == 0, "does not parse under \(shell): \(parse.output)")
 		}
 	}
 

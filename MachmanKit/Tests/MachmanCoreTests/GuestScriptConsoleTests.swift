@@ -17,9 +17,9 @@ struct GuestScriptConsoleTests {
 	// S6: a login is live wherever its device shows on the getty's process line — systemd's
 	// serial-getty@ (the device only in the TTY column), our agetty lines, busybox getty,
 	// FreeBSD's 3wire getty — and never on a longer name that merely starts the same.
-	@Test func gettyIsActiveWhateverItsArgumentOrder() throws {
+	@Test func gettyIsActiveWhateverItsArgumentOrder() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				ps() { printf '  PID TTY      STAT   TIME COMMAND\n%s\n' "$PS_LINE"; }
 				probe() {
 					PS_LINE="$2"
@@ -51,9 +51,9 @@ struct GuestScriptConsoleTests {
 
 	// S6: the getty-generator's serial-getty@ is active without being enabled — "active
 	// (automatic)", which no process line could prove (/dev/null stands in for the device).
-	@Test func systemdGeneratorGettyReadsActiveAuto() throws {
+	@Test func systemdGeneratorGettyReadsActiveAuto() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run("""
+			let r = try await GuestScriptHarness.run("""
 				INIT=systemd
 				GETTY_MECH=systemd
 				ps() { :; }
@@ -74,9 +74,9 @@ struct GuestScriptConsoleTests {
 	// Void's stock agetty-<dev> runs the shared agetty-generic script through a link: it is
 	// enabled by a link of its own, never written; a device Void ships no service for gets
 	// a Machman-named one.
-	@Test func runitStockServicesAreLinkedNeverWritten() throws {
+	@Test func runitStockServicesAreLinkedNeverWritten() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				RUNIT_SV_DIR="$D/sv"
 				RUNIT_SERVICE_DIR="$D/service"
 				mkdir -p "$RUNIT_SV_DIR/agetty-generic" "$RUNIT_SV_DIR/agetty-hvc0" \
@@ -113,9 +113,9 @@ struct GuestScriptConsoleTests {
 	// An older Machman's write through such a link (here a cloned disk's source VM's) left
 	// the shared script carrying a marker: the run names Void's own repair and never
 	// rewrites the script; the uninstall leaves it too and ends partial.
-	@Test func runitDamageIsNamedNeverRewritten() throws {
+	@Test func runitDamageIsNamedNeverRewritten() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				RUNIT_SV_DIR="$D/sv"
 				RUNIT_SERVICE_DIR="$D/service"
 				mkdir -p "$RUNIT_SV_DIR/agetty-generic" "$RUNIT_SERVICE_DIR"
@@ -147,9 +147,9 @@ struct GuestScriptConsoleTests {
 
 	// The state is gone (or never said grubby): the exact pair Machman sets in grubby's
 	// boot entries is named with its remedy and left, and the uninstall ends partial.
-	@Test func grubbyArgsWithoutARecordAreNamed() throws {
+	@Test func grubbyArgsWithoutARecordAreNamed() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				OS=Linux
 				UI_COLS=200
 				CONSOLE_DEVICES="hvc0 hvc1"
@@ -179,9 +179,9 @@ struct GuestScriptConsoleTests {
 
 	// NetBSD is its own init (rc.d + /etc/ttys), its virtio consoles are viocon's ttyVI<n>0,
 	// and its /etc/ttys lines take NetBSD's getty format. Before 10 it has no viocon at all.
-	@Test func netbsdInitAndConsoleNames() throws {
+	@Test func netbsdInitAndConsoleNames() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run("""
+			let r = try await GuestScriptHarness.run("""
 				OS=NetBSD
 				OS_FAMILY=netbsd
 				OS_VERSION=10.1
@@ -208,9 +208,9 @@ struct GuestScriptConsoleTests {
 	}
 
 	// pkgsrc names sshfs fuse-sshfs (OpenBSD's ports: sshfs-fuse); pkgin is NetBSD's own.
-	@Test func netbsdPackageNames() throws {
+	@Test func netbsdPackageNames() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run("""
+			let r = try await GuestScriptHarness.run("""
 				OS_FAMILY=netbsd
 				pm_preferred_for_family
 				PM=pkgin; pm_command; pkg_for_sshfs; echo "[$(pkg_for_sshd)]"
@@ -232,9 +232,9 @@ struct GuestScriptConsoleTests {
 
 	// sshd=YES lands once, as the file's last word on sshd (rc.conf is read top to bottom),
 	// and a file already saying so is left alone.
-	@Test func rcConfEnablesOnce() throws {
+	@Test func rcConfEnablesOnce() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				printf 'hostname=nb\nsshd=NO\n#sshd=YES\n' > "$D/rc.conf"
 				rc_conf_yes sshd "$D/rc.conf"
 				cp "$D/rc.conf" "$D/once"
@@ -272,9 +272,9 @@ struct GuestScriptConsoleTests {
 
 	// A re-run that verifies hvc0 and adds hvc1 stages both: the block holds each once,
 	// and a run that changes nothing leaves the file alone (no rewrite, no init reload).
-	@Test func aVerifiedConsoleKeepsItsLineWhenAnotherIsAdded() throws {
+	@Test func aVerifiedConsoleKeepsItsLineWhenAnotherIsAdded() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(Self.busyboxInittab + """
+			let r = try await GuestScriptHarness.run(Self.busyboxInittab + """
 				console_act_inittab hvc0
 				console_act_inittab hvc1
 				console_flush_lines "$D/inittab" && echo flushed
@@ -299,9 +299,9 @@ struct GuestScriptConsoleTests {
 
 	// A console the run does not touch keeps its line: the flush replaces only the lines of
 	// the devices it staged.
-	@Test func unselectedConsolesKeepTheirLines() throws {
+	@Test func unselectedConsolesKeepTheirLines() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(Self.busyboxInittab + """
+			let r = try await GuestScriptHarness.run(Self.busyboxInittab + """
 				console_act_inittab hvc1
 				console_flush_lines "$D/inittab"
 				cat "$D/inittab"
@@ -321,9 +321,9 @@ struct GuestScriptConsoleTests {
 	// sysvinit ids name the device, never the console's place in this run's selection: a
 	// re-run selecting another set never renames a line init runs. An older run's index id
 	// for a device being staged again is replaced, not doubled.
-	@Test func inittabIdsFollowTheDevice() throws {
+	@Test func inittabIdsFollowTheDevice() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run("""
+			let r = try await GuestScriptHarness.run("""
 				printf '# BEGIN %s\\nM0:2345:respawn:/sbin/agetty -L hvc1 115200 vt100\\n' \\
 					"$MARKER" > "$D/inittab"
 				printf '# END %s\\n' "$MARKER" >> "$D/inittab"
@@ -349,9 +349,9 @@ struct GuestScriptConsoleTests {
 	// macOS: one plist per DEVICE. An older run's index-keyed plist for the device is booted
 	// out and removed; another device's is left alone. (/dev/zero and /dev/null stand in
 	// for the guest's cu.virtio ports, which a Mac has no /dev entry for.)
-	@Test func launchdLabelsFollowTheDevice() throws {
+	@Test func launchdLabelsFollowTheDevice() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				LAUNCHD_DIR="$D/LaunchDaemons"
 				mkdir -p "$LAUNCHD_DIR"
 				launchctl() { printf '%s\n' "$*" >> "$D/launchctl.log"; }

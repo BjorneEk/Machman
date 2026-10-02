@@ -15,9 +15,9 @@ struct GuestScriptReportTests {
 
 	// S9: a --report-only run lists the share's sshfs automount where its entry mounts it
 	// (the share root, as sshfsauto_entry does), every other mount under the mount root.
-	@Test func shareRowKeepsTheShareRoot() throws {
+	@Test func shareRowKeepsTheShareRoot() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				T="$(printf '\t')"
 				ST_AUTOMOUNT_SSHFS="@share${T}docs"
 				ST_MOUNTPOINT=/mnt/machman/mounts
@@ -36,9 +36,9 @@ struct GuestScriptReportTests {
 	// S14: systemd's sshfs automounts are started right after the reload that creates their
 	// units, so the folders mount on first access without a reboot — and the run says so
 	// only for those it armed; without systemd-escape they arm at the next boot.
-	@Test func automountsArmNow() throws {
+	@Test func automountsArmNow() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				T="$(printf '\t')"
 				INIT=systemd
 				U="$(id -un)"
@@ -80,19 +80,19 @@ struct GuestScriptReportTests {
 	// S27: the boot-time copy reports where its machman.env says (the share's drop-box, as
 	// the setup run resolved it) and does nothing else: any other run is refused. The
 	// share's own copy, without that line, reports beside its payload as before.
-	@Test func bootCopyIsReportOnly() throws {
+	@Test func bootCopyIsReportOnly() async throws {
 		let env = ["BOOT_REPORT_DIR": "/mnt/machman/share/GuestReport"]
 		for shell in GuestScriptHarness.shells {
-			let copy = try GuestScriptHarness.run(#"echo "$REPORT_DIR""#, under: shell,
+			let copy = try await GuestScriptHarness.run(#"echo "$REPORT_DIR""#, under: shell,
 				env: env, args: ["--report-only"])
 			#expect(copy.status == 0, "\(shell): \(copy.out)")
 			#expect(copy.out == "/mnt/machman/share/GuestReport\n", "\(shell): \(copy.out)")
-			let refused = try GuestScriptHarness.run("echo ran", under: shell,
+			let refused = try await GuestScriptHarness.run("echo ran", under: shell,
 				env: env, args: ["-y", "--ssh"])
 			#expect(refused.status == 3, "\(shell): \(refused.out)")
 			#expect(refused.out.contains("Machman's boot-time report copy"), "\(shell)")
 			#expect(!refused.out.contains("ran"), "\(shell): \(refused.out)")
-			let share = try GuestScriptHarness.run(#"echo "${REPORT_DIR##*/}""#, under: shell,
+			let share = try await GuestScriptHarness.run(#"echo "${REPORT_DIR##*/}""#, under: shell,
 				args: ["-y", "--ssh"])
 			#expect(share.out == "GuestReport\n", "\(shell): \(share.out)")
 		}
@@ -101,9 +101,9 @@ struct GuestScriptReportTests {
 	// S27: the hook's copy lives beside the state — the script itself (root-only), its
 	// machman.env plus where reports go, and the files it reads — and macOS's launchd hook
 	// runs it, loaded at the next boot (never racing this run's own report).
-	@Test func bootCopyInstallsBesideTheState() throws {
+	@Test func bootCopyInstallsBesideTheState() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				state_paths() { STATE_DIR="$D/state"; STATE_FILE="$STATE_DIR/state.env"; }
 				state_paths
 				LAUNCHD_DIR="$D/LaunchDaemons"
@@ -137,9 +137,9 @@ struct GuestScriptReportTests {
 	// S31: --at-boot is the boot hook's --report-only, and it first waits for the share's
 	// drop-box and a default route (the sshfs automounts need one) — polling, bounded — so
 	// a boot report never marks them unavailable before DHCP. The locked copy accepts it.
-	@Test func bootWaitWaitsForTheRouteAndTheShare() throws {
+	@Test func bootWaitWaitsForTheRouteAndTheShare() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				echo "report-only=$REPORT_ONLY at-boot=$AT_BOOT"
 				BOOT_WAIT_POLL=0
 				REPORT_DIR="$D/later"
@@ -168,9 +168,9 @@ struct GuestScriptReportTests {
 
 	// S36: a note (a repair made, a boot refresh that will not run) is reported as NOTE_<n>,
 	// after the errors, and is no error: a clean run's report carries no ERROR_ line.
-	@Test func reportNotesTravelAsNotes() throws {
+	@Test func reportNotesTravelAsNotes() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				FEATURES=""
 				report_note report-refresh "rc.local was not executable — re-enabled"
 				step_failed sshd "could not enable the service"
@@ -190,9 +190,9 @@ struct GuestScriptReportTests {
 	// S17: a row whose name has a space is TAB-separated, so the host reads it whole; every
 	// other row stays space-separated, as every daemon reads it. The feature's detail lists
 	// the names comma-separated.
-	@Test func reportRowsKeepSpacedNamesWhole() throws {
+	@Test func reportRowsKeepSpacedNamesWhole() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try GuestScriptHarness.run(#"""
+			let r = try await GuestScriptHarness.run(#"""
 				T="$(printf '\t')"
 				FEATURES=sshfsauto
 				avail_sshfsauto=1

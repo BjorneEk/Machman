@@ -11,30 +11,17 @@
 //
 
 import Foundation
+import MachmanTestSupport
 
 enum OpenSSHConfigCheck {
 	static var available: Bool {
 		FileManager.default.isExecutableFile(atPath: "/usr/bin/ssh")
 	}
 
-	// ssh's exit status and its stdout + stderr. Async and detached: the wait blocks its
-	// thread, and callers are often @MainActor suites; a blocked main actor starves the
-	// in-process stub hosts other suites run in parallel (their hello deadlines are short).
+	// ssh's exit status and its stdout + stderr, through Subprocess: the wait holds no Swift
+	// concurrency thread, and callers are often @MainActor suites.
 	static func resolve(config: URL, host: String) async throws -> (status: Int32, output: String) {
-		try await Task.detached { try run(config: config, host: host) }.value
-	}
-
-	private static func run(config: URL, host: String) throws -> (status: Int32, output: String) {
-		let ssh = Process()
-		ssh.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-		ssh.arguments = ["-G", "-F", config.path, host]
-		let pipe = Pipe()
-		ssh.standardOutput = pipe
-		ssh.standardError = pipe
-		ssh.standardInput = FileHandle.nullDevice
-		try ssh.run()
-		let data = pipe.fileHandleForReading.readDataToEndOfFile()
-		ssh.waitUntilExit()
-		return (ssh.terminationStatus, String(decoding: data, as: UTF8.self))
+		let ssh = try await Subprocess.run("/usr/bin/ssh", ["-G", "-F", config.path, host])
+		return (ssh.status, ssh.output)
 	}
 }

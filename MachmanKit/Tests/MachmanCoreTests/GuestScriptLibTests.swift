@@ -25,7 +25,9 @@ struct GuestScriptLibTests {
 
 	// Sources 05-lib under `shell` in a fresh scratch directory ($D, also the working
 	// directory) with MARKER set, then runs `body`; returns its exit status and output.
-	private func run(_ body: String, under shell: String) throws -> (status: Int32, out: String) {
+	private func run(
+		_ body: String, under shell: String
+	) async throws -> (status: Int32, out: String) {
 		let dir = TestEnvironment.scratchURL
 			.appendingPathComponent("guestlib-\(UUID().uuidString)", isDirectory: true)
 		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -34,26 +36,17 @@ struct GuestScriptLibTests {
 			+ "\nMARKER=\(Self.marker)\nD='\(dir.path)'\ncd \"$D\"\n" + body + "\n"
 		let url = dir.appendingPathComponent("probe.sh")
 		try script.write(to: url, atomically: true, encoding: .utf8)
-		let process = Process()
-		process.executableURL = URL(fileURLWithPath: shell)
-		process.arguments = [url.path]
-		process.currentDirectoryURL = dir
-		let pipe = Pipe()
-		process.standardOutput = pipe
-		process.standardError = pipe
-		try process.run()
-		let data = pipe.fileHandleForReading.readDataToEndOfFile()
-		process.waitUntilExit()
-		return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+		let result = try await Subprocess.run(shell, [url.path], directory: dir)
+		return (result.status, result.output)
 	}
 
 	// "<perms> <nlink>" for a path, from the same ls the script reads.
 	private static let meta = #"meta() { ls -ln "$1" | awk '{ print substr($1, 1, 10), $2 }'; }"#
 
 	// S19: an executable rc.local stays executable through the edit.
-	@Test func stripBlockKeepsTheFileMode() throws {
+	@Test func stripBlockKeepsTheFileMode() async throws {
 		for shell in Self.shells {
-			let r = try run(Self.meta + """
+			let r = try await run(Self.meta + """
 
 				printf '#!/bin/sh -e\\n# BEGIN %s\\nold\\n# END %s\\nexit 0\\n' \\
 					"$MARKER" "$MARKER" > "$D/rc.local"
@@ -68,9 +61,9 @@ struct GuestScriptLibTests {
 	}
 
 	// S20: the old fixed temp name, planted as a link by the file's owner, is never used.
-	@Test func aPlantedTempNameIsNeverFollowed() throws {
+	@Test func aPlantedTempNameIsNeverFollowed() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				echo secret > "$D/victim"
 				printf 'mine\\n# BEGIN %s\\nours\\n# END %s\\n' "$MARKER" "$MARKER" > "$D/config"
 				ln -s "$D/victim" "$D/config.machman-tmp"
@@ -84,9 +77,9 @@ struct GuestScriptLibTests {
 
 	// A linked target, a linked directory on the way, or a hard-linked file is refused with
 	// a reason, and nothing is replaced.
-	@Test func linksAreRefusedNeverReplaced() throws {
+	@Test func linksAreRefusedNeverReplaced() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				printf '# BEGIN %s\\nours\\n# END %s\\n' "$MARKER" "$MARKER" > "$D/real"
 				ln -s "$D/real" "$D/linked"
 				mkdir "$D/dir" && cp "$D/real" "$D/dir/f" && ln -s "$D/dir" "$D/linkdir"
@@ -113,9 +106,9 @@ struct GuestScriptLibTests {
 	// edit reads through one open checked against the checked file, so it refuses instead of
 	// copying the other file into the owner's. Proven where /dev/fd shows open files (macOS
 	// here, Linux in scripts/guest-regress).
-	@Test func aLinkSwappedInAfterTheCheckIsNeverRead() throws {
+	@Test func aLinkSwappedInAfterTheCheckIsNeverRead() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				echo secret > "$D/victim"
 				printf 'mine\\n# BEGIN %s\\nours\\n# END %s\\n' "$MARKER" "$MARKER" > "$D/config"
 				od() {
@@ -137,9 +130,9 @@ struct GuestScriptLibTests {
 
 	// S35: FreeBSD, OpenBSD and NetBSD show no open file through /dev/fd, but their stat
 	// reads a descriptor itself: with /dev/fd ruled out, the same swap is refused there.
-	@Test func aLinkSwappedInIsRefusedWithoutDevFd() throws {
+	@Test func aLinkSwappedInIsRefusedWithoutDevFd() async throws {
 		for shell in Self.shells {
-			let r = try run(Self.swap(check: "_rf_stat_shows_fds", without: "_rf_fd_shows_files"),
+			let r = try await run(Self.swap(check: "_rf_stat_shows_fds", without: "_rf_fd_shows_files"),
 				under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out.hasPrefix("check on\n"), "\(shell): \(r.out)")
@@ -150,9 +143,9 @@ struct GuestScriptLibTests {
 	}
 
 	// …and where stat cannot read a descriptor (GNU, busybox), /dev/fd still checks it.
-	@Test func aLinkSwappedInIsRefusedThroughDevFd() throws {
+	@Test func aLinkSwappedInIsRefusedThroughDevFd() async throws {
 		for shell in Self.shells {
-			let r = try run(Self.swap(check: "_rf_fd_shows_files", without: "_rf_stat_shows_fds"),
+			let r = try await run(Self.swap(check: "_rf_fd_shows_files", without: "_rf_stat_shows_fds"),
 				under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out.hasPrefix("check on\n"), "\(shell): \(r.out)")
@@ -181,9 +174,9 @@ struct GuestScriptLibTests {
 
 	// S20: a file without our block is not ours — not even rewritten in place, and a link
 	// to one is no refusal either.
-	@Test func filesWithoutTheMarkerAreLeftAlone() throws {
+	@Test func filesWithoutTheMarkerAreLeftAlone() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				printf 'only the user\\n' > "$D/plain"
 				ln -s "$D/plain" "$D/dotfile"
 				before="$(ls -i "$D/plain" | awk '{ print $1 }')"
@@ -198,9 +191,9 @@ struct GuestScriptLibTests {
 
 	// D14: an /etc/default/grub (or configuration.nix) holding nothing but our line empties
 	// cleanly, and a link to such a file is refused by name like any other edit.
-	@Test func aFileOfOnlyOurLinesEmptiesCleanly() throws {
+	@Test func aFileOfOnlyOurLinesEmptiesCleanly() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				printf 'G="$G console=hvc0" # %s\\n' "$MARKER" > "$D/grub"
 				ln -s "$D/grub" "$D/linked"
 				drop_lines "$D/linked" "# $MARKER" || echo "kept: $R_ERROR"
@@ -216,9 +209,9 @@ struct GuestScriptLibTests {
 
 	// A whole-file write replaces whatever stands at the name — a link is never written
 	// through, and a hard link's other name keeps the old content.
-	@Test func writeFileReplacesALinkInsteadOfWritingThroughIt() throws {
+	@Test func writeFileReplacesALinkInsteadOfWritingThroughIt() async throws {
 		for shell in Self.shells {
-			let r = try run(Self.meta + """
+			let r = try await run(Self.meta + """
 
 				echo secret > "$D/victim"
 				ln -s "$D/victim" "$D/known"
@@ -234,9 +227,9 @@ struct GuestScriptLibTests {
 	}
 
 	// S19: rc.local stays executable, and our blocks land before its final exit.
-	@Test func blocksLandBeforeAFinalExit() throws {
+	@Test func blocksLandBeforeAFinalExit() async throws {
 		for shell in Self.shells {
-			let r = try run(Self.meta + """
+			let r = try await run(Self.meta + """
 
 				printf '#!/bin/sh -e\\n# rc.local\\n\\nexit 0\\n' > "$D/rc.local"
 				chmod 755 "$D/rc.local"
@@ -266,9 +259,9 @@ struct GuestScriptLibTests {
 
 	// S19 on a guest an older run already hit: its blocks sit after the exit. Ours move
 	// before it as they are rewritten; another VM's (a cloned disk's) stays inert there.
-	@Test func blocksLeftAfterTheExitMoveBeforeIt() throws {
+	@Test func blocksLeftAfterTheExitMoveBeforeIt() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				printf '#!/bin/sh -e\\n\\nexit 0\\n' > "$D/rc.local"
 				for m in "$MARKER" "$MARKER-report" machman-ffffffffffff; do
 					printf '# BEGIN %s\\nold\\n# END %s\\n' "$m" "$m" >> "$D/rc.local"
@@ -297,9 +290,9 @@ struct GuestScriptLibTests {
 	}
 
 	// D17: mount names are host text; "*.txt" stays "*.txt" beside a.txt.
-	@Test func itemListsAreNeverGlobbed() throws {
+	@Test func itemListsAreNeverGlobbed() async throws {
 		for shell in Self.shells {
-			let r = try run("""
+			let r = try await run("""
 				touch "$D/a.txt"
 				INTERACTIVE=0
 				ask_choice "pick" '*.txt' 1
@@ -311,9 +304,9 @@ struct GuestScriptLibTests {
 
 	// fstab escapes survive the body (no awk -v escape processing), and a file without a
 	// final newline does not glue its last line to our block.
-	@Test func blockBodiesArriveVerbatim() throws {
+	@Test func blockBodiesArriveVerbatim() async throws {
 		for shell in Self.shells {
-			let r = try run(#"""
+			let r = try await run(#"""
 				printf 'UUID=x / ext4 defaults 0 1' > "$D/fstab"
 				put_block "$D/fstab" "$MARKER" 'h:/a\040b /mnt/a\040b fuse.sshfs nofail 0 0'
 				cat "$D/fstab"

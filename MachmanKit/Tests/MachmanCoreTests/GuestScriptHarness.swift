@@ -49,11 +49,12 @@ enum GuestScriptHarness {
 	}
 
 	// Runs `body` under `shell` (script arguments `args`) and returns its exit status and
-	// merged stdout + stderr. Unattended: stdin is /dev/null and -y is implied.
+	// merged stdout + stderr. Unattended: stdin is /dev/null and -y is implied. The shell
+	// runs through Subprocess: off the cooperative pool, one child at a time.
 	static func run(
 		_ body: String, under shell: String, env: [String: String] = [:],
 		args: [String] = [], in dir: URL? = nil
-	) throws -> (status: Int32, out: String) {
+	) async throws -> (status: Int32, out: String) {
 		let dir = try dir ?? scratch()
 		let fm = FileManager.default
 		let payload = dir.appendingPathComponent("GuestSetup", isDirectory: true)
@@ -75,26 +76,14 @@ enum GuestScriptHarness {
 		let probe = payload.appendingPathComponent("probe.sh")
 		try script.write(to: probe, atomically: true, encoding: .utf8)
 
-		let process = Process()
-		process.executableURL = URL(fileURLWithPath: shell)
-		process.arguments = [probe.path] + args
-		process.currentDirectoryURL = dir
-		process.environment = [
-			"PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-			"ASSUME_YES": "1", "NO_COLOR": "1", "TERM": "dumb",
-		]
-		process.standardInput = FileHandle.nullDevice
-		let pipe = Pipe()
-		process.standardOutput = pipe
-		process.standardError = pipe
-		try process.run()
-		// A probe that waits on something never coming must fail, not hang the suite.
-		DispatchQueue.global().asyncAfter(deadline: .now() + 60) {
-			if process.isRunning { process.terminate() }
-		}
-		let data = pipe.fileHandleForReading.readDataToEndOfFile()
-		process.waitUntilExit()
-		return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+		let result = try await Subprocess.run(
+			shell, [probe.path] + args,
+			environment: [
+				"PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+				"ASSUME_YES": "1", "NO_COLOR": "1", "TERM": "dumb",
+			],
+			directory: dir)
+		return (result.status, result.output)
 	}
 
 	// 90-main up to its detection phase: the helpers the modules call (feature_selected,
