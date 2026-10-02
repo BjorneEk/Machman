@@ -30,7 +30,7 @@ struct KernelParentInspector: View {
 
 	var body: some View {
 		Form {
-			Section("Active Kernel") {
+			Section("Active kernel") {
 				Picker("Kernel", selection: activeBinding) {
 					Text("None").tag(String?.none)
 					ForEach(ownedKernels) { k in
@@ -49,7 +49,7 @@ struct KernelParentInspector: View {
 						.foregroundStyle(MachmanColors.warning)
 				}
 			}
-			Section("Command Line") {
+			Section("Command line") {
 				CmdlineEditor(
 					initial: vm.boot.kernel?.commandLine ?? "",
 					commit: { joined in
@@ -58,8 +58,8 @@ struct KernelParentInspector: View {
 						settings.commandLine = joined
 						viewModel.updateKernelSettings(vm.name, settings)
 					})
-				Text("Passed to the kernel at boot; a per-kernel override (on the file's "
-					+ "inspector) replaces it while that kernel is active.")
+				Text("Passed to the kernel at boot unless the active kernel has its own "
+					+ "override.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
@@ -87,7 +87,7 @@ struct KernelEntryInspector: View {
 			Form {
 				KernelFileInfoSection(
 					viewModel: viewModel, vm: vm, entry: entry, initialTagDraft: tagDraft)
-				Section("Command Line Override") {
+				Section("Command line override") {
 					Toggle("Override VM command line", isOn: overrideBinding(entry))
 					CmdlineEditor(
 						initial: entry.file?.overrideCommandLine ?? "",
@@ -171,7 +171,7 @@ private struct KernelFileInfoSection: View {
 	@State private var tagRefusal: String?
 
 	var body: some View {
-		Section(entry.role == .kernel ? "Kernel File" : "Initramfs File") {
+		Section(entry.role == .kernel ? "Kernel file" : "Initramfs file") {
 			if entry.owned {
 				tagField
 			} else {

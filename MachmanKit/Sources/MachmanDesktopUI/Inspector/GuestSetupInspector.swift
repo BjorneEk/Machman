@@ -40,11 +40,11 @@ struct GuestSetupInspector: View {
 			setupSection
 			Section {
 				Button("Reset Setup State…", role: .destructive) { resetConfirm = true }
-					.confirmationDialog("Reset guest-setup state?", isPresented: $resetConfirm) {
+					.confirmationDialog("Reset guest setup state?", isPresented: $resetConfirm) {
 						Button("Reset", role: .destructive) { viewModel.resetSetup(vm.name) }
 						Button("Cancel", role: .cancel) {}
 					} message: {
-						Text("Forgets the guest's report — the guest keeps what the "
+						Text("Forgets the guest’s report — the guest keeps what the "
 							+ "script installed, and SSH state has its own reset.")
 					}
 			}
@@ -70,7 +70,7 @@ struct GuestSetupInspector: View {
 				// Not serving: the reserved dirs ride the share EMPTY (content only
 				// while installing — the toggle below brings it back).
 				LabeledContent("Payload") {
-					Text("not served — the share stays clean")
+					Text("Not served — the share stays clean")
 						.foregroundStyle(.secondary)
 				}
 			} else {
@@ -110,7 +110,7 @@ struct GuestSetupInspector: View {
 				errorsPopdown
 				notesPopdown
 			} else {
-				Text("No report yet — run the install script in the guest.")
+				Text("No report yet — run the installer in the guest.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
@@ -118,16 +118,26 @@ struct GuestSetupInspector: View {
 	}
 
 	// What carries the share into the guest: "virtiofs auto" / "sshfs auto" when the
-	// guest automounts it, else "available" — served, mount by hand.
+	// guest automounts it, else "Available" — served, mount by hand.
 	private var shareTransport: String {
+		switch shareAutomountKind {
+		case MountKind.virtiofs?: return "virtiofs auto"
+		case MountKind.sshfs?: return "sshfs auto"
+		default: return "Available"
+		}
+	}
+
+	// The transport the guest automounts the share over, nil when it doesn't — the one
+	// test both the Share row and the setup captions read, never the row's display text.
+	private var shareAutomountKind: String? {
 		let automounts = setup?.automounts ?? []
 		if automounts.contains(where: { $0.kind == MountKind.virtiofs }) {
-			return "virtiofs auto"
+			return MountKind.virtiofs
 		}
 		if automounts.contains(where: { $0.kind == MountKind.sshfs && $0.target == "@share" }) {
-			return "sshfs auto"
+			return MountKind.sshfs
 		}
-		return "available"
+		return nil
 	}
 
 	private var statusLabel: some View {
@@ -209,7 +219,7 @@ struct GuestSetupInspector: View {
 						ForEach(unavailableFeatures, id: \.id) { feature in
 							VStack(alignment: .leading, spacing: 2) {
 								Text(Self.featureTitle(feature.id))
-								Text(feature.reason ?? "not available on this guest")
+								Text(feature.reason ?? "Not available on this guest")
 									.font(.caption)
 									.foregroundStyle(.secondary)
 									.fixedSize(horizontal: false, vertical: true)
@@ -222,8 +232,8 @@ struct GuestSetupInspector: View {
 	}
 
 	private func featureSummary(_ feature: GuestFeatureInfo) -> String {
-		guard feature.configured else { return "not configured" }
-		return feature.detail ?? "configured"
+		guard feature.configured else { return "Not configured" }
+		return feature.detail ?? "Configured"
 	}
 
 	static func featureTitle(_ id: String) -> String {
@@ -287,13 +297,13 @@ struct GuestSetupInspector: View {
 
 	// The share automounts (either transport): mounting instructions would contradict
 	// the Share row above, so the run command stands alone.
-	private var shareAutomounted: Bool { shareTransport != "available" }
+	private var shareAutomounted: Bool { shareAutomountKind != nil }
 
 	@ViewBuilder
 	private var setupCommands: some View {
 		switch vm.boot.mode {
 		case .macOS:
-			Text("Run in the guest's Terminal (the share automounts, macOS 13+):")
+			Text("Run in the guest’s Terminal (the share automounts, macOS 13+):")
 				.font(.caption)
 				.foregroundStyle(.secondary)
 			CommandBlock(GuestSetupCommands.run(.macOS, shareMounted: true))
@@ -320,8 +330,8 @@ struct GuestSetupInspector: View {
 				VStack(alignment: .leading, spacing: 6) {
 					Text(shareAutomounted
 						? "The share automounts over ssh — run the installer:"
-						: "No virtiofs driver — the guide shows the one-time sshfs "
-							+ "bootstrap; afterwards the same run command applies.")
+						: "No virtiofs driver, so mount the share over sshfs first (see the "
+							+ "Setup Guide), then run:")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
