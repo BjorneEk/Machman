@@ -68,4 +68,16 @@ extension Samples {
 			sinceOSVersion: since)
 		return vm
 	}
+
+	// An installed macOS guest with one uart port (its PL011 is the kernel debug UART).
+	public static func macOSWithUART(_ name: String = "Sequoia") -> VMInfo {
+		var vm = macOS(name)
+		vm.uartPorts = [
+			SerialPortInfo(
+				kind: .uart, index: 0,
+				guestDevice: SerialPortKind.uart.guestDevice(index: 0, os: .macOS),
+				logging: SerialLogConfig()),
+		]
+		return vm
+	}
 }

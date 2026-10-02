@@ -225,6 +225,12 @@ struct SerialInspector: View {
 					setupGuideButton
 				case (.unknown, _):
 					EmptyView()
+				case (.uart, .macOS):
+					// The kernel's debug UART: no userland device to name, only the note.
+					Text(setupNote)
+						.font(.caption)
+						.foregroundColor(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
 				case (.console, .linuxKernel), (.uart, _):
 					deviceRow("Linux", os: .linux)
 					Text(setupNote)

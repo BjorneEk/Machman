@@ -173,6 +173,10 @@ enum InspectorScenes {
 			"uart.gated", "SerialInspector, a uart port on a host that gates uarts",
 			vms: { [Samples.kernelBootGatedUART()] }, select: "Kernel Lab",
 			node: .serial(SerialPortRef(kind: .uart, index: 0))),
+		inspector(
+			"uart.macos", "SerialInspector, a macOS guest's uart port",
+			vms: { [Samples.macOSWithUART()] }, select: "Sequoia",
+			node: .serial(SerialPortRef(kind: .uart, index: 0))),
 		inspector("ssh", "SSHInspector", node: .group("SSH")),
 		inspector(
 			"ssh.spaced-name", "SSHInspector, a VM named with a space",
