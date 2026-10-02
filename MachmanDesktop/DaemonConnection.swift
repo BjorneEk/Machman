@@ -169,7 +169,12 @@ final class DaemonConnection: ObservableObject {
 	// next boot silently switches disks).
 	// 1.0.10: the display device gained systemKeyCapture — an older daemon drops it on its
 	// next rewrite, and its vmhosts would never apply it.
-	static let oldestCompatibleDaemonVersion = "1.0.10"
+	// 1.0.11: Save as New VM moves the disks a safe run wrote directly into the saved VM
+	// and rewrites the original to reference them — an older daemon never reloads the
+	// original, so its stale copy can be saved over the rewrite — and the daemon gained the
+	// safety refusals around it (shared disks, dropped vmhost connections, cross-volume
+	// saves, a saved run on its source's socket).
+	static let oldestCompatibleDaemonVersion = "1.0.11"
 
 	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
