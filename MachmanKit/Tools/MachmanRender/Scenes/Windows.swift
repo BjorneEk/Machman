@@ -408,7 +408,9 @@ enum WindowScenes {
 			ctx.terminals.ensureController(
 				vm: ctx.vm.name, ref: console, socketPath: ctx.vm.consolePorts?[0].socketPath,
 				profile: ctx.profiles.defaultProfile)
-			Offscreen.pump(until: { ctx.terminals.controller(vm: ctx.vm.name, ref: console) != nil })
+			Offscreen.pump(until: {
+				ctx.terminals.controller(vm: ctx.vm.name, ref: console) != nil
+			})
 			return AnyView(serialTab(ctx, console).environment(\.terminalDisconnectedGrace, .zero))
 		},
 		RenderScene(

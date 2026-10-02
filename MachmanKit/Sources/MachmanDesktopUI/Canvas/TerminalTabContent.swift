@@ -83,7 +83,8 @@ struct TerminalTabContent: View {
 		let stillWanted = stillWanted
 		DispatchQueue.main.async { [weak sessions] in
 			sessions?.ensureController(
-				vm: vmName, ref: ref, socketPath: socket, profile: profile, stillWanted: stillWanted)
+				vm: vmName, ref: ref, socketPath: socket, profile: profile,
+				stillWanted: stillWanted)
 		}
 	}
 
