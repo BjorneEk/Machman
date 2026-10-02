@@ -2,8 +2,8 @@
 //  ByteSize.swift
 //  MachmanAPI
 //
-//  Byte/GB helpers clients need for editing UIs, plus memory clamping against host
-//  capabilities — so clients never need Virtualization.framework for bounds math.
+//  Byte/GB helpers clients need for editing and showing sizes, plus memory clamping against
+//  host capabilities — so clients never need Virtualization.framework for bounds math.
 //
 
 import Foundation
@@ -11,10 +11,6 @@ import Foundation
 public enum ByteSize {
 	public static func fromGB(_ gb: Int) -> UInt64 {
 		UInt64(max(gb, 0)) * 1024 * 1024 * 1024
-	}
-
-	public static func toGB(_ bytes: UInt64) -> Int {
-		Int(bytes / (1024 * 1024 * 1024))
 	}
 
 	// `floor` lets a boot mode raise the lower bound (macOS guests carry install minimums).
@@ -78,6 +74,29 @@ public enum ByteSize {
 		if bytes >= mib, bytes % mib == 0 { return "\(bytes / mib) MB" }
 		if bytes >= kib, bytes % kib == 0 { return "\(bytes / kib) KB" }
 		return "\(bytes) B"
+	}
+
+	// A size for reading, not editing — the read-only twin of `format` (exact, editable):
+	// binary units labelled KB/MB/GB/TB as everywhere else here (decision 14), one decimal
+	// below 100 ("1.5 GB", "13.2 GB"), whole numbers from 100 ("412 GB"), the decimal mark
+	// from `locale`. Rounding that reaches 1024 of a unit steps up ("1 GB", not "1024 MB").
+	public static func display(_ bytes: UInt64, locale: Locale = .current) -> String {
+		guard bytes >= kib else { return "\(bytes) B" }
+		let units = ["KB", "MB", "GB", "TB"]
+		let shown = { (value: Double) in
+			value < 100 ? (value * 10).rounded() / 10 : value.rounded()
+		}
+		var unit = 0
+		var value = Double(bytes) / Double(kib)
+		while unit < units.count - 1, shown(value) >= 1024 {
+			value /= 1024
+			unit += 1
+		}
+		let rounded = shown(value)
+		let text = rounded.formatted(
+			.number.precision(.fractionLength(rounded < 100 ? 0...1 : 0...0))
+				.grouping(.never).locale(locale))
+		return "\(text) \(units[unit])"
 	}
 
 	// Virtualization requires memory sizes in whole mebibytes; nearest keeps "what was

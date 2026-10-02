@@ -58,4 +58,14 @@ struct NewDiskFormTests {
 		#expect(problem("", "8") == "A disk name can't be empty")
 		#expect(problem("data", "64") == nil)
 	}
+
+	// H18: the free-space figure was truncated to whole GB, so 500 MB free read "0 GB".
+	@Test func aSmallFreeSpaceIsNotZero() async throws {
+		let h = await harness()
+		h.stub.capabilities.freeDiskBytes = 500 << 20
+		await h.store.refreshCapabilities()
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		#expect(h.viewModel.newDiskProblem(on: debian, name: "data", sizeText: "1")
+			== "Only 500 MB is free")
+	}
 }

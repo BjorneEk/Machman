@@ -218,7 +218,9 @@ private struct NewDiskForm: View {
 		_sizeText = State(initialValue: sizeText)
 	}
 
-	private var freeGB: Int? { viewModel.capabilities.map { ByteSize.toGB($0.freeDiskBytes) } }
+	private var freeText: String? {
+		viewModel.capabilities.map { ByteSize.display($0.freeDiskBytes) }
+	}
 	private var problem: String? {
 		viewModel.newDiskProblem(on: vm, name: name, sizeText: sizeText)
 	}
@@ -241,7 +243,7 @@ private struct NewDiskForm: View {
 			VStack(spacing: 8) {
 				TextField("Name", text: $name)
 					.textFieldStyle(.roundedBorder)
-				TextField("Size in GB\(freeGB.map { " (max \($0))" } ?? "")", text: $sizeText)
+				TextField("Size in GB\(freeText.map { " (up to \($0))" } ?? "")", text: $sizeText)
 					.textFieldStyle(.roundedBorder)
 				if let problem, !(name.isEmpty && sizeText.isEmpty) {
 					FieldProblem(problem)

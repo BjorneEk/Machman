@@ -40,8 +40,8 @@ struct DiskInspector: View {
 						LabeledContent("Name", value: disk.name ?? fileName(disk))
 					}
 					if let size = disk.sizeBytes {
-						LabeledContent("Size", value: ByteCountFormatter.string(
-							fromByteCount: Int64(size), countStyle: .file))
+						LabeledContent("Size", value: ByteSize.display(size))
+							.help("\(size.formatted()) bytes")
 					}
 					LabeledContent("Type", value: typeLabel(disk))
 					if let path = disk.path {

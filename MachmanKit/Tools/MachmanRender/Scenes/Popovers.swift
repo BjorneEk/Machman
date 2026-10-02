@@ -90,6 +90,12 @@ enum PopoverScenes {
 				vm: ctx.vm, viewModel: ctx.viewModel, excludedMountIDs: [Samples.notesMountID]))
 		},
 		RenderScene(
+			"sheet.copy-vm.small-disk", "CopyVMSheet, a 500 MB disk (under one GB)",
+			vms: { [Samples.linuxSmallDisk()] }
+		) { ctx in
+			AnyView(CopyVMSheet(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
+		RenderScene(
 			"sheet.safe-save", "SafeSaveSheet, a running safe run",
 			vms: {
 				var vm = Samples.linux("Debian", state: .running)

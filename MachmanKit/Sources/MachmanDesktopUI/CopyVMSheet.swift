@@ -103,8 +103,10 @@ struct CopyVMSheet: View {
 				.help("The copy shares this folder with its guest as \u{201C}\(mount.tag)\u{201D}")
 			}
 			if let free = viewModel.capabilities?.freeDiskBytes {
-				Text("Needs up to \(ByteSize.toGB(bytesNeeded)) GB — "
-					+ "\(ByteSize.toGB(free)) GB free")
+				Text(bytesNeeded > 0
+					? "Needs up to \(ByteSize.display(bytesNeeded)) — "
+						+ "\(ByteSize.display(free)) free"
+					: "\(ByteSize.display(free)) free")
 					.font(.caption)
 					.foregroundColor(bytesNeeded > free ? .red : .secondary)
 			}

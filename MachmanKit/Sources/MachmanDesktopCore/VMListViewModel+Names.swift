@@ -37,7 +37,7 @@ extension VMListViewModel {
 			return "Enter a size in GB, like 64 or 1.5"
 		}
 		if let free = capabilities?.freeDiskBytes, bytes > free {
-			return "Only \(ByteSize.toGB(free)) GB is free"
+			return "Only \(ByteSize.display(free)) is free"
 		}
 		return nil
 	}
