@@ -8,7 +8,8 @@
 //  main queue, a write source drains a bounded outgoing queue, and the descriptor is closed
 //  only in the cancel handler of the last source to go. So send() never blocks its caller
 //  (P5), and no read, write or ioctl can land on a closed number the process already reused
-//  for something else (P6).
+//  for something else (P6). Output reaches the main queue through one delivery at a time,
+//  and reading pauses while too much of it waits (P29).
 //
 
 import Foundation
@@ -21,10 +22,22 @@ final class TerminalFDChannel: @unchecked Sendable {
 	static let outgoingCap = 8 << 20
 	private static let readSize = 16 << 10
 	private static let drainBudget = 1 << 20
+	// Output read but not yet delivered. Past highWater the read source pauses, so the peer's
+	// writes back up instead of the app's memory and main queue (a pty child blocks; the
+	// vmhost bridge drops output for a client that stops reading); reads resume once delivery
+	// brings the backlog down to lowWater. Each delivery turn runs for at most deliverySlice,
+	// so a flood leaves the main queue time for input, resizes and drawing. SwiftTerm's
+	// LocalProcess uses the same marks and slice.
+	static let highWater = 4 << 20
+	static let lowWater = 1 << 20
+	private static let deliverySlice: UInt64 = 4_000_000   // ns
 
 	private let fd: Int32
 	private let label: String
 	private let queue: DispatchQueue
+	private let deliveryQueue: DispatchQueue
+	private let highWater: Int
+	private let lowWater: Int
 
 	// Confined to `queue`.
 	private var readSource: DispatchSourceRead?
@@ -35,6 +48,14 @@ final class TerminalFDChannel: @unchecked Sendable {
 	private var writeFailed = false
 	private var warnedDrop = false
 	private var readBuffer = [UInt8](repeating: 0, count: TerminalFDChannel.readSize)
+	private var readPaused = false
+
+	// Shared by `queue` and the delivery queue, under deliveryLock.
+	private let deliveryLock = NSLock()
+	private var undelivered = ByteChunkQueue()
+	private var deliveryScheduled = false
+	private var pauseRequested = false
+	private var endPending = false
 	private var onData: ((Data) -> Void)?
 	private var onEnd: (() -> Void)?
 
@@ -42,23 +63,32 @@ final class TerminalFDChannel: @unchecked Sendable {
 	private let transcriptLock = NSLock()
 	private var transcript = ByteChunkQueue()
 
-	// Takes ownership of fd: from here on only this channel closes it.
-	init(fd: Int32, label: String) {
+	// Takes ownership of fd: from here on only this channel closes it. Tests deliver to their
+	// own queue and lower the marks.
+	init(
+		fd: Int32, label: String, deliverOn deliveryQueue: DispatchQueue = .main,
+		highWater: Int = TerminalFDChannel.highWater, lowWater: Int = TerminalFDChannel.lowWater
+	) {
 		self.fd = fd
 		self.label = label
+		self.deliveryQueue = deliveryQueue
+		self.highWater = highWater
+		self.lowWater = lowWater
 		queue = DispatchQueue(label: "machman.terminal.\(label)", qos: .userInitiated)
 		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 	}
 
 	// onData runs on the main queue with each chunk, in order; onEnd runs there once, after
 	// the last chunk, when the peer hangs up or drainAndEnd() ran. close() ends the channel
-	// without onEnd, but a delivery already queued to main still arrives: owners keep their
-	// own stopped flag.
+	// without onEnd and drops what was not delivered yet, though a chunk being handed over at
+	// that moment still arrives: owners keep their own stopped flag.
 	func start(onData: @escaping (Data) -> Void, onEnd: @escaping () -> Void) {
 		queue.async { [self] in
 			guard !ended else { return }
+			deliveryLock.lock()
 			self.onData = onData
 			self.onEnd = onEnd
+			deliveryLock.unlock()
 			let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
 			source.setEventHandler { [self] in _ = readOnce() }
 			source.setCancelHandler { [self] in sourceGone() }
@@ -107,6 +137,9 @@ final class TerminalFDChannel: @unchecked Sendable {
 	// Test seam: the descriptor this channel owns (closed once the channel has ended).
 	var descriptor: Int32 { fd }
 
+	// Test seam: whether reading is paused for a backlog.
+	var isReadPaused: Bool { queue.sync { readPaused } }
+
 	// MARK: - On `queue`
 
 	// One read: true when it got bytes (so a drain should keep going).
@@ -121,7 +154,7 @@ final class TerminalFDChannel: @unchecked Sendable {
 				transcript.removeFirst(transcript.count - Self.transcriptCap)
 			}
 			transcriptLock.unlock()
-			if let onData { DispatchQueue.main.async { onData(data) } }
+			enqueueDelivery(data)
 			return true
 		}
 		if n == 0 || (errno != EAGAIN && errno != EINTR) {
@@ -195,14 +228,86 @@ final class TerminalFDChannel: @unchecked Sendable {
 		guard !ended else { return }
 		ended = true
 		outgoing.removeAll()
+		// A suspended source never runs its cancel handler, and the descriptor would stay open.
+		if readPaused {
+			readPaused = false
+			readSource?.resume()
+		}
 		readSource?.cancel()
 		readSource = nil
 		writeSource?.cancel()
 		writeSource = nil
 		if liveSources == 0 { Darwin.close(fd) }
-		if notify, let onEnd { DispatchQueue.main.async { onEnd() } }
-		onData = nil
-		onEnd = nil
+		deliveryLock.lock()
+		var schedule = false
+		if notify {
+			// After the last chunk: the delivery that drains the backlog reports the end.
+			endPending = true
+			schedule = !deliveryScheduled
+			deliveryScheduled = true
+		} else {
+			undelivered.removeAll()
+			onData = nil
+			onEnd = nil
+		}
+		deliveryLock.unlock()
+		if schedule { deliveryQueue.async { [self] in deliver() } }
+	}
+
+	// Queues a chunk for delivery, starting a delivery if none is under way, and pauses reading
+	// once the backlog passes highWater.
+	private func enqueueDelivery(_ data: Data) {
+		deliveryLock.lock()
+		undelivered.append(data)
+		let pause = !pauseRequested && undelivered.count >= highWater
+		if pause { pauseRequested = true }
+		let schedule = !deliveryScheduled
+		deliveryScheduled = true
+		deliveryLock.unlock()
+		if pause, let readSource {
+			readPaused = true
+			readSource.suspend()
+		}
+		if schedule { deliveryQueue.async { [self] in deliver() } }
+	}
+
+	private func resumeReading() {
+		guard readPaused, !ended, let readSource else { return }
+		readPaused = false
+		readSource.resume()
+	}
+
+	// MARK: - On the delivery queue
+
+	// Hands the backlog over in order for one slice, then yields the queue and carries on in a
+	// later turn; reports the end once nothing is left.
+	private func deliver() {
+		let start = DispatchTime.now().uptimeNanoseconds
+		while true {
+			deliveryLock.lock()
+			guard let chunk = undelivered.popFirst() else {
+				deliveryScheduled = false
+				let end = endPending ? onEnd : nil
+				if endPending {
+					endPending = false
+					onData = nil
+					onEnd = nil
+				}
+				deliveryLock.unlock()
+				end?()
+				return
+			}
+			let handler = onData
+			let resume = pauseRequested && undelivered.count <= lowWater
+			if resume { pauseRequested = false }
+			deliveryLock.unlock()
+			if resume { queue.async { [self] in resumeReading() } }
+			handler?(chunk)
+			if DispatchTime.now().uptimeNanoseconds - start >= Self.deliverySlice {
+				deliveryQueue.async { [self] in deliver() }
+				return
+			}
+		}
 	}
 
 	// A source's cancel handler: the last one out after the end closes the descriptor.

@@ -3,8 +3,9 @@
 //  MachmanUI
 //
 //  A FIFO of byte chunks for the terminal transports: appends at the tail and consumes from
-//  the head without moving what stays. Two users — the bounded transcript (trim the head to a
-//  cap) and the outgoing queue (consume what write() took). The head is tracked by index and
+//  the head without moving what stays. Three users — the bounded transcript (trim the head to a
+//  cap), the outgoing queue (consume what write() took) and the output waiting for delivery
+//  (taken a chunk at a time). The head is tracked by index and
 //  offset, so a dropped chunk is really freed: cutting the head off one big Data only slices
 //  it, and the slice keeps the whole buffer alive (a capped Data transcript retained every
 //  byte the session ever printed).
@@ -54,6 +55,17 @@ struct ByteChunkQueue {
 		head = 0
 		headOffset = 0
 		count = 0
+	}
+
+	// Takes the head chunk's unconsumed bytes off the queue, as they were appended.
+	mutating func popFirst() -> Data? {
+		guard count > 0 else { return nil }
+		var chunk = chunks[head]
+		if headOffset > 0 {
+			chunk = chunk.subdata(in: (chunk.startIndex + headOffset)..<chunk.endIndex)
+		}
+		removeFirst(chunk.count)
+		return chunk
 	}
 
 	// The head chunk's unconsumed bytes — what the next write() should try.
