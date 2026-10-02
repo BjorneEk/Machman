@@ -143,7 +143,7 @@ final class DaemonConnection: ObservableObject {
 		// Deferred a turn: its alert runs modal, never inside the loop's callback.
 		let version = api.hello.daemonVersion
 		Task { @MainActor [weak self] in
-			self?.checkDaemonVersion(version)
+			await self?.checkDaemonVersion(version)
 		}
 	}
 
@@ -184,7 +184,7 @@ final class DaemonConnection: ObservableObject {
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
 	// a user-confirmed replacement (retire, then the reconnect path launches the embedded,
 	// current-version daemon and re-adopts vmhosts).
-	private func checkDaemonVersion(_ running: String) {
+	private func checkDaemonVersion(_ running: String) async {
 		guard MachmanVersion.isOlder(running, than: Self.oldestCompatibleDaemonVersion) else {
 			let mine = Bundle.main
 				.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
@@ -199,16 +199,15 @@ final class DaemonConnection: ObservableObject {
 		let canReplace = Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID
 		let prompt = DaemonVersionPrompt.tooOld(
 			running: running, floor: Self.oldestCompatibleDaemonVersion, canReplace: canReplace)
-		let alert = NSAlert()
-		alert.messageText = prompt.title
-		alert.informativeText = prompt.message
-		for title in prompt.buttons {
-			alert.addButton(withTitle: title)
+		// From a run-loop callout: a modal inside this main-actor Task would hold every other
+		// main-actor job (the stores' reloads, the replies the view model awaits) until it
+		// closes (E32).
+		let replace = await MainRunLoopCallout.run {
+			Self.runAlert(prompt) == .alertFirstButtonReturn
 		}
-		let response = alert.runModal()
 		// Nothing newer to launch: the alert explained instead of offering a dead end.
 		guard canReplace else { return }
-		guard response == .alertFirstButtonReturn else {
+		guard replace else {
 			MachmanLogger.log(.passiveWarning,
 				"daemon \(running) is below the floor "
 					+ "\(Self.oldestCompatibleDaemonVersion); newer features may fail")
@@ -218,6 +217,16 @@ final class DaemonConnection: ObservableObject {
 			// Retire drops the connection; the reconnect path launches the embedded daemon.
 			try? await self?.api?.retire()
 		}
+	}
+
+	private static func runAlert(_ prompt: DaemonVersionPrompt) -> NSApplication.ModalResponse {
+		let alert = NSAlert()
+		alert.messageText = prompt.title
+		alert.informativeText = prompt.message
+		for title in prompt.buttons {
+			alert.addButton(withTitle: title)
+		}
+		return alert.runModal()
 	}
 
 	// The attached session dropped; the loop reconnects (or stops) on its own.

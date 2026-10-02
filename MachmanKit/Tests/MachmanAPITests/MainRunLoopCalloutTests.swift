@@ -7,13 +7,14 @@
 //  answering under an alert. The same loop spun straight from a main-actor job holds them
 //  until it returns (probed in this runner: it did, for the whole spin) — and so does one a
 //  callout runs inside, when the callout fires in a loop a main-actor job spins (a
-//  synchronous Process wait), so the callout waits for that job instead.
+//  synchronous Process wait), so the callout waits for that job instead. It lives in
+//  MachmanAPI so the desktop's alerts can use it too (E32).
 //
 
 import Testing
 import Foundation
 import MachmanTestSupport
-@testable import MachmanCore
+import MachmanAPI
 
 @MainActor
 struct MainRunLoopCalloutTests {

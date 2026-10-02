@@ -1,14 +1,16 @@
 //
 //  MainRunLoopCallout.swift
-//  MachmanCore
+//  MachmanAPI
 //
 //  Where a modal alert asked from a Task runs. NSAlert.runModal spins a nested run loop, and
 //  one spun inside a main-queue job (every main-actor Task is one) leaves the main queue
 //  undrained until it returns: every other main-actor job waits behind the alert, and in the
 //  daemon or a vmhost that is the socket server's request handling. Started from a run-loop
 //  callout instead, the nested loop drains the main queue as the app's own loop does, so the
-//  server keeps answering while the alert shows. Prompts AppKit asks for itself (a window's
-//  close button, a quit) arrive from event dispatch and need none of this.
+//  server keeps answering while the alert shows; in the desktop it is the stores' reloads
+//  and the replies its view model awaits (E32). Prompts AppKit asks for itself (a window's
+//  close button, a quit) arrive from event dispatch and need none of this. Foundation only,
+//  so every process (the desktop too) reaches it here.
 //
 
 import Foundation
@@ -28,9 +30,9 @@ public enum MainRunLoopCallout {
 	// main queue after all, so the work waits for that job to end and is posted again. Only a
 	// Swift job is seen: a loop nested in a plain main-queue GCD block would still run the
 	// modal there, so such loops start from a main-actor Task (KeyCapture's full-screen hop
-	// does). Internal for tests.
+	// does).
 	@MainActor
-	static func post(_ work: @escaping @MainActor () -> Void) {
+	public static func post(_ work: @escaping @MainActor () -> Void) {
 		RunLoop.main.perform(inModes: [.common]) {
 			MainActor.assumeIsolated {
 				if withUnsafeCurrentTask(body: { $0 != nil }) {
