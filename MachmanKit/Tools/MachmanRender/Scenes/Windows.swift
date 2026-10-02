@@ -496,6 +496,31 @@ enum WindowScenes {
 			ctx.tornTabs.open.insert(TornTab(vm: "Debian", tab: .ssh(restoredSession)))
 			return tree(ctx)
 		},
+		// Every tagged row selected (Q11): each row kind's List tag draws as its highlight, so
+		// a tree change that loses one shows in the pixels. Running, so no dot pulses.
+		RenderScene(
+			"sidebar.tree.select-all",
+			"VMDeviceTreeView, Kernel Lab with every selectable row selected",
+			widths: [270], height: 1000, vms: { [Samples.kernelBoot(state: .running)] }
+		) { ctx in
+			let vm = ctx.vm
+			var canvas = ctx.canvases.canvas(for: vm.name)
+			canvas.open(.ssh(canvasSession))
+			ctx.canvases.setCanvas(canvas, for: vm.name)
+			ctx.terminals.renameSSHSession(vm: vm.name, ref: canvasSession, to: "Session 1")
+			var nodes: Set<SidebarNode> = [
+				.vmRoot, .group("Serial"), .group("SSH"), .group("Kernel"),
+				.sshSession(canvasSession),
+			]
+			nodes.formUnion(vm.disks.map { .disk($0.id) })
+			nodes.formUnion(vm.mounts.map { .mount($0.id) })
+			nodes.formUnion(vm.allSerialPorts.map { .serial(SerialPortRef($0)) })
+			nodes.formUnion((vm.devices ?? []).map { .device($0.kind) })
+			nodes.formUnion(vm.kernelTreeEntries(role: .kernel).map { .kernel($0.id) })
+			nodes.formUnion(vm.kernelTreeEntries(role: .initramfs).map { .initramfs($0.id) })
+			ctx.viewModel.treeSelection = nodes
+			return tree(ctx)
+		},
 		// N1: a filter hides the sections without a match; a section-title match shows it
 		// whole; without a filter, empty sections hide unless the tree is their add path.
 		RenderScene(
