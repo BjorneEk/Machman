@@ -339,7 +339,7 @@ struct VMInspector: View {
 					if memText != committedMemText { memoryNote = nil }
 				}
 				.onSubmit { commitMemory() }
-				.help("\(vm.memoryBytes.formatted()) bytes — a bare number is GB")
+				.help("\(vm.memoryBytes.formatted()) bytes, and a bare number means GB")
 		} label: {
 			Label("Memory", systemImage: MachmanSymbols.memory)
 		}
