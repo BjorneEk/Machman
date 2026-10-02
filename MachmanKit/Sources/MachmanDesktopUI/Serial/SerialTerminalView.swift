@@ -65,9 +65,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// Safe to call any time; the startup-only settings are ignored here (they need a Reload).
 	func applyLive(_ profile: TerminalProfile) {
 		let size = CGFloat(profile.fontSize)
-		terminalView.font = NSFont(name: profile.fontName, size: size)
-			?? NSFont(name: "Menlo", size: size)
-			?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+		terminalView.font = TerminalFonts.font(named: profile.fontName, size: size)
 		let c = profile.colors
 		if let fg = NSColor(hexColor: c.foreground) { terminalView.nativeForegroundColor = fg }
 		if let bg = NSColor(hexColor: c.background) { terminalView.nativeBackgroundColor = bg }

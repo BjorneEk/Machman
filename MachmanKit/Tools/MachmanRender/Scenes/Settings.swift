@@ -29,6 +29,15 @@ enum SettingsScenes {
 		pane("terminal", "TerminalSettingsView (profile editor, live preview)") { ctx in
 			AnyView(TerminalSettingsView(store: ctx.profiles))
 		},
+		// H19: a profile naming a font this Mac doesn't have says so in the Family picker.
+		pane("terminal.missing-font", "TerminalSettingsView, a profile whose font isn't installed")
+		{ ctx in
+			var profile = ctx.profiles.addProfile()
+			profile.fontName = "Iosevka Term"
+			ctx.profiles.update(profile)
+			ctx.profiles.editingProfileID = profile.id
+			return AnyView(TerminalSettingsView(store: ctx.profiles))
+		},
 		pane("behaviour", "BehaviourSettingsView") { _ in
 			AnyView(BehaviourSettingsView())
 		},

@@ -114,7 +114,9 @@ public extension TerminalProfile {
 	// The built-in default has a fixed id so it stays recognizable across launches and reinstalls,
 	// associations that point at it remain valid, and it can be protected from deletion.
 	static let defaultID = UUID(uuidString: "0B1D0DEF-0000-0000-0000-000000000001")!
-	static let defaultFontName = "VictorMono Nerd Font Mono"
+	// The system monospaced face (decision 15), resolved through TerminalFonts: it can't be
+	// loaded by name. Profiles keep whatever font they were saved with — no migration.
+	static let defaultFontName = TerminalFonts.systemMonospacedName
 
 	// OneDark, mirroring the user's kitty theme. Seeded on first run.
 	static var oneDarkDefault: TerminalProfile {

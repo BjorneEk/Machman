@@ -99,7 +99,7 @@ struct TerminalSettingsView: View {
 		Form {
 			Section("Font") {
 				Picker("Family", selection: binding(\.fontName)) {
-					ForEach(fontFamilies, id: \.self) { Text($0).tag($0) }
+					ForEach(fontFamilies, id: \.self) { Text(TerminalFonts.label(for: $0)).tag($0) }
 				}
 				Stepper(
 					"Size: \(Int(current.fontSize))",
@@ -228,17 +228,13 @@ struct TerminalSettingsView: View {
 			})
 	}
 
+	// The installed families, plus the profile's own font when it is missing — listed (so the
+	// picker has a row for it) but labelled "(not installed)" (H19).
 	private var fontFamilies: [String] {
-		var names = Set(Self.monospacedFamilies)
-		names.insert(current.fontName)   // keep the current choice selectable even if unusual
-		return names.sorted()
+		let installed = TerminalFonts.families
+		if installed.contains(current.fontName) { return installed }
+		return (installed + [current.fontName]).sorted()
 	}
-
-	private static let monospacedFamilies: [String] = {
-		NSFontManager.shared.availableFontFamilies.filter { family in
-			(NSFont(name: family, size: 12)?.isFixedPitch) ?? false
-		}.sorted()
-	}()
 
 	private static func hexString(from color: Color) -> String {
 		let ns = NSColor(color).usingColorSpace(.sRGB) ?? .black
