@@ -296,7 +296,7 @@ struct MountInspector: View {
 							os: "Linux",
 							requirement: "virtiofs is built into kernels ≥ 5.4 "
 								+ "(CONFIG_VIRTIO_FS); no extra packages.",
-							command: GuestPaths.mountShareCommand)
+							command: GuestSetupCommands.mountShare(.linux))
 						Text("No virtiofs driver (FreeBSD, OpenBSD)? Switch the kind to "
 							+ "sshfs instead.")
 							.font(.caption)

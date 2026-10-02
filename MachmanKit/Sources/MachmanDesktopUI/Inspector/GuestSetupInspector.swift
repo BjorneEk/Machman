@@ -291,16 +291,14 @@ struct GuestSetupInspector: View {
 			Text("Run in the guest's Terminal (the share automounts, macOS 13+):")
 				.font(.caption)
 				.foregroundStyle(.secondary)
-			CommandBlock(GuestSetupInstallerInfo.runCommand)
+			CommandBlock(GuestSetupCommands.run(.macOS, shareMounted: true))
 		case .linuxKernel:
 			Text(shareAutomounted
 				? "Run in the guest (the share automounts):"
 				: "Run in the guest (mounts the share, then the installer):")
 				.font(.caption)
 				.foregroundStyle(.secondary)
-			CommandBlock(shareAutomounted
-				? GuestSetupInstallerInfo.runCommand()
-				: GuestSetupInstallerInfo.mountAndRunCommand)
+			CommandBlock(GuestSetupCommands.run(.linux, shareMounted: shareAutomounted))
 		case .efi, .unknown:
 			DisclosureGroup("Linux") {
 				VStack(alignment: .leading, spacing: 6) {
@@ -309,9 +307,7 @@ struct GuestSetupInspector: View {
 						: "Mounts the share, then runs the installer:")
 						.font(.caption)
 						.foregroundStyle(.secondary)
-					CommandBlock(shareAutomounted
-						? GuestSetupInstallerInfo.runCommand()
-						: GuestSetupInstallerInfo.mountAndRunCommand)
+					CommandBlock(GuestSetupCommands.run(.linux, shareMounted: shareAutomounted))
 				}
 				.padding(.vertical, 2)
 			}
@@ -324,7 +320,7 @@ struct GuestSetupInspector: View {
 						.font(.caption)
 						.foregroundStyle(.secondary)
 						.fixedSize(horizontal: false, vertical: true)
-					CommandBlock(GuestSetupInstallerInfo.runCommand())
+					CommandBlock(GuestSetupCommands.run(.bsd, shareMounted: true))
 				}
 				.padding(.vertical, 2)
 			}

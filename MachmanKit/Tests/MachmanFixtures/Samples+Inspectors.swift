@@ -107,4 +107,16 @@ extension Samples {
 		vm.ssh?.reversePublicKey = reverseKeyLine
 		return vm
 	}
+
+	// A kernel-boot guest whose share automounts (the report's "virtiofs host-share
+	// /mnt/machman/share" line), set to serve the installer again.
+	public static func kernelBootReinstall(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name)
+		vm.setup?.reinstallRequested = true
+		vm.setup?.automounts = [
+			GuestAutomountInfo(
+				kind: MountKind.virtiofs, target: GuestPaths.shareTag, path: GuestPaths.share),
+		]
+		return vm
+	}
 }

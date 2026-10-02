@@ -217,6 +217,11 @@ enum InspectorScenes {
 			"guest-setup.failed-run", "GuestSetupInspector, a failed run keeps serving",
 			vms: { [Samples.failedSetupRun("Debian")] }, node: .device(.guestSetup)),
 		inspector(
+			"guest-setup.kernel-reinstall",
+			"GuestSetupInspector, a kernel-boot guest whose share automounts, reinstalling",
+			vms: { [Samples.kernelBootReinstall()] }, select: "Kernel Lab",
+			node: .device(.guestSetup)),
+		inspector(
 			"kernel", "KernelParentInspector", select: "Kernel Lab", node: .group("Kernel")),
 		inspector(
 			"kernel.entry", "KernelEntryInspector, active kernel with an override",
