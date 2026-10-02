@@ -36,6 +36,17 @@ struct GuideCommandTests {
 			== "printf '%s\\n' '\(rule)' | tee /proc/sys/fs/binfmt_misc/register")
 	}
 
+	// R4-4: OpenRC and runit guests may not have binfmt_misc mounted, so the register line
+	// above fails there; the guide offers the mount.
+	@Test func binfmtMiscMountsWhereTheGuestDidNot() {
+		#expect(GuestSetupCommands.binfmtMiscMount()
+			== "sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc")
+		#expect(GuestSetupCommands.binfmtMiscMount(.doas)
+			== "doas mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc")
+		#expect(GuestSetupCommands.binfmtMiscMount(.root)
+			== "mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc")
+	}
+
 	// R4-3: the guides showed two macOS 12 mounts, and the Guest Setup one made the folder in
 	// the user's home as root. One line now: the mkdir the user's, the mount (and the
 	// installer run from it) escalated.

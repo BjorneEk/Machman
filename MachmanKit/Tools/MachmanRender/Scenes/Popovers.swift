@@ -219,6 +219,9 @@ enum PopoverScenes {
 			mount: Samples.notesMountID),
 		mountGuide(".macos", "a macOS guest", vms: { [Samples.macOSWithMount()] }),
 		RenderScene("sheet.rosetta-help", "RosettaHelpSheet") { _ in AnyView(RosettaHelpSheet()) },
+		RenderScene("sheet.rosetta-help.root", "RosettaHelpSheet run as root") { _ in
+			AnyView(RosettaHelpSheet(escalation: .root))
+		},
 		RenderScene("sheet.mac-switch", "MacSwitchSheet (switch a VM to macOS)") { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
 		},

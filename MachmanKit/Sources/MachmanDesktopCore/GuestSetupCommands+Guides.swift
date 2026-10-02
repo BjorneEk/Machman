@@ -39,8 +39,16 @@ extension GuestSetupCommands {
 	// restarts.
 	public static func rosettaRegister(_ escalation: GuestEscalation = .sudo) -> String {
 		"printf '%s\\n' '\(rosettaBinfmtRule)' | \(escalation.prefix)tee "
-			+ "/proc/sys/fs/binfmt_misc/register"
+			+ "\(binfmtMiscDirectory)/register"
 	}
+
+	// systemd mounts binfmt_misc on its own; under OpenRC or runit (Alpine, Void) it may not
+	// be, and the register line then fails with "No such file or directory".
+	public static func binfmtMiscMount(_ escalation: GuestEscalation = .sudo) -> String {
+		escalation.apply("mount -t binfmt_misc binfmt_misc \(binfmtMiscDirectory)")
+	}
+
+	static let binfmtMiscDirectory = "/proc/sys/fs/binfmt_misc"
 
 	static let rosettaBinfmtRule = ":rosetta:M::"
 		+ #"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00"#
