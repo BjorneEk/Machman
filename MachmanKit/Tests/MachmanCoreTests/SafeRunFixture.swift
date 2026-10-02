@@ -5,8 +5,9 @@
 //  A safe-run vmhost's registry with the exact shape promotion meets: the ORIGINAL VM in a
 //  library, its shadow built by the real SafeRun.shadowRequest + VMCopier (safe disks
 //  cloned, unsafe ones referenced), and a bare VMRuntime (no VZ) marking the shadow running
-//  with what a start would have attached. Build it inside VMTestDir.withRedirectedDir: the redirected machmanVMDir plays the run
-//  root, a sibling "-lib" folder the library (scratch, removed with the run).
+//  with what a start would have attached. Build it inside VMTestDir.withRedirectedDir: the
+//  redirected machmanVMDir plays the run root, a sibling "-lib" folder the library (scratch,
+//  removed with the run).
 //
 
 import Foundation
