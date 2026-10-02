@@ -24,4 +24,12 @@ extension Samples {
 		vm.memoryBytes = capabilities.maxMemoryBytes
 		return vm
 	}
+
+	// A VM whose vmhost never answered, as the daemon serves it: state unknown, marked
+	// unresponsive. Not "running", yet the daemon refuses stop-first actions on it.
+	public static func neverAnswered(_ name: String = "Alpine") -> VMInfo {
+		var vm = linux(name, state: .unknown)
+		vm.unresponsive = true
+		return vm
+	}
 }

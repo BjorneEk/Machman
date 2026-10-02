@@ -32,10 +32,8 @@ struct DiskInspector: View {
 							.onSubmit { commitRename(disk) }
 							.onAppear { draftName = disk.name ?? "" }
 							.onChange(of: disk.name) { draftName = disk.name ?? "" }
-							.disabled(vm.state.isRunning)
-							.help(vm.state.isRunning
-								? "Stop the VM to rename its disks"
-								: "Renames the backing file too")
+							.disabled(vm.refusal(.renameDisk) != nil)
+							.help(vm.refusal(.renameDisk) ?? "Renames the backing file too")
 					} else {
 						LabeledContent("Name", value: disk.name ?? fileName(disk))
 					}
@@ -60,11 +58,10 @@ struct DiskInspector: View {
 							HStack {
 								Stepper("+\(growGB) GB", value: $growGB, in: 0...256, step: 8)
 								Button("Apply") { grow(disk) }
-									.disabled(growGB == 0 || vm.state.isRunning)
+									.disabled(growGB == 0 || vm.refusal(.resizeDisk) != nil)
 							}
 						}
-						.help(vm.state.isRunning
-							? "Stop the VM to grow its disks" : "Grow-only; shrink refuses")
+						.help(vm.refusal(.resizeDisk) ?? "Grow-only; shrink refuses")
 					}
 					HStack(spacing: 6) {
 						if disk.owned == false {

@@ -93,6 +93,9 @@ enum InspectorScenes {
 		inspector("disk", "DiskInspector, owned storage disk", node: .disk("storage:system")),
 		inspector("disk-iso", "DiskInspector, referenced ISO", node: .disk(iso)),
 		inspector(
+			"disk.never-answered", "DiskInspector, a VM whose vmhost never answered",
+			vms: { [Samples.neverAnswered()] }, select: "Alpine", node: .disk("storage:system")),
+		inspector(
 			"mount", "MountInspector, virtiofs mount",
 			node: .mount("7B0E4F52-3C1A-4D55-9E0B-2A6C1D9F0A11")),
 		inspector("serial-group", "SerialGroupInspector", node: .group("Serial")),
