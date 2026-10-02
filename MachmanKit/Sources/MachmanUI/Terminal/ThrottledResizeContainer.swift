@@ -84,9 +84,16 @@ public final class ThrottledResizeContainer: NSView {
 	// Called when this mount goes away. Only the container that still HOLDS the terminal
 	// releases it; one that already lost it to another mount must not touch it.
 	public func releaseChildIfOwned() {
-		guard let held = child, held.superview === self else { return }
+		guard let held else { return }
 		held.removeFromSuperview()
 		child = nil
+	}
+
+	// The terminal while it is still here: once another mount adopted it (a tab torn into its
+	// window), a snap still pending here must leave it alone.
+	private var held: NSView? {
+		guard let child, child.superview === self else { return nil }
+		return child
 	}
 
 	// Every size change, whoever makes it (window, split view, SwiftUI animation), lands here.
@@ -98,17 +105,17 @@ public final class ThrottledResizeContainer: NSView {
 	// A child left mismatched with nothing pending (sized before it was adopted) is fixed now.
 	public override func layout() {
 		super.layout()
-		guard !snapArmed, let child, child.frame.size != bounds.size else { return }
+		guard !snapArmed, let held, held.frame.size != bounds.size else { return }
 		apply()
 	}
 
 	public override func viewDidEndLiveResize() {
 		super.viewDidEndLiveResize()
-		if let child, child.frame.size != bounds.size { apply() }
+		if let held, held.frame.size != bounds.size { apply() }
 	}
 
 	private func sizeChanged() {
-		guard let child, child.frame.size != bounds.size else { return }
+		guard let held, held.frame.size != bounds.size else { return }
 		let now = clock.now()
 		let inBurst = lastChange.map { now - $0 < Self.calm } ?? false
 		lastChange = now
@@ -116,15 +123,15 @@ public final class ThrottledResizeContainer: NSView {
 		if !inBurst || now - lastApplyEnd >= spacing {
 			apply()
 		} else {
-			layer?.backgroundColor = child.layer?.backgroundColor
+			layer?.backgroundColor = held.layer?.backgroundColor
 			armSnap(after: Self.calm)
 		}
 	}
 
 	private func apply() {
-		guard let child else { return }
+		guard let held else { return }
 		let start = clock.now()
-		child.frame = bounds   // the terminal resizes and reflows right here
+		held.frame = bounds   // the terminal resizes and reflows right here
 		lastApplyEnd = clock.now()
 		lastApplyCost = lastApplyEnd - start
 	}
@@ -141,7 +148,7 @@ public final class ThrottledResizeContainer: NSView {
 		let left = (lastChange ?? 0) + Self.calm - clock.now()
 		if left > 0 {
 			armSnap(after: left)
-		} else if let child, child.frame.size != bounds.size {
+		} else if let held, held.frame.size != bounds.size {
 			apply()
 		}
 	}

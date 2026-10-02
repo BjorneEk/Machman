@@ -150,6 +150,20 @@ struct ThrottledResizeContainerTests {
 		#expect(child.frame.size == start)
 	}
 
+	// Torn into a window mid-burst: the old mount's pending snap must not size the terminal
+	// to the canvas pane it left.
+	@Test func aSnapLeftBehindByATearOffLeavesTheTerminalAlone() {
+		let clock = FakeClock()
+		let (pane, child) = mount(clock: clock)
+		pane.setFrameSize(NSSize(width: 820, height: 480))
+		clock.advance(by: 0.01)
+		pane.setFrameSize(NSSize(width: 860, height: 480))   // deferred: a snap is armed
+		let window = ThrottledResizeContainer(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+		window.adopt(child)
+		clock.advance(by: 0.5)
+		#expect(child.frame.size == NSSize(width: 500, height: 300))
+	}
+
 	@Test func aLaggingTerminalStaysTopLeftAndClipped() {
 		let clock = FakeClock()
 		let (container, child) = mount(clock: clock)
