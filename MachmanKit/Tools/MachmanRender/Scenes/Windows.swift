@@ -22,6 +22,14 @@ enum WindowScenes {
 			profiles: ctx.profiles, vm: ctx.vm))
 	}
 
+	// The tree with text in its filter field.
+	@MainActor
+	static func filteredTree(_ ctx: SceneContext, _ filter: String) -> AnyView {
+		AnyView(VMDeviceTreeView(
+			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
+			profiles: ctx.profiles, vm: ctx.vm, filter: filter))
+	}
+
 	// The tree with a Finder drag hovering its Disks group (the files don't exist, so the
 	// classifier reads the URLs' trailing slashes).
 	@MainActor
@@ -358,6 +366,32 @@ enum WindowScenes {
 			ctx.terminals.renameSSHSession(vm: "Debian", ref: canvasSession, to: "Session 1")
 			ctx.tornTabs.open.insert(TornTab(vm: "Debian", tab: .ssh(restoredSession)))
 			return tree(ctx)
+		},
+		// N1: a filter hides the sections without a match; a section-title match shows it
+		// whole; without a filter, empty sections hide unless the tree is their add path.
+		RenderScene(
+			"sidebar.tree.filter-none", "VMDeviceTreeView, a filter nothing matches",
+			widths: [270], height: 760
+		) { ctx in
+			filteredTree(ctx, "nvme")
+		},
+		RenderScene(
+			"sidebar.tree.filter-hvc", "VMDeviceTreeView, filtered to hvc",
+			widths: [270], height: 760
+		) { ctx in
+			filteredTree(ctx, "hvc")
+		},
+		RenderScene(
+			"sidebar.tree.filter-title", "VMDeviceTreeView, a filter matching the Disks title",
+			widths: [270], height: 760
+		) { ctx in
+			filteredTree(ctx, "disks")
+		},
+		RenderScene(
+			"sidebar.tree.bare", "VMDeviceTreeView, a VM without mounts, ports or Guest Setup",
+			widths: [270], height: 760, vms: { [Samples.bareLinux()] }
+		) { ctx in
+			tree(ctx)
 		},
 		RenderScene(
 			"sidebar.tree.drop-mixed", "VMDeviceTreeView, files and a folder dragged onto Disks",

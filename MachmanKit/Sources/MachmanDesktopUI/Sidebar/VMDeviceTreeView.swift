@@ -2,11 +2,12 @@
 //  VMDeviceTreeView.swift
 //  MachmanDesktopUI
 //
-//  The sidebar device tree (1.0.4 UI): the selected VM as root with Disks / Mounts / Serial
-//  groups (Devices and Kernel/Initramfs land with their inspectors). Group parents are
-//  dimmed and unselectable — entry rows carry the interaction: dim when disabled, link
-//  badge on referenced files, warning + no tab for host-gated uarts, live dot on open
-//  terminals. VM switching lives in the toolbar picker, not here.
+//  The sidebar device tree (1.0.4 UI): the selected VM as root with Disks / Mounts / Serial /
+//  SSH / Installers / Devices / Kernel / Initramfs groups. A group without rows hides unless
+//  the tree is where its things are added, and a filter hides every group without a match
+//  (TreeSection, N1). Group parents are dimmed and unselectable — entry rows carry the
+//  interaction: dim when disabled, link badge on referenced files, warning + no tab for
+//  host-gated uarts, live dot on open terminals. VM switching lives in the toolbar picker.
 //
 
 import SwiftUI
@@ -46,10 +47,12 @@ struct VMDeviceTreeView: View {
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
 
-	// `dragPreview` starts the tree with a drag already hovering (render scenes).
+	// `dragPreview` starts the tree with a drag already hovering, `filter` with text in the
+	// filter field (render scenes).
 	init(
 		viewModel: VMListViewModel, sessions: TerminalSessions, canvases: CanvasStateStore,
-		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil
+		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil,
+		filter: String = ""
 	) {
 		self.viewModel = viewModel
 		_tornTabs = ObservedObject(wrappedValue: viewModel.tornTabs)
@@ -58,6 +61,7 @@ struct VMDeviceTreeView: View {
 		self.profiles = profiles
 		self.vm = vm
 		_dragPreview = State(initialValue: dragPreview)
+		_filter = State(initialValue: filter)
 	}
 
 	var body: some View {
@@ -95,6 +99,25 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
+	// A filter naming a section ("disks") shows that section whole.
+	private func titleMatches(_ section: TreeSection) -> Bool {
+		!filter.isEmpty && section.title.localizedCaseInsensitiveContains(filter)
+	}
+
+	// The rows a section lists: all of them unfiltered or on a title match, else the matches.
+	private func sectionRows<Row>(
+		_ section: TreeSection, _ all: [Row], matching: (Row) -> Bool
+	) -> [Row] {
+		filter.isEmpty || titleMatches(section) ? all : all.filter(matching)
+	}
+
+	// N1: a section with rows shows; an empty one only unfiltered (or on a title match),
+	// and only when the tree is where its things are added (TreeSection.staysWhenEmpty).
+	private func shows(_ section: TreeSection, rows: Int) -> Bool {
+		TreeSection.isVisible(
+			section, rows: rows, filtering: !filter.isEmpty && !titleMatches(section))
+	}
+
 	private var treeList: some View {
 		List(selection: $localSelection) {
 			vmRootRow
@@ -104,9 +127,9 @@ struct VMDeviceTreeView: View {
 			sshGroup
 			installerGroup
 			deviceGroup
-			if showsKernelSections {
-				kernelGroup(role: .kernel, title: "Kernel")
-				kernelGroup(role: .initramfs, title: "Initramfs")
+			if vm.showsKernelSections {
+				kernelGroup(role: .kernel)
+				kernelGroup(role: .initramfs)
 			}
 		}
 		.listStyle(.sidebar)
@@ -205,53 +228,55 @@ struct VMDeviceTreeView: View {
 
 	@ViewBuilder
 	private var diskGroup: some View {
-		let disks = vm.disks
-		group(.group("Disks"), symbol: MachmanSymbols.diskName, title: "Disks",
-			count: disks.count, menu: {
-				Button("Add Existing Disk…") {
-					AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
-				}
-				Button("Paste") { pasteIntoDisks() }
-					.disabled(!canPasteIntoDisks)
-			}) {
-			ForEach(disks.filter { matches($0.name, $0.path) }) { disk in
-				HStack(spacing: 6) {
-					Image(systemName: Self.symbol(for: disk.type))
-						.font(.system(size: theme.metrics.iconSize))
-						.foregroundStyle(disk.owned == false ? Color.secondary : Color.primary)
-					if renamingNode == .disk(disk.id) {
-						RenameField(initial: disk.name ?? "") { newName in
-							renamingNode = nil
-							viewModel.renameDisk(vm.name, diskID: disk.id, newName: newName)
-						} cancel: {
-							renamingNode = nil
+		let disks = sectionRows(.disks, vm.disks) { matches($0.name, $0.path) }
+		if shows(.disks, rows: disks.count) {
+			group(.group("Disks"), symbol: MachmanSymbols.diskName, title: "Disks",
+				count: vm.disks.count, menu: {
+					Button("Add Existing Disk…") {
+						AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
+					}
+					Button("Paste") { pasteIntoDisks() }
+						.disabled(!canPasteIntoDisks)
+				}) {
+				ForEach(disks) { disk in
+					HStack(spacing: 6) {
+						Image(systemName: Self.symbol(for: disk.type))
+							.font(.system(size: theme.metrics.iconSize))
+							.foregroundStyle(disk.owned == false ? Color.secondary : Color.primary)
+						if renamingNode == .disk(disk.id) {
+							RenameField(initial: disk.name ?? "") { newName in
+								renamingNode = nil
+								viewModel.renameDisk(vm.name, diskID: disk.id, newName: newName)
+							} cancel: {
+								renamingNode = nil
+							}
+						} else {
+							Text(disk.name ?? Self.lastComponent(disk.path))
+								.truncationMode(.middle)
+								.lineLimit(1)
 						}
-					} else {
-						Text(disk.name ?? Self.lastComponent(disk.path))
-							.truncationMode(.middle)
-							.lineLimit(1)
+						Spacer()
+						if disk.owned == false {
+							Image(systemName: MachmanSymbols.externalReference)
+								.font(.system(size: 9))
+								.foregroundStyle(.tertiary)
+								.help("Referenced — lives outside the VM directory")
+						}
 					}
-					Spacer()
-					if disk.owned == false {
-						Image(systemName: MachmanSymbols.externalReference)
-							.font(.system(size: 9))
-							.foregroundStyle(.tertiary)
-							.help("Referenced — lives outside the VM directory")
-					}
+					.opacity(disk.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
+					.font(.system(size: theme.metrics.rowFontSize))
+					.frame(height: theme.metrics.treeRowHeight)
+					.tag(SidebarNode.disk(disk.id))
+					.contextMenu { diskMenu(disk) }
 				}
-				.opacity(disk.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
-				.font(.system(size: theme.metrics.rowFontSize))
-				.frame(height: theme.metrics.treeRowHeight)
-				.tag(SidebarNode.disk(disk.id))
-				.contextMenu { diskMenu(disk) }
+				if let preview = dragPreview, preview.section == .disks {
+					TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.diskStorage)
+				}
 			}
-			if let preview = dragPreview, preview.section == .disks {
-				TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.diskStorage)
-			}
+			.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
+				section: .disks, preview: $dragPreview,
+				touched: { dragGeneration &+= 1 }, perform: performDiskDrop))
 		}
-		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
-			section: .disks, preview: $dragPreview,
-			touched: { dragGeneration &+= 1 }, perform: performDiskDrop))
 	}
 
 	// Batch actions lead a row's menu when it sits inside a multi-selection.
@@ -306,84 +331,88 @@ struct VMDeviceTreeView: View {
 
 	@ViewBuilder
 	private var mountGroup: some View {
-		let mounts = vm.mounts
-		group(.group("Mounts"), symbol: MachmanSymbols.mount, title: "Mounts",
-			count: mounts.count, menu: {
-				Button("Add Mount Folder…") {
-					AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
+		let mounts = sectionRows(.mounts, vm.mounts) { matches($0.path, $0.tag) }
+		if shows(.mounts, rows: mounts.count) {
+			group(.group("Mounts"), symbol: MachmanSymbols.mount, title: "Mounts",
+				count: vm.mounts.count, menu: {
+					Button("Add Mount Folder…") {
+						AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
+					}
+					Button("Paste") { pasteIntoMounts() }
+						.disabled(!canPasteIntoMounts)
+				}) {
+				ForEach(mounts) { mount in
+					HStack(spacing: 6) {
+						Image(systemName: MachmanSymbols.mount)
+							.font(.system(size: theme.metrics.iconSize))
+						Text(Self.abbreviate(mount.path))
+							.truncationMode(.middle)
+							.lineLimit(1)
+							.help("\(mount.path) — guest tag “\(mount.tag)”")
+						Spacer()
+						// Trailing badges (the disks' externalReference pattern): how the
+						// mount travels, and whether the guest mounts it at boot.
+						if mount.effectiveKind == MountKind.sshfs {
+							Image(systemName: MachmanSymbols.mountSSHFS)
+								.font(.system(size: 9))
+								.foregroundStyle(.tertiary)
+								.help("sshfs — the guest mounts this over its SSH link")
+						}
+						if mount.automounted == true {
+							Image(systemName: MachmanSymbols.automounted)
+								.font(.system(size: 9))
+								.foregroundStyle(.tertiary)
+								.help(mount.automountedAt.map { "Mounts at boot at \($0)" }
+									?? "Mounted at boot by Guest Setup")
+						}
+					}
+					.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
+					.font(.system(size: theme.metrics.rowFontSize))
+					.frame(height: theme.metrics.treeRowHeight)
+					.tag(SidebarNode.mount(mount.id))
+					.contextMenu {
+						batchMenuItems(for: .mount(mount.id))
+						Button("Copy") {
+							EntityClipboard.write(EntityClipboard(
+								kind: .mount, path: mount.path, tag: mount.tag))
+						}
+						Button("Show in Finder") { Self.revealInFinder(mount.path) }
+						Divider()
+						Button(mount.isEnabled ? "Disable" : "Enable") {
+							viewModel.setEnabled(vm.name, mounts: [mount.id: !mount.isEnabled])
+						}
+						Divider()
+						Button("Remove", role: .destructive) {
+							viewModel.removeMount(vm.name, mountID: mount.id)
+						}
+					}
 				}
-				Button("Paste") { pasteIntoMounts() }
-					.disabled(!canPasteIntoMounts)
-			}) {
-			ForEach(mounts.filter { matches($0.path, $0.tag) }) { mount in
-				HStack(spacing: 6) {
-					Image(systemName: MachmanSymbols.mount)
-						.font(.system(size: theme.metrics.iconSize))
-					Text(Self.abbreviate(mount.path))
-						.truncationMode(.middle)
-						.lineLimit(1)
-						.help("\(mount.path) — guest tag “\(mount.tag)”")
-					Spacer()
-					// Trailing badges (the disks' externalReference pattern): how the
-					// mount travels, and whether the guest mounts it at boot.
-					if mount.effectiveKind == MountKind.sshfs {
-						Image(systemName: MachmanSymbols.mountSSHFS)
-							.font(.system(size: 9))
-							.foregroundStyle(.tertiary)
-							.help("sshfs — the guest mounts this over its SSH link")
-					}
-					if mount.automounted == true {
-						Image(systemName: MachmanSymbols.automounted)
-							.font(.system(size: 9))
-							.foregroundStyle(.tertiary)
-							.help(mount.automountedAt.map { "Mounts at boot at \($0)" }
-								?? "Mounted at boot by Guest Setup")
-					}
-				}
-				.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
-				.font(.system(size: theme.metrics.rowFontSize))
-				.frame(height: theme.metrics.treeRowHeight)
-				.tag(SidebarNode.mount(mount.id))
-				.contextMenu {
-					batchMenuItems(for: .mount(mount.id))
-					Button("Copy") {
-						EntityClipboard.write(EntityClipboard(
-							kind: .mount, path: mount.path, tag: mount.tag))
-					}
-					Button("Show in Finder") { Self.revealInFinder(mount.path) }
-					Divider()
-					Button(mount.isEnabled ? "Disable" : "Enable") {
-						viewModel.setEnabled(vm.name, mounts: [mount.id: !mount.isEnabled])
-					}
-					Divider()
-					Button("Remove", role: .destructive) {
-						viewModel.removeMount(vm.name, mountID: mount.id)
-					}
+				if let preview = dragPreview, preview.section == .mounts {
+					TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.mount)
 				}
 			}
-			if let preview = dragPreview, preview.section == .mounts {
-				TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.mount)
-			}
+			.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
+				section: .mounts, preview: $dragPreview,
+				touched: { dragGeneration &+= 1 }, perform: performMountDrop))
 		}
-		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
-			section: .mounts, preview: $dragPreview,
-			touched: { dragGeneration &+= 1 }, perform: performMountDrop))
 	}
 
 	@ViewBuilder
 	private var serialGroup: some View {
-		let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
+		// Search matches the display name AND the raw guest device (hvc0 finds
+		// "Console 0" on an EFI VM).
+		let ports = sectionRows(.serial, vm.allSerialPorts) {
+			matches($0.displayName(mode: vm.boot.mode)) || matches($0.guestDevice)
+				|| matches($0.guestName)
+		}
 		// Selectable (the SSH-group pattern): the group inspector lists every interface
 		// with the login state the guest-setup script reported.
-		group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-			count: ports.count, selectable: true) {
-			// Search matches the display name AND the raw guest device (hvc0 finds
-			// "Console 0" on an EFI VM).
-			ForEach(ports.filter {
-				matches($0.displayName(mode: vm.boot.mode)) || matches($0.guestDevice)
-					|| matches($0.guestName)
-			}) { port in
-				serialRow(port)
+		if shows(.serial, rows: ports.count) {
+			group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
+				count: vm.allSerialPorts.count, selectable: true) {
+				ForEach(ports) { port in
+					serialRow(port)
+				}
 			}
 		}
 	}
@@ -403,19 +432,22 @@ struct VMDeviceTreeView: View {
 			// Canvas tabs AND live torn-off windows: a detached session is still open, and
 			// dropping it from this list would leave no way back to its window.
 			let open = viewModel.openSSHSessions(vm: vm.name)
-			group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
-				title: "SSH", count: open.count, selectable: true, menu: {
-				// The + accessory's reliable twin — List group labels can swallow clicks.
-				Button("New SSH Session") { openSSHSession() }
-					.disabled(!sshSessionReady)
-				if sshUnreachable || sshWaiting {
-					Button("Check Connection") { viewModel.refreshSSH(vm.name) }
-				}
-			}, accessory: { sshSessionButton }) {
-				ForEach(open.filter {
-					matches(sessions.sshSessionName(vm: vm.name, ref: $0))
-				}) { ref in
-					sshSessionRow(ref)
+			let rows = sectionRows(.ssh, open) {
+				matches(sessions.sshSessionName(vm: vm.name, ref: $0))
+			}
+			if shows(.ssh, rows: rows.count) {
+				group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
+					title: "SSH", count: open.count, selectable: true, menu: {
+					// The + accessory's reliable twin — List group labels can swallow clicks.
+					Button("New SSH Session") { openSSHSession() }
+						.disabled(!sshSessionReady)
+					if sshUnreachable || sshWaiting {
+						Button("Check Connection") { viewModel.refreshSSH(vm.name) }
+					}
+				}, accessory: { sshSessionButton }) {
+					ForEach(rows) { ref in
+						sshSessionRow(ref)
+					}
 				}
 			}
 		}
@@ -478,19 +510,22 @@ struct VMDeviceTreeView: View {
 	@ViewBuilder
 	private var installerGroup: some View {
 		let installers = (vm.devices ?? []).filter(\.kind.isInstaller)
+		let rows = sectionRows(.installers, installers) { matches($0.kind.displayLabel) }
 		// The unified Guest Setup (the legacy Console Login / SSH Setup kinds migrate to it).
-		group(.group("Installers"), symbol: MachmanSymbols.installerGroup,
-			title: "Installers", count: installers.count, menu: {
-			if vm.canAddGuestSetup {
-				Button("Add Guest Setup") {
-					viewModel.addDevice(vm.name, kind: .guestSetup)
+		if shows(.installers, rows: rows.count) {
+			group(.group("Installers"), symbol: MachmanSymbols.installerGroup,
+				title: "Installers", count: installers.count, menu: {
+				if vm.canAddGuestSetup {
+					Button("Add Guest Setup") {
+						viewModel.addDevice(vm.name, kind: .guestSetup)
+					}
 				}
-			}
-		}) {
-			ForEach(installers.filter { matches($0.kind.displayLabel) }) { device in
-				deviceRow(device)
-					.tag(SidebarNode.device(device.kind))
-					.contextMenu { deviceMenu(device) }
+			}) {
+				ForEach(rows) { device in
+					deviceRow(device)
+						.tag(SidebarNode.device(device.kind))
+						.contextMenu { deviceMenu(device) }
+				}
 			}
 		}
 	}
@@ -640,12 +675,15 @@ struct VMDeviceTreeView: View {
 	private var deviceGroup: some View {
 		// Installer kinds render under Installers instead.
 		let devices = (vm.devices ?? []).filter { !$0.kind.isInstaller }
-		group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
-			count: devices.count) {
-			ForEach(devices.filter { matches($0.kind.displayLabel) }) { device in
-				deviceRow(device)
-					.tag(SidebarNode.device(device.kind))
-					.contextMenu { deviceMenu(device) }
+		let rows = sectionRows(.devices, devices) { matches($0.kind.displayLabel) }
+		if shows(.devices, rows: rows.count) {
+			group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
+				count: devices.count) {
+				ForEach(rows) { device in
+					deviceRow(device)
+						.tag(SidebarNode.device(device.kind))
+						.contextMenu { deviceMenu(device) }
+				}
 			}
 		}
 	}
@@ -684,39 +722,8 @@ struct VMDeviceTreeView: View {
 
 	// MARK: - Kernel / Initramfs
 
-	// Kernel sections appear once kernel boot is (or was) configured — the draft survives
-	// toggling back to EFI, shown parked (dimmed) until kernel boot is on again.
-	private var showsKernelSections: Bool {
-		vm.boot.mode != .macOS
-			&& (vm.boot.kernel != nil || !(vm.boot.ownedKernels ?? []).isEmpty)
-	}
-
-	private var kernelSectionParked: Bool { vm.boot.mode != .linuxKernel }
-
-	private struct KernelEntry: Identifiable {
-		let id: String        // absolute path (OwnedKernelFile.id)
-		let label: String     // tag, or file name for external references
-		let owned: Bool
-		let active: Bool
-	}
-
-	// Owned files of the role, plus the active settings path when it points outside the
-	// owned set (an external reference — promotable).
-	private func kernelEntries(role: KernelRole) -> [KernelEntry] {
-		let owned = (vm.boot.ownedKernels ?? []).filter { $0.role == role }
-		let activePath = role == .kernel
-			? vm.boot.kernel?.kernelPath : vm.boot.kernel?.initrdPath
-		var entries = owned.map {
-			KernelEntry(id: $0.path, label: $0.tag, owned: true, active: $0.path == activePath)
-		}
-		if let activePath, !activePath.isEmpty,
-			!owned.contains(where: { $0.path == activePath }) {
-			entries.append(KernelEntry(
-				id: activePath, label: (activePath as NSString).lastPathComponent,
-				owned: false, active: true))
-		}
-		return entries
-	}
+	// The sections show once kernel boot is (or was) configured (VMInfo.showsKernelSections:
+	// parked, dimmed, while kernel boot is off); their rows are VMInfo.kernelTreeEntries.
 
 	// The VM cannot start kernel boot without a kernel path.
 	private var missingKernelWarning: Bool {
@@ -724,10 +731,22 @@ struct VMDeviceTreeView: View {
 	}
 
 	@ViewBuilder
-	private func kernelGroup(role: KernelRole, title: String) -> some View {
-		let entries = kernelEntries(role: role)
+	private func kernelGroup(role: KernelRole) -> some View {
+		let section: TreeSection = role == .kernel ? .kernel : .initramfs
+		let entries = sectionRows(section, vm.kernelTreeEntries(role: role)) {
+			matches($0.label)
+		}
+		if shows(section, rows: entries.count) {
+			kernelDisclosure(role: role, title: section.title, entries: entries)
+		}
+	}
+
+	@ViewBuilder
+	private func kernelDisclosure(
+		role: KernelRole, title: String, entries: [KernelTreeEntry]
+	) -> some View {
 		let dg = DisclosureGroup(isExpanded: groupBinding(.group(title))) {
-			ForEach(entries.filter { matches($0.label) }) { file in
+			ForEach(entries) { file in
 				HStack(spacing: 6) {
 					if role == .kernel {
 						TuxIcon(size: theme.metrics.iconSize + 1)
@@ -813,14 +832,14 @@ struct VMDeviceTreeView: View {
 		if role == .kernel {
 			droppable
 				.tag(SidebarNode.group("Kernel"))
-				.opacity(kernelSectionParked ? 0.45 : 1)
+				.opacity(vm.kernelSectionParked ? 0.45 : 1)
 		} else {
-			droppable.opacity(kernelSectionParked ? 0.45 : MachmanColors.dimmedRowOpacity)
+			droppable.opacity(vm.kernelSectionParked ? 0.45 : MachmanColors.dimmedRowOpacity)
 		}
 	}
 
 	@ViewBuilder
-	private func kernelEntryMenu(_ file: KernelEntry, role: KernelRole) -> some View {
+	private func kernelEntryMenu(_ file: KernelTreeEntry, role: KernelRole) -> some View {
 		if file.active {
 			Button("Deselect") { setActiveKernelPath(nil, role: role) }
 		} else {
@@ -916,8 +935,7 @@ struct VMDeviceTreeView: View {
 		case .vmRoot:
 			reveal(.config)
 		case .serial(let ref):
-			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
-			guard let port = ports.first(where: { SerialPortRef($0) == ref }),
+			guard let port = vm.allSerialPorts.first(where: { SerialPortRef($0) == ref }),
 				port.unavailable == nil, port.enabled ?? true else { return }
 			openTerminal(ref)
 		case .sshSession(let ref):

@@ -4,7 +4,8 @@
 //
 //  The device tree's and the canvas tabs' edge states (wave 3, lane 3e), as the daemon serves
 //  them: serial ports that exist but have no socket on a running VM — disabled before the
-//  start, enabled after it, or a UART this host can't attach.
+//  start, enabled after it, or a UART this host can't attach — and a guest with empty
+//  sections.
 //
 
 import Foundation
@@ -42,6 +43,18 @@ extension Samples {
 				+ "configured uart ports are left unattached.",
 			sinceOSVersion: since)
 		vm.uartPorts?[0].socketPath = nil
+		return vm
+	}
+
+	// A Blank-template guest: its system disk and the implied devices, nothing else — no
+	// mounts, no serial ports, no Guest Setup (N1's empty sections).
+	public static func bareLinux(_ name: String = "Bare") -> VMInfo {
+		var vm = linux(name)
+		vm.mounts = []
+		vm.consolePorts = []
+		vm.uartPorts = []
+		vm.devices = vm.devices?.filter { $0.kind != .guestSetup }
+		vm.setup = nil
 		return vm
 	}
 }
