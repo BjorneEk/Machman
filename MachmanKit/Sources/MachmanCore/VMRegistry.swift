@@ -302,7 +302,7 @@ public final class VMRegistry {
 	// owns). Renames the shadow dir into the library atomically (same volume by
 	// construction, refused otherwise) and re-keys this restricted registry to the new name;
 	// the running VZ instance never notices — open fds follow the moved inodes. The disks
-	// the run wrote directly (the original's unsafe storage raws) move into the saved VM's
+	// the run attached directly (the original's unsafe storage raws) move into the saved VM's
 	// folder, and the original keeps them as references (C5). The promoted VM gets FRESH
 	// identity like vm.copy (user decision): new MAC now, new machine ids effective next
 	// boot, created = now, runtime restarts (the in-flight session re-adds at teardown
@@ -312,7 +312,7 @@ public final class VMRegistry {
 			throw MachmanError(
 				code: .invalidState, message: "only a safe-run vmhost can save as a new VM")
 		}
-		guard let vm = vms[oldName], vm.runtime != nil else {
+		guard let vm = vms[oldName], let runtime = vm.runtime else {
 			throw MachmanError(code: .invalidState, message: "the safe run already ended")
 		}
 		try NameRule.vmName.validate(newName)
@@ -335,7 +335,8 @@ public final class VMRegistry {
 			(try? FileManager.default.contentsOfDirectory(atPath: destination)) ?? [])
 		let moves = original.map {
 			DirectDiskMove.plan(
-				run: vm.config, original: $0, originalDir: originalDir, savedFiles: savedFiles)
+				run: vm.config, attached: runtime.attachedDiskFiles, original: $0,
+				originalDir: originalDir, savedFiles: savedFiles)
 		} ?? []
 		// The hand-over (C5), in an order that keeps the guest's data reachable from a
 		// config at every point: the saved VM's config (its new storage entries name files

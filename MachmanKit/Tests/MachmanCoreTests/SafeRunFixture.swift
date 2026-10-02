@@ -4,8 +4,8 @@
 //
 //  A safe-run vmhost's registry with the exact shape promotion meets: the ORIGINAL VM in a
 //  library, its shadow built by the real SafeRun.shadowRequest + VMCopier (safe disks
-//  cloned, unsafe ones referenced), and a bare VMRuntime (no VZ) marking the shadow running.
-//  Build it inside VMTestDir.withRedirectedDir: the redirected machmanVMDir plays the run
+//  cloned, unsafe ones referenced), and a bare VMRuntime (no VZ) marking the shadow running
+//  with what a start would have attached. Build it inside VMTestDir.withRedirectedDir: the redirected machmanVMDir plays the run
 //  root, a sibling "-lib" folder the library (scratch, removed with the run).
 //
 
@@ -55,7 +55,9 @@ struct SafeRunFixture {
 			config: config, sourceDir: original, runRoot: runRoot))
 		let registry = VMRegistry(only: name, promotionLibrary: library)
 		if let vm = registry.vm(named: name) {
-			vm.runtime = VMRuntime(config: vm.config, events: registry.events)
+			let runtime = VMRuntime(config: vm.config, events: registry.events)
+			runtime.recordAttachedDisks()
+			vm.runtime = runtime
 		}
 		return SafeRunFixture(registry: registry, library: library, runRoot: runRoot, name: name)
 	}

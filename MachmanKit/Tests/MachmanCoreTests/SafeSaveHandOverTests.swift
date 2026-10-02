@@ -90,6 +90,38 @@ struct SafeSaveHandOverTests {
 		}
 	}
 
+	// The flags can change mid-run, the attachments can't: a disk switched off after the
+	// start is still attached and written, so it moves; one switched on was never attached,
+	// so it stays. Each entry keeps the flag it has now.
+	@Test @MainActor func whatTheRunAttachedMovesWhateverItsFlagSaysNow() throws {
+		try VMTestDir.withRedirectedDir {
+			let host = try SafeRunFixture.make(disks: [
+				unsafe("data"), unsafe("scratch", enabled: false),
+			])
+			defer { host.removeLibrary() }
+			let original = host.originalDir
+			let vm = try #require(host.registry.vm(named: "alpha"))
+			let ids = vm.config.disks.map(\.id)
+			try vm.config.setEnabled(
+				disks: [ids[0]: false, ids[1]: true], mounts: [:], console: [:], uart: [:])
+
+			_ = try host.registry.promoteRestrictedVM(to: "kept")
+
+			let kept = host.library + "/kept"
+			#expect(contents(kept + "/data.raw") == "raw-data")
+			#expect(!FileManager.default.fileExists(atPath: kept + "/scratch.raw"))
+			#expect(contents(original + "/scratch.raw") == "raw-scratch")
+			#expect(try SafeRunFixture.load(kept).disks == [
+				unsafe("data", enabled: false),
+				VMDisk(kind: .fromUrl(url(original + "/scratch.raw")), safe: false),
+			])
+			#expect(try SafeRunFixture.load(original).disks == [
+				VMDisk(kind: .fromUrl(url(kept + "/data.raw")), safe: false),
+				unsafe("scratch", enabled: false),
+			])
+		}
+	}
+
 	// The guest keeps writing through descriptors it opened before the save.
 	@Test @MainActor func aDescriptorOpenedBeforeTheSaveWritesTheMovedFile() throws {
 		try VMTestDir.withRedirectedDir {

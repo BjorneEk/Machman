@@ -23,14 +23,17 @@ struct DirectDiskMove: Equatable {
 	var sourceFile: String { storage + ".raw" }
 	var targetFile: String { target + ".raw" }
 
-	// What moves, and under which names. A run entry moves when it is enabled, references
-	// a storage raw the original's config owns and that file exists; external files and
-	// isos never move. A disabled entry was never attached, so the run never wrote it: it
-	// stays a reference into the original's folder, which the cross-VM guards keep (C19).
-	// A name taken in the saved folder — a file there or a storage disk of the run — gets
-	// the first free "<n>-<k>" (k = 2, 3, …), compared case-insensitively like the volume.
+	// What moves, and under which names. A run entry moves when the run attached its file
+	// (`attached`, VMRuntime.attachedDiskFiles), it references a storage raw the original's
+	// config owns, and that file exists; external files and isos never move. The flag says
+	// nothing about the run: a disk switched off mid-run is still attached and written. An
+	// entry the run never attached was never written: it stays a reference into the
+	// original's folder, which the cross-VM guards keep (C19). A name taken in the saved
+	// folder — a file there or a storage disk of the run — gets the first free "<n>-<k>"
+	// (k = 2, 3, …), compared case-insensitively like the volume.
 	static func plan(
-		run: VMConfig, original: VMConfig, originalDir: String, savedFiles: Set<String>,
+		run: VMConfig, attached: Set<String>, original: VMConfig, originalDir: String,
+		savedFiles: Set<String>,
 		fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
 	) -> [DirectDiskMove] {
 		let dir = (originalDir as NSString).standardizingPath
@@ -41,11 +44,11 @@ struct DirectDiskMove: Equatable {
 		}
 		var moves: [DirectDiskMove] = []
 		for disk in run.disks {
-			guard disk.enabled, case .fromUrl(let url) = disk.kind else { continue }
+			guard case .fromUrl(let url) = disk.kind else { continue }
 			let path = (url.path as NSString).standardizingPath
 			let file = (path as NSString).lastPathComponent
-			guard (path as NSString).deletingLastPathComponent == dir, file.hasSuffix(".raw")
-			else { continue }
+			guard attached.contains(path), (path as NSString).deletingLastPathComponent == dir,
+				file.hasSuffix(".raw") else { continue }
 			let storage = String(file.dropLast(4))
 			guard !moves.contains(where: { $0.storage == storage }),
 				let size = original.storageSize(of: storage), fileExists(path) else { continue }

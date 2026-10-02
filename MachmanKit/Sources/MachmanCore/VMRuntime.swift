@@ -23,6 +23,11 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	private var serialBridges: [SerialPortBridge] = []
 	// This run's identity for its data-plane sockets (MachmanPaths.serialSocketPath).
 	private let runID = UUID().uuidString
+	// The writable disk files this run attached, fixed when start builds the VZ machine: a
+	// disk switched off mid-run stays attached until the VM stops, and one switched on waits
+	// for the next start. Save as New VM moves what the run attached, not what the flags say
+	// now (C5).
+	private(set) var attachedDiskFiles: Set<String> = []
 	// SSH report ingestion (1.0.5): mtime-poll of the guest-writable drop-box while the
 	// VM runs — this process owns the config, so ingestion persists here (single writer).
 	private var sshReportTimer: Timer?
@@ -39,6 +44,12 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		self.events = events
 		self.systemKeyCapture = config.systemKeyCaptureDefault
 		super.init()
+	}
+
+	// What the builder attaches: the enabled entries (VMConfig.diskArray). Internal so a
+	// test's bare runtime can record a start's set without VZ.
+	func recordAttachedDisks() {
+		attachedDiskFiles = config.writableDiskFiles
 	}
 
 	var state: VMState {
@@ -67,6 +78,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 			throw VirtualMachineError.critical("\(config.name) is already running")
 		}
 		let built = try config.makeVZVirtualMachineConfiguration()
+		recordAttachedDisks()
 		// Configured (enabled) uarts the builder could not attach (macOS ≥ 26.6.1 rejects the
 		// private PL011): tell the user rather than silently serving a VM with fewer devices.
 		let wiredUARTs = built.serialWiring.filter { $0.kind == .uart }.count
