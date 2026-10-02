@@ -196,7 +196,7 @@ public final class VMRegistry {
 		guard !(installSessions[vm.config.name]?.isInstalling ?? false) else {
 			throw MachmanError(
 				code: .invalidState,
-				message: "(\(vm.config.name)) cannot start while macOS is installing")
+				message: "\(vm.config.name) can’t start while macOS is installing")
 		}
 		let runtime = VMRuntime(config: vm.config, events: events)
 		// Runtime accumulates here and only here — in the process that ran the VM, at teardown,
@@ -312,10 +312,10 @@ public final class VMRegistry {
 	func promoteRestrictedVM(to newName: String) throws -> VirtualMachine {
 		guard let oldName = restrictedName, let library = promotionLibrary else {
 			throw MachmanError(
-				code: .invalidState, message: "only a safe-run vmhost can save as a new VM")
+				code: .invalidState, message: "Only a safe run can be saved as a new VM")
 		}
 		guard let vm = vms[oldName], let runtime = vm.runtime else {
-			throw MachmanError(code: .invalidState, message: "the safe run already ended")
+			throw MachmanError(code: .invalidState, message: "The safe run already ended")
 		}
 		try NameRule.vmName.validate(newName)
 		let runRoot = machmanVMDir
@@ -429,7 +429,7 @@ public final class VMRegistry {
 		SSHSetupInstaller.writeKnownHosts(for: vm.config)
 		try? FileManager.default.removeItem(atPath: runRoot)   // now-empty run root + marker
 		promotionLibrary = nil
-		if let warning = DirectDiskMove.handOverWarning(moves, original: oldName, saved: newName) {
+		if let warning = DirectDiskMove.handOverWarning(moves, original: oldName) {
 			events.emit(.log(vm: newName, level: .warning, message: warning))
 		}
 		onPromoted?(oldName, newName)
@@ -454,7 +454,8 @@ public final class VMRegistry {
 			return
 		case EEXIST where folder, ENOTEMPTY where folder:
 			throw MachmanError(
-				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+				code: .alreadyExists,
+				message: "A VM named \u{201C}\(newName)\u{201D} already exists")
 		case EXDEV:
 			throw MachmanError(
 				code: .invalidState,
@@ -464,7 +465,7 @@ public final class VMRegistry {
 			let what = folder ? "" : " (\((from as NSString).lastPathComponent))"
 			throw MachmanError(
 				code: .ioFailure,
-				message: "saving \(newName)\(what): \(String(cString: strerror(code)))")
+				message: "Couldn’t save \(newName)\(what): \(String(cString: strerror(code)))")
 		}
 	}
 
@@ -483,11 +484,11 @@ public final class VMRegistry {
 	// `library`: VMConfig.load's.
 	func adoptFromDisk(name: String, library: String = machmanVMDir) throws -> VirtualMachine {
 		guard restrictedName == nil else {
-			throw MachmanError(code: .invalidState, message: "a vmhost cannot adopt VMs")
+			throw MachmanError(code: .invalidState, message: "This process can’t adopt VMs")
 		}
 		guard vms[name] == nil else {
 			throw MachmanError(
-				code: .alreadyExists, message: "a VM named '\(name)' already exists")
+				code: .alreadyExists, message: "A VM named \u{201C}\(name)\u{201D} already exists")
 		}
 		let config: VMConfig
 		do {
@@ -542,7 +543,7 @@ public final class VMRegistry {
 
 	func create() throws -> VirtualMachine {
 		guard restrictedName == nil else {
-			throw MachmanError(code: .invalidState, message: "a vmhost cannot create VMs")
+			throw MachmanError(code: .invalidState, message: "This process can’t create VMs")
 		}
 		var nbr = 1
 		while vms["new-VM\(nbr)"] != nil {
@@ -563,11 +564,11 @@ public final class VMRegistry {
 	func delete(_ vm: VirtualMachine) throws {
 		let name = vm.config.name
 		guard vm.runtime == nil else {
-			throw MachmanError(code: .invalidState, message: "stop \(name) before deleting it")
+			throw MachmanError(code: .invalidState, message: "Stop \(name) before deleting it")
 		}
 		guard !(installSessions[name]?.isInstalling ?? false) else {
 			throw MachmanError(
-				code: .invalidState, message: "wait for the macOS install to finish first")
+				code: .invalidState, message: "Wait for the macOS install to finish first")
 		}
 		// Another VM's disk may live in this folder (C5).
 		if let ref = foreignReference(to: vm.config.vmDirPath(), excluding: name) {
@@ -604,12 +605,12 @@ public final class VMRegistry {
 		guard oldName != newName else { return }
 		try checkNewVMName(newName)
 		guard vm.runtime == nil else {
-			throw MachmanError(code: .invalidState, message: "stop \(oldName) before renaming it")
+			throw MachmanError(code: .invalidState, message: "Stop \(oldName) before renaming it")
 		}
 		// The installer writes into the folder the rename would move (E15b).
 		guard !(installSessions[oldName]?.isInstalling ?? false) else {
 			throw MachmanError(
-				code: .invalidState, message: "wait for the macOS install to finish first")
+				code: .invalidState, message: "Wait for the macOS install to finish first")
 		}
 		// …and so would another VM whose disk lives in it (C5).
 		if let ref = foreignReference(to: vm.config.vmDirPath(), excluding: oldName) {

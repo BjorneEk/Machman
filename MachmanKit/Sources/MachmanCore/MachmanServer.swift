@@ -462,7 +462,7 @@ public final class MachmanServer {
 			let names = VMTemplate.allCases.map(\.rawValue)
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "unknown VM template '\(name)' — use "
+				message: "Unknown VM template \u{201C}\(name)\u{201D} — use "
 					+ names.dropLast().joined(separator: ", ") + " or \(names.last ?? "")")
 		}
 		return template

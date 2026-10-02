@@ -360,7 +360,8 @@ extension VMConfig {
 			if ns.domain == VZError.errorDomain {
 				throw MachmanError(
 					code: .virtualizationFailure,
-					message: "configuration invalid: \(ns.localizedDescription)")
+					message: "\(name) can’t start with its current settings: "
+						+ MachmanError.userMessage(for: error))
 			}
 			throw error
 		}

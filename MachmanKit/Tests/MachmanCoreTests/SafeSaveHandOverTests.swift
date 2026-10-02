@@ -585,14 +585,14 @@ struct SafeSaveHandOverTests {
 struct SafeSaveHandOverWarningTests {
 	@Test func theWarningNamesTheMovedFiles() {
 		let one = [DirectDiskMove(storage: "data", size: 0, target: "data")]
-		#expect(DirectDiskMove.handOverWarning(one, original: "alpha", saved: "kept")
-			== "alpha's disk data.raw now lives in kept's folder; kept can't be deleted while "
-				+ "alpha uses it")
+		#expect(DirectDiskMove.handOverWarning(one, original: "alpha")
+			== "alpha\u{2019}s disk data.raw now lives in this VM\u{2019}s folder, so this VM "
+				+ "can\u{2019}t be deleted while alpha uses it.")
 		let two = one + [DirectDiskMove(storage: "b", size: 0, target: "b-2")]
-		#expect(DirectDiskMove.handOverWarning(two, original: "alpha", saved: "kept")
-			== "alpha's disks data.raw, b-2.raw now live in kept's folder; kept can't be "
-				+ "deleted while alpha uses them")
-		#expect(DirectDiskMove.handOverWarning([], original: "alpha", saved: "kept") == nil)
+		#expect(DirectDiskMove.handOverWarning(two, original: "alpha")
+			== "alpha\u{2019}s disks data.raw, b-2.raw now live in this VM\u{2019}s folder, so "
+				+ "this VM can\u{2019}t be deleted while alpha uses them.")
+		#expect(DirectDiskMove.handOverWarning([], original: "alpha") == nil)
 	}
 
 	@Test @MainActor func theSaveRaisesItOnce() async throws {
@@ -614,8 +614,8 @@ struct SafeSaveHandOverWarningTests {
 			if level == .warning { warnings.append(message) }
 		}
 		#expect(warnings == [
-			"alpha's disk data.raw now lives in kept's folder; kept can't be deleted while "
-				+ "alpha uses it",
+			"alpha\u{2019}s disk data.raw now lives in this VM\u{2019}s folder, so this VM "
+				+ "can\u{2019}t be deleted while alpha uses it.",
 		])
 	}
 }

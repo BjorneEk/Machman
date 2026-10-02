@@ -85,8 +85,7 @@ final class InstallSession {
 		guard !isVMRunning() else {
 			// Two live VZ VMs would contend for the same disk images.
 			phase = InstallPhase(kind: .failed, message: "Stop the VM before installing macOS")
-			throw VirtualMachineError.critical(
-				"Refused macOS install for \(config.name): the VM is running")
+			throw VirtualMachineError.critical("Stop \(config.name) before installing macOS")
 		}
 		let installerSource: MacInstaller.Source
 		switch source.kind {
@@ -94,7 +93,7 @@ final class InstallSession {
 			installerSource = .latestSupported
 		case .ipsw:
 			guard let path = source.path, !path.isEmpty else {
-				throw VirtualMachineError.critical("ipsw install source requires a path")
+				throw VirtualMachineError.critical("An IPSW install needs a file path")
 			}
 			installerSource = .localIPSW(URL(fileURLWithPath: path))
 		}

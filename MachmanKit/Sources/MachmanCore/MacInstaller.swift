@@ -64,7 +64,7 @@ final class MacInstaller {
 			}
 		}
 		guard let requirements = image.mostFeaturefulSupportedConfiguration else {
-			throw VirtualMachineError.critical("Restore image is not supported on this host")
+			throw VirtualMachineError.critical("This Mac can’t install that restore image")
 		}
 		let hwModel = requirements.hardwareModel
 		let minCPU = requirements.minimumSupportedCPUCount
@@ -248,7 +248,7 @@ final class MacInstaller {
 				}
 				guard let url = url else {
 					continuation.resume(
-						throwing: VirtualMachineError.critical("Download produced no file"))
+						throwing: VirtualMachineError.critical("The download produced no file"))
 					return
 				}
 				do {

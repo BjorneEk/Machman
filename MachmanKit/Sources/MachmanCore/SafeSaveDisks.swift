@@ -67,17 +67,16 @@ struct DirectDiskMove: Equatable {
 
 extension DirectDiskMove {
 	// The one warning a save that moved disks raises: otherwise the first sign is a refusal
-	// when the user later deletes the saved VM.
-	static func handOverWarning(
-		_ moves: [DirectDiskMove], original: String, saved: String
-	) -> String? {
+	// when the user later deletes the saved VM. It is raised as the saved VM's, which the
+	// desktop names first ("kept: …"), so the sentence calls that VM "this VM".
+	static func handOverWarning(_ moves: [DirectDiskMove], original: String) -> String? {
 		guard !moves.isEmpty else { return nil }
 		let files = moves.map(\.targetFile).joined(separator: ", ")
 		return moves.count == 1
-			? "\(original)'s disk \(files) now lives in \(saved)'s folder; \(saved) can't be "
-				+ "deleted while \(original) uses it"
-			: "\(original)'s disks \(files) now live in \(saved)'s folder; \(saved) can't be "
-				+ "deleted while \(original) uses them"
+			? "\(original)’s disk \(files) now lives in this VM’s folder, so this VM can’t be "
+				+ "deleted while \(original) uses it."
+			: "\(original)’s disks \(files) now live in this VM’s folder, so this VM can’t be "
+				+ "deleted while \(original) uses them."
 	}
 }
 

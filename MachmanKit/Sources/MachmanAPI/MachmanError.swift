@@ -38,7 +38,7 @@ public struct MachmanError: Error, Codable, Sendable, Equatable {
 	}
 
 	public static func notFound(_ name: String) -> MachmanError {
-		MachmanError(code: .notFound, message: "no VM named '\(name)'")
+		MachmanError(code: .notFound, message: "No VM named \u{201C}\(name)\u{201D}")
 	}
 }
 

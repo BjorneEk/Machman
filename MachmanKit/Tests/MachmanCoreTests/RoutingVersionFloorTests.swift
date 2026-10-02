@@ -4,7 +4,7 @@
 //
 //  E22 (decision 9): a VM still running under a vmhost older than the daemon runs old code —
 //  its decoder drops config keys the newer clients rely on (Capture System Keys snapped back
-//  to Off after a Replace). Its setting changes are refused with "restart … to finish
+//  to Off after a Replace). Its setting changes are refused with "Restart … to finish
 //  updating" until it restarts under a current vmhost; everything that is not a setting
 //  change (stop, window, preview) keeps working, and the list marks the VM. A vmhost that
 //  reports no usable version (a launch-agent host from before vmhosts read their own bundle
@@ -112,7 +112,7 @@ struct RoutingVersionFloorTests {
 				Issue.record("\(label): expected the outdated vmhost to refuse")
 			} catch let error as MachmanError {
 				#expect(error.code == .invalidState, "\(label) carried \(error.code)")
-				#expect(error.message == "restart alpha to finish updating", "\(label)")
+				#expect(error.message == "Restart alpha to finish updating", "\(label)")
 			} catch {
 				Issue.record("\(label): \(error)")
 			}
@@ -131,7 +131,7 @@ struct RoutingVersionFloorTests {
 			Issue.record("expected the outdated vmhost to refuse")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
-			#expect(error.message == "restart alpha to finish updating")
+			#expect(error.message == "Restart alpha to finish updating")
 		}
 	}
 

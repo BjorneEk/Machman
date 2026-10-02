@@ -103,16 +103,17 @@ enum VMCopier {
 			request.newName != ".", request.newName != ".." else {
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "'\(request.newName)' can't name a VM directory")
+				message: "\u{201C}\(request.newName)\u{201D} can’t name a VM folder")
 		}
 		let src = request.sourceDir
 		let dst = request.destinationParent + "/" + request.newName
 		guard fm.fileExists(atPath: src + "/config") else {
-			throw MachmanError(code: .notFound, message: "no VM directory at \(src)")
+			throw MachmanError(code: .notFound, message: "No VM folder at \(src)")
 		}
 		guard !fm.fileExists(atPath: dst) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "'\(request.newName)' already exists")
+				code: .alreadyExists,
+				message: "A VM named \u{201C}\(request.newName)\u{201D} already exists")
 		}
 		let config: VMConfig
 		do {
@@ -135,11 +136,13 @@ enum VMCopier {
 			if fm.fileExists(atPath: dst) {
 				// The name appeared while we copied; the rename lost the race.
 				throw MachmanError(
-					code: .alreadyExists, message: "'\(request.newName)' already exists")
+					code: .alreadyExists,
+					message: "A VM named \u{201C}\(request.newName)\u{201D} already exists")
 			}
 			throw MachmanError(
 				code: .ioFailure,
-				message: "copying \(request.newName): \(error.localizedDescription)")
+				message: "Couldn’t copy \(request.newName): "
+					+ MachmanError.userMessage(for: error))
 		}
 		return dst
 	}
@@ -353,7 +356,7 @@ enum VMCopier {
 		allowClone: Bool = true
 	) throws {
 		if isCancelled?() == true {
-			throw MachmanError(code: .ioFailure, message: "copy canceled")
+			throw MachmanError(code: .ioFailure, message: "The copy was canceled")
 		}
 		if allowClone, clonefile(src, dst, 0) == 0 {
 			throttle.report(base + size)
@@ -379,11 +382,12 @@ enum VMCopier {
 			unsafeBitCast(callback, to: UnsafeRawPointer.self))
 		guard copyfile(src, dst, state, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
 			if context.canceled {
-				throw MachmanError(code: .ioFailure, message: "copy canceled")
+				throw MachmanError(code: .ioFailure, message: "The copy was canceled")
 			}
 			throw MachmanError(
 				code: .ioFailure,
-				message: "copying \(src): \(String(cString: strerror(errno)))")
+				message: "Couldn’t copy \((src as NSString).lastPathComponent): "
+					+ String(cString: strerror(errno)))
 		}
 		throttle.report(base + size)
 	}
@@ -400,7 +404,8 @@ enum VMCopier {
 		guard copyfile(src, dst, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
 			throw MachmanError(
 				code: .ioFailure,
-				message: "copying \(src): \(String(cString: strerror(errno)))")
+				message: "Couldn’t copy \((src as NSString).lastPathComponent): "
+					+ String(cString: strerror(errno)))
 		}
 		var offset = base
 		for child in try FileManager.default.contentsOfDirectory(atPath: src).sorted() {
@@ -418,7 +423,8 @@ enum VMCopier {
 				guard copyfile(from, to, nil, flags) == 0 else {
 					throw MachmanError(
 						code: .ioFailure,
-						message: "copying \(from): \(String(cString: strerror(errno)))")
+						message: "Couldn’t copy \((from as NSString).lastPathComponent): "
+							+ String(cString: strerror(errno)))
 				}
 			case nil:
 				MachmanLogger.log(.log, "copy left out \(from) (not a file or folder)")

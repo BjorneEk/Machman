@@ -112,11 +112,11 @@ public final class LocalMachman: MachmanControlling {
 	) async throws -> VMInfo {
 		let vm = try lookup(name)
 		guard !vm.state.isRunning else {
-			throw MachmanError(code: .invalidState, message: "stop \(name) before copying it")
+			throw MachmanError(code: .invalidState, message: "Stop \(name) before copying it")
 		}
 		guard !registry.isInstalling(vm) else {
 			throw MachmanError(
-				code: .invalidState, message: "wait for the macOS install to finish first")
+				code: .invalidState, message: "Wait for the macOS install to finish first")
 		}
 		let target: String
 		if let newName {
@@ -732,7 +732,7 @@ public final class LocalMachman: MachmanControlling {
 
 	public func installRosetta() async throws {
 		throw MachmanError(
-			code: .invalidState, message: "only the daemon can install Rosetta")
+			code: .invalidState, message: "Only Machman Agent can install Rosetta")
 	}
 
 	// MARK: - Run / stop / window
@@ -742,7 +742,7 @@ public final class LocalMachman: MachmanControlling {
 		// run has nowhere to put its discardable state in v1.
 		guard !(policy.autostart && policy.safe) else {
 			throw MachmanError(
-				code: .invalidArgument, message: "autostart of a safe run is not supported")
+				code: .invalidArgument, message: "A safe run can’t start automatically")
 		}
 		let vm = try lookup(name)
 		try vm.config.setStartPolicy(policy)
@@ -793,7 +793,7 @@ public final class LocalMachman: MachmanControlling {
 		// so a safe flag reaching this engine means a client bypassed the router.
 		guard !options.safe else {
 			throw MachmanError(
-				code: .invalidArgument, message: "this process cannot run safe copies")
+				code: .invalidArgument, message: "This process can’t run safe copies")
 		}
 		try await registry.start(try lookup(name), openWindow: options.openWindow)
 	}
@@ -865,7 +865,7 @@ public final class LocalMachman: MachmanControlling {
 	// MARK: - Daemon lifecycle
 
 	public func retire() async throws {
-		throw MachmanError(code: .invalidState, message: "a vmhost cannot retire")
+		throw MachmanError(code: .invalidState, message: "This process can’t retire")
 	}
 
 	// MARK: - Events

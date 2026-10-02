@@ -95,11 +95,11 @@ final class OperationCenter {
 
 	func cancel(id: String) throws {
 		guard let op = operations[id], op.state == OperationInfo.State.running else {
-			throw MachmanError(code: .notFound, message: "no operation '\(id)'")
+			throw MachmanError(code: .notFound, message: "That operation already ended")
 		}
 		guard let hook = cancelHooks[id] else {
 			throw MachmanError(
-				code: .invalidState, message: "operation '\(id)' cannot be cancelled")
+				code: .invalidState, message: "This operation can’t be canceled")
 		}
 		hook()
 	}

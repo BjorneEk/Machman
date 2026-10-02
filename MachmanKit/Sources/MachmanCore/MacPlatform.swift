@@ -21,7 +21,7 @@ extension VMConfig {
 		let path = macHardwareModelPath()
 		guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
 			let model = VZMacHardwareModel(dataRepresentation: data) else {
-			throw VirtualMachineError.critical("Missing or invalid Mac hardware model: '\(path)'")
+			throw VirtualMachineError.critical("Missing or invalid Mac hardware model: \(path)")
 		}
 		return model
 	}
@@ -30,7 +30,7 @@ extension VMConfig {
 		let path = macMachineIdPath()
 		guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
 			let id = VZMacMachineIdentifier(dataRepresentation: data) else {
-			throw VirtualMachineError.critical("Missing or invalid Mac machine identifier: '\(path)'")
+			throw VirtualMachineError.critical("Missing or invalid Mac machine identifier: \(path)")
 		}
 		return id
 	}
@@ -38,7 +38,7 @@ extension VMConfig {
 	func getMacAuxiliaryStorage() throws -> VZMacAuxiliaryStorage {
 		let path = macAuxStoragePath()
 		guard FileManager.default.fileExists(atPath: path) else {
-			throw VirtualMachineError.critical("Missing Mac auxiliary storage: '\(path)'")
+			throw VirtualMachineError.critical("Missing Mac auxiliary storage: \(path)")
 		}
 		return VZMacAuxiliaryStorage(url: URL(fileURLWithPath: path))
 	}

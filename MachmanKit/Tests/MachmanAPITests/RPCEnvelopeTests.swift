@@ -36,13 +36,16 @@ struct RPCEnvelopeTests {
 		#expect(try encode(result)
 			== #"{"id":2,"jsonrpc":"2.0","result":{"apiVersion":1,"daemonVersion":"0.2"}}"#)
 
-		let error = RPCErrorReply(id: .number(3), error: RPCErrorBody(MachmanError.notFound("x")))
+		// The framing, with a fixed message: refusal wording is text, pinned where it is made
+		// (VMRefusalTextTests), and must not move these golden bytes.
+		let refusal = MachmanError(code: .notFound, message: "no VM named 'x'")
+		let error = RPCErrorReply(id: .number(3), error: RPCErrorBody(refusal))
 		#expect(try encode(error)
 			== #"{"error":{"code":-32000,"data":{"machmanCode":"notFound"},"#
 			+ #""message":"no VM named 'x'"},"id":3,"jsonrpc":"2.0"}"#)
 
 		let roundTripped = try decode(RPCErrorReply.self, try encode(error)).error.machmanError
-		#expect(roundTripped == MachmanError.notFound("x"))
+		#expect(roundTripped == refusal)
 
 		// Void results are {}.
 		#expect(try encode(RPCResult(id: .number(4), result: RPCEmpty()))

@@ -610,7 +610,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 					message: "A VM named \u{201C}\(newName)\u{201D} already exists")
 			}
 			throw MachmanError(
-				code: .ioFailure, message: "renaming \(oldName): \(error.localizedDescription)")
+				code: .ioFailure,
+				message: "Couldn’t rename \(oldName): \(MachmanError.userMessage(for: error))")
 		}
 		self.name = newName
 		rewriteOwnedPaths(fromDir: oldDir, toDir: newDir, .moved)

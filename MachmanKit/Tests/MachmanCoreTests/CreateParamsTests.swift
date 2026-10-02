@@ -53,7 +53,8 @@ struct CreateParamsTests {
 			Issue.record("an unknown template must not create a VM")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidArgument)
-			#expect(error.message == "unknown VM template 'bogus' — use blank, default or mac")
+			#expect(error.message
+				== "Unknown VM template \u{201C}bogus\u{201D} — use blank, default or mac")
 		}
 		#expect(!stub.calls.contains("createVM"))
 		#expect(stub.vms.isEmpty)

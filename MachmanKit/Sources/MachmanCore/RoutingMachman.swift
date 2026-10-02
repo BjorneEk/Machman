@@ -19,6 +19,9 @@ import MachmanClient
 
 @MainActor
 public final class RoutingMachman: MachmanControlling {
+	// The shadow build's progress label; its card reads "<VM> — Preparing a safe run".
+	nonisolated static let safeRunLabel = "Preparing a safe run"
+
 	private let registry: VMRegistry
 	private let local: LocalMachman
 	private let daemonVersion: String
@@ -265,7 +268,7 @@ public final class RoutingMachman: MachmanControlling {
 				await client.disconnect()
 				throw MachmanError(
 					code: .invalidState,
-					message: "the vmhost on \(name)'s socket does not serve it")
+					message: "Another VM’s process answers on \(name)’s socket")
 			}
 			identity.name = actual.name
 			reply = actual
@@ -493,10 +496,11 @@ public final class RoutingMachman: MachmanControlling {
 	) async throws -> HostedVM {
 		let name = identity.name
 		guard let vmhost = locateVMHost() else {
+			MachmanLogger.log(.passiveError,
+				"MachmanVMHost.app not found (embedded or beside \(Bundle.main.bundleURL.path))")
 			throw MachmanError(
 				code: .internalError,
-				message: "MachmanVMHost.app not found (embedded or beside "
-					+ "\(Bundle.main.bundleURL.path))")
+				message: "Machman VM is missing from this copy of Machman — reinstall Machman")
 		}
 		// Standalone, never a child: the vmhost is its own TCC responsible process by
 		// construction — the same identity story as a launchd-started host.
@@ -519,7 +523,8 @@ public final class RoutingMachman: MachmanControlling {
 		} catch {
 			throw MachmanError(
 				code: .internalError,
-				message: "cannot launch vmhost for \(name): \(error.localizedDescription)")
+				message: "Couldn’t open Machman VM for \(name): "
+					+ MachmanError.userMessage(for: error))
 		}
 		let hostID = identity.id
 		let deathWatch = app.observe(\.isTerminated, options: [.new]) { [weak self] app, _ in
@@ -529,11 +534,11 @@ public final class RoutingMachman: MachmanControlling {
 			}
 		}
 
-		var lastError = "vmhost never answered"
+		var lastError = "it never answered"
 		for _ in 0..<40 {
 			try? await Task.sleep(for: .milliseconds(250))
 			guard !app.isTerminated else {
-				lastError = "vmhost exited during startup"
+				lastError = "it quit while starting"
 				break
 			}
 			do {
@@ -547,7 +552,7 @@ public final class RoutingMachman: MachmanControlling {
 		deathWatch.invalidate()
 		app.forceTerminate()
 		throw MachmanError(
-			code: .internalError, message: "vmhost for \(name) failed to start: \(lastError)")
+			code: .internalError, message: "Machman VM for \(name) didn’t start: \(lastError)")
 	}
 
 	func connectHost(identity: HostIdentity) async throws -> RemoteMachman {
@@ -914,8 +919,7 @@ public final class RoutingMachman: MachmanControlling {
 			} catch {
 				throw MachmanError(
 					code: .invalidState,
-					message: "a vmhost is running \(name) but did not answer — "
-						+ "try again in a moment")
+					message: "\(name) is not responding — try again in a moment")
 			}
 		case .local:
 			return local
@@ -937,7 +941,7 @@ public final class RoutingMachman: MachmanControlling {
 		let target = try await proxy(name)
 		if let host = hosted[name], isOutdated(host) {
 			throw MachmanError(
-				code: .invalidState, message: "restart \(name) to finish updating")
+				code: .invalidState, message: "Restart \(name) to finish updating")
 		}
 		return target
 	}
@@ -948,14 +952,14 @@ public final class RoutingMachman: MachmanControlling {
 	func requireStopped(_ name: String, _ action: String) throws {
 		switch residence(of: name) {
 		case .hosted:
-			throw MachmanError(code: .invalidState, message: "stop \(name) before \(action)")
+			throw MachmanError(code: .invalidState, message: "Stop \(name) before \(action)")
 		case .starting:
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is starting — wait before \(action)")
 		case .unadopted:
 			throw MachmanError(
 				code: .invalidState,
-				message: "a vmhost is still running \(name) — stop it before \(action)")
+				message: "\(name) is still running — stop it before \(action)")
 		case .local:
 			return
 		}
@@ -1306,7 +1310,7 @@ public final class RoutingMachman: MachmanControlling {
 		if let host = hosted[name], host.identity.isSafe {
 			throw MachmanError(
 				code: .invalidState,
-				message: "run defaults cannot change during a safe run — stop \(name) "
+				message: "Run defaults can’t change during a safe run — stop \(name) "
 					+ "or save it first")
 		}
 		try await target.setStartPolicy(vm: name, policy: policy)
@@ -1562,7 +1566,7 @@ public final class RoutingMachman: MachmanControlling {
 				continue
 			}
 		}
-		throw MachmanError(code: .notFound, message: "no operation '\(id)'")
+		throw MachmanError(code: .notFound, message: "That operation already ended")
 	}
 
 	// System-prompted Rosetta install, tracked as an indeterminate operation. Returns
@@ -1574,12 +1578,13 @@ public final class RoutingMachman: MachmanControlling {
 			return   // already there — success
 		case .notSupported:
 			throw MachmanError(
-				code: .invalidState, message: "Rosetta is not supported on this host")
+				code: .invalidState, message: "Rosetta isn’t supported on this Mac")
 		case .notInstalled:
 			break
 		@unknown default:
 			throw MachmanError(
-				code: .invalidState, message: "Rosetta availability is unknown on this host")
+				code: .invalidState,
+				message: "Machman can’t tell whether this Mac supports Rosetta")
 		}
 		let center = local.operationCenter
 		let opID = center.begin(
@@ -1614,7 +1619,7 @@ public final class RoutingMachman: MachmanControlling {
 		guard !registry.isInstalling(vm) else {
 			throw MachmanError(
 				code: .invalidState,
-				message: "(\(name)) cannot start while macOS is installing")
+				message: "\(name) can’t start while macOS is installing")
 		}
 		// Reserved before the first await; the defer releases on every exit, success or
 		// throw. Everything below (probe, spawn, shadow build) runs under this claim.
@@ -1695,9 +1700,8 @@ public final class RoutingMachman: MachmanControlling {
 		}) {
 			throw MachmanError(
 				code: .macConflict,
-				message: "\(name) uses MAC \(mac), which running VM "
-					+ "'\(clash.identity.name)' is already using — one of them would lose "
-					+ "networking. Stop it, regenerate a MAC, or force start.")
+				message: "\(name) and the running VM \u{201C}\(clash.identity.name)\u{201D} "
+					+ "share MAC address \(mac), so one of them would lose networking")
 		}
 		let mine = pendingStartMACs[name]?.order ?? Int.max
 		let earlier = pendingStartMACs
@@ -1706,8 +1710,8 @@ public final class RoutingMachman: MachmanControlling {
 		if let other = earlier?.key {
 			throw MachmanError(
 				code: .macConflict,
-				message: "\(name) uses MAC \(mac), which '\(other)' is starting with — one of "
-					+ "them would lose networking. Wait for it, regenerate a MAC, or force start.")
+				message: "\(name) and \u{201C}\(other)\u{201D}, which is starting, share MAC "
+					+ "address \(mac), so one of them would lose networking")
 		}
 	}
 
@@ -1760,8 +1764,7 @@ public final class RoutingMachman: MachmanControlling {
 			let events = registry.events
 			let center = local.operationCenter
 			let opID = center.begin(
-				kind: OperationInfo.Kind.shadowBuild, vm: name,
-				label: "Preparing safe run of \(name)")
+				kind: OperationInfo.Kind.shadowBuild, vm: name, label: Self.safeRunLabel)
 			let request = SafeRun.shadowRequest(
 				config: vm.config, sourceDir: machmanVMDir + "/" + name, runRoot: runRoot,
 				progress: { copied, total in
@@ -1847,7 +1850,7 @@ public final class RoutingMachman: MachmanControlling {
 				// recover; spawning over it would fork the VM's identity.
 				throw MachmanError(
 					code: .internalError,
-					message: "a vmhost owns \(name)'s socket but did not answer")
+					message: "\(name) is not responding")
 			}
 			unlink(socketPath)
 			return false
@@ -1881,7 +1884,7 @@ public final class RoutingMachman: MachmanControlling {
 			guard host.sawRun else { return }
 		case .stalled:
 			throw MachmanError(
-				code: .invalidState, message: "\(name)'s vmhost is not responding")
+				code: .invalidState, message: "\(name) is not responding")
 		case .failed:
 			break   // its connection is going: wait for it like an exit
 		}
@@ -1926,7 +1929,7 @@ public final class RoutingMachman: MachmanControlling {
 			guard !options.safe else {
 				throw MachmanError(
 					code: .invalidState,
-					message: "\(name) has an idle vmhost from an earlier start — start it "
+					message: "\(name) is still prepared from an earlier start — start it "
 						+ "normally, or wait up to 3 minutes to start it safe")
 			}
 			try checkMACConflict(name: name, mac: mac, options: options)
@@ -2059,7 +2062,8 @@ public final class RoutingMachman: MachmanControlling {
 		guard registry.vm(named: newName) == nil, hosted[newName] == nil,
 			!pendingStarts.contains(newName) else {
 			throw MachmanError(
-				code: .alreadyExists, message: "a VM named '\(newName)' already exists")
+				code: .alreadyExists,
+				message: "A VM named \u{201C}\(newName)\u{201D} already exists")
 		}
 		// The new name is claimed while the save is in flight: the vmhost serves at the new
 		// name's socket before it replies, and nothing may start or late-adopt it there
@@ -2156,7 +2160,7 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func retire() async throws {
 		guard let onRetire else {
-			throw MachmanError(code: .invalidState, message: "this process cannot retire")
+			throw MachmanError(code: .invalidState, message: "This process can’t retire")
 		}
 		MachmanLogger.log(.log, "retiring on request; vmhosts keep running")
 		Task { @MainActor in

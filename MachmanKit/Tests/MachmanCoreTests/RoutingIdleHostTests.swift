@@ -124,7 +124,7 @@ struct RoutingIdleHostTests {
 			Issue.record("expected invalidState")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
-			#expect(error.message.contains("idle vmhost"))
+			#expect(error.message.contains("earlier start"))
 		}
 		#expect(rig.stub.starts.isEmpty)
 
@@ -223,7 +223,7 @@ struct RoutingIdleHostTests {
 			try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
 			Issue.record("expected the fresh-start path to fail in the test host")
 		} catch let error as MachmanError {
-			#expect(error.message.contains("MachmanVMHost.app not found"))
+			#expect(error.message.contains("reinstall Machman"))
 		}
 		#expect(ended == ["alpha"])
 		#expect(rig.stub.starts.isEmpty)
