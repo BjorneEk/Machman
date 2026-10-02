@@ -264,7 +264,9 @@ final class TerminalFDChannel: @unchecked Sendable {
 		let schedule = !deliveryScheduled
 		deliveryScheduled = true
 		deliveryLock.unlock()
-		if pause, let readSource {
+		// Never suspended twice: drainAndEnd() reads past a paused source, and a source
+		// suspended twice would never run its cancel handler, leaving the descriptor open.
+		if pause, !readPaused, let readSource {
 			readPaused = true
 			readSource.suspend()
 		}
