@@ -167,6 +167,9 @@ enum InspectorScenes {
 		inspector(
 			"serial", "SerialInspector, console port of a running VM", node: .serial(console)),
 		inspector(
+			"serial.logging", "SerialInspector, a running console logging to a file",
+			vms: { [Samples.linuxConsoleLog()] }, node: .serial(console)),
+		inspector(
 			"uart", "SerialInspector, uart port of a kernel-boot VM", select: "Kernel Lab",
 			node: .serial(SerialPortRef(kind: .uart, index: 0))),
 		inspector(

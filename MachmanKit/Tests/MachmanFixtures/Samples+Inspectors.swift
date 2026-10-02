@@ -80,4 +80,12 @@ extension Samples {
 		]
 		return vm
 	}
+
+	// A running Linux guest whose console logs to a file: the daemon serves the log's path
+	// (VMConfig.serialLogURL's naming) only while the VM runs with logging on.
+	public static func linuxConsoleLog(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name, state: .running)
+		vm.consolePorts?[0].logPath = "\(vmsRoot)/\(name)/serial-console0.log"
+		return vm
+	}
 }

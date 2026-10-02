@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import AppKit
 import MachmanUI
 import MachmanAPI
 import MachmanDesktopCore
@@ -141,14 +142,7 @@ struct SerialInspector: View {
 			if gate != nil {
 				LabeledContent("Path", value: "— (not attached on this host)")
 			} else if let sock = port?.socketPath {
-				HStack {
-					Text(sock)
-						.font(.system(.caption, design: .monospaced))
-						.lineLimit(1).truncationMode(.middle)
-						.help(sock)
-					Spacer(minLength: 4)
-					CopyToClipboardButton(sock, tooltip: "Copy socket path")
-				}
+				PathRow(label: "Path", path: sock) { reveal(sock) }
 			} else {
 				LabeledContent("Path", value: "— (socket exists while running)")
 			}
@@ -170,11 +164,13 @@ struct SerialInspector: View {
 			}
 			.disabled(port?.logging.mode == .disabled)
 			if let logPath = port?.logPath {
-				Text("Logging to \(logPath)")
-					.font(.caption).foregroundColor(.secondary)
-					.lineLimit(1).truncationMode(.middle)
+				PathRow(label: "Log file", path: logPath) { reveal(logPath) }
 			}
 		}
+	}
+
+	private func reveal(_ path: String) {
+		NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
 	}
 
 	private var modeBinding: Binding<SerialLogMode> {
