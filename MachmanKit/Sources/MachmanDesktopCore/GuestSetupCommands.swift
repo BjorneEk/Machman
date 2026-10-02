@@ -72,6 +72,23 @@ public enum GuestSetupCommands {
 		escalations(for: family)[0].apply(GuestPaths.mountShareCommand)
 	}
 
+	// MARK: - macOS 12 (no automount: the share mounted by hand in the user's home)
+
+	// The mkdir stays the user's — escalated, it would leave a root-owned folder in their
+	// home — and the mount takes `escalation`, so the line works whether or not the guest
+	// lets a user mount. Both guides show this one line (the mount guide as is).
+	public static func macOS12MountShare(_ escalation: GuestEscalation = .sudo) -> String {
+		"mkdir -p \(ConsoleLoginInstallerInfo.fallbackMountPoint) && "
+			+ escalation.apply(ConsoleLoginInstallerInfo.fallbackMount)
+	}
+
+	// …then the installer from it, with the same escalation (the Guest Setup guide).
+	public static func macOS12MountShareAndRun(_ escalation: GuestEscalation = .sudo) -> String {
+		macOS12MountShare(escalation) + " && " + escalation.apply(
+			GuestSetupInstallerInfo.runCommand(
+				inShareAt: ConsoleLoginInstallerInfo.fallbackMountPoint))
+	}
+
 	// MARK: - The guide's BSD bootstrap (unescalated: the page's choice escalates them)
 
 	// FreeBSD's fuse driver, loaded unless it already is.

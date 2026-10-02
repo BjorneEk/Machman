@@ -36,6 +36,20 @@ struct GuideCommandTests {
 			== "printf '%s\\n' '\(rule)' | tee /proc/sys/fs/binfmt_misc/register")
 	}
 
+	// R4-3: the guides showed two macOS 12 mounts, and the Guest Setup one made the folder in
+	// the user's home as root. One line now: the mkdir the user's, the mount (and the
+	// installer run from it) escalated.
+	@Test func macOS12MountsTheSameWayInBothGuides() {
+		let mount = GuestSetupCommands.macOS12MountShare()
+		#expect(mount == "mkdir -p ~/shared && "
+			+ "sudo mount_virtiofs com.apple.virtio-fs.automount ~/shared")
+		#expect(GuestSetupCommands.macOS12MountShareAndRun()
+			== mount + " && sudo sh ~/shared/GuestSetup/install.sh")
+		#expect(GuestSetupCommands.macOS12MountShareAndRun(.root)
+			== "mkdir -p ~/shared && mount_virtiofs com.apple.virtio-fs.automount ~/shared "
+				+ "&& sh ~/shared/GuestSetup/install.sh")
+	}
+
 	@Test func aMountsGuestPathFollowsItsKindAndGuest() {
 		let manual = Samples.linuxManualMount()
 		#expect(GuestSetupCommands.guestPath(of: manual.mounts[0], on: manual)

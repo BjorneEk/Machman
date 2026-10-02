@@ -74,8 +74,9 @@ struct MountGuidePage: View {
 	private var macOSSteps: some View {
 		HelpStep(1, "Open the folder at \(guestPath).")
 		HelpNote("macOS 13 and later mount the share on their own.")
-		HelpNote("Volume missing (macOS 12)? Mount the share, then open ~/shared/\(mount.tag):")
-		HelpCommand(ConsoleLoginInstallerInfo.fallbackMountCommand)
+		HelpNote("Volume missing (macOS 12)? Mount the share, then open "
+			+ "\(ConsoleLoginInstallerInfo.fallbackMountPoint)/\(mount.tag):")
+		HelpCommand(GuestSetupCommands.macOS12MountShare())
 	}
 
 	@ViewBuilder

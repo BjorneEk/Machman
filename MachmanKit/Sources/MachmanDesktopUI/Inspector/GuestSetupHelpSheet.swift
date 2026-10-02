@@ -151,8 +151,7 @@ struct GuestSetupGuidePage: View {
 		HelpStep(2, "In the guest’s Terminal, run the script:")
 		command(GuestSetupInstallerInfo.runFromAutomountCommand)
 		HelpNote("Volume missing (macOS 12)? Mount the share and run the script from there:")
-		command(ConsoleLoginInstallerInfo.fallbackMountCommand + " && "
-			+ GuestSetupInstallerInfo.runCommand(inShareAt: "~/shared"))
+		command(GuestSetupCommands.macOS12MountShareAndRun(escalation), escalate: false)
 		HelpStep(3, "Undo it later:")
 		command(GuestSetupInstallerInfo.runFromAutomountCommand + " --uninstall")
 	}

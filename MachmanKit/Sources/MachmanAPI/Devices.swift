@@ -85,14 +85,17 @@ public extension DeviceKind {
 // The pre-1.0.7 login installer's vocabulary: the directory name it appeared under inside
 // the automounting share ("My Shared Files" is the ONE volume macOS guests mount on their
 // own — its name is fixed by the OS), still a reserved mount tag (ReservedShareNames), and
-// the hand mount the Guest Setup guide shows for macOS 12.
+// the hand mount the guides show for macOS 12.
 public enum ConsoleLoginInstallerInfo {
 	public static let directoryName = "LoginInstaller"
 	public static let scriptName = "install.sh"
 
-	// macOS 12 guests don't automount; mount the share by hand, then run from there.
-	public static var fallbackMountCommand: String {
-		"mkdir -p ~/shared && mount_virtiofs com.apple.virtio-fs.automount ~/shared"
+	// macOS 12 guests don't automount: the share is mounted by hand here, in the user's home.
+	public static let fallbackMountPoint = "~/shared"
+
+	// The mount alone, unprivileged and without its mkdir: GuestSetupCommands adds both.
+	public static var fallbackMount: String {
+		"mount_virtiofs com.apple.virtio-fs.automount \(fallbackMountPoint)"
 	}
 }
 
