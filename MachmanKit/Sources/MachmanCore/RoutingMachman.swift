@@ -1917,9 +1917,37 @@ public final class RoutingMachman: MachmanControlling {
 		// meanwhile (residence says starting).
 		reserveStart(newName, mac: nil)
 		defer { releaseStart(newName) }
+		let savedConfig = machmanVMDir + "/" + newName + "/config"
+		let hadSavedConfig = FileManager.default.fileExists(atPath: savedConfig)
 		// The vmhost moves the files (single writer); the daemon re-keys its view after.
-		let info = try await host.client.safeSave(vm: name, to: newName)
+		let info: VMInfo
+		do {
+			info = try await host.client.safeSave(vm: name, to: newName)
+		} catch {
+			listHalfSavedVM(
+				newName, from: name, savedConfig: savedConfig, existedBefore: hadSavedConfig)
+			throw error
+		}
 		return finishSafeSave(host, from: name, to: newName, reply: info)
+	}
+
+	// A save the vmhost could neither finish nor wholly undo (a moved disk, or the saved
+	// folder, could not go back) leaves the saved VM in the library, and for a stranded disk
+	// the vmhost rewrote both VMs' configs to say where it is. List them as they are now, not
+	// after the next daemon start. Internal so tests can run it under the redirect lock.
+	func listHalfSavedVM(
+		_ newName: String, from name: String, savedConfig: String, existedBefore: Bool
+	) {
+		guard !existedBefore, FileManager.default.fileExists(atPath: savedConfig) else { return }
+		do {
+			_ = try registry.adoptFromDisk(name: newName)
+		} catch {
+			MachmanLogger.log(.passiveError,
+				"Save as New VM left \(newName) in the library, but it can't be listed yet: "
+					+ "\(error)")
+		}
+		registry.reload(name: name)
+		registry.events.emit(.listChanged)
 	}
 
 	// The daemon's half once the vmhost replied, in ONE synchronous block. Internal so tests

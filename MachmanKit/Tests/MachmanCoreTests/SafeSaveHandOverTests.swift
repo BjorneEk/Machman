@@ -326,6 +326,76 @@ struct SafeSaveHandOverTests {
 		#expect(routing.hostedNames == ["kept"])
 		await client.disconnect()
 	}
+
+	// A save the vmhost could not undo left kept in the library holding alpha's disk, and
+	// rewrote both configs. The daemon lists them at once, not after its next start.
+	@Test @MainActor func theDaemonListsAHalfSavedVMAtOnce() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			let alpha = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+			try alpha.addNewStorageDisk(name: "data", size: 4096)
+			let registry = VMRegistry()
+			let routing = RoutingMachman(registry: registry, daemonVersion: "test")
+			let savedConfig = machmanVMDir + "/kept/config"
+			let before = FileManager.default.fileExists(atPath: savedConfig)
+
+			try VMConfig.createNewVMDirectory(name: "kept")
+			let kept = try VMConfig(name: "kept", memorySize: 2048, cpuCount: 2)
+			try kept.addNewStorageDisk(name: "data", size: 4096)
+			let moved = url(machmanVMDir + "/kept/data.raw")
+			alpha.disks = [VMDisk(kind: .fromUrl(moved))]
+			try alpha.saveVMConfig()
+			routing.listHalfSavedVM(
+				"kept", from: "alpha", savedConfig: savedConfig, existedBefore: before)
+
+			#expect(registry.vm(named: "kept") != nil)
+			#expect(registry.vm(named: "alpha")?.config.disks.map(\.kind) == [.fromUrl(moved)])
+
+			// A folder that was there before the save is not the save's to list.
+			try VMConfig.createNewVMDirectory(name: "stray")
+			_ = try VMConfig(name: "stray", memorySize: 2048, cpuCount: 2)
+			routing.listHalfSavedVM(
+				"stray", from: "alpha", savedConfig: machmanVMDir + "/stray/config",
+				existedBefore: true)
+			#expect(registry.vm(named: "stray") == nil)
+		}
+	}
+
+	// The real path: the vmhost's refusal reaches the caller, and with no saved folder left
+	// behind nothing new is listed and the run stays the original's.
+	@Test @MainActor func aFailedSaveRethrowsAndListsNothingNew() async throws {
+		var registry: VMRegistry!
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			_ = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+			registry = VMRegistry()
+			routing = RoutingMachman(registry: registry, daemonVersion: "test")
+		}
+		let socketPath = TestEnvironment.scratch
+			+ "mm-half-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		let stub = StubMachman()
+		var running = StubMachman.makeInfo("alpha", state: .running)
+		running.safeRun = true
+		stub.vms["alpha"] = running
+		stub.fail("safeSave", with: MachmanError(code: .ioFailure, message: "saving half-saved"))
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		defer { server.stop() }
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath,
+			isSafe: true, shadowRoot: "/nonexistent")
+		let client = try await routing.connectHost(identity: identity)
+		routing.adopt(identity: identity, client: client)
+
+		let error = await #expect(throws: MachmanError.self) {
+			_ = try await routing.safeSave(vm: "alpha", to: "half-saved")
+		}
+		#expect(error?.code == .ioFailure)
+		#expect(registry.vm(named: "half-saved") == nil)
+		#expect(routing.hostedNames == ["alpha"])
+		await client.disconnect()
+	}
 }
 
 // The one warning at the save, so the first sign of the hand-over is not a later refusal.
