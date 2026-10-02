@@ -132,8 +132,8 @@ struct GuestScriptLibTests {
 	// reads a descriptor itself: with /dev/fd ruled out, the same swap is refused there.
 	@Test func aLinkSwappedInIsRefusedWithoutDevFd() async throws {
 		for shell in Self.shells {
-			let r = try await run(Self.swap(check: "_rf_stat_shows_fds", without: "_rf_fd_shows_files"),
-				under: shell)
+			let r = try await run(
+				Self.swap(check: "_rf_stat_shows_fds", without: "_rf_fd_shows_files"), under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out.hasPrefix("check on\n"), "\(shell): \(r.out)")
 			#expect(r.out.contains("/config changed while it was being edited\n"),
@@ -145,8 +145,8 @@ struct GuestScriptLibTests {
 	// …and where stat cannot read a descriptor (GNU, busybox), /dev/fd still checks it.
 	@Test func aLinkSwappedInIsRefusedThroughDevFd() async throws {
 		for shell in Self.shells {
-			let r = try await run(Self.swap(check: "_rf_fd_shows_files", without: "_rf_stat_shows_fds"),
-				under: shell)
+			let r = try await run(
+				Self.swap(check: "_rf_fd_shows_files", without: "_rf_stat_shows_fds"), under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out.hasPrefix("check on\n"), "\(shell): \(r.out)")
 			#expect(r.out.contains("/config changed while it was being edited\n"),
