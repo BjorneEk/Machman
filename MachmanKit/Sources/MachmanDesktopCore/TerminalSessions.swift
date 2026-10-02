@@ -92,6 +92,15 @@ public final class TerminalSessions: ObservableObject {
 		}
 	}
 
+	// A serial tab's own Reconnect, from its banner: the same controller, so the scrollback
+	// stays, with Machman's line marking where the socket's replay of recent output starts. A
+	// connected tab is left alone.
+	public func reconnectSerial(vm: String, ref: SerialPortRef, socketPath: String) {
+		guard let c = live[vm]?[.terminal(ref)], !c.connected else { return }
+		c.note("reconnected " + Date().formatted(date: .omitted, time: .shortened))
+		c.connect(path: socketPath)
+	}
+
 	// Tear down a tab's controller: tab closed, port removed, or VM deleted. An ssh tab's
 	// display metadata goes with it — the session it named is over.
 	func drop(_ tab: VMPaneTab, vm: String) {

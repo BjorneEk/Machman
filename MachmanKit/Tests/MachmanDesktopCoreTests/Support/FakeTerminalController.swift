@@ -17,6 +17,7 @@ final class FakeTerminalController: TerminalController {
 	private(set) var connectedPaths: [String] = []
 	private(set) var disconnects = 0
 	private(set) var liveApplies = 0
+	private(set) var notes: [String] = []
 
 	init(profile: TerminalProfile) {
 		startupSignature = profile.startupSignature
@@ -39,6 +40,6 @@ final class FakeTerminalController: TerminalController {
 	func applyLive(_ profile: TerminalProfile) {
 		liveApplies += 1
 	}
-	func note(_ text: String) {}
+	func note(_ text: String) { notes.append(text) }
 	func transcript() -> Data { Data() }
 }

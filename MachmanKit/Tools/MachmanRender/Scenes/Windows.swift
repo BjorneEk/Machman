@@ -262,7 +262,8 @@ enum WindowScenes {
 			mainWindow(ctx, inspector: false)
 		},
 		// T8: the active canvas tab selects its tree row, and the inspector follows it. The
-		// sample console socket is under /var/empty, so the terminal's connect fails there.
+		// sample console socket is under /var/empty, so the terminal's connect fails there,
+		// and the tab says so at once (T25).
 		RenderScene(
 			"window.main.console-tab",
 			"VMNavigationView, Debian's Console 0 tab active; tree row and inspector follow",
@@ -281,7 +282,8 @@ enum WindowScenes {
 			canvas.open(.config)
 			canvas.open(.terminal(InspectorScenes.console))
 			ctx.canvases.setCanvas(canvas, for: "Debian")
-			return mainWindow(ctx, inspector: true)
+			return AnyView(mainWindow(ctx, inspector: true)
+				.environment(\.terminalDisconnectedGrace, .zero))
 		},
 		// L2: three panes with the first divider at its limit stay inside the canvas.
 		RenderScene(
@@ -395,6 +397,19 @@ enum WindowScenes {
 			widths: [320, 640], height: 360, vms: { [Samples.kernelBoot(state: .starting)] }
 		) { ctx in
 			serialTab(ctx, uart)
+		},
+		// T25: a live port whose socket refused (the sample's is under /var/empty) says so.
+		RenderScene(
+			"canvas.serial-tab.disconnected",
+			"TerminalTabContent, Console 0 of a running VM whose socket refused the connection",
+			widths: [320, 640], height: 360
+		) { ctx in
+			let console = InspectorScenes.console
+			ctx.terminals.ensureController(
+				vm: ctx.vm.name, ref: console, socketPath: ctx.vm.consolePorts?[0].socketPath,
+				profile: ctx.profiles.defaultProfile)
+			Offscreen.pump(until: { ctx.terminals.controller(vm: ctx.vm.name, ref: console) != nil })
+			return AnyView(serialTab(ctx, console).environment(\.terminalDisconnectedGrace, .zero))
 		},
 		RenderScene(
 			"window.connecting", "ConnectionStatusView, connecting", widths: [480, 900],

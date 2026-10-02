@@ -3,10 +3,10 @@
 //  MachmanDesktopUI
 //
 //  One terminal tab's content, shared by the canvas panes and torn-off windows: the live
-//  SwiftTerm view when the port has a socket (created lazily with a spinner over the gap),
-//  otherwise one sentence saying why there is none (SerialTabState, T10). The controller
-//  comes from the app-scoped TerminalSessions, so the same terminal reparents wherever the
-//  tab lives.
+//  SwiftTerm view when the port has a socket (created lazily with a spinner over the gap, and
+//  saying so when that socket closed or refused — T25), otherwise one sentence saying why there
+//  is none (SerialTabState, T10). The controller comes from the app-scoped TerminalSessions,
+//  so the same terminal reparents wherever the tab lives.
 //
 
 import SwiftUI
@@ -21,6 +21,7 @@ struct TerminalTabContent: View {
 	let ref: SerialPortRef
 	// Re-checked on the deferred creation turn — the tab may have closed meanwhile.
 	let stillWanted: @MainActor () -> Bool
+	@Environment(\.terminalDisconnectedGrace) private var disconnectedGrace
 
 	var body: some View {
 		switch SerialTabState(vm: vm, ref: ref) {
@@ -50,10 +51,11 @@ struct TerminalTabContent: View {
 	private func live(socket: String) -> some View {
 		Group {
 			if let controller = sessions.serialTerminal(vm: vm.name, ref: ref) {
-				SerialTerminalHost(controller: controller)
+				SerialSessionSurface(
+					controller: controller, vmIsStopping: vm.state == .stopping,
+					grace: disconnectedGrace,
+					reconnect: { reconnect(socket: socket) })
 					.id(ObjectIdentifier(controller))   // swap the view on reloadTab
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-					.padding(6)
 			} else {
 				VStack(spacing: 10) {
 					ProgressView()
@@ -63,16 +65,25 @@ struct TerminalTabContent: View {
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.onAppear {
-			// Deferred: reconnecting an existing controller flips its @Published
-			// `connected` — publishing mid-view-update warns.
-			let vmName = vm.name
-			let profile = profiles.profile(vm: vmName, ref: ref)
-			DispatchQueue.main.async { [weak sessions] in
-				sessions?.ensureController(
-					vm: vmName, ref: ref, socketPath: socket,
-					profile: profile, stillWanted: stillWanted)
-			}
+		.onAppear { ensureController(socket: socket) }
+		// The port's socket moved while the tab stayed live (onAppear won't run again): a
+		// controller left disconnected connects to the new one.
+		.onChange(of: socket) { _, new in ensureController(socket: new) }
+	}
+
+	private func reconnect(socket: String) {
+		sessions.reconnectSerial(vm: vm.name, ref: ref, socketPath: socket)
+	}
+
+	private func ensureController(socket: String) {
+		// Deferred: reconnecting an existing controller flips its @Published `connected` —
+		// publishing mid-view-update warns.
+		let vmName = vm.name
+		let profile = profiles.profile(vm: vmName, ref: ref)
+		let stillWanted = stillWanted
+		DispatchQueue.main.async { [weak sessions] in
+			sessions?.ensureController(
+				vm: vmName, ref: ref, socketPath: socket, profile: profile, stillWanted: stillWanted)
 		}
 	}
 
@@ -99,5 +110,62 @@ struct TerminalTabContent: View {
 
 	private var guestName: String {
 		port?.displayName(mode: vm.boot.mode) ?? ref.displayName(mode: vm.boot.mode)
+	}
+}
+
+// Observes the controller, so a terminal whose socket closed or refused says so and offers to
+// connect again (T25), where a dead terminal used to stay silently empty. The banner waits out
+// a grace period: a normal stop closes the socket a moment before the list drops it, and the
+// tab then shows why there is no terminal instead.
+struct SerialSessionSurface: View {
+	@ObservedObject var controller: SerialTerminalController
+	let vmIsStopping: Bool
+	let grace: Duration
+	let reconnect: () -> Void
+	@State private var graceOver: Bool
+
+	init(
+		controller: SerialTerminalController, vmIsStopping: Bool, grace: Duration,
+		reconnect: @escaping () -> Void
+	) {
+		self.controller = controller
+		self.vmIsStopping = vmIsStopping
+		self.grace = grace
+		self.reconnect = reconnect
+		_graceOver = State(initialValue: grace == .zero)
+	}
+
+	var body: some View {
+		SerialTerminalHost(controller: controller)
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.padding(6)
+			.overlay(alignment: .top) {
+				if graceOver, !controller.connected, !vmIsStopping {
+					TerminalBanner("Disconnected.") {
+						Button("Reconnect", action: reconnect)
+					}
+				}
+			}
+			// Restarted on every flip: a connection resets the grace, a drop starts it.
+			.task(id: controller.connected) {
+				guard grace > .zero else { return }
+				graceOver = false
+				guard !controller.connected else { return }
+				try? await Task.sleep(for: grace)
+				if !Task.isCancelled { graceOver = true }
+			}
+	}
+}
+
+// How long a serial terminal stays disconnected before its banner says so. Render scenes set
+// zero, so a snapshot never depends on how long the render took.
+private struct TerminalDisconnectedGraceKey: EnvironmentKey {
+	static let defaultValue: Duration = .seconds(1)
+}
+
+extension EnvironmentValues {
+	var terminalDisconnectedGrace: Duration {
+		get { self[TerminalDisconnectedGraceKey.self] }
+		set { self[TerminalDisconnectedGraceKey.self] = newValue }
 	}
 }

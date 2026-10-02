@@ -134,6 +134,44 @@ struct TerminalSessionsTests {
 		#expect(ssh.liveApplies == 0)
 	}
 
+	// MARK: - Serial reconnect (T25: a closed or refused socket, the tab's banner)
+
+	@Test func aDisconnectedSerialTabReconnectsOnItsOwnController() async throws {
+		let h = await harnessWithBothKinds()
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		serial.disconnect()
+		h.terminals.reconnectSerial(vm: "Debian", ref: console, socketPath: "/var/empty/c0.sock")
+		#expect(serial.connected)
+		#expect(serial.connectedPaths.last == "/var/empty/c0.sock")
+		#expect(serial.notes.count == 1)
+		#expect(serial.notes.first?.hasPrefix("reconnected ") == true)
+		#expect(h.terminals.controller(vm: "Debian", ref: console) === serial)
+	}
+
+	@Test func aConnectedSerialTabIgnoresReconnect() async throws {
+		let h = await harnessWithBothKinds()
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		let paths = serial.connectedPaths
+		h.terminals.reconnectSerial(vm: "Debian", ref: console, socketPath: "/var/empty/c0.sock")
+		#expect(serial.connectedPaths == paths)
+		#expect(serial.notes.isEmpty)
+	}
+
+	// The tab's onChange(of: socket) path: a controller left disconnected takes the new socket.
+	@Test func aMovedSocketReconnectsADisconnectedTab() async throws {
+		let h = await harnessWithBothKinds()
+		let serial = try #require(
+			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
+		serial.disconnect()
+		h.terminals.ensureController(
+			vm: "Debian", ref: console, socketPath: "/var/empty/moved.sock",
+			profile: h.profiles.defaultProfile)
+		#expect(serial.connectedPaths.last == "/var/empty/moved.sock")
+		#expect(h.terminals.controller(vm: "Debian", ref: console) === serial)
+	}
+
 	// MARK: - Reconnect (Q4: the tab's banner and the session inspector share it)
 
 	@Test func aDeadSessionReconnectsOnItsOwnController() async throws {
