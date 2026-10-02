@@ -96,6 +96,11 @@ enum PopoverScenes {
 			AnyView(VMPickerPopover(viewModel: ctx.viewModel, templates: true))
 		},
 		RenderScene(
+			"popover.vm-picker.mac-source", "VMPickerPopover's macOS install source"
+		) { ctx in
+			AnyView(VMPickerPopover(viewModel: ctx.viewModel, macSource: true))
+		},
+		RenderScene(
 			"popover.vm-picker.not-responding", "VMPickerPopover, Debian's vmhost not responding",
 			vms: Samples.libraryWithStalledHost
 		) { ctx in

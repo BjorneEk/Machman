@@ -121,6 +121,7 @@ public enum MachmanSymbols {
 	public static let splitRight = "rectangle.split.2x1"
 	public static let moveHere = "arrow.down.square"    // drop-zone "Move Here" label
 	public static let installDownload = "arrow.down.circle" // download-latest install
+	public static let installFromFile = "doc"           // install from an IPSW file
 	public static let newWindow = "macwindow.on.rectangle"
 	public static let sidebarToggle = "sidebar.left"
 	public static let inspectorToggle = "sidebar.right" // successor name for infoPanel

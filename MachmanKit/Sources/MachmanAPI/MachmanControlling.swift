@@ -21,7 +21,8 @@ public protocol MachmanControlling: AnyObject {
 	func listVMs() async throws -> [VMInfo]
 	func vm(named name: String) async throws -> VMInfo
 	// template: the starting device set (VMTemplate says what each seeds). nil keeps the
-	// pre-template behavior (same as .default).
+	// pre-template behavior (same as .default). The desktop's macOS template also starts the
+	// install right after the create.
 	func createVM(template: VMTemplate?) async throws -> VMInfo
 	func deleteVM(named name: String) async throws
 	func renameVM(named name: String, to newName: String) async throws

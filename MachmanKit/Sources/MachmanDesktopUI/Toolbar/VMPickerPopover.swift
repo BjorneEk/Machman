@@ -3,9 +3,10 @@
 //  MachmanDesktopUI
 //
 //  The VM indicator's dropdown: searchable VM list with per-row quick-action menus, plus
-//  the New VM template chooser (blank / default / mac → vm.create {template}). In the
-//  quick actions, state alternates (Start ↔ Shut Down) stay hidden; stop-first actions show
-//  dimmed with the reason while the VM runs (P14), as in the tree and the inspector.
+//  the New VM template chooser (blank / default → vm.create {template}; macOS → its install
+//  source, then create and install). In the quick actions, state alternates (Start ↔ Shut
+//  Down) stay hidden; stop-first actions show dimmed with the reason while the VM runs (P14),
+//  as in the tree and the inspector.
 //
 
 import SwiftUI
@@ -17,12 +18,15 @@ struct VMPickerPopover: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@Environment(\.dismiss) private var dismiss
 	@State private var query = ""
-	@State private var choosingTemplate: Bool
+	@State private var page: Page
 
-	// `templates` opens straight on the New VM template chooser (render scenes).
-	init(viewModel: VMListViewModel, templates: Bool = false) {
+	private enum Page { case list, templates, macSource }
+
+	// `templates` opens straight on the New VM template chooser, `macSource` on the macOS
+	// template's install-source page (render scenes).
+	init(viewModel: VMListViewModel, templates: Bool = false, macSource: Bool = false) {
 		self.viewModel = viewModel
-		_choosingTemplate = State(initialValue: templates)
+		_page = State(initialValue: macSource ? .macSource : templates ? .templates : .list)
 	}
 
 	private var filtered: [VMInfo] {
@@ -33,9 +37,12 @@ struct VMPickerPopover: View {
 
 	var body: some View {
 		Group {
-			if choosingTemplate {
+			switch page {
+			case .list:
+				pickerList
+			case .templates:
 				NewVMTemplateView {
-					withAnimation(.snappy(duration: 0.18)) { choosingTemplate = false }
+					show(.list)
 				} create: { template in
 					dismiss()
 					Task {
@@ -43,12 +50,30 @@ struct VMPickerPopover: View {
 							viewModel.select(name: name)
 						}
 					}
+				} installMac: {
+					show(.macSource)
 				}
-			} else {
-				pickerList
+			case .macSource:
+				// H21: the VM is created only once a source is picked (VMListViewModel+NewMac).
+				NewMacSourceView {
+					show(.templates)
+				} latest: {
+					dismiss()
+					Task { await viewModel.createMacVM(source: .latest) }
+				} fromFile: {
+					let viewModel = viewModel
+					dismiss()
+					AddFlows.chooseRestoreImage { path in
+						Task { await viewModel.createMacVM(source: .ipsw(path)) }
+					}
+				}
 			}
 		}
 		.frame(width: 300)
+	}
+
+	private func show(_ next: Page) {
+		withAnimation(.snappy(duration: 0.18)) { page = next }
 	}
 
 	private var pickerList: some View {
@@ -79,7 +104,7 @@ struct VMPickerPopover: View {
 			.frame(maxHeight: 300)
 			Divider()
 			Button {
-				withAnimation(.snappy(duration: 0.18)) { choosingTemplate = true }
+				show(.templates)
 			} label: {
 				Label("New VM…", systemImage: MachmanSymbols.add)
 					.frame(maxWidth: .infinity, alignment: .leading)
@@ -184,10 +209,12 @@ private struct VMPickerRow: View {
 }
 
 // Template chooser shown inside the picker popover after "New VM…". Captions state what
-// the daemon's template actually seeds (LocalMachman.createVM).
+// the daemon's template actually seeds (LocalMachman.createVM); the macOS template leads on
+// to its install source (H21).
 private struct NewVMTemplateView: View {
 	let back: () -> Void
 	let create: (VMTemplate?) -> Void
+	let installMac: () -> Void
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -207,16 +234,16 @@ private struct NewVMTemplateView: View {
 			.padding(8)
 			Divider()
 			VStack(spacing: 2) {
-				row(title: "Blank", caption: "No devices — add exactly what you need",
-					template: .blank) {
+				Self.row(title: "Blank", caption: "No devices — add exactly what you need",
+					action: { create(.blank) }) {
 					Image(systemName: MachmanSymbols.templateBlank).font(.system(size: 15))
 				}
-				row(title: "Default", caption: "Keyboard, pointer, display, audio, network, "
-					+ "clipboard — add disks yourself", template: .default) {
+				Self.row(title: "Default", caption: "Keyboard, pointer, display, audio, network, "
+					+ "clipboard — add disks yourself", action: { create(.default) }) {
 					TuxIcon(size: 16)
 				}
-				row(title: "macOS", caption: "Mac device set — install macOS afterwards",
-					template: .mac) {
+				Self.row(title: "macOS", caption: "Installs macOS, downloaded or from an IPSW file",
+					action: installMac) {
 					Image(systemName: MachmanSymbols.bootMacTab).font(.system(size: 15))
 				}
 			}
@@ -224,12 +251,13 @@ private struct NewVMTemplateView: View {
 		}
 	}
 
-	private func row(
-		title: String, caption: String, template: VMTemplate?,
+	// One choice row; NewMacSourceView's rows are built the same way.
+	static func row(
+		title: String, caption: String, action: @escaping () -> Void,
 		@ViewBuilder icon: @escaping () -> some View
 	) -> some View {
 		Button {
-			create(template)
+			action()
 		} label: {
 			HStack(spacing: 9) {
 				icon().frame(width: 22)
@@ -249,5 +277,46 @@ private struct NewVMTemplateView: View {
 		}
 		.buttonStyle(.plain)
 		.machmanHoverable(radius: 6)
+	}
+}
+
+// The macOS template's second step (H21, decision 15): where the install comes from. The VM
+// is created only once a source is picked, so backing out or cancelling the Open panel
+// leaves nothing behind.
+private struct NewMacSourceView: View {
+	let back: () -> Void
+	let latest: () -> Void
+	let fromFile: () -> Void
+
+	var body: some View {
+		VStack(spacing: 0) {
+			HStack(spacing: 6) {
+				Button(action: back) {
+					Image(systemName: MachmanSymbols.back)
+						.font(.system(size: 10, weight: .bold))
+				}
+				.buttonStyle(.plain)
+				.machmanHoverable()
+				.help("Back")
+				Text("macOS")
+					.font(.system(size: 12, weight: .semibold))
+				Spacer()
+			}
+			.padding(8)
+			Divider()
+			VStack(spacing: 2) {
+				NewVMTemplateView.row(
+					title: "Download Latest", caption: "The newest macOS this Mac can run",
+					action: latest) {
+					Image(systemName: MachmanSymbols.installDownload).font(.system(size: 15))
+				}
+				NewVMTemplateView.row(
+					title: "From an IPSW File…",
+					caption: "A macOS restore image you already have", action: fromFile) {
+					Image(systemName: MachmanSymbols.installFromFile).font(.system(size: 15))
+				}
+			}
+			.padding(6)
+		}
 	}
 }
