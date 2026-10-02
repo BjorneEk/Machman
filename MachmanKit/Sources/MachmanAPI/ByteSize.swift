@@ -28,8 +28,8 @@ public enum ByteSize {
 	private static let mib: UInt64 = 1024 * 1024
 	private static let gib: UInt64 = 1024 * 1024 * 1024
 
-	// What a number with no unit means: bytes in the memory field, GB in a size field
-	// (decision 14). Binary, like every unit here.
+	// What a number with no unit means. The memory and size fields read it as GB (decision
+	// 14); bytes stays the API default. Binary, like every unit here.
 	public enum Unit: UInt64, Sendable {
 		case byte = 1
 		case kibibyte = 1_024

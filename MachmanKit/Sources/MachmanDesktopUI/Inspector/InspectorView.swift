@@ -114,11 +114,25 @@ struct VMInspector: View {
 	let vm: VMInfo
 	@State private var draftName = ""
 	@State private var memText = ""
+	// What the last Return in the memory field did to the value (clamped, unreadable), until
+	// the next edit; committedMemText is the text that answer belongs to.
+	@State private var memoryNote: String?
+	@State private var committedMemText = ""
 	@State private var macSwitchSheet = false
+
+	// `memoryNote` opens the memory row with a note under it (render scenes).
+	init(
+		viewModel: VMListViewModel, profiles: TerminalProfileStore, vm: VMInfo,
+		memoryNote: String? = nil
+	) {
+		self.viewModel = viewModel
+		self.profiles = profiles
+		self.vm = vm
+		_memoryNote = State(initialValue: memoryNote)
+	}
 
 	// macOS guests carry install-time hardware minimums; other modes have none.
 	private var cpuFloor: Int { max(1, vm.boot.minCPUCount ?? 1) }
-	private var memoryFloor: UInt64 { vm.boot.minMemoryBytes ?? 0 }
 	private var cpuRange: ClosedRange<Int> {
 		let upper = max(viewModel.capabilities?.maxCPUCount ?? cpuFloor, cpuFloor)
 		return cpuFloor...upper
@@ -142,24 +156,11 @@ struct VMInspector: View {
 				} label: {
 					Label("CPUs", systemImage: MachmanSymbols.cpu)
 				}
-				LabeledContent {
-					TextField("", text: $memText)
-						.textFieldStyle(.plain)
-						.multilineTextAlignment(.trailing)
-						.frame(width: 90)
-						.onChange(of: memText) {
-							// Permissive while typing; interpretation happens on submit.
-							let filtered = String(memText
-								.filter { "0123456789.,kmgbKMGB ".contains($0) }.prefix(12))
-							if filtered != memText { memText = filtered }
-						}
-						.onSubmit { commitMemory() }
-						.help("\(vm.memoryBytes.formatted()) bytes")
-				} label: {
-					Label("Memory", systemImage: MachmanSymbols.memory)
+				memoryRow
+				// Its own row: the field keeps its place while the note comes and goes.
+				if let memoryNote {
+					FieldProblem(memoryNote)
 				}
-				.onAppear { memText = ByteSize.format(vm.memoryBytes) }
-				.onChange(of: vm.memoryBytes) { memText = ByteSize.format(vm.memoryBytes) }
 				// The MAC lives in the Network device's inspector (Devices → Network).
 			}
 
@@ -282,16 +283,40 @@ struct VMInspector: View {
 			.units(allowed: allowed, width: .narrow, maximumUnitCount: showSeconds ? 3 : 2))
 	}
 
-	private func commitMemory() {
-		// Bare number = bytes; k/m/g[b] = binary units; decimals accepted. Unparseable
-		// reverts; out-of-range lands on min/max via the clamp.
-		guard let parsed = ByteSize.parse(memText) else {
-			memText = ByteSize.format(vm.memoryBytes)
-			return
+	private var memoryRow: some View {
+		LabeledContent {
+			TextField("", text: $memText, prompt: Text("8 GB"))
+				.textFieldStyle(.plain)
+				.multilineTextAlignment(.trailing)
+				.frame(width: 90)
+				.onChange(of: memText) {
+					// Permissive while typing; interpretation happens on submit.
+					let filtered = String(memText
+						.filter { "0123456789.,kmgbKMGB ".contains($0) }.prefix(12))
+					if filtered != memText { memText = filtered }
+					if memText != committedMemText { memoryNote = nil }
+				}
+				.onSubmit { commitMemory() }
+				.help("\(vm.memoryBytes.formatted()) bytes — a bare number is GB")
+		} label: {
+			Label("Memory", systemImage: MachmanSymbols.memory)
 		}
-		let clamped = viewModel.clampMemory(ByteSize.roundToMiB(parsed), floor: memoryFloor)
-		memText = ByteSize.format(clamped)
-		viewModel.setHardware(vm.name, memoryBytes: clamped)
+		.onAppear { showMemory() }
+		.onChange(of: vm.memoryBytes) { showMemory() }
+	}
+
+	private func showMemory() {
+		committedMemText = ByteSize.format(vm.memoryBytes)
+		memText = committedMemText
+	}
+
+	// Bare number = GB, k/m/g[b] = binary units, decimals accepted (decision 14). An
+	// unreadable entry reverts, an out-of-range one lands on the min/max; both say so.
+	private func commitMemory() {
+		let entry = viewModel.submitMemory(vm, text: memText)
+		committedMemText = ByteSize.format(entry.bytes ?? vm.memoryBytes)
+		memText = committedMemText
+		memoryNote = entry.note
 	}
 
 	private var cpuBinding: Binding<Int> {

@@ -17,4 +17,11 @@ extension Samples {
 		vm.disks[0].sizeBytes = 500 << 20
 		return vm
 	}
+
+	// A Linux guest at this Mac's memory maximum — where a too-large entry lands (H4).
+	public static func linuxMemoryAtMaximum(_ name: String = "Alpine") -> VMInfo {
+		var vm = linux(name)
+		vm.memoryBytes = capabilities.maxMemoryBytes
+		return vm
+	}
 }

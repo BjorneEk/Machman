@@ -75,6 +75,18 @@ enum InspectorScenes {
 		inspector(
 			"vm.not-responding", "VMInspector, vmhost not responding",
 			vms: Samples.libraryWithStalledHost, node: nil),
+		RenderScene(
+			"inspector.vm.memory-clamped", "VMInspector, a memory entry lowered to the maximum",
+			widths: RenderScene.inspectorWidths, height: height,
+			vms: { [Samples.linuxMemoryAtMaximum()] }
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			return AnyView(
+				VMInspector(
+					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
+					memoryNote: "Lowered to this Mac's maximum")
+					.formStyle(.grouped))
+		},
 		inspector(
 			"multi", "MultiSelectionInspector, two disks",
 			nodes: [.disk("storage:system"), .disk(iso)]),
