@@ -87,9 +87,8 @@ extension VMListViewModel {
 		return TornTab(vm: vm, tab: tab)
 	}
 
-	// Opening rides on selection CHANGE (the tree's only channel), so a row left selected
-	// after its tab closed is a dead end — clicking it again cannot re-fire. Every path
-	// that takes a tab off a canvas (close, tear-off, torn-window close) reports here.
+	// A tab's row goes with it, so the inspector stops showing a tab that closed. Every
+	// path that takes a tab off a canvas (close, tear-off, torn-window close) reports here.
 	public func tabClosed(_ tab: VMPaneTab, vm: String) {
 		guard vm == selectedName else { return }
 		treeSelection.remove(Self.treeNode(for: tab))
@@ -109,9 +108,8 @@ extension VMListViewModel {
 	// reorders, other VMs' canvases and renames (the incoming layouts lack the old key)
 	// leave the selection alone, and so does an empty canvas filling with its
 	// configuration tab: that is the canvas's own fallback as a VM is shown, part of a VM
-	// switch. Nothing reopens: the tree's deferred mirror skips openNode when the
-	// published selection already matches the List's. Runs inside the store's willSet, so
-	// canvases still holds the old layouts.
+	// switch. Nothing reopens: selecting a row never opens it (T7). Runs inside the
+	// store's willSet, so canvases still holds the old layouts.
 	func canvasesWillChange(_ incoming: [String: CanvasState]) {
 		guard let name = selectedName else { return }
 		let old = canvases.canvas(for: name)

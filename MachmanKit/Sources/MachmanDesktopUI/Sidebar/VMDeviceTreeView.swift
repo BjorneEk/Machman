@@ -137,16 +137,21 @@ struct VMDeviceTreeView: View {
 		.font(.system(size: theme.metrics.rowFontSize))
 		// A remount (VM switch, reconnect) starts from the surviving published selection.
 		.onAppear { localSelection = viewModel.treeSelection }
-		// Mirror + open side effects run DEFERRED — the click lands mid-update.
+		// The mirror runs DEFERRED — the click lands mid-update. Selecting never opens
+		// (T7): arrow keys, type-select and ⌘/⇧-clicks only move the selection; a plain
+		// click (the rows' tap gesture) or Return opens.
 		.onChange(of: localSelection) {
 			let selection = localSelection
 			DispatchQueue.main.async { [weak viewModel] in
-				guard let viewModel, viewModel.treeSelection != selection else { return }
-				viewModel.treeSelection = selection
-				if selection.count == 1, let node = selection.first {
-					openNode(node)
-				}
+				viewModel?.treeSelectionChanged(selection)
 			}
+		}
+		.onKeyPress(.return) {
+			guard !renamingRoot, renamingNode == nil, localSelection.count == 1,
+				let node = localSelection.first,
+				VMListViewModel.opensOnClick(node) else { return .ignored }
+			open(node)
+			return .handled
 		}
 		// Programmatic selection (row menus, batch actions) flows back into the List.
 		.onChange(of: viewModel.treeSelection) {
@@ -205,6 +210,8 @@ struct VMDeviceTreeView: View {
 		}
 		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
+		.contentShape(Rectangle())
+		.simultaneousGesture(TapGesture().onEnded { clicked(.vmRoot) })
 		.tag(SidebarNode.vmRoot)
 		.contextMenu {
 			// Stop-first actions show dimmed with the reason while the VM runs (P14).
@@ -477,6 +484,8 @@ struct VMDeviceTreeView: View {
 		}
 		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
+		.contentShape(Rectangle())
+		.simultaneousGesture(TapGesture().onEnded { clicked(.sshSession(ref)) })
 		.tag(SidebarNode.sshSession(ref))
 		.contextMenu {
 			if !torn {
@@ -606,6 +615,8 @@ struct VMDeviceTreeView: View {
 			: (gated ? MachmanColors.dimmedRowOpacity : 1))
 		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
+		.contentShape(Rectangle())
+		.simultaneousGesture(TapGesture().onEnded { clicked(.serial(ref)) })
 		.tag(SidebarNode.serial(ref))
 		.contextMenu { serialMenu(port, ref: ref, open: open, gated: gated, enabled: enabled) }
 	}
@@ -928,23 +939,22 @@ struct VMDeviceTreeView: View {
 
 	// MARK: - Behaviour
 
-	// Spec mapping: VM root → config tab, serial → terminal tab (never for disabled or
-	// host-gated ports); entries → inspector once S6 lands.
-	private func openNode(_ node: SidebarNode) {
-		switch node {
-		case .vmRoot:
-			reveal(.config)
-		case .serial(let ref):
-			guard let port = vm.allSerialPorts.first(where: { SerialPortRef($0) == ref }),
-				port.unavailable == nil, port.enabled ?? true else { return }
-			openTerminal(ref)
-		case .sshSession(let ref):
-			// Rows exist only for OPEN sessions — selecting one focuses wherever it
-			// lives: its canvas tab, or the window it was torn into.
-			reveal(.ssh(ref))
-		default:
-			break
+	// Open a row (VMListViewModel.openTreeRow: VM root → configuration, a usable port → its
+	// terminal, a session → its tab); a torn-off tab's window is focused instead.
+	private func open(_ node: SidebarNode) {
+		if let torn = viewModel.openTreeRow(node, vm: vm) {
+			openWindow(id: "torn-tab", value: torn)
 		}
+	}
+
+	// A plain click opens, a row already selected included (arrow keys leave rows selected
+	// without opening them); ⌘/⇧-clicks only select, a control-click is a menu click, and
+	// a click into a rename field is not an open. Simultaneous with the List's own click,
+	// which keeps selecting as before.
+	private func clicked(_ node: SidebarNode) {
+		guard NSEvent.modifierFlags.isDisjoint(with: [.command, .shift, .control]),
+			!renamingRoot, renamingNode == nil else { return }
+		open(node)
 	}
 
 	// MARK: - Section drops (validated by the hovering preview; routed here on release)
