@@ -48,11 +48,13 @@ final class SoftStopEscalation {
 				self.pending.contains(where: { $0 === entry }) else {
 				return
 			}
-			self.pending.removeAll { $0 === entry }
-			let name = entry.name
-			// Checked again after the answer: the guest can finish while the question shows.
-			if self.isRunning(name), await self.askToForce(name), self.isRunning(name) {
-				self.force(name)
+			// Pending while it asks, so a rename (Save as New VM) still reaches it and a second
+			// Shut Down still adds none. Checked again after the answer, under the name then
+			// current: the guest can finish, or the VM be renamed, while the question shows.
+			defer { self.pending.removeAll { $0 === entry } }
+			if self.isRunning(entry.name), await self.askToForce(entry.name),
+				self.isRunning(entry.name) {
+				self.force(entry.name)
 			}
 		}
 		return entry.task

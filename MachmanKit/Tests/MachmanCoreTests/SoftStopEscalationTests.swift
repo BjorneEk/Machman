@@ -109,4 +109,38 @@ struct SoftStopEscalationTests {
 		#expect(r.asked == ["kept"])
 		#expect(r.forced == ["kept"])
 	}
+
+	// The question no longer holds the main actor (R3-1), so Save as New VM can rename the VM
+	// while it shows (RR3-2): a Force Stop answer then stops the VM under its new name.
+	@Test func aRenameWhileAskedIsFollowed() async throws {
+		let r = Recorder()
+		var current = "alpha"
+		r.followUp.isRunning = { $0 == current }
+		r.followUp.askToForce = { [unowned r] name in
+			r.asked.append(name)
+			r.followUp.rekey(from: name, to: "kept")
+			current = "kept"
+			return true
+		}
+		try await #require(r.followUp.schedule("alpha")).value
+		#expect(r.asked == ["alpha"])
+		#expect(r.forced == ["kept"])
+		#expect(!r.followUp.isPending("kept"))
+	}
+
+	// While the question shows, the follow-up is still the VM's one: a second Shut Down adds
+	// none (RR3-2).
+	@Test func aShutDownWhileAskedAddsNoSecondFollowUp() async throws {
+		let r = Recorder()
+		var secondAdded: Bool?
+		r.followUp.askToForce = { [unowned r] name in
+			r.asked.append(name)
+			secondAdded = r.followUp.schedule(name) != nil
+			return false
+		}
+		try await #require(r.followUp.schedule("alpha")).value
+		#expect(r.asked == ["alpha"])
+		#expect(secondAdded == false)
+		#expect(!r.followUp.isPending("alpha"))
+	}
 }
