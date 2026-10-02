@@ -57,7 +57,8 @@ struct MachmanDesktopApp: App {
 						.id(ObjectIdentifier(viewModel))   // remount per (re)connection
 						// A settings file set aside at launch is announced once.
 						.onAppear {
-							viewModel.announceSetAsideSettings([profiles, connection.canvases])
+							viewModel.announceSetAsideSettings(
+								[profiles, connection.canvases, viewModel.activity])
 						}
 				} else {
 					ConnectingView(connection: connection)
@@ -104,6 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 	func applicationWillTerminate(_ notification: Notification) {
 		Self.connection?.canvases.flush()
 		Self.profiles?.flush()
+		Self.connection?.operationsStore.activity.flush()
 	}
 
 	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting.

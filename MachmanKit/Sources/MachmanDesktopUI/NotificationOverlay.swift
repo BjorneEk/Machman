@@ -30,8 +30,8 @@ struct NotificationOverlay: View {
 		var cards = operations.operations.map { op in
 			ProgressCardModel(
 				id: op.id,
-				title: title(for: op),
-				symbol: symbol(for: op),
+				title: op.displayTitle,
+				symbol: op.displaySymbol,
 				phase: phase(for: op),
 				fraction: op.fraction,
 				etaSeconds: eta(for: op),
@@ -56,41 +56,18 @@ struct NotificationOverlay: View {
 		return cards
 	}
 
-	// MARK: - Operation mapping
-
-	private func title(for op: OperationInfo) -> String {
-		if let vm = op.vm { return "\(vm) — \(op.label)" }
-		return op.label
-	}
-
-	private func symbol(for op: OperationInfo) -> String {
-		switch op.kind {
-		case OperationInfo.Kind.copyVM: return MachmanSymbols.duplicateVM
-		case OperationInfo.Kind.importDisk, OperationInfo.Kind.promoteDisk:
-			return MachmanSymbols.diskStorage
-		case OperationInfo.Kind.shadowBuild, OperationInfo.Kind.safeSave:
-			return MachmanSymbols.safe
-		case OperationInfo.Kind.kernelImport: return MachmanSymbols.initramfs
-		case OperationInfo.Kind.rosettaInstall: return MachmanSymbols.deviceRosetta
-		default: return MachmanSymbols.more
-		}
-	}
+	// MARK: - Operation mapping (title and symbol: OperationInfo+Display)
 
 	private func phase(for op: OperationInfo) -> String {
-		switch op.state {
-		case OperationInfo.State.succeeded: return "Done"
-		case OperationInfo.State.failed: return op.message ?? "Failed"
-		case OperationInfo.State.cancelled: return "Canceled"
-		default:
-			if let done = op.completedBytes, let total = op.totalBytes, total > 0 {
-				let f = ByteCountFormatter.string(
-					fromByteCount: done, countStyle: .file)
-				let t = ByteCountFormatter.string(
-					fromByteCount: total, countStyle: .file)
-				return "\(f) of \(t)"
-			}
-			return "Working…"
+		if let outcome = op.outcomeText { return outcome }
+		if let done = op.completedBytes, let total = op.totalBytes, total > 0 {
+			let f = ByteCountFormatter.string(
+				fromByteCount: done, countStyle: .file)
+			let t = ByteCountFormatter.string(
+				fromByteCount: total, countStyle: .file)
+			return "\(f) of \(t)"
 		}
+		return "Working…"
 	}
 
 	// ETA is consumer math: elapsed rate over remaining bytes (nil until measurable).

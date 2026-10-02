@@ -8,7 +8,9 @@
 //  and lets the stream keep it fresh; a pull that fails is retried with a backoff (P13).
 //  Finished entries linger briefly (the progress card shows the outcome), then prune —
 //  whether a terminal event or a resync brought them — and a pruned one never comes back
-//  on a later resync, though the daemon keeps listing it for a while (P24).
+//  on a later resync, though the daemon keeps listing it for a while (P24). Each finished
+//  operation also lands in the activity list once (PR5), which this store owns so it
+//  outlives reconnects like the store itself.
 //
 
 import Foundation
@@ -27,12 +29,19 @@ public final class OperationsStore: ObservableObject {
 	private var forgotten: Set<String> = []
 	// macOS VMs whose install phase is being fetched (dedupes re-triggered primes).
 	private var phasePrimesInFlight: Set<String> = []
+	// The activity list, and the finished operations already in it (event or resync).
+	public let activity: ActivityLog
+	private var recorded: Set<String> = []
 
+	// `activity` nil = an in-memory list. Resolved in the body: a default argument is
+	// evaluated outside the main actor, where ActivityLog's init is out of reach.
 	public init(
-		retryDelays: [Duration] = RetryBackoff.standardDelays, linger: Duration = .seconds(5)
+		retryDelays: [Duration] = RetryBackoff.standardDelays, linger: Duration = .seconds(5),
+		activity: ActivityLog? = nil
 	) {
 		backoff = RetryBackoff(delays: retryDelays)
 		self.linger = linger
+		self.activity = activity ?? ActivityLog()
 	}
 
 	public func attach(api: MachmanControlling) {
@@ -99,13 +108,23 @@ public final class OperationsStore: ObservableObject {
 			return
 		}
 		guard self.api === api else { return }
-		// Only ids the daemon still lists can come back, so that is all `forgotten` keeps.
+		// Only ids the daemon still lists can come back, so that is all these two keep.
 		forgotten.formIntersection(ops.map(\.id))
+		recorded.formIntersection(ops.map(\.id))
 		operations = ops.filter { !forgotten.contains($0.id) }
 		for op in operations where op.isFinished {
+			recordOutcome(op)
 			schedulePrune(op.id)
 		}
 		backoff.reset()
+	}
+
+	// Once per operation. The list may already hold it: a relaunch's first resync lists
+	// what the last session recorded.
+	private func recordOutcome(_ op: OperationInfo) {
+		guard recorded.insert(op.id).inserted,
+			!activity.contains(key: ActivityEntry.operationKey(op.id)) else { return }
+		activity.record(.operation(op, at: Date()))
 	}
 
 	private func schedulePrune(_ id: String) {
@@ -142,6 +161,7 @@ public final class OperationsStore: ObservableObject {
 			}
 			// Terminal states linger briefly (the card shows the outcome) then prune.
 			if op.isFinished {
+				recordOutcome(op)
 				schedulePrune(op.id)
 			}
 		default:

@@ -30,7 +30,8 @@ final class DaemonConnection: ObservableObject {
 	// new view model is a facade over them. DaemonConnection is their composition root
 	// because it is the one object that sees every (re)connection.
 	let vmStore = VMStore()
-	let operationsStore = OperationsStore()
+	// Its activity list is saved, so finished work and warnings outlive a relaunch (PR5).
+	let operationsStore = OperationsStore(activity: ActivityLog(fileURL: ActivityLog.defaultURL()))
 	// Not api-bound (nothing to re-attach): open terminal tabs + their live SwiftTerm
 	// controllers, kept out of the per-connection teardown so transcripts survive it.
 	let terminals = TerminalSessions.swiftTerm()

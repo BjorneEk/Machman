@@ -268,9 +268,10 @@ public final class VMListViewModel: ObservableObject {
 			case .stopped where previous == .running || previous == .stopping:
 				pushToast(symbol: MachmanSymbols.shutDown, message: "\(vm.name) stopped")
 			case .error:
-				pushToast(
+				pushProblem(
 					symbol: MachmanSymbols.warning, message: "\(vm.name) hit an error",
-					tint: MachmanColors.warning)
+					tint: MachmanColors.warning, vm: vm.name, detail: "Stopped with an error",
+					severity: .failure)
 			default:
 				break
 			}
@@ -342,11 +343,13 @@ public final class VMListViewModel: ObservableObject {
 				&& previous.setupReportAt != now.setupReportAt
 			if setupLanded {
 				if let status = vm.setup?.lastRunStatus, status != "ok" {
-					pushToast(
+					pushProblem(
 						symbol: MachmanSymbols.warning,
 						message: "\(vm.name): guest setup \(status) — details in the "
 							+ "inspector",
-						tint: MachmanColors.warning)
+						tint: MachmanColors.warning, vm: vm.name,
+						detail: "Guest setup \(status) — details in the inspector",
+						severity: .warning)
 				} else {
 					pushToast(
 						symbol: MachmanSymbols.deviceGuestSetup,
@@ -356,11 +359,12 @@ public final class VMListViewModel: ObservableObject {
 				let user = vm.ssh?.guestUser ?? "the guest"
 				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
 				if let status = vm.ssh?.lastRunStatus, status != "ok" {
-					pushToast(
+					let note = vm.ssh?.lastRunNote.map { " — \($0)" } ?? ""
+					pushProblem(
 						symbol: MachmanSymbols.warning,
-						message: "\(vm.name): SSH setup \(status)"
-							+ (vm.ssh?.lastRunNote.map { " — \($0)" } ?? ""),
-						tint: MachmanColors.warning)
+						message: "\(vm.name): SSH setup \(status)\(note)",
+						tint: MachmanColors.warning, vm: vm.name,
+						detail: "SSH setup \(status)\(note)", severity: .warning)
 				} else {
 					pushToast(
 						symbol: MachmanSymbols.deviceSSHSetup,
@@ -368,11 +372,13 @@ public final class VMListViewModel: ObservableObject {
 				}
 			}
 			if previous.reverseState != .pending, now.reverseState == .pending {
-				pushToast(
+				pushProblem(
 					symbol: MachmanSymbols.deviceSSHSetup,
 					message: "\(vm.name) asks to log in to this Mac — approve it in the "
 						+ "SSH section",
-					tint: MachmanColors.warning)
+					tint: MachmanColors.warning, vm: vm.name,
+					detail: "Asks to log in to this Mac — approve it in the SSH section",
+					severity: .warning)
 			}
 		}
 		// A VM that stopped or vanished has no pending SSH wait to report on.
@@ -406,6 +412,8 @@ public final class VMListViewModel: ObservableObject {
 				pushToast(
 					symbol: MachmanSymbols.warning, message: text, tint: MachmanColors.warning,
 					key: Self.logToastKey(text))
+				// The toast goes in seconds; the activity list keeps the whole text (F6).
+				activity.record(.engineLog(vm: vm, level: level, message: message, at: Date()))
 			}
 		case .copyProgress:
 			break   // legacy wire event; the operation cards carry all copy progress
