@@ -22,10 +22,11 @@ struct GuestSetupCommandTests {
 	@Test func theRunLineCarriesTheFamilysEscalation() {
 		#expect(GuestSetupCommands.run(.linux, shareMounted: true) == "sudo " + script)
 		#expect(GuestSetupCommands.run(.linux, shareMounted: false)
-			== GuestSetupInstallerInfo.mountAndRunCommand)
+			== "sudo mkdir -p /mnt/machman/share && sudo mount -t virtiofs host-share "
+				+ "/mnt/machman/share && sudo " + script)
 		#expect(GuestSetupCommands.run(.bsd, shareMounted: true) == "doas " + script)
 		#expect(GuestSetupCommands.run(.macOS, shareMounted: true)
-			== GuestSetupInstallerInfo.runCommand)
+			== "sudo sh \"/Volumes/My Shared Files/GuestSetup/install.sh\"")
 	}
 
 	@Test func mountingTheShareRunsEveryCommandAsRoot() {

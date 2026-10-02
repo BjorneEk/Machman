@@ -82,20 +82,13 @@ public extension DeviceKind {
 	}
 }
 
-// Shared vocabulary for the login installer: the reserved directory name it appears
-// under inside the automounting share ("My Shared Files" is the ONE volume macOS guests
-// mount on their own — its name is fixed by the OS, so the installer rides it as a
-// folder next to the VM's regular mounts; the name is also a reserved mount tag), the
-// script name, and the guest commands. One home so the engine (generation), the daemon
-// (tag validation), and the UI (shown commands) can never drift.
+// The pre-1.0.7 login installer's vocabulary: the directory name it appeared under inside
+// the automounting share ("My Shared Files" is the ONE volume macOS guests mount on their
+// own — its name is fixed by the OS), still a reserved mount tag (ReservedShareNames), and
+// the hand mount the Guest Setup guide shows for macOS 12.
 public enum ConsoleLoginInstallerInfo {
 	public static let directoryName = "LoginInstaller"
 	public static let scriptName = "install.sh"
-
-	// The one guest command — the share automounts on macOS 13+, nothing to mount.
-	public static var runCommand: String {
-		"sudo sh \"/Volumes/My Shared Files/\(directoryName)/\(scriptName)\""
-	}
 
 	// macOS 12 guests don't automount; mount the share by hand, then run from there.
 	public static var fallbackMountCommand: String {
@@ -103,54 +96,20 @@ public enum ConsoleLoginInstallerInfo {
 	}
 }
 
-// Shared vocabulary for the SSH installer (the ConsoleLoginInstallerInfo pattern): the
-// read-only payload directory (generated script + the host's public keys), the writable
-// drop-box the guest reports back through, and the guest commands. One home so the engine
-// (generation), the daemon (tag validation), and the UI (shown commands) can never drift.
+// The pre-1.0.7 SSH installer's names: its read-only payload directory and the writable
+// drop-box the guest reported back through. Old daemons still generate them, so they stay
+// reserved mount tags (ReservedShareNames).
 public enum SSHSetupInfo {
 	public static let directoryName = "SSHSetup"
 	public static let reportDirectoryName = "SSHReport"
 	public static let scriptName = "install.sh"
 	public static let reportName = "report.env"
-
-	// The commands, unprivileged: what needs root is decided by the caller, because the
-	// guest may have sudo, doas, or neither (FreeBSD base ships no sudo at all).
-	// Guest-side paths come from GuestPaths — never spelled out again here.
-
-	// The installer, wherever the share landed. The default is the standard mount point,
-	// so this is the same sentence on every guest that mounts by hand.
-	public static func runCommand(inShareAt mountPoint: String = GuestPaths.share) -> String {
-		"sh \(mountPoint)/\(directoryName)/\(scriptName)"
-	}
-
-	public static var runFromAutomountCommand: String {
-		"sh \"\(GuestPaths.macOSAutomount)/\(directoryName)/\(scriptName)\""
-	}
-
-	// Prefixes EVERY command in an && chain — "sudo a && b" would run b as the user.
-	public static func escalated(_ command: String, with prefix: String) -> String {
-		guard !prefix.isEmpty else { return command }
-		return command.components(separatedBy: " && ")
-			.map { prefix + $0 }
-			.joined(separator: " && ")
-	}
-
-	// macOS guests: the share automounts on 13+, nothing to mount.
-	public static var runCommand: String {
-		escalated(runFromAutomountCommand, with: "sudo ")
-	}
-
-	// Linux guests mount the share by hand once, then run from inside it.
-	public static var mountAndRunCommand: String {
-		escalated(GuestPaths.mountShareCommand + " && " + runCommand(), with: "sudo ")
-	}
 }
 
-// Shared vocabulary for the unified guest-setup installer (1.0.7, the SSHSetupInfo
-// pattern): the read-only payload directory (generated script + env + keys + mount list),
-// the writable drop-box the guest reports back through, and the guest commands. One home
-// so the engine (generation), the daemon (tag validation), and the UI (shown commands)
-// can never drift.
+// Shared vocabulary for the unified guest-setup installer (1.0.7): the read-only payload
+// directory (generated script + env + keys + mount list), the writable drop-box the guest
+// reports back through, and the guest commands. One home so the engine (generation), the
+// daemon (tag validation), and the UI (shown commands) can never drift.
 public enum GuestSetupInstallerInfo {
 	public static let directoryName = "GuestSetup"
 	public static let reportDirectoryName = "GuestReport"
@@ -159,24 +118,19 @@ public enum GuestSetupInstallerInfo {
 	// Per-mount hand-off beside the script: `kind<TAB>name<TAB>hostpath` lines.
 	public static let mountsFileName = "mounts.list"
 
-	// The installer, wherever the share landed (see SSHSetupInfo for the escalation rules).
+	// The commands, unprivileged: the caller escalates them (GuestSetupCommands, in
+	// MachmanDesktopCore), because the guest may have sudo, doas, or neither (FreeBSD base
+	// ships no sudo at all). Guest-side paths come from GuestPaths — never spelled out here.
+
+	// The installer, wherever the share landed. The default is the standard mount point,
+	// so this is the same sentence on every guest that mounts by hand.
 	public static func runCommand(inShareAt mountPoint: String = GuestPaths.share) -> String {
 		"sh \(mountPoint)/\(directoryName)/\(scriptName)"
 	}
 
+	// macOS guests: the share automounts on 13+, nothing to mount.
 	public static var runFromAutomountCommand: String {
 		"sh \"\(GuestPaths.macOSAutomount)/\(directoryName)/\(scriptName)\""
-	}
-
-	// macOS guests: the share automounts on 13+, nothing to mount.
-	public static var runCommand: String {
-		SSHSetupInfo.escalated(runFromAutomountCommand, with: "sudo ")
-	}
-
-	// Linux guests mount the share by hand once, then run from inside it.
-	public static var mountAndRunCommand: String {
-		SSHSetupInfo.escalated(
-			GuestPaths.mountShareCommand + " && " + runCommand(), with: "sudo ")
 	}
 }
 
