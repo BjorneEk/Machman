@@ -42,6 +42,9 @@ final class DaemonConnection: ObservableObject {
 	// serves), so it is a flag beside the status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
 	private var api: RemoteMachman?
+	// The too-old alert is up: a reconnect while it shows is checked once it closes, never
+	// with a second alert on top of it.
+	private var versionPromptShowing = false
 	private var loop: ConnectionLoop<RemoteMachman>!
 	// App-scoped like the previews it pauses: one watcher for the app's lifetime, never one
 	// per connection or per mounted pane (P3).
@@ -141,9 +144,9 @@ final class DaemonConnection: ObservableObject {
 			self?.objectWillChange.send()
 		}
 		// Deferred a turn: its alert runs modal, never inside the loop's callback.
-		let version = api.hello.daemonVersion
-		Task { @MainActor [weak self] in
-			await self?.checkDaemonVersion(version)
+		Task { @MainActor [weak self, weak api] in
+			guard let api else { return }
+			await self?.checkDaemonVersion(of: api)
 		}
 	}
 
@@ -184,7 +187,9 @@ final class DaemonConnection: ObservableObject {
 	// process that can tell "this daemon is older than what I ship". Below the floor → offer
 	// a user-confirmed replacement (retire, then the reconnect path launches the embedded,
 	// current-version daemon and re-adopts vmhosts).
-	private func checkDaemonVersion(_ running: String) async {
+	private func checkDaemonVersion(of session: RemoteMachman) async {
+		guard !versionPromptShowing else { return }
+		let running = session.hello.daemonVersion
 		guard MachmanVersion.isOlder(running, than: Self.oldestCompatibleDaemonVersion) else {
 			let mine = Bundle.main
 				.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
@@ -202,8 +207,17 @@ final class DaemonConnection: ObservableObject {
 		// From a run-loop callout: a modal inside this main-actor Task would hold every other
 		// main-actor job (the stores' reloads, the replies the view model awaits) until it
 		// closes (E32).
+		versionPromptShowing = true
 		let replace = await MainRunLoopCallout.run {
 			Self.runAlert(prompt) == .alertFirstButtonReturn
+		}
+		versionPromptShowing = false
+		// The answer is about the agent the alert named. While it showed, that one may have
+		// gone and another attached (quit from its menu, the loop launched the current one):
+		// never retire that one on a stale Replace — check whatever is attached now instead.
+		guard api === session else {
+			if let current = api { await checkDaemonVersion(of: current) }
+			return
 		}
 		// Nothing newer to launch: the alert explained instead of offering a dead end.
 		guard canReplace else { return }
@@ -213,9 +227,9 @@ final class DaemonConnection: ObservableObject {
 					+ "\(Self.oldestCompatibleDaemonVersion); newer features may fail")
 			return
 		}
-		Task { [weak self] in
+		Task {
 			// Retire drops the connection; the reconnect path launches the embedded daemon.
-			try? await self?.api?.retire()
+			try? await session.retire()
 		}
 	}
 
