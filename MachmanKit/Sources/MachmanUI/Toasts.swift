@@ -223,6 +223,7 @@ struct CappedWidth: Layout {
 		in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
 	) {
 		subviews.first?.place(
-			at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+			at: bounds.origin,
+			proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
 	}
 }
