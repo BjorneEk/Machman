@@ -42,6 +42,9 @@ public final class RoutingMachman: MachmanControlling {
 		// The MAC the guest is actually using — captured at spawn from the config, at adopt
 		// from the host's own reply (they can differ after a safe-save promotion).
 		var macInUse: String?
+		// The library a safe run saves into: its vmhost's --library, set at spawn. nil for a
+		// re-attached run, whose vmhost an earlier daemon handed this daemon's own.
+		var library: String?
 	}
 
 	final class HostedVM {
@@ -1696,11 +1699,12 @@ public final class RoutingMachman: MachmanControlling {
 			macInUse: vm.config.macAddress)
 		identity.isSafe = true
 		identity.shadowRoot = runRoot
+		let library = machmanVMDir
+		identity.library = library
 		let host: HostedVM
 		do {
 			host = try await spawnHost(
-				identity: identity, dataDir: runRoot,
-				extraArguments: ["--library", machmanVMDir])
+				identity: identity, dataDir: runRoot, extraArguments: ["--library", library])
 			// Phase-2 marker: the pid the startup sweep matches against the socket peer.
 			try? SafeRun.writeMarker(
 				ShadowMarker(
@@ -1943,15 +1947,16 @@ public final class RoutingMachman: MachmanControlling {
 		// meanwhile (residence says starting).
 		reserveStart(newName, mac: nil)
 		defer { releaseStart(newName) }
-		let savedConfig = machmanVMDir + "/" + newName + "/config"
-		let hadSavedConfig = FileManager.default.fileExists(atPath: savedConfig)
+		let library = host.identity.library ?? machmanVMDir
+		let hadSavedConfig = FileManager.default.fileExists(
+			atPath: library + "/" + newName + "/config")
 		// The vmhost moves the files (single writer); the daemon re-keys its view after.
 		let info: VMInfo
 		do {
 			info = try await host.client.safeSave(vm: name, to: newName)
 		} catch {
 			listHalfSavedVM(
-				newName, from: name, savedConfig: savedConfig, existedBefore: hadSavedConfig)
+				newName, from: name, library: library, existedBefore: hadSavedConfig)
 			throw error
 		}
 		return finishSafeSave(host, from: name, to: newName, reply: info)
@@ -1962,17 +1967,19 @@ public final class RoutingMachman: MachmanControlling {
 	// the configs to say where each disk is. List them as they are now, not after the next
 	// daemon start. Internal so tests can run it under the redirect lock.
 	func listHalfSavedVM(
-		_ newName: String, from name: String, savedConfig: String, existedBefore: Bool
+		_ newName: String, from name: String, library: String, existedBefore: Bool
 	) {
-		guard !existedBefore, FileManager.default.fileExists(atPath: savedConfig) else { return }
+		guard !existedBefore,
+			FileManager.default.fileExists(atPath: library + "/" + newName + "/config")
+		else { return }
 		do {
-			_ = try registry.adoptFromDisk(name: newName)
+			_ = try registry.adoptFromDisk(name: newName, library: library)
 		} catch {
 			MachmanLogger.log(.passiveError,
 				"Save as New VM left \(newName) in the library, but it can't be listed yet: "
 					+ "\(error)")
 		}
-		registry.reload(name: name)
+		registry.reload(name: name, library: library)
 		registry.events.emit(.listChanged)
 	}
 
@@ -1981,10 +1988,11 @@ public final class RoutingMachman: MachmanControlling {
 	func finishSafeSave(
 		_ host: HostedVM, from name: String, to newName: String, reply info: VMInfo
 	) -> VMInfo {
+		let library = host.identity.library ?? machmanVMDir
 		guard hosted[name] === host else {
 			// The run ended while it saved: the saved VM is on disk, stopped.
-			_ = try? registry.adoptFromDisk(name: newName)
-			registry.reload(name: name)
+			_ = try? registry.adoptFromDisk(name: newName, library: library)
+			registry.reload(name: name, library: library)
 			registry.events.emit(.listChanged)
 			var stopped = info
 			stopped.state = .stopped
@@ -2007,7 +2015,7 @@ public final class RoutingMachman: MachmanControlling {
 		hosted[name] = nil
 		hosted[newName] = host
 		do {
-			_ = try registry.adoptFromDisk(name: newName)
+			_ = try registry.adoptFromDisk(name: newName, library: library)
 		} catch {
 			// The host is live and keyed either way; the next listChanged/reload catches up.
 			MachmanLogger.log(.passiveError,
@@ -2016,7 +2024,7 @@ public final class RoutingMachman: MachmanControlling {
 		// The vmhost rewrote the ORIGINAL's config as well: the disks the run wrote directly
 		// moved into the saved VM's folder, and the original references them there (C5).
 		// The daemon's copy is from before the run.
-		registry.reload(name: name)
+		registry.reload(name: name, library: library)
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
 		registry.events.emit(.stateChanged(vm: newName, state: .running))
 		registry.events.emit(.listChanged)

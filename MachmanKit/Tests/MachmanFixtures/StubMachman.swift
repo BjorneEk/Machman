@@ -548,7 +548,11 @@ public final class StubMachman: MachmanControlling {
 	// The engine keeps the original VM after a save (stopped, its run handed to the new
 	// name); the stub drops it unless this is set (LoopbackTests pins the dropping list).
 	public var safeSaveKeepsOriginal = false
+	// What a vmhost's save leaves on disk before it answers (the files it moved, the configs
+	// it rewrote). Runs ahead of the gate, so a scripted failure leaves it behind too.
+	public var onSafeSave: ((_ vm: String, _ newName: String) -> Void)?
 	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		onSafeSave?(name, newName)
 		try gate()
 		await stallWhileScripted("safeSave")
 		var vm = try get(name)

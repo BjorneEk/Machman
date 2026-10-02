@@ -478,7 +478,8 @@ public final class VMRegistry {
 
 	// Register a directory that appeared after the initial scan (vm.copy now, safe-save
 	// later). reload(name:) can't do this — it only refreshes names it already knows.
-	func adoptFromDisk(name: String) throws -> VirtualMachine {
+	// `library`: VMConfig.load's.
+	func adoptFromDisk(name: String, library: String = machmanVMDir) throws -> VirtualMachine {
 		guard restrictedName == nil else {
 			throw MachmanError(code: .invalidState, message: "a vmhost cannot adopt VMs")
 		}
@@ -488,7 +489,7 @@ public final class VMRegistry {
 		}
 		let config: VMConfig
 		do {
-			config = try VMConfig.load(name: name)
+			config = try VMConfig.load(name: name, library: library)
 		} catch {
 			throw MachmanError(
 				code: .ioFailure, message: "cannot read the new VM '\(name)': \(error)")
@@ -514,8 +515,8 @@ public final class VMRegistry {
 	}
 
 	// Re-read one VM's config from disk (after a vmhost exits, the daemon's in-memory copy is
-	// stale — the vmhost owned the file while the VM ran).
-	func reload(name: String) {
+	// stale — the vmhost owned the file while the VM ran). `library`: VMConfig.load's.
+	func reload(name: String, library: String = machmanVMDir) {
 		guard vms[name] != nil else { return }
 		if installSessions[name]?.isInstalling == true {
 			// A live install saves through the config it started with; a second object would
@@ -527,7 +528,7 @@ public final class VMRegistry {
 		// a kept session would whole-file-save the pre-run config at its next install,
 		// reverting everything the run persisted (E4).
 		installSessions[name] = nil
-		guard let fresh = try? VMConfig.load(name: name) else {
+		guard let fresh = try? VMConfig.load(name: name, library: library) else {
 			vms[name] = nil
 			events.emit(.listChanged)
 			return

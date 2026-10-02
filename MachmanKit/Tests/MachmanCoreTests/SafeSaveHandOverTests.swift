@@ -464,8 +464,7 @@ struct SafeSaveHandOverTests {
 			try alpha.addNewStorageDisk(name: "data", size: 4096)
 			let registry = VMRegistry()
 			let routing = RoutingMachman(registry: registry, daemonVersion: "test")
-			let savedConfig = machmanVMDir + "/kept/config"
-			let before = FileManager.default.fileExists(atPath: savedConfig)
+			let before = FileManager.default.fileExists(atPath: machmanVMDir + "/kept/config")
 
 			try VMConfig.createNewVMDirectory(name: "kept")
 			let kept = try VMConfig(name: "kept", memorySize: 2048, cpuCount: 2)
@@ -474,7 +473,7 @@ struct SafeSaveHandOverTests {
 			alpha.disks = [VMDisk(kind: .fromUrl(moved))]
 			try alpha.saveVMConfig()
 			routing.listHalfSavedVM(
-				"kept", from: "alpha", savedConfig: savedConfig, existedBefore: before)
+				"kept", from: "alpha", library: machmanVMDir, existedBefore: before)
 
 			#expect(registry.vm(named: "kept") != nil)
 			#expect(registry.vm(named: "alpha")?.config.disks.map(\.kind) == [.fromUrl(moved)])
@@ -483,15 +482,36 @@ struct SafeSaveHandOverTests {
 			try VMConfig.createNewVMDirectory(name: "stray")
 			_ = try VMConfig(name: "stray", memorySize: 2048, cpuCount: 2)
 			routing.listHalfSavedVM(
-				"stray", from: "alpha", savedConfig: machmanVMDir + "/stray/config",
-				existedBefore: true)
+				"stray", from: "alpha", library: machmanVMDir, existedBefore: true)
 			#expect(registry.vm(named: "stray") == nil)
 		}
+	}
+
+	// alpha's safe run on a stub vmhost this daemon adopted. Its save goes to `library`,
+	// given explicitly so no parallel test's redirect can move it under the call.
+	@MainActor
+	private func adoptSafeRun(
+		into routing: RoutingMachman, library: String, stub: StubMachman
+	) async throws -> (MachmanServer, RemoteMachman) {
+		let socketPath = TestEnvironment.scratch
+			+ "mm-half-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
+		var running = StubMachman.makeInfo("alpha", state: .running)
+		running.safeRun = true
+		stub.vms["alpha"] = running
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try server.start()
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath,
+			isSafe: true, shadowRoot: "/nonexistent", library: library)
+		let client = try await routing.connectHost(identity: identity)
+		routing.adopt(identity: identity, client: client)
+		return (server, client)
 	}
 
 	// The real path: the vmhost's refusal reaches the caller, and with no saved folder left
 	// behind nothing new is listed and the run stays the original's.
 	@Test @MainActor func aFailedSaveRethrowsAndListsNothingNew() async throws {
+		let library = TestEnvironment.scratch + "lib-\(UUID().uuidString)"
 		var registry: VMRegistry!
 		var routing: RoutingMachman!
 		try VMTestDir.withRedirectedDir {
@@ -500,27 +520,65 @@ struct SafeSaveHandOverTests {
 			registry = VMRegistry()
 			routing = RoutingMachman(registry: registry, daemonVersion: "test")
 		}
-		let socketPath = TestEnvironment.scratch
-			+ "mm-half-\(getpid())-\(UInt32.random(in: 0..<99999)).sock"
 		let stub = StubMachman()
-		var running = StubMachman.makeInfo("alpha", state: .running)
-		running.safeRun = true
-		stub.vms["alpha"] = running
 		stub.fail("safeSave", with: MachmanError(code: .ioFailure, message: "saving half-saved"))
-		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
-		try server.start()
+		let (server, client) = try await adoptSafeRun(into: routing, library: library, stub: stub)
 		defer { server.stop() }
-		let identity = RoutingMachman.HostIdentity(
-			id: UUID(), name: "alpha", socketPath: socketPath,
-			isSafe: true, shadowRoot: "/nonexistent")
-		let client = try await routing.connectHost(identity: identity)
-		routing.adopt(identity: identity, client: client)
 
 		let error = await #expect(throws: MachmanError.self) {
 			_ = try await routing.safeSave(vm: "alpha", to: "half-saved")
 		}
 		#expect(error?.code == .ioFailure)
 		#expect(registry.vm(named: "half-saved") == nil)
+		#expect(routing.hostedNames == ["alpha"])
+		await client.disconnect()
+	}
+
+	// The real path when the vmhost could neither finish nor undo the save: kept stays in
+	// the library holding alpha's disk, and alpha's config references it there. The daemon
+	// lists both as they are now before it passes the failure on.
+	@Test @MainActor func aSaveThatFailsHalfWayListsWhatItLeft() async throws {
+		let library = TestEnvironment.scratch + "lib-\(UUID().uuidString)"
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		var registry: VMRegistry!
+		var routing: RoutingMachman!
+		var original: VMConfig!
+		var saved: VMConfig!
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			original = try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+			try original.addNewStorageDisk(name: "data", size: 4096)
+			registry = VMRegistry()
+			routing = RoutingMachman(registry: registry, daemonVersion: "test")
+			try VMConfig.createNewVMDirectory(name: "kept")
+			saved = try VMConfig(name: "kept", memorySize: 2048, cpuCount: 2)
+			try saved.addNewStorageDisk(name: "data", size: 4096)
+		}
+		// The library before the save: alpha owns data.raw.
+		let fm = FileManager.default
+		try fm.createDirectory(atPath: library + "/alpha", withIntermediateDirectories: true)
+		try SafeRunFixture.write(original, to: library + "/alpha")
+		let moved = url(library + "/kept/data.raw")
+		let alpha: VMConfig = original, kept: VMConfig = saved
+		alpha.disks = [VMDisk(kind: .fromUrl(moved), safe: false)]
+		let stub = StubMachman()
+		stub.onSafeSave = { _, newName in
+			// What the vmhost leaves: kept owns data.raw, alpha references it there.
+			try? fm.createDirectory(
+				atPath: library + "/" + newName, withIntermediateDirectories: true)
+			try? SafeRunFixture.write(kept, to: library + "/" + newName)
+			try? SafeRunFixture.write(alpha, to: library + "/alpha")
+		}
+		stub.fail("safeSave", with: MachmanError(code: .ioFailure, message: "saving kept"))
+		let (server, client) = try await adoptSafeRun(into: routing, library: library, stub: stub)
+		defer { server.stop() }
+
+		let error = await #expect(throws: MachmanError.self) {
+			_ = try await routing.safeSave(vm: "alpha", to: "kept")
+		}
+		#expect(error?.code == .ioFailure)
+		#expect(registry.vm(named: "kept")?.config.disks.map(\.kind) == [.storage("data", 4096)])
+		#expect(registry.vm(named: "alpha")?.config.disks.map(\.kind) == [.fromUrl(moved)])
 		#expect(routing.hostedNames == ["alpha"])
 		await client.disconnect()
 	}

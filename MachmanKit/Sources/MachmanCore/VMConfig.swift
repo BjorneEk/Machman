@@ -213,12 +213,14 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
-	// Load a VM from <machmanVMDir>/<name>/config: a plain decode, then two invariants. The
+	// Load a VM from <library>/<name>/config: a plain decode, then two invariants. The
 	// DIRECTORY name is authoritative (renames move the directory; the file's name field is
 	// discarded), and configs predating macAddress get one minted and saved (one-time
-	// migration).
-	static func load(name: String) throws -> VMConfig {
-		let fileURL = URL(fileURLWithPath: "\(machmanVMDir)/\(name)/config")
+	// migration). `library` is machmanVMDir unless the caller holds the folder's path (Save
+	// as New VM's daemon half); the VM's own paths, that save's among them, still resolve
+	// through machmanVMDir, which names the same folder outside tests.
+	static func load(name: String, library: String = machmanVMDir) throws -> VMConfig {
+		let fileURL = URL(fileURLWithPath: "\(library)/\(name)/config")
 		let data = try Data(contentsOf: fileURL)
 		let config = try JSONDecoder().decode(VMConfig.self, from: data)
 		config.name = name
