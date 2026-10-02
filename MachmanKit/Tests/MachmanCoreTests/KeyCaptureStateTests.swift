@@ -68,6 +68,35 @@ struct KeyCaptureStateTests {
 		#expect(state.keyUp(keyCode: 40) == .pass)     // consumed once, then the guest's
 	}
 
+	// V4: the chord's release went elsewhere (another Space, a key-window change mid-press).
+	// The next plain press of that key is the guest's, and so is its release — eating it
+	// would leave a key stuck down, repeating, in the guest.
+	@Test func aLostChordReleaseNeverEatsTheNextPress() {
+		var state = KeyCaptureState()
+		#expect(state.keyDown(keyCode: 40, reserved: .toggleCapture, isRepeat: false)
+			== .perform(.toggleCapture))
+		#expect(state.keyDown(keyCode: 40, reserved: nil, isRepeat: false) == .pass)
+		#expect(state.keyUp(keyCode: 40) == .pass)
+	}
+
+	@Test func resigningKeyDropsTheChordsRelease() {
+		var state = KeyCaptureState()
+		_ = state.keyDown(keyCode: 40, reserved: .toggleCapture, isRepeat: false)
+		state.resignedKey()
+		#expect(state.keyUp(keyCode: 40) == .pass)
+	}
+
+	// Still held: repeats and other keys leave the slot, and the chord's own release is eaten.
+	@Test func aHeldChordStillEatsItsOwnRelease() {
+		var state = KeyCaptureState()
+		_ = state.keyDown(keyCode: 40, reserved: .toggleCapture, isRepeat: false)
+		#expect(state.keyDown(keyCode: 40, reserved: .toggleCapture, isRepeat: true)
+			== .consume)
+		#expect(state.keyDown(keyCode: 3, reserved: nil, isRepeat: false) == .pass)
+		#expect(state.keyUp(keyCode: 3) == .pass)
+		#expect(state.keyUp(keyCode: 40) == .consume)
+	}
+
 	@Test func ordinaryKeysPass() {
 		var state = KeyCaptureState()
 		#expect(state.keyDown(keyCode: 3, reserved: nil, isRepeat: false) == .pass)
@@ -97,8 +126,8 @@ struct KeyCaptureStateTests {
 		#expect(entered.capturing == !entryHidesChrome)
 	}
 
-	// Every mash of ⌃⌥⌘K and ⌃⌥⌘F (K8) up to six steps, from each mode: whenever the window
-	// sits in full screen, the Dock and menu bar are hidden exactly when capture is on.
+	// Every mash of ⌃⌥⌘K and ⌃⌥⌘F (K8) up to six steps, from each mode: whenever
+	// the window sits in full screen, the Dock and menu bar hide exactly when capture is on.
 	@Test func everyMashEndsWithTheChromeCaptureAsksFor() {
 		var failures: [String] = []
 		for start in [SystemKeyCapture.off, .always, .fullScreen] {

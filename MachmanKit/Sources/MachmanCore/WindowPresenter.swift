@@ -149,6 +149,10 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		keyCapture(notification)?.windowDidBecomeKey()
 	}
 
+	func windowDidResignKey(_ notification: Notification) {
+		keyCapture(notification)?.windowDidResignKey()
+	}
+
 	func windowDidEnterFullScreen(_ notification: Notification) {
 		keyCapture(notification)?.windowDidEnterFullScreen()
 	}

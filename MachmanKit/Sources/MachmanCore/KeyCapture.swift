@@ -225,6 +225,10 @@ final class KeyCaptureController {
 		focusView()
 	}
 
+	func windowDidResignKey() {
+		state.resignedKey()
+	}
+
 	// What the window enters full screen with: hidden Dock and menu bar if this run captures
 	// there, the proposal untouched otherwise.
 	func fullScreenPresentationOptions(

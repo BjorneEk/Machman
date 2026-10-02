@@ -19,7 +19,10 @@ struct KeyCaptureState {
 	// The mode last reported, so a refresh with nothing new stays quiet.
 	private var reportedMode: SystemKeyCapture?
 	// The key of a chord we consumed: its key-up is consumed too, so the guest never sees a
-	// release without a press.
+	// release without a press. The release can go elsewhere (a Space or key-window change
+	// mid-press, e.g. during ⌃⌥⌘F's transition), so a plain press of that key or the window
+	// resigning key ends the wait: should the release still come, the guest gets an
+	// unmatched key-up, a no-op for a keyboard, where an eaten one leaves a key stuck down.
 	private var consumedKeyCode: UInt16?
 
 	// What a refresh asks of the controller.
@@ -82,7 +85,12 @@ struct KeyCaptureState {
 	mutating func keyDown(
 		keyCode: UInt16, reserved: KeyCapturePolicy.ReservedKey?, isRepeat: Bool
 	) -> KeyAction {
-		guard let reserved else { return .pass }
+		guard let reserved else {
+			if keyCode == consumedKeyCode {
+				consumedKeyCode = nil   // pressed again without the chord: its release was lost
+			}
+			return .pass
+		}
 		consumedKeyCode = keyCode
 		return isRepeat ? .consume : .perform(reserved)
 	}
@@ -91,5 +99,10 @@ struct KeyCaptureState {
 		guard keyCode == consumedKeyCode else { return .pass }
 		consumedKeyCode = nil
 		return .consume
+	}
+
+	// The window lost key status: the chord's release will go to whichever window has it.
+	mutating func resignedKey() {
+		consumedKeyCode = nil
 	}
 }
