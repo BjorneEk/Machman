@@ -288,6 +288,29 @@ public final class VMListViewModel: ObservableObject {
 		var lastReportAt: Date?
 		var reverseState: SSHInfo.ReverseState = .none
 		var setupReportAt: Date?
+		var setupRun: SetupRun?
+	}
+
+	// What a setup RUN decided, as opposed to what any report re-probes (features, consoles,
+	// automounts, OS facts): a boot-time refresh replays the last run's outcome unchanged,
+	// so only a change here is a run worth a toast.
+	private struct SetupRun: Equatable {
+		var installed: Bool?
+		var status: String?
+		var note: String?
+		var errors: [GuestSetupError]?
+		var notes: [GuestSetupNote]?
+		var scriptVersion: Int?
+
+		init?(_ setup: GuestSetupInfo?) {
+			guard let setup else { return nil }
+			installed = setup.installed
+			status = setup.lastRunStatus
+			note = setup.lastRunNote
+			errors = setup.errors
+			notes = setup.notes
+			scriptVersion = setup.scriptVersion
+		}
 	}
 	private var knownSSH: [String: SSHSnapshot] = [:]
 	// Re-run Address Discovery / Check Connection (F4): the VMs waiting on an answer (each
@@ -312,7 +335,8 @@ public final class VMListViewModel: ObservableObject {
 				reachability: vm.ssh?.reachability,
 				lastReportAt: vm.ssh?.lastReportAt,
 				reverseState: vm.ssh?.reverseState ?? .none,
-				setupReportAt: vm.setup?.lastReportAt)
+				setupReportAt: vm.setup?.lastReportAt,
+				setupRun: SetupRun(vm.setup))
 			let previous = knownSSH[vm.name]
 			knownSSH[vm.name] = now
 			// A re-run discovery that heard back says what it found, unchanged or not.
@@ -356,11 +380,17 @@ public final class VMListViewModel: ObservableObject {
 			}
 			// A setup run landed. One toast per run: the unified (v3) report speaks for
 			// the whole run; the SSH-only phrasing survives for v2 guests, whose reports
-			// carry no setup half.
+			// carry no setup half. Every boot re-sends the report: a refresh that changed
+			// only what it probes, not the run's outcome, stays quiet.
 			let setupLanded = now.setupReportAt != nil
 				&& previous.setupReportAt != now.setupReportAt
+				&& previous.setupRun != now.setupRun
 			if setupLanded {
-				if let status = vm.setup?.lastRunStatus, status != "ok" {
+				if vm.setup?.installed == false {
+					pushToast(
+						symbol: MachmanSymbols.deviceGuestSetup,
+						message: "\(vm.name): guest setup removed")
+				} else if let status = vm.setup?.lastRunStatus, status != "ok" {
 					pushProblem(
 						symbol: MachmanSymbols.warning,
 						message: "\(vm.name): guest setup \(status) — details in the "
@@ -373,7 +403,8 @@ public final class VMListViewModel: ObservableObject {
 						symbol: MachmanSymbols.deviceGuestSetup,
 						message: "\(vm.name): guest setup complete")
 				}
-			} else if let stamp = now.lastReportAt, previous.lastReportAt != stamp {
+			} else if vm.setup?.lastReportAt == nil, let stamp = now.lastReportAt,
+				previous.lastReportAt != stamp {
 				let user = vm.ssh?.guestUser ?? "the guest"
 				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
 				if let status = vm.ssh?.lastRunStatus, status != "ok" {
