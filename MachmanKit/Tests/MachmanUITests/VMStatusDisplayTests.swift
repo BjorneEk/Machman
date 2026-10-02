@@ -2,8 +2,9 @@
 //  VMStatusDisplayTests.swift
 //  MachmanTests
 //
-//  The state word every state spot shows: the VM's state, or "not responding" while its
-//  vmhost misses the daemon's answer deadline (E20).
+//  The state word every state spot shows: the VM's state as a word ("Running", never the
+//  raw enum name — H8), or "Not responding" while its vmhost misses the daemon's answer
+//  deadline (E20).
 //
 
 import Testing
@@ -25,13 +26,18 @@ struct VMStatusDisplayTests {
 	}
 
 	@Test func aStalledVMSaysNotResponding() {
-		#expect(vm(.running, unresponsive: true).stateLabel == "not responding")
-		#expect(vm(.unknown, unresponsive: true).stateLabel == "not responding")
+		#expect(vm(.running, unresponsive: true).stateLabel == "Not responding")
+		#expect(vm(.unknown, unresponsive: true).stateLabel == "Not responding")
 	}
 
 	@Test func anAnsweringVMSaysItsState() {
-		#expect(vm(.running, unresponsive: nil).stateLabel == "running")
-		#expect(vm(.stopped, unresponsive: false).stateLabel == "stopped")
-		#expect(vm(.starting, unresponsive: nil).stateLabel == "starting")
+		#expect(vm(.running, unresponsive: nil).stateLabel == "Running")
+		#expect(vm(.stopped, unresponsive: false).stateLabel == "Stopped")
+		#expect(vm(.starting, unresponsive: nil).stateLabel == "Starting")
+	}
+
+	@Test func everyStateHasADisplayWord() {
+		#expect(VMState.allCases.map(\.displayLabel)
+			== ["Stopped", "Starting", "Running", "Stopping", "Paused", "Error", "Unknown"])
 	}
 }

@@ -4,16 +4,31 @@
 //
 //  A VM's state as the desktop shows it — the one place that knows a vmhost can stop
 //  answering (E20). The daemon then serves the VM's last answer marked unresponsive, and
-//  every state spot shows a hollow warning ring and "not responding" instead of the state.
+//  every state spot shows a hollow warning ring and "Not responding" instead of the state.
 //
 
 import SwiftUI
 import MachmanAPI
 
+extension VMState {
+	// The state as a word for people, never the raw enum name (H8).
+	public var displayLabel: String {
+		switch self {
+		case .stopped: return "Stopped"
+		case .starting: return "Starting"
+		case .running: return "Running"
+		case .stopping: return "Stopping"
+		case .paused: return "Paused"
+		case .error: return "Error"
+		case .unknown: return "Unknown"
+		}
+	}
+}
+
 extension VMInfo {
-	// The state word a state spot shows: "running", "stopped", … or "not responding".
+	// The state word a state spot shows: "Running", "Stopped", … or "Not responding".
 	public var stateLabel: String {
-		isUnresponsive ? "not responding" : String(describing: state)
+		isUnresponsive ? "Not responding" : state.displayLabel
 	}
 }
 

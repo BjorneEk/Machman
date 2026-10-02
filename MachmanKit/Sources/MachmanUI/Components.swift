@@ -33,7 +33,7 @@ public struct StatusDot: View {
 					PulsingRing(color: color)
 				}
 			}
-			.accessibilityLabel(String(describing: state))
+			.accessibilityLabel(state.displayLabel)
 	}
 
 	private var color: Color {
