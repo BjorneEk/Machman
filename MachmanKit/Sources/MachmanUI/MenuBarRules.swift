@@ -41,7 +41,8 @@ public struct MenuBarFailure: Equatable, Sendable {
 				forceStart = nil
 			}
 		case .stop(let mode):
-			title = mode == .force ? "Couldn't force stop \(quoted)" : "Couldn't shut down \(quoted)"
+			title = mode == .force
+				? "Couldn't force stop \(quoted)" : "Couldn't shut down \(quoted)"
 			forceStart = nil
 		case .openWindow:
 			title = "Couldn't open \(vm)'s window"
