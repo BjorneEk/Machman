@@ -210,12 +210,7 @@ struct VMDeviceTreeView: View {
 			Spacer()
 			BootBadge(mode: vm.boot.mode, size: 9)
 		}
-		.font(.system(size: theme.metrics.rowFontSize))
-		.frame(height: theme.metrics.treeRowHeight)
-		.contentShape(Rectangle())
-		.simultaneousGesture(TapGesture().onEnded { clicked(.vmRoot) })
-		.tag(SidebarNode.vmRoot)
-		.contextMenu {
+		.treeRow(.vmRoot, onClick: { clicked(.vmRoot) }) {
 			// Stop-first actions show dimmed with the reason while the VM runs (P14).
 			Button("Rename") { renamingRoot = true }
 				.stopFirst(vm, .renameVM)
@@ -238,8 +233,8 @@ struct VMDeviceTreeView: View {
 	private var diskGroup: some View {
 		let disks = sectionRows(.disks, vm.disks) { matches($0.name, $0.path) }
 		if shows(.disks, rows: disks.count) {
-			group(.group("Disks"), symbol: MachmanSymbols.diskName, title: "Disks",
-				count: vm.disks.count, menu: {
+			TreeGroup(.group("Disks"), symbol: MachmanSymbols.diskName, title: "Disks",
+				count: vm.disks.count, isExpanded: groupBinding(.group("Disks")), menu: {
 					Button("Add Existing Disk…") {
 						AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
 					}
@@ -271,11 +266,10 @@ struct VMDeviceTreeView: View {
 								.help("Referenced — lives outside the VM directory")
 						}
 					}
-					.opacity(disk.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
-					.font(.system(size: theme.metrics.rowFontSize))
-					.frame(height: theme.metrics.treeRowHeight)
-					.tag(SidebarNode.disk(disk.id))
-					.contextMenu { diskMenu(disk) }
+					.treeRow(
+						.disk(disk.id),
+						opacity: disk.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity
+					) { diskMenu(disk) }
 				}
 				if let preview = dragPreview, preview.section == .disks {
 					TreeDropPreviewRow(preview: preview, icon: MachmanSymbols.diskStorage)
@@ -341,8 +335,8 @@ struct VMDeviceTreeView: View {
 	private var mountGroup: some View {
 		let mounts = sectionRows(.mounts, vm.mounts) { matches($0.path, $0.tag) }
 		if shows(.mounts, rows: mounts.count) {
-			group(.group("Mounts"), symbol: MachmanSymbols.mount, title: "Mounts",
-				count: vm.mounts.count, menu: {
+			TreeGroup(.group("Mounts"), symbol: MachmanSymbols.mount, title: "Mounts",
+				count: vm.mounts.count, isExpanded: groupBinding(.group("Mounts")), menu: {
 					Button("Add Mount Folder…") {
 						AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
 					}
@@ -374,11 +368,10 @@ struct VMDeviceTreeView: View {
 									?? "Mounted at boot by Guest Setup")
 						}
 					}
-					.opacity(mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity)
-					.font(.system(size: theme.metrics.rowFontSize))
-					.frame(height: theme.metrics.treeRowHeight)
-					.tag(SidebarNode.mount(mount.id))
-					.contextMenu {
+					.treeRow(
+						.mount(mount.id),
+						opacity: mount.isEnabled ? 1 : MachmanColors.inactiveEntryOpacity
+					) {
 						batchMenuItems(for: .mount(mount.id))
 						Button("Copy") {
 							EntityClipboard.write(EntityClipboard(
@@ -416,8 +409,9 @@ struct VMDeviceTreeView: View {
 		// Selectable (the SSH-group pattern): the group inspector lists every interface
 		// with the login state the guest-setup script reported.
 		if shows(.serial, rows: ports.count) {
-			group(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
-				count: vm.allSerialPorts.count, selectable: true) {
+			TreeGroup(.group("Serial"), symbol: MachmanSymbols.serialUart, title: "Serial",
+				count: vm.allSerialPorts.count, selectable: true,
+				isExpanded: groupBinding(.group("Serial"))) {
 				ForEach(ports) { port in
 					serialRow(port)
 				}
@@ -444,8 +438,9 @@ struct VMDeviceTreeView: View {
 				matches(sessions.sshSessionName(vm: vm.name, ref: $0))
 			}
 			if shows(.ssh, rows: rows.count) {
-				group(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
-					title: "SSH", count: open.count, selectable: true, menu: {
+				TreeGroup(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
+					title: "SSH", count: open.count, selectable: true,
+					isExpanded: groupBinding(.group("SSH")), menu: {
 					// The + accessory's reliable twin — List group labels can swallow clicks.
 					Button("New SSH Session") { openSSHSession() }
 						.disabled(!sshSessionReady)
@@ -484,12 +479,7 @@ struct VMDeviceTreeView: View {
 				.frame(width: 5, height: 5)
 				.help("Session open")
 		}
-		.font(.system(size: theme.metrics.rowFontSize))
-		.frame(height: theme.metrics.treeRowHeight)
-		.contentShape(Rectangle())
-		.simultaneousGesture(TapGesture().onEnded { clicked(.sshSession(ref)) })
-		.tag(SidebarNode.sshSession(ref))
-		.contextMenu {
+		.treeRow(.sshSession(ref), onClick: { clicked(.sshSession(ref)) }) {
 			if !torn {
 				Button {
 					detach(.ssh(ref))
@@ -524,8 +514,9 @@ struct VMDeviceTreeView: View {
 		let rows = sectionRows(.installers, installers) { matches($0.kind.displayLabel) }
 		// The unified Guest Setup (the legacy Console Login / SSH Setup kinds migrate to it).
 		if shows(.installers, rows: rows.count) {
-			group(.group("Installers"), symbol: MachmanSymbols.installerGroup,
-				title: "Installers", count: installers.count, menu: {
+			TreeGroup(.group("Installers"), symbol: MachmanSymbols.installerGroup,
+				title: "Installers", count: installers.count,
+				isExpanded: groupBinding(.group("Installers")), menu: {
 				if vm.canAddGuestSetup {
 					Button("Add Guest Setup") {
 						viewModel.addDevice(vm.name, kind: .guestSetup)
@@ -534,8 +525,6 @@ struct VMDeviceTreeView: View {
 			}) {
 				ForEach(rows) { device in
 					deviceRow(device)
-						.tag(SidebarNode.device(device.kind))
-						.contextMenu { deviceMenu(device) }
 				}
 			}
 		}
@@ -613,14 +602,12 @@ struct VMDeviceTreeView: View {
 					.help("Terminal open")
 			}
 		}
-		.opacity(!enabled ? MachmanColors.inactiveEntryOpacity
-			: (gated ? MachmanColors.dimmedRowOpacity : 1))
-		.font(.system(size: theme.metrics.rowFontSize))
-		.frame(height: theme.metrics.treeRowHeight)
-		.contentShape(Rectangle())
-		.simultaneousGesture(TapGesture().onEnded { clicked(.serial(ref)) })
-		.tag(SidebarNode.serial(ref))
-		.contextMenu { serialMenu(port, ref: ref, open: open, gated: gated, enabled: enabled) }
+		.treeRow(
+			.serial(ref),
+			opacity: !enabled ? MachmanColors.inactiveEntryOpacity
+				: (gated ? MachmanColors.dimmedRowOpacity : 1),
+			onClick: { clicked(.serial(ref)) }
+		) { serialMenu(port, ref: ref, open: open, gated: gated, enabled: enabled) }
 	}
 
 	// HIG: hide (don't dim) unavailable actions — a host-gated or disabled port has no
@@ -690,12 +677,10 @@ struct VMDeviceTreeView: View {
 		let devices = (vm.devices ?? []).filter { !$0.kind.isInstaller }
 		let rows = sectionRows(.devices, devices) { matches($0.kind.displayLabel) }
 		if shows(.devices, rows: rows.count) {
-			group(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
-				count: devices.count) {
+			TreeGroup(.group("Devices"), symbol: MachmanSymbols.deviceGroup, title: "Devices",
+				count: devices.count, isExpanded: groupBinding(.group("Devices"))) {
 				ForEach(rows) { device in
 					deviceRow(device)
-						.tag(SidebarNode.device(device.kind))
-						.contextMenu { deviceMenu(device) }
 				}
 			}
 		}
@@ -715,9 +700,10 @@ struct VMDeviceTreeView: View {
 					.help(gate.message)
 			}
 		}
-		.opacity(device.enabled ? 1 : MachmanColors.inactiveEntryOpacity)
-		.font(.system(size: theme.metrics.rowFontSize))
-		.frame(height: theme.metrics.treeRowHeight)
+		.treeRow(
+			.device(device.kind),
+			opacity: device.enabled ? 1 : MachmanColors.inactiveEntryOpacity
+		) { deviceMenu(device) }
 	}
 
 	@ViewBuilder
@@ -758,7 +744,35 @@ struct VMDeviceTreeView: View {
 	private func kernelDisclosure(
 		role: KernelRole, title: String, entries: [KernelTreeEntry]
 	) -> some View {
-		let dg = DisclosureGroup(isExpanded: groupBinding(.group(title))) {
+		// Kernel parent is selectable (it has an inspector); the initramfs parent is a dim
+		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
+		TreeGroup(
+			.group(title), title: title, count: nil, selectable: role == .kernel,
+			parked: vm.kernelSectionParked, isExpanded: groupBinding(.group(title)),
+			icon: {
+				if role == .kernel {
+					TuxIcon(size: theme.metrics.iconSize + 1)
+				} else {
+					Image(systemName: MachmanSymbols.initramfs)
+						.font(.system(size: theme.metrics.iconSize))
+				}
+			},
+			menu: {
+				Button("Add From Disk…") {
+					AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
+				}
+				Button("Paste") { paste(into: .kernel(role)) }
+					.disabled(!pasteboard.snapshot.canPaste(into: .kernel(role)))
+			},
+			accessory: {
+				if role == .kernel && missingKernelWarning {
+					Image(systemName: MachmanSymbols.warning)
+						.font(.system(size: 10))
+						.foregroundStyle(MachmanColors.warning)
+						.help("No kernel selected — the VM cannot start")
+				}
+			}
+		) {
 			ForEach(entries) { file in
 				HStack(spacing: 6) {
 					if role == .kernel {
@@ -796,12 +810,10 @@ struct VMDeviceTreeView: View {
 							.help("Active")
 					}
 				}
-				.opacity(file.active ? 1 : MachmanColors.inactiveEntryOpacity)
-				.font(.system(size: theme.metrics.rowFontSize))
-				.frame(height: theme.metrics.treeRowHeight)
-				.tag(role == .kernel
-					? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id))
-				.contextMenu { kernelEntryMenu(file, role: role) }
+				.treeRow(
+					role == .kernel ? .kernel(file.id) : .initramfs(file.id),
+					opacity: file.active ? 1 : MachmanColors.inactiveEntryOpacity
+				) { kernelEntryMenu(file, role: role) }
 			}
 			if let preview = dragPreview, preview.section == .kernel(role) {
 				TreeDropPreviewRow(
@@ -809,46 +821,11 @@ struct VMDeviceTreeView: View {
 					icon: role == .kernel
 						? MachmanSymbols.kernelFile : MachmanSymbols.initramfs)
 			}
-		} label: {
-			HStack(spacing: 6) {
-				if role == .kernel {
-					TuxIcon(size: theme.metrics.iconSize + 1)
-				} else {
-					Image(systemName: MachmanSymbols.initramfs)
-						.font(.system(size: theme.metrics.iconSize))
-				}
-				Text(title).fontWeight(.medium)
-				Spacer()
-				if role == .kernel && missingKernelWarning {
-					Image(systemName: MachmanSymbols.warning)
-						.font(.system(size: 10))
-						.foregroundStyle(MachmanColors.warning)
-						.help("No kernel selected — the VM cannot start")
-				}
-			}
-			.font(.system(size: theme.metrics.rowFontSize))
-			.frame(height: theme.metrics.treeRowHeight)
-			.contextMenu {
-				Button("Add From Disk…") {
-					AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
-				}
-				Button("Paste") { paste(into: .kernel(role)) }
-					.disabled(!pasteboard.snapshot.canPaste(into: .kernel(role)))
-			}
 		}
-		// Kernel parent is selectable (it has an inspector); the initramfs parent is a dim
-		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
-		let droppable = dg.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
+		.onDrop(of: [.fileURL], delegate: GroupDropDelegate(
 			section: .kernel(role), preview: $dragPreview,
 			touched: { dragGeneration &+= 1 },
 			perform: { drop($0, on: .kernel(role)) }))
-		if role == .kernel {
-			droppable
-				.tag(SidebarNode.group("Kernel"))
-				.opacity(vm.kernelSectionParked ? 0.45 : 1)
-		} else {
-			droppable.opacity(vm.kernelSectionParked ? 0.45 : MachmanColors.dimmedRowOpacity)
-		}
 	}
 
 	@ViewBuilder
@@ -892,46 +869,7 @@ struct VMDeviceTreeView: View {
 		viewModel.setActiveKernelFile(vm, role: role, path: path)
 	}
 
-	// MARK: - Group scaffold
-
-	// Group parents are dimmed and NOT selectable (no tag — selection skips them); their
-	// add actions live in a row-level context menu on the label. `accessory` renders as a
-	// trailing control before the count (the SSH group's +). `selectable` is for the
-	// groups that ARE a thing in their own right and carry an inspector (Kernel, SSH):
-	// they keep a tag and full opacity.
-	@ViewBuilder
-	private func group<Content: View, MenuItems: View, Accessory: View>(
-		_ node: SidebarNode, symbol: String, title: String, count: Int,
-		selectable: Bool = false,
-		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
-		@ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
-		@ViewBuilder content: @escaping () -> Content
-	) -> some View {
-		let disclosure = DisclosureGroup(isExpanded: groupBinding(node)) {
-			content()
-		} label: {
-			HStack(spacing: 6) {
-				Image(systemName: symbol)
-					.font(.system(size: theme.metrics.iconSize))
-					.foregroundStyle(.secondary)
-				Text(title).fontWeight(.medium)
-				Spacer()
-				accessory()
-				Text("\(count)")
-					.font(.caption2)
-					.foregroundStyle(.tertiary)
-					.monospacedDigit()
-			}
-			.font(.system(size: theme.metrics.rowFontSize))
-			.frame(height: theme.metrics.treeRowHeight)
-			.contextMenu { menu() }
-		}
-		if selectable {
-			disclosure.tag(node)
-		} else {
-			disclosure.opacity(MachmanColors.dimmedRowOpacity)
-		}
-	}
+	// MARK: - Group expansion
 
 	private func groupBinding(_ node: SidebarNode) -> Binding<Bool> {
 		Binding(
