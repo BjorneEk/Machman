@@ -86,7 +86,9 @@ struct RoutingRunningVMTests {
 		defer { server.stop() }
 		#expect(routing.runningVMNames == ["alpha"])
 
-		// The host says its VM stopped: it no longer holds a log out up.
+		// The host says its VM stopped: it no longer holds a log out up. Emitted once the
+		// router's subscription reached the stub, so the event has somewhere to go.
+		#expect(await eventually { stub.calls.contains("events") })
 		stub.emit(.stateChanged(vm: "alpha", state: .stopped))
 		#expect(await eventually { routing.runningVMNames.isEmpty })
 	}
