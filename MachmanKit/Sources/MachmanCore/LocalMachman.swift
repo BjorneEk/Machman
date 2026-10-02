@@ -1074,11 +1074,6 @@ public final class LocalMachman: MachmanControlling {
 				reason: .unsupportedHost,
 				message: "The Mac trackpad needs a macOS guest — it is skipped until "
 					+ "macOS is installed.")
-		case .consoleLoginInstaller where !macGuest:
-			return UnavailabilityInfo(
-				reason: .unsupportedHost,
-				message: "The console login installer needs a macOS guest — it is skipped until "
-					+ "macOS is installed.")
 		case .clipboard where macGuest:
 			return UnavailabilityInfo(
 				reason: .unsupportedHost,

@@ -89,8 +89,6 @@ extension VMConfig {
 						+ "isn’t attached.")
 			case .trackpad where !macGuest:
 				warnings.append("The Mac trackpad needs a macOS guest, so it isn’t attached.")
-			case .consoleLoginInstaller where !macGuest:
-				warnings.append("Console Login needs a macOS guest, so it isn’t attached.")
 			case .clipboard where macGuest:
 				warnings.append(
 					"Clipboard sharing isn’t supported for macOS guests, so it isn’t attached.")
