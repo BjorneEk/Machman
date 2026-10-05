@@ -62,10 +62,12 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 	// Public keys only, in both directions (the SSHSetupInstaller reasoning), plus the
 	// per-mount hand-off: kind<TAB>name<TAB>hostpath for every enabled sshfs-kind mount.
 	static func extraFiles(for config: VMConfig) throws -> [String: Data?] {
+		try extraFiles(for: config, lab: .current)
+	}
+
+	static func extraFiles(for config: VMConfig, lab: LabEnvironment?) throws -> [String: Data?] {
 		let marker = try SSHSetupInstaller.marker(for: config)
 		let publicKey = try SSHSetupInstaller.ensureKeypair(for: config, marker: marker)
-		let machineKey = try? String(
-			contentsOfFile: "/etc/ssh/ssh_host_ed25519_key.pub", encoding: .utf8)
 		// A legacy tag or path with a tab or line break would corrupt the
 		// kind<TAB>name<TAB>path list: names are validated at entry, but a broken row is
 		// never emitted.
@@ -84,10 +86,30 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			.map { "\(MountKind.sshfs)\t\($0.tag)\t\($0.path)" }
 		return [
 			"host_key.pub": Data((publicKey + "\n").utf8),
-			"host_machine_key.pub": machineKey.map { Data($0.utf8) },
+			"host_machine_key.pub": machineHostKey(lab: lab),
 			GuestSetupInstallerInfo.mountsFileName: sshfsMounts.isEmpty
 				? nil : Data((sshfsMounts.joined(separator: "\n") + "\n").utf8),
 		]
+	}
+
+	// The Mac's sshd host key, which the guest pins for 'ssh mac' and its sshfs mounts. Under
+	// a lab sshd (MACHMAN_LAB_SSHD_HOSTKEY) the guest pins the lab's key instead: the lab
+	// routes the guest's "Mac" to its own sshd. An unreadable lab key ships no pin at all,
+	// never this Mac's.
+	static func machineHostKey(
+		lab: LabEnvironment?, systemKeyPath: String = "/etc/ssh/ssh_host_ed25519_key.pub"
+	) -> Data? {
+		guard let labKey = lab?.sshdHostKeyPath else {
+			let key = try? String(contentsOfFile: systemKeyPath, encoding: .utf8)
+			return key.map { Data($0.utf8) }
+		}
+		guard let key = try? String(contentsOfFile: labKey, encoding: .utf8),
+			!key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+			MachmanLogger.log(.passiveError, "test mode: no lab sshd host key at \(labKey) "
+				+ "\u{2014} the guest gets no Mac host-key pin")
+			return nil
+		}
+		return Data(key.utf8)
 	}
 
 	// The guest-writable drop-box: a sibling of the payload dir, so the script addresses
