@@ -108,10 +108,9 @@ extension BootConfig: Codable {
 
 extension BootConfig {
 	// What refuses to start or replace a boot mode a newer Machman wrote (C11): one sentence
-	// for every such refusal.
+	// for every such refusal, shared with the desktop's inspector.
 	static var newerModeRefusal: MachmanError {
-		MachmanError(
-			code: .invalidState, message: "A newer version of Machman set this VM’s boot mode")
+		MachmanError(code: .invalidState, message: BootInfo.newerModeReason)
 	}
 
 	var isMacInstalled: Bool {

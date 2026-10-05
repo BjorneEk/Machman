@@ -85,6 +85,9 @@ enum InspectorScenes {
 		inspector("vm", "VMInspector (no tree selection)", node: nil),
 		inspector("vm.macos", "VMInspector, installed macOS guest", select: "Sequoia", node: nil),
 		inspector(
+			"machine.newer-boot", "VMInspector, a boot mode a newer Machman wrote",
+			vms: { [Samples.newerBootMode()] }, select: "Alpine", node: nil),
+		inspector(
 			"vm.not-responding", "VMInspector, vmhost not responding",
 			vms: Samples.libraryWithStalledHost, node: nil),
 		RenderScene(

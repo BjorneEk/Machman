@@ -190,6 +190,16 @@ struct VMInspector: View {
 						}
 					}
 					.help("macOS is installed — the bootloader can no longer change")
+				} else if vm.boot.mode == .unknown {
+					// A mode a newer Machman wrote (C11): nothing here can pick or keep it.
+					LabeledContent("Bootloader") {
+						HStack(spacing: 4) {
+							Image(systemName: MachmanSymbols.help)
+								.accessibilityHidden(true)
+							Text(BootInfo.Mode.unknown.displayLabel)
+						}
+					}
+					.help(BootInfo.newerModeReason)
 				} else {
 					Picker("Bootloader", selection: bootBinding) {
 						Text("EFI").tag(BootInfo.Mode.efi)
@@ -204,7 +214,8 @@ struct VMInspector: View {
 						Button("Install macOS…") { macSwitchSheet = true }
 					}
 				}
-				if vm.boot.mode != .macOS {
+				// EFI and kernel boots only: a newer Machman's mode may not take it either.
+				if vm.boot.mode != .macOS && vm.boot.mode != .unknown {
 					Toggle("Allow nested virtualization", isOn: nestedBinding)
 						.disabled(
 							viewModel.capabilities?.nestedVirtualizationSupported == false)

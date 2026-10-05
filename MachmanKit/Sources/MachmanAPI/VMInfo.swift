@@ -273,6 +273,10 @@ public struct BootInfo: Codable, Sendable, Equatable {
 	}
 
 	public var macInstalled: Bool { macInstallState?.kind == .installed }
+
+	// Why a VM in mode .unknown can't start or change its boot mode (C11) — the daemon's
+	// refusal and the inspector's help, one text.
+	public static let newerModeReason = "A newer version of Machman set this VM’s boot mode"
 }
 
 public struct MacInstallState: Codable, Sendable, Equatable {
