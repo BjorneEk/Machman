@@ -37,13 +37,14 @@ struct GuestSetupCommandTests {
 	}
 
 	@Test func rootChangesNothing() {
-		let chain = "mkdir -p /x && mount /x || true"
-		#expect(GuestEscalation.root.apply(chain) == chain)
+		let chain = GuestCommand("mkdir -p /x").and("mount /x").or("true")
+		#expect(GuestEscalation.root.apply(chain) == "mkdir -p /x && mount /x || true")
+		#expect(chain.text == "mkdir -p /x && mount /x || true")
 		#expect(GuestEscalation.sudo.apply(chain)
 			== "sudo mkdir -p /x && sudo mount /x || sudo true")
 	}
 
-	private func shareMount(approved: Bool) -> String {
+	private func shareMount(approved: Bool) -> GuestCommand {
 		GuestSetupCommands.bsdShareMount(
 			approvedGuestUser: approved ? "demo" : nil, hostUser: "demo",
 			hostAddress: "192.168.64.1", sharePath: "/Users/demo/VMs/Debian/share")
@@ -93,12 +94,30 @@ struct GuestSetupCommandTests {
 			let line = GuestSetupCommands.bsdShareMount(
 				approvedGuestUser: approved ? "demo" : nil, hostUser: "demo",
 				hostAddress: "192.168.64.1", sharePath: sharePath)
-			let sh = try await Subprocess.run("/bin/sh", ["-c", Self.standIns + line])
+			let sh = try await Subprocess.run("/bin/sh", ["-c", Self.standIns + line.text])
 			#expect(sh.status == 0)
 			let words = sh.output.split(separator: "\n").map(String.init)
 			let source = approved ? "mac:" + sharePath : "demo@192.168.64.1:" + sharePath
 			#expect(words.contains(source), "\(words)")
 			#expect(words.filter { $0 == "---" }.count == 2)
 		}
+	}
+
+	// C26: escalation split the line on " && " to find its commands, so a share path holding
+	// one got "doas " inside the quoted path. Chains are built from their commands now: doas
+	// runs exactly the two commands, and the path reaches sshfs whole.
+	@Test func aPathHoldingAJoinIsEscalatedAsTwoCommands() async throws {
+		let sharePath = "/Users/demo/VMs/a && b's/share"
+		let line = GuestEscalation.doas.apply(GuestSetupCommands.bsdShareMount(
+			approvedGuestUser: "demo", hostUser: "demo", hostAddress: "192.168.64.1",
+			sharePath: sharePath))
+		#expect(count("doas ", in: line) == 2)
+
+		let sh = try await Subprocess.run("/bin/sh", ["-c", Self.standIns + line])
+		#expect(sh.status == 0)
+		let words = sh.output.split(separator: "\n").map(String.init)
+		#expect(words.filter { $0 == "doas" }.count == 2, "\(words)")
+		#expect(Array(words.prefix(5)) == ["doas", "mkdir", "-p", "/mnt/machman/share", "---"])
+		#expect(words.contains("mac:" + sharePath))
 	}
 }

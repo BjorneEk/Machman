@@ -20,20 +20,54 @@ public enum GuestEscalation: String, CaseIterable, Identifiable, Sendable {
 	public var label: String { rawValue }
 	public var prefix: String { self == .root ? "" : rawValue + " " }
 
-	// `command` with the prefix before each of its commands (split on " && " and " || ",
-	// the separators kept). Root changes nothing.
-	public func apply(_ command: String) -> String {
-		guard !prefix.isEmpty else { return command }
-		var out = prefix
-		var rest = command[...]
-		while let separator = [" && ", " || "]
-			.compactMap({ rest.range(of: $0) })
-			.min(by: { $0.lowerBound < $1.lowerBound }) {
-			out += rest[..<separator.upperBound] + prefix
-			rest = rest[separator.upperBound...]
-		}
-		return out + rest
+	// `line` with the prefix before each of its commands. Root changes nothing.
+	public func apply(_ line: GuestCommand) -> String {
+		line.text(prefix: prefix)
 	}
+}
+
+// A guest command line kept as its commands and the && / || between them, so escalation
+// prefixes each command without looking for the joins in text again: split on " && ", a
+// quoted path that held one got "doas " inside it (C26). Deliberately no string-literal
+// conformance: an interpolated chain would quietly escalate its first command only.
+public struct GuestCommand: Equatable, Sendable {
+	public enum Join: String, Sendable {
+		case and = " && "
+		case or = " || "
+	}
+
+	private struct Link: Equatable, Sendable {
+		var join: Join
+		var command: String
+	}
+
+	private let first: String
+	private var rest: [Link] = []
+
+	// One command.
+	public init(_ command: String) {
+		first = command
+	}
+
+	// `self && next` and `self || next`, read left to right as sh reads them.
+	public func and(_ next: String) -> GuestCommand { joined(.and, GuestCommand(next)) }
+	public func or(_ next: String) -> GuestCommand { joined(.or, GuestCommand(next)) }
+	public func and(_ next: GuestCommand) -> GuestCommand { joined(.and, next) }
+
+	private func joined(_ join: Join, _ next: GuestCommand) -> GuestCommand {
+		var line = self
+		line.rest.append(Link(join: join, command: next.first))
+		line.rest += next.rest
+		return line
+	}
+
+	// The line with `prefix` before every command.
+	func text(prefix: String) -> String {
+		rest.reduce(prefix + first) { $0 + $1.join.rawValue + prefix + $1.command }
+	}
+
+	// The line as root runs it.
+	public var text: String { text(prefix: "") }
 }
 
 public enum GuestSetupCommands {
@@ -58,18 +92,24 @@ public enum GuestSetupCommands {
 		let escalation = escalations(for: family)[0]
 		switch family {
 		case .macOS:
-			return escalation.apply(GuestSetupInstallerInfo.runFromAutomountCommand)
+			return escalation.apply(GuestCommand(GuestSetupInstallerInfo.runFromAutomountCommand))
 		case .linux where !shareMounted:
-			return escalation.apply(
-				GuestPaths.mountShareCommand + " && " + GuestSetupInstallerInfo.runCommand())
+			return escalation.apply(mountShareLine.and(GuestSetupInstallerInfo.runCommand()))
 		case .linux, .bsd:
-			return escalation.apply(GuestSetupInstallerInfo.runCommand())
+			return escalation.apply(GuestCommand(GuestSetupInstallerInfo.runCommand()))
 		}
+	}
+
+	// mkdir + mount for the guests that mount the share by hand. Unescalated: what needs root
+	// is the caller's decision (FreeBSD base ships neither sudo nor doas).
+	public static var mountShareLine: GuestCommand {
+		GuestCommand("mkdir -p \(GuestPaths.share)")
+			.and("mount -t virtiofs \(GuestPaths.shareTag) \(GuestPaths.share)")
 	}
 
 	// Mounting the share by hand, with the family's usual escalation.
 	public static func mountShare(_ family: Family) -> String {
-		escalations(for: family)[0].apply(GuestPaths.mountShareCommand)
+		escalations(for: family)[0].apply(mountShareLine)
 	}
 
 	// MARK: - macOS 12 (no automount: the share mounted by hand in the user's home)
@@ -79,20 +119,20 @@ public enum GuestSetupCommands {
 	// lets a user mount. Both guides show this one line (the mount guide as is).
 	public static func macOS12MountShare(_ escalation: GuestEscalation = .sudo) -> String {
 		"mkdir -p \(ConsoleLoginInstallerInfo.fallbackMountPoint) && "
-			+ escalation.apply(ConsoleLoginInstallerInfo.fallbackMount)
+			+ escalation.apply(GuestCommand(ConsoleLoginInstallerInfo.fallbackMount))
 	}
 
 	// …then the installer from it, with the same escalation (the Guest Setup guide).
 	public static func macOS12MountShareAndRun(_ escalation: GuestEscalation = .sudo) -> String {
-		macOS12MountShare(escalation) + " && " + escalation.apply(
+		macOS12MountShare(escalation) + " && " + escalation.apply(GuestCommand(
 			GuestSetupInstallerInfo.runCommand(
-				inShareAt: ConsoleLoginInstallerInfo.fallbackMountPoint))
+				inShareAt: ConsoleLoginInstallerInfo.fallbackMountPoint)))
 	}
 
 	// MARK: - The guide's BSD bootstrap (unescalated: the page's choice escalates them)
 
 	// FreeBSD's fuse driver, loaded unless it already is.
-	public static let bsdFuseLoad = "kldstat -q -m fusefs || kldload fusefs"
+	public static let bsdFuseLoad = GuestCommand("kldstat -q -m fusefs").or("kldload fusefs")
 
 	// Mounts Machman's setup folder over sshfs at the share's guest path. With the guest's
 	// key approved it goes through the user's 'mac' alias — root reads ~root/.ssh/config, so
@@ -100,15 +140,15 @@ public enum GuestSetupCommands {
 	// the Mac account's password once. The host path is quoted: it can carry the VM's name.
 	public static func bsdShareMount(
 		approvedGuestUser: String?, hostUser: String, hostAddress: String, sharePath: String
-	) -> String {
+	) -> GuestCommand {
 		let mountPoint = GuestPaths.share
 		let options = "-o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3"
 		let path = ShellQuote.single(sharePath)
+		let mkdir = GuestCommand("mkdir -p \(mountPoint)")
 		guard let user = approvedGuestUser else {
-			return "mkdir -p \(mountPoint) && sshfs \(hostUser)@\(hostAddress):\(path) "
-				+ "\(mountPoint) \(options)"
+			return mkdir.and("sshfs \(hostUser)@\(hostAddress):\(path) \(mountPoint) \(options)")
 		}
-		return "mkdir -p \(mountPoint) && sshfs -F /home/\(user)/.ssh/config "
-			+ "mac:\(path) \(mountPoint) \(options)"
+		return mkdir.and(
+			"sshfs -F /home/\(user)/.ssh/config mac:\(path) \(mountPoint) \(options)")
 	}
 }

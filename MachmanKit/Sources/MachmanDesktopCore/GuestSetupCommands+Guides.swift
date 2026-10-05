@@ -28,8 +28,8 @@ extension GuestSetupCommands {
 	public static let rosettaMountPoint = "/media/rosetta"
 
 	public static func rosettaMount(_ escalation: GuestEscalation = .sudo) -> String {
-		escalation.apply(
-			"mkdir -p \(rosettaMountPoint) && mount -t virtiofs rosetta \(rosettaMountPoint)")
+		escalation.apply(GuestCommand("mkdir -p \(rosettaMountPoint)")
+			.and("mount -t virtiofs rosetta \(rosettaMountPoint)"))
 	}
 
 	// Registers Rosetta for x86-64 ELF binaries straight through binfmt_misc: Apple's
@@ -45,7 +45,7 @@ extension GuestSetupCommands {
 	// systemd mounts binfmt_misc on its own; under OpenRC or runit (Alpine, Void) it may not
 	// be, and the register line then fails with "No such file or directory".
 	public static func binfmtMiscMount(_ escalation: GuestEscalation = .sudo) -> String {
-		escalation.apply("mount -t binfmt_misc binfmt_misc \(binfmtMiscDirectory)")
+		escalation.apply(GuestCommand("mount -t binfmt_misc binfmt_misc \(binfmtMiscDirectory)"))
 	}
 
 	static let binfmtMiscDirectory = "/proc/sys/fs/binfmt_misc"

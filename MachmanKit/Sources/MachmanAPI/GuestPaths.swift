@@ -38,12 +38,6 @@ public enum GuestPaths {
 	// standardize — which is exactly why it is written down here next to the ones that are.
 	public static let macOSAutomount = "/Volumes/My Shared Files"
 
-	// mkdir + mount for the guests that mount by hand. Unprivileged: what needs root is
-	// the caller's decision (FreeBSD base ships neither sudo nor doas).
-	public static var mountShareCommand: String {
-		"mkdir -p \(share) && mount -t virtiofs \(shareTag) \(share)"
-	}
-
 	// Where one sshfs-carried host folder lands (a subdirectory of `mounts`, named by the
 	// mount's tag).
 	public static func sshfsMountPoint(name: String) -> String {

@@ -122,8 +122,7 @@ struct GuestSetupGuidePage: View {
 			command(GuestSetupInstallerInfo.runCommand())
 		} else {
 			HelpStep(2, "Mount the share and run the script:")
-			command(GuestPaths.mountShareCommand + " && "
-				+ GuestSetupInstallerInfo.runCommand())
+			command(GuestSetupCommands.mountShareLine.and(GuestSetupInstallerInfo.runCommand()))
 		}
 		HelpNote("It asks per feature — console logins, kernel boot output, SSH, boot "
 			+ "automounts — and re-running it later reconfigures.")
@@ -236,9 +235,15 @@ struct GuestSetupGuidePage: View {
 			+ "the inspector forgets its report.")
 	}
 
-	// A copyable command, carrying the page's escalation on every command in the line —
-	// a chained "sudo a && b" would run b as the user. `raw` is never escalated itself.
+	// A copyable command line, carrying the page's escalation on every command in it — a
+	// chained "sudo a && b" would run b as the user. `escalate: false` shows a line that
+	// already carries it.
+	private func command(_ line: GuestCommand, escalate: Bool = true) -> some View {
+		HelpCommand(escalate ? escalation.apply(line) : line.text)
+	}
+
+	// One command — chains are built as a GuestCommand — or a line already escalated.
 	private func command(_ raw: String, escalate: Bool = true) -> some View {
-		HelpCommand(escalate ? escalation.apply(raw) : raw)
+		command(GuestCommand(raw), escalate: escalate)
 	}
 }
