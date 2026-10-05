@@ -44,8 +44,8 @@ struct LabDevicePolicyTests {
 	}
 
 	private static func sharesClipboard(_ built: BuiltVM) -> Bool? {
-		let console = built.configuration.consoleDevices.first as? VZVirtioConsoleDeviceConfiguration
-		let port = console?.ports[0]
+		let console = built.configuration.consoleDevices.first
+		let port = (console as? VZVirtioConsoleDeviceConfiguration)?.ports[0]
 		return (port?.attachment as? VZSpiceAgentPortAttachment)?.sharesClipboard
 	}
 
