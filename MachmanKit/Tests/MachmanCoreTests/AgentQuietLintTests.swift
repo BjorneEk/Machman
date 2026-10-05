@@ -14,50 +14,6 @@ import Foundation
 import MachmanTestSupport
 
 struct AgentQuietLintTests {
-	// MachmanKit/Tests/MachmanCoreTests/<this file> → the repo.
-	static let repo = URL(fileURLWithPath: #filePath)
-		.deletingLastPathComponent().deletingLastPathComponent()
-		.deletingLastPathComponent().deletingLastPathComponent()
-
-	struct Hit: CustomStringConvertible {
-		let file: String
-		let line: Int
-		let text: String
-		var description: String { "\(file):\(line): \(text)" }
-	}
-
-	// Swift files under `directory` (repo-relative), recursively, sorted.
-	static func swiftFiles(under directory: String) -> [String] {
-		let root = repo.appendingPathComponent(directory)
-		let found = FileManager.default.enumerator(atPath: root.path)?
-			.compactMap { $0 as? String }.filter { $0.hasSuffix(".swift") } ?? []
-		return found.sorted().map { directory + "/" + $0 }
-	}
-
-	static func lines(of file: String) throws -> [String] {
-		try String(contentsOf: repo.appendingPathComponent(file), encoding: .utf8)
-			.components(separatedBy: "\n")
-	}
-
-	// The code part of a line: anything after `//` is a comment.
-	static func code(_ line: String) -> String {
-		line.range(of: "//").map { String(line[..<$0.lowerBound]) } ?? line
-	}
-
-	// Lines of `files` whose code matches `pattern`.
-	static func hits(_ pattern: String, in files: [String]) throws -> [Hit] {
-		let regex = try Regex(pattern)
-		var found: [Hit] = []
-		for file in files {
-			for (index, line) in try lines(of: file).enumerated()
-			where code(line).contains(regex) {
-				found.append(Hit(file: file, line: index + 1, text: line.trimmingCharacters(
-					in: .whitespaces)))
-			}
-		}
-		return found
-	}
-
 	// Written as escaped patterns, so this file never spells the calls it bans.
 	static let alertPatterns = [#"NSAlert\("#, #"runModal"#]
 	static let frontPatterns = [
@@ -66,22 +22,22 @@ struct AgentQuietLintTests {
 
 	@Test("Q18: the agent shows no alert, Dock icon or activation of its own (TB10)")
 	func theAgentShowsNoAlertDockIconOrActivationOfItsOwn() throws {
-		let agent = Self.swiftFiles(under: "MachmanAgent")
+		let agent = SourceScan.swiftFiles(under: "MachmanAgent")
 		#expect(agent.contains("MachmanAgent/MachmanAgentApp.swift"))
 		for pattern in Self.alertPatterns + Self.frontPatterns {
-			let found = try Self.hits(pattern, in: agent)
+			let found = try SourceScan.hits(pattern, in: agent)
 			#expect(found.isEmpty, "use PromptAlert: \(found)")
 		}
 		// Its one launch of another app (Open Machman) is recorded, never performed, under a
 		// test suite: the function holding the launch checks test mode.
 		var launches = 0
 		for file in agent {
-			let lines = try Self.lines(of: file)
+			let lines = try SourceScan.lines(of: file)
 			for (index, line) in lines.enumerated()
-			where Self.code(line).contains(try Regex(#"openApplication\("#)) {
+			where SourceScan.code(line).contains(try Regex(#"openApplication\("#)) {
 				launches += 1
 				let start = lines[...index].lastIndex { $0.contains("func ") } ?? 0
-				let body = lines[start...index].map(Self.code).joined(separator: "\n")
+				let body = lines[start...index].map(SourceScan.code).joined(separator: "\n")
 				#expect(body.contains("MachmanTestMode.isActive"),
 					"\(file):\(index + 1) launches an app without checking test mode first")
 			}
@@ -91,10 +47,10 @@ struct AgentQuietLintTests {
 
 	@Test("Q18: every AppKit alert in MachmanUI goes through PromptAlert (TB10)")
 	func everyAppKitAlertInMachmanUIGoesThroughPromptAlert() throws {
-		let ui = Self.swiftFiles(under: "MachmanKit/Sources/MachmanUI")
+		let ui = SourceScan.swiftFiles(under: "MachmanKit/Sources/MachmanUI")
 		#expect(ui.contains("MachmanKit/Sources/MachmanUI/PromptAlert.swift"))
 		for pattern in Self.alertPatterns + Self.frontPatterns {
-			let found = try Self.hits(pattern, in: ui)
+			let found = try SourceScan.hits(pattern, in: ui)
 				.filter { $0.file != "MachmanKit/Sources/MachmanUI/PromptAlert.swift" }
 			#expect(found.isEmpty, "use PromptAlert: \(found)")
 		}
@@ -110,11 +66,11 @@ struct AgentQuietLintTests {
 		]
 		for line in provoked {
 			let flagged = try (Self.alertPatterns + Self.frontPatterns)
-				.contains { Self.code(line).contains(try Regex($0)) }
+				.contains { SourceScan.code(line).contains(try Regex($0)) }
 			#expect(flagged, "\(line)")
 		}
-		#expect(!Self.code("NSApp.setActivationPolicy(.prohibited)")
+		#expect(!SourceScan.code("NSApp.setActivationPolicy(.prohibited)")
 			.contains(try Regex(Self.frontPatterns[1])))
-		#expect(!Self.code("// alert.runModal" + "()").contains(try Regex("runModal")))
+		#expect(!SourceScan.code("// alert.runModal" + "()").contains(try Regex("runModal")))
 	}
 }
