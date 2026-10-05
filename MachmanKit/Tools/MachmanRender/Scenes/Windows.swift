@@ -175,6 +175,17 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: true)
 		},
+		// P37 (review F1): the Network inspector's Regenerate MAC waits for the agent too.
+		RenderScene(
+			"window.main.unknown-state.network",
+			"VMNavigationView, Debian's vmhost not reached yet, its Network device selected",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			vms: Samples.libraryWithUnreachedHost,
+			panels: treeAndInspector
+		) { ctx in
+			ctx.viewModel.treeSelection = [.device(.network)]
+			return mainWindow(ctx, inspector: true)
+		},
 		RenderScene(
 			"window.main.mac-unfinished-copy",
 			"VMNavigationView, the copy of a Mac whose install never finished",

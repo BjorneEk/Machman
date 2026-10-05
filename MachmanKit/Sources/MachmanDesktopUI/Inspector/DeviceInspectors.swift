@@ -327,16 +327,16 @@ struct NetworkInspector: View {
 							.foregroundStyle(vm.macAddress == nil ? .secondary : .primary)
 						if let mac = vm.macAddress {
 							CopyToClipboardButton(mac, tooltip: "Copy MAC address")
+							// The shared stop-first rule (P37): also held while the VM's state
+							// is unknown, with the reason to wait.
 							IconButton(
 								symbol: MachmanSymbols.regenerate,
-								tooltip: vm.state.isRunning
-									? "Stop the VM to change its MAC address"
-									: "Regenerate MAC address…",
+								tooltip: vm.refusal(.regenerateMAC) ?? "Regenerate MAC address…",
 								font: .callout, flat: true
 							) {
 								regenConfirm = true
 							}
-							.disabled(vm.state.isRunning)
+							.disabled(vm.refusal(.regenerateMAC) != nil)
 						}
 					}
 				}
