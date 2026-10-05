@@ -115,6 +115,8 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	private func resolve(_ order: TornTabRegistry.Order?) {
 		guard let order else { return }
 		tornTabs.orders[payload] = nil
+		// Ordered, not closed by the user: the teardown ends the tab, never docks it (C18).
+		tornTabs.closing.insert(payload)
 		switch order {
 		case .close:
 			// The window's onDisappear is the teardown (tornWindowClosed): controller,

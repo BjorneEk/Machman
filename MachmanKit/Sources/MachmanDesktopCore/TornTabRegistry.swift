@@ -30,6 +30,10 @@ public final class TornTabRegistry: ObservableObject {
 	public static let shared = TornTabRegistry()
 	@Published public var open: Set<TornTab> = []
 	@Published public var orders: [TornTab: Order] = [:]
+	// Windows closing because an order told them to (a close, a rename swap), set as they act
+	// on it: their teardown ends the tab. A window the user closes isn't here, and its live
+	// SSH session docks back into the canvas instead (C18).
+	public var closing: Set<TornTab> = []
 
 	// The app uses `shared`; tests make their own so parallel tests never share one.
 	public init() {}

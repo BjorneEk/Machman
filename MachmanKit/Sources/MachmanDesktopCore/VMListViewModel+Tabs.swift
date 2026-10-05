@@ -31,13 +31,36 @@ extension VMListViewModel {
 	}
 
 	// A torn window went away (closed by the user, by its order, or by the system). Static,
-	// so a window that closes mid-reconnect — no view model — still ends its terminal.
+	// so a window that closes mid-reconnect — no view model — still ends its terminal. One
+	// the user closed while its SSH session runs gives the session back to the canvas as a
+	// tab (C18): closing a window isn't ending the session; Close Session is.
 	public static func tornWindowClosed(
 		_ payload: TornTab, registry: TornTabRegistry, terminals: TerminalSessions,
 		viewModel: VMListViewModel?
 	) {
 		registry.open.remove(payload)
+		let ordered = registry.closing.remove(payload) != nil
+		if !ordered, let viewModel, viewModel.docksBack(payload) {
+			viewModel.dock(payload)
+			return
+		}
 		endTab(payload.tab, vm: payload.vm, terminals: terminals, viewModel: viewModel)
+	}
+
+	// Whether a torn window closing on its own docks its tab back: an SSH session whose ssh
+	// still runs, of a VM still in the list. Anything else just closes.
+	func docksBack(_ payload: TornTab) -> Bool {
+		guard case .ssh(let ref) = payload.tab, vms.contains(where: { $0.name == payload.vm })
+		else { return false }
+		return terminals.sshController(vm: payload.vm, ref: ref)?.connected == true
+	}
+
+	// The session's tab joins its VM's active pane; that canvas mount adopts the live
+	// terminal, as the window adopted it when the tab tore off.
+	func dock(_ payload: TornTab) {
+		var canvas = canvases.canvas(for: payload.vm)
+		canvas.open(payload.tab)
+		canvases.setCanvas(canvas, for: payload.vm)
 	}
 
 	// A terminal lives exactly as long as the thing showing it, tab or window; its row goes
@@ -129,6 +152,7 @@ extension VMListViewModel {
 		canvases.setCanvas(canvas, for: vm)
 		let torn = TornTab(vm: vm, tab: tab)
 		tornTabs.open.insert(torn)
+		tornTabs.closing.remove(torn)   // a new window: closing it is the user's again
 		tabClosed(tab, vm: vm)   // the next row click focuses the window
 		return torn
 	}
