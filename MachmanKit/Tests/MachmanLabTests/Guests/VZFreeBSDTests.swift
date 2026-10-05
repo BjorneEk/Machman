@@ -22,8 +22,8 @@ struct VZFreeBSDTests {
 			let spec = LabVMSpec(
 				name: "lab-vzfreebsd", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
 				consolePorts: 1, network: true)
-			try await agent.withVM(spec) { vm in
-				let console = try await vm.loggedInConsole(0, label: "ttyV0.0")
+			try await agent.withVM(spec, start: false) { vm in
+				let console = try await vm.bootLoggedIn(0, label: "ttyV0.0")
 				defer { console.close() }
 				let kernel = try await console.run("uname -i")
 				#expect(kernel.output == "VZ")

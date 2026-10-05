@@ -27,8 +27,8 @@ struct LabSSHDVZTests {
 			let spec = LabVMSpec(
 				name: "lab-sshd-vz", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
 				consolePorts: 3, network: true)
-			try await agent.withVM(spec) { vm in
-				let console = try await vm.loggedInConsole(2, label: "hvc2")
+			try await agent.withVM(spec, start: false) { vm in
+				let console = try await vm.bootLoggedIn(2, label: "hvc2")
 				defer { console.close() }
 				let gateway = try await defaultGateway(console)
 				// The bridge exists now (the VM is on NAT): the lab sshd listens on it.

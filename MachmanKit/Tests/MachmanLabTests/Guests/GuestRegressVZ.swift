@@ -111,8 +111,7 @@ enum GuestRegressVZ {
 		_ suite: String, distro: String, on vm: LabVM, work: String
 	) async throws -> [GuestRegress.Check] {
 		let started = ContinuousClock.now
-		try await vm.start(timeout: .seconds(120))
-		var console = try await login(vm, label: "\(suite)-run")
+		var console = try await vm.bootLoggedIn(driverConsole, label: "\(suite)-run")
 		try await prepare(console)
 		let runOut = work + "/\(distro)-\(suite).run.out"
 		try await runPhase(suite, distro: distro, phase: "run", console: console)
@@ -120,8 +119,7 @@ enum GuestRegressVZ {
 		var bootOut: String?
 		if GuestRegress.hasBootChecks(suite) {
 			try await powerOff(vm, console)
-			try await vm.start(timeout: .seconds(120))
-			console = try await login(vm, label: "\(suite)-boot")
+			console = try await vm.bootLoggedIn(driverConsole, label: "\(suite)-boot")
 			try await requireIsolated(console)
 			let note = try await unshadowPayload(console)
 			let path = work + "/\(distro)-\(suite).boot.out"
@@ -138,10 +136,6 @@ enum GuestRegressVZ {
 				distro: distro, suite: suite, phase: "boot", output: bootOut)
 		}
 		return checks
-	}
-
-	private static func login(_ vm: LabVM, label: String) async throws -> LabConsole {
-		try await vm.loggedInConsole(driverConsole, label: label)
 	}
 
 	@discardableResult

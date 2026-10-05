@@ -78,8 +78,8 @@ struct LabSmokeL3Tests {
 			let spec = LabVMSpec(
 				name: "lab-debian", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
 				consolePorts: 3)
-			try await agent.withVM(spec) { vm in
-				let console = try await vm.loggedInConsole(0, label: "hvc0")
+			try await agent.withVM(spec, start: false) { vm in
+				let console = try await vm.bootLoggedIn(0, label: "hvc0")
 				defer { console.close() }
 				let arch = try await console.run("uname -m")
 				#expect(arch.status == 0)

@@ -180,12 +180,11 @@ final class LabVM: @unchecked Sendable {
 			try await consoleSocketPath(index), transcript: "\(pidName)-hvc\(index)")
 	}
 
-	/// A console on port `index` with `user` logged in. A login that stalls (seen on Debian
-	/// 13 under VZ, about once in ten logins right after a start: the typed name is never
-	/// echoed and the getty answers nothing more on that connection) is retried on a fresh
-	/// connection, three tries in all, each logged.
+	/// A console on port `index` with `user` logged in. A login that stalls (the typed name
+	/// is never echoed) is retried on a fresh connection, `tries` in all, each logged.
 	func loggedInConsole(
-		_ index: Int, user: String = "root", label: String, timeout: Duration = .seconds(300)
+		_ index: Int, user: String = "root", label: String, timeout: Duration = .seconds(300),
+		tries: Int = 3
 	) async throws -> LabConsole {
 		var attempt = 1
 		while true {
@@ -195,7 +194,7 @@ final class LabVM: @unchecked Sendable {
 			do {
 				try await console.login(user: user, timeout: attempt == 1 ? timeout : .seconds(60))
 				return console
-			} catch let error as LabError where attempt < 3 {
+			} catch let error as LabError where attempt < tries {
 				MachmanLogger.log(
 					.passiveWarning,
 					"lab: \(name) console \(index): login try \(attempt) failed, reconnecting: "
@@ -203,6 +202,33 @@ final class LabVM: @unchecked Sendable {
 				console.close()
 				attempt += 1
 				try await Task.sleep(for: .seconds(1))
+			}
+		}
+	}
+
+	/// Starts the VM unless it runs and logs `user` in on console `index`. A boot whose
+	/// console takes no input (seen on Debian 13 under VZ, about one boot in ten: the getty's
+	/// prompt arrives, typed text never reaches it, on any connection) is force-stopped and
+	/// booted again, `boots` boots in all, each logged.
+	func bootLoggedIn(
+		_ index: Int, user: String = "root", label: String, boots: Int = 3
+	) async throws -> LabConsole {
+		var boot = 1
+		while true {
+			if try await info().state != .running { try await start(timeout: .seconds(120)) }
+			do {
+				return try await loggedInConsole(
+					index, user: user, label: boot == 1 ? label : "\(label)-boot\(boot)",
+					tries: 1)
+			} catch let error as LabError where boot < boots {
+				MachmanLogger.log(
+					.passiveWarning,
+					"lab: \(name) console \(index): no login on boot \(boot) of \(boots), booting"
+						+ " again: \(error)")
+				try await api.stop(vm: name, mode: .force)
+				try await waitForState(.stopped, timeout: .seconds(60))
+				await awaitHostExit()
+				boot += 1
 			}
 		}
 	}
@@ -225,6 +251,12 @@ final class LabVM: @unchecked Sendable {
 	/// hosted and refuses config changes — then drops the vmhost's pid file.
 	func guestStopped(timeout: Duration = .seconds(180)) async throws {
 		try await waitForState(.stopped, timeout: timeout)
+		await awaitHostExit()
+	}
+
+	// The vmhost named by the pid file exits a moment after its VM reads stopped; until then
+	// the agent counts the VM as hosted. Then the pid file goes.
+	private func awaitHostExit() async {
 		let file = LabProcesses.pidFile(kind: "vmhost", name: pidName)
 		if let text = try? String(contentsOfFile: file, encoding: .utf8),
 			let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
