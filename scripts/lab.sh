@@ -245,7 +245,9 @@ LAB_SEAM_MARKER_VMHOST="test mode: no window for"
 lab_has_marker() {  # lab_has_marker <app> <marker>
 	local f
 	for f in "$1"/Contents/MacOS/*; do
-		[[ -f "$f" ]] && strings -a "$f" 2>/dev/null | grep -qF "$2" && return 0
+		# grep reads to the end: an early -q exit would SIGPIPE strings, which pipefail
+		# turns into "no marker" on a big debug dylib.
+		[[ -f "$f" ]] && strings -a "$f" 2>/dev/null | grep -F -- "$2" >/dev/null && return 0
 	done
 	return 1
 }
