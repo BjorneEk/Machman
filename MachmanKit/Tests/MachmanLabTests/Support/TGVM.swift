@@ -154,6 +154,11 @@ final class TGVM: @unchecked Sendable {
 		}
 	}
 
+	/// Whether the VM lists `wanted` within `timeout`.
+	func reaches(_ wanted: VMState, timeout: Duration) async -> Bool {
+		(try? await waitForState(wanted, timeout: timeout)) != nil
+	}
+
 	// MARK: Runs
 
 	/// A start with exact options; returns once the VM runs and its vmhost's pid is filed.

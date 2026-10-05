@@ -296,6 +296,10 @@ enum TG {
 		}
 	}
 
+	static func waitForExit(_ pid: pid_t, timeout: Duration = .seconds(30)) async -> Bool {
+		await LabProcesses.waitForExit(pid, timeout: timeout)
+	}
+
 	/// SIGKILL of a vmhost whose pid came from its socket's peer, and its exit.
 	static func killHost(_ pid: pid_t) async throws {
 		LabProcesses.signal(pid, SIGKILL)
