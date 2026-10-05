@@ -583,10 +583,22 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return realMemorySize
 	}
 
-	static func createNewVMDirectory(name: String) throws {
-		let fileManager = FileManager.default
-		let url = URL(fileURLWithPath: "\(machmanVMDir)/\(name)", isDirectory: true)
-		try fileManager.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
+	// A new VM's folder, made exclusively: false when something already has the name — a
+	// folder the registry skipped (its config didn't decode, and is still the user's) or a
+	// stray file. Only the library itself is made on the way.
+	@discardableResult
+	static func createNewVMDirectory(name: String) throws -> Bool {
+		try FileManager.default.createDirectory(
+			atPath: machmanVMDir, withIntermediateDirectories: true, attributes: nil)
+		guard mkdir("\(machmanVMDir)/\(name)", 0o755) == 0 else {
+			let code = errno
+			if code == EEXIST { return false }
+			throw MachmanError(
+				code: .ioFailure,
+				message: "Couldn’t create the folder for \(name): "
+					+ String(cString: strerror(code)))
+		}
+		return true
 	}
 
 	// The name changes only once the directory moved: a failed move (a stray directory at

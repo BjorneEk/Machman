@@ -544,12 +544,15 @@ public final class VMRegistry {
 		guard restrictedName == nil else {
 			throw MachmanError(code: .invalidState, message: "This process can’t create VMs")
 		}
+		// A name the map lacks can still be taken on disk: a folder the scan skipped keeps a
+		// config the user may restore, and its disks (D19). The folder is made exclusively, so
+		// a new VM never writes into one.
 		var nbr = 1
-		while vms["new-VM\(nbr)"] != nil {
+		var name = "new-VM1"
+		while try vms[name] != nil || !VMConfig.createNewVMDirectory(name: name) {
 			nbr += 1
+			name = "new-VM\(nbr)"
 		}
-		let name = "new-VM\(nbr)"
-		try VMConfig.createNewVMDirectory(name: name)
 		let vm = VirtualMachine(
 			config: try VMConfig(
 				name: name, memorySize: ByteSize.fromGB(1),
