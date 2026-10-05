@@ -178,5 +178,15 @@ let package = Package(
 			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
+		// L1: desktop views hosted in never-ordered windows (OffscreenHost) and read through
+		// in-process accessibility — no window on screen, no Dock icon, no AX server.
+		.testTarget(
+			name: "MachmanDesktopUITests",
+			dependencies: [
+				"MachmanAPI", "MachmanClient", "MachmanUI", "MachmanDesktopCore",
+				"MachmanDesktopUI", "MachmanFixtures", "MachmanTestSupport",
+			],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
 	]
 )
