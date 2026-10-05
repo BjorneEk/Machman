@@ -90,6 +90,18 @@ struct StopConfirmTests {
 		#expect(h.viewModel.presentedError == nil)
 	}
 
+	// Review F12: a Machman Agent from before vm.process.end answers "method not found"; the
+	// confirmed End Process falls back to the force stop that agent knows.
+	@Test func anOlderAgentGetsAForceStopInstead() async throws {
+		let h = await DesktopHarness.make()
+		h.stub.fail("endProcess", with: MachmanError(
+			code: .unsupported, message: "unknown method 'vm.process.end'"))
+		h.viewModel.endProcess("Debian")
+		#expect(await eventually { h.stub.vms["Debian"]?.state == .stopped })
+		#expect(h.stub.calls.suffix(2) == ["endProcess", "stop"])
+		#expect(h.viewModel.presentedError == nil)   // before: "Ending the process … failed"
+	}
+
 	@Test func theProcessQuestionIsOneSentenceEach() throws {
 		let prompt = PendingEndProcess(vm: "Debian").prompt
 		#expect(prompt.title

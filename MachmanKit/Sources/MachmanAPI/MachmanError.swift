@@ -25,6 +25,9 @@ public struct MachmanError: Error, Codable, Sendable, Equatable {
 		// The user canceled what the call was doing — a Stop or ✕ while a safe start prepared
 		// (additive, review F11): a never-mind, not a failure. Older clients read internalError.
 		case cancelled
+		// The serving process doesn't know the method: an older Machman Agent. Never sent as a
+		// code — clients read JSON-RPC's -32601 "method not found" as it (review F12).
+		case unsupported
 
 		public init(from decoder: Decoder) throws {
 			let raw = try decoder.singleValueContainer().decode(String.self)

@@ -70,6 +70,23 @@ struct MenuBarModelTests {
 		#expect(!stub.calls.contains("stop"))
 	}
 
+	// Review F12: an engine from before vm.process.end gets the force stop it knows.
+	@Test func anOlderEngineGetsAForceStopInstead() async {
+		let stub = StubMachman()
+		var debian = Samples.linux("Debian", state: .running)
+		debian.unresponsive = true
+		stub.vms["Debian"] = debian
+		stub.fail("endProcess", with: MachmanError(
+			code: .unsupported, message: "unknown method 'vm.process.end'"))
+		let model = MenuBarModel(api: stub)
+		model.confirmEndProcess = { _ in true }
+		model.begin()
+		#expect(await eventually { !model.vms.isEmpty })
+
+		model.stop("Debian", mode: .force)
+		#expect(await eventually { stub.calls.suffix(2) == ["endProcess", "stop"] })
+	}
+
 	// A host that wedged after the list last said so: the bounded stop's timeout asks too.
 	@Test func aTimedOutForceStopAsksAboutTheProcess() async {
 		let stub = StubMachman()

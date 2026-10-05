@@ -112,8 +112,12 @@ public struct RPCErrorBody: Codable, Equatable, Sendable {
 		self.data = ErrorData(machmanCode: error.code.rawValue)
 	}
 
-	// The MachmanError this body carries (application errors round-trip their code).
+	// The MachmanError this body carries (application errors round-trip their code; a method
+	// the peer doesn't know reads as unsupported, so a client can fall back).
 	public var machmanError: MachmanError {
+		if code == JSONRPC.methodNotFound, data?.machmanCode == nil {
+			return MachmanError(code: .unsupported, message: message)
+		}
 		let code = data?.machmanCode.flatMap { MachmanError.Code(rawValue: $0) }
 		return MachmanError(code: code ?? .internalError, message: message)
 	}

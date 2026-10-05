@@ -116,7 +116,13 @@ public final class MenuBarModel: ObservableObject {
 			case .stop(let mode): try await api.stop(vm: name, mode: mode)
 			case .openWindow: try await api.openWindow(vm: name)
 			case .closeWindow: try await api.closeWindow(vm: name)
-			case .endProcess: try await api.endProcess(vm: name)
+			case .endProcess:
+				do {
+					try await api.endProcess(vm: name)
+				} catch let error as MachmanError where error.code == .unsupported {
+					// An engine from before vm.process.end: the force stop it knows (F12).
+					try await api.stop(vm: name, mode: .force)
+				}
 			}
 		} catch {
 			let failure = MenuBarFailure(vm: name, action: action, error: error)

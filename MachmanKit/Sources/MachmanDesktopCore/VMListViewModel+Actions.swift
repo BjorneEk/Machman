@@ -184,8 +184,13 @@ extension VMListViewModel {
 	}
 
 	public func endProcess(_ name: String) {
-		perform("Ending the process of \u{201C}\(name)\u{201D}") {
-			try await $0.endProcess(vm: name)
+		perform("Ending the process of \u{201C}\(name)\u{201D}") { api in
+			do {
+				try await api.endProcess(vm: name)
+			} catch let error as MachmanError where error.code == .unsupported {
+				// A Machman Agent from before vm.process.end: the force stop it knows (F12).
+				try await api.stop(vm: name, mode: .force)
+			}
 		}
 	}
 

@@ -5,7 +5,8 @@
 //  Review F11: a safe start the user stopped while it prepared came back as an ioFailure,
 //  shown as "Starting … failed". It carries its own code now, `cancelled` (additive: an older
 //  client reads it as internalError, as it read any unknown code), so clients take it as a
-//  never-mind. The raw value is wire contract from here on.
+//  never-mind. The raw value is wire contract from here on. And F12: JSON-RPC's "method not
+//  found" reads as `unsupported`.
 //
 
 import Testing
@@ -22,5 +23,16 @@ struct CancelledCodeWireTests {
 		let decoded = try JSONDecoder().decode(
 			MachmanError.self, from: Data(#"{"code":"cancelled","message":"m"}"#.utf8))
 		#expect(decoded.code == .cancelled)
+	}
+
+	// Review F12: a method the peer doesn't know (an older Machman Agent) reads as unsupported,
+	// so a client can fall back; an application error keeps its own code.
+	@Test func methodNotFoundReadsAsUnsupported() {
+		let unknown = RPCErrorBody(
+			code: JSONRPC.methodNotFound, message: "unknown method 'vm.process.end'")
+		#expect(unknown.machmanError.code == .unsupported)
+		#expect(unknown.machmanError.message == "unknown method 'vm.process.end'")
+		#expect(RPCErrorBody(MachmanError(code: .invalidState, message: "m")).machmanError.code
+			== .invalidState)
 	}
 }
