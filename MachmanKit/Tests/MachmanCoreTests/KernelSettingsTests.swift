@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import Virtualization
+import MachmanAPI
 import MachmanTestSupport
 @testable import MachmanCore
 
@@ -119,6 +120,26 @@ struct KernelSettingsTests {
 				let loader = try config.makeBootLoader() as? VZLinuxBootLoader
 				#expect(loader?.kernelURL.path == new)
 				#expect(config.kernelOverrides.keys.sorted() == ["kernel/v2/" + file])
+			}
+		}
+	}
+
+	// C11: the kernel-boot toggle can't replace a boot mode a newer Machman wrote — the
+	// refusal says why (not the macOS-installed text BootConfigError maps to).
+	@Test func aNewerBootModeRefusesTheKernelBootToggle() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "newer")
+			let cfg = try VMConfig(name: "newer", memorySize: 2048, cpuCount: 2)
+			cfg.boot = try JSONDecoder().decode(
+				BootConfig.self, from: Data(#"{"bhyve":{"_0":{"x":1}}}"#.utf8))
+			try cfg.saveVMConfig()
+			for enabled in [true, false] {
+				#expect(throws: MachmanError.self) { try cfg.setKernelBoot(enabled: enabled) }
+			}
+			#expect(try VMConfig.load(name: "newer").boot == cfg.boot)
+			guard case .unknown = cfg.boot else {
+				Issue.record("the boot mode was replaced")
+				return
 			}
 		}
 	}

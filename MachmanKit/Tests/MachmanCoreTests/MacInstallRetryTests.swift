@@ -35,6 +35,33 @@ struct MacInstallRetryTests {
 		#expect(config.boot.isMacInstalled)
 	}
 
+	// C11: an install would replace a boot mode a newer Machman wrote. The session refuses
+	// before any phase changes, and the installer itself refuses for every other caller.
+	@Test func aNewerBootModeRefusesAnInstall() async throws {
+		let config = try JSONDecoder().decode(
+			VMConfig.self,
+			from: Data(#"{"name":"mac","memorySize":2048,"cpuCount":2,"created":1000}"#.utf8))
+		config.boot = try JSONDecoder().decode(
+			BootConfig.self, from: Data(#"{"bhyve":{"_0":{"x":1}}}"#.utf8))
+		let before = config.boot
+		let session = InstallSession(config: config, events: EventBus(), isVMRunning: { false })
+		let refused = try #require(throws: MachmanError.self) {
+			try session.startInstall(source: InstallSource(kind: .ipsw, path: "/nonexistent.ipsw"))
+		}
+		#expect(refused.code == .invalidState)
+		#expect(!session.isInstalling)
+		#expect(session.phase.kind == .idle)
+
+		let installer = MacInstaller(config: config)
+		let error = await #expect(throws: MachmanError.self) {
+			try await installer.install(
+				source: .localIPSW(URL(fileURLWithPath: "/nonexistent/restore.ipsw")))
+		}
+		#expect(error?.code == .invalidState)
+		#expect(error?.message == "A newer version of Machman set this VM\u{2019}s boot mode")
+		#expect(config.boot == before)
+	}
+
 	// The API entry refuses before any session phase changes.
 	@Test func theAPIRefusesAnInstallOnAnInstalledMac() async throws {
 		var api: LocalMachman!

@@ -15,7 +15,8 @@ enum BootConfig: Equatable {
 	case linuxKernel(LinuxKernelBoot)   // direct kernel boot, no EFI variable store
 	case macOS(MacOSBoot)               // Apple-silicon macOS guest; locked once installed
 	// A boot mode a newer Machman wrote (D26), kept as read: a save writes it back, and this
-	// build never starts it (VMConfig.requireStartableBoot).
+	// build never starts it or replaces it (VMConfig.requireStartableBoot, validateTransition,
+	// the macOS installer).
 	case unknown(JSONValue)
 }
 
@@ -128,8 +129,14 @@ extension BootConfig {
 
 	// Whether the boot mode may change from `current` to `next`. macOS is a creation-time
 	// identity: once installed it can't become EFI/kernel. EFI <-> linuxKernel is free, and an
-	// interrupted/failed macOS install may still be reverted. Pure (no I/O) so it's easy to test.
+	// interrupted/failed macOS install may still be reverted. A newer Machman's mode is never
+	// left (C11): this build can't know what leaving it would lose — the refusal is a
+	// MachmanError, not a BootConfigError, so it isn't worded as the macOS lock. Pure (no I/O)
+	// so it's easy to test.
 	static func validateTransition(from current: BootConfig, to next: BootConfig) throws {
+		if case .unknown = current, next != current {
+			throw newerModeRefusal
+		}
 		if current.isMacInstalled {
 			if case .macOS = next { return }   // staying macOS is fine
 			throw BootConfigError.macOSLocked

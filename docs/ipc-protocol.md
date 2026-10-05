@@ -109,7 +109,7 @@ keep working — nothing is rejected at load.
 | `vm.uart.add` | `{name}` | `{}` (appends a PL011 uart port, guest `/dev/ttyAMAN`; refused while running) |
 | `vm.uart.remove` | `{name}` | `{}` (pops the last uart port; refused while running) |
 | `vm.serial.setLogging` | `{name, kind: "console"\|"uart", index, config: SerialLogConfig}` | `{}` (retunes a port's file logging; applied live when the VM runs, appending to this boot's log — only a run's first open empties a `resetOnBoot` file; `maxBytes` above 1073741824 (1 GiB) → `invalidArgument`, unless it is the port's stored cap sent back unchanged) |
-| `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed) |
+| `vm.boot.setKernel` | `{name, enabled}` | `{}` (refused once macOS is installed, and with `invalidState` when a newer Machman set the boot mode) |
 | `vm.boot.kernelSettings` | `{name, settings: {kernelPath, initrdPath?, commandLine}}` | `{}` |
 | `vm.kernel.promote` | `{name, role: "kernel"\|"initramfs", sourcePath, tag}` | `VMInfo` (copies the file into `<vm>/kernels/<role>/<tag>/` as owned and points the role's field at it; `tag` follows the name rules) |
 | `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — `path` must name one of the VM's listed owned files once `..` is resolved, else `notFound` — and clears any field referencing it) |
@@ -121,7 +121,7 @@ keep working — nothing is rejected at load.
 | `vm.window.open` | `{name}` | `{}` (the VM's vmhost shows its window) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
-| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` (refused with `invalidState` once macOS is installed or while that VM's install is already running; a retry after a failed or cancelled install starts over) |
+| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` (refused with `invalidState` once macOS is installed, while that VM's install is already running, or when a newer Machman set its boot mode; a retry after a failed or cancelled install starts over) |
 | `vm.install.cancel` | `{name}` | `{}` |
 | `vm.install.phase` | `{name}` | `InstallPhase` |
 | `vm.device.add` | `{name, kind}` | `VMInfo` (1.0.4+; one device per kind; kind validity depends on boot mode — trackpad needs macOS, clipboard/rosetta refuse macOS; takes effect next boot) |

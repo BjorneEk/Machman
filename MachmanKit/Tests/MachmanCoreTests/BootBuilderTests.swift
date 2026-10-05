@@ -1,4 +1,6 @@
 import Testing
+import Foundation
+import MachmanAPI
 @testable import MachmanCore
 
 struct BootBuilderTests {
@@ -32,5 +34,20 @@ struct BootBuilderTests {
 		let failed = BootConfig.macOS(MacOSBoot(installState: .failed("x"),
 			minimumCPUCount: 4, minimumMemorySize: 8))
 		try BootConfig.validateTransition(from: failed, to: .efi)
+	}
+
+	// C11: a boot mode a newer Machman wrote is never replaced here — this build can't know
+	// what leaving it would lose. Staying on it (any save) is fine.
+	@Test func aNewerBootModeCannotBeLeft() throws {
+		let newer = try JSONDecoder().decode(
+			BootConfig.self, from: Data(#"{"bhyve":{"_0":{"x":1}}}"#.utf8))
+		for next in [BootConfig.efi, kernel(), installedMac()] {
+			let error = try #require(throws: MachmanError.self) {
+				try BootConfig.validateTransition(from: newer, to: next)
+			}
+			#expect(error.code == .invalidState)
+			#expect(error.message == "A newer version of Machman set this VM\u{2019}s boot mode")
+		}
+		try BootConfig.validateTransition(from: newer, to: newer)
 	}
 }
