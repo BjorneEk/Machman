@@ -48,7 +48,9 @@ struct TreeKernelSection: View {
 		// unselectable group like the others. Both park (extra dim) while kernel boot is off.
 		TreeGroup(
 			.group(title), title: title, count: nil, selectable: role == .kernel,
-			parked: ctx.vm.kernelSectionParked, isExpanded: ctx.groupBinding(.group(title)),
+			parked: ctx.vm.kernelSectionParked,
+			folds: TreeSection.folds(rows: entries.count, previewing: ctx.previews(.kernel(role))),
+			isExpanded: ctx.groupBinding(.group(title)),
 			icon: {
 				if role == .kernel {
 					TuxIcon(size: theme.metrics.iconSize + 1)

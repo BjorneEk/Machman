@@ -16,7 +16,8 @@ import MachmanDesktopCore
 // control before the count (the SSH group's +). `selectable` is for the groups that ARE a
 // thing in their own right and carry an inspector (Kernel, SSH): they keep a tag and full
 // opacity. `parked` dims a whole group further (Kernel and Initramfs while kernel boot is
-// off); a nil `count` draws none.
+// off); a nil `count` draws none. `folds` false (nothing in it, TreeSection.folds) draws the
+// label as a leaf: no chevron, nothing below it.
 // Plain List rows, not a DisclosureGroup (T26): SwiftUI expands an outline group lazily as
 // its row comes into view, and AppKit's row-height estimate re-enters itself under that
 // expansion ("reentrant operation in its NSTableView delegate", an assert to come). The label
@@ -27,6 +28,7 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 	private let count: Int?
 	private let selectable: Bool
 	private let parked: Bool
+	private let folds: Bool
 	@Binding private var isExpanded: Bool
 	private let icon: () -> Icon
 	private let menu: () -> MenuItems
@@ -35,7 +37,7 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 
 	init(
 		_ node: SidebarNode, title: String, count: Int?, selectable: Bool = false,
-		parked: Bool = false, isExpanded: Binding<Bool>,
+		parked: Bool = false, folds: Bool = true, isExpanded: Binding<Bool>,
 		@ViewBuilder icon: @escaping () -> Icon,
 		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
 		@ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
@@ -46,6 +48,7 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 		self.count = count
 		self.selectable = selectable
 		self.parked = parked
+		self.folds = folds
 		_isExpanded = isExpanded
 		self.icon = icon
 		self.menu = menu
@@ -60,7 +63,7 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 		Group {
 			label
 				.opacity(selectable || parked ? 1 : MachmanColors.dimmedRowOpacity)
-			if isExpanded {
+			if folds && isExpanded {
 				content()
 					.padding(.leading, TreeIndent.rows)
 			}
@@ -71,8 +74,8 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 	@ViewBuilder
 	private var label: some View {
 		let row = TreeGroupLabel(
-			title: title, count: count, isExpanded: $isExpanded, icon: icon, menu: menu,
-			accessory: accessory)
+			title: title, count: count, isExpanded: folds ? $isExpanded : nil, icon: icon,
+			menu: menu, accessory: accessory)
 		if selectable {
 			row.tag(node)
 		} else {
@@ -91,10 +94,11 @@ enum TreeIndent {
 }
 
 // A group's label row: chevron, icon, title, the trailing accessory and count, the add menu.
+// A leaf (nil `isExpanded`) keeps the chevron's room, so its icon lines up with the others.
 struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 	let title: String
 	let count: Int?
-	@Binding var isExpanded: Bool
+	let isExpanded: Binding<Bool>?
 	let icon: () -> Icon
 	let menu: () -> MenuItems
 	let accessory: () -> Accessory
@@ -102,7 +106,11 @@ struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 
 	var body: some View {
 		HStack(spacing: 1.5) {
-			TreeGroupChevron(title: title, isExpanded: $isExpanded)
+			if let isExpanded {
+				TreeGroupChevron(title: title, isExpanded: isExpanded)
+			} else {
+				Color.clear.frame(width: TreeGroupChevron.width, height: 1)
+			}
 			HStack(spacing: 6) {
 				icon()
 				Text(title).fontWeight(.medium)
@@ -125,6 +133,7 @@ struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 
 // The chevron a group folds and unfolds by: right when collapsed, down when expanded.
 struct TreeGroupChevron: View {
+	static let width: CGFloat = 10
 	let title: String
 	@Binding var isExpanded: Bool
 
@@ -136,7 +145,7 @@ struct TreeGroupChevron: View {
 				.font(.system(size: 8.5, weight: .heavy))
 				.foregroundStyle(.primary.opacity(0.75))
 				.rotationEffect(.degrees(isExpanded ? 90 : 0))
-				.frame(width: 10, height: 16)
+				.frame(width: Self.width, height: 16)
 				.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
@@ -159,15 +168,15 @@ struct TreeGroupSymbol: View {
 extension TreeGroup where Icon == TreeGroupSymbol {
 	init(
 		_ node: SidebarNode, symbol: String, title: String, count: Int,
-		selectable: Bool = false, isExpanded: Binding<Bool>,
+		selectable: Bool = false, folds: Bool = true, isExpanded: Binding<Bool>,
 		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
 		@ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
 		@ViewBuilder content: @escaping () -> Content
 	) {
 		self.init(
-			node, title: title, count: count, selectable: selectable, isExpanded: isExpanded,
-			icon: { TreeGroupSymbol(symbol: symbol) }, menu: menu, accessory: accessory,
-			content: content)
+			node, title: title, count: count, selectable: selectable, folds: folds,
+			isExpanded: isExpanded, icon: { TreeGroupSymbol(symbol: symbol) }, menu: menu,
+			accessory: accessory, content: content)
 	}
 }
 

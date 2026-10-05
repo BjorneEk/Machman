@@ -18,4 +18,9 @@ extension Samples {
 			URL(fileURLWithPath: "/Users/demo/src", isDirectory: true),
 		]
 	}
+
+	// A Finder drag of one kernel image.
+	public static func kernelDrop() -> [URL] {
+		[URL(fileURLWithPath: "/Users/demo/Downloads/vmlinuz-6.13", isDirectory: false)]
+	}
 }

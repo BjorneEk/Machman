@@ -83,6 +83,11 @@ extension TreeContext {
 			touched: dragTouched, perform: { drop($0, on: section) })
 	}
 
+	// Whether a drag hovers the section (its preview row is something to fold, N2).
+	func previews(_ section: TreeDragPreview.Section) -> Bool {
+		dragPreview?.section == section
+	}
+
 	// The would-be entry while a drag hovers the section.
 	@ViewBuilder
 	func dropPreview(in section: TreeDragPreview.Section, icon: String) -> some View {

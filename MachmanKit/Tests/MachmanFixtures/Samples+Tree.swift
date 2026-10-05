@@ -46,6 +46,15 @@ extension Samples {
 		return vm
 	}
 
+	// Kernel boot switched on before any kernel file was added: Kernel and Initramfs show
+	// empty (N2), Kernel with its no-kernel warning.
+	public static func kernelBootEmpty(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name)
+		vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		vm.boot.ownedKernels = []
+		return vm
+	}
+
 	// A Blank-template guest: its system disk and the implied devices, nothing else — no
 	// mounts, no serial ports, no Guest Setup (N1's empty sections).
 	public static func bareLinux(_ name: String = "Bare") -> VMInfo {

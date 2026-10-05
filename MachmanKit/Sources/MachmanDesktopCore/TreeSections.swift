@@ -44,6 +44,12 @@ public enum TreeSection: CaseIterable, Sendable {
 	public static func isVisible(_ section: TreeSection, rows: Int, filtering: Bool) -> Bool {
 		rows > 0 || (!filtering && section.staysWhenEmpty)
 	}
+
+	// Whether a shown section's label carries a chevron (N2): only when there is something
+	// to fold — its rows, or the would-be row of a drag hovering it. An empty one is a leaf.
+	public static func folds(rows: Int, previewing: Bool) -> Bool {
+		rows > 0 || previewing
+	}
 }
 
 // One row of the Kernel or Initramfs section: an owned file, or the active setting when it

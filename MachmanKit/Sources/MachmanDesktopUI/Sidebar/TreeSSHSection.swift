@@ -31,6 +31,7 @@ struct TreeSSHSection: View {
 			if ctx.shows(.ssh, rows: rows.count) {
 				TreeGroup(.group("SSH"), symbol: MachmanSymbols.deviceSSHSetup,
 					title: "SSH", count: open.count, selectable: true,
+					folds: TreeSection.folds(rows: rows.count, previewing: false),
 					isExpanded: ctx.groupBinding(.group("SSH")), menu: {
 					// The + accessory's reliable twin — List group labels can swallow clicks.
 					Button("New SSH Session") { openSSHSession() }

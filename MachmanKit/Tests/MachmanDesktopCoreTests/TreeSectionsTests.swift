@@ -35,6 +35,17 @@ struct TreeSectionsTests {
 		}
 	}
 
+	// N2: an empty section that stays (SSH with no session, Kernel before its first file)
+	// drew a chevron that unfolded nothing.
+	@Test func anEmptySectionDoesNotFold() {
+		#expect(!TreeSection.folds(rows: 0, previewing: false))
+	}
+
+	@Test func rowsOrADragPreviewFold() {
+		#expect(TreeSection.folds(rows: 1, previewing: false))
+		#expect(TreeSection.folds(rows: 0, previewing: true))
+	}
+
 	@Test func kernelEntriesListOwnedFilesAndTheActiveReference() {
 		var vm = Samples.kernelBoot()
 		let dir = "\(Samples.vmsRoot)/Kernel Lab/kernels"

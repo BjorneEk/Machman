@@ -31,12 +31,14 @@ enum WindowScenes {
 			profiles: ctx.profiles, vm: ctx.vm, filter: filter))
 	}
 
-	// The tree with a Finder drag hovering its Disks group (the files don't exist, so the
+	// The tree with a Finder drag hovering one of its groups (the files don't exist, so the
 	// classifier reads the URLs' trailing slashes).
 	@MainActor
-	static func treeWithDiskDrop(_ ctx: SceneContext, _ urls: [URL]) -> AnyView {
+	static func treeWithDrop(
+		_ ctx: SceneContext, on section: TreeDragPreview.Section = .disks, _ urls: [URL]
+	) -> AnyView {
 		let preview = TreeDragPreview.resolve(
-			section: .disks, urls: urls, isDirectory: { $0.hasDirectoryPath })
+			section: section, urls: urls, isDirectory: { $0.hasDirectoryPath })
 		return AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
 			profiles: ctx.profiles, vm: ctx.vm, dragPreview: preview))
@@ -576,6 +578,21 @@ enum WindowScenes {
 		) { ctx in
 			tree(ctx)
 		},
+		// N2: a section that stays empty is a leaf row — SSH with no session open, Kernel and
+		// Initramfs before their first file — and gains its chevron with a row or a drag.
+		RenderScene(
+			"sidebar.tree.kernel-empty", "VMDeviceTreeView, kernel boot before any kernel file",
+			widths: [270], height: 900, vms: { [Samples.kernelBootEmpty()] }
+		) { ctx in
+			tree(ctx)
+		},
+		RenderScene(
+			"sidebar.tree.drop-kernel-empty",
+			"VMDeviceTreeView, a kernel image dragged onto the empty Kernel section",
+			widths: [270], height: 900, vms: { [Samples.kernelBootEmpty()] }
+		) { ctx in
+			treeWithDrop(ctx, on: .kernel(.kernel), Samples.kernelDrop())
+		},
 		// H20: Settings ▸ Accent ▸ Orange recolors Machman's own accent elements — inside the
 		// tree's List rows too (live dots, the active kernel and initramfs checks).
 		RenderScene(
@@ -589,13 +606,13 @@ enum WindowScenes {
 			"sidebar.tree.drop-mixed", "VMDeviceTreeView, files and a folder dragged onto Disks",
 			widths: [270], height: 760
 		) { ctx in
-			treeWithDiskDrop(ctx, Samples.mixedDrop())
+			treeWithDrop(ctx, Samples.mixedDrop())
 		},
 		RenderScene(
 			"sidebar.tree.drop-refused", "VMDeviceTreeView, a folder dragged onto Disks",
 			widths: [270], height: 760
 		) { ctx in
-			treeWithDiskDrop(ctx, Samples.mixedDrop().filter(\.hasDirectoryPath))
+			treeWithDrop(ctx, Samples.mixedDrop().filter(\.hasDirectoryPath))
 		},
 	]
 }
