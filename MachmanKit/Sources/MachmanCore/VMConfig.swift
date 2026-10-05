@@ -376,9 +376,18 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Removes the disk from the config; for .storage also deletes the backing image file.
 	// Destructive — confirmation is the caller's job. Ownership = residency: storage raws
 	// and isos living INSIDE the VM dir (imported/promoted) are deleted with their entry;
-	// external files are only disconnected.
+	// external files are only disconnected. The config saves first (D22): a failed save
+	// keeps the entry and its file, and a failed delete after it leaves an orphan file —
+	// never an entry naming a file that is gone.
 	func deleteDisk(disk: VMDisk) throws {
-		self.disks.removeAll { $0 == disk }
+		let before = disks
+		disks.removeAll { $0 == disk }
+		do {
+			try saveVMConfig()
+		} catch {
+			disks = before
+			throw error
+		}
 		switch disk.kind {
 		case .storage(let name, _):
 			let url = localURL(file: "\(name).raw")
@@ -392,7 +401,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		default:
 			break
 		}
-		try saveVMConfig()
 	}
 
 	// Swap a disk entry in place (vm.disk.promote): position and the entry's flags (safe,

@@ -226,7 +226,8 @@ extension VMConfig {
 	// MARK: - Disk resize (vm.disk.resize) — grow-only, owned storage only.
 
 	// Rename an owned storage disk: moves the backing file and rewrites the disk entry
-	// (the disk's id is derived from the name, so callers re-resolve after this).
+	// (the disk's id is derived from the name, so callers re-resolve after this). A failed
+	// save moves the file back (D22): the config on disk still names the old one.
 	func renameStorageDisk(id: String, to newName: String) throws {
 		guard let index = disks.firstIndex(where: { $0.id == id }) else {
 			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
@@ -252,7 +253,18 @@ extension VMConfig {
 		}
 		try FileManager.default.moveItem(atPath: oldPath, toPath: newPath)
 		disks[index].kind = .storage(trimmed, size)
-		try saveVMConfig()
+		do {
+			try saveVMConfig()
+		} catch {
+			disks[index].kind = .storage(oldName, size)
+			do {
+				try FileManager.default.moveItem(atPath: newPath, toPath: oldPath)
+			} catch let moveBack {
+				MachmanLogger.log(.passiveError,
+					"\(name): \(trimmed).raw couldn’t move back to \(oldName).raw: \(moveBack)")
+			}
+			throw error
+		}
 	}
 
 	// Change how a mount reaches the guest (1.0.7). Value/boot-mode validation is the
@@ -283,7 +295,8 @@ extension VMConfig {
 	}
 
 	// Re-tag an owned kernel/initramfs file: moves it on disk and migrates the kernel-boot
-	// references and the per-file override to the new path/key. Returns the new path.
+	// references and the per-file override to the new path/key. Returns the new path. A
+	// failed save re-tags the file back (D22's shape: the config still names the old path).
 	@discardableResult
 	func renameKernelFile(path: String, to newTag: String) throws -> String {
 		// KernelStore moves the standardized path, so every comparison here uses it too (a
@@ -292,6 +305,7 @@ extension VMConfig {
 		let newPath = try KernelStore.rename(
 			path: path, kernelsDir: kernelsDirPath(), newTag: newTag)
 		guard newPath != oldPath else { return newPath }
+		let before = (kernelSettings, boot, kernelOverrides)
 		func isOld(_ reference: String?) -> Bool {
 			guard let reference, !reference.isEmpty else { return false }
 			return URL(fileURLWithPath: reference).standardized.path == oldPath
@@ -315,7 +329,21 @@ extension VMConfig {
 			let value = kernelOverrides.removeValue(forKey: oldKey) {
 			kernelOverrides[newKey] = value
 		}
-		try saveVMConfig()
+		do {
+			try saveVMConfig()
+		} catch {
+			(kernelSettings, boot, kernelOverrides) = before
+			let oldTag = URL(fileURLWithPath: oldPath).deletingLastPathComponent()
+				.lastPathComponent
+			do {
+				_ = try KernelStore.rename(
+					path: newPath, kernelsDir: kernelsDirPath(), newTag: oldTag)
+			} catch let moveBack {
+				MachmanLogger.log(.passiveError,
+					"\(name): \(newPath) couldn’t move back to its tag \(oldTag): \(moveBack)")
+			}
+			throw error
+		}
 		return newPath
 	}
 
