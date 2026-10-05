@@ -53,6 +53,22 @@ struct SessionNamesTests {
 
 	// W4: the preview tab tore off as “Debian — Configuration”; it shows the preview, and the
 	// canvas tab strip names it by its VM alone.
+	// Q12: the canvas tab and the torn window name a tab the same way, from one place.
+	@Test func aTabIsNamedAsItsTornWindowNamesIt() async throws {
+		let h = await DesktopHarness.make()
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		let console = VMPaneTab.terminal(SerialPortRef(kind: .console, index: 0))
+		h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "Build")
+		for tab in [VMPaneTab.config, console, .ssh(session)] {
+			let title = tab.title(vm: "Debian", info: debian, sessions: h.terminals)
+			let window = TornTab(vm: "Debian", tab: tab)
+				.windowTitle(vms: h.viewModel.vms, terminals: h.terminals)
+			#expect(window == (tab == .config ? title : "Debian — \(title)"))
+		}
+		#expect(console.title(vm: "Debian", info: debian, sessions: h.terminals) == "hvc0")
+		#expect(console.symbol == MachmanSymbols.serialConsole)
+	}
+
 	@Test func aPreviewWindowIsTitledByItsVM() async {
 		let h = await DesktopHarness.make()
 		let torn = TornTab(vm: "Debian", tab: .config)

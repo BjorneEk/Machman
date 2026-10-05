@@ -430,26 +430,10 @@ struct VMCanvasView: View {
 	}
 
 	private func tabSymbol(_ tab: VMPaneTab) -> String {
-		switch tab {
-		case .config:
-			return MachmanSymbols.tabConfig
-		case .terminal(let ref):
-			return ref.kind == .console
-				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart
-		case .ssh:
-			return MachmanSymbols.deviceSSHSetup
-		}
+		tab.symbol
 	}
 
 	private func tabTitle(_ tab: VMPaneTab) -> String {
-		switch tab {
-		case .config:
-			return vm.name
-		case .terminal(let ref):
-			return vm.port(for: ref)?.displayName(mode: vm.boot.mode)
-				?? ref.displayName(mode: vm.boot.mode)
-		case .ssh(let ref):
-			return sessions.sshSessionName(vm: vm.name, ref: ref)
-		}
+		tab.title(vm: vm.name, info: vm, sessions: sessions)
 	}
 }

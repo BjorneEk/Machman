@@ -3,9 +3,8 @@
 //  MachmanDesktopCore
 //
 //  What a torn-off window calls itself (T13): its VM's name for the preview tab, as the canvas
-//  tab names it; "<VM> — <tab>" for a terminal or session. A port names itself by the live
-//  VM's boot mode, and an ssh session by its CURRENT name — renames live in TerminalSessions,
-//  not in the ref, so the window must read them there to follow a rename.
+//  tab names it; "<VM> — <tab>" for a terminal or session, the tab named as the canvas names
+//  it (VMPaneTab.title), so a session's window follows its renames.
 //
 
 import Foundation
@@ -17,17 +16,13 @@ extension TornTab {
 	// EFI port naming (and the ref's config index).
 	@MainActor
 	public func windowTitle(vms: [VMInfo]?, terminals: TerminalSessions) -> String {
+		let name = tab.title(
+			vm: vm, info: vms?.first(where: { $0.name == vm }), sessions: terminals)
 		switch tab {
 		case .config:
-			return vm
-		case .terminal(let ref):
-			let info = vms?.first(where: { $0.name == vm })
-			let mode = info?.boot.mode ?? .efi
-			let name = info?.port(for: ref)?.displayName(mode: mode)
-				?? ref.displayName(mode: mode)
+			return name
+		case .terminal, .ssh:
 			return "\(vm) — \(name)"
-		case .ssh(let ref):
-			return "\(vm) — \(terminals.sshSessionName(vm: vm, ref: ref))"
 		}
 	}
 }
