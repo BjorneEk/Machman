@@ -81,10 +81,12 @@ public final class HostWindow: NSWindow {
 	}
 
 	public override func orderFront(_ sender: Any?) { refuse("orderFront(_:)") }
-	public override func makeKeyAndOrderFront(_ sender: Any?) {
+	public override func makeKeyAndOrderFront(_ sender: Any?) {   // host-quiet: the tripwire
 		refuse("makeKeyAndOrderFront(_:)")
 	}
-	public override func orderFrontRegardless() { refuse("orderFrontRegardless()") }
+	public override func orderFrontRegardless() {   // host-quiet: the tripwire
+		refuse("orderFrontRegardless()")
+	}
 	public override func makeKey() { refuse("makeKey()") }
 	public override func makeMain() { refuse("makeMain()") }
 
