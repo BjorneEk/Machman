@@ -76,7 +76,16 @@ final class LabAgent: @unchecked Sendable {
 	}
 
 	/// The environment of the launched agent (pure): the suite, the scope's library and home,
-	/// the lab variables and nothing else: no MACHMAN_LAB, no SSH_AUTH_SOCK.
+	/// the lab variables, and blanks for what must not reach it. OpenConfiguration.environment
+	/// MERGES onto what the agent would inherit (launchd's SSH_AUTH_SOCK, the test helper's
+	/// DYLD_* paths) rather than replacing it, so those are overridden with empty values: an
+	/// empty SSH_AUTH_SOCK reads as no ssh-agent, so nothing a lab process runs reaches the
+	/// user's keys.
+	static let blanked = [
+		"SSH_AUTH_SOCK", "SSH_ASKPASS", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
+		"DYLD_INSERT_LIBRARIES",
+	]
+
 	static func environment(
 		scope: LabScope, inherited: [String: String], extra: [String: String]
 	) -> [String: String] {
@@ -92,6 +101,7 @@ final class LabAgent: @unchecked Sendable {
 		result["LOGNAME"] = inherited["LOGNAME"]
 		result["MACHMAN_LAB_ANSWERS"] = scope.answersPath
 		result["MACHMAN_LAB_AGENT_CONTROL"] = scope.controlPath
+		for key in blanked { result[key] = "" }
 		for (key, value) in extra { result[key] = value }
 		return result
 	}

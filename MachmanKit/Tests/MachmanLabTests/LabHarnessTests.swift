@@ -178,7 +178,10 @@ struct LabHarnessTests {
 		#expect(environment["MACHMAN_LAB_AGENT_CONTROL"] == scope.controlPath)
 		#expect(environment["USER"] == "me")
 		#expect(environment["MACHMAN_LAB"] == nil)
-		#expect(environment["SSH_AUTH_SOCK"] == nil)
+		// Blanked, not left out: the launch merges onto launchd's environment.
+		for key in ["SSH_AUTH_SOCK", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"] {
+			#expect(environment[key] == "")
+		}
 		#expect(environment["SECRET"] == nil)
 	}
 
