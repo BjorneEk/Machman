@@ -343,8 +343,6 @@ struct GuestSetupInstallerTests {
 			#expect(env.contains("CONSOLE_COUNT='1'"))
 			#expect(env.contains("SHARE_TAG='host-share'"))
 			// The library is assembled INTO the script — no separate file to lose.
-			#expect(!fm.fileExists(atPath: payload.appendingPathComponent(
-				GuestInstallerWriter.sharedLibraryFileName).path))
 			#expect(try String(contentsOf: scriptURL, encoding: .utf8)
 				.contains("ui_detect()"))
 			// The sshfs mounts ride mounts.list, tab-separated.
