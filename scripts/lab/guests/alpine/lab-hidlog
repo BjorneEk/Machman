@@ -1,0 +1,46 @@
+#!/bin/sh
+# HID event log for the lab's Alpine guest, written to hvc1 (the host reads it through the
+# console socket). Lines:
+#   HID-READY <event devices>   once the readers run
+#   HID-NONE                    no /dev/input/event* appeared within 10 s
+#   HID <dev> <type> <code> <value>   one per input_event (little-endian arm64 struct, 24 bytes)
+# lab-hidlog --parse FILE [NAME] decodes a file of raw events (the host self-test).
+
+# decode <dev>: reads lines of 24 hex bytes, prints one HID line each.
+decode() {
+	while read -r b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 b16 b17 b18 b19 \
+		b20 b21 b22 b23; do
+		[ -n "$b23" ] || continue
+		echo "HID $1 $((0x$b17$b16)) $((0x$b19$b18)) $((0x$b23$b22$b21$b20))"
+	done
+}
+
+if [ "${1:-}" = "--parse" ]; then
+	hexdump -v -e '24/1 "%02x " "\n"' "$2" | decode "${3:-file}"
+	exit 0
+fi
+
+n=0
+while [ "$n" -lt 10 ]; do
+	ls /dev/input/event* >/dev/null 2>&1 && break
+	sleep 1
+	n=$((n + 1))
+done
+if ! ls /dev/input/event* >/dev/null 2>&1; then
+	echo HID-NONE
+	exit 0
+fi
+# One dd per event keeps output unbuffered, and holding fd 3 open loses no events between
+# reads.
+for dev in /dev/input/event*; do
+	(
+		exec 3<"$dev"
+		while :; do
+			ev=$(dd bs=24 count=1 <&3 2>/dev/null | hexdump -v -e '24/1 "%02x " "\n"')
+			[ -n "$ev" ] || break
+			echo "$ev" | decode "${dev##*/}"
+		done
+	) &
+done
+echo "HID-READY $(cd /dev/input && echo event*)"
+wait

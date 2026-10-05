@@ -205,6 +205,7 @@ lab_selfcheck() {
 	echo "lab: sandbox $root (suite $suite)"
 	"$repo/scripts/lib/sandbox-selfcheck.sh" || failures=$((failures + $?))
 	"$repo/scripts/lab/fetch.sh" --self-check || failures=$((failures + $?))
+	"$repo/scripts/lab/guests/alpine/build.sh" --self-check || failures=$((failures + $?))
 	set +e
 	swift test --skip-build --disable-xctest --no-parallel --package-path "$pkg" \
 		--filter 'MachmanLabTests\.' 2>&1 | tee "$root/report/swift-test.log"

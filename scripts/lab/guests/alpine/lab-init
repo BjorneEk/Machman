@@ -1,0 +1,37 @@
+#!/bin/sh
+# The lab's rdinit for the Alpine netboot initramfs (kernel cmdline: rdinit=/lab-init).
+# It mounts the pseudo filesystems, loads the modloop (usbhid, evdev, virtiofs, ...), starts
+# the HID log on hvc1 and gives a root shell on hvc0. Console strings the lab keys on:
+#   LAB-READY <uname -r>    on hvc0, once the guest is ready for a command
+# Kernel cmdline knobs:
+#   lab.noshell   print LAB-READY but leave hvc0 unread (W1-24: nothing reads the console)
+#   lab.nohid     do not start the HID log on hvc1
+/bin/busybox mkdir -p /proc /sys /dev /tmp /run /.modloop
+/bin/busybox mount -t proc proc /proc
+/bin/busybox --install -s
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts
+ver="$(uname -r)"
+# The netboot initramfs carries few modules, while the modloop has usbhid, evdev, virtiofs
+# and the rest.
+if [ -f /lab/modloop ]; then
+	modprobe -q loop
+	modprobe -q squashfs
+	if mount -t squashfs -o loop,ro /lab/modloop /.modloop; then
+		rm -rf /lib/modules && ln -s /.modloop/modules /lib/modules
+	fi
+fi
+modprobe -qa xhci_pci usbhid hid_generic evdev 2>/dev/null
+case " $(cat /proc/cmdline) " in
+*" lab.nohid "*) ;;
+*) { [ -c /dev/hvc1 ] && /lab/lab-hidlog >/dev/hvc1 2>&1; } & ;;
+esac
+echo "LAB-READY $ver"
+# Nothing reads hvc0 (W1-24).
+case " $(cat /proc/cmdline) " in
+*" lab.noshell "*) exec sleep 2147483647 ;;
+esac
+# A controlling tty, so ^C reaches the foreground job.
+command -v cttyhack >/dev/null 2>&1 && exec setsid cttyhack /bin/sh
+exec /bin/sh
