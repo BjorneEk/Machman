@@ -88,6 +88,7 @@ public enum MachmanSymbols {
 	public static let more = "ellipsis"                 // row quick-action menus
 	public static let pickerChevron = "chevron.down"    // fades in on the VM indicator
 	public static let back = "chevron.left"             // popover sub-view back button
+	public static let disclosure = "chevron.right"      // tree group chevron (turns down open)
 	public static let selectedItem = "checkmark"        // picker row's current selection
 	public static let templateBlank = "square.dashed"   // New VM blank-template tile
 	public static let warning = "exclamationmark.triangle.fill"

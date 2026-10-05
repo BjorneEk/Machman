@@ -2,9 +2,9 @@
 //  TreeGroup.swift
 //  MachmanDesktopUI
 //
-//  The device tree's scaffold: TreeGroup, a section's disclosure group and its label, and
-//  `.treeRow`, the chrome every entry row shares. A section supplies only what differs: its
-//  icon, title, count, accessory, menus and rows.
+//  The device tree's scaffold: TreeGroup, a section's label row and its rows, and `.treeRow`,
+//  the chrome every entry row shares. A section supplies only what differs: its icon, title,
+//  count, accessory, menus and rows.
 //
 
 import SwiftUI
@@ -16,9 +16,11 @@ import MachmanDesktopCore
 // control before the count (the SSH group's +). `selectable` is for the groups that ARE a
 // thing in their own right and carry an inspector (Kernel, SSH): they keep a tag and full
 // opacity. `parked` dims a whole group further (Kernel and Initramfs while kernel boot is
-// off); a nil `count` draws none. No @Environment here — the label reads the theme: an
-// environment read in the view that owns a List row's DisclosureGroup made AppKit warn of
-// a reentrant NSTableView delegate operation on every tree update.
+// off); a nil `count` draws none.
+// Plain List rows, not a DisclosureGroup (T26): SwiftUI expands an outline group lazily as
+// its row comes into view, and AppKit's row-height estimate re-enters itself under that
+// expansion ("reentrant operation in its NSTableView delegate", an assert to come). The label
+// row carries the chevron; the group's rows follow it, indented, while it is expanded.
 struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: View {
 	private let node: SidebarNode
 	private let title: String
@@ -52,47 +54,89 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 	}
 
 	var body: some View {
-		let disclosure = DisclosureGroup(isExpanded: $isExpanded) {
-			content()
-		} label: {
-			TreeGroupLabel(
-				title: title, count: count, icon: icon, menu: menu, accessory: accessory)
+		Group {
+			label
+			if isExpanded {
+				content()
+					.padding(.leading, TreeIndent.rows)
+			}
 		}
+		.opacity(parked ? 0.45 : (selectable ? 1 : MachmanColors.dimmedRowOpacity))
+	}
+
+	@ViewBuilder
+	private var label: some View {
+		let row = TreeGroupLabel(
+			title: title, count: count, isExpanded: $isExpanded, icon: icon, menu: menu,
+			accessory: accessory)
 		if selectable {
-			disclosure
-				.tag(node)
-				.opacity(parked ? 0.45 : 1)
+			row.tag(node)
 		} else {
-			disclosure.opacity(parked ? 0.45 : MachmanColors.dimmedRowOpacity)
+			row
 		}
 	}
 }
 
-// A group's label row: icon, title, the trailing accessory and count, and the add menu.
+// Where the flat tree's rows start, lined up with the outline layout they replace (T26): the
+// root row after the outline's disclosure gutter, a group's chevron in that gutter, a
+// group's rows one level in.
+enum TreeIndent {
+	static let root: CGFloat = 9
+	static let chevron: CGFloat = -2
+	static let rows: CGFloat = 21
+}
+
+// A group's label row: chevron, icon, title, the trailing accessory and count, the add menu.
 struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 	let title: String
 	let count: Int?
+	@Binding var isExpanded: Bool
 	let icon: () -> Icon
 	let menu: () -> MenuItems
 	let accessory: () -> Accessory
 	@Environment(\.machmanTheme) private var theme
 
 	var body: some View {
-		HStack(spacing: 6) {
-			icon()
-			Text(title).fontWeight(.medium)
-			Spacer()
-			accessory()
-			if let count {
-				Text("\(count)")
-					.font(.caption2)
-					.foregroundStyle(.tertiary)
-					.monospacedDigit()
+		HStack(spacing: 1.5) {
+			TreeGroupChevron(title: title, isExpanded: $isExpanded)
+			HStack(spacing: 6) {
+				icon()
+				Text(title).fontWeight(.medium)
+				Spacer()
+				accessory()
+				if let count {
+					Text("\(count)")
+						.font(.caption2)
+						.foregroundStyle(.tertiary)
+						.monospacedDigit()
+				}
 			}
 		}
+		.padding(.leading, TreeIndent.chevron)
 		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
 		.contextMenu { menu() }
+	}
+}
+
+// The chevron a group folds and unfolds by: right when collapsed, down when expanded.
+struct TreeGroupChevron: View {
+	let title: String
+	@Binding var isExpanded: Bool
+
+	var body: some View {
+		Button {
+			withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+		} label: {
+			Image(systemName: MachmanSymbols.disclosure)
+				.font(.system(size: 8.5, weight: .heavy))
+				.foregroundStyle(.primary.opacity(0.75))
+				.rotationEffect(.degrees(isExpanded ? 90 : 0))
+				.frame(width: 10, height: 16)
+				.contentShape(Rectangle())
+		}
+		.buttonStyle(.plain)
+		.accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
 	}
 }
 
