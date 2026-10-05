@@ -88,4 +88,107 @@ struct GuestScriptSSHTests {
 				"""), "\(shell): \(r.out)")
 		}
 	}
+
+	// MARK: - 'ssh mac' (S42)
+
+	// reverse_act on a NAT guest whose ssh-keygen is a stand-in (it writes the pair it is
+	// asked for), after `config` became the user's ~/.ssh/config. UI_COLS=1000: the script
+	// folds what it says at the terminal's width; these read it whole.
+	private static func reverse(config: String) -> String {
+		home + #"""
+			UI_COLS=1000
+			mkdir -p "$D/bin"
+			cat > "$D/bin/ssh-keygen" <<'K'
+			#!/bin/sh
+			while [ $# -gt 1 ]; do [ "$1" = -f ] && f="$2"; shift; done
+			printf 'key\n' > "$f"
+			printf 'ssh-ed25519 AAAAC3rev machman-0123456789ab-reverse\n' > "$f.pub"
+			K
+			chmod 755 "$D/bin/ssh-keygen"
+			PATH="$D/bin:$PATH"
+			OS=Linux
+			GATEWAY=192.168.64.1
+			CFG="$HOME_DIR/.ssh/config"
+			printf '\#(config)' > "$CFG"
+			# Scratch files take the directory's group (wheel under /tmp); an edit keeps the
+			# file's owner, which a non-root run may only give its own groups.
+			chgrp "$GROUP" "$CFG"
+			cp "$CFG" "$D/config.orig"
+			# What ssh itself makes of 'mac' with only this file.
+			resolve() { ssh -G -F "$CFG" mac 2>/dev/null | grep -E '^(hostname|user) ' | sort; }
+
+			"""#
+	}
+
+	// S42: ssh takes each option's first value, so a 'Host *' (or Match) the user keeps at
+	// the top redirected Machman's appended 'ssh mac' while the run said ready. The block
+	// goes first now — and ends in 'Host *', so the user's top-level lines still apply to
+	// every host — and a re-run moves an older run's block up; stripping it restores the file.
+	@Test func sshMacGoesAheadOfTheUsersDefaults() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.reverse(
+				config: #"ServerAliveInterval 30\nHost *\n\tUser me\n\tHostName studio.lan\n"#
+			) + #"""
+				reverse_act
+				resolve
+				ssh -G -F "$CFG" other 2>/dev/null | grep -E '^(hostname|serveraliveinterval) ' \
+					| sort
+				echo ---
+				strip_block "$CFG"
+				put_block "$CFG" "$MARKER" 'older run'
+				reverse_act >/dev/null
+				head -n 2 "$CFG"
+				strip_block "$CFG"
+				cmp -s "$CFG" "$D/config.orig" && echo restored
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				[ok] guest -> host ready: 'ssh mac' reaches 192.168.64.1 (Mac) as gustaf
+				   It works once you approve this VM in Machman and Remote Login is on.
+				hostname 192.168.64.1
+				user gustaf
+				hostname studio.lan
+				serveraliveinterval 30
+				---
+				# BEGIN \(GuestScriptHarness.marker)
+				Host mac
+				restored
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// The user's own 'Host mac' (any keyword spelling; a "Host Mac" is no such entry — ssh
+	// matches 'mac' as typed) is theirs: Machman's block goes after it, and the run says so
+	// in a note (the report's Notes) instead of claiming 'ssh mac' is ready.
+	@Test func theUsersOwnHostMacKeepsSshMac() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.reverse(
+				config: #"Host Mac\n\tUser nobody\nhost="mac" studio\n\tHostName studio.lan\n"#
+			) + #"""
+				reverse_act > "$D/out" 2>&1
+				sed "s|$D|D|g" "$D/out"
+				echo ---
+				resolve | grep hostname
+				head -n 5 "$CFG"
+				printf '%s\n' "$NOTE_LINES" | sed "s|$D|D|g"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			let note = "'ssh mac' stays your own entry in D/home/.ssh/config — Machman's "
+				+ "'Host mac' after it does not apply"
+			#expect(r.out == """
+				[!!] \(note)
+				   It works once you approve this VM in Machman and Remote Login is on.
+				---
+				hostname studio.lan
+				Host Mac
+				\tUser nobody
+				host="mac" studio
+				\tHostName studio.lan
+				# BEGIN \(GuestScriptHarness.marker)
+				two-way: \(note)
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }

@@ -21,6 +21,26 @@ reverse_is_configured() {
 		&& grep -qF "$MARKER-reverse" "$_ric_h/.ssh/machman_host.pub" 2>/dev/null
 }
 
+# Whether the user's own config — outside every Machman block — has a Host line naming mac:
+# their 'ssh mac', which Machman never takes over. The keyword is any case, the pattern is
+# not (ssh matches 'mac' as typed: a "Host Mac" never catches it). <config>
+reverse_user_owns_mac() {
+	regular_file "$1" || return 1
+	awk '
+		/^# BEGIN machman-/ { inb = 1; next }
+		/^# END machman-/ { inb = 0; next }
+		inb { next }
+		match($0, /^[ \t]*[Hh][Oo][Ss][Tt]([ \t]*=[ \t]*|[ \t]+)/) {
+			n = split(substr($0, RLENGTH + 1), pats, /[ \t]+/)
+			for (i = 1; i <= n; i++) {
+				p = pats[i]
+				gsub(/"/, "", p)
+				if (p == "mac") found = 1
+			}
+		}
+		END { exit found ? 0 : 1 }' "$1"
+}
+
 reverse_menu_note() {
 	if reverse_is_configured; then
 		echo "configured — verify ('ssh mac' entry refreshed)"
@@ -133,19 +153,31 @@ reverse_act() {
 $_atw_lines
 EOF
 	fi
+	# The block ends back at every host: what follows it is the user's, for all of them. (No
+	# apostrophes in comments inside $( ): macOS's bash 3.2 sh reads them as quotes.)
 	_atw_body="$(
 		printf 'Host mac\n\tHostName %s\n\tUser %s\n' "$_atw_target" "$HOST_USER"
 		printf '\tIdentityFile %s\n\tIdentitiesOnly yes\n' "$_atw_key"
 		[ -n "$_atw_known" ] && printf '\tUserKnownHostsFile %s\n' "$_atw_known"
-		:
+		printf 'Host *\n'
 	)"
-	# A new config is the user's own, 0600; an existing one keeps its owner and mode.
-	if ! put_block -m 600 -o "$U:$GROUP" "$_atw_dir/config" "$MARKER" "$_atw_body"; then
+	# ssh takes each option's first value, so the block goes first: no Host * or Match of
+	# the user's can redirect 'ssh mac'. Their own 'Host mac' keeps it, though — ours goes
+	# after it, said so. A new config is the user's own, 0600; an existing one keeps its
+	# owner and mode.
+	_atw_top=-t
+	reverse_user_owns_mac "$_atw_dir/config" && _atw_top=""
+	if ! put_block -m 600 -o "$U:$GROUP" ${_atw_top:+"$_atw_top"} "$_atw_dir/config" \
+		"$MARKER" "$_atw_body"; then
 		step_failed two-way "'ssh mac' was not added: $R_ERROR" \
 			"Add a 'Host mac' entry to it yourself (IdentityFile $_atw_key)."
 		return 0
 	fi
-	ok "guest -> host ready: 'ssh mac' reaches ${_atw_target}${HOST_NAME:+ ($HOST_NAME)} as $HOST_USER"
+	if [ -z "$_atw_top" ]; then
+		report_note two-way "'ssh mac' stays your own entry in $_atw_dir/config — Machman's 'Host mac' after it does not apply"
+	else
+		ok "guest -> host ready: 'ssh mac' reaches ${_atw_target}${HOST_NAME:+ ($HOST_NAME)} as $HOST_USER"
+	fi
 	note "It works once you approve this VM in Machman and Remote Login is on."
 	return 0
 }
