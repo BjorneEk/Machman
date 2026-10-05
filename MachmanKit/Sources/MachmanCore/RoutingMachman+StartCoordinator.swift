@@ -54,6 +54,7 @@ extension RoutingMachman {
 	private func launch(
 		_ vm: VirtualMachine, name: String, options: StartOptions, claim: VMClaims.Token
 	) async throws {
+		await adoptOtherUnadoptedHosts(than: name)
 		if let host = hosted[name] {
 			// An idle host from an earlier start whose forward never happened (the daemon
 			// died in between, E12): it takes this start instead of idling out — unless it
@@ -146,6 +147,20 @@ extension RoutingMachman {
 			BootGuard.Candidate(name: name, disks: mine), among: bootGuardOthers())
 	}
 
+	// A vmhost nobody adopted yet — a launch-agent start that bound after startup adoption, a
+	// host that missed hello — runs a VM the boot guard has to see (E37). Each is adopted
+	// first, at once; one that can't be still counts, from the daemon's copy of its config.
+	private func adoptOtherUnadoptedHosts(than name: String) async {
+		let unadopted = registry.list().map(\.name).filter { $0 != name && isUnadopted($0) }
+		guard !unadopted.isEmpty else { return }
+		_ = await adoptLiveHosts(unadopted)
+	}
+
+	private func isUnadopted(_ name: String) -> Bool {
+		if case .unadopted = residence(of: name) { return true }
+		return false
+	}
+
 	// Every VM that runs or starts, as the boot guard sees it. A start still in flight
 	// attaches its enabled entries (nothing edits its config meanwhile). A running VM's flags
 	// can't decide: a disk switched off mid-run stays attached until it stops, so every entry
@@ -153,7 +168,8 @@ extension RoutingMachman {
 	// made; for an adopted host each entry counts, the disabled ones as "may have". Entries
 	// are never removed or renamed while a VM runs, so the daemon's copy, however old, names
 	// all it attached; a safe run's real config names files its shadow cloned, which only
-	// ever over-refuses.
+	// ever over-refuses. A vmhost that couldn't be adopted counts with the config's MAC and
+	// every entry it may have attached.
 	func bootGuardOthers() -> [BootGuard.Other] {
 		var others: [BootGuard.Other] = []
 		for (name, host) in hosted {
@@ -178,6 +194,11 @@ extension RoutingMachman {
 				other.attached = registry.vm(named: name)?.config.writableDiskFiles ?? []
 			}
 			others.append(other)
+		}
+		for vm in registry.list() where hosted[vm.name] == nil && isUnadopted(vm.name) {
+			others.append(BootGuard.Other(
+				name: vm.name, role: .running, mac: vm.config.macAddress,
+				mayHaveAttached: vm.config.everyWritableDiskFile))
 		}
 		return others
 	}
