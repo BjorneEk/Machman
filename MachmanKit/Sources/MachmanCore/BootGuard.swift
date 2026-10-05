@@ -126,9 +126,36 @@ enum BootGuard {
 					name: $0.name, role: .autostart, mac: $0.macAddress,
 					attached: $0.writableDiskFiles)
 			}
+		return refusal(Candidate(name: name, mac: mine.macAddress, disks: mine.writableDiskFiles),
+			among: others)
+	}
+
+	// C8's login half: the vmhost about to boot its VM at login, which sees only that VM,
+	// looks for a library VM sharing a writable disk file or the MAC whose vmhost answers
+	// on its socket — running, or about to. What that one attached can't be told from here,
+	// so each of its entries counts.
+	static func runningSharerConflict(
+		vm name: String, library: String, runtimeDir: String, isLive: (String) -> Bool
+	) -> MachmanError? {
+		guard let mine = peekConfig(name: name, library: library) else { return nil }
+		let others = libraryConfigs(library)
+			.filter {
+				$0.name != name
+					&& isLive(MachmanPaths.vmSocketPath(vm: $0.name, runtimeDir: runtimeDir))
+			}
+			.map {
+				Other(
+					name: $0.name, role: .running, mac: $0.macAddress,
+					mayHaveAttached: $0.everyWritableDiskFile)
+			}
+		return refusal(Candidate(name: name, mac: mine.macAddress, disks: mine.writableDiskFiles),
+			among: others)
+	}
+
+	private static func refusal(_ candidate: Candidate, among others: [Other]) -> MachmanError? {
 		do {
-			try checkDisks(Candidate(name: name, disks: mine.writableDiskFiles), among: others)
-			try checkMAC(Candidate(name: name, mac: mine.macAddress), among: others)
+			try checkDisks(candidate, among: others)
+			try checkMAC(candidate, among: others)
 		} catch let error as MachmanError {
 			return error
 		} catch {

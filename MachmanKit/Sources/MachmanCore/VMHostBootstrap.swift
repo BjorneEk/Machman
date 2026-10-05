@@ -145,6 +145,17 @@ public enum VMHostBootstrap {
 					server.stop()
 					exit(70)
 				}
+				// This host sees one VM, so the router's guards never ran (E38, C8): a VM
+				// sharing a writable disk file or the MAC may already run.
+				if let conflict = BootGuard.runningSharerConflict(
+					vm: vmName, library: dataDir,
+					runtimeDir: (socketPath as NSString).deletingLastPathComponent,
+					isLive: { UDSListener.isLive(path: $0) }) {
+					MachmanLogger.log(.passiveError,
+						"autostart of \(vmName) refused: \(conflict.message)")
+					server.stop()
+					exit(70)
+				}
 				do {
 					try await api.start(
 						vm: vmName, options: StartOptions(openWindow: policy.windowed))

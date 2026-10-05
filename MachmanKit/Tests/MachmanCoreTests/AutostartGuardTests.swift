@@ -56,6 +56,34 @@ struct AutostartGuardTests {
 		}
 	}
 
+	// The login half: the vmhost about to boot alpha finds kept's vmhost answering, and kept
+	// shares its image. Read-only — a config the loader would migrate is left as it is.
+	@Test @MainActor func aLoginStartSeesARunningSharer() throws {
+		try VMTestDir.withRedirectedDir {
+			try makePair(keptAutostart: false)
+			let keptConfig = machmanVMDir + "/kept/config"
+			var json = try #require(try JSONSerialization.jsonObject(
+				with: Data(contentsOf: URL(fileURLWithPath: keptConfig))) as? [String: Any])
+			json["macAddress"] = nil   // VMConfig.load would mint one and save it
+			try JSONSerialization.data(withJSONObject: json)
+				.write(to: URL(fileURLWithPath: keptConfig))
+			let before = try Data(contentsOf: URL(fileURLWithPath: keptConfig))
+			let runtime = "/run/mm"
+			let keptSocket = MachmanPaths.vmSocketPath(vm: "kept", runtimeDir: runtime)
+
+			let refusal = try #require(BootGuard.runningSharerConflict(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { $0 == keptSocket }))
+			let file = (image as NSString).lastPathComponent
+			#expect(refusal.message
+				== "kept may still have \(file) attached \u{2014} stop kept before starting alpha")
+			#expect(BootGuard.runningSharerConflict(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }) == nil)   // kept doesn't run
+			#expect(try Data(contentsOf: URL(fileURLWithPath: keptConfig)) == before)
+		}
+	}
+
 	@Test @MainActor func whatDoesntBootTogetherPasses() throws {
 		try VMTestDir.withRedirectedDir {
 			try makePair(keptAutostart: false)   // kept doesn't start at login
