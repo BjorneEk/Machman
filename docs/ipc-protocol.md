@@ -402,7 +402,9 @@ the library with a machine identity of its own, both VMs' configs say where each
 and the daemon lists it at once. Until the promoted VM reboots onto its fresh MAC, starting
 the ORIGINAL requires `force` (macConflict). Safe runs survive
 daemon restarts (the daemon re-attaches by matching the shadow's recorded vmhost pid
-against the socket peer) and reset on host reboot.
+against the socket peer) and reset on host reboot. Building the shadow is a `shadowBuild`
+operation that `op.cancel` stops; the start then answers "The safe run was canceled". A start
+that fails after the VM listed as `starting` is followed by a `listChanged`.
 
 ## Per-VM host processes (invisible on the wire)
 

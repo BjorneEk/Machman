@@ -18,6 +18,11 @@ import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
 
+@MainActor
+private final class HeardEvents {
+	var events: [VMEvent] = []
+}
+
 struct RoutingPendingStartTests {
 	@MainActor
 	private func makeRouting(names: [String], mac: String? = nil) throws -> RoutingMachman {
@@ -250,6 +255,25 @@ struct RoutingPendingStartTests {
 		}
 		#expect(routing.pendingStarts.isEmpty)
 		#expect(routing.hostedNames.isEmpty)
+	}
+
+	// The VM listed as starting while the start ran: a failed start says it no longer is, or a
+	// client that lists on listChanged keeps showing it starting.
+	@Test @MainActor func aFailedStartAnnouncesTheList() async throws {
+		let routing = try makeRouting(names: ["pending-delta"])
+		let heard = HeardEvents()
+		let stream = await routing.events()
+		let pump = Task { @MainActor in
+			for await event in stream { heard.events.append(event) }
+		}
+		defer { pump.cancel() }
+
+		await #expect(throws: MachmanError.self) {
+			try await routing.start(vm: "pending-delta", options: StartOptions())
+		}
+		// Before: nothing announced it.
+		#expect(await eventually { heard.events.contains(.listChanged) })
+		#expect(try await routing.vm(named: "pending-delta").state == .stopped)
 	}
 
 	// C11: a boot mode a newer Machman wrote is refused before anything is spawned — a vmhost

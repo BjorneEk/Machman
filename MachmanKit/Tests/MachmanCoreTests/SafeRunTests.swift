@@ -380,4 +380,21 @@ struct SafeRunTests {
 		#expect(info.safeRun == true)
 		await client.disconnect()
 	}
+
+	// E35: the shadow build byte-copies external images marked safe, minutes for a large one,
+	// and its card offered no ✕. Its cancel now reaches the copy.
+	@Test @MainActor func aShadowBuildCanBeCanceled() throws {
+		let routing = try makeRouting()
+		let vm = try #require(routing.registry.vm(named: "alpha"))
+		let build = routing.beginShadowBuild(vm, runRoot: "/nonexistent/run")
+		let center = routing.local.operationCenter
+		let card = try #require(center.list().first { $0.id == build.operation })
+		#expect(card.kind == OperationInfo.Kind.shadowBuild)
+		#expect(card.cancellable == true)   // before: false, no ✕
+		#expect(build.request.isCancelled?() == false)
+
+		try center.cancel(id: build.operation)
+		#expect(build.request.isCancelled?() == true)
+		center.finish(build.operation, state: OperationInfo.State.cancelled)
+	}
 }

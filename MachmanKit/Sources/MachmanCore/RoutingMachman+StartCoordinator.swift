@@ -37,9 +37,23 @@ extension RoutingMachman {
 				message: "\(name) can’t start while macOS is installing")
 		}
 		// Claimed before the first await; the defer releases on every exit, success or
-		// throw. Everything below (probe, spawn, shadow build) runs under this claim.
+		// throw. Everything in launch (probe, spawn, shadow build) runs under this claim.
 		let claim = try claims.claim(name, .starting, mac: vm.config.macAddress)
 		defer { claims.release(claim) }
+		do {
+			try await launch(vm, name: name, options: options, claim: claim)
+		} catch {
+			// The VM listed as starting since the claim: a client that lists on listChanged
+			// would keep showing it starting after the start failed.
+			registry.events.emit(.listChanged)
+			throw error
+		}
+	}
+
+	// A start under its claim: hand it to a host that already serves the VM, or spawn one.
+	private func launch(
+		_ vm: VirtualMachine, name: String, options: StartOptions, claim: VMClaims.Token
+	) async throws {
 		if let host = hosted[name] {
 			// An idle host from an earlier start whose forward never happened (the daemon
 			// died in between, E12): it takes this start instead of idling out — unless it
@@ -63,7 +77,7 @@ extension RoutingMachman {
 		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
 		try checkSharedDisks(name: name)
 		if options.safe {
-			try await startSafe(vm: vm, name: name, options: options)
+			try await startSafe(vm: vm, name: name, options: options, claim: claim)
 			return
 		}
 		let identity = HostIdentity(
@@ -173,7 +187,9 @@ extension RoutingMachman {
 	// clone-vs-reference / omit-vs-attach), run the vmhost against the shadow, and present
 	// it AS the real VM. --library is passed ONLY here: it is the promotion destination and
 	// its absence makes a vmhost refuse safeSave (the misattribution backstop).
-	private func startSafe(vm: VirtualMachine, name: String, options: StartOptions) async throws {
+	private func startSafe(
+		vm: VirtualMachine, name: String, options: StartOptions, claim: VMClaims.Token
+	) async throws {
 		let runRoot = machmanSafeDir + "/" + SafeRun.runPrefix + UUID().uuidString
 		let unattached = vm.config.unattachedDiskFiles   // the config the shadow copies
 		do {
@@ -182,34 +198,24 @@ extension RoutingMachman {
 			// Phase-1 marker: intent, no pid yet — the sweep treats it as never-attachable.
 			try SafeRun.writeMarker(
 				ShadowMarker(vm: name, createdAt: Date(), pid: nil), runRoot: runRoot)
-			let events = registry.events
+			let build = beginShadowBuild(vm, runRoot: runRoot)
 			let center = local.operationCenter
-			let opID = center.begin(
-				kind: OperationInfo.Kind.shadowBuild, vm: name, label: Self.safeRunLabel)
-			let request = SafeRun.shadowRequest(
-				config: vm.config, sourceDir: machmanVMDir + "/" + name, runRoot: runRoot,
-				progress: { copied, total in
-					Task { @MainActor in
-						events.emit(.copyProgress(
-							vm: name, copiedBytes: copied, totalBytes: total))
-						center.update(
-							opID, fraction: total > 0 ? Double(copied) / Double(total) : nil,
-							completedBytes: Int64(copied), totalBytes: Int64(total))
-					}
-				})
 			// Detached: same-volume clones are instant, but unsafe-marked-safe external
 			// images can be real byte copies.
 			do {
+				let request = build.request
 				try await Task.detached(priority: .userInitiated) {
 					try VMCopier.copy(request)
 				}.value
 			} catch {
+				let canceled = build.canceled.get()
 				center.finish(
-					opID, state: OperationInfo.State.failed,
+					build.operation,
+					state: canceled ? OperationInfo.State.cancelled : OperationInfo.State.failed,
 					message: MachmanError.userMessage(for: error))
-				throw error
+				throw canceled ? Self.safeRunCanceled : error
 			}
-			center.finish(opID, state: OperationInfo.State.succeeded)
+			center.finish(build.operation, state: OperationInfo.State.succeeded)
 		} catch {
 			try? FileManager.default.removeItem(atPath: runRoot)
 			throw error
@@ -246,6 +252,39 @@ extension RoutingMachman {
 		}
 		// The shadow keeps every entry's flag, so it left these unattached too.
 		hostStarted(host, name: name, unattached: unattached)
+	}
+
+	nonisolated static let safeRunCanceled = MachmanError(
+		code: .ioFailure, message: "The safe run was canceled")
+
+	struct ShadowBuild {
+		let operation: String
+		let canceled: CancelFlag
+		let request: VMCopyRequest
+	}
+
+	// A safe start's shadow copy: its operation card and the copy request, both reporting to
+	// the card and both stopped by its cancel (E35). Copies nothing itself — a sync seam.
+	func beginShadowBuild(_ vm: VirtualMachine, runRoot: String) -> ShadowBuild {
+		let name = vm.config.name
+		let events = registry.events
+		let center = local.operationCenter
+		let canceled = CancelFlag()
+		let operation = center.begin(
+			kind: OperationInfo.Kind.shadowBuild, vm: name, label: Self.safeRunLabel,
+			cancel: { canceled.set() })
+		var request = SafeRun.shadowRequest(
+			config: vm.config, sourceDir: machmanVMDir + "/" + name, runRoot: runRoot,
+			progress: { copied, total in
+				Task { @MainActor in
+					events.emit(.copyProgress(vm: name, copiedBytes: copied, totalBytes: total))
+					center.update(
+						operation, fraction: total > 0 ? Double(copied) / Double(total) : nil,
+						completedBytes: Int64(copied), totalBytes: Int64(total))
+				}
+			})
+		request.isCancelled = { canceled.get() }
+		return ShadowBuild(operation: operation, canceled: canceled, request: request)
 	}
 
 	// Internal seam (tests inject their own socket path): probe a socket that exists, adopt
