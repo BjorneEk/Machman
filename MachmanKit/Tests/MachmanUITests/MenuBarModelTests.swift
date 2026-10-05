@@ -115,6 +115,79 @@ struct MenuBarModelTests {
 		])
 	}
 
+	// TB12: the lab's `menu <action> <vm>` runs an agent menu item only where the menu would
+	// enable it, through the same calls the menu makes.
+	@Test("Q18: a lab menu command acts only where the agent menu's item is enabled (TB12)")
+	func aLabMenuCommandActsOnlyWhereTheItemIsEnabled() async {
+		let stub = StubMachman()
+		stub.vms["Debian"] = Samples.linux("Debian")
+		stub.vms["Sequoia"] = Samples.macOS("Sequoia")
+		var stuck = Samples.linux("Stuck", state: .running)
+		stuck.unresponsive = true
+		stub.vms["Stuck"] = stuck
+		var blind = Samples.linux("Blind", state: .running)
+		blind.devices = blind.devices?.filter { $0.kind != .graphics }
+		stub.vms["Blind"] = blind
+		let model = MenuBarModel(api: stub)
+		var asked: [EndProcessPrompt] = []
+		model.confirmEndProcess = { prompt in
+			asked.append(prompt)
+			return false
+		}
+		model.begin()
+		#expect(await eventually { model.vms.count == 4 })
+
+		// A live macOS install: Start waits, as the menu's item does.
+		stub.emit(.installPhaseChanged(vm: "Sequoia", phase: InstallPhase(kind: .installing)))
+		let sequoia = model.vms.first { $0.name == "Sequoia" }!
+		#expect(await eventually { !model.canStart(sequoia) })
+		#expect(model.performLab(.start, vm: "Sequoia") == .disabled)
+		#expect(!stub.calls.contains("start"))
+
+		#expect(model.performLab(.startHeadless, vm: "Debian") == .done)
+		#expect(await eventually { stub.starts.count == 1 })
+		#expect(stub.starts.first?.vm == "Debian")
+		#expect(stub.starts.first?.options == Samples.linux("Debian").startOptions(.headless))
+
+		// Force Stop on a VM that isn't answering asks about its process first.
+		#expect(model.performLab(.forceStop, vm: "Stuck") == .done)
+		#expect(await eventually { asked == [.forVM("Stuck")] })
+		#expect(!stub.calls.contains("stop"))
+
+		// No display: the menu has no window item, so there is nothing to open.
+		#expect(model.performLab(.openWindow, vm: "Blind") == .disabled)
+		#expect(model.performLab(.closeWindow, vm: "Blind") == .disabled)
+		#expect(model.performLab(.start, vm: "Nobody") == .noSuchVM)
+		#expect(stub.windowOpens == 0)
+	}
+
+	@Test("Q18: the lab path and the agent menu share one enablement rule (TB12)")
+	func theLabPathAndTheMenuShareOneRule() {
+		let model = MenuBarModel(api: StubMachman())
+		var open = Samples.linux("Open", state: .running)
+		open.windowOpen = false
+		let samples = [
+			Samples.linux("Stopped"), Samples.linux("Running", state: .running), open,
+			Samples.macOS("Mac"), Samples.macOS("MacRunning", state: .running),
+			Samples.linux("Unknown", state: .unknown),
+		]
+		for vm in samples {
+			for action in [LabMenuAction.start, .startHeadless, .startSafe] {
+				#expect(model.isEnabled(action, vm) == model.canStart(vm), "\(vm.name) \(action)")
+			}
+			for action in [LabMenuAction.shutDown, .forceStop] {
+				#expect(model.isEnabled(action, vm) == vm.menuBarCanStop, "\(vm.name) \(action)")
+			}
+			#expect(model.isEnabled(.openWindow, vm) == (vm.windowAction == .open), "\(vm.name)")
+			#expect(model.isEnabled(.closeWindow, vm) == (vm.windowAction == .close), "\(vm.name)")
+		}
+		// The table covers both sides of every rule.
+		#expect(samples.contains { model.isEnabled(.start, $0) })
+		#expect(samples.contains { !model.isEnabled(.start, $0) })
+		#expect(samples.contains { model.isEnabled(.openWindow, $0) })
+		#expect(samples.contains { model.isEnabled(.closeWindow, $0) })
+	}
+
 	// A host that wedged after the list last said so: the bounded stop's timeout asks too.
 	@Test func aTimedOutForceStopAsksAboutTheProcess() async {
 		let stub = StubMachman()

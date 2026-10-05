@@ -11,6 +11,13 @@ import SwiftUI
 import AppKit
 import MachmanAPI
 
+// What a lab menu command did.
+public enum LabMenuOutcome: Equatable, Sendable {
+	case done
+	case disabled
+	case noSuchVM
+}
+
 @MainActor
 public final class MenuBarModel: ObservableObject {
 	let api: MachmanControlling
@@ -112,6 +119,34 @@ public final class MenuBarModel: ObservableObject {
 
 	public func closeWindow(_ name: String) {
 		Task { await perform(.closeWindow, vm: name) }
+	}
+
+	// Whether the menu's item for `action` is enabled for `vm`: the one rule the menu and the
+	// lab's control socket share. A window item exists only while the VM runs with a display.
+	public func isEnabled(_ action: LabMenuAction, _ vm: VMInfo) -> Bool {
+		switch action {
+		case .start, .startHeadless, .startSafe: return canStart(vm)
+		case .shutDown, .forceStop: return vm.menuBarCanStop
+		case .openWindow: return vm.windowAction == .open
+		case .closeWindow: return vm.windowAction == .close
+		}
+	}
+
+	// The lab's `menu <action> <vm>` (test mode only): the item, as if chosen from the menu,
+	// only where the menu would enable it.
+	public func performLab(_ action: LabMenuAction, vm name: String) -> LabMenuOutcome {
+		guard let vm = vms.first(where: { $0.name == name }) else { return .noSuchVM }
+		guard isEnabled(action, vm) else { return .disabled }
+		switch action {
+		case .start: start(vm, .plain)
+		case .startHeadless: start(vm, .headless)
+		case .startSafe: start(vm, .safe)
+		case .shutDown: stop(name, mode: .soft)
+		case .forceStop: stop(name, mode: .force)
+		case .openWindow: openWindow(name)
+		case .closeWindow: closeWindow(name)
+		}
+		return .done
 	}
 
 	// A failed action says so in an alert (P23); a MAC conflict offers Start Anyway, as the

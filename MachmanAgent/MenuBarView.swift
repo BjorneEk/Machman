@@ -31,19 +31,19 @@ struct MenuBarView: View {
 				} label: {
 					Label("Start", systemImage: MachmanSymbols.start)
 				}
-				.disabled(!model.canStart(vm))
+				.disabled(!model.isEnabled(.start, vm))
 				Button {
 					model.start(vm, .headless)
 				} label: {
 					Label("Start Headless", systemImage: MachmanSymbols.startHeadless)
 				}
-				.disabled(!model.canStart(vm))
+				.disabled(!model.isEnabled(.startHeadless, vm))
 				Button {
 					model.start(vm, .safe)
 				} label: {
 					Label("Start Safe", systemImage: MachmanSymbols.safe)
 				}
-				.disabled(!model.canStart(vm))
+				.disabled(!model.isEnabled(.startSafe, vm))
 				// A window item only while the VM runs with a display (P27).
 				if let action = vm.windowAction {
 					Divider()
@@ -70,13 +70,13 @@ struct MenuBarView: View {
 				} label: {
 					Label("Shut Down", systemImage: MachmanSymbols.shutDown)
 				}
-				.disabled(!vm.menuBarCanStop)
+				.disabled(!model.isEnabled(.shutDown, vm))
 				Button {
 					model.stop(vm.name, mode: .force)
 				} label: {
 					Label("Force Stop", systemImage: MachmanSymbols.forceStop)
 				}
-				.disabled(!vm.menuBarCanStop)
+				.disabled(!model.isEnabled(.forceStop, vm))
 			} label: {
 				// Menu rendering may flatten StatusIcon's green to a template glyph — the
 				// window/terminal/pause shapes still differentiate the states.

@@ -65,6 +65,9 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	// Whether this process ever served the socket (V9). One that stepped aside for another
 	// agent quits at once: its engine never ran, so it has no VMs to ask about.
 	private static var served = false
+	// Test mode only: the lab's control socket, and the reason its last `quit` asked for.
+	private static var labControl: LabControlServer?
+	private static var labQuitReason: LabQuitReason?
 
 	// Under a test suite the agent can never become active or show UI, even through a path
 	// the prompts' routing (PromptAlert) missed; the banner is what the lab waits for.
@@ -77,6 +80,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
+		Self.serveLabControl()
 		do {
 			try Daemon.server.start()
 		} catch UDSError.alreadyRunning(let path) {
@@ -200,6 +204,39 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		PromptAlert.run(prompt.labPrompt, front: .lendDockIcon)
 	}
 
+	// Test mode only (MACHMAN_LAB_AGENT_CONTROL): what a lab test triggers in here that no
+	// socket request reaches — a quit for a chosen reason, and the menu's items, enabled by
+	// the menu's own rule. A second agent of the suite finds the path served: it goes on
+	// without one.
+	private static func serveLabControl() {
+		guard let path = LabEnvironment.current?.agentControlPath else { return }
+		do {
+			labControl = try LabControlServer(path: path) { command in
+				switch command {
+				case .ping:
+					return "ok"
+				case .quit(let reason):
+					// After the reply has left: a quit that goes through ends the process.
+					labQuitReason = reason
+					Task { @MainActor in
+						try? await Task.sleep(for: .milliseconds(250))
+						MainRunLoopCallout.post { NSApp.terminate(nil) }
+					}
+					return "ok"
+				case .menu(let action, let vm):
+					guard served else { return "error not serving" }
+					switch Daemon.menuBar.performLab(action, vm: vm) {
+					case .done: return "ok"
+					case .disabled: return "disabled"
+					case .noSuchVM: return "error no VM named \(vm)"
+					}
+				}
+			}
+		} catch {
+			MachmanLogger.log(.log, "test mode: no lab control (\(error))")
+		}
+	}
+
 	// VM windows come and go; the daemon lives in the menu bar.
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
 		false
@@ -207,7 +244,10 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
 		guard Self.served else { return .terminateNow }
-		let reason = VMHostQuitReason.current()
+		// A lab quit's reason stands in for the quit event's (test mode only), once.
+		let lab = Self.labQuitReason.map(VMHostQuitReason.init(lab:))
+		Self.labQuitReason = nil
+		let reason = lab ?? VMHostQuitReason.current()
 		let running = Daemon.api.runningVMNames
 		switch AgentQuitDecision.decide(
 			reason: reason, runningVMs: running.count, holders: Daemon.api.sessionHolders) {
