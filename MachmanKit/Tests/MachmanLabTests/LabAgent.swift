@@ -50,8 +50,8 @@ final class LabAgent: @unchecked Sendable {
 	static let bundleID = "com.gustaffranzen.Machman.dev.agent"
 
 	static var embeddedAppURL: URL {
-		URL(fileURLWithPath: Lab.productsDir)
-			.appendingPathComponent("MachmanDesktop.app/Contents/Library/LoginItems/MachmanAgent.app")
+		URL(fileURLWithPath: Lab.productsDir).appendingPathComponent(
+			"MachmanDesktop.app/Contents/Library/LoginItems/MachmanAgent.app")
 	}
 
 	private(set) var pid: pid_t
