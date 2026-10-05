@@ -11,6 +11,13 @@ SSH_SWITCH_FROM=""         # remove that user's key after installing for the new
 avail_ssh=0
 reason_ssh=""
 
+# A Machman VM's key carries that VM's marker as a whole word: machman- and exactly 12 hex
+# digits (SSHSetupInstaller's label), so a user's own bob@machman-debian is never one. The
+# digits are spelled out — older awks have no {12}. An ERE for awk -v and grep -E alike.
+_skl_hex='[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+_skl_gap="[ $(printf '\t')]"
+SSH_LABEL_ERE="(^|$_skl_gap)machman-$_skl_hex$_skl_hex$_skl_hex($_skl_gap|\$)"
+
 # Marker-scan the candidate homes (state first — it is cheaper and usually right).
 ssh_find_installed_user() {
 	SSH_INSTALLED_USER=""
@@ -314,8 +321,8 @@ ssh_dir_ready() {
 # Filter for authorized_keys: other Machman VMs' keys dropped (a cloned disk's), the
 # Mac's key (ENVIRON _MF_BODY) kept, or appended when missing. _MF_TEXT is our marker.
 ssh_keys_filter() {
-	awk '
-		/machman-[0-9a-f]/ && index($0, ENVIRON["_MF_TEXT"]) == 0 { next }
+	awk -v re="$SSH_LABEL_ERE" '
+		$0 ~ re && index($0, ENVIRON["_MF_TEXT"]) == 0 { next }
 		{ print; if (index($0, ENVIRON["_MF_BODY"])) have = 1 }
 		END { if (!have) print ENVIRON["_MF_BODY"] }'
 }
@@ -347,7 +354,7 @@ ssh_act_key() {
 	# A cloned guest disk carries the source VM's machman key. A machman-tagged line
 	# whose marker is not ours is stale, not the user's — the rewrite sweeps it.
 	_aik_swept=0
-	if grep 'machman-[0-9a-f]' "$_aik_ak" | grep -qvF "$MARKER"; then
+	if grep -E "$SSH_LABEL_ERE" "$_aik_ak" | grep -qvF "$MARKER"; then
 		_aik_swept=1
 	fi
 	_aik_had=0

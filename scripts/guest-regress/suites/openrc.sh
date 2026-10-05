@@ -3,7 +3,7 @@
 # source's marker on every machman artifact).
 # CHECKS: CLONE_NOTE CLONE_SWEPT CLONE_REVERSE REPORT_SSH SSHFS_SPACE SSHFS_BOOT_OPTS
 # CHECKS: IDEMPOTENT_ALPINE HOOK_INSTALLED FSTAB_VERIFY_ALPINE REPORT_ONLY_CLEAN HOOK_REMOVED
-# CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL
+# CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL LOOKALIKE_KEPT
 . /mnt/machman/share/regress/lib.sh
 # Machman markers are always 12 hex chars — the sweep matches exactly that shape.
 OLD=machman-0ddc105e9999
@@ -11,7 +11,9 @@ BOOT=/etc/local.d/machman-sshfs.start
 
 mkuser reg
 mkdir -p /home/reg/.ssh /var/lib/machman
-printf '%s\n%s\n' "ssh-rsa USERSOWNKEY user@laptop" \
+# The user's own key whose comment merely contains machman- (S39) is never swept.
+printf '%s\n%s\n%s\n' "ssh-rsa USERSOWNKEY user@laptop" \
+	"ssh-ed25519 AAAA_LOOKALIKE bob@machman-debian" \
 	"ssh-ed25519 AAAA_OLDBLOB $OLD source-vm" > /home/reg/.ssh/authorized_keys
 printf 'ssh-ed25519 AAAA_OLDREV %s-reverse\n' "$OLD" > /home/reg/.ssh/machman_host.pub
 touch /home/reg/.ssh/machman_host
@@ -22,7 +24,7 @@ $SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
 	>/tmp/run1.log 2>&1
 if grep -q 'treating it as new' /tmp/run1.log; then R CLONE_NOTE pass; else
 	R CLONE_NOTE fail; fi
-if [ "$(grep -c 'machman-' /home/reg/.ssh/authorized_keys)" = 1 ] \
+if [ "$(grep -c ' machman-' /home/reg/.ssh/authorized_keys)" = 1 ] \
 	&& grep -q "$NEW" /home/reg/.ssh/authorized_keys \
 	&& ! grep -q "$OLD" /home/reg/.ssh/authorized_keys \
 	&& grep -q USERSOWNKEY /home/reg/.ssh/authorized_keys; then
@@ -30,6 +32,8 @@ if [ "$(grep -c 'machman-' /home/reg/.ssh/authorized_keys)" = 1 ] \
 else
 	R CLONE_SWEPT fail; cat /home/reg/.ssh/authorized_keys
 fi
+if grep -q 'AAAA_LOOKALIKE bob@machman-debian' /home/reg/.ssh/authorized_keys; then
+	R LOOKALIKE_KEPT pass; else R LOOKALIKE_KEPT fail; fi
 if grep -q "$NEW-reverse" /home/reg/.ssh/machman_host.pub; then R CLONE_REVERSE pass; else
 	R CLONE_REVERSE fail; fi
 if grep -q '^FEATURE_ssh=configured reg' "$REPORT"; then
