@@ -493,6 +493,12 @@ public final class RoutingMachman: MachmanControlling {
 		let target = try await settingsOwner(name)
 		// Policy has a daemon-side launchd side effect.
 		try refuseWhileSafe(name, "Run defaults")
+		// C8: never two VMs starting at login on one disk file or MAC. Read from the configs
+		// on disk — a hosted VM's policy and disks are its vmhost's, saved there.
+		if policy.autostart,
+			let conflict = BootGuard.autostartConflict(turningOn: name, library: machmanVMDir) {
+			throw conflict
+		}
 		try await target.setStartPolicy(vm: name, policy: policy)
 		// Agent bookkeeping reads the ARGUMENT, never the registry: while the VM is hosted
 		// the daemon's config copy is stale until the host exits.
