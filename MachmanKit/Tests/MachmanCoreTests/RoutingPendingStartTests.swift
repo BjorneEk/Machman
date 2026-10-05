@@ -251,4 +251,28 @@ struct RoutingPendingStartTests {
 		#expect(routing.pendingStarts.isEmpty)
 		#expect(routing.hostedNames.isEmpty)
 	}
+
+	// C11: a boot mode a newer Machman wrote is refused before anything is spawned — a vmhost
+	// launched for it would only refuse in turn, a Dock icon that flashes and goes.
+	@Test @MainActor func aNewerBootModeIsRefusedBeforeASpawn() async throws {
+		let routing = try makeRouting(names: ["pending-newer"])
+		let vm = try #require(routing.registry.vm(named: "pending-newer"))
+		vm.config.boot = try JSONDecoder().decode(
+			BootConfig.self, from: Data(#"{"future":{"_0":{}}}"#.utf8))
+		var located = 0
+		routing.locateVMHost = {
+			located += 1
+			return nil
+		}
+
+		do {
+			try await routing.start(vm: "pending-newer", options: StartOptions())
+			Issue.record("expected the newer boot mode's refusal")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message == "A newer version of Machman set this VM\u{2019}s boot mode")
+		}
+		#expect(located == 0)   // before: the start went on to locate a vmhost to launch
+		#expect(routing.pendingStarts.isEmpty)
+	}
 }

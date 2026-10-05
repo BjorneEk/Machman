@@ -30,6 +30,9 @@ extension RoutingMachman {
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
 		}
+		// A boot mode a newer Machman wrote never boots here (C11): refused before any vmhost
+		// is launched for it.
+		try vm.config.requireStartableBoot()
 		guard !registry.isInstalling(vm) else {
 			throw MachmanError(
 				code: .invalidState,
