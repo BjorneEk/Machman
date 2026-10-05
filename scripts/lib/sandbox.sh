@@ -1,6 +1,9 @@
 # Sandbox helpers shared by scripts/test.sh and scripts/lab.sh.
 # Sourced, never executed; functions are prefixed sandbox_; never set -e or exit here.
 
+# The checkout this library belongs to (scripts/lib/sandbox.sh sits two levels below it).
+SANDBOX_LIB_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+
 # sandbox_create <prefix> <xcount>: a fresh /tmp/<prefix>.<token> root with the suite id,
 # data dir and fake home of a test run. Sets SANDBOX_ROOT, SANDBOX_TOKEN, SANDBOX_SUITE.
 sandbox_create() {
@@ -93,9 +96,10 @@ sandbox_review_fix_dir() {
 	return 0
 }
 
-# sandbox_lab_cache: the fixture cache (several GB, outside the repo).
+# sandbox_lab_cache: the fixture cache (several GB): this worktree's git-ignored
+# scripts/lab/cache, unless MACHMAN_LAB_CACHE says otherwise.
 sandbox_lab_cache() {
-	echo "${MACHMAN_LAB_CACHE:-$HOME/Library/Caches/com.gustaffranzen.Machman.lab}"
+	echo "${MACHMAN_LAB_CACHE:-${SANDBOX_LIB_REPO}/scripts/lab/cache}"
 }
 
 # sandbox_slot_dir <repo>: where the machine-wide lab slot lives.

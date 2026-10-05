@@ -1,0 +1,17 @@
+# Lab fixtures: <name> <sha256> <size> <url> [<recipe>]
+#
+# sha256 and size pin the DOWNLOADED file; <recipe> names the convert step in fetch.sh that
+# turns it into the fixture (zboot-unwrap | xz | gz | qcow2-raw; none = the file as is).
+# Re-pin a fixture after a deliberate upgrade with:
+#   scripts/lab/fetch.sh pin <name> <url> [<recipe>]
+# scripts/lab/guests.lock (r3-td) uses the same format.
+#
+# Alpine 3.24.2 netboot (kernel 6.18.52-0-virt): the immutable netboot-3.24.2/ directory, whose
+# vmlinuz-virt and initramfs-virt match the vz-private-probes pins (e45e1f60..., ffe65ec5...).
+alpine-3.24-aarch64-kernel e45e1f6083d1ed45db6647b422e32b6ae6dc54de7b8190b7b97744fb293412e3 10387968 https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/netboot-3.24.2/vmlinuz-virt zboot-unwrap
+alpine-3.24-aarch64-initramfs ffe65ec5a0c0bf470042ad28f7ce7aa5f842ce8090e4230fb2703a7a34e1bebe 9399083 https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/netboot-3.24.2/initramfs-virt
+alpine-3.24-aarch64-modloop 32a189d5e4ae4417cf65bfcc91d2cc8ffdf5957fbbc1f055b037861c595b7328 17743872 https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/netboot-3.24.2/modloop-virt
+#
+# Debian 13 (trixie) nocloud arm64, dated build 20261001-2618; the qcow2's SHA512 was checked
+# against that directory's SHA512SUMS (5c0c57d5...) before pinning. Converted to a sparse raw.
+debian-13-nocloud-arm64.raw cf69254236d5081f0049a22ccd666c707c2d00ce99aa6d75e1bc112222990e7b 403439616 https://cloud.debian.org/images/cloud/trixie/20261001-2618/debian-13-nocloud-arm64-20261001-2618.qcow2 qcow2-raw
