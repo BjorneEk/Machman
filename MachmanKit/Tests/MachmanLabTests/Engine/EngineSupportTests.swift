@@ -123,6 +123,26 @@ struct EngineSupportTests {
 		#expect(!argv.contains { $0.contains(NSHomeDirectory() + "/.ssh") })
 	}
 
+	@Test("Q18: a patched build copy changes only the two version keys")
+	func patchedCopyChangesVersionsOnly() {
+		let plist: [String: Any] = [
+			"CFBundleIdentifier": "com.gustaffranzen.Machman.dev.agent",
+			"CFBundleShortVersionString": "1.0.12", "CFBundleVersion": "1.0.12",
+			"LSUIElement": true,
+		]
+		let patched = TFBuilds.patchPlist(plist, version: "1.0.11")
+		#expect(patched["CFBundleShortVersionString"] as? String == "1.0.11")
+		#expect(patched["CFBundleVersion"] as? String == "1.0.11")
+		#expect(patched["CFBundleIdentifier"] as? String == "com.gustaffranzen.Machman.dev.agent")
+		#expect(patched["LSUIElement"] as? Bool == true)
+		#expect(patched.count == plist.count)
+		#expect(TFBuilds.olderVersion(than: "1.0.12") == "1.0.11")
+		#expect(TFBuilds.olderVersion(than: "1.2.0") == "1.1.99")
+		#expect(TFBuilds.newerVersion(than: "1.0.12") == "1.0.99")
+		#expect(MachmanVersion.isOlder(TFBuilds.olderVersion(than: "1.0.12"), than: "1.0.12"))
+		#expect(MachmanVersion.isOlder("1.0.12", than: TFBuilds.newerVersion(than: "1.0.12")))
+	}
+
 	private func inode(_ path: String) throws -> UInt64 {
 		let attributes = try FileManager.default.attributesOfItem(atPath: path)
 		return (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
