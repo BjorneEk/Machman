@@ -155,6 +155,13 @@ struct VMInspector: View {
 	private static let noDisplayHelp =
 		"No display device — the window can’t open until one is added"
 
+	// An unfinished Mac's bootloader choices are all about its install — macOS… opens it,
+	// EFI or Kernel Boot gives it up — so they wait like Install macOS… does (P37). Other
+	// modes change at any time; the daemon applies them at the next start.
+	private var bootPickerRefusal: String? {
+		vm.boot.mode == .macOS ? vm.refusal(.installMacOS) : nil
+	}
+
 	// macOS guests carry install-time hardware minimums; other modes have none.
 	private var cpuFloor: Int { max(1, vm.boot.minCPUCount ?? 1) }
 	private var cpuRange: ClosedRange<Int> {
@@ -206,7 +213,8 @@ struct VMInspector: View {
 						Text("Kernel Boot").tag(BootInfo.Mode.linuxKernel)
 						Text("macOS…").tag(BootInfo.Mode.macOS)
 					}
-					.disabled(viewModel.isInstalling(vm))
+					.disabled(viewModel.isInstalling(vm) || bootPickerRefusal != nil)
+					.help(bootPickerRefusal ?? "")
 					// Already in macOS mode but not installed (a failed or cancelled install,
 					// or an unfinished Mac's copy): re-selecting macOS can't fire the picker,
 					// so the install needs its own way in.
