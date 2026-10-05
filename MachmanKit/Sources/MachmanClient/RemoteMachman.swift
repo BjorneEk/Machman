@@ -391,6 +391,10 @@ public final class RemoteMachman: MachmanControlling {
 		try await void(.stop, RPCParams.Stop(name: name, mode: mode), deadline: deadline)
 	}
 
+	public func endProcess(vm name: String) async throws {
+		try await void(.processEnd, RPCParams.Name(name: name))
+	}
+
 	public func openWindow(vm name: String) async throws {
 		try await void(.windowOpen, RPCParams.Name(name: name))
 	}

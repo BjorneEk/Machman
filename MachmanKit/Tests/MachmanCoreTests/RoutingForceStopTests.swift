@@ -17,6 +17,12 @@ import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
 
+@MainActor
+private final class Heard {
+	var events: [VMEvent] = []
+	var ended: [String] = []
+}
+
 struct RoutingForceStopTests {
 	private struct Rig {
 		let routing: RoutingMachman
@@ -58,6 +64,10 @@ struct RoutingForceStopTests {
 		let rig = try await makeRig()
 		defer { finish(rig) }
 		rig.stub.stalled = ["stop"]
+		rig.routing.endHost = { _ in
+			Issue.record("a plain force stop ended a process")
+			return false
+		}
 
 		let clock = ContinuousClock()
 		let started = clock.now
@@ -89,6 +99,123 @@ struct RoutingForceStopTests {
 			#expect(error.message == "alpha is not responding \u{2014} use Force Stop")
 		}
 		#expect(rig.stub.calls.filter { $0 == "stop" }.count == asked)
+	}
+
+	// C9: ending the process is its own call, sent after the user's second confirmation.
+	@Test @MainActor func endProcessEndsAHostThatDoesntAnswer() async throws {
+		let rig = try await makeRig()
+		defer { finish(rig) }
+		let heard = Heard()
+		rig.routing.isProcessAlive = { _ in false }   // the stub host's exit: its server stops
+		rig.routing.endHost = { host in
+			heard.ended.append(host.identity.name)
+			rig.server.stop()
+			return true
+		}
+		let stream = await rig.routing.events()
+		let pump = Task { @MainActor in
+			for await event in stream { heard.events.append(event) }
+		}
+		defer { pump.cancel() }
+		rig.stub.stalled = ["stop"]
+		_ = try? await rig.routing.stop(vm: "alpha", mode: .force)   // listed as not responding
+
+		try await rig.routing.endProcess(vm: "alpha")
+		#expect(heard.ended == ["alpha"])
+		#expect(rig.routing.hostedNames.isEmpty)   // its exit was cleaned up before the reply
+		#expect(await eventually {
+			heard.events.contains(.log(
+				vm: "alpha", level: .warning,
+				message: "Its process wasn\u{2019}t answering, so Machman ended it."))
+		})
+	}
+
+	@Test @MainActor func endProcessRefusesAHostThatAnswers() async throws {
+		let rig = try await makeRig()
+		defer { finish(rig) }
+		rig.routing.endHost = { _ in
+			Issue.record("ended a host that answers")
+			return true
+		}
+		do {
+			try await rig.routing.endProcess(vm: "alpha")
+			Issue.record("expected a refusal")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message == "alpha is answering again \u{2014} use Force Stop")
+		}
+	}
+
+	@Test @MainActor func endProcessWithoutAProcessToEndRefuses() async throws {
+		let rig = try await makeRig()
+		defer { finish(rig) }
+		rig.routing.endHost = { _ in false }
+		rig.stub.stalled = ["stop"]
+		_ = try? await rig.routing.stop(vm: "alpha", mode: .force)
+		do {
+			try await rig.routing.endProcess(vm: "alpha")
+			Issue.record("expected a refusal")
+		} catch let error as MachmanError {
+			#expect(error.message
+				== "alpha is not responding, and Machman can\u{2019}t end its process")
+		}
+		#expect(rig.routing.hostedNames == ["alpha"])
+	}
+
+	// A vmhost that answers on the socket but could never be adopted ("Not responding"):
+	// whoever holds the socket is ended, once it proves a vmhost.
+	@Test @MainActor func endProcessEndsAnUnadoptableSocketsHolder() async throws {
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2).saveVMConfig()
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+		}
+		let socketPath = TestEnvironment.socketPath("mm-holder")
+		routing.socketPathForVM = { _ in socketPath }
+		let listener = try UDSListener(
+			path: socketPath, queue: DispatchQueue(label: "mm-holder-accept")) { fd in
+				close(fd)
+			}
+		defer { listener.shutdown() }
+		var ended: [String] = []
+		routing.endSocketHolder = { path in
+			ended.append(path)
+			listener.shutdown()
+			return true
+		}
+
+		try await routing.endProcess(vm: "alpha")
+		#expect(ended == [socketPath])
+		#expect(routing.hostedNames.isEmpty)
+		#expect(!routing.unadoptable.contains("alpha"))
+	}
+
+	// The wire: a client reaches the daemon's vm.process.end; the engine half refuses.
+	@Test @MainActor func vmProcessEndCrossesTheWire() async throws {
+		let socketPath = TestEnvironment.socketPath("mm-pend")
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try startServing(server)
+		defer { server.stop() }
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "test")
+		try await client.endProcess(vm: "alpha")
+		#expect(stub.calls.contains("endProcess"))
+		#expect(stub.vms["alpha"]?.state == .stopped)
+		await client.disconnect()
+
+		var local: LocalMachman!
+		try VMTestDir.withRedirectedDir {
+			local = LocalMachman(registry: VMRegistry())
+		}
+		await #expect(throws: MachmanError.self) { try await local.endProcess(vm: "alpha") }
+	}
+
+	// The pid a SIGKILL goes to must still be a vmhost's: never this test process.
+	@Test func onlyAVMHostProcessIsEverKilled() {
+		#expect(!RoutingMachman.isVMHostProcess(getpid()))
+		#expect(!RoutingMachman.killVMHost(pid: getpid()))
 	}
 
 	// "Force Stop All & Quit" says which VMs it couldn't stop, and doesn't wait on them.

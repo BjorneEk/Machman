@@ -531,6 +531,15 @@ public final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		emit(.stateChanged(vm: name, state: .stopped))
 	}
+	// vm.process.end, like a force stop that ends the process.
+	public func endProcess(vm name: String) async throws {
+		try gate()
+		var vm = try get(name)
+		vm.state = .stopped
+		vm.windowOpen = false
+		vms[name] = vm
+		emit(.stateChanged(vm: name, state: .stopped))
+	}
 	public var windowOpens = 0
 	public func openWindow(vm name: String) async throws {
 		try gate()

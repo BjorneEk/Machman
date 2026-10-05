@@ -76,16 +76,22 @@ public final class RoutingMachman: MachmanControlling {
 	// Whether a vmhost process still exists (E8). A seam: an in-process test host's peer is
 	// the test itself, so a test that ends a host says so here.
 	var isProcessAlive: (Int32) -> Bool = SafeRun.defaultPidAlive
-	// Ends an idle vmhost that runs older code than this daemon, before a start spawns a
-	// current one (R3-3). It runs no VM, so a kill loses nothing. False when it could not:
-	// no app and no peer pid to end it by (RR3-3). A seam for the same reason as
-	// isProcessAlive: an in-process test host's peer is the test.
-	var endIdleHost: (HostedVM) -> Bool = { host in
+	// Ends a vmhost's process: an idle one that runs older code than this daemon, before a
+	// start spawns a current one (R3-3) — it runs no VM, so a kill loses nothing — or one
+	// that stopped answering, once the user confirmed it (vm.process.end, C9). False when it
+	// could not: no app, and no peer pid that is still a vmhost's (RR3-3). Seams for the
+	// same reason as isProcessAlive: an in-process test host's peer is the test.
+	var endHost: (HostedVM) -> Bool = { host in
 		if let app = host.app {
 			return app.forceTerminate() || app.isTerminated
 		}
 		guard let pid = host.client.peerPID else { return false }
-		return kill(pid, SIGKILL) == 0 || errno == ESRCH
+		return RoutingMachman.killVMHost(pid: pid)
+	}
+	// …and the process answering on a socket nobody adopted (the holder's pid).
+	var endSocketHolder: (String) -> Bool = { path in
+		guard let pid = UDSListener.holderPID(path: path) else { return false }
+		return RoutingMachman.killVMHost(pid: pid)
 	}
 
 	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
@@ -676,6 +682,33 @@ public final class RoutingMachman: MachmanControlling {
 				}
 			}
 		}
+	}
+
+	// The C9 escalation, sent only after the user confirmed it a second time: end the
+	// process of a VM's vmhost that doesn't answer — what a force stop couldn't reach.
+	// Refused while the host answers; a plain stop never gets here.
+	public func endProcess(vm name: String) async throws {
+		switch residence(of: name) {
+		case .hosted(let host):
+			guard host.unresponsive else { throw answeringAgain(name) }
+			try await endUnresponsiveHost(host, name: name)
+		case .unadopted:
+			if !unadoptable.contains(name), (try? await adoptLiveHost(name)) != nil {
+				throw answeringAgain(name)
+			}
+			try await endUnadoptedHost(name)
+		case .starting:
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is starting — try again once it is running")
+		case .local:
+			throw MachmanError(code: .invalidState, message: "\(name) is not running")
+		}
+	}
+
+	private func answeringAgain(_ name: String) -> MachmanError {
+		MachmanError(
+			code: .invalidState, message: "\(name) is answering again — use Force Stop")
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {

@@ -213,7 +213,7 @@ struct RoutingIdleHostTests {
 		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.11-vmhost")
 		defer { rig.server.stop() }
 		var ended: [String] = []
-		routing.endIdleHost = { host in
+		routing.endHost = { host in
 			ended.append(host.identity.name)
 			rig.server.stop()   // the host exits
 			return true
@@ -235,7 +235,7 @@ struct RoutingIdleHostTests {
 		let routing = try makeRouting(daemonVersion: "1.0.12")
 		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.12-vmhost")
 		defer { rig.server.stop() }
-		routing.endIdleHost = { _ in
+		routing.endHost = { _ in
 			Issue.record("a current host must not be ended")
 			return true
 		}
@@ -251,7 +251,7 @@ struct RoutingIdleHostTests {
 		let routing = try makeRouting(daemonVersion: "1.0.12", exitGrace: .seconds(3))
 		let rig = try await adoptStub(routing, state: .stopped, version: "1.0.11-vmhost")
 		defer { rig.server.stop() }
-		routing.endIdleHost = { _ in false }
+		routing.endHost = { _ in false }
 
 		try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
 		#expect(rig.stub.starts.count == 1)

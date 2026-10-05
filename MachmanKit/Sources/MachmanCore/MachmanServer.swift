@@ -253,6 +253,10 @@ public final class MachmanServer {
 				let p: RPCParams.Stop = try params(line)
 				try await api.stop(vm: p.name, mode: p.mode)
 				reply(client, id, RPCEmpty())
+			case .processEnd:
+				let p: RPCParams.Name = try params(line)
+				try await api.endProcess(vm: p.name)
+				reply(client, id, RPCEmpty())
 			case .consoleAdd:
 				let p: RPCParams.Name = try params(line)
 				try await api.addConsolePort(vm: p.name)

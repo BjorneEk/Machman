@@ -787,6 +787,12 @@ public final class LocalMachman: MachmanControlling {
 		try await registry.stop(try lookup(name), mode: mode)
 	}
 
+	// Only the daemon ends a vmhost's process; the engine half refuses like retire does.
+	public func endProcess(vm name: String) async throws {
+		throw MachmanError(
+			code: .invalidState, message: "Only Machman Agent can end a VM’s process")
+	}
+
 	public func openWindow(vm name: String) async throws {
 		try registry.openWindow(try lookup(name))
 	}

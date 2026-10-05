@@ -69,6 +69,8 @@ public enum RPCMethod: String, Sendable {
 	case installRosetta = "host.installRosetta"
 	case eventsSubscribe = "events.subscribe"
 	case daemonRetire = "daemon.retire"
+	// Ends a vmhost that doesn't answer, once the user confirmed it (C9).
+	case processEnd = "vm.process.end"
 	// Server -> client notification carrying a VMEvent as params.
 	case event = "event"
 }

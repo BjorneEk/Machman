@@ -283,6 +283,76 @@ extension RoutingMachman {
 		return failed.filter { hosted[$0] != nil }.sorted()
 	}
 
+	func waitForHostGone(id: UUID, timeout: Duration) async -> Bool {
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: timeout)
+		while host(withID: id) != nil {
+			guard clock.now < deadline else { return false }
+			try? await Task.sleep(for: .milliseconds(50))
+		}
+		return true
+	}
+
+	// MARK: - Ending a vmhost (C9)
+
+	// What the VM's clients hear once Machman ended its vmhost: the stop is the run's end,
+	// and hostGone announces it like any other.
+	nonisolated static let endedProcessWarning =
+		"Its process wasn’t answering, so Machman ended it."
+
+	private func cantEnd(_ name: String) -> MachmanError {
+		MachmanError(
+			code: .invalidState,
+			message: "\(name) is not responding, and Machman can’t end its process")
+	}
+
+	// A hosted vmhost listed as not responding: end it, then wait (bounded) for hostGone, so
+	// the reply comes after the VM lists as stopped. The death watch or the dropped socket
+	// does the cleanup, as for any exit.
+	func endUnresponsiveHost(_ host: HostedVM, name: String) async throws {
+		guard endHost(host) else { throw cantEnd(name) }
+		MachmanLogger.log(.passiveWarning,
+			"ended \(name)'s vmhost: it didn't answer, and the user confirmed ending it")
+		registry.events.emit(.log(vm: name, level: .warning, message: Self.endedProcessWarning))
+		if !(await waitForHostGone(id: host.identity.id, timeout: hostExitGrace)) {
+			MachmanLogger.log(.passiveWarning, "\(name)'s vmhost was ended but is still listed")
+		}
+	}
+
+	// A vmhost that answers on the VM's socket but could never be adopted: end whoever holds
+	// the socket, if it is a vmhost. Nothing hosts it, so the list changes here.
+	func endUnadoptedHost(_ name: String) async throws {
+		let path = hostSocketPath(for: name)
+		guard endSocketHolder(path) else { throw cantEnd(name) }
+		MachmanLogger.log(.passiveWarning,
+			"ended the vmhost on \(name)'s socket: it didn't answer, and the user confirmed it")
+		registry.events.emit(.log(vm: name, level: .warning, message: Self.endedProcessWarning))
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: hostExitGrace)
+		while UDSListener.isLive(path: path), clock.now < deadline {
+			try? await Task.sleep(for: .milliseconds(50))
+		}
+		unadoptable.remove(name)
+		registry.events.emit(.stateChanged(vm: name, state: .stopped))
+		registry.events.emit(.listChanged)
+	}
+
+	// SIGKILL for a vmhost by pid — only while that pid is still a MachmanVMHost process: a
+	// pid captured at connect time may belong to something else once the vmhost is gone.
+	// True when it is gone already.
+	nonisolated static func killVMHost(pid: pid_t) -> Bool {
+		if kill(pid, 0) != 0, errno == ESRCH { return true }
+		guard isVMHostProcess(pid) else { return false }
+		return kill(pid, SIGKILL) == 0 || errno == ESRCH
+	}
+
+	nonisolated static func isVMHostProcess(_ pid: pid_t) -> Bool {
+		var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))   // PROC_PIDPATHINFO_MAXSIZE
+		guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
+		return String(cString: path)
+			.hasSuffix("/" + VMHostLocator.bundleName + "/Contents/MacOS/MachmanVMHost")
+	}
+
 	// A stop for a VM its vmhost runs (E36). Shut Down asks the guest through the host, so
 	// one listed as not responding is refused at once instead of after the call's deadline.
 	// Force Stop is bounded: a host that misses the bound is marked not responding and the

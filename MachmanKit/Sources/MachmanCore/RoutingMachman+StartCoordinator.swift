@@ -370,16 +370,6 @@ extension RoutingMachman {
 		}
 	}
 
-	private func waitForHostGone(id: UUID, timeout: Duration) async -> Bool {
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: timeout)
-		while host(withID: id) != nil {
-			guard clock.now < deadline else { return false }
-			try? await Task.sleep(for: .milliseconds(50))
-		}
-		return true
-	}
-
 	// Hands a start to a host this daemon holds: an idle adopted one, or whoever answered
 	// at probe-adopt. Its last answer decides. A running VM is a fact — adopt it as it is,
 	// safe or not (a run cannot become safe retroactively). An idle host runs the real VM,
@@ -434,7 +424,7 @@ extension RoutingMachman {
 
 	// True once the host is gone; false when there is nothing to end it by.
 	private func endOutdatedIdleHost(_ host: HostedVM, name: String) async throws -> Bool {
-		guard endIdleHost(host) else {
+		guard endHost(host) else {
 			MachmanLogger.log(.passiveWarning,
 				"cannot end \(name)'s idle vmhost \(host.version), older than this daemon's "
 					+ "\(daemonVersion) — the start runs on it, locked until \(name) restarts")

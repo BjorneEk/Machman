@@ -145,6 +145,9 @@ public protocol MachmanControlling: AnyObject {
 	// MARK: Run / stop / window
 	func start(vm name: String, options: StartOptions) async throws
 	func stop(vm name: String, mode: StopMode) async throws
+	// Ends the process of a VM's vmhost that doesn't answer, so the VM stops at once (C9).
+	// Only the daemon can; a client sends it only after the user confirmed it.
+	func endProcess(vm name: String) async throws
 	func openWindow(vm name: String) async throws
 	// Close the window without touching the VM (it keeps running headless).
 	func closeWindow(vm name: String) async throws
