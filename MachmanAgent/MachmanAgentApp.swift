@@ -48,8 +48,13 @@ struct MachmanAgentApp: App {
 		_model = StateObject(wrappedValue: Daemon.menuBar)
 	}
 
+	// Under a test suite (the lab) there is no menu-bar item at all: nothing draws in the menu
+	// bar, and no status-item position is saved into the dev agent's preferences.
 	var body: some Scene {
-		MenuBarExtra("Machman", systemImage: MachmanSymbols.menuBarExtra) {
+		MenuBarExtra(
+			"Machman", systemImage: MachmanSymbols.menuBarExtra,
+			isInserted: .constant(!MachmanTestMode.isActive)
+		) {
 			MenuBarView(model: model)
 		}
 	}
@@ -60,6 +65,16 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	// Whether this process ever served the socket (V9). One that stepped aside for another
 	// agent quits at once: its engine never ran, so it has no VMs to ask about.
 	private static var served = false
+
+	// Under a test suite the agent can never become active or show UI, even through a path
+	// the prompts' routing (PromptAlert) missed; the banner is what the lab waits for.
+	func applicationWillFinishLaunching(_ notification: Notification) {
+		guard let lab = LabEnvironment.current else { return }
+		NSApp.setActivationPolicy(.prohibited)
+		MachmanLogger.log(.log, "test mode: agent under \(lab.suiteID); prompts answered from "
+			+ (lab.answersPath ?? "their cancel buttons") + "; control "
+			+ (lab.agentControlPath ?? "off") + "; no menu bar item")
+	}
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		do {
@@ -78,13 +93,8 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			// with no Dock icon to click. That failure mode looks exactly like a hung daemon —
 			// present in Activity Monitor, no menu bar item, nothing answering the socket.
 			MachmanLogger.log(.interactionError, "cannot start: \(error)")
-			NSApp.setActivationPolicy(.regular)
-			NSApp.activate(ignoringOtherApps: true)
-			let alert = NSAlert()
-			alert.messageText = "Machman Agent can’t start"
-			alert.informativeText = MachmanError.userMessage(for: error)
-			alert.alertStyle = .critical
-			alert.runModal()
+			let prompt = AgentPrompt.cannotStart(reason: MachmanError.userMessage(for: error))
+			_ = PromptAlert.run(prompt.labPrompt, front: .lendDockIcon, style: .critical)
 			NSApp.terminate(nil)
 			return
 		}
@@ -142,7 +152,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		// every other main-actor job behind the alert).
 		let prompt = AgentPrompt.replaceOlder(running: running, mine: mine)
 		let replace = await MainRunLoopCallout.run {
-			runInFront(prompt) == .alertFirstButtonReturn
+			runInFront(prompt) == 0   // Replace
 		}
 		guard replace else {
 			await client.disconnect()
@@ -184,18 +194,10 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	// Lends the menu-bar agent a Dock icon and brings the prompt to the front while it shows:
-	// an LSUIElement app's alert can otherwise sit behind every window.
-	private static func runInFront(_ prompt: AgentPrompt) -> NSApplication.ModalResponse {
-		NSApp.setActivationPolicy(.regular)
-		NSApp.activate(ignoringOtherApps: true)
-		defer { NSApp.setActivationPolicy(.accessory) }
-		let alert = NSAlert()
-		alert.messageText = prompt.message
-		alert.informativeText = prompt.info
-		for title in prompt.buttons {
-			alert.addButton(withTitle: title)
-		}
-		return alert.runModal()
+	// an LSUIElement app's alert can otherwise sit behind every window. The chosen button's
+	// index; under a test suite, the lab's answer.
+	private static func runInFront(_ prompt: AgentPrompt) -> Int {
+		PromptAlert.run(prompt.labPrompt, front: .lendDockIcon)
 	}
 
 	// VM windows come and go; the daemon lives in the menu bar.
@@ -229,8 +231,9 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			return .terminateCancel
 		case .askAboutWork(let holders):
 			// The user's own quit, while the agent runs work no VM window knows of (E47).
-			guard Self.runInFront(AgentPrompt.quitDuringWork(holders))
-				== .alertSecondButtonReturn else { return .terminateCancel }
+			guard Self.runInFront(AgentPrompt.quitDuringWork(holders)) == 1 else {   // Quit Anyway
+				return .terminateCancel
+			}
 			Daemon.server.stop()
 			return .terminateNow
 		case .ask(let work):
@@ -243,36 +246,22 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	private func askAboutVMs(
 		_ sender: NSApplication, stopping work: [SessionHolder]
 	) -> NSApplication.TerminateReply {
-		// In front, where they can see it.
-		NSApp.activate(ignoringOtherApps: true)
-		let alert = NSAlert()
-		alert.messageText = "VMs are still running"
-		alert.informativeText = "Running VMs live in their own processes: you can quit and "
-			+ "leave them running (the next Machman Agent re-adopts them), ask the guests to shut "
-			+ "down (force-stopped after 30 seconds), or force stop everything now."
-		alert.addButton(withTitle: "Quit, Leave VMs Running")
-		alert.addButton(withTitle: "Shut Down All & Quit")
-		alert.addButton(withTitle: "Force Stop All & Quit")
-		alert.addButton(withTitle: "Cancel")
-		let choice = alert.runModal()
-		let quitting: [NSApplication.ModalResponse] = [
-			.alertFirstButtonReturn, .alertSecondButtonReturn, .alertThirdButtonReturn,
-		]
-		guard quitting.contains(choice) else { return .terminateCancel }
+		// In front, where they can see it. Its buttons: leave them running, shut them down,
+		// force stop them, Cancel.
+		let choice = PromptAlert.run(AgentPrompt.vmsStillRunning.labPrompt, front: .activate)
+		guard (0...2).contains(choice) else { return .terminateCancel }
 		if !work.isEmpty,
-			Self.runInFront(AgentPrompt.quitDuringWork(work)) != .alertSecondButtonReturn {
+			Self.runInFront(AgentPrompt.quitDuringWork(work)) != 1 {   // Quit Anyway
 			return .terminateCancel
 		}
 		switch choice {
-		case .alertFirstButtonReturn:
+		case 0:
 			Daemon.server.stop()
 			return .terminateNow
-		case .alertSecondButtonReturn:
+		case 1:
 			stopAllAndQuit(sender, soft: true)
-		case .alertThirdButtonReturn:
-			stopAllAndQuit(sender, soft: false)
 		default:
-			return .terminateCancel
+			stopAllAndQuit(sender, soft: false)
 		}
 		return .terminateLater
 	}

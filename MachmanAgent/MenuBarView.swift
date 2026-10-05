@@ -109,6 +109,11 @@ struct MenuBarView: View {
 	private func openDesktop() {
 		// The daemon's own suite id minus its `.agent` suffix IS the desktop's bundle id.
 		let suite = MachmanPaths.suiteIdentifier()
+		// A lab run never launches another app: recorded, never performed.
+		guard !MachmanTestMode.isActive else {
+			MachmanLogger.log(.log, "test mode: would open the desktop app (\(suite))")
+			return
+		}
 		// Embedded daemon lives at <outer>.app/Contents/Library/LoginItems/MachmanAgent.app —
 		// walk up to the outer bundle. A standalone scheme-run MachmanAgent.app walks to
 		// nonsense; the id gate rejects that and Launch Services answers instead.
