@@ -14,11 +14,33 @@
 import Foundation
 import Testing
 import MachmanAPI
+import MachmanClient
 
 @Suite("Autostart under launchd", .serialized, .enabled(if: Lab.runs(.launchd)))
 struct TGAutostartTests {
 	static let atLogin = StartPolicy(windowed: false, autostart: true)
 	static let manual = StartPolicy(windowed: false)
+
+	/// The agent's VM over the vmhost's own socket (no agent involved), until it runs.
+	static func waitRunningOnSocket(_ vm: TGVM, timeout: Duration = .seconds(60)) async throws
+		-> pid_t {
+		guard await TG.waitForSocket(vm.socketPath, timeout: timeout) else {
+			throw LabError.stateTimeout(vm: vm.name, wanted: "a live socket", last: "none")
+		}
+		let host = try await RemoteMachman(socketPath: vm.socketPath, clientName: "machman-lab-tg")
+		defer { Task { await host.disconnect() } }
+		let deadline = ContinuousClock.now + timeout
+		while try await host.vm(named: vm.name).state != .running {
+			if ContinuousClock.now >= deadline {
+				throw LabError.stateTimeout(vm: vm.name, wanted: "running", last: "not running")
+			}
+			try await Task.sleep(for: .milliseconds(250))
+		}
+		guard let pid = host.peerPID else {
+			throw LabError.agentDidNotStart("no peer pid on \(vm.name)'s socket")
+		}
+		return pid
+	}
 
 	@Test("Autostart matrix: turning Start at login on writes the plist and launches nothing")
 	func plistWrittenNothingLaunched() async throws {
@@ -51,6 +73,41 @@ struct TGAutostartTests {
 			#expect(try await TGLaunchd.state(job.label).loaded == false)
 			#expect(await !TG.isSocketLive(vm.socketPath))
 			#expect(try await TG.vmhostPids(socketPath: vm.socketPath).isEmpty)
+		}
+	}
+
+	@Test("Autostart matrix: a job boots with no agent, is adopted once and isn't respawned")
+	func jobBootsAdoptedNotRespawned() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.alpine("tg-am2", on: agent)
+			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
+			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
+			let label = TGLaunchd.label(vm.name)
+			try await TGLaunchd.withJobs { jobs in
+				// No agent: retired (nothing runs, so nothing asks).
+				try await agent.api.retire()
+				#expect(await agent.waitForExit(timeout: .seconds(15)))
+				try await jobs.bootstrap(plist)
+				let host = try await Self.waitRunningOnSocket(vm)
+				try vm.fileHostPid(host)
+				#expect(try await TGLaunchd.state(label).pid == host)
+				#expect(await !TG.isSocketLive(agent.socketPath))
+				// The agent adopts it: the same vmhost, and no second one.
+				try await agent.relaunch()
+				#expect(await TG.until { (try? await vm.info())?.state == .running })
+				#expect(try await vm.hostPID() == host)
+				#expect(try await TG.vmhostPids(socketPath: vm.socketPath) == [host])
+				// The guest powers off: launchd doesn't start it again (KeepAlive false).
+				let guest = try await vm.guest()
+				try guest.powerOff()
+				guest.console.close()
+				try await vm.stopped(host: host, timeout: .seconds(30))
+				#expect(!LabProcesses.isAlive(host))
+				try await Task.sleep(for: .seconds(5))
+				#expect(try await TGLaunchd.state(label).pid == nil)
+				#expect(try await TG.vmhostPids(socketPath: vm.socketPath).isEmpty)
+				#expect(try await vm.info().state == .stopped)
+			}
 		}
 	}
 
