@@ -202,7 +202,8 @@ public final class RoutingMachman: MachmanControlling {
 
 	// Whole-VM edits the framework fixes at start (files moved, ports, MAC) refuse rather
 	// than proxy unless the VM is stopped — and stopped means no start in flight and no
-	// vmhost answering on its socket either, whether this daemon adopted it or not.
+	// vmhost answering on its socket either, whether this daemon adopted it or not — and
+	// while a copy writes into the VM's folder or reads it whole (D20).
 	func requireStopped(_ name: String, _ action: String) throws {
 		switch residence(of: name) {
 		case .hosted:
@@ -215,8 +216,22 @@ public final class RoutingMachman: MachmanControlling {
 				code: .invalidState,
 				message: "\(name) is still running — stop it before \(action)")
 		case .local:
-			return
+			if let busy = claims.refusal(for: name) { throw busy }
 		}
+	}
+
+	// A long copy into (or out of) a VM's folder runs under a claim on the VM (PR14): a start
+	// meanwhile would hand the config to a vmhost whose saves revert the copy's final edit
+	// (E33), and a rename, delete or copy would move or read the folder under it (D20).
+	// Claimed in the same main-actor turn the owner was resolved in, so nothing slips
+	// between. `inDaemon`: the copy runs here, not in the VM's vmhost.
+	func withClaim<Value>(
+		_ name: String, _ kind: VMClaims.Kind, inDaemon: Bool,
+		_ body: () async throws -> Value
+	) async throws -> Value {
+		let claim = try claims.claim(name, kind, inDaemon: inDaemon)
+		defer { claims.release(claim) }
+		return try await body()
 	}
 
 	// MARK: - MachmanControlling
@@ -353,9 +368,11 @@ public final class RoutingMachman: MachmanControlling {
 	) async throws -> VMInfo {
 		// Cloning images under an active writer produces torn copies.
 		try requireStopped(name, "copying it")
-		return try await local.copyVM(
-			vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
-			regenerateMAC: regenerateMAC)
+		return try await withClaim(name, .copying, inDaemon: true) {
+			try await local.copyVM(
+				vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
+				regenerateMAC: regenerateMAC)
+		}
 	}
 
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
@@ -380,7 +397,10 @@ public final class RoutingMachman: MachmanControlling {
 	// external file no attachment references, the owned image is NEW, and the config
 	// addition is the hosted vmhost's to make (next-boot effect, like addDisk/addMount).
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
-		try await settingsOwner(name).importDisk(vm: name, path: path)
+		let target = try await settingsOwner(name)
+		return try await withClaim(name, .importingDisk, inDaemon: target === local) {
+			try await target.importDisk(vm: name, path: path)
+		}
 	}
 
 	// Refused while hosted, not proxied or deferred: the copy reads an image the live VZ
@@ -388,7 +408,9 @@ public final class RoutingMachman: MachmanControlling {
 	// config rewire under that attachment makes the next boot silently switch disks.
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
 		try requireStopped(name, "promoting its disks")
-		return try await local.promoteDisk(vm: name, diskID: diskID)
+		return try await withClaim(name, .promotingDisk, inDaemon: true) {
+			try await local.promoteDisk(vm: name, diskID: diskID)
+		}
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
@@ -439,8 +461,11 @@ public final class RoutingMachman: MachmanControlling {
 	public func promoteKernelFile(
 		vm name: String, role: KernelRole, sourcePath: String, tag: String
 	) async throws -> VMInfo {
-		try await settingsOwner(name).promoteKernelFile(
-			vm: name, role: role, sourcePath: sourcePath, tag: tag)
+		let target = try await settingsOwner(name)
+		return try await withClaim(name, .importingKernel, inDaemon: target === local) {
+			try await target.promoteKernelFile(
+				vm: name, role: role, sourcePath: sourcePath, tag: tag)
+		}
 	}
 
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {

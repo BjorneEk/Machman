@@ -426,6 +426,12 @@ VM's socket, adopted by this daemon or not. A vmhost the daemon has not adopted 
 the daemon started, or started by a launch agent) is adopted on its VM's next per-VM call or
 list; until then the VM lists with state `unknown`, plus `unresponsive` once an adoption failed.
 
+While a copy writes into a VM's folder or reads it whole — `vm.disk.import`, `vm.disk.promote`,
+`vm.kernel.promote` (whether the daemon or the VM's vmhost does the copy), `vm.copy` of it —
+`vm.start` and the whole-VM edits answer `invalidState` ("… is importing a disk — try again
+when it finishes"; "… is promoting a disk", "… is importing a kernel file", "… is being
+copied"). Imports and promotes into one VM may run side by side; a `vm.copy` runs alone.
+
 `vm.start` asks a vmhost the daemon already holds for the VM before spawning one. A running
 VM answers `invalidState` ("… is already running"). An idle host — spawned for a start that
 was never forwarded because its daemon died in between; it exits on its own after 3 minutes —

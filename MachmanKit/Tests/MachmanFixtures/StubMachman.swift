@@ -24,7 +24,8 @@ public final class StubMachman: MachmanControlling {
 	// One-shot scripted failures by base name: the next call of that method throws.
 	private var failures: [String: Error] = [:]
 	// Base names whose calls park while listed: a stalled vmhost (E20). They answer once
-	// removed, or after a minute. Honored by vm(named:), operations(), preview and safeSave.
+	// removed, or after a minute. Honored by vm(named:), operations(), preview, safeSave and
+	// importDisk.
 	public var stalled: Set<String> = []
 
 	public init() {}
@@ -341,6 +342,7 @@ public final class StubMachman: MachmanControlling {
 	}
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
 		try gate()
+		await stallWhileScripted("importDisk")
 		var vm = try get(name)
 		vm.disks.append(DiskInfo(
 			id: "storage:imported", type: .storage, name: "imported", path: path,

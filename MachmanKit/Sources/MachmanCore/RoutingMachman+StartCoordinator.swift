@@ -17,15 +17,13 @@ extension RoutingMachman {
 	nonisolated static let safeRunLabel = "Preparing a safe run"
 
 	public func start(vm name: String, options: StartOptions) async throws {
-		guard !pendingStarts.contains(name) else {
-			throw MachmanError(code: .invalidState, message: "\(name) is already starting")
-		}
+		// Another start, or a copy into the VM (E33): its final config edit would land under
+		// the vmhost this start launches, whose own saves then revert it.
+		if let busy = claims.refusal(for: name) { throw busy }
 		if let host = hosted[name] {
 			// A host this daemon holds is not necessarily running its VM: ask it first.
 			try await settleExistingHost(host, name: name)
-			guard !pendingStarts.contains(name) else {   // the settle awaited
-				throw MachmanError(code: .invalidState, message: "\(name) is already starting")
-			}
+			if let busy = claims.refusal(for: name) { throw busy }   // the settle awaited
 		}
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
