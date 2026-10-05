@@ -278,4 +278,15 @@ struct AgentPromptTests {
 		#expect(prompt.info.matches(of: sentenceEnd).count == 1)
 		#expect(!prompt.info.lowercased().contains("daemon"))
 	}
+
+	// E45: a busy older agent refuses retire; the new one's Replace used to time out silently.
+	@Test func aRefusedReplaceSaysWhy() throws {
+		let prompt = AgentPrompt.replaceRefused(
+			reason: "mac is installing macOS \u{2014} try again when it finishes")
+		#expect(prompt.message == "The older Machman Agent can\u{2019}t be replaced yet")
+		#expect(prompt.info == "mac is installing macOS \u{2014} try again when it finishes.")
+		#expect(prompt.buttons == ["OK"])
+		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
+		#expect(prompt.info.matches(of: sentenceEnd).count == 1)
+	}
 }

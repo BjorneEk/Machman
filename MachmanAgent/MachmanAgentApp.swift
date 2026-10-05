@@ -151,7 +151,19 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			return
 		}
 		MachmanLogger.log(.log, "replacing daemon \(running) with \(mine)")
-		try? await client.retire()
+		do {
+			try await client.retire()
+		} catch let error as MachmanError where error.code == .invalidState {
+			// It runs work of its own that would die with it (E45): it stays, this one goes.
+			await client.disconnect()
+			MachmanLogger.log(.log, "the older daemon can't retire yet (\(error.message)); exiting")
+			let refused = AgentPrompt.replaceRefused(reason: error.message)
+			_ = await MainRunLoopCallout.run { runInFront(refused) }
+			NSApp.terminate(nil)
+			return
+		} catch {
+			// A dropped connection: the takeover below finds out whether it went.
+		}
 		await client.disconnect()
 		// Take the socket over as soon as the old daemon releases it.
 		for _ in 0..<25 {

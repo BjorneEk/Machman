@@ -97,6 +97,14 @@ public struct AgentPrompt: Equatable, Sendable {
 			buttons: ["Cancel", "Quit Anyway"])
 	}
 
+	// The older agent refused to be replaced while it runs work of its own (E45); `reason` is
+	// its refusal, which names the work and has no period of its own.
+	public static func replaceRefused(reason: String) -> AgentPrompt {
+		AgentPrompt(
+			message: "The older Machman Agent can’t be replaced yet", info: reason + ".",
+			buttons: ["OK"])
+	}
+
 	// A newly launched agent that finds an older one serving: replace it, or leave it be.
 	public static func replaceOlder(running: String, mine: String) -> AgentPrompt {
 		AgentPrompt(
