@@ -4,8 +4,8 @@
 //
 //  TB9: every alert the menu-bar agent shows goes through PromptAlert, which under a test
 //  suite logs and answers it from the lab's answers file by a stable id instead — without
-//  touching NSApp (this test process has no NSApplication: a branch that reached it would
-//  crash here). Outside test mode the alert shows, as before.
+//  touching NSApp, so these run headless with no alert, activation or Dock icon. Outside
+//  test mode the alert shows, as before.
 //
 
 import Testing

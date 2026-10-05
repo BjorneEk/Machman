@@ -14,7 +14,8 @@ import Foundation
 import MachmanTestSupport
 
 struct AgentQuietLintTests {
-	// Written as escaped patterns, so this file never spells the calls it bans.
+	// Written as escaped patterns, and the provoked calls below in pieces, so this file never
+	// spells a call it bans (nor one the test sources' own host-quiet lint bans).
 	static let alertPatterns = [#"NSAlert\("#, #"runModal"#]
 	static let frontPatterns = [
 		#"\.activate\((ignoringOtherApps|options|\))"#,
@@ -63,7 +64,7 @@ struct AgentQuietLintTests {
 	func theAgentLintsFlagAProvokedCall() throws {
 		let provoked = [
 			"let alert = NSAlert" + "()", "alert.runModal" + "()",
-			"NSApp.activate(ignoringOtherApps" + ": true)", "NSApp.activate" + "()",
+			"NSApp" + ".activate(ignoringOtherApps: true)", "NSApp" + ".activate()",
 			"NSRunningApplication.current.activate" + "(options: [])",
 			"NSApp.setActivationPolicy(.reg" + "ular)", "app.setActivationPolicy(.acc" + "essory)",
 			"NSApp.requestUserAttention" + "(.criticalRequest)",
