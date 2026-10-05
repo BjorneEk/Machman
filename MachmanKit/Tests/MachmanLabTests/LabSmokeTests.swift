@@ -46,7 +46,9 @@ struct LabSmokeTests {
 		}
 	}
 
-	@Test("L2: the Alpine fixture's HID log lists the USB keyboard and pointer when the lab opts in")
+	@Test(
+		"L2: the Alpine fixture's HID log lists the USB keyboard and pointer when the lab opts in"
+	)
 	func alpineHIDLog() async throws {
 		let options = LabAgent.Options(environment: ["MACHMAN_LAB_DEVICES": "hid"])
 		try await Lab.withAgent(options) { agent in
