@@ -50,7 +50,8 @@ struct THBSDScriptTests {
 			#expect(gone.status == 0, "\(gone.output)")
 			#expect(try await THGuestFiles.stat(g, "/home/lab/.ssh/config") == config)
 			#expect(try await THGuestFiles.stat(g, "/home/lab/.ssh/authorized_keys") == keys)
-			let temps = try await g.check("ls -a /home/lab/.ssh | grep '^\\..*\\.machman-.*~$'; true")
+			let temps = try await g.check(
+				"ls -a /home/lab/.ssh | grep '^\\..*\\.machman-.*~$'; true")
 			#expect(temps.isEmpty, "\(temps)")
 		}
 	}

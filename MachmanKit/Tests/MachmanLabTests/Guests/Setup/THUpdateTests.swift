@@ -111,17 +111,17 @@ struct THUpdateTests {
 		try await TH.withGuest(.debianSysv, options) { g in
 			let marker = try g.marker()
 			try await g.check(
-				"printf '%s\\n' '#!/bin/sh -e' '# BEGIN \(marker)' '# an older run' '# END \(marker)'"
-					+ " 'exit 0' > /etc/rc.local && chmod 644 /etc/rc.local")
+				"printf '%s\\n' '#!/bin/sh -e' '# BEGIN \(marker)' '# an older run'"
+					+ " '# END \(marker)' 'exit 0' > /etc/rc.local && chmod 644 /etc/rc.local")
 			let run = try await g.install(
 				"-y --two-way --automount-sshfs", user: "lab", escalation: .sudo)
 			#expect(run.status == 0, "\(run.output)")
 			try await g.approveReverse()
 			let setup = try await g.waitForReport(newerThan: nil)
 			let said = ((setup.errors ?? []) + (setup.notes ?? [])).map(\.message)
-			#expect(said.contains(
-				"/etc/rc.local was not executable — re-enabled (Machman's boot hook lives there)"),
-				"\(said)")
+			let note = "/etc/rc.local was not executable — re-enabled"
+				+ " (Machman's boot hook lives there)"
+			#expect(said.contains(note), "\(said)")
 			let written = g.reportFileDate()
 			try await g.reboot()
 			#expect(try await g.check("stat -c %a /etc/rc.local") == "755")
