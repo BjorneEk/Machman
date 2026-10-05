@@ -381,6 +381,8 @@ enum THCards {
 		"The installer's plan lines run past 80 columns on a console"
 	static let generatedGettyReadsActive: Comment =
 		"hvc0's generator login reads active, not active (automatic), on systemd 257"
+	static let bsdRootHome: Comment =
+		"The BSD guide's approved share mount reads /home/root/.ssh/config for a root guest user"
 	static let uninstallStopsForeignGetty: Comment =
 		"--uninstall stops and disables serial-getty logins Machman never enabled"
 }

@@ -114,9 +114,9 @@ final class THBSDGuest: THGuest, @unchecked Sendable {
 			approvedGuestUser: nil, hostUser: try await hostUser,
 			hostAddress: QEMUGuest.gateway, sharePath: try await sharePath)
 		try await check(GuestEscalation.root.apply(GuestSetupCommands.bsdFuseLoad))
+		let line = GuestEscalation.root.apply(mount)
 		try await check(
-			"mount | grep -q ' on \(GuestPaths.share) ' || { \(GuestEscalation.root.apply(mount)); }",
-			timeout: .seconds(60))
+			"mount | grep -q ' on \(GuestPaths.share) ' || { \(line); }", timeout: .seconds(60))
 	}
 
 	/// Drops the bootstrap keys (before rows that must reach the Mac on Machman's grant only).
