@@ -90,6 +90,34 @@ enum WindowScenes {
 
 	static let uart = SerialPortRef(kind: .uart, index: 0)
 
+	// One pane strip of Debian's tabs in `style`: the configuration selected, Console 0
+	// drawn hovered (hover itself doesn't render), a session at rest (C6).
+	@MainActor
+	static func tabStrip(_ ctx: SceneContext, _ style: MachmanTabStyle) -> some View {
+		let tabs: [(title: String, symbol: String, terminal: Bool)] = [
+			(ctx.vm.name, MachmanSymbols.tabConfig, false),
+			(ctx.vm.consolePorts?.first?.displayName(mode: ctx.vm.boot.mode) ?? "",
+				MachmanSymbols.serialConsole, true),
+			(canvasSession.title, MachmanSymbols.deviceSSHSetup, true),
+		]
+		return HStack(spacing: style == .capsule ? 6 : 0) {
+			ForEach(Array(tabs.enumerated()), id: \.offset) { index, tab in
+				CanvasTabItem(
+					title: tab.title, symbol: tab.symbol, isTerminal: tab.terminal,
+					selected: index == 0, dragging: false, detachedDrag: false,
+					dragOffset: .zero, canSplit: true, hasSiblings: true, tabStyle: style,
+					metrics: MachmanMetrics(), onSelect: {}, onClose: {}, onCloseOthers: {},
+					onSplit: {}, onTearOff: {}, onDragChanged: { _ in }, onDragEnded: {},
+					reportFrame: { _ in }, hoverPreview: index == 1)
+			}
+		}
+		.padding(.horizontal, style == .capsule ? 8 : 0)
+		.padding(.vertical, style == .capsule ? 4 : 0)
+		.background {
+			if style == .rectangular { Rectangle().fill(.thinMaterial) }
+		}
+	}
+
 	// Kernel Lab's canvas split into three panes (configuration, Console 0, UART 0) with the
 	// first divider dragged right, as far as the minimum pane width lets it go (L2).
 	@MainActor
@@ -411,6 +439,17 @@ enum WindowScenes {
 			widths: [320, 640], height: 420, vms: { [Samples.linux("Debian", state: .unknown)] }
 		) { ctx in
 			AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
+		// C6: a tab that isn't selected rests unfilled and shows its hover plainly.
+		RenderScene(
+			"canvas.tabs.hover",
+			"CanvasTabItem, selected, hovered and resting tabs in both tab styles"
+		) { ctx in
+			AnyView(VStack(alignment: .leading, spacing: 14) {
+				tabStrip(ctx, .capsule)
+				tabStrip(ctx, .rectangular)
+			}
+			.padding(14))
 		},
 		// T10: a serial tab without a socket says why, not always "Start the VM".
 		RenderScene(

@@ -30,7 +30,11 @@ struct CanvasTabItem: View {
 	let onDragChanged: (DragGesture.Value) -> Void
 	let onDragEnded: () -> Void
 	let reportFrame: (CGRect) -> Void
+	// Draws the hover without a pointer (render scenes).
+	var hoverPreview = false
 	@State private var hovering = false
+
+	private var hovered: Bool { hovering || hoverPreview }
 
 	var body: some View {
 		HStack(spacing: 5) {
@@ -78,7 +82,7 @@ struct CanvasTabItem: View {
 	private var iconOrClose: some View {
 		Button(action: onClose) {
 			Group {
-				if hovering && !dragging {
+				if hovered && !dragging {
 					Image(systemName: MachmanSymbols.closeTab)
 						.font(.system(size: 9, weight: .bold))
 						.frame(width: 14, height: 14)
@@ -99,20 +103,22 @@ struct CanvasTabItem: View {
 
 	private var closeHelp: String { "Close tab" + (isTerminal ? " (disconnects)" : "") }
 
+	// A tab that isn't selected rests unfilled and shows its hover plainly (C6): capsules at
+	// the active-overlay strength (their selection is the accent, so the two never mix up),
+	// rectangles a step below the selected tab's fill.
 	@ViewBuilder
 	private var tabBackground: some View {
 		switch tabStyle {
 		case .rectangular:
 			Rectangle().fill(Color.primary.opacity(
 				selected ? MachmanColors.activeOverlay
-					: (hovering ? MachmanColors.hoverOverlay : 0)))
+					: (hovered ? MachmanColors.quietHoverOverlay : 0)))
 		case .capsule:
 			if selected {
 				Capsule().fill(MachmanColors.selection.opacity(0.16))
 					.overlay(Capsule().strokeBorder(MachmanColors.selection.opacity(0.35)))
 			} else {
-				Capsule().fill(Color.primary.opacity(
-					hovering ? MachmanColors.hoverOverlay : 0.04))
+				Capsule().fill(Color.primary.opacity(hovered ? MachmanColors.activeOverlay : 0))
 			}
 		}
 	}
