@@ -161,7 +161,9 @@ sshfsauto_entry() {
 	R_MOUNT_WHAT=""
 	R_MOUNT_WHERE=""
 	if [ "$1" = "@share" ]; then
-		R_MOUNT_WHAT="$HOST_USER@$GATEWAY:$SHARE_HOST_PATH"
+		# The share's host path is a rename-stable link (<library>/.machman-shares/<marker>),
+		# and sshfs lstat()s its root: only a trailing slash makes the Mac resolve it.
+		R_MOUNT_WHAT="$HOST_USER@$GATEWAY:${SHARE_HOST_PATH%/}/"
 		R_MOUNT_WHERE="$SHARE_ROOT"
 		return 0
 	fi

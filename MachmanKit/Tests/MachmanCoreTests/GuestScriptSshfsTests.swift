@@ -104,6 +104,30 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// The share's host path is a link (<library>/.machman-shares/<marker>), and sshfs's root
+	// check is an LSTAT: without a trailing slash the Mac's sftp-server answers "symlink" and
+	// the mount fails "Not a directory". One slash, whatever the path ended with.
+	@Test func theShareMountsThroughItsLinkWithATrailingSlash() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				GATEWAY=192.168.64.1
+				SHARE_HOST_PATH="/Lib/.machman-shares/$MARKER"
+				sshfsauto_entry @share
+				printf '%s|%s\\n' "$R_MOUNT_WHAT" "$R_MOUNT_WHERE"
+				SHARE_HOST_PATH="$SHARE_HOST_PATH/"
+				sshfsauto_entry @share
+				printf '%s\\n' "$R_MOUNT_WHAT"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			let link = "/Lib/.machman-shares/\(GuestScriptHarness.marker)/"
+			#expect(r.out == """
+				gustaf@192.168.64.1:\(link)|/mnt/machman/share
+				gustaf@192.168.64.1:\(link)
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - NetBSD user mounts (S38)
 
 	// S38: NetBSD lets users mount only with vfs.generic.usermount=1 — checked, never
