@@ -15,6 +15,7 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 pkg="$repo/MachmanKit"
+source "$repo/scripts/lib/sandbox.sh"
 mode=run
 if [[ "${1:-}" == "--self-check" ]]; then
 	mode=selfcheck
@@ -24,27 +25,11 @@ fi
 # Build in the caller's environment: the fake home below would cold-start SwiftPM's caches.
 swift build --build-tests --package-path "$pkg"
 
-# /tmp, not $TMPDIR: socket paths built on the run dir must stay under sun_path's 104 bytes.
-root="$(mktemp -d /tmp/mmt.XXXXXX)"
-token="${root##*.}"
-suite="com.gustaffranzen.Machman.test-$token"
-mkdir -p "$root/data" "$root/home"
-
-cleanup() {
-	# Every path below derives from the token minted above; do nothing on any surprise.
-	[[ "$root" == /tmp/mmt.* && "$suite" == com.gustaffranzen.Machman.test-* ]] || return 0
-	# Best effort: under set -e the first failing rm would skip every later sweep and turn a
-	# green run into exit 1 — the script exits with the tests' own status, not cleanup's.
-	set +e
-	local temp
-	temp="$(getconf DARWIN_USER_TEMP_DIR)"
-	rm -rf "$root"
-	rm -rf "${temp}${suite}"                              # MachmanPaths.runtimeDir
-	rm -f "${temp}_private_tmp_mmt.${token}_"*            # SwiftPM locks named after the fake home
-	rm -rf "$HOME/Library/Application Support/$suite"     # defaultDataDir in the real home
-	rm -f "$HOME/Library/Preferences/$suite"*.plist       # any defaults domain under the suite
-}
-trap cleanup EXIT
+sandbox_create mmt 6
+root="$SANDBOX_ROOT"
+token="$SANDBOX_TOKEN"
+suite="$SANDBOX_SUITE"
+trap 'sandbox_cleanup "$root"' EXIT
 
 
 if [[ "$mode" == selfcheck ]]; then
