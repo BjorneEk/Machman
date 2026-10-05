@@ -446,7 +446,8 @@ is ended instead and the start spawns a current one, so the run does not start l
 A host whose VM just stopped is exiting: the
 start waits up to 3 s for it to go and then starts normally; if the host is still there, the
 start answers `invalidState` ("… is still shutting down — try again in a moment"). A host that
-misses its answer deadline answers `invalidState` ("… is not responding"). A vmhost
+misses its answer deadline answers `invalidState` ("… is not responding — try again in a
+moment"), as does every per-VM call whose vmhost can't be reached or adopted. A vmhost
 answering on one VM's socket for another — a run an older vmhost saved as a new VM — is adopted
 as the VM it serves, and starting the original answers `invalidState` ("… saved from …, still
 runs on its socket — stop … before starting …").

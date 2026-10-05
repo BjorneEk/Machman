@@ -306,9 +306,7 @@ extension RoutingMachman {
 			guard !UDSListener.isLive(path: socketPath) else {
 				// NEVER unlink a live socket (single-writer rule) — whoever owns it may
 				// recover; spawning over it would fork the VM's identity.
-				throw MachmanError(
-					code: .internalError,
-					message: "\(name) is not responding")
+				throw notResponding(name)
 			}
 			unlink(socketPath)
 			return false
@@ -341,8 +339,7 @@ extension RoutingMachman {
 		case .answered:
 			guard host.sawRun else { return }
 		case .stalled:
-			throw MachmanError(
-				code: .invalidState, message: "\(name) is not responding")
+			throw notResponding(name)
 		case .failed:
 			break   // its connection is going: wait for it like an exit
 		}
@@ -435,6 +432,9 @@ extension RoutingMachman {
 	}
 
 	public func safeSave(vm name: String, to newName: String) async throws -> VMInfo {
+		// Resolved like any per-VM call (E41): adopting a vmhost the daemon hasn't met yet
+		// re-attaches the safe run it may be serving.
+		_ = try await proxy(name)
 		guard let host = hosted[name], host.identity.isSafe else {
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is not running in safe mode")

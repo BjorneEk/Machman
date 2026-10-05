@@ -166,12 +166,7 @@ extension RoutingMachman {
 	// runs (setStartPolicy reasoning: host-side state must never reconcile against a
 	// discardable shadow write).
 	private func refuseSSHWhileSafe(_ name: String) throws {
-		if let host = hosted[name], host.identity.isSafe {
-			throw MachmanError(
-				code: .invalidState,
-				message: "SSH settings can’t change during a safe run — stop \(name) "
-					+ "or save it first")
-		}
+		try refuseWhileSafe(name, "SSH settings")
 	}
 
 	public func setSSH(

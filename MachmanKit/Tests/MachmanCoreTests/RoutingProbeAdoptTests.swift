@@ -75,6 +75,57 @@ struct RoutingProbeAdoptTests {
 		#expect(routing.hostedNames.isEmpty)
 	}
 
+	// E41: a live socket nobody can adopt is "not responding" with ONE code wherever it is
+	// met — probe-adopt answered internalError where proxy answered invalidState.
+	@Test @MainActor func aStartMeetingAnUnadoptableSocketAnswersInvalidState() async throws {
+		let routing = try makeRouting()
+		routing.locateVMHost = { nil }
+		let socketPath = TestEnvironment.socketPath("mm-noadopt")
+		routing.socketPathForVM = { _ in socketPath }
+		let listener = try UDSListener(
+			path: socketPath, queue: DispatchQueue(label: "mm-noadopt-accept")) { fd in
+				close(fd)
+			}
+		defer { listener.shutdown() }
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("expected not responding")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)   // before: internalError
+			#expect(error.message == "alpha is not responding \u{2014} try again in a moment")
+		}
+		#expect(FileManager.default.fileExists(atPath: socketPath))   // never unlinked
+	}
+
+	// E41: vm.ssh.refresh and vm.safeSave read the hosted map alone, so a running VM whose
+	// vmhost the daemon hadn't adopted yet answered "not running". They adopt it first now.
+	@Test @MainActor func refreshAndSafeSaveAdoptALateVMHost() async throws {
+		for call in ["refresh", "safeSave"] {
+			let routing = try makeRouting()
+			let socketPath = TestEnvironment.socketPath("mm-late-\(call)")
+			routing.socketPathForVM = { _ in socketPath }
+			let stub = StubMachman()
+			stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+			let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+			try startServing(server)
+			defer { server.stop() }
+
+			if call == "refresh" {
+				// Before: "alpha is not running — nothing to discover".
+				try await routing.refreshSSH(vm: "alpha")
+			} else {
+				do {
+					_ = try await routing.safeSave(vm: "alpha", to: "gamma")
+					Issue.record("saved a run that isn't safe")
+				} catch let error as MachmanError {
+					#expect(error.message == "alpha is not running in safe mode")
+				}
+			}
+			#expect(routing.hostedNames == ["alpha"], "\(call)")
+		}
+	}
+
 	// D1: delete's running-check must not stop at the in-memory hosted map — a vmhost the
 	// daemon never adopted (launch-agent start, socket appeared after adoption ran) still
 	// owns the VM's directory. A live socket refuses; a dead leftover file does not.

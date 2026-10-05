@@ -171,12 +171,28 @@ public final class RoutingMachman: MachmanControlling {
 				guard host.identity.name == name else { return try await proxy(name) }
 				return host.client
 			} catch {
-				throw MachmanError(
-					code: .invalidState,
-					message: "\(name) is not responding — try again in a moment")
+				throw notResponding(name)
 			}
 		case .local:
 			return local
+		}
+	}
+
+	// A VM whose vmhost doesn't answer, said one way with one code wherever it is met (E41):
+	// clients key on the code.
+	func notResponding(_ name: String) -> MachmanError {
+		MachmanError(
+			code: .invalidState, message: "\(name) is not responding — try again in a moment")
+	}
+
+	// Edits with daemon-side effects (launch agents, ~/.ssh) refuse during a safe run: those
+	// effects must never reconcile against a discardable shadow write — refuse rather than
+	// half-apply. `what` names the settings: "Run defaults", "SSH settings".
+	func refuseWhileSafe(_ name: String, _ what: String) throws {
+		if let host = hosted[name], host.identity.isSafe {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(what) can’t change during a safe run — stop \(name) or save it first")
 		}
 	}
 
@@ -475,14 +491,8 @@ public final class RoutingMachman: MachmanControlling {
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
 		let target = try await settingsOwner(name)
-		// Policy has a daemon-side launchd side effect that must never reconcile against a
-		// discardable shadow write — refuse rather than half-apply.
-		if let host = hosted[name], host.identity.isSafe {
-			throw MachmanError(
-				code: .invalidState,
-				message: "Run defaults can’t change during a safe run — stop \(name) "
-					+ "or save it first")
-		}
+		// Policy has a daemon-side launchd side effect.
+		try refuseWhileSafe(name, "Run defaults")
 		try await target.setStartPolicy(vm: name, policy: policy)
 		// Agent bookkeeping reads the ARGUMENT, never the registry: while the VM is hosted
 		// the daemon's config copy is stale until the host exits.
@@ -565,6 +575,9 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func refreshSSH(vm name: String) async throws {
+		// Resolved like any per-VM call (E41): a running VM's vmhost the daemon hasn't adopted
+		// yet is adopted, never taken for a stopped VM.
+		_ = try await proxy(name)
 		guard let host = hosted[name] else {
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is not running — nothing to discover")
