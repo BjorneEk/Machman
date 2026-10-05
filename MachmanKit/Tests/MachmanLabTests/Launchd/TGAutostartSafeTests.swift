@@ -2,9 +2,10 @@
 //  TGAutostartSafeTests.swift
 //  MachmanLabTests
 //
-//  launchd tier (T4: lab.sh --launchd only) — a login job beside a safe run: an unsafe
-//  autostart next to a dead safe run is adopted unshielded and the dead run's dir swept.
-//  Every job a test loads is booted out on every path.
+//  launchd tier (T4: lab.sh --launchd only) — login jobs beside safe runs and beside each
+//  other: an unsafe autostart next to a dead safe run is adopted unshielded and the dead
+//  run's dir swept; of two login VMs sharing a writable image the second refuses and says
+//  why. Every job a test loads is booted out on every path.
 //
 
 import Foundation
@@ -15,6 +16,10 @@ import MachmanClient
 @Suite("Autostart and safe runs", .serialized, .enabled(if: Lab.runs(.launchd)))
 struct TGAutostartSafeTests {
 	static let atLogin = StartPolicy(windowed: false, autostart: true)
+
+	/// The draft card for the login race (r3-tg, E/RISK, routed to r3-3c).
+	static let loginRaceCard = Comment(
+		rawValue: "Two login VMs sharing a writable image can both refuse to start at login")
 
 	static func escaped(_ text: String) -> String { NSRegularExpression.escapedPattern(for: text) }
 
@@ -52,6 +57,86 @@ struct TGAutostartSafeTests {
 				// An unsafe run: its run defaults stay editable.
 				try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
 				try await vm.forceStop()
+			}
+		}
+	}
+
+	/// tg-ga and tg-gb, each with the same writable image; tg-ga starts at login by the
+	/// API, tg-gb by a hand edit the API refuses; the relaunched agent writes tg-gb's plist
+	/// (its startup heal), then retires.
+	static func twoLoginSharers(_ agent: LabAgent) async throws -> (TGVM, TGVM) {
+		let shared = agent.scope.imagesDir + "/tg-shared.img"
+		try await TG.writeFile(shared, size: 32 << 20)
+		let first = try await TGVM.alpine(
+			"tg-ga", externals: [TGExternal(path: shared, safe: false)], on: agent)
+		let second = try await TGVM.alpine(
+			"tg-gb", externals: [TGExternal(path: shared, safe: false)], on: agent)
+		try await agent.api.setStartPolicy(vm: first.name, policy: Self.atLogin)
+		try TG.editConfig(agent.scope, second.name) { TG.setPolicy("autostart", true, in: &$0) }
+		try await agent.api.retire()
+		_ = await agent.waitForExit(timeout: .seconds(15))
+		try await agent.relaunch()
+		#expect(FileManager.default.fileExists(
+			atPath: TGLaunchd.plistPath(agent.scope, second.name)))
+		try await agent.api.retire()
+		_ = await agent.waitForExit(timeout: .seconds(15))
+		return (first, second)
+	}
+
+	static let refusal = "autostart of tg-gb refused: tg-ga (is running with|may still have) "
+		+ "tg-shared\\.img attached"
+
+	@Test("R3W2-26: of two forced login VMs sharing an image, the second refuses and logs why")
+	func secondLoginSharerRefuses() async throws {
+		try await TG.withAgent { agent in
+			let (first, second) = try await Self.twoLoginSharers(agent)
+			try await TGLaunchd.withJobs { jobs in
+				try await jobs.bootstrap(TGLaunchd.plistPath(agent.scope, first.name))
+				let host = try await TGAutostartTests.waitRunningOnSocket(first)
+				try first.fileHostPid(host)
+				let mark = LabLog.mark()
+				try await jobs.bootstrap(TGLaunchd.plistPath(agent.scope, second.name))
+				_ = try await LabLog.waitFor(
+					Self.refusal, after: mark, process: "MachmanVMHost", timeout: .seconds(30))
+				let label = TGLaunchd.label(second.name)
+				#expect(await TG.until(timeout: .seconds(20)) {
+					(try? await TGLaunchd.state(label))?.pid == nil
+				})
+				if let exit = try await TGLaunchd.state(label).lastExit { #expect(exit == 70) }
+				#expect(await !TG.isSocketLive(second.socketPath))
+				try await agent.relaunch()
+				#expect(await TG.until { (try? await first.info())?.state == .running })
+				let listed = try await agent.api.listVMs().filter { $0.state == .running }
+				#expect(listed.map(\.name) == [first.name])
+				try await first.forceStop()
+			}
+		}
+	}
+
+	@Test("R3W2-26: two sharers bootstrapped together still boot exactly one")
+	func sharersTogetherBootOne() async throws {
+		try await TG.withAgent { agent in
+			let (first, second) = try await Self.twoLoginSharers(agent)
+			try await TGLaunchd.withJobs { jobs in
+				let mark = LabLog.mark()
+				try await jobs.bootstrap(TGLaunchd.plistPath(agent.scope, first.name))
+				try await jobs.bootstrap(TGLaunchd.plistPath(agent.scope, second.name))
+				try await Task.sleep(for: .seconds(20))
+				var running = 0
+				for vm in [first, second] where await TG.isSocketLive(vm.socketPath) {
+					if let host = try? await TGAutostartTests.waitRunningOnSocket(
+						vm, timeout: .seconds(5)) {
+						try vm.fileHostPid(host)
+						running += 1
+					}
+				}
+				#expect(LabLog.count("autostart of tg-g[ab] refused: ", after: mark) >= 1)
+				withKnownIssue(Self.loginRaceCard, isIntermittent: true) {
+					#expect(running == 1)
+				}
+				for vm in [first, second] {
+					if let host = vm.filedHostPid() { try? await TG.killHost(host) }
+				}
 			}
 		}
 	}
