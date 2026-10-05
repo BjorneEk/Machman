@@ -26,9 +26,12 @@
 # fake_systemd stands aside (REGRESS_BACKEND). The VM table is its own: nixos is a container
 # stand-in (an /etc/fstab linked into a read-only /nix/store) and stays docker-only, and the
 # inittab and rc.local suites need the sysvinit Debian. --backend vz (the same suites under
-# Machman's own VZ guests) runs through scripts/lab.sh. --results appends one TSV row per
-# check: distro, suite, phase, check, pass|fail|missing. Exits 69 without QEMU or without a
-# prepared image.
+# Machman's own VZ guests) runs through scripts/lab.sh. A suite with "# BOOT-CHECKS:" lines
+# (grub, automount, console, rclocal) ends its VM run with a tail left installed; the harness
+# reboots the guest and runs it again with REGRESS_PHASE=boot for its after-boot checks
+# (docker reads only "# CHECKS:" and never reboots). --results appends one TSV row per check:
+# distro, suite, phase, check, pass|fail|missing. Exits 69 without QEMU or without a prepared
+# image.
 set -u
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(CDPATH= cd -- "$HERE/../.." && pwd)"
@@ -132,8 +135,9 @@ usage() {
 }
 
 # evaluate <distro> <suite> <phase> <output>: the suite's named checks for that phase (its
-# "# CHECKS:" lines for run) against the output's RESULT_ lines. Sets EXPECTED and BAD, counts
-# TOTAL, appends a TSV row per check to $RESULTS when set. The one rule every backend uses.
+# "# CHECKS:" lines for run, "# BOOT-CHECKS:" for boot) against the output's RESULT_ lines.
+# Sets EXPECTED and BAD, counts TOTAL, appends a TSV row per check to $RESULTS when set. The
+# one rule every backend uses.
 evaluate() {
 	EXPECTED="$(sed -n "s/^# $(phase_tag "$3"): //p" "$HERE/suites/$2.sh" | tr '\n' ' ')"
 	BAD=""
@@ -151,6 +155,7 @@ evaluate() {
 phase_tag() {
 	case "$1" in
 	run) echo CHECKS ;;
+	boot) echo BOOT-CHECKS ;;
 	*) echo "unknown phase: $1" >&2; exit 64 ;;
 	esac
 }
@@ -257,7 +262,9 @@ with_timeout() {
 	perl -e 'alarm shift; exec @ARGV or exit 127' "$@"
 }
 
-# vm_suite <distro> <suite>: one suite in a fresh guest; leaves <distro>-<suite>.run.out.
+# vm_suite <distro> <suite>: one suite in a fresh guest; leaves <distro>-<suite>.run.out and,
+# for a suite with boot checks, <distro>-<suite>.boot.out (the run's tail installed, the guest
+# rebooted, the suite run again for its boot block).
 vm_suite() {
 	vm_distro "$1"
 	n="$1" s="$2"
@@ -276,7 +283,32 @@ vm_suite() {
 		| vm_ssh "$d" "${root}sh -c 'rm -rf /mnt/machman/share && mkdir -p /mnt/machman/share \
 && tar -xf - --no-same-owner -C /mnt/machman/share'" > "$out" 2>&1
 	vm_run "$d" run >> "$out" 2>&1
+	if has_boot_checks "$s"; then
+		vm_reboot "$d" > "$TMP/$n-$s.boot.out" 2>&1 \
+			&& vm_run "$d" boot >> "$TMP/$n-$s.boot.out" 2>&1
+	fi
 	"$LAB/qemu/run.sh" stop --run "$TMP" --name "$name" --timeout 0
+}
+
+has_boot_checks() { grep -q '^# BOOT-CHECKS: ' "$HERE/suites/$1.sh"; }
+
+# vm_reboot <guest dir>: reboot, wait for ssh to drop (60 s) and come back (180 s), put the
+# guest's default route back on the lab gateway.
+vm_reboot() {
+	vm_ssh "$1" "${root}sh -c 'nohup sh -c \"sleep 1; reboot\" >/dev/null 2>&1 </dev/null &'"
+	end=$(( $(date +%s) + 60 ))
+	while vm_ssh "$1" true </dev/null >/dev/null 2>&1; do
+		[ "$(date +%s)" -lt "$end" ] || { echo "reboot: the guest did not go down"; return 1; }
+		sleep 2
+	done
+	t0="$(date +%s)"
+	end=$(( t0 + 180 ))
+	until vm_ssh "$1" true </dev/null >/dev/null 2>&1; do
+		[ "$(date +%s)" -lt "$end" ] || { echo "reboot: no ssh within 180 s"; return 1; }
+		sleep 2
+	done
+	echo "reboot: ssh back after $(( $(date +%s) - t0 )) s"
+	vm_ssh "$1" "$("$LAB/guests/$VM_OS/guest.sh" lab-route)" </dev/null
 }
 
 # vm_run <guest dir> <phase>: the suite ($n, $s) as root in the guest, 20 minutes at most.
@@ -335,6 +367,10 @@ backend_qemu() {
 		n="${j%%:*}" s="${j#*:}"
 		evaluate "$n" "$s" run "$TMP/$n-$s.run.out"
 		report "$n/$s" "$TMP/$n-$s.run.out"
+		has_boot_checks "$s" || continue
+		[ -f "$TMP/$n-$s.boot.out" ] || : > "$TMP/$n-$s.boot.out"
+		evaluate "$n" "$s" boot "$TMP/$n-$s.boot.out"
+		report "$n/$s after boot" "$TMP/$n-$s.boot.out"
 	done
 	echo "   (qemu: $(( $(date +%s) - start ))s)"
 	[ -z "$KEEP" ] || echo "   (kept: $TMP)"

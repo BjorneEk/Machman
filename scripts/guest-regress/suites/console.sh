@@ -1,17 +1,15 @@
 # inittab consoles (busybox init on alpine, sysvinit's format on debian): the getty lines
 # land in one marker block beside the guest's own lines, a re-run changes nothing, a re-run
 # that adds or leaves out a console keeps every login it manages, and uninstall restores the
-# file exactly. (/dev/hvcN are stand-in files; HUP to a container's PID 1 is ignored.)
+# file exactly. (In a container /dev/hvcN are stand-in files and HUP to PID 1 is ignored; in
+# a sysvinit VM the run ends with logins on hvc0 and hvc1 installed, and after a reboot init
+# runs them — then the uninstall's HUP stops them. hvc2 is the lab's driver console, never
+# one under test.)
 # CHECKS: CONSOLE_INITTAB CONSOLE_IDEMPOTENT CONSOLE_PRISTINE CONSOLE_RESTAGE
 # CHECKS: CONSOLE_UNSELECTED_KEPT CONSOLE_STATE_KEPT
+# BOOT-CHECKS: CONSOLE_GETTY_AT_BOOT CONSOLE_GETTY_GONE
 . /mnt/machman/share/regress/lib.sh
 
-[ -f /etc/fstab ] || : > /etc/fstab
-# A sysvinit guest's inittab where the image has none (debian's initscripts): PID 1 is not
-# busybox there, so the lines take sysvinit's id:runlevels:action:process format.
-[ -f /etc/inittab ] || printf '1:2345:respawn:/sbin/getty 38400 tty1\n' > /etc/inittab
-touch /dev/hvc0 /dev/hvc1
-cp -p /etc/inittab /tmp/inittab.orig
 block() {
 	awk -v m="$NEW" '$0 == "# BEGIN " m { b = 1; next } $0 == "# END " m { b = 0 } b' /etc/inittab
 }
@@ -22,6 +20,33 @@ run_consoles() { # <devices> <log>
 	$SH "$S" -y --user root --console --consoles "$1" --no-ssh --no-install --no-service \
 		>"$2" 2>&1
 }
+
+if boot_phase; then
+	getty_on() { ps -eo args | grep -E "^[^ ]*getty .*[ /]$1( |\$)"; }
+	if getty_on hvc0 >/dev/null && getty_on hvc1 >/dev/null && [ "$(lines_for hvc1)" = 1 ]; then
+		R CONSOLE_GETTY_AT_BOOT pass
+	else
+		R CONSOLE_GETTY_AT_BOOT fail; ps -eo pid,args | grep getty; block
+	fi
+	$SH "$S" --uninstall -y --user root >/tmp/unin-boot.log 2>&1
+	kill -HUP 1
+	n=0
+	while getty_on hvc1 >/dev/null && [ "$n" -lt 10 ]; do
+		sleep 1
+		n=$((n + 1))
+	done
+	if ! getty_on hvc1 >/dev/null && [ -z "$(block)" ]; then R CONSOLE_GETTY_GONE pass; else
+		R CONSOLE_GETTY_GONE fail; ps -eo pid,args | grep getty; tail -n 4 /tmp/unin-boot.log
+	fi
+	exit 0
+fi
+
+[ -f /etc/fstab ] || : > /etc/fstab
+# A sysvinit guest's inittab where the image has none (debian's initscripts): PID 1 is not
+# busybox there, so the lines take sysvinit's id:runlevels:action:process format.
+[ -f /etc/inittab ] || printf '1:2345:respawn:/sbin/getty 38400 tty1\n' > /etc/inittab
+touch /dev/hvc0 /dev/hvc1
+cp -p /etc/inittab /tmp/inittab.orig
 
 run_consoles "hvc0 hvc1" /tmp/run1.log
 if [ "$(lines_for hvc0)" = 1 ] && [ "$(lines_for hvc1)" = 1 ] \
@@ -64,4 +89,9 @@ $SH "$S" -y --user root --ssh --no-console --no-install --no-service >/tmp/run6.
 if [ "$(logins)" = "'hvc1 hvc0'" ]; then R CONSOLE_STATE_KEPT pass; else
 	R CONSOLE_STATE_KEPT "fail ($(logins))"; tail -n 4 /tmp/run6.log; fi
 $SH "$S" --uninstall -y --user root >/tmp/unin2.log 2>&1
+
+# VM tail: logins on hvc0 and hvc1 installed for the boot block.
+if on_vm; then
+	run_consoles "hvc0 hvc1" /tmp/tail.log
+fi
 exit 0

@@ -5,6 +5,10 @@ set -u
 # where a suite needs one) or a real guest (qemu, vz) whose init and services are real.
 REGRESS_BACKEND="${REGRESS_BACKEND:-docker}"
 on_vm() { [ "$REGRESS_BACKEND" != docker ]; }
+# The phase (VM backends): run, then — for a suite with "# BOOT-CHECKS:" lines — boot, after
+# the harness rebooted the guest with the run's tail left installed. A suite runs only its
+# boot block in the boot phase; docker never has one.
+boot_phase() { [ "${REGRESS_PHASE:-run}" = boot ]; }
 S=/mnt/machman/share/GuestSetup/install.sh
 REPORT=/mnt/machman/share/GuestReport/report.env
 NEW=machman-regres000001

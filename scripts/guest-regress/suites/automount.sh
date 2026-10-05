@@ -1,16 +1,39 @@
 # The shared fstab block (systemd guests): each automount feature rewrites only its own
-# lines, and mount names are never globbed.
+# lines, and mount names are never globbed. In a VM the run ends with both automounts
+# installed; after a reboot the sshfs automount is armed, and the share's nofail line (QEMU
+# has no virtiofs device to answer it) does not hold the boot.
 # CHECKS: VFS_KEEPS_SSHFS SSHFS_RECORD_KEPT AUTOMOUNT_ARMED GLOB_TAG SPACED_NAME
 # CHECKS: SHARE_PATH_REPORT_ONLY
+# BOOT-CHECKS: AUTOMOUNT_ARMED_AT_BOOT AUTOMOUNT_BOOT_NOT_BLOCKED AUTOMOUNT_DISARMED
 . /mnt/machman/share/regress/lib.sh
 
-[ -f /etc/fstab ] || : > /etc/fstab
-fake_systemd
-mkuser reg
 T="$(printf '\t')"
 block() {
 	awk -v m="$NEW" '$0 == "# BEGIN " m { b = 1; next } $0 == "# END " m { b = 0 } b' /etc/fstab
 }
+UNIT=mnt-machman-mounts-projects.automount
+
+if boot_phase; then
+	# The boot has finished (running or degraded: the share's mount fails, nofail).
+	timeout 120 systemctl is-system-running --wait >/tmp/boot-state 2>&1
+	if systemctl_did start "$UNIT"; then R AUTOMOUNT_ARMED_AT_BOOT pass; else
+		R AUTOMOUNT_ARMED_AT_BOOT fail; systemctl status "$UNIT" --no-pager 2>&1 | head -n 6; fi
+	if systemctl is-active --quiet multi-user.target; then R AUTOMOUNT_BOOT_NOT_BLOCKED pass
+	else
+		R AUTOMOUNT_BOOT_NOT_BLOCKED "fail ($(cat /tmp/boot-state))"
+		systemctl list-jobs --no-pager | head -n 8
+	fi
+	$SH "$S" --uninstall -y >/tmp/unin-boot.log 2>&1
+	if ! systemctl is-active --quiet "$UNIT" && [ -z "$(block)" ]; then R AUTOMOUNT_DISARMED pass
+	else
+		R AUTOMOUNT_DISARMED fail; systemctl is-active "$UNIT"; block; tail -n 4 /tmp/unin-boot.log
+	fi
+	exit 0
+fi
+
+[ -f /etc/fstab ] || : > /etc/fstab
+fake_systemd
+mkuser reg
 
 $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-install \
 	--no-service >/tmp/run1.log 2>&1
@@ -19,7 +42,7 @@ $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-ins
 # claims mounting only for those (the script folds its lines: read them back unfolded).
 tr '\n' ' ' < /tmp/run1.log | tr -s ' ' > /tmp/run1.flat
 if command -v systemd-escape >/dev/null 2>&1; then
-	systemctl_did start mnt-machman-mounts-projects.automount \
+	systemctl_did start "$UNIT" \
 		&& grep -q 'armed (projects, docs) — each mounts on first access' /tmp/run1.flat \
 		&& armed=pass || armed=fail
 else
@@ -102,5 +125,14 @@ if grep -q '^AUTOMOUNT_[0-9]*=sshfs @share /mnt/machman/share$' "$REPORT" \
 	R SHARE_PATH_REPORT_ONLY pass
 else
 	R SHARE_PATH_REPORT_ONLY fail; grep AUTOMOUNT "$REPORT"
+fi
+
+# VM tail: a clean slate, the two stock mounts, both automounts installed for the boot block.
+if on_vm; then
+	$SH "$S" --uninstall -y >/tmp/tail-unin.log 2>&1
+	printf 'sshfs\tprojects\t/Users/g/Projects\nsshfs\tdocs\t/Users/g/My Docs\n' \
+		> /mnt/machman/share/GuestSetup/mounts.list
+	$SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-install \
+		--no-service >/tmp/tail.log 2>&1
 fi
 exit 0

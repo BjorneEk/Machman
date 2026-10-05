@@ -1,10 +1,42 @@
 # Guests whose boot hooks live in /etc/rc.local (sysvinit: Debian/Devuan initscripts run it
 # only while it is executable; Void's runit stage 2 likewise): the report hook and the
-# sshfs boot mounts share the file with whatever the guest already runs there.
+# sshfs boot mounts share the file with whatever the guest already runs there. In a sysvinit
+# VM the run ends with both blocks installed and the report removed; after a reboot the init
+# ran rc.local (the report is back) and the blocks still sit above its "exit 0".
 # CHECKS: RCLOCAL_INIT RCLOCAL_HOOK RCLOCAL_IDEMPOTENT RCLOCAL_PRISTINE
 # CHECKS: RCLOCAL_EXEC RCLOCAL_BEFORE_EXIT RCLOCAL_RUNS RCLOCAL_REENABLED RCLOCAL_DISABLED_KEPT
 # CHECKS: BOOT_REPORT_KEEPS_ERRORS
+# BOOT-CHECKS: RCLOCAL_RAN_AT_BOOT RCLOCAL_ORDER_KEPT
 . /mnt/machman/share/regress/lib.sh
+
+if boot_phase; then
+	# The hook refreshes the report in the background: give it a minute.
+	n=0
+	while { [ ! -f "$REPORT" ] || grep -qsE 'report[.]sh' /proc/[0-9]*/cmdline; } \
+		&& [ "$n" -lt 60 ]; do
+		sleep 1
+		n=$((n + 1))
+	done
+	btime="$(sed -n 's/^btime //p' /proc/stat)"
+	mtime="$(stat -c %Y "$REPORT" 2>/dev/null || echo 0)"
+	if [ "$mtime" -ge "$btime" ] && grep -q '^STATUS=' "$REPORT"; then
+		R RCLOCAL_RAN_AT_BOOT pass
+	else
+		R RCLOCAL_RAN_AT_BOOT "fail (report $mtime, boot $btime)"; ls -l "$REPORT" 2>&1
+	fi
+	line_of() { grep -n "$1" /etc/rc.local | head -n 1 | cut -d: -f1; }
+	exit_at="$(grep -n '^[[:space:]]*exit 0[[:space:]]*$' /etc/rc.local | tail -n 1 | cut -d: -f1)"
+	report_at="$(line_of "^# BEGIN $NEW-report\$")"
+	mounts_at="$(line_of "^# BEGIN $NEW\$")"
+	if [ -n "$exit_at" ] && [ -n "$report_at" ] && [ -n "$mounts_at" ] \
+		&& [ "$report_at" -lt "$exit_at" ] && [ "$mounts_at" -lt "$exit_at" ] \
+		&& [ "$(meta /etc/rc.local | cut -d' ' -f1)" = -rwxr-xr-x ]; then
+		R RCLOCAL_ORDER_KEPT pass
+	else
+		R RCLOCAL_ORDER_KEPT fail; ls -l /etc/rc.local; cat -n /etc/rc.local
+	fi
+	exit 0
+fi
 
 [ -f /etc/fstab ] || : > /etc/fstab
 mkuser reg
@@ -138,5 +170,15 @@ if grep -q '^ERROR_[0-9]*=automount-sshfs: /etc/rc.local is not executable' /tmp
 	R BOOT_REPORT_KEEPS_ERRORS pass
 else
 	R BOOT_REPORT_KEEPS_ERRORS fail; diff /tmp/outcome-run /tmp/outcome-boot
+fi
+
+# VM tail: the template rc.local back (executable), both blocks installed, the report gone —
+# the boot block expects the init to have run rc.local and rewritten it.
+if on_vm; then
+	$SH "$S" --uninstall -y >/tmp/tail-unin.log 2>&1
+	cp -p /tmp/rc.local.orig /etc/rc.local
+	$SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
+		>/tmp/tail.log 2>&1
+	rm -f "$REPORT"
 fi
 exit 0
