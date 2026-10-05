@@ -47,7 +47,7 @@ struct LaunchAgentManagerTests {
 		#expect(dict["RunAtLoad"] as? Bool == true)
 		#expect(dict["KeepAlive"] as? Bool == false)
 		#expect(dict["LimitLoadToSessionType"] as? String == "Aqua")
-		// No EnvironmentVariables on purpose: the vmhost self-identifies by bundle id.
+		// No EnvironmentVariables outside a test suite: the vmhost self-identifies by bundle id.
 		#expect(dict["EnvironmentVariables"] == nil)
 		let args = try #require(dict["ProgramArguments"] as? [String])
 		#expect(args == [
@@ -57,6 +57,56 @@ struct LaunchAgentManagerTests {
 			"--socket", MachmanPaths.vmSocketPath(vm: "Debian", runtimeDir: "/test/rt"),
 			"--autostart",
 		])
+	}
+
+	// TB4: a test-suite job carries what a spawned vmhost inherits — launchd would start its
+	// vmhost with launchd's environment, which resolves the .dev suite.
+	@Test("Q18: a test-suite autostart plist carries the lab environment (TB4)")
+	func aTestSuitePlistCarriesTheLabEnvironment() throws {
+		let suite = "com.gustaffranzen.Machman.test-abc1"
+		let lab = try #require(LabEnvironment(
+			suiteID: suite,
+			environment: [
+				"CFFIXED_USER_HOME": "/tmp/mml.abc1/home", "MACHMAN_DATA_DIR": "/tmp/mml.abc1/data",
+				"MACHMAN_LAB_ANSWERS": "/tmp/mml.abc1/answers.json", "PATH": "/usr/bin",
+			],
+			debugBuild: true))
+		var manager = makeManager()
+		manager.environment = LaunchAgentManager.labEnvironment(lab: lab)
+		let plist = manager.plistDictionary(for: "Debian")
+		#expect(plist["EnvironmentVariables"] as? [String: String] == [
+			"MACHMAN_SUITE_ID": suite,
+			"CFFIXED_USER_HOME": "/tmp/mml.abc1/home",
+			"MACHMAN_DATA_DIR": "/tmp/mml.abc1/data",
+			"MACHMAN_LAB_ANSWERS": "/tmp/mml.abc1/answers.json",
+		])
+		#expect(plist["Label"] as? String == "com.test.suite.vm.Debian")
+
+		// And it reaches the file: a plist written once the lab set it.
+		let tmp = TestEnvironment.scratch + "machman-agents-\(UUID().uuidString)"
+		defer { try? FileManager.default.removeItem(atPath: tmp) }
+		var writing = makeManager(agentsDir: tmp)
+		writing.environment = manager.environment
+		try writing.install(vm: "Debian")
+		let data = try #require(
+			FileManager.default.contents(atPath: writing.plistPath(for: "Debian")))
+		let parsed = try PropertyListSerialization.propertyList(
+			from: data, format: nil) as? [String: Any]
+		#expect(parsed?["EnvironmentVariables"] as? [String: String] == manager.environment)
+	}
+
+	@Test("Q18: outside test mode autostart plists carry no environment (TB4)")
+	func outsideTestModePlistsCarryNoEnvironment() {
+		#expect(LaunchAgentManager.labEnvironment(lab: nil).isEmpty)
+		for suite in ["com.gustaffranzen.Machman.dev", "com.gustaffranzen.Machman"] {
+			let lab = LabEnvironment(
+				suiteID: suite, environment: ["MACHMAN_LAB_ANSWERS": "/tmp/a.json"],
+				debugBuild: true)
+			#expect(LaunchAgentManager.labEnvironment(lab: lab).isEmpty)
+		}
+		var manager = makeManager()
+		manager.environment = LaunchAgentManager.labEnvironment(lab: nil)
+		#expect(manager.plistDictionary(for: "Debian")["EnvironmentVariables"] == nil)
 	}
 
 	@Test func installRemoveRoundTrip() throws {

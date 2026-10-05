@@ -23,6 +23,8 @@ public struct LaunchAgentManager {
 	let vmsDir: String
 	let runtimeDir: String
 	let agentsDir: String
+	// The job's EnvironmentVariables: empty, so absent, outside a test suite.
+	var environment: [String: String] = [:]
 
 	// nil when no vmhost app can be located (broken install). The daemon treats that as
 	// "toggles persist, agents aren't written" and logs once.
@@ -34,7 +36,14 @@ public struct LaunchAgentManager {
 			vmhostExecutablePath: vmhost.executableURL.path,
 			vmsDir: machmanVMDir,
 			runtimeDir: machmanRuntimeDir,
-			agentsDir: NSHomeDirectory() + "/Library/LaunchAgents")
+			agentsDir: NSHomeDirectory() + "/Library/LaunchAgents",
+			environment: labEnvironment(lab: .current))
+	}
+
+	// A test suite's job carries what a spawned vmhost inherits (vmhostEnvironment): launchd
+	// starts it with launchd's environment, and the vmhost would resolve the .dev suite.
+	static func labEnvironment(lab: LabEnvironment?) -> [String: String] {
+		lab?.forwardedVariables ?? [:]
 	}
 
 	// `.vm.` can never collide with the helper bundle ids (`.agent`, `.vmhost`, …).
@@ -61,11 +70,11 @@ public struct LaunchAgentManager {
 	}
 
 	// Pure — this IS the contract the manual autostart matrix exercises. No
-	// EnvironmentVariables on purpose: the vmhost self-identifies from its bundle (id and
-	// version), and the socket's parent directory is created by MachmanServer.start at serve
-	// time.
+	// EnvironmentVariables outside a test suite, on purpose: the vmhost self-identifies from
+	// its bundle (id and version), and the socket's parent directory is created by
+	// MachmanServer.start at serve time.
 	func plistDictionary(for name: String) -> [String: Any] {
-		[
+		var plist: [String: Any] = [
 			"Label": label(for: name),
 			"ProgramArguments": [
 				vmhostExecutablePath,
@@ -78,6 +87,10 @@ public struct LaunchAgentManager {
 			"KeepAlive": false,
 			"LimitLoadToSessionType": "Aqua",
 		]
+		if !environment.isEmpty {
+			plist["EnvironmentVariables"] = environment
+		}
+		return plist
 	}
 
 	func install(vm name: String) throws {
