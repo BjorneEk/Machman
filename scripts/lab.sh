@@ -467,6 +467,94 @@ lab_run() {
 	exit 0
 }
 
+# lab_doctor: checks only; runs nothing and writes nothing (no build, agent, VM, download
+# or slot). One line per check: ok|WARN|MISSING <what>: <detail>; exit 69 on any MISSING.
+lab_doctor() {
+	local missing=0 tool cache line free qdir t owner state alive=0 dead=0 none=0 d pid
+	ok() { echo "ok $1"; }
+	warn() { echo "WARN $1"; }
+	miss() { echo "MISSING $1"; missing=1; }
+	for tool in xcodebuild swift git curl shasum xz gzip cpio strings plutil hdiutil lsappinfo \
+		launchctl log; do
+		if command -v "$tool" >/dev/null 2>&1; then ok "$tool: $(command -v "$tool")"
+		else miss "$tool: not found"; fi
+	done
+	if xcrun --find swiftc >/dev/null 2>&1; then ok "swiftc: $(xcrun --find swiftc)"
+	else miss "swiftc: xcrun can't find it"; fi
+	if id -Gn | tr ' ' '\n' | grep -qx admin; then ok "admin: this user can run log stream"
+	else miss "admin: log stream needs an admin user"; fi
+	if command -v python3 >/dev/null 2>&1 &&
+		! { [[ "$(command -v python3)" == /usr/bin/python3 ]] && ! xcode-select -p >/dev/null 2>&1; }
+	then ok "python3: $(command -v python3)"
+	else miss "python3: missing, or the Command Line Tools shim (it would pop the installer)"; fi
+	for tool in qemu-system-aarch64 qemu-img; do
+		if command -v "$tool" >/dev/null 2>&1; then ok "$tool: $(command -v "$tool")"
+		else miss "$tool: not found (L3 only)"; fi
+	done
+	if t="$(command -v qemu-system-aarch64)" &&
+		[[ -f "$(dirname "$t")/../share/qemu/edk2-aarch64-code.fd" ]]; then
+		ok "edk2: $(dirname "$t")/../share/qemu/edk2-aarch64-code.fd"
+	else miss "edk2: edk2-aarch64-code.fd not found beside qemu (L3 only)"; fi
+	if [[ -x /usr/sbin/sshd ]]; then ok "sshd: /usr/sbin/sshd"
+	else miss "sshd: /usr/sbin/sshd missing (L3 only)"; fi
+	ok "docker: not required (the lab never starts it)"
+	cache="$(sandbox_lab_cache)"
+	if [[ -d "$cache" ]]; then ok "cache: $cache ($(du -sh "$cache" 2>/dev/null | cut -f1))"
+	else ok "cache: $cache (not created yet)"; fi
+	d="$cache"
+	while [[ ! -d "$d" && "$d" != / ]]; do d="$(dirname "$d")"; done
+	free="$(df -k "$d" | awk 'NR == 2 { print int($4 / 1048576) }')"
+	if ((free < 20)); then warn "disk: only $free GB free for the cache (want 20)"
+	else ok "disk: $free GB free for the cache"; fi
+	free="$(df -k /tmp | awk 'NR == 2 { print int($4 / 1048576) }')"
+	if ((free < 10)); then warn "tmp: only $free GB free on /tmp (want 10)"
+	else ok "tmp: $free GB free on /tmp"; fi
+	while IFS= read -r line; do
+		case "$line" in
+		MISSING*) warn "fixture ${line#MISSING }" ;;
+		BAD*) warn "fixture $line" ;;
+		ok*) ok "fixture ${line#ok }" ;;
+		esac
+	done < <(MACHMAN_LAB_CACHE="$cache" "$repo/scripts/lab/fetch.sh" --verify 2>&1 || true)
+	products="$(lab_products_dir 2>/dev/null || true)"
+	if [[ -n "$products" && -d "$products/MachmanDesktop.app" ]]; then
+		ok "products: $products"
+		if lab_seams_present "$products"; then ok "seams: the test-mode markers are in the build"
+		else warn "seams: no test-mode markers in the build; agent tiers refuse"; fi
+	else
+		warn "products: no Debug MachmanDesktop.app for this worktree; agent tiers refuse"
+	fi
+	slot="$(sandbox_slot_dir "$repo")/lab.1"
+	if [[ -d "$slot" ]]; then
+		owner="$(cat "$slot/owner" 2>/dev/null)"
+		pid="$(cut -d' ' -f1 <<<"$owner" | tr -cd '0-9')"
+		if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then ok "slot: held by $owner (alive)"
+		else ok "slot: held by $owner (dead; reclaimed on the next run)"; fi
+	else ok "slot: free"; fi
+	for d in /tmp/mml.* /tmp/mmt.*; do
+		[[ -d "$d" ]] || continue
+		if [[ -f "$d/.owner" ]]; then
+			pid="$(head -n1 "$d/.owner" | tr -cd '0-9')"
+			if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then alive=$((alive + 1))
+			else dead=$((dead + 1)); fi
+		else none=$((none + 1)); fi
+	done
+	ok "sandboxes: $alive alive, $dead dead, $none without an owner"
+	line="$( { ps -axo pid=,comm= | grep -E '/Machman[A-Za-z]*\.app/Contents/MacOS/' || true; } |
+		awk '{ print $1 }' | tr '\n' ' ')"
+	if [[ -n "${line// /}" ]]; then
+		warn "non-lab Machman processes: $line(protected-path changes during a run become" \
+			"warnings while they run)"
+	else ok "non-lab Machman processes: none"; fi
+	if sandbox_path_budget "com.gustaffranzen.Machman.test-abcd"; then
+		ok "path budget: a 4-character token fits sun_path with this temp dir"
+	else miss "path budget: even a 4-character token overflows sun_path here"; fi
+	if [[ -x "$repo/scripts/lab/sshd/sshd.sh" ]]; then
+		"$repo/scripts/lab/sshd/sshd.sh" doctor 2>&1 | sed 's/^/  /' || true
+	fi
+	exit $((missing ? 69 : 0))
+}
+
 case "$mode" in
 selfcheck)
 	sandbox_refuse_main_checkout "$repo" || exit 64
@@ -482,6 +570,7 @@ selfcheck)
 	lab_run harness 1 "$scriptfail"
 	;;
 run) lab_run "$(lab_tiers)" ;;
+doctor) lab_doctor ;;
 *)
 	echo "lab.sh: --$mode isn't available yet" >&2
 	exit 64
