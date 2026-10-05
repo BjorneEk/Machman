@@ -297,7 +297,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		if !hadSerialKeys {
 			switch boot {
 			case .efi, .linuxKernel: self.consolePorts = [SerialPort()]
-			case .macOS: break
+			case .macOS, .unknown: break   // a newer mode proves no console either
 			}
 		}
 		// Migration (1.0.4): a config predating devices gets the implied per-boot set — what

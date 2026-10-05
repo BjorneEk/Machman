@@ -4,7 +4,8 @@
 //
 //  VZ device construction for VMConfig, split out from the model. The boot-mode-aware builders
 //  (makePlatform / makeBootLoader / graphicsDevices / keyboards / pointingDevices) are the seam
-//  where a new boot mode plugs in: add a BootConfig case, then one arm in each switch here.
+//  where a new boot mode plugs in: add a BootConfig case (and its coding key), then one arm in
+//  each switch here.
 //
 
 import Foundation
@@ -34,6 +35,13 @@ extension VMConfig {
 
 	// MARK: - Boot-mode-aware builders
 
+	// A start's first check (C11): a boot mode a newer Machman wrote never boots here — this
+	// build can't know what it needs. The assembly below runs it before anything else, and a
+	// caller can run it before any start work at all.
+	func requireStartableBoot() throws {
+		if case .unknown = boot { throw BootConfig.newerModeRefusal }
+	}
+
 	func makePlatform() throws -> VZPlatformConfiguration {
 		switch boot {
 		case .efi, .linuxKernel:
@@ -46,6 +54,8 @@ extension VMConfig {
 			platform.machineIdentifier = try getMacMachineIdentifier()
 			platform.auxiliaryStorage = try getMacAuxiliaryStorage()
 			return platform
+		case .unknown:
+			throw BootConfig.newerModeRefusal
 		}
 	}
 
@@ -67,6 +77,8 @@ extension VMConfig {
 			return loader
 		case .macOS:
 			return VZMacOSBootLoader()
+		case .unknown:
+			throw BootConfig.newerModeRefusal
 		}
 	}
 
@@ -129,7 +141,7 @@ extension VMConfig {
 		let width = device.displayWidthPixels ?? fallback.width
 		let height = device.displayHeightPixels ?? fallback.height
 		switch boot {
-		case .efi, .linuxKernel:
+		case .efi, .linuxKernel, .unknown:   // .unknown never starts (requireStartableBoot)
 			let graphics = VZVirtioGraphicsDeviceConfiguration()
 			graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(
 				widthInPixels: width, heightInPixels: height)]
@@ -149,7 +161,7 @@ extension VMConfig {
 	func keyboards(present: Bool) -> [VZKeyboardConfiguration] {
 		guard present else { return [] }
 		switch boot {
-		case .efi, .linuxKernel:
+		case .efi, .linuxKernel, .unknown:   // .unknown never starts (requireStartableBoot)
 			return [VZUSBKeyboardConfiguration()]
 		case .macOS:
 			return [VZMacKeyboardConfiguration()]
@@ -291,6 +303,7 @@ extension VMConfig {
 	// in exactly one place. attachSerial is false for the installer: it does not run bridges,
 	// and an undrained serial pipe would stall the guest.
 	func makeVZVirtualMachineConfiguration(attachSerial: Bool = true) throws -> BuiltVM {
+		try requireStartableBoot()
 		let resolved = resolvedDevices()
 		let byKind = resolved.attach
 		var warnings = resolved.warnings

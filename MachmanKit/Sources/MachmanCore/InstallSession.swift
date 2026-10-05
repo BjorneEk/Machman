@@ -60,7 +60,7 @@ final class InstallSession {
 	// with no live install means the app quit mid-install (interrupted).
 	nonisolated static func phase(for boot: BootConfig, hasActiveInstall: Bool) -> InstallPhase {
 		switch boot {
-		case .efi, .linuxKernel:
+		case .efi, .linuxKernel, .unknown:
 			return InstallPhase(kind: .idle)
 		case .macOS(let m):
 			switch m.installState {

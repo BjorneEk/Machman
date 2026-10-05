@@ -275,6 +275,11 @@ extension LocalMachman {
 			return BootInfo(
 				mode: .macOS, kernel: kernel, macInstallState: state,
 				minCPUCount: m.minimumCPUCount, minMemoryBytes: m.minimumMemorySize)
+		case .unknown:
+			// A mode a newer Machman wrote (D26): listed, never started or replaced here.
+			return BootInfo(
+				mode: .unknown, kernel: kernel, macInstallState: nil,
+				minCPUCount: nil, minMemoryBytes: nil, ownedKernels: ownedKernels)
 		}
 	}
 }

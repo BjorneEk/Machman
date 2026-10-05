@@ -4,15 +4,19 @@
 //
 //  How a VM boots. The common ~90% of VMConfig is shared; only this facet varies, so it lives
 //  as a composed enum member on VMConfig rather than a VMConfig subclass. Adding a new boot mode
-//  is one case here plus one arm in the VMDevices builders.
+//  is one case here (and one key in its coding below) plus one arm in the VMDevices builders.
 //
 
 import Foundation
+import MachmanAPI
 
-enum BootConfig: Codable, Equatable {
+enum BootConfig: Equatable {
 	case efi                            // generic EFI machine (the default / current behavior)
 	case linuxKernel(LinuxKernelBoot)   // direct kernel boot, no EFI variable store
 	case macOS(MacOSBoot)               // Apple-silicon macOS guest; locked once installed
+	// A boot mode a newer Machman wrote (D26), kept as read: a save writes it back, and this
+	// build never starts it (VMConfig.requireStartableBoot).
+	case unknown(JSONValue)
 }
 
 struct LinuxKernelBoot: Codable, Equatable {
@@ -37,7 +41,78 @@ enum BootConfigError: Error, Equatable {
 	case macOSLocked
 }
 
+// The on-disk shape is the one the synthesized enum coding wrote — {"efi":{}},
+// {"linuxKernel":{"_0":{…}}}, {"macOS":{"_0":{…}}} — and every config on disk carries it, so it
+// is FROZEN. What doesn't decode as one of those (a newer mode, or a known mode whose payload
+// this build can't read, like a newer install state) is kept whole as .unknown and written back
+// as read: the VM stays in the list instead of vanishing from it (D26).
+extension BootConfig: Codable {
+	private enum CodingKeys: String, CodingKey {
+		case efi
+		case linuxKernel
+		case macOS
+	}
+
+	private enum PayloadKeys: String, CodingKey {
+		case _0
+	}
+
+	init(from decoder: any Decoder) throws {
+		if let known = try? Self.decodeKnown(from: decoder) {
+			self = known
+		} else {
+			self = .unknown(try JSONValue(from: decoder))
+		}
+	}
+
+	private static func decodeKnown(from decoder: any Decoder) throws -> BootConfig {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		guard c.allKeys.count == 1, let key = c.allKeys.first else {
+			throw DecodingError.dataCorrupted(DecodingError.Context(
+				codingPath: c.codingPath, debugDescription: "Not a boot mode this build knows"))
+		}
+		switch key {
+		case .efi:
+			_ = try c.nestedContainer(keyedBy: PayloadKeys.self, forKey: key)
+			return .efi
+		case .linuxKernel:
+			let payload = try c.nestedContainer(keyedBy: PayloadKeys.self, forKey: key)
+			return .linuxKernel(try payload.decode(LinuxKernelBoot.self, forKey: ._0))
+		case .macOS:
+			let payload = try c.nestedContainer(keyedBy: PayloadKeys.self, forKey: key)
+			return .macOS(try payload.decode(MacOSBoot.self, forKey: ._0))
+		}
+	}
+
+	func encode(to encoder: any Encoder) throws {
+		if case .unknown(let value) = self {
+			try value.encode(to: encoder)
+			return
+		}
+		var c = encoder.container(keyedBy: CodingKeys.self)
+		switch self {
+		case .efi:
+			_ = c.nestedContainer(keyedBy: PayloadKeys.self, forKey: .efi)
+		case .linuxKernel(let kernel):
+			var payload = c.nestedContainer(keyedBy: PayloadKeys.self, forKey: .linuxKernel)
+			try payload.encode(kernel, forKey: ._0)
+		case .macOS(let mac):
+			var payload = c.nestedContainer(keyedBy: PayloadKeys.self, forKey: .macOS)
+			try payload.encode(mac, forKey: ._0)
+		case .unknown:
+			break   // written above
+		}
+	}
+}
+
 extension BootConfig {
+	// What refuses to start or replace a boot mode a newer Machman wrote (C11): one sentence
+	// for every such refusal.
+	static var newerModeRefusal: MachmanError {
+		MachmanError(
+			code: .invalidState, message: "A newer version of Machman set this VM’s boot mode")
+	}
+
 	var isMacInstalled: Bool {
 		if case .macOS(let m) = self, m.installState == .installed { return true }
 		return false

@@ -115,7 +115,7 @@ keep working — nothing is rejected at load.
 | `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — `path` must name one of the VM's listed owned files once `..` is resolved, else `notFound` — and clears any field referencing it) |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
-| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached — a disk switched off on a running VM stays attached until it stops — which `force` does not override; `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
+| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (`macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached — a disk switched off on a running VM stays attached until it stops — which `force` does not override; `invalidState` when a newer Machman set the VM's boot mode (`boot.mode` `"unknown"`); `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop) |
 | `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's unsafe storage disks it attached, whatever their flags say now) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs; like `vm.copy`, the saved VM forgets the last guest-setup run and serves the installer at its next boot, when its SSH keypair is re-minted) |
 | `vm.window.open` | `{name}` | `{}` (the VM's vmhost shows its window) |
@@ -150,11 +150,15 @@ keep working — nothing is rejected at load.
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
 [{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe, owned?, enabled?}],
 mounts: [{id, path, tag, safe, enabled?, kind?, automounted?, automountedAt?}],
-boot: {mode: "efi"|"linuxKernel"|"macOS", kernel?,
+boot: {mode: "efi"|"linuxKernel"|"macOS"|"unknown", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
 overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
 devices?, nestedVirtualization?, ssh?, setup?, unresponsive?, outdatedHost?}`.
+
+`boot.mode` `"unknown"`: the VM's config carries a boot mode a newer Machman wrote. The daemon
+keeps that mode as written through its saves and never boots it — `vm.start` answers
+`invalidState` "A newer version of Machman set this VM’s boot mode".
 
 `unresponsive` is a daemon overlay, like `safeRun`: `true` while the VM's vmhost misses its 3 s
 answer deadline. The rest of the entry is then that vmhost's last answer (state `unknown` if it

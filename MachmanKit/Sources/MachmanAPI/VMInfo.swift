@@ -239,7 +239,9 @@ public struct BootInfo: Codable, Sendable, Equatable {
 		case efi
 		case linuxKernel
 		case macOS
-		case unknown   // decode fallback only; never encode it
+		// The decode fallback, and what a daemon sends for a VM whose config carries a mode a
+		// newer Machman wrote (that VM can't start there).
+		case unknown
 
 		public init(from decoder: Decoder) throws {
 			let raw = try decoder.singleValueContainer().decode(String.self)
