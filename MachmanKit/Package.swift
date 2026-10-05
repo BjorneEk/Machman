@@ -167,5 +167,16 @@ let package = Package(
 			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
+		// MachmanLabTests (L2/L3): drives the real Debug agent and vmhosts of this worktree's
+		// build under a .test-<token> suite. Runs only under scripts/lab.sh: every suite is
+		// gated on Lab.runs(<tier>), and scripts/test.sh skips the target.
+		.testTarget(
+			name: "MachmanLabTests",
+			dependencies: [
+				"MachmanAPI", "MachmanClient", "MachmanUI", "MachmanDesktopCore",
+				"MachmanFixtures", "MachmanTestSupport",
+			],
+			swiftSettings: [.swiftLanguageMode(.v5)]
+		),
 	]
 )

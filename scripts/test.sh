@@ -5,6 +5,7 @@
 #   scripts/test.sh [swift test args]     e.g. --filter WireFixtureTests
 #   scripts/test.sh --self-check          prove the sandbox guard refuses unsandboxed runs
 #
+# MachmanLabTests never runs here: it needs scripts/lab.sh.
 # Never launches an app or touches a live daemon. Every run gets its own suite id
 # (com.gustaffranzen.Machman.test-<token>), a scratch data dir and a fake home under
 # /tmp/mmt.<token>, all removed on exit — so a run can neither resolve the .dev / Release
@@ -74,7 +75,8 @@ fi
 
 status=0
 env MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$root/data" CFFIXED_USER_HOME="$root/home" \
-	swift test --skip-build --disable-xctest --package-path "$pkg" "$@" || status=$?
+	swift test --skip-build --disable-xctest --package-path "$pkg" \
+	--skip 'MachmanLabTests\.' "$@" || status=$?
 
 # Anything a test wrote where the real ~/.ssh or ~/Library/LaunchAgents would be landed in the
 # fake home instead: surface it (SwiftPM's own .swiftpm and Library/Caches there are expected).
