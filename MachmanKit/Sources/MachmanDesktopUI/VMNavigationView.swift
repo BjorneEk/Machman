@@ -295,10 +295,6 @@ private struct ConfirmationDialogs: ViewModifier {
 	}
 }
 
-#Preview {
-	//VMNavigationView()
-}
-
 // The canvas's minimum, from which SwiftUI derives the window's floor (L1): the sidebar's
 // width plus this, which follows the selected VM's open panes (three need more than one).
 // While the inspector shows, SwiftUI already keeps 300 pt for the content beside it and

@@ -64,6 +64,3 @@ struct SafeSaveSheet: View {
 		.frame(width: 400)
 	}
 }
-
-#Preview {
-}

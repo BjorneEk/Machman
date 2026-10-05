@@ -17,19 +17,13 @@ struct SerialGroupInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 
-	private var ports: [SerialPortInfo] {
-		(vm.consolePorts ?? []) + (vm.uartPorts ?? [])
-	}
+	// Never empty: the Serial group (and so this inspector) shows only while ports exist.
+	private var ports: [SerialPortInfo] { vm.allSerialPorts }
 	private var reported: [GuestConsoleInfo] { vm.setup?.consoles ?? [] }
 
 	var body: some View {
 		Form {
 			Section("Interfaces") {
-				if ports.isEmpty {
-					Text("No serial interfaces — add a console with (+).")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				}
 				ForEach(ports) { port in
 					LabeledContent {
 						Text(summary(for: port))
