@@ -786,12 +786,76 @@ console_report() {
 	return 0
 }
 
+# The console this run's session hangs off, if any: the terminal of this shell or of any
+# ancestor — sudo's use_pty gives the script a pseudo-terminal of its own while the login
+# stays on the console. Linux reads /proc (busybox ps has no -p); elsewhere ps names each
+# one. console_session_device [proc root] → the device, or nothing.
+console_session_device() {
+	[ -n "$CONSOLE_DEVICES" ] || return 0
+	_csd_proc="${1:-/proc}"
+	_csd_pid=$$
+	_csd_n=0
+	while [ "$_csd_n" -lt 32 ]; do
+		if [ -d "$_csd_proc/$_csd_pid" ]; then
+			_csd_ttys="$(for _csd_fd in 0 1 2; do
+				readlink "$_csd_proc/$_csd_pid/fd/$_csd_fd" 2>/dev/null
+			done | tr '\n' ' ')"
+			# stat is "pid (comm) state ppid …", and comm may itself hold ") ".
+			_csd_ppid="$(sed 's/.*) //' "$_csd_proc/$_csd_pid/stat" 2>/dev/null \
+				| cut -d ' ' -f 2)"
+		else
+			_csd_ttys="/dev/$(ps -o tty= -p "$_csd_pid" 2>/dev/null | tr -d ' ')"
+			_csd_ppid="$(ps -o ppid= -p "$_csd_pid" 2>/dev/null | tr -d ' ')"
+		fi
+		for _csd_dev in $CONSOLE_DEVICES; do
+			if has_word "/dev/$_csd_dev" "$_csd_ttys"; then
+				printf '%s' "$_csd_dev"
+				return 0
+			fi
+		done
+		case "$_csd_ppid" in
+		''|*[!0-9]*|0|1) return 0 ;;
+		esac
+		_csd_pid="$_csd_ppid"
+		_csd_n=$((_csd_n + 1))
+	done
+	return 0
+}
+
+# The session's own login cannot go now (runit stops a service the moment its link goes):
+# named with what to remove, and the uninstall ends partial. <what to remove>
+console_session_kept() {
+	warn "the login on $_cu_own stays (removing it would end this session) — remove $1 after you log out."
+	UNINSTALL_KEPT=1
+	return 0
+}
+
+# init rereads <file> now — unless this session runs on one of the consoles, whose login
+# that would end: then the change waits for the next boot, said so.
+console_uninstall_reload() {
+	if [ -n "$_cu_own" ]; then
+		note "$1 changes take effect at the next boot — reloading init now would end this session on $_cu_own."
+	else
+		kill -HUP 1 2>/dev/null || true
+	fi
+	return 0
+}
+
+# Uninstalled from a console login Machman set up (the obvious place on a headless guest),
+# that login is disabled but keeps running until the next boot: stopping it would end the
+# session — and the run — halfway, before the report says it is gone.
 console_uninstall() {
+	_cu_own="$(console_session_device)"
 	case "$GETTY_MECH" in
 	systemd)
 		# Only what a run of this script would have enabled: the explicit units.
 		for _cu_dev in $CONSOLE_DEVICES; do
-			if systemctl is-enabled "serial-getty@$_cu_dev.service" >/dev/null 2>&1; then
+			systemctl is-enabled "serial-getty@$_cu_dev.service" >/dev/null 2>&1 || continue
+			if [ "$_cu_dev" = "$_cu_own" ]; then
+				run "disabling the login on $_cu_dev" \
+					systemctl disable "serial-getty@$_cu_dev.service" || true
+				note "$_cu_dev keeps its login until the next boot — stopping it now would end this session."
+			else
 				run "disabling the login on $_cu_dev" \
 					systemctl disable --now "serial-getty@$_cu_dev.service" || true
 			fi
@@ -800,12 +864,12 @@ console_uninstall() {
 	inittab)
 		strip_block /etc/inittab || uninstall_kept
 		restore_superseded /etc/inittab || uninstall_kept
-		kill -HUP 1 2>/dev/null || true
+		console_uninstall_reload /etc/inittab
 		;;
 	ttys)
 		strip_block /etc/ttys || uninstall_kept
 		restore_superseded /etc/ttys || uninstall_kept
-		kill -HUP 1 2>/dev/null || true
+		console_uninstall_reload /etc/ttys
 		# Deliberate keep, disclosed: un-listing virtio_console would take away the
 		# console devices — possibly the very one this uninstall is being read on.
 		if [ "$OS_FAMILY" = freebsd ] \
@@ -821,9 +885,19 @@ console_uninstall() {
 			[ -d "$_cu_sv" ] || continue
 			_cu_name="$(basename "$_cu_sv")"
 			case "$_cu_name" in
-			machman-agetty-*) console_runit_own "${_cu_name#machman-agetty-}" || continue ;;
-			*) console_runit_legacy "${_cu_name#agetty-}" || continue ;;
+			machman-agetty-*)
+				_cu_dev="${_cu_name#machman-agetty-}"
+				console_runit_own "$_cu_dev" || continue
+				;;
+			*)
+				_cu_dev="${_cu_name#agetty-}"
+				console_runit_legacy "$_cu_dev" || continue
+				;;
 			esac
+			if [ "$_cu_dev" = "$_cu_own" ]; then
+				console_session_kept "$RUNIT_SERVICE_DIR/$_cu_name and $_cu_sv"
+				continue
+			fi
 			rm -f "$RUNIT_SERVICE_DIR/$_cu_name"
 			rm -rf "$_cu_sv"
 		done
@@ -831,7 +905,11 @@ console_uninstall() {
 			_cu_link="$RUNIT_SERVICE_DIR/agetty-$_cu_dev"
 			if [ "$(readlink "$_cu_link" 2>/dev/null)" = "$RUNIT_SV_DIR/agetty-$_cu_dev" ]
 			then
-				rm -f "$_cu_link"
+				if [ "$_cu_dev" = "$_cu_own" ]; then
+					console_session_kept "$_cu_link"
+				else
+					rm -f "$_cu_link"
+				fi
 			fi
 		done
 		if console_runit_damaged; then
@@ -840,9 +918,14 @@ console_uninstall() {
 		fi
 		;;
 	launchd)
+		# A loaded job outlives its plist: the session's own login runs until the next boot.
 		for _cu_plist in "$LAUNCHD_DIR/$LAUNCHD_GETTY_PREFIX".*.plist; do
 			[ -e "$_cu_plist" ] || continue
-			launchctl bootout "system/$(basename "$_cu_plist" .plist)" 2>/dev/null || true
+			if [ -n "$_cu_own" ] && grep -qF "<string>$_cu_own</string>" "$_cu_plist"; then
+				note "$_cu_own keeps its login until the next boot — stopping it now would end this session."
+			else
+				launchctl bootout "system/$(basename "$_cu_plist" .plist)" 2>/dev/null || true
+			fi
 			rm -f "$_cu_plist"
 		done
 		;;
