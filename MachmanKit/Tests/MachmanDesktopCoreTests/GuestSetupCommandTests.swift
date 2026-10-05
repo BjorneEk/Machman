@@ -14,6 +14,7 @@
 import Testing
 import Foundation
 import MachmanAPI
+import MachmanTestSupport
 @testable import MachmanDesktopCore
 
 struct GuestSetupCommandTests {
@@ -78,5 +79,26 @@ struct GuestSetupCommandTests {
 		#expect(GuestSetupCommands.escalations(for: .bsd).first == .doas)
 		#expect(GuestSetupCommands.escalations(for: .linux).first == .sudo)
 		#expect(!GuestSetupCommands.escalations(for: .macOS).contains(.doas))
+	}
+
+	// Stand-ins for the guest's commands: each prints its name, its arguments one per line,
+	// and a marker — so a test sees exactly how sh split a pasted line.
+	static let standIns = "for c in mkdir sshfs doas sudo; do "
+		+ #"eval "$c() { printf '%s\n' $c \"\$@\" ---; }"; done; "#
+
+	// C26: the host path can carry the VM's name; pasted into a shell it stays one word.
+	@Test func theBSDMountKeepsAnApostrophePathWhole() async throws {
+		let sharePath = "/Users/demo/VMs/Bob's Ubuntu/share"
+		for approved in [true, false] {
+			let line = GuestSetupCommands.bsdShareMount(
+				approvedGuestUser: approved ? "demo" : nil, hostUser: "demo",
+				hostAddress: "192.168.64.1", sharePath: sharePath)
+			let sh = try await Subprocess.run("/bin/sh", ["-c", Self.standIns + line])
+			#expect(sh.status == 0)
+			let words = sh.output.split(separator: "\n").map(String.init)
+			let source = approved ? "mac:" + sharePath : "demo@192.168.64.1:" + sharePath
+			#expect(words.contains(source), "\(words)")
+			#expect(words.filter { $0 == "---" }.count == 2)
+		}
 	}
 }

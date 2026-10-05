@@ -11,6 +11,7 @@ import Testing
 import Foundation
 import MachmanAPI
 import MachmanFixtures
+import MachmanTestSupport
 @testable import MachmanDesktopCore
 
 struct SSHCommandTests {
@@ -39,5 +40,21 @@ struct SSHCommandTests {
 		let arguments = try #require(
 			SSHCommand.arguments(for: pinned(alias: "Debian copy.machman")))
 		#expect(arguments.contains("HostKeyAlias=Debian-copy.machman"))
+	}
+
+	// C26: the SSH inspector's line, pasted into a shell, carries the key path as ONE word
+	// even when the VM's name holds an apostrophe (it opened an unterminated quote).
+	@Test func theShellLineKeepsAnApostropheNamesKeyPathWhole() async throws {
+		let vm = Samples.linuxApostropheName()
+		let line = try #require(SSHCommand.shellLine(for: vm))
+		let identity = try #require(vm.ssh?.identityFilePath)
+		#expect(identity.contains("Bob's Ubuntu"))
+
+		// sh runs the pasted line with a stand-in ssh that prints its arguments.
+		let sh = try await Subprocess.run(
+			"/bin/sh", ["-c", #"ssh() { printf '%s\n' "$@"; }; "# + line])
+		#expect(sh.status == 0)
+		#expect(sh.output.split(separator: "\n").map(String.init)
+			== ["-i", identity, "-o", "IdentitiesOnly=yes", "demo@192.168.64.7"])
 	}
 }

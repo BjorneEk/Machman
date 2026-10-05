@@ -249,6 +249,10 @@ enum InspectorScenes {
 		inspector(
 			"ssh.reverse-denied", "SSHInspector, a denied guest key",
 			vms: { [Samples.linuxReverse(.denied)] }, node: .group("SSH")),
+		inspector(
+			"ssh.apostrophe-name", "SSHInspector, the ssh line of a VM named with an apostrophe",
+			vms: { [Samples.linuxApostropheName()] }, select: "Bob's Ubuntu",
+			node: .group("SSH")),
 		RenderScene(
 			"inspector.ssh.alias-invalid", "SSHInspector, an alias it can't use",
 			widths: RenderScene.inspectorWidths, height: height

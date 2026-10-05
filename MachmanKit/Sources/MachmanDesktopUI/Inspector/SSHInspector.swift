@@ -50,9 +50,7 @@ struct NetworkSSHSection: View {
 			return "ssh \"\(alias)\""
 		}
 		// Self-contained command — works without the ~/.ssh integration.
-		guard let user = ssh.guestUser, let address = ssh.address,
-			let identity = ssh.identityFilePath else { return nil }
-		return "ssh -i '\(identity)' -o IdentitiesOnly=yes \(user)@\(address)"
+		return SSHCommand.shellLine(for: vm)
 	}
 
 	var body: some View {

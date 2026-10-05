@@ -43,6 +43,15 @@ public enum SSHCommand {
 		return arguments + ["\(user)@\(address)"]
 	}
 
+	// The same connection as one line to paste into a terminal: self-contained, so it works
+	// without the ~/.ssh integration. The key path carries the VM's name, so it goes in
+	// quoted (C26).
+	public static func shellLine(for vm: VMInfo) -> String? {
+		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
+			let identity = ssh.identityFilePath else { return nil }
+		return "ssh -i \(ShellQuote.single(identity)) -o IdentitiesOnly=yes \(user)@\(address)"
+	}
+
 	// The name the VM's pin is keyed by. The daemon serves it; the fallback is for older
 	// daemons and uses the daemon's own rule — the bare VM name (a space ends the word for
 	// ssh) or an unmapped "<vm>.machman" would never match the pin.
