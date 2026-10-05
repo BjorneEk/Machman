@@ -341,9 +341,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try c.encodeIfPresent(setup, forKey: .setup)
 	}
 
-	func getDisks() -> [VMDisk] {
-		self.disks
-	}
 	func configFilePath(file: String) -> String {
 		return "\(machmanVMDir)/\(self.name)/\(file)"
 	}
@@ -564,14 +561,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		virtualCPUCount = min(virtualCPUCount, VZVirtualMachineConfiguration.maximumAllowedCPUCount)
 
 		return virtualCPUCount
-	}
-
-	static func fromGB(size: Int) -> UInt64 {
-		return UInt64(size * 1024 * 1024 * 1024)
-	}
-
-	static func toGB(size: UInt64) -> Int {
-		return Int(size / (1024 * 1024 * 1024))
 	}
 
 	static func clampMemorySize(size: UInt64) -> UInt64 {
@@ -849,12 +838,13 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try FileManager.default.removeItem(at: URL(fileURLWithPath: "\(machmanVMDir)/\(name)"))
 	}
 
-	func getMemorySize() -> UInt64 {
-		return VMConfig.clampMemorySize(size: self.memorySize)
+	// What a start actually gets: the configured values held to this host's bounds.
+	var effectiveMemorySize: UInt64 {
+		VMConfig.clampMemorySize(size: memorySize)
 	}
 
-	func getCPUCounte() -> Int {
-		return min(VMConfig.computeMaxCPUCount(), self.cpuCount)
+	var effectiveCPUCount: Int {
+		min(VMConfig.computeMaxCPUCount(), cpuCount)
 	}
 
 	private func createVmIdentifier(_ vmIdentifierPath: String) throws -> VZGenericMachineIdentifier {
@@ -946,14 +936,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 					+ MachmanError.userMessage(for: error))
 		}
 		return VZVirtioBlockDeviceConfiguration(attachment: attachment)
-	}
-	static func formatUrl(from url: URL, _ n: Int) -> String {
-		let components = url.pathComponents.filter { $0 != "/" }
-
-		guard n > 0 else { return "" }
-
-		let lastComponents = components.suffix(n)
-		return lastComponents.joined(separator: "/")
 	}
 
 	// Disabled entries (1.0.4) stay configured but are not attached.

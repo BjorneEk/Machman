@@ -279,8 +279,8 @@ extension VMConfig {
 		let byKind = resolved.attach
 		var warnings = resolved.warnings
 		let vmConfig = VZVirtualMachineConfiguration()
-		vmConfig.cpuCount = getCPUCounte()
-		vmConfig.memorySize = getMemorySize()
+		vmConfig.cpuCount = effectiveCPUCount
+		vmConfig.memorySize = effectiveMemorySize
 		vmConfig.platform = try makePlatform()
 		vmConfig.bootLoader = try makeBootLoader()
 		vmConfig.storageDevices = try diskArray()
