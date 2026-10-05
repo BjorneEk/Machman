@@ -32,26 +32,32 @@ struct ToastCardTests {
 		let h = await UIHarness.make()
 		let failed = Samples.failedImport()
 		let running = Samples.copyOperation()
-		h.stub.emit(.operationChanged(op: failed))
-		h.stub.emit(.operationChanged(op: running))
-		#expect(await eventually { h.operations.operations.count == 2 })
-		// The overlay's own mapping (NotificationOverlay → OperationInfo+Display).
-		let tree = try await h.snapshot(
-			NotificationOverlay(viewModel: h.viewModel, operations: h.operations),
-			width: 800, height: 600)
 		let title = failed.displayTitle
 		let outcome = try #require(failed.outcomeText)
-		let titleText = try #require(tree.find(text: title), "\(tree.dump())")
-		#expect(titleText.help == title)
-		let phase = try #require(tree.find(text: outcome), "\(tree.dump())")
-		#expect(phase.help == outcome)
-		// One caption line, from the running card's one-line phase.
-		let line = try #require(
-			tree.all.first { $0.text?.hasSuffix(" of 32 GB") == true }?.frame?.height,
-			"\(tree.dump())")
-		let height = try #require(phase.frame?.height)
-		#expect(height > line + 1, "the failure fits one line, so the row proves nothing")
-		#expect(height <= 3 * line + 2, "\(height) for a line of \(line)")
+		// The overlay's own mapping (NotificationOverlay → OperationInfo+Display). A finished
+		// card lingers 5 s, so the operations arrive once the overlay is up.
+		try await OffscreenHost.withHost(
+			NotificationOverlay(viewModel: h.viewModel, operations: h.operations),
+			width: 800, height: 600
+		) { hosted in
+			h.stub.emit(.operationChanged(op: failed))
+			h.stub.emit(.operationChanged(op: running))
+			#expect(await eventually(timeout: .seconds(4)) {
+				hosted.snapshot().find(text: outcome) != nil
+					&& hosted.snapshot().find(text: "13 GB of 32 GB") != nil
+			})
+			await hosted.settle()
+			let tree = hosted.snapshot()
+			let titleText = try #require(tree.find(text: title), "\(tree.dump())")
+			#expect(titleText.help == title)
+			let phase = try #require(tree.find(text: outcome), "\(tree.dump())")
+			#expect(phase.help == outcome)
+			// One caption line, from the running card's one-line phase.
+			let line = try #require(tree.find(text: "13 GB of 32 GB")?.frame?.height)
+			let height = try #require(phase.frame?.height)
+			#expect(height > line + 1, "the failure fits one line, so the row proves nothing")
+			#expect(height <= 3 * line + 2, "\(height) for a line of \(line)")
+		}
 	}
 
 	@Test("W3-41: a long warning toast wraps within 340 pt and keeps it on hover")
