@@ -51,12 +51,15 @@ struct VMDeviceTreeView: View {
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
 
-	// `dragPreview` starts the tree with a drag already hovering, `filter` with text in the
-	// filter field (render scenes); `pasteboard` defaults to the general pasteboard's watch.
+	// Render scenes: `dragPreview` starts the tree with a drag already hovering, `filter` with
+	// text in the filter field, `hovered` with those rows drawn under a pointer. `pasteboard`
+	// defaults to the general pasteboard's watch.
+	private let hovered: Set<SidebarNode>
+
 	init(
 		viewModel: VMListViewModel, sessions: TerminalSessions, canvases: CanvasStateStore,
 		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil,
-		filter: String = "", pasteboard: PasteboardWatch? = nil
+		filter: String = "", hovered: Set<SidebarNode> = [], pasteboard: PasteboardWatch? = nil
 	) {
 		self.viewModel = viewModel
 		_tornTabs = ObservedObject(wrappedValue: viewModel.tornTabs)
@@ -67,6 +70,7 @@ struct VMDeviceTreeView: View {
 		self.vm = vm
 		_dragPreview = State(initialValue: dragPreview)
 		_filter = State(initialValue: filter)
+		self.hovered = hovered
 	}
 
 	var body: some View {
@@ -118,6 +122,7 @@ struct VMDeviceTreeView: View {
 		}
 		.listStyle(.sidebar)
 		.environment(\.defaultMinListRowHeight, theme.metrics.treeRowHeight)
+		.environment(\.treeHoverPreview, hovered)
 		.font(.system(size: theme.metrics.rowFontSize))
 		// A remount (VM switch, reconnect) starts from the surviving published selection.
 		.onAppear { localSelection = viewModel.treeSelection }

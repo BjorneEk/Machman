@@ -30,6 +30,7 @@ public enum MachmanColors {
 
 	// Interaction overlay strengths (MachmanButtonStyle's long-standing values).
 	public static let hoverOverlay = 0.06
+	public static let quietHoverOverlay = 0.08             // a hovered row or flat control
 	public static let activeOverlay = 0.12
 	public static let pressedOverlay = 0.16
 	public static let disabledOpacity = 0.4

@@ -62,10 +62,10 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 	var body: some View {
 		Group {
 			label
-				.opacity(selectable || parked ? 1 : MachmanColors.dimmedRowOpacity)
 			if folds && isExpanded {
 				content()
 					.padding(.leading, TreeIndent.rows)
+					.environment(\.treeRowIndent, TreeIndent.rows)
 			}
 		}
 		.opacity(parked ? 0.45 : 1)
@@ -76,11 +76,15 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 		let row = TreeGroupLabel(
 			title: title, count: count, isExpanded: folds ? $isExpanded : nil, icon: icon,
 			menu: menu, accessory: accessory)
+			.opacity(selectable || parked ? 1 : MachmanColors.dimmedRowOpacity)
 		if selectable {
-			row.tag(node)
+			row
+				.treeRowHover(node)
+				.tag(node)
 		} else {
 			// Nothing to select: a click folds it instead, so no row is a dead target (C5).
 			row
+				.treeRowHover(node)
 				.contentShape(Rectangle())
 				.onTapGesture { if folds { TreeGroupChevron.toggle($isExpanded) } }
 		}
@@ -94,6 +98,62 @@ enum TreeIndent {
 	static let root: CGFloat = 9
 	static let chevron: CGFloat = -2
 	static let rows: CGFloat = 21
+	// How far a row's hover fill reaches past its content, to the List's selection shape.
+	static let hoverLeading: CGFloat = 6
+	static let hoverTrailing: CGFloat = 6
+	static let hoverVertical: CGFloat = 3.5
+}
+
+private struct TreeRowIndentKey: EnvironmentKey {
+	static let defaultValue: CGFloat = 0
+}
+
+private struct TreeHoverPreviewKey: EnvironmentKey {
+	static let defaultValue: Set<SidebarNode> = []
+}
+
+extension EnvironmentValues {
+	// How far TreeGroup indented the rows below it: their hover fill reaches back out.
+	var treeRowIndent: CGFloat {
+		get { self[TreeRowIndentKey.self] }
+		set { self[TreeRowIndentKey.self] = newValue }
+	}
+
+	// Rows drawn hovered without a pointer (render scenes).
+	var treeHoverPreview: Set<SidebarNode> {
+		get { self[TreeHoverPreviewKey.self] }
+		set { self[TreeHoverPreviewKey.self] = newValue }
+	}
+}
+
+// The hover every row that reacts to a click shows (C4): a fill the shape of the List's
+// selection, under the row. Every tree row reacts — entries select or open, labels select
+// or fold.
+struct TreeRowHover: ViewModifier {
+	let node: SidebarNode
+	@State private var hovering = false
+	@Environment(\.treeRowIndent) private var indent
+	@Environment(\.treeHoverPreview) private var preview
+	@Environment(\.machmanTheme) private var theme
+
+	func body(content: Content) -> some View {
+		content
+			.background {
+				RoundedRectangle(cornerRadius: theme.metrics.radiusS, style: .continuous)
+					.fill(Color.primary.opacity(
+						hovering || preview.contains(node) ? MachmanColors.quietHoverOverlay : 0))
+					.padding(.leading, -(indent + TreeIndent.hoverLeading))
+					.padding(.trailing, -TreeIndent.hoverTrailing)
+					.padding(.vertical, -TreeIndent.hoverVertical)
+			}
+			.onHover { hovering = $0 }
+	}
+}
+
+extension View {
+	func treeRowHover(_ node: SidebarNode) -> some View {
+		modifier(TreeRowHover(node: node))
+	}
 }
 
 // A group's label row: chevron, icon, title, the trailing accessory and count, the add menu.
@@ -188,8 +248,8 @@ extension TreeGroup where Icon == TreeGroupSymbol {
 }
 
 // The chrome every entry row shares, always in this order: the dim of an inactive entry, the
-// row font and height, the plain click of a row that opens something (simultaneous with the
-// List's own click, which keeps selecting), the tag the List selects it by, and its menu.
+// row font and height, the hover, the plain click of a row that opens something (it
+// selects the row too, T22), the tag the List selects it by, and its menu.
 struct TreeRow<MenuItems: View>: ViewModifier {
 	let node: SidebarNode
 	let opacity: Double
@@ -203,6 +263,7 @@ struct TreeRow<MenuItems: View>: ViewModifier {
 			.opacity(opacity)
 			.font(.system(size: theme.metrics.rowFontSize))
 			.frame(height: theme.metrics.treeRowHeight)
+			.treeRowHover(node)
 		if let onClick {
 			row
 				.contentShape(Rectangle())

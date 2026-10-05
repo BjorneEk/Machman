@@ -31,6 +31,14 @@ enum WindowScenes {
 			profiles: ctx.profiles, vm: ctx.vm, filter: filter))
 	}
 
+	// The tree with `hovered` drawn under a pointer (hover itself doesn't render).
+	@MainActor
+	static func hoveredTree(_ ctx: SceneContext, _ hovered: Set<SidebarNode>) -> AnyView {
+		AnyView(VMDeviceTreeView(
+			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
+			profiles: ctx.profiles, vm: ctx.vm, hovered: hovered))
+	}
+
 	// The tree with a Finder drag hovering one of its groups (the files don't exist, so the
 	// classifier reads the URLs' trailing slashes).
 	@MainActor
@@ -585,6 +593,17 @@ enum WindowScenes {
 			widths: [270], height: 900, vms: { [Samples.kernelBootEmpty()] }
 		) { ctx in
 			tree(ctx)
+		},
+		// C4: every row that reacts to a click shows a hover: an entry (the system disk), an
+		// unselectable label (Mounts) and a selectable one (Serial) next to the selected hvc0.
+		RenderScene(
+			"sidebar.tree.hover",
+			"VMDeviceTreeView, the system disk, Mounts and Serial hovered beside the selected hvc0",
+			widths: [270], height: 760
+		) { ctx in
+			ctx.viewModel.treeSelection = [.serial(InspectorScenes.console)]
+			return hoveredTree(
+				ctx, [.disk("storage:system"), .group("Mounts"), .group("Serial")])
 		},
 		RenderScene(
 			"sidebar.tree.drop-kernel-empty",
