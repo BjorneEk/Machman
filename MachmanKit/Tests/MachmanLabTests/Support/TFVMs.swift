@@ -38,14 +38,20 @@ enum TFVM {
 		_ = try await recordHost(agent, name)
 	}
 
-	/// The vmhost serving `name` (its socket's peer), written to the run's pid files.
-	@discardableResult
-	static func recordHost(_ agent: LabAgent, _ name: String) async throws -> pid_t {
+	/// The pid serving `name`'s vmhost socket (its peer), not recorded.
+	static func peer(_ name: String) async throws -> pid_t {
 		let host = try await RemoteMachman(
 			socketPath: MachmanPaths.vmSocketPath(vm: name), clientName: "machman-lab-pid")
 		let pid = host.peerPID
 		await host.disconnect()
 		guard let pid else { throw TFError.precondition("no peer pid for \(name)'s vmhost") }
+		return pid
+	}
+
+	/// The vmhost serving `name`, written to the run's pid files.
+	@discardableResult
+	static func recordHost(_ agent: LabAgent, _ name: String) async throws -> pid_t {
+		let pid = try await peer(name)
 		try LabProcesses.writePid(pid, kind: "vmhost", name: pidName(scope: agent.scope, vm: name))
 		return pid
 	}
@@ -65,6 +71,20 @@ enum TFVM {
 		}
 		if let host { _ = await LabProcesses.waitForExit(host, timeout: .seconds(30)) }
 		forget(agent, name)
+	}
+
+	/// `body`, retried for a few seconds while the agent settles a stop: a call that races a
+	/// vmhost's exit meets its closing connection, or a VM the agent still counts as hosted.
+	@discardableResult
+	static func settled<T>(_ body: () async throws -> T) async throws -> T {
+		let deadline = ContinuousClock.now + .seconds(15)
+		while true {
+			do {
+				return try await body()
+			} catch where ContinuousClock.now < deadline {
+				try await Task.sleep(for: .milliseconds(250))
+			}
+		}
 	}
 
 	/// Rewrites a stopped VM's config through a JSON round trip: unknown keys stay, the file
