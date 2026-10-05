@@ -47,8 +47,9 @@ struct VMCanvasView: View {
 		}
 	}
 	@State private var frames = FrameStore()
-	// Divider drags apply fractions absolutely from the drag-start snapshot.
-	@State private var dragBaseFractions: [Double]?
+	// A divider drag in flight: the canvas draws its fractions and stores them on release
+	// (P9), so a drag event re-renders only this view, not the window and its menus.
+	@State private var dividerDrag: CanvasDividerDrag?
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
 
@@ -59,7 +60,7 @@ struct VMCanvasView: View {
 			let c = canvas
 			// Panes plus dividers always sum to the canvas width (L2).
 			let widths = CanvasPaneLayout.widths(
-				fractions: c.fractions, total: geo.size.width, divider: dividerWidth)
+				fractions: fractions(of: c), total: geo.size.width, divider: dividerWidth)
 			HStack(spacing: 0) {
 				ForEach(Array(c.panes.enumerated()), id: \.element.id) { index, pane in
 					paneView(pane, canvas: c)
@@ -86,6 +87,7 @@ struct VMCanvasView: View {
 		.onAppear { ensureConfigTab() }
 		.onChange(of: vm.name) {
 			tabDrag = nil
+			dividerDrag = nil
 			frames.panes = [:]
 			frames.strips = [:]
 			frames.tabs = [:]
@@ -106,6 +108,14 @@ struct VMCanvasView: View {
 			canvas.open(.config)
 			canvases.setCanvas(canvas, for: name)
 		}
+	}
+
+	// The drag's fractions while one is in flight over this layout, else the stored ones.
+	private func fractions(of c: CanvasState) -> [Double] {
+		guard let drag = dividerDrag, drag.fractions.count == c.panes.count else {
+			return c.fractions
+		}
+		return drag.fractions
 	}
 
 	private func mutate(_ change: (inout CanvasState) -> Void) {
@@ -131,15 +141,17 @@ struct VMCanvasView: View {
 		.gesture(
 			DragGesture(coordinateSpace: .named("machman-canvas"))
 				.onChanged { value in
-					let base = dragBaseFractions ?? canvas.fractions
-					if dragBaseFractions == nil { dragBaseFractions = base }
-					guard base.indices.contains(index) else { return }
+					var drag = dividerDrag ?? CanvasDividerDrag(index: index, canvas: canvas)
 					let available = max(200, frames.canvasSize.width
 						- dividerWidth * CGFloat(canvas.panes.count - 1))
-					let delta = Double(value.translation.width / available)
-					mutate { $0.setFraction(base[index] + delta, at: index) }
+					drag.update(translation: value.translation.width, available: available)
+					dividerDrag = drag
 				}
-				.onEnded { _ in dragBaseFractions = nil }
+				.onEnded { _ in
+					guard let drag = dividerDrag else { return }
+					dividerDrag = nil
+					mutate { $0 = drag.committed(to: $0) }
+				}
 		)
 	}
 
