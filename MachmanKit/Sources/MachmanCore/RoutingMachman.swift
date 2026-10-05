@@ -277,16 +277,21 @@ public final class RoutingMachman: MachmanControlling {
 		}
 		var infos: [VMInfo] = []
 		for vm in vms {
-			if let probed = probes[vm.name] {
-				let result = await probed.answer.value
-				// A host gone or re-keyed during the wait (a stop, safe-save) answered for a
-				// run that is over: fall through to what owns the VM now.
-				if hosted[vm.name] === probed.host {
-					infos.append(try await presented(probed.host, result))
-					continue
+			do {
+				if let probed = probes[vm.name] {
+					let result = await probed.answer.value
+					// A host gone or re-keyed during the wait (a stop, safe-save) answered for
+					// a run that is over: fall through to what owns the VM now.
+					if hosted[vm.name] === probed.host {
+						infos.append(try await presented(probed.host, result))
+						continue
+					}
 				}
+				infos.append(try await self.vm(named: vm.name))
+			} catch let error as MachmanError where error.code == .notFound {
+				// Deleted or renamed while the probes ran (E39): the list says what is there now.
+				continue
 			}
-			infos.append(try await self.vm(named: vm.name))
 		}
 		return infos
 	}

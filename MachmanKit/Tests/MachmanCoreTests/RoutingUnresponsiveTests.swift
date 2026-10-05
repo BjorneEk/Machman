@@ -71,6 +71,44 @@ struct RoutingUnresponsiveTests {
 		for server in rig.servers { server.stop() }
 	}
 
+	// E39: a VM deleted or renamed while the list waited on a host's answer failed the whole
+	// list ("No VM named …"), and the desktop showed a list problem.
+	@Test @MainActor func aVMThatVanishesDuringTheProbesIsLeftOut() async throws {
+		let gamma = "vanish-\(UUID().uuidString)"
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			for (name, ran) in [("alpha", Date()), (gamma, nil)] as [(String, Date?)] {
+				try VMConfig.createNewVMDirectory(name: name)
+				let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+				cfg.lastRan = ran   // alpha lists first, so gamma is read after alpha's wait
+				try cfg.saveVMConfig()
+			}
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+		}
+		routing.hostProbeDeadline = .seconds(10)
+		let socketPath = TestEnvironment.socketPath("mm-vanish")
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try startServing(server)
+		defer {
+			stub.stalled = []
+			server.stop()
+		}
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath)
+		routing.adopt(identity: identity, client: try await routing.connectHost(identity: identity))
+		stub.stalled = ["vm"]
+		let asked = stub.calls.filter { $0 == "vm" }.count
+
+		let listing = Task { try await routing.listVMs() }
+		#expect(await eventually { stub.calls.filter { $0 == "vm" }.count > asked })
+		routing.registry.reload(name: gamma)   // its folder is gone: deleted under the list
+		stub.stalled = []
+		let list = try await listing.value   // before: notFound for the whole list
+		#expect(list.map(\.name) == ["alpha"])
+	}
+
 	@Test @MainActor func aStalledHostIsListedFromItsLastAnswer() async throws {
 		let rig = try await makeRig()
 		defer { finish(rig) }
