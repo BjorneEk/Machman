@@ -31,7 +31,7 @@ console_detect() {
 	systemd) GETTY_MECH=systemd ;;
 	launchd) GETTY_MECH=launchd ;;
 	runit) GETTY_MECH=runit ;;
-	freebsd-rc|netbsd-rc) GETTY_MECH=ttys ;;
+	freebsd-rc|netbsd-rc|openbsd-rc) GETTY_MECH=ttys ;;
 	inittab) GETTY_MECH=inittab ;;
 	openrc|sysv) [ -f /etc/inittab ] && GETTY_MECH=inittab || GETTY_MECH=none ;;
 	*) GETTY_MECH=none ;;
@@ -136,8 +136,14 @@ console_available() {
 	fi
 	case "$OS_FAMILY" in
 	openbsd)
-		reason_console="OpenBSD has no virtio-console driver"
-		return 0
+		# viocon(4) came to OpenBSD in 5.9; whether this kernel carries it, its boot
+		# messages say (without it the console device is left "not configured").
+		if ! console_any_device_present \
+			&& ! { cat /var/run/dmesg.boot; dmesg; } 2>/dev/null | grep -q '^viocon[0-9]'
+		then
+			reason_console="no viocon console driver in this OpenBSD kernel"
+			return 0
+		fi
 		;;
 	freebsd)
 		# Loading is part of the ACT (console_act does it, reported): this probe must
@@ -522,7 +528,7 @@ console_act_ttys() {
 		acting "would add a getty line for $1 to /etc/ttys"
 		return 0
 	fi
-	if [ "$OS_FAMILY" = netbsd ]; then
+	if [ "$OS_FAMILY" = netbsd ] || [ "$OS_FAMILY" = openbsd ]; then
 		console_stage "$1" "$(printf '%s "/usr/libexec/getty default" vt100 on secure' "$1")"
 	else
 		console_stage "$1" \

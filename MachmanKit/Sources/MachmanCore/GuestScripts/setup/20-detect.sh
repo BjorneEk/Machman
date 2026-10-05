@@ -463,13 +463,13 @@ find_addresses() {
 # --------------------------------------------------------------------------- consoles ----
 
 # The guest device name for the index-th virtio console — mirrors the app's
-# SerialPortKind.guestDevice table. NetBSD's viocon(4) names unit, then port: Machman
-# attaches one single-port device per console.
+# SerialPortKind.guestDevice table. viocon(4) (NetBSD, OpenBSD) names unit, then port:
+# Machman attaches one single-port device per console.
 console_device() {
 	case "$OS_FAMILY" in
 	darwin) [ "$1" -eq 0 ] && echo "cu.virtio" || echo "cu.virtio$1" ;;
 	freebsd) echo "ttyV$1.0" ;;
-	netbsd) echo "ttyVI${1}0" ;;
+	netbsd|openbsd) echo "ttyVI${1}0" ;;
 	*) echo "hvc$1" ;;
 	esac
 }
@@ -522,7 +522,7 @@ getty_persistent_on() {
 		done
 		return 1
 		;;
-	freebsd-rc|netbsd-rc)
+	freebsd-rc|netbsd-rc|openbsd-rc)
 		grep -q "^$1[[:space:]]" /etc/ttys 2>/dev/null \
 			&& ! grep -q "^$1[[:space:]].*[[:space:]]off" /etc/ttys 2>/dev/null
 		;;

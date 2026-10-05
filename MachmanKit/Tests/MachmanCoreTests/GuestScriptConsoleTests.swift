@@ -230,6 +230,41 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// MARK: - OpenBSD (S37)
+
+	// OpenBSD has had viocon(4) since 5.9: its consoles are ttyVI<n>0 like NetBSD's, its
+	// logins /etc/ttys lines in NetBSD's format. A kernel without the driver — its boot
+	// messages show no viocon — is told apart from one that has it.
+	@Test func openbsdInitAndConsoleNames() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				OS=OpenBSD
+				OS_FAMILY=openbsd
+				OS_VERSION=7.6
+				have() { [ "$1" = rcctl ] || command -v "$1" >/dev/null 2>&1; }
+				detect_init
+				console_detect
+				echo "$INIT $GETTY_MECH $CONSOLE_DEVICES"
+				dmesg() { printf 'virtio2 at pci0 dev 3 function 0\\nviocon0 at virtio2\\n'; }
+				console_available
+				echo "$avail_console"
+				dmesg() { printf 'virtio2: no matching child driver; not configured\\n'; }
+				console_available
+				echo "$avail_console $reason_console"
+				console_act_ttys ttyVI00
+				printf '%s\\n' "$CONSOLE_STAGE"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				openbsd-rc ttys ttyVI00 ttyVI10
+				1
+				0 no viocon console driver in this OpenBSD kernel
+				ttyVI00 "/usr/libexec/getty default" vt100 on secure
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// sshd=YES lands once, as the file's last word on sshd (rc.conf is read top to bottom),
 	// and a file already saying so is left alone.
 	@Test func rcConfEnablesOnce() async throws {
