@@ -28,12 +28,25 @@ final class MacInstaller {
 	let config: VMConfig
 	private(set) var progress: Progress?
 	private var downloadTask: URLSessionDownloadTask?
-	private var cancelled = false
+	private(set) var cancelled = false
 
 	// What a failed install stores as its reason, which the canvas and the Activity list
 	// show (H31): the error's own sentence, never an NSError dump.
 	nonisolated static func failedReason(for error: Error, cancelled: Bool) -> String {
 		cancelled ? "The macOS install was canceled." : MachmanError.userMessage(for: error)
+	}
+
+	// Whether `error` is how a cancel ends a stage: a download task's URLError.cancelled, a
+	// Cocoa user cancel, Swift's CancellationError, or — once VZMacOSInstaller runs, where
+	// cancel() cancels its progress — Virtualization's operationCancelled (F10).
+	nonisolated static func isCancellation(_ error: Error) -> Bool {
+		if error is CancellationError || (error as? URLError)?.code == .cancelled {
+			return true
+		}
+		let ns = error as NSError
+		if ns.domain == NSCocoaErrorDomain && ns.code == NSUserCancelledError { return true }
+		return ns.domain == VZError.errorDomain
+			&& ns.code == VZError.Code.operationCancelled.rawValue
 	}
 
 	// Apple's latest image is newer than this Mac can install (the index was unreachable).
@@ -122,7 +135,8 @@ final class MacInstaller {
 			onInstallProgress?(installer.progress)
 			try await installer.install()
 		} catch {
-			let reason = Self.failedReason(for: error, cancelled: cancelled)
+			let reason = Self.failedReason(
+				for: error, cancelled: cancelled || Self.isCancellation(error))
 			config.boot = .macOS(MacOSBoot(installState: .failed(reason),
 				minimumCPUCount: minCPU, minimumMemorySize: minMem))
 			try? config.saveVMConfig()

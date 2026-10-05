@@ -31,6 +31,19 @@ struct MacInstallFailureTextTests {
 			for: MachmanError(code: .installFailure, message: "x"), cancelled: false) == "x")
 	}
 
+	// F10: what ends a stage when the user cancels it, Virtualization's own error among them.
+	@Test func cancelsAreRecognizedWhateverEndsTheStage() {
+		let vzCancel = NSError(domain: "VZErrorDomain", code: 9)
+		for cancel: Error in [
+			URLError(.cancelled), CocoaError(.userCancelled), CancellationError(), vzCancel,
+		] {
+			#expect(MacInstaller.isCancellation(cancel), "\(cancel)")
+		}
+		for failure: Error in [vzError, URLError(.timedOut), CocoaError(.fileNoSuchFile)] {
+			#expect(!MacInstaller.isCancellation(failure), "\(failure)")
+		}
+	}
+
 	// D27: the download never looked at the HTTP status, so a 403/404 page was taken as the
 	// image and then reported as "The restore image download stopped at 1 KB of 13.4 GB" —
 	// an interrupted download it wasn't.

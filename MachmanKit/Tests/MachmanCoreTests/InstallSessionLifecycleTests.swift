@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import Virtualization
 import MachmanAPI
 import MachmanTestSupport
 @testable import MachmanCore
@@ -17,13 +18,37 @@ import MachmanTestSupport
 @MainActor
 private final class Gate {
 	var open = false
+	// What the install ends with once the gate opens — a user cancel unless a test says else.
+	var ending: any Error = CocoaError(.userCancelled)
 
-	// A runner that installs nothing: it waits for the gate, then cancels quietly.
+	// A runner that installs nothing: it waits for the gate, then ends with `ending`.
 	var runner: InstallSession.Runner {
 		{ [self] _, _ in
 			while !open { try await Task.sleep(for: .milliseconds(10)) }
-			throw CocoaError(.userCancelled)
+			throw ending
 		}
+	}
+}
+
+// Every log event a bus carries, in order.
+@MainActor
+private final class LogTap {
+	private(set) var logs: [(level: LogLevel, message: String)] = []
+	private var reader: Task<Void, Never>?
+
+	init(_ events: EventBus) {
+		let stream = events.stream()
+		reader = Task { @MainActor [weak self] in
+			for await event in stream {
+				if case .log(_, let level, let message) = event {
+					self?.logs.append((level, message))
+				}
+			}
+		}
+	}
+
+	func stop() {
+		reader?.cancel()
 	}
 }
 
@@ -54,6 +79,36 @@ struct InstallSessionLifecycleTests {
 
 		gate.open = true
 		#expect(await eventually(timeout: .seconds(10)) { !session.isInstalling })
+	}
+
+	// F10: once VZMacOSInstaller runs, a cancel surfaces as VZErrorDomain code 9, which the
+	// session took for a failure — an error toast and Activity entry "The macOS install
+	// failed: …" for the user's own cancel. A VZ-domain cancel, or whatever ends an install
+	// the user canceled, now ends it as a cancel: the message-level log, no error event.
+	@Test @MainActor func aCancelDuringTheInstallStageIsNotAFailure() async throws {
+		let vzCancel = NSError(
+			domain: VZError.errorDomain, code: VZError.Code.operationCancelled.rawValue)
+		let vzFailure = NSError(domain: VZError.errorDomain, code: 10007)
+		for (userCanceled, ending) in [(false, vzCancel), (true, vzFailure)] {
+			let gate = Gate()
+			gate.ending = ending
+			let events = EventBus()
+			let tap = LogTap(events)
+			defer { tap.stop() }
+			let session = InstallSession(
+				config: try makeConfig(name: "mac"), events: events,
+				isVMRunning: { false }, run: gate.runner)
+			try session.startInstall(source: Self.ipsw)
+			if userCanceled { session.cancel() }
+			gate.open = true
+
+			let canceled = await eventually {
+				tap.logs.contains { $0.message == "macOS install cancelled" }
+			}
+			#expect(canceled, "\(ending)")
+			#expect(!tap.logs.contains { $0.level == .error }, "\(ending)")
+			#expect(!session.isInstalling)
+		}
 	}
 
 	@Test @MainActor func renameRefusesWhileInstalling() throws {

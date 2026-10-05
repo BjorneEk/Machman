@@ -136,9 +136,9 @@ final class InstallSession {
 					message: "macOS install finished for \(self.config.name)"))
 			} catch {
 				// A user cancel is a clean never-mind, not a failure — no error log/toast.
-				let ns = error as NSError
-				let cancelled = (error as? URLError)?.code == .cancelled
-					|| (ns.domain == NSCocoaErrorDomain && ns.code == NSUserCancelledError)
+				// The installer's own flag counts too: whatever ends an install the user
+				// canceled is that cancel (F10).
+				let cancelled = installer.cancelled || MacInstaller.isCancellation(error)
 				if case .macOS(let m) = self.config.boot,
 					case .failed(let msg) = m.installState {
 					self.phase = InstallPhase(kind: .failed, message: msg)
