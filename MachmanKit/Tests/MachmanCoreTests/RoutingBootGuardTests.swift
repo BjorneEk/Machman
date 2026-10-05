@@ -17,6 +17,33 @@ import MachmanAPI
 import MachmanClient
 @testable import MachmanCore
 
+// Accepts and holds every connection without ever answering: a vmhost whose main actor is
+// wedged, so it never answers hello.
+private final class SilentHost: @unchecked Sendable {
+	private let lock = NSLock()
+	private var held: [Int32] = []
+	private var listener: UDSListener!
+
+	init(path: String) throws {
+		listener = try UDSListener(path: path, queue: DispatchQueue(label: "mm-silent-host")) {
+			[weak self] fd in
+			self?.hold(fd)
+		}
+	}
+
+	private func hold(_ fd: Int32) {
+		lock.lock(); held.append(fd); lock.unlock()
+	}
+
+	func close() {
+		listener.shutdown()
+		lock.lock()
+		for fd in held { Darwin.close(fd) }
+		held = []
+		lock.unlock()
+	}
+}
+
 struct RoutingBootGuardTests {
 	private struct Rig {
 		let routing: RoutingMachman
@@ -94,6 +121,23 @@ struct RoutingBootGuardTests {
 		#expect(error.message
 			== "beta may still have \(file) attached — stop beta before starting alpha")
 		#expect(rig.routing.hostedNames.isEmpty)
+	}
+
+	// Review F8: a vmhost that never answers hello, already marked unadoptable, was asked
+	// again by every start of any other VM — its hello deadline, under the start claim.
+	@Test @MainActor func aKnownUnadoptableHostCostsAStartNothing() async throws {
+		let rig = try makeRig(shareDisk: false)
+		rig.routing.helloDeadline = .seconds(10)
+		let silent = try SilentHost(path: rig.betaSocket)
+		defer { silent.close() }
+		rig.routing.unadoptable.insert("beta")   // an earlier adoption failed
+
+		let clock = ContinuousClock()
+		let started = clock.now
+		let error = try await refusal(rig.routing, force: false)
+		#expect(error.message.contains("reinstall Machman"))   // on to the spawn
+		#expect(clock.now - started < .seconds(5))   // before: the 10 s hello first
+		#expect(rig.routing.adoptionAttempts == 0)
 	}
 
 	@Test @MainActor func anUnadoptedVMsMACCounts() async throws {

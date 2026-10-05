@@ -150,8 +150,12 @@ extension RoutingMachman {
 	// A vmhost nobody adopted yet — a launch-agent start that bound after startup adoption, a
 	// host that missed hello — runs a VM the boot guard has to see (E37). Each is adopted
 	// first, at once; one that can't be still counts, from the daemon's copy of its config.
+	// One whose last adoption already failed isn't asked again here: it would cost every
+	// start its hello and answer deadlines, and the guard counts it anyway (review F8).
 	private func adoptOtherUnadoptedHosts(than name: String) async {
-		let unadopted = registry.list().map(\.name).filter { $0 != name && isUnadopted($0) }
+		let unadopted = registry.list().map(\.name).filter {
+			$0 != name && !unadoptable.contains($0) && isUnadopted($0)
+		}
 		guard !unadopted.isEmpty else { return }
 		_ = await adoptLiveHosts(unadopted)
 	}
