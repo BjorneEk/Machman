@@ -119,25 +119,23 @@ prep_scp() { # <run> <name> <user> <key> <local file> <remote path>
 }
 
 prep_wait_ssh() { # <run> <name> <user> <key> <timeout s>
-	local t=0
+	local end=$((SECONDS + $5))
 	until prep_ssh "$1" "$2" "$3" "$4" true </dev/null >/dev/null 2>&1; do
-		[ "$t" -ge "$5" ] && { prep_log "no ssh as $3 within $5 s"; return 1; }
+		[ "$SECONDS" -ge "$end" ] && { prep_log "no ssh as $3 within $5 s"; return 1; }
 		sleep 5
-		t=$((t + 5))
 	done
 }
 
 prep_wait_exit() { # <run> <name> <timeout s>: wait for the guest to power off
-	local pid t=0
+	local pid end=$((SECONDS + $3))
 	pid="$(lab_pid_of "$1/pids/qemu-$2.pid")" || return 0
 	while lab_pid_is "$pid" qemu-system-aarch64; do
-		if [ "$t" -ge "$3" ]; then
+		if [ "$SECONDS" -ge "$end" ]; then
 			prep_log "no power-off within $3 s: stopping QEMU"
 			"$HERE/run.sh" stop --run "$1" --name "$2" --timeout 0
 			return 1
 		fi
 		sleep 2
-		t=$((t + 2))
 	done
 	"$HERE/run.sh" stop --run "$1" --name "$2" --timeout 0
 }

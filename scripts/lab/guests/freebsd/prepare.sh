@@ -19,6 +19,10 @@ mkdir -p /usr/local/etc/sudoers.d
 echo 'lab ALL=(ALL) NOPASSWD: ALL' > /usr/local/etc/sudoers.d/lab
 chmod 440 /usr/local/etc/sudoers.d/lab
 sysrc sshd_enable=YES
+# Restricted per-run networking drops DNS (10.0.2.3): name the addresses sshd's TCP-wrapper
+# and UseDNS lookups ask about, or every login waits out the resolver first.
+printf '10.0.2.2\tlab-slirp-host\n10.0.2.100\tlab-gateway\n127.0.0.1\t%s\n' "$(hostname)" \
+	>> /etc/hosts
 # The image's first-boot base upgrade ran once already (firstboot_pkg_upgrade): a per-run
 # boot has no network for it.
 sysrc firstboot_pkg_upgrade_enable=NO

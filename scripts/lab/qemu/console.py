@@ -37,7 +37,8 @@ import tempfile
 import threading
 import time
 
-ANSI = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[()][A-Za-z0-9]|\x1b[=>78]")
+ANSI = re.compile(rb"\x1b\[[0-9;:?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+	rb"|\x1b[()][A-Za-z0-9]|\x1b[=>78]")
 PROMPT = re.compile(rb"(?:^|\n)[^\n]{0,120}[#$] ?$")
 LOGIN = re.compile(rb"login: ?$")
 PASSWORD = re.compile(rb"[Pp]assword: ?$")
