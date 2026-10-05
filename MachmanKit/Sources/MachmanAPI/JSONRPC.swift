@@ -106,10 +106,18 @@ public struct RPCErrorBody: Codable, Equatable, Sendable {
 		self.data = data
 	}
 
+	// An `unsupported` relayed from a peer (a newer method forwarded to an older vmhost) goes
+	// out as the "method not found" it was read from, never as a machmanCode: the next
+	// client reads it as unsupported again (review F14).
 	public init(_ error: MachmanError) {
-		self.code = JSONRPC.applicationError
 		self.message = error.message
-		self.data = ErrorData(machmanCode: error.code.rawValue)
+		if error.code == .unsupported {
+			self.code = JSONRPC.methodNotFound
+			self.data = nil
+		} else {
+			self.code = JSONRPC.applicationError
+			self.data = ErrorData(machmanCode: error.code.rawValue)
+		}
 	}
 
 	// The MachmanError this body carries (application errors round-trip their code; a method

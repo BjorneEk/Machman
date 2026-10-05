@@ -35,4 +35,17 @@ struct CancelledCodeWireTests {
 		#expect(RPCErrorBody(MachmanError(code: .invalidState, message: "m")).machmanError.code
 			== .invalidState)
 	}
+
+	// Review F14: `unsupported` is never a machmanCode on the wire. Relayed (a newer method
+	// forwarded to an older vmhost), it goes out as the -32601 it was read from.
+	@Test func unsupportedIsNeverSentAsACode() throws {
+		let relayed = RPCErrorBody(MachmanError(
+			code: .unsupported, message: "unknown method 'vm.future'"))
+		#expect(relayed.code == JSONRPC.methodNotFound)
+		#expect(relayed.data == nil)
+		let line = String(decoding: try JSONEncoder().encode(relayed), as: UTF8.self)
+		#expect(!line.contains("unsupported"))
+		#expect(relayed.machmanError
+			== MachmanError(code: .unsupported, message: "unknown method 'vm.future'"))
+	}
 }

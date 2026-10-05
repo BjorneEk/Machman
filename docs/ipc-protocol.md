@@ -70,8 +70,9 @@ alone; its message names the deadline, e.g. "No answer within 30 seconds"; unkno
 `internalError`, so the list is additively extensible), `cancelled` (the user canceled what the
 call was doing — a `vm.stop` or `op.cancel` while a safe start prepared its shadow; a never-mind
 for clients, not a failure). The Swift client reads a -32601 "method not found" as `unsupported`
-(never sent as a `machmanCode`), so it can fall back when an older daemon lacks a method. Messages are one sentence for people
-to read; match on the code, never on the text, which a newer daemon may reword.
+(never sent as a `machmanCode`: a daemon relaying one from an older vmhost answers -32601
+itself), so it can fall back when an older daemon lacks a method. Messages are one sentence
+for people to read; match on the code, never on the text, which a newer daemon may reword.
 
 ### Names
 
