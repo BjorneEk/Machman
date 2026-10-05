@@ -3,7 +3,8 @@
 //  MachmanLabTests
 //
 //  L2 — a second volume (a sparse APFS image the test attaches, B-2): a safe run's shadow
-//  build and an import that are real byte copies report determinate progress.
+//  build and an import that are real byte copies report determinate progress, and Save as
+//  New VM refuses a library on another volume than its safe runs while the run goes on.
 //
 
 import Foundation
@@ -71,6 +72,45 @@ struct TGVolumeTests {
 				let disk = imported.disks.first { $0.type == .storage && $0.owned == true }
 				#expect(disk?.sizeBytes == UInt64(TGVolume.bigImageBytes))
 				#expect(disk?.path?.hasPrefix(vm.dir + "/") == true)
+			}
+		}
+	}
+
+	@Test("W2-39: Save as New VM is refused for a library on another volume; the run goes on")
+	func saveRefusedAcrossVolumes() async throws {
+		try await TGVolume.with(sizeGiB: 2) { volume in
+			let library = volume.mountPoint + "/VMs"
+			// The library on the second volume; the safe runs stay beside it on /tmp.
+			let prepare: (LabScope) async throws -> Void = { scope in
+				try FileManager.default.createDirectory(
+					atPath: library, withIntermediateDirectories: true)
+				try FileManager.default.createSymbolicLink(
+					atPath: TG.vmsDir(scope), withDestinationPath: library)
+			}
+			try await TG.withAgent(prepare: prepare) { agent in
+				let vm = try await TGVM.alpine("tg-w239", policy: Self.safeHeadless, on: agent)
+				#expect(FileManager.default.fileExists(atPath: library + "/tg-w239/config"))
+				try await vm.start(try await vm.info().startOptions(.plain))
+				let guest = try await vm.guest()
+				defer { guest.console.close() }
+				let run = "run-" + TG.nonce()
+				try await guest.set("TGWHO", run)
+				let refused = await #expect(throws: MachmanError.self) {
+					_ = try await agent.api.safeSave(vm: "tg-w239", to: "tg-w239-kept")
+				}
+				#expect(refused?.code == .invalidState)
+				#expect(refused?.message
+					== "Save as New VM needs the VM library on the same volume as its safe runs")
+				// The run goes on, still safe, the same shell; no saved VM anywhere.
+				let info = try await vm.info()
+				#expect(info.state == .running)
+				#expect(info.safeRun == true)
+				#expect(try await guest.value(of: "TGWHO") == run)
+				#expect(try await agent.api.listVMs().allSatisfy { $0.name != "tg-w239-kept" })
+				#expect(!FileManager.default.fileExists(atPath: library + "/tg-w239-kept"))
+				guest.console.close()
+				try await vm.forceStop()
+				#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
 			}
 		}
 	}
