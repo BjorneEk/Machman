@@ -25,7 +25,12 @@ extension VMListViewModel {
 		panel.nameFieldStringValue = "terminal.log"
 		panel.allowedContentTypes = [.plainText]
 		guard panel.runModal() == .OK, let url = panel.url else { return }
-		let transcript = terminal.transcript()
+		writeTerminalTranscript(terminal.transcript(), to: url)
+	}
+
+	// The panel's answer written out: off the main thread, a failure as the save's alert.
+	// Apart from the panel so a test reaches the write (R3W1-8) without one.
+	func writeTerminalTranscript(_ transcript: Data, to url: URL) {
 		Task.detached(priority: .userInitiated) { [weak self] in
 			do {
 				try transcript.write(to: url)
