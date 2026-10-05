@@ -52,7 +52,7 @@ struct ReverseKeyRevokeTests {
 		let (routing, registry) = try routing(sshDir: dir)
 		var events = registry.events.stream().makeAsyncIterator()
 
-		routing.revokeReverseKey(marker: "machman-abc", vmName: "dev")
+		routing.revokeReverseKey(marker: "machman-abc", vmName: "dev", announce: .always)
 		// A sentinel behind it: the first event is the warning, or the test fails instead
 		// of waiting forever.
 		registry.events.emit(.listChanged)
@@ -73,7 +73,7 @@ struct ReverseKeyRevokeTests {
 		defer { try? FileManager.default.removeItem(at: dir) }
 		let (routing, _) = try routing(sshDir: dir)
 
-		routing.revokeReverseKey(marker: "machman-abc", vmName: "dev")
+		routing.revokeReverseKey(marker: "machman-abc", vmName: "dev", announce: .always)
 		#expect(try String(contentsOf: dir.appendingPathComponent("authorized_keys"),
 			encoding: .utf8) == mine)
 	}
@@ -213,23 +213,54 @@ struct ReverseKeyRevokeTests {
 		#expect(raised == ["Couldn’t read ~/.ssh/authorized_keys to remove the guest’s key"])
 	}
 
-	// A line that stays is said once per VM, not at every report.
-	@Test func aStuckLineIsSaidOnce() async throws {
-		let grant = "ssh-ed25519 AAAA guest machman:machman-abc:dev\n"
-		let dir = try sshDir(grant: grant)
-		let fm = FileManager.default
-		try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
-		defer {
-			try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
-			try? fm.removeItem(at: dir)
-		}
+	// A line that stays: a read-only folder keeps the line in.
+	private func stuckLine() throws -> URL {
+		let dir = try sshDir(grant: "ssh-ed25519 AAAA guest machman:machman-abc:dev\n")
+		try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+		return dir
+	}
+
+	private func release(_ dir: URL) {
+		try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+		try? FileManager.default.removeItem(at: dir)
+	}
+
+	// A line that stays is said once per VM by the reconcile, not at every report.
+	@Test func aStuckLineIsSaidOnceByTheReconcile() async throws {
+		let dir = try stuckLine()
+		defer { release(dir) }
 		let (routing, registry) = try routing(sshDir: dir)
+		let stub = owner()
 
 		let raised = await warnings(registry) {
-			routing.revokeReverseKey(marker: "machman-abc", vmName: "dev")
-			routing.revokeReverseKey(marker: "machman-abc", vmName: "dev")
+			await routing.reconcileReverseKey(vm: "dev", marker: "machman-abc", owner: stub)
+			await routing.reconcileReverseKey(vm: "dev", marker: "machman-abc", owner: stub)
 		}
 		#expect(raised.count == 1)
 		#expect(raised.first?.contains("machman:machman-abc:dev") == true)
+	}
+
+	// Review F13: the quiet is the reconcile's alone. After it warned, deleting the VM or a
+	// Revoke still says which line to remove, every time — a deleted VM's marker can't be
+	// found afterwards. They went silent after the first warning.
+	@Test func anExplicitRevokeWarnsAfterTheReconcileDid() async throws {
+		for unreadable in [true, false] {
+			let dir = unreadable ? try unreadableKeys() : try stuckLine()
+			defer { unreadable ? cleanUp(dir) : release(dir) }
+			let (routing, registry) = try routing(sshDir: dir)
+			let stub = owner()
+
+			let raised = await warnings(registry) {
+				await routing.reconcileReverseKey(vm: "dev", marker: "machman-abc", owner: stub)
+				routing.revokeReverseKey(marker: "machman-abc", vmName: "dev", announce: .always)
+				routing.revokeReverseKey(marker: "machman-abc", vmName: "dev", announce: .always)
+			}
+			#expect(raised.count == 3, "\(raised)")
+			let line = "delete the line ending in machman:machman-abc:dev"
+			#expect(raised.dropFirst().allSatisfy { $0.hasSuffix(line) }, "\(raised)")
+			if unreadable {
+				#expect(raised.last == "Couldn’t read ~/.ssh/authorized_keys — " + line)
+			}
+		}
 	}
 }

@@ -41,7 +41,8 @@ extension RoutingMachman {
 		}
 		revokeReverseKey(
 			marker: marker, vmName: name,
-			lineMayExist: ssh.reversePublicKey != nil || files.wasGranted(marker))
+			announce: .oncePerVM(lineMayExist: ssh.reversePublicKey != nil
+				|| files.wasGranted(marker)))
 	}
 
 	// Bounded per-VM resolver in two phases, on one task keyed by identity.id (so
@@ -159,22 +160,38 @@ extension RoutingMachman {
 		info.ssh = ssh
 	}
 
+	// How a removal that fails is said.
+	enum GrantNotice {
+		// Something the user did — Deny, Revoke, Reset SSH State, deleting the VM, an approval
+		// rolled back: every time, naming the line to remove (a deleted VM's marker can't be
+		// found afterwards).
+		case always
+		// The reconcile at every report: once per VM until its line is gone, and an unreadable
+		// file only for a VM that can have a line at all.
+		case oncePerVM(lineMayExist: Bool)
+	}
+
 	// Every guest→Mac grant leaves ~/.ssh/authorized_keys through here: a deleted VM's, a
 	// denied or revoked one, a reset, a key the guest replaced. Never silent (D11, C21): a
 	// line that stays is logged and shown, with what to remove by hand — a deny that left the
-	// key working used to read as done. A file that can't be read is said as that, and only
-	// when `lineMayExist`; either trouble is shown once per VM until its line is gone.
-	func revokeReverseKey(marker: String, vmName name: String, lineMayExist: Bool = true) {
+	// key working used to read as done.
+	func revokeReverseKey(marker: String, vmName name: String, announce: GrantNotice) {
 		guard let files = sshFiles else { return }
+		let line = "delete the line ending in machman:\(marker):\(name)"
 		let present: Bool
 		do {
 			present = try files.hasReverseKey(marker: marker)
 		} catch {
 			MachmanLogger.log(.passiveWarning, "reading authorized_keys for \(name): \(error)")
-			guard lineMayExist, files.firstWarning(for: marker) else { return }
-			registry.events.emit(.log(
-				vm: name, level: .warning,
-				message: "Couldn’t read ~/.ssh/authorized_keys to remove the guest’s key"))
+			let message: String
+			switch announce {
+			case .always:
+				message = "Couldn’t read ~/.ssh/authorized_keys — " + line
+			case .oncePerVM(let lineMayExist):
+				guard lineMayExist, files.firstWarning(for: marker) else { return }
+				message = "Couldn’t read ~/.ssh/authorized_keys to remove the guest’s key"
+			}
+			registry.events.emit(.log(vm: name, level: .warning, message: message))
 			return
 		}
 		do {
@@ -184,11 +201,10 @@ extension RoutingMachman {
 			files.lineGone(marker)
 		} catch {
 			MachmanLogger.log(.passiveWarning, "revoking \(name)'s reverse key: \(error)")
-			guard files.firstWarning(for: marker) else { return }
+			if case .oncePerVM = announce, !files.firstWarning(for: marker) { return }
 			registry.events.emit(.log(
 				vm: name, level: .warning,
-				message: "Couldn’t remove the guest’s key from ~/.ssh/authorized_keys — "
-					+ "delete the line ending in machman:\(marker):\(name)"))
+				message: "Couldn’t remove the guest’s key from ~/.ssh/authorized_keys — " + line))
 		}
 	}
 
@@ -229,7 +245,7 @@ extension RoutingMachman {
 		} else {
 			info = try await record()
 			if reverseApproved == false, let marker {
-				revokeReverseKey(marker: marker, vmName: name)
+				revokeReverseKey(marker: marker, vmName: name, announce: .always)
 			}
 		}
 		scheduleSSHHostConfigWrite()
@@ -271,7 +287,7 @@ extension RoutingMachman {
 		do {
 			info = try await record()
 		} catch {
-			revokeReverseKey(marker: marker, vmName: name)
+			revokeReverseKey(marker: marker, vmName: name, announce: .always)
 			throw error
 		}
 		// A report that replaced the key during the call: the line follows what was approved.
@@ -279,7 +295,7 @@ extension RoutingMachman {
 			do {
 				try files.setReverseKey(approved, marker: marker, vmName: name)
 			} catch {
-				revokeReverseKey(marker: marker, vmName: name)
+				revokeReverseKey(marker: marker, vmName: name, announce: .always)
 				throw error
 			}
 		}
@@ -293,7 +309,7 @@ extension RoutingMachman {
 		let marker = existingSSHMarker(name)
 		let info = try await target.resetSSH(vm: name)
 		if let marker {
-			revokeReverseKey(marker: marker, vmName: name)
+			revokeReverseKey(marker: marker, vmName: name, announce: .always)
 		}
 		scheduleSSHHostConfigWrite()
 		return info

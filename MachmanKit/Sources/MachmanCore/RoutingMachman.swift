@@ -370,7 +370,7 @@ public final class RoutingMachman: MachmanControlling {
 		try await local.deleteVM(named: name)
 		launchAgents?.remove(vm: name, canBootout: true)
 		if let sshMarker {
-			revokeReverseKey(marker: sshMarker, vmName: name)
+			revokeReverseKey(marker: sshMarker, vmName: name, announce: .always)
 		}
 		scheduleSSHHostConfigWrite()
 	}
