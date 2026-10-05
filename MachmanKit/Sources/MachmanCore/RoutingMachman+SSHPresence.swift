@@ -214,17 +214,15 @@ extension RoutingMachman {
 		return SSHSetupInstaller.existingMarker(for: config)
 	}
 
-	// Rebuild ~/.ssh/machman/config (+ Include line) from current state. Fire-and-forget
-	// with whole-state writes — concurrent triggers converge on last-write-wins.
+	// Rebuild ~/.ssh/machman/config (+ Include line) from current state. The owner runs one
+	// pass at a time and gathers again for requests made meanwhile, so the newest state is
+	// the one that lands.
 	func scheduleSSHHostConfigWrite() {
-		guard sshFiles != nil else { return }
-		Task { [weak self] in
-			await self?.writeSSHHostConfig()
-		}
+		sshFiles?.regenerate { [weak self] in await self?.sshHostEntries() }
 	}
 
-	private func writeSSHHostConfig() async {
-		guard let files = sshFiles else { return }
+	// One entry per VM with the ~/.ssh integration on, from current state.
+	private func sshHostEntries() async -> [SSHHostConfigWriter.VMEntry] {
 		var entries: [SSHHostConfigWriter.VMEntry] = []
 		for vm in registry.list() {
 			let name = vm.name
@@ -254,10 +252,6 @@ extension RoutingMachman {
 				address: ssh.address ?? vm.config.ssh?.lastAddress,
 				identityFilePath: ssh.identityFilePath, hostKey: ssh.guestHostKey))
 		}
-		do {
-			try files.apply(entries: entries)
-		} catch {
-			MachmanLogger.log(.passiveError, "cannot write ~/.ssh/machman/config: \(error)")
-		}
+		return entries
 	}
 }
