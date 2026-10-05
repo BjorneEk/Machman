@@ -126,4 +126,69 @@ struct TGDiskOwnershipTests {
 			#expect(disk.path == vm.dir + "/disk.raw")
 		}
 	}
+
+	@Test("18: an imported ISO lands in the VM folder, and Duplicate points the copy at its own")
+	func isoImportFollowsDuplicate() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.blank("tg-d18", on: agent)
+			let source = agent.scope.imagesDir + "/tg.iso"
+			var iso = Data(repeating: 0x20, count: 64 << 10)
+			iso.replaceSubrange(0x8001..<0x8006, with: Data("CD001".utf8))
+			try iso.write(to: URL(fileURLWithPath: source))
+			let imported = try await agent.api.importDisk(vm: vm.name, path: source)
+			let owned = vm.dir + "/tg.iso"
+			let entry = try #require(imported.disks.first { $0.type == .iso })
+			#expect(entry.path == owned)
+			#expect(entry.owned == true)
+			#expect(FileManager.default.fileExists(atPath: owned))
+			// Duplicate: the copy's ISO entry points into the copy's own folder.
+			let copy = try await agent.api.copyVM(
+				vm: vm.name, newName: "tg-d18-dup", diskIDs: nil, regenerateMAC: true)
+			let copied = TG.vmDir(agent.scope, "tg-d18-dup") + "/tg.iso"
+			let copyEntry = try #require(copy.disks.first { $0.type == .iso })
+			#expect(copyEntry.path == copied)
+			#expect(FileManager.default.fileExists(atPath: copied))
+			#expect(try await TG.sha256(copied) == (try await TG.sha256(owned)))
+			// The original's entry and file stay as they were.
+			let original = try #require(try await vm.info().disks.first { $0.type == .iso })
+			#expect(original.path == owned)
+			#expect(FileManager.default.fileExists(atPath: owned))
+		}
+	}
+
+	@Test("19: promoting an external image keeps its row and safe flag and leaves the source")
+	func promoteKeepsRowAndFlag() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.blank("tg-d19", on: agent)
+			let external = agent.scope.imagesDir + "/ext.img"
+			try await TG.writeFile(external, size: 2 << 20, fill: 0x3C)
+			let sum = try await TG.sha256(external)
+			let first = try await vm.info().disks.count
+			try await agent.api.addDisk(vm: vm.name, .storage(name: "a", sizeBytes: 1 << 20))
+			try await agent.api.addDisk(vm: vm.name, .image(path: external))
+			try await agent.api.addDisk(vm: vm.name, .storage(name: "b", sizeBytes: 3 << 20))
+			let ext = try await vm.disk(path: external)
+			try await agent.api.setSafety(vm: vm.name, disks: [ext.id: false], mounts: nil)
+			let before = try await vm.info().disks
+			try #require(before.count == first + 3)
+			#expect(before[first + 1].id == ext.id)
+			#expect(before[first + 1].safe == false)
+			let promoted = try await agent.api.promoteDisk(vm: vm.name, diskID: ext.id).disks
+			try #require(promoted.count == before.count)
+			// Same row, now owned storage in the VM's folder, still unsafe.
+			let row = promoted[first + 1]
+			#expect(row.type == .storage)
+			#expect(row.owned == true)
+			#expect(row.safe == false)
+			#expect(row.path?.hasPrefix(vm.dir + "/") == true)
+			#expect(promoted[first] == before[first])
+			#expect(promoted[first + 2] == before[first + 2])
+			// The source is untouched, and the promoted row has nothing left to promote.
+			#expect(try await TG.sha256(external) == sum)
+			let again = await #expect(throws: MachmanError.self) {
+				_ = try await agent.api.promoteDisk(vm: vm.name, diskID: row.id)
+			}
+			#expect(again?.message == "This disk is already owned by the VM")
+		}
+	}
 }
