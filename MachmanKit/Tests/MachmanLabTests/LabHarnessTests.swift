@@ -11,13 +11,13 @@ import MachmanTestSupport
 
 @Suite("Lab harness", .enabled(if: Lab.runs(.harness)))
 struct LabHarnessTests {
-	@Test("TC1: lab tiers parse from MACHMAN_LAB_TIERS")
+	@Test("Q18: lab tiers parse from MACHMAN_LAB_TIERS")
 	func tiersParse() {
 		#expect(Lab.tiers(from: "harness, smoke,bogus,,l3") == [.harness, .smoke, .l3])
 		#expect(Lab.tiers(from: nil).isEmpty)
 	}
 
-	@Test("TC1: the lab is active only inside its own run sandbox")
+	@Test("Q18: the lab is active only inside its own run sandbox")
 	func activeOnlyInOwnRun() {
 		let good = ["MACHMAN_LAB": "1", "MACHMAN_LAB_RUN": "/tmp/mml.ab12"]
 		#expect(Lab.isActive(environment: good, token: "ab12"))
@@ -36,7 +36,7 @@ struct LabHarnessTests {
 
 	// MARK: console client (TC2) and unified-log reader (TC3)
 
-	@Test("TC2: the console client sees output that arrived before it connected")
+	@Test("Q18: the console client sees output that arrived before it connected")
 	func consoleSeesEarlierOutput() async throws {
 		let server = try FakeConsoleServer(
 			greeting: "boot noise\r\nLAB-READY 6.0-test\r\n# ", respond: { _ in ("", 0) })
@@ -47,7 +47,7 @@ struct LabHarnessTests {
 		#expect(groups[1] == "6.0-test")
 	}
 
-	@Test("TC2: run returns a command's output and status without the echoed command")
+	@Test("Q18: run returns a command's output and status without the echoed command")
 	func consoleRun() async throws {
 		let server = try FakeConsoleServer(greeting: "# ") { command in
 			command == "uname -r" ? ("6.0-test", 0) : ("", 3)
@@ -63,7 +63,7 @@ struct LabHarnessTests {
 		#expect(second.output == "")
 	}
 
-	@Test("TC2: expect names the pattern and the console's last output when it times out")
+	@Test("Q18: expect names the pattern and the console's last output when it times out")
 	func consoleExpectTimeout() async throws {
 		let server = try FakeConsoleServer(
 			greeting: "nothing to see\r\n", respond: { _ in ("", 0) })
@@ -79,7 +79,7 @@ struct LabHarnessTests {
 		}
 	}
 
-	@Test("TC2: a console that closes fails expect at once")
+	@Test("Q18: a console that closes fails expect at once")
 	func consoleClosedFailsFast() async throws {
 		let server = try FakeConsoleServer(greeting: "hi\r\n", respond: { _ in ("", 0) })
 		defer { server.stop() }
@@ -96,7 +96,7 @@ struct LabHarnessTests {
 		}
 	}
 
-	@Test("TC2: colour codes and carriage returns never split a match")
+	@Test("Q18: colour codes and carriage returns never split a match")
 	func consoleCleansEscapes() async throws {
 		let server = try FakeConsoleServer(greeting: "", respond: { _ in ("", 0) })
 		defer { server.stop() }
@@ -106,7 +106,7 @@ struct LabHarnessTests {
 		try await console.expect("LAB-READY ok", timeout: .seconds(20))
 	}
 
-	@Test("TC2: the transcript keeps the console's bytes without carriage returns")
+	@Test("Q18: the transcript keeps the console's bytes without carriage returns")
 	func consoleTranscript() async throws {
 		let greeting = "first line\r\nsecond line\r\n"
 		let server = try FakeConsoleServer(greeting: greeting, respond: { _ in ("", 0) })
@@ -119,7 +119,7 @@ struct LabHarnessTests {
 		#expect(kept == greeting.replacingOccurrences(of: "\r", with: ""))
 	}
 
-	@Test("TC3: the lab log finds a line written after the mark")
+	@Test("Q18: the lab log finds a line written after the mark")
 	func logFindsLaterLine() async throws {
 		let path = TestEnvironment.scratch + "lab-log-\(UUID().uuidString).ndjson"
 		try "Filtering the log data using \"subsystem == x\"\n{\"eventMessage\":\"old\"}\n"
@@ -139,7 +139,7 @@ struct LabHarnessTests {
 		#expect(LabLog.entries(after: mark, path: path).count == 1)
 	}
 
-	@Test("TC3: the lab log skips malformed and partial lines")
+	@Test("Q18: the lab log skips malformed and partial lines")
 	func logSkipsBadLines() throws {
 		let path = TestEnvironment.scratch + "lab-log-\(UUID().uuidString).ndjson"
 		try "garbage\n{\"eventMessage\":\"good\"}\n{\"eventMessage\":\"partial\"}"
@@ -152,7 +152,7 @@ struct LabHarnessTests {
 	// MARK: agent, scope, VM spec and fixtures (TC4-TC6): pure, nothing is launched
 
 	@Test(
-		"TC4: an agent's environment carries the suite, its scope and the lab variables only"
+		"Q18: an agent's environment carries the suite, its scope and the lab variables only"
 	)
 	func agentEnvironment() throws {
 		let scope = try LabScope.make(in: TestEnvironment.scratch + "scopes-\(UUID().uuidString)")
@@ -183,7 +183,7 @@ struct LabHarnessTests {
 	}
 
 	@Test(
-		"TC4: every scope gets its own library, home, answers and control socket inside the run"
+		"Q18: every scope gets its own library, home, answers and control socket inside the run"
 	)
 	func scopesAreSeparate() throws {
 		let dir = TestEnvironment.scratch + "scopes-\(UUID().uuidString)"
@@ -204,7 +204,7 @@ struct LabHarnessTests {
 		#expect(real.controlPath.utf8.count <= 103)
 	}
 
-	@Test("TC4: answers written to a scope read back as the agent reads them")
+	@Test("Q18: answers written to a scope read back as the agent reads them")
 	func answersRoundTrip() throws {
 		let scope = try LabScope.make(in: TestEnvironment.scratch + "scopes-\(UUID().uuidString)")
 		try scope.writeAnswers([
@@ -218,7 +218,7 @@ struct LabHarnessTests {
 		#expect(held["holdSeconds"] as? Int == 2)
 	}
 
-	@Test("TC5: a lab VM stays within two vCPUs, 2 GB, four consoles and no audio")
+	@Test("Q18: a lab VM stays within two vCPUs, 2 GB, four consoles and no audio")
 	func specLimits() throws {
 		let alpine = LabVMSpec.Boot.alpine()
 		try LabVMSpec(name: "ok", boot: alpine, cpus: 2, memoryGiB: 2, consolePorts: 4).validate()
@@ -237,7 +237,7 @@ struct LabHarnessTests {
 		}
 	}
 
-	@Test("TC5: lab guests count running vmhost and QEMU pid files toward the cap of two")
+	@Test("Q18: lab guests count running vmhost and QEMU pid files toward the cap of two")
 	func guestCount() throws {
 		let dir = TestEnvironment.scratch + "pids-\(UUID().uuidString)"
 		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -253,13 +253,13 @@ struct LabHarnessTests {
 		#expect(LabProcesses.liveGuestCount(in: dir) == 2)
 	}
 
-	@Test("TC5: a lab pid file name keeps only safe characters")
+	@Test("Q18: a lab pid file name keeps only safe characters")
 	func pidFileName() {
 		let path = LabProcesses.pidFile(kind: "vmhost", name: "01-dev copy/x", in: "/p")
 		#expect(path == "/p/vmhost-01-dev_copy_x.pid")
 	}
 
-	@Test("TC6: a fixture that was never fetched names the fetch command")
+	@Test("Q18: a fixture that was never fetched names the fetch command")
 	func fixtureMissing() {
 		let cache = TestEnvironment.scratch + "cache-\(UUID().uuidString)"
 		do {
@@ -270,7 +270,7 @@ struct LabHarnessTests {
 		}
 	}
 
-	@Test("TC6: a fixture clone is a writable copy in the scope's images dir")
+	@Test("Q18: a fixture clone is a writable copy in the scope's images dir")
 	func fixtureClone() async throws {
 		let cache = TestEnvironment.scratch + "cache-\(UUID().uuidString)"
 		let fixtures = cache + "/fixtures"

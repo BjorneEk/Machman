@@ -13,7 +13,7 @@ import MachmanAPI
 
 @Suite("Lab smoke", .serialized, .enabled(if: Lab.runs(.smoke)))
 struct LabSmokeTests {
-	@Test("L2: the lab agent answers hello under the test suite")
+	@Test("Q18: the lab agent answers hello under the test suite")
 	func agentAnswersHello() async throws {
 		try await Lab.withAgent { agent in
 			#expect(agent.api.hello.daemonVersion == agent.bundleVersion)
@@ -26,7 +26,7 @@ struct LabSmokeTests {
 		}
 	}
 
-	@Test("L2: an Alpine fixture boots to LAB-READY on hvc0")
+	@Test("Q18: an Alpine fixture boots to LAB-READY on hvc0")
 	func alpineBoots() async throws {
 		try await Lab.withAgent { agent in
 			try await agent.withVM(LabVMSpec(name: "lab-alpine", boot: .alpine())) { vm in
@@ -47,7 +47,7 @@ struct LabSmokeTests {
 	}
 
 	@Test(
-		"L2: the Alpine fixture's HID log lists the USB keyboard and pointer when the lab opts in"
+		"Q18: the Alpine fixture's HID log lists the USB keyboard and pointer when the lab opts in"
 	)
 	func alpineHIDLog() async throws {
 		let options = LabAgent.Options(environment: ["MACHMAN_LAB_DEVICES": "hid"])
@@ -67,7 +67,7 @@ struct LabSmokeTests {
 
 @Suite("Lab smoke L3", .serialized, .enabled(if: Lab.runs(.l3)))
 struct LabSmokeL3Tests {
-	@Test("L3: the Debian fixture boots to a login prompt on hvc0")
+	@Test("Q18: the Debian fixture boots to a login prompt on hvc0")
 	func debianLogin() async throws {
 		try await Lab.withAgent { agent in
 			let spec = LabVMSpec(
