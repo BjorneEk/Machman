@@ -7,3 +7,8 @@
 # CHECKSUM.SHA256 lines (14.5: 2026-09-04, 15.1: 2026-06-12), checked on a download.
 freebsd-14.5-aarch64-cloudinit-ufs.raw 26d68ac71da285d89e3143e090818760fd909fc8b644d4a201bee77bdc2a366f 586444324 https://download.freebsd.org/releases/VM-IMAGES/14.5-RELEASE/aarch64/Latest/FreeBSD-14.5-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.raw.xz xz
 freebsd-15.1-aarch64-cloudinit-ufs.raw 6784c274f8f20eb4687de5e79283d5a3486a07278fce4d58d0d01d198d2c45ed 595324072 https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.raw.xz xz
+#
+# Spike pins (step 10; not lab guests). NetBSD's release sums cover the unpacked arm64.img
+# (MD5 62df032d130f8aad3c512552d4e60724); the gz's sha256 below was taken on the download.
+netbsd-11.0-arm64.img 12e089f199d47e548f8c3496fef7e6adab2b099cd4cbe3c30957d0f58e4fa428 442585791 https://cdn.netbsd.org/pub/NetBSD/NetBSD-11.0/evbarm-aarch64/binary/gzimg/arm64.img.gz gz
+openbsd-7.9-arm64-install.img 551e411e46739a244376592568b3e131f029aebdce63030a7a42901dac292b8c 660602880 https://cdn.openbsd.org/pub/OpenBSD/7.9/arm64/install79.img
