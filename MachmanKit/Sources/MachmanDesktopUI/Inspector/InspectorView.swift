@@ -271,9 +271,10 @@ struct VMInspector: View {
 			}
 			if vm.state.isRunning, let started = vm.lastRan {
 				LabeledContent("Uptime") {
-					TimelineView(.periodic(from: .now, by: 1)) { context in
+					// The timeline only ticks; the time counted is MachmanClock's (Q16).
+					TimelineView(.periodic(from: .now, by: 1)) { _ in
 						Text(Self.duration(
-							context.date.timeIntervalSince(started), seconds: true))
+							MachmanClock.now().timeIntervalSince(started), seconds: true))
 							.monospacedDigit()
 					}
 				}
@@ -288,8 +289,9 @@ struct VMInspector: View {
 				}
 			} else if let lastRan = vm.lastRan {
 				LabeledContent("Last ran") {
-					if Date().timeIntervalSince(lastRan) < 48 * 3600 {
-						Text(lastRan, format: .relative(presentation: .named))
+					let now = MachmanClock.now()
+					if now.timeIntervalSince(lastRan) < 48 * 3600 {
+						Text(Self.relative(lastRan, to: now))
 					} else {
 						Text(lastRan.formatted(date: .abbreviated, time: .shortened))
 					}
@@ -300,9 +302,9 @@ struct VMInspector: View {
 			if let total = vm.totalRuntimeSeconds, total > 0 {
 				LabeledContent("Total runtime") {
 					if vm.state.isRunning, let started = vm.lastRan {
-						TimelineView(.periodic(from: .now, by: 60)) { context in
+						TimelineView(.periodic(from: .now, by: 60)) { _ in
 							Text(Self.duration(
-								total + context.date.timeIntervalSince(started),
+								total + MachmanClock.now().timeIntervalSince(started),
 								seconds: false))
 						}
 					} else {
@@ -313,6 +315,13 @@ struct VMInspector: View {
 			LabeledContent("Created",
 				value: vm.created.formatted(date: .abbreviated, time: .shortened))
 		}
+	}
+
+	// “1 hour ago”, counted from `now` (Text's .relative format reads the system clock).
+	private static func relative(_ date: Date, to now: Date) -> String {
+		let formatter = RelativeDateTimeFormatter()
+		formatter.dateTimeStyle = .named
+		return formatter.localizedString(for: date, relativeTo: now)
 	}
 
 	private static func duration(_ seconds: Double, seconds showSeconds: Bool) -> String {

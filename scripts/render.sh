@@ -22,8 +22,8 @@
 # opaque, without one. In window.* scenes the split view's glass columns are flat composites
 # of the real column views, the traffic lights are hidden and a 1 px line marks the inspector
 # edge. Alerts, confirmation dialogs and open/save panels cannot render. Text follows the
-# locale ("34,36 GB"). Elapsed times count from the run's first sample, so a sweep's later
-# scenes read older (the copy card's "about 2m left" alone, about 4m at the end of a sweep).
+# locale ("34,36 GB"). Every scene draws as of one fixed instant (Samples.now, MachmanClock)
+# with animations at their end state, so two runs of a commit draw identical PNGs.
 #
 set -euo pipefail
 

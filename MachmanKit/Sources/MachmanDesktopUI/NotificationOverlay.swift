@@ -34,7 +34,7 @@ struct NotificationOverlay: View {
 				symbol: op.displaySymbol,
 				phase: phase(for: op),
 				fraction: op.fraction,
-				etaSeconds: op.etaSeconds(),
+				etaSeconds: op.etaSeconds(now: MachmanClock.now()),
 				finished: op.isFinished,
 				cancellable: op.isCancellable)
 		}
@@ -48,7 +48,7 @@ struct NotificationOverlay: View {
 					symbol: MachmanSymbols.bootMacTab,
 					phase: phase.displayLabel,
 					fraction: phase.progress?.fraction,
-					etaSeconds: phase.etaSeconds()))
+					etaSeconds: phase.etaSeconds(now: MachmanClock.now())))
 			default:
 				break
 			}

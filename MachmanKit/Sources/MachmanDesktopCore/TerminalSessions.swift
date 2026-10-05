@@ -196,7 +196,7 @@ public final class TerminalSessions: ObservableObject {
 		let trimmed = name.trimmingCharacters(in: .whitespaces)
 		guard !trimmed.isEmpty else { return }
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
-			name: ref.title, startedAt: Date())].name = trimmed
+			name: ref.title, startedAt: MachmanClock.now())].name = trimmed
 		objectWillChange.send()
 	}
 
@@ -211,7 +211,7 @@ public final class TerminalSessions: ObservableObject {
 		vm: String, ref: SSHSessionRef, id: UUID, profile: TerminalProfile
 	) {
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
-			name: ref.title, startedAt: Date())].profileID = id
+			name: ref.title, startedAt: MachmanClock.now())].profileID = id
 		live[vm]?[.ssh(ref)]?.applyLive(profile)
 		objectWillChange.send()
 	}
@@ -224,7 +224,7 @@ public final class TerminalSessions: ObservableObject {
 			guard let self else { return }
 			if self.sshMeta[vm]?[ref] == nil {
 				self.sshMeta[vm, default: [:]][ref] =
-					SSHSessionMeta(name: ref.title, startedAt: Date())
+					SSHSessionMeta(name: ref.title, startedAt: MachmanClock.now())
 			}
 			// TERM matches what the emulator actually is — without it ssh sends "dumb".
 			c.connect(stream: PTYProcessStream(

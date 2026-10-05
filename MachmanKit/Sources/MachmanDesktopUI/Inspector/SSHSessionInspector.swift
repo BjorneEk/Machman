@@ -36,7 +36,7 @@ struct SSHSessionInspector: View {
 				if let started = sessions.sshSessionStart(vm: vm.name, ref: ref) {
 					TimelineView(.periodic(from: .now, by: 1)) { _ in
 						LabeledContent("Duration") {
-							Text(Self.format(Date().timeIntervalSince(started)))
+							Text(Self.format(MachmanClock.now().timeIntervalSince(started)))
 								.monospacedDigit()
 						}
 					}

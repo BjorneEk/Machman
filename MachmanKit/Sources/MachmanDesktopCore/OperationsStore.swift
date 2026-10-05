@@ -15,6 +15,7 @@
 
 import Foundation
 import MachmanAPI
+import MachmanUI
 
 @MainActor
 public final class OperationsStore: ObservableObject {
@@ -124,7 +125,7 @@ public final class OperationsStore: ObservableObject {
 	private func recordOutcome(_ op: OperationInfo) {
 		guard recorded.insert(op.id).inserted,
 			!activity.contains(key: ActivityEntry.operationKey(op.id)) else { return }
-		activity.record(.operation(op, at: Date()))
+		activity.record(.operation(op, at: MachmanClock.now()))
 	}
 
 	private func schedulePrune(_ id: String) {

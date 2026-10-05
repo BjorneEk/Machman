@@ -8,9 +8,9 @@
 //  ports are named by SerialPortKind.guestDevice. Absolute dates (created, report stamps) are
 //  fixed; the ones views turn into elapsed time (lastRan → uptime or "last ran", an
 //  operation's startedAt → its ETA) are set relative to `now`, one instant per process, so
-//  that text reads as it would live and two builds of a sample stay equal within a run. In a
-//  render sweep `now` is the run's first sample, so later scenes read minutes older than the
-//  same scene rendered alone: compare elapsed-time text only within one run.
+//  that text reads as it would live and two builds of a sample stay equal within a run. The
+//  render tool pins `now`, and the views' MachmanClock with it, to one fixed instant, so a
+//  scene's elapsed-time text is the same in every run (Q16).
 //  Tests and render scenes both start here; a lane that needs a new state (a new DTO field)
 //  adds a builder here rather than inventing one inline.
 //
@@ -20,8 +20,9 @@ import MachmanAPI
 
 public enum Samples {
 	public static let epoch = Date(timeIntervalSince1970: 1_780_000_000)
-	// Taken once, on first use: the base of every now-relative date below.
-	public static let now = Date()
+	// Taken once, on first use: the base of every now-relative date below. Only the render
+	// tool sets it, at its start, before any sample is built.
+	nonisolated(unsafe) public static var now = Date()
 	public static let vmsRoot = "/Users/demo/Library/Application Support/"
 		+ "com.gustaffranzen.Machman/VMs"
 	// Console sockets of running samples: under /var/empty (root-owned, read-only, empty), so

@@ -101,6 +101,6 @@ extension VMListViewModel {
 	) {
 		pushToast(symbol: symbol, message: message, tint: tint)
 		activity.record(.problem(
-			vm: vm, detail: detail, symbol: symbol, severity: severity, at: Date()))
+			vm: vm, detail: detail, symbol: symbol, severity: severity, at: MachmanClock.now()))
 	}
 }

@@ -146,7 +146,7 @@ struct ActivityRow: View {
 
 	// Today's entries by time; older ones with their date too (the list outlives a day).
 	private var time: String {
-		Calendar.current.isDateInToday(entry.date)
+		Calendar.current.isDate(entry.date, inSameDayAs: MachmanClock.now())
 			? entry.date.formatted(date: .omitted, time: .shortened)
 			: entry.date.formatted(date: .abbreviated, time: .shortened)
 	}
