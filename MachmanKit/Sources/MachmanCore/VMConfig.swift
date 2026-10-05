@@ -459,8 +459,8 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	}
 
 	func addMountPoint(_ mountPoint: HostMountPoint) throws {
-		// Same rules as setMountTag — a duplicate tag would TRAP the vmhost at start
-		// (the share dictionary is built with uniqueKeysWithValues).
+		// Same rules as setMountTag — of mounts sharing a tag, only the first is shared
+		// (directoryShareDeviceConfig).
 		var mount = mountPoint
 		mount.tag = try VMConfig.normalizedShareTag(mount.tag)
 		guard !mountPoints.contains(where: { $0.tag == mount.tag }) else {
@@ -963,19 +963,26 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		}
 	}
 
+	// The mounts that ride the share device: the enabled virtiofs ones. sshfs-kind mounts
+	// (1.0.7) never enter the share — the guest mounts them itself over its SSH link (the
+	// payload's mounts.list carries them there instead).
+	var sharedMounts: [HostMountPoint] {
+		mountPoints.filter { $0.enabled && $0.kind != MountKind.sshfs }
+	}
+
 	func directoryShareDeviceConfig(
 		mainTag: String, extraDirectories: [String: VZSharedDirectory] = [:]
 	) -> VZVirtioFileSystemDeviceConfiguration {
-		// sshfs-kind mounts (1.0.7) never enter the share: the guest mounts them itself
-		// over its SSH link (the payload's mounts.list carries them there instead).
+		// A doubled tag shares its first mount (D25): add and rename refuse doubles, but a
+		// config from before that, or edited by hand, still loads (names are validated at
+		// entry, never at load) — and a trap here killed the vmhost at every start.
+		// shareTagWarnings tells the user.
 		var sharedDirectories: [String: VZSharedDirectory] = Dictionary(
-			uniqueKeysWithValues: mountPoints
-				.filter { $0.enabled && $0.kind != MountKind.sshfs }
-				.map { mount in
-					(mount.tag,
-					VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
-				}
-		)
+			sharedMounts.map { mount in
+				(mount.tag,
+				VZSharedDirectory(url: URL(fileURLWithPath: mount.path), readOnly: false))
+			},
+			uniquingKeysWith: { first, _ in first })
 		// Engine-reserved directories (the guest setup payload and its report drop-box).
 		// Mount validation refuses their names, so the merge cannot shadow a user mount.
 		sharedDirectories.merge(extraDirectories) { _, extra in extra }

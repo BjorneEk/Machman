@@ -104,6 +104,22 @@ extension VMConfig {
 		return (attach, warnings)
 	}
 
+	// One warning per tag that more than one shared mount carries: only the first of them is
+	// shared (directoryShareDeviceConfig). Worded like resolvedDevices' warnings.
+	func shareTagWarnings() -> [String] {
+		var counts: [String: Int] = [:]
+		var order: [String] = []
+		for mount in sharedMounts {
+			if counts[mount.tag] == nil { order.append(mount.tag) }
+			counts[mount.tag, default: 0] += 1
+		}
+		return order.compactMap { tag in
+			guard let count = counts[tag], count > 1 else { return nil }
+			let mounts = count == 2 ? "Two mounts" : "\(count) mounts"
+			return "\(mounts) share the tag \u{201C}\(tag)\u{201D}, so only the first is shared."
+		}
+	}
+
 	// Generic (virtio / USB) graphics for EFI/Linux; Mac graphics for a macOS guest.
 	// Resolution comes from the device's settings, falling back to the host screen size
 	// (and 80 ppi for Mac guests) — exactly the pre-1.0.4 hard-coded behavior.
@@ -329,6 +345,7 @@ extension VMConfig {
 					"Guest Setup isn’t attached: \(MachmanError.userMessage(for: error))")
 			}
 		}
+		warnings += shareTagWarnings()
 		var shares: [VZDirectorySharingDeviceConfiguration] =
 			[directoryShareDeviceConfig(mainTag: shareTag, extraDirectories: extraShares)]
 		if byKind[.rosetta] != nil {

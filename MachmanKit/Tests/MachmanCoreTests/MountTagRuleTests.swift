@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import Virtualization
 import MachmanAPI
 @testable import MachmanCore
 
@@ -38,6 +39,36 @@ struct MountTagRuleTests {
 				try vm.setMountTag(id: vm.mountPoints[0].id.uuidString, tag: "a\tb")
 			}
 			_ = vm.directoryShareDeviceConfig(mainTag: "host-share")   // must not trap
+		}
+	}
+
+	// D25: a config from before add refused a doubled tag (546a86e), or edited by hand,
+	// still loads — and the share dictionary's uniqueKeysWithValues trapped the vmhost at
+	// every start. The first mount on a tag is shared now, and the start says so.
+	@Test func aDoubledTagSharesTheFirstMountAndWarns() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("doubled")
+			for (path, tag) in [("/tmp/first", "docs"), ("/tmp/second", "docs"),
+				("/tmp/third", "docs"), ("/tmp/fourth", "logs"), ("/tmp/fifth", "logs")] {
+				vm.mountPoints.append(HostMountPoint(path: path, tag: tag))
+			}
+			// sshfs and disabled mounts never ride the share, so they double nothing.
+			vm.mountPoints.append(HostMountPoint(
+				path: "/tmp/sshfs", tag: "solo", kind: MountKind.sshfs))
+			vm.mountPoints.append(HostMountPoint(path: "/tmp/solo", tag: "solo"))
+			var off = HostMountPoint(path: "/tmp/off", tag: "solo")
+			off.enabled = false
+			vm.mountPoints.append(off)
+
+			let device = vm.directoryShareDeviceConfig(mainTag: "host-share")
+			let share = try #require(device.share as? VZMultipleDirectoryShare)
+			#expect(share.directories["docs"]?.url.path == "/tmp/first")
+			#expect(share.directories["logs"]?.url.path == "/tmp/fourth")
+			#expect(share.directories["solo"]?.url.path == "/tmp/solo")
+			#expect(vm.shareTagWarnings() == [
+				"3 mounts share the tag \u{201C}docs\u{201D}, so only the first is shared.",
+				"Two mounts share the tag \u{201C}logs\u{201D}, so only the first is shared.",
+			])
 		}
 	}
 
