@@ -195,7 +195,8 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		guard Self.served else { return .terminateNow }
 		let reason = VMHostQuitReason.current()
 		let running = Daemon.api.runningVMNames
-		switch AgentQuitDecision.decide(reason: reason, runningVMs: running.count) {
+		switch AgentQuitDecision.decide(
+			reason: reason, runningVMs: running.count, holders: Daemon.api.sessionHolders) {
 		case .quit:
 			Daemon.server.stop()
 			return .terminateNow
@@ -203,6 +204,16 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			// Each VM's own window cancels the log out too and says what to do (V1).
 			MachmanLogger.log(.log,
 				"\(reason) canceled: \(running.joined(separator: ", ")) still running")
+			return .terminateCancel
+		case .cancelAndExplain(let holders):
+			// No VM window will say why (V10). The alert comes after this reply: the log out
+			// waits on the reply, never on the alert.
+			MachmanLogger.log(.log, "\(reason) canceled: "
+				+ holders.map { "\($0.vm) \($0.activity)" }.joined(separator: ", "))
+			let prompt = AgentPrompt.sessionEndHeld(reason: reason, holders: holders)
+			Task { @MainActor in
+				_ = await MainRunLoopCallout.run { Self.runInFront(prompt) }
+			}
 			return .terminateCancel
 		case .ask:
 			break

@@ -117,6 +117,28 @@ extension RoutingMachman {
 		return Set(hostedRunning).union(pendingStarts).sorted()
 	}
 
+	// What holds a log out, restart or shut down (V10): every VM runningVMNames counts, and
+	// whether its own vmhost cancels in front and says what to do. Only a vmhost running its
+	// VM and answering does; a start in flight (its vmhost not there yet, or idle until the
+	// start arrives), a host that stopped answering and one that never answered leave it to
+	// the agent.
+	public var sessionHolders: [SessionHolder] {
+		let starting = pendingStarts
+		var holders: [SessionHolder] = starting.map {
+			SessionHolder(vm: $0, activity: "is still starting", promptsItself: false)
+		}
+		for host in hosted.values where !starting.contains(host.identity.name) {
+			if host.unresponsive || host.lastState == nil {
+				holders.append(SessionHolder(
+					vm: host.identity.name, activity: "is not responding", promptsItself: false))
+			} else if host.lastState?.isRunning == true {
+				holders.append(SessionHolder(
+					vm: host.identity.name, activity: "is still running", promptsItself: true))
+			}
+		}
+		return holders.sorted { $0.vm < $1.vm }
+	}
+
 	// The vmhost serving `name`, adopting one this daemon has not met yet: a launch-agent
 	// start, a socket that appeared after startup adoption ran, a host that missed hello
 	// then. Concurrent callers share one adoption.
