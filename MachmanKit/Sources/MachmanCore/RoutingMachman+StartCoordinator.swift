@@ -129,58 +129,57 @@ extension RoutingMachman {
 	// so two same-MAC starts never both fail. Applies to safe runs too — the shadow
 	// impersonates this VM's MAC. Internal for tests.
 	func checkMACConflict(name: String, mac: String?, options: StartOptions) throws {
-		guard !options.force, let mac else { return }
-		if let clash = hosted.values.first(where: {
-			$0.identity.name != name && $0.identity.macInUse == mac
-		}) {
-			throw MachmanError(
-				code: .macConflict,
-				message: "\(name) and the running VM \u{201C}\(clash.identity.name)\u{201D} "
-					+ "share MAC address \(mac), so one of them would lose networking")
-		}
-		let mine = pendingStartMACs[name]?.order ?? Int.max
-		let earlier = pendingStartMACs
-			.filter { $0.key != name && $0.value.mac == mac && $0.value.order < mine }
-			.min { $0.value.order < $1.value.order }
-		if let other = earlier?.key {
-			throw MachmanError(
-				code: .macConflict,
-				message: "\(name) and \u{201C}\(other)\u{201D}, which is starting, share MAC "
-					+ "address \(mac), so one of them would lose networking")
-		}
+		guard !options.force else { return }
+		try BootGuard.checkMAC(
+			BootGuard.Candidate(name: name, mac: mac, order: pendingStartMACs[name]?.order),
+			among: bootGuardOthers())
 	}
 
 	// No second writer of one disk file (C5): a VM saved from a safe run owns disks its
 	// original references, and any VM may attach another's image. Running and starting VMs
 	// count; isos (read-only) do not. `force` does NOT override it — lost networking
 	// recovers, a disk written by two VMs does not. The starting VM attaches its enabled
-	// entries, and so does a start still in flight (nothing edits its config meanwhile). A
-	// running VM's flags can't decide: a disk switched off mid-run stays attached until it
-	// stops, so every entry counts except the ones its start left disabled — known only for
-	// a start this daemon made; for an adopted host each entry counts. Entries are never
-	// removed or renamed while a VM runs, so the daemon's copy, however old, names all it
-	// attached; a safe run's real config names files its shadow cloned, which only ever
-	// over-refuses. Internal for tests.
+	// entries. Internal for tests.
 	func checkSharedDisks(name: String) throws {
-		guard let mine = registry.vm(named: name)?.config.writableDiskFiles, !mine.isEmpty
-		else { return }
-		for other in Set(hosted.keys).union(pendingStarts).subtracting([name]).sorted() {
-			guard let config = registry.vm(named: other)?.config else { continue }
-			let host = hosted[other]
-			let theirs = host.map {
-				config.everyWritableDiskFile.subtracting($0.unattachedDisks ?? [])
-			} ?? config.writableDiskFiles
-			guard let file = mine.intersection(theirs).sorted().first else { continue }
-			let disk = (file as NSString).lastPathComponent
-			// Only an adopted host's disabled entries name a file it may never have attached.
-			let surely = host?.unattachedDisks != nil || config.writableDiskFiles.contains(file)
-			throw MachmanError(
-				code: .invalidState,
-				message: (surely
-					? "\(other) is running with \(disk) attached"
-					: "\(other) may still have \(disk) attached")
-					+ " — stop \(other) before starting \(name)")
+		guard let mine = registry.vm(named: name)?.config.writableDiskFiles else { return }
+		try BootGuard.checkDisks(
+			BootGuard.Candidate(name: name, disks: mine), among: bootGuardOthers())
+	}
+
+	// Every VM that runs or starts, as the boot guard sees it. A start still in flight
+	// attaches its enabled entries (nothing edits its config meanwhile). A running VM's flags
+	// can't decide: a disk switched off mid-run stays attached until it stops, so every entry
+	// counts except the ones its start left disabled — known only for a start this daemon
+	// made; for an adopted host each entry counts, the disabled ones as "may have". Entries
+	// are never removed or renamed while a VM runs, so the daemon's copy, however old, names
+	// all it attached; a safe run's real config names files its shadow cloned, which only
+	// ever over-refuses.
+	func bootGuardOthers() -> [BootGuard.Other] {
+		var others: [BootGuard.Other] = []
+		for (name, host) in hosted {
+			var other = BootGuard.Other(name: name, role: .running, mac: host.identity.macInUse)
+			if let config = registry.vm(named: name)?.config {
+				if let unattached = host.unattachedDisks {
+					other.attached = config.everyWritableDiskFile.subtracting(unattached)
+				} else {
+					other.attached = config.writableDiskFiles
+					other.mayHaveAttached = config.unattachedDiskFiles
+				}
+			}
+			others.append(other)
 		}
+		let macs = pendingStartMACs
+		for name in pendingStarts {
+			let order = macs[name]?.order ?? Int.max
+			var other = BootGuard.Other(
+				name: name, role: .starting(order: order), mac: macs[name]?.mac)
+			// A hosted one's disks are its host's (above).
+			if hosted[name] == nil {
+				other.attached = registry.vm(named: name)?.config.writableDiskFiles ?? []
+			}
+			others.append(other)
+		}
+		return others
 	}
 
 	// A safe run: clone the VM into a shadow run root (per-disk/mount safe flags decide
