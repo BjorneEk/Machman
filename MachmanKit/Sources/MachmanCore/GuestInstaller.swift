@@ -14,6 +14,7 @@
 //
 
 import Foundation
+import MachmanAPI
 
 // A guest script Machman serves. Text-backed today; `init(bytes:)` is what the embedded
 // .sh sources use.
@@ -175,9 +176,8 @@ enum GuestInstallerWriter {
 			.joined(separator: "\n") + "\n"
 	}
 
-	// Single-quoted for sh: the only character needing care inside single quotes is the
-	// quote itself.
+	// Single-quoted for sh — the one rule every command Machman shows uses too.
 	static func shellQuoted(_ value: String) -> String {
-		"'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+		ShellQuote.single(value)
 	}
 }
