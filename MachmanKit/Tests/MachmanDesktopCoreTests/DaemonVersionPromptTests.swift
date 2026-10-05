@@ -41,4 +41,16 @@ struct DaemonVersionPromptTests {
 			#expect(!prompt.title.lowercased().contains("daemon"))
 		}
 	}
+
+	// E45: a busy agent refuses retire; the desktop's Replace used to drop that silently.
+	@Test func aRefusedReplaceSaysWhy() throws {
+		let prompt = DaemonVersionPrompt.replaceRefused(
+			reason: "mac is installing macOS \u{2014} try again when it finishes")
+		#expect(prompt.title == "Machman Agent can\u{2019}t be replaced yet")
+		#expect(prompt.message
+			== "mac is installing macOS \u{2014} try again when it finishes.")
+		#expect(prompt.buttons == ["OK"])
+		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
+		#expect(prompt.message.matches(of: sentenceEnd).count == 1)
+	}
 }

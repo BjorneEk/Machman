@@ -228,8 +228,16 @@ final class DaemonConnection: ObservableObject {
 			return
 		}
 		Task {
-			// Retire drops the connection; the reconnect path launches the embedded daemon.
-			try? await session.retire()
+			// Retire drops the connection; the reconnect path launches the embedded daemon. An
+			// agent running work of its own refuses, and the alert says what (E45).
+			do {
+				try await session.retire()
+			} catch let error as MachmanError where error.code == .invalidState {
+				let prompt = DaemonVersionPrompt.replaceRefused(reason: error.message)
+				_ = await MainRunLoopCallout.run { Self.runAlert(prompt) }
+			} catch {
+				// A dropped connection: the reconnect path takes it from here.
+			}
 		}
 	}
 
