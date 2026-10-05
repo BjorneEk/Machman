@@ -221,19 +221,22 @@ extension RoutingMachman {
 		sshFiles?.regenerate { [weak self] in await self?.sshHostEntries() }
 	}
 
-	// One entry per VM with the ~/.ssh integration on, from current state.
+	// One entry per VM with the ~/.ssh integration on, from current state. The vmhosts are
+	// asked at once (a stalled one costs the pass one deadline, never one per host), and a
+	// VM whose host can't answer keeps its entry from what the daemon last knew.
 	private func sshHostEntries() async -> [SSHHostConfigWriter.VMEntry] {
+		let vms = registry.list()
+		var asks: [String: Task<VMInfo?, Never>] = [:]
+		for vm in vms {
+			guard let host = hosted[vm.name], !host.identity.isSafe else { continue }
+			asks[vm.name] = Task { await self.sshState(of: host) }
+		}
 		var entries: [SSHHostConfigWriter.VMEntry] = []
-		for vm in registry.list() {
+		for vm in vms {
 			let name = vm.name
-			var info: VMInfo?
-			if let host = hosted[name], !host.identity.isSafe {
-				// The vmhost's answer is the fresh state; the registry copy is stale.
-				info = try? await host.client.vm(named: name)
-				if var overlaid = info {
-					overlaySSH(&overlaid, from: host)
-					info = overlaid
-				}
+			let info: VMInfo?
+			if let ask = asks[name] {
+				info = await ask.value
 			} else {
 				// Stopped — or SAFE-hosted: a shadow's ssh state (its report, its
 				// address) is temporary by definition and must never persist into
@@ -253,5 +256,22 @@ extension RoutingMachman {
 				identityFilePath: ssh.identityFilePath, hostKey: ssh.guestHostKey))
 		}
 		return entries
+	}
+
+	// A hosted VM's state with the daemon's overlay. The vmhost's answer is the fresh state
+	// (the registry copy predates the run), bounded like a list probe; a host that is Not
+	// responding or misses the deadline gives its last answer, else the registry copy — a
+	// dropped answer used to drop the VM's alias and pinned key from ~/.ssh.
+	private func sshState(of host: HostedVM) async -> VMInfo? {
+		let name = host.identity.name
+		var info: VMInfo?
+		if !host.unresponsive {
+			info = try? await host.client.vm(named: name, deadline: hostProbeDeadline)
+		}
+		if info == nil { info = host.lastAnswer }
+		if info == nil { info = try? await local.vm(named: name) }
+		guard var found = info else { return nil }
+		overlaySSH(&found, from: host)
+		return found
 	}
 }
