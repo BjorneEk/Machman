@@ -66,9 +66,10 @@ public final class MenuBarModel: ObservableObject {
 		}
 	}
 
-	// Start waits for a running macOS install, as the desktop's does.
+	// Start waits for a running macOS install, and for a VM that may be running (V11), as the
+	// desktop's does.
 	public func canStart(_ vm: VMInfo) -> Bool {
-		!vm.state.isRunning && !vm.isInstallingMacOS(phase: installPhases[vm.name])
+		vm.menuBarCanStart(phase: installPhases[vm.name])
 	}
 
 	// The desktop's start rule (StartIntent): the policy, overridden only where named.

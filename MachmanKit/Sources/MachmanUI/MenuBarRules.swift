@@ -4,7 +4,7 @@
 //
 //  The menu-bar agent's decisions, kept out of its app target so they test headlessly
 //  (P23): what a failed menu action says, whether it offers Start Anyway (a MAC conflict,
-//  as the desktop does), and whether Start is offered while a macOS install runs.
+//  as the desktop does), and which of a VM's Start and stop items are enabled (V11).
 //
 
 import Foundation
@@ -69,5 +69,17 @@ extension VMInfo {
 			}
 		}
 		return boot.macInstallState?.kind == .installing
+	}
+
+	// The agent's Start items (V11): the desktop's rule — never while the VM may be running,
+	// its state unknown included (VMBusyRule) — and never during a macOS install.
+	public func menuBarCanStart(phase: InstallPhase.Kind?) -> Bool {
+		!mayBeRunning && !isInstallingMacOS(phase: phase)
+	}
+
+	// Shut Down and Force Stop: whenever the VM may be running. A VM whose state the agent
+	// can't see yet counts as running when the agent quits, so its menu can stop it too.
+	public var menuBarCanStop: Bool {
+		mayBeRunning
 	}
 }

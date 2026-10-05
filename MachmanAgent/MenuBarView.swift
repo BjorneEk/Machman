@@ -62,19 +62,21 @@ struct MenuBarView: View {
 						}
 					}
 				}
+				// Also for a VM whose state is unknown or that stopped answering (V11): the
+				// agent counts it as running when it quits, so its menu can stop it.
 				Divider()
 				Button {
 					model.stop(vm.name, mode: .soft)
 				} label: {
 					Label("Shut Down", systemImage: MachmanSymbols.shutDown)
 				}
-				.disabled(!vm.state.isRunning)
+				.disabled(!vm.menuBarCanStop)
 				Button {
 					model.stop(vm.name, mode: .force)
 				} label: {
 					Label("Force Stop", systemImage: MachmanSymbols.forceStop)
 				}
-				.disabled(!vm.state.isRunning)
+				.disabled(!vm.menuBarCanStop)
 			} label: {
 				// Menu rendering may flatten StatusIcon's green to a template glyph — the
 				// window/terminal/pause shapes still differentiate the states.

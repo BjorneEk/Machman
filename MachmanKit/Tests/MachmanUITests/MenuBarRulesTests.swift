@@ -4,12 +4,15 @@
 //
 //  P23: the menu-bar agent's actions failed silently (start and stop only logged, the
 //  window items used try?), and Start stayed enabled during a macOS install. What its alert
-//  says, when it offers Start Anyway, and when Start waits are pure rules, pinned here.
+//  says, when it offers Start Anyway, and when Start waits are pure rules, pinned here. V11:
+//  its Shut Down and Force Stop were disabled exactly for the VMs it couldn't see a state for
+//  — the ones it counts as running when it quits — while Start stayed enabled for them.
 //
 
 import Testing
 import Foundation
 import MachmanTestSupport
+import MachmanFixtures
 import MachmanAPI
 import MachmanUI
 
@@ -82,5 +85,25 @@ struct MenuBarRulesTests {
 		#expect(!mac.isInstallingMacOS(phase: .installed))
 		mac.boot.macInstallState = MacInstallState(kind: .interrupted)
 		#expect(!mac.isInstallingMacOS(phase: nil))
+	}
+
+	// Unknown is busy (VMBusyRule): stop offered, Start held, as for a VM not answering.
+	@Test func unknownIsBusyInTheAgentsMenu() {
+		let cases: [(VMInfo, start: Bool, stop: Bool)] = [
+			(Samples.linux("Alpine"), true, false),
+			(Samples.linux("Fedora", state: .error), true, false),
+			(Samples.linux("Debian", state: .starting), false, true),
+			(Samples.linux("Debian", state: .running), false, true),
+			(Samples.linux("Debian", state: .stopping), false, true),
+			(Samples.linux("Debian", state: .paused), false, true),
+			(Samples.linux("Debian", state: .unknown), false, true),
+			(Samples.neverAnswered("Debian"), false, true),
+			(Samples.notResponding("Debian"), false, true),
+		]
+		for (vm, start, stop) in cases {
+			let label = "\(vm.state) unresponsive: \(vm.isUnresponsive)"
+			#expect(vm.menuBarCanStart(phase: nil) == start, "\(label)")
+			#expect(vm.menuBarCanStop == stop, "\(label)")
+		}
 	}
 }
