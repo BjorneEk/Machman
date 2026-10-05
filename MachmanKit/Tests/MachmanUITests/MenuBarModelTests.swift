@@ -87,6 +87,34 @@ struct MenuBarModelTests {
 		#expect(await eventually { stub.calls.suffix(2) == ["endProcess", "stop"] })
 	}
 
+	// TB9: the failure alert is a seam now, so a test (and the lab, through it) sees what the
+	// menu would say; Start Anyway is the same start, forced.
+	@Test("Q18: a failed menu start is presented through presentFailure (TB9)")
+	func aFailedMenuStartIsPresentedThroughTheSeam() async {
+		let stub = StubMachman()
+		stub.vms["Debian"] = Samples.linux("Debian")
+		stub.fail("start", with: MachmanError(
+			code: .macConflict, message: "Alpine already uses 5e:2c:7a:10:44:01"))
+		let model = MenuBarModel(api: stub)
+		var presented: [MenuBarFailure] = []
+		model.presentFailure = { failure in
+			presented.append(failure)
+			return true
+		}
+		model.begin()
+		#expect(await eventually { !model.vms.isEmpty })
+		let vm = model.vms[0]
+
+		model.start(vm, .headless)
+		// The refused start is called (and fails), then the forced one starts it.
+		#expect(await eventually { stub.calls.filter { $0 == "start" }.count == 2 })
+		#expect(presented.map(\.title) == ["MAC address conflict"])
+		#expect(presented.first?.labPrompt.id == "agent.macConflict")
+		#expect(stub.starts.map(\.options) == [
+			StartOptions(openWindow: false, force: true, safe: vm.startOptions(.headless).safe),
+		])
+	}
+
 	// A host that wedged after the list last said so: the bounded stop's timeout asks too.
 	@Test func aTimedOutForceStopAsksAboutTheProcess() async {
 		let stub = StubMachman()

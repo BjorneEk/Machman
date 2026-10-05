@@ -23,6 +23,13 @@ public final class MenuBarModel: ObservableObject {
 	public var confirmEndProcess: @MainActor (EndProcessPrompt) async -> Bool = { prompt in
 		await MainRunLoopCallout.run { prompt.runInFront() }
 	}
+	// Says that a menu action failed (P23); true when the user chose Start Anyway. A seam as
+	// well: the agent's alert comes from a run-loop callout, never modal inside this
+	// main-actor job, which would hold every other one (the daemon's request handling
+	// included) until it is dismissed.
+	public var presentFailure: @MainActor (MenuBarFailure) async -> Bool = { failure in
+		await MainRunLoopCallout.run { MenuBarModel.present(failure) }
+	}
 
 	public init(api: MachmanControlling) {
 		self.api = api
@@ -134,9 +141,7 @@ public final class MenuBarModel: ObservableObject {
 			}
 			// Logged first: the alert of an LSUIElement app can end up behind everything.
 			MachmanLogger.log(.interactionError, "\(failure.title): \(failure.message)")
-			// Not modal inside this main-actor job: that would hold every other one, the
-			// daemon's request handling included, until the alert is dismissed.
-			let startAnyway = await MainRunLoopCallout.run { Self.present(failure) }
+			let startAnyway = await presentFailure(failure)
 			if startAnyway, let forced = failure.forceStart {
 				await perform(.start(forced), vm: name)
 			}
@@ -145,16 +150,7 @@ public final class MenuBarModel: ObservableObject {
 
 	// True when the user chose Start Anyway.
 	private static func present(_ failure: MenuBarFailure) -> Bool {
-		NSApp.activate(ignoringOtherApps: true)
-		let alert = NSAlert()
-		alert.messageText = failure.title
-		alert.informativeText = failure.message
-		guard failure.forceStart != nil else {
-			alert.runModal()
-			return false
-		}
-		alert.addButton(withTitle: "Start Anyway")
-		alert.addButton(withTitle: "Cancel")
-		return alert.runModal() == .alertFirstButtonReturn
+		let answer = PromptAlert.run(failure.labPrompt, front: .activate)
+		return failure.forceStart != nil && answer == 0
 	}
 }
