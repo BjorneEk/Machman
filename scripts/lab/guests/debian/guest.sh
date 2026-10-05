@@ -10,6 +10,10 @@
 #                                         gateway (QEMU)
 #   guest.sh lab-redirect <gw> <port>     the nft commands that send <gw>:22 to the lab sshd on
 #                                         <gw>:<port> (VZ guests, whose gateway is the bridge)
+#   guest.sh lab-isolate                  a script that closes a VZ guest's network from the
+#                                         inside: nothing but DHCP leaves it, now and at every
+#                                         boot (QEMU's restrict=on for a guest on VZ NAT, whose
+#                                         gateway is this Mac and its real sshd)
 #
 # root logs in over ssh with the image's baked key; on a console with an empty password.
 set -u
@@ -20,7 +24,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROUTE="ip route replace default via $GUEST_LAB_GATEWAY"
 
 usage() {
-	sed -n '4,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '4,17p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 64
 }
 
@@ -113,10 +117,48 @@ nft add rule ip machman_lab out ip daddr $gw tcp dport 22 dnat to $gw:$port
 EOF
 }
 
+# cmd_isolate: the script (run as root in the guest) that loads the restricted ruleset and
+# persists it: systemd's nftables.service (before network-pre.target) or, under sysvinit,
+# an ifupdown pre-up hook. It prints "lab-isolate: ok" once the table is loaded.
+cmd_isolate() {
+	cat <<'EOF'
+#!/bin/sh
+# The lab's restricted network for a VZ guest (scripts/lab/guests/debian/guest.sh lab-isolate):
+# nothing leaves the guest but DHCP; TCP is reset, the rest refused, at once.
+set -e
+cat > /etc/nftables.conf <<'NFT'
+#!/usr/sbin/nft -f
+flush ruleset
+table inet machman_lab {
+	chain out {
+		type filter hook output priority 0; policy accept;
+		oif "lo" accept
+		udp dport 67 accept
+		meta l4proto tcp reject with tcp reset
+		reject
+	}
+}
+NFT
+nft -f /etc/nftables.conf
+if [ -d /run/systemd/system ]; then
+	systemctl enable nftables.service >/dev/null 2>&1
+else
+	mkdir -p /etc/network/if-pre-up.d
+	printf '#!/bin/sh\n%s\n' \
+		'nft list table inet machman_lab >/dev/null 2>&1 || nft -f /etc/nftables.conf' \
+		> /etc/network/if-pre-up.d/machman-lab
+	chmod 755 /etc/network/if-pre-up.d/machman-lab
+fi
+nft list table inet machman_lab >/dev/null
+echo "lab-isolate: ok"
+EOF
+}
+
 case "${1:-}" in
 boot) shift; g="$(guest_of "${1:-}")" || exit $?; shift; boot "$g" "$@" ;;
 check) shift; g="$(guest_of "${1:-}")" || exit $?; shift; cmd_check "$g" "$@" ;;
 lab-route) echo "$ROUTE" ;;
 lab-redirect) shift; cmd_redirect "$@" ;;
+lab-isolate) cmd_isolate ;;
 *) usage ;;
 esac; exit $?

@@ -51,8 +51,7 @@ enum GuestRegress {
 	) async throws -> [Check] {
 		switch backend {
 		case .qemu: try await runQEMU(distro: distro, suites: suites)
-		case .vz:
-			throw LabError.specInvalid("guest-regress under VZ is not in this build yet")
+		case .vz: try await GuestRegressVZ.run(distro: distro, suites: suites)
 		}
 	}
 

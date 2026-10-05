@@ -6,8 +6,11 @@
 #   scripts/guest-regress/run.sh --list                                  distros and suites
 #   scripts/guest-regress/run.sh --backend qemu [--results <tsv>] [--image <raw>] [--keep]
 #                                [--jobs 1|2] [--suites '<suite>…'] [--shell <sh|ksh>] [distro…]
+#   scripts/guest-regress/run.sh --backend vz [--results <tsv>] [--suites '<suite>…'] [--keep]
+#                                [debian|debian-sysv…]
 #   scripts/guest-regress/run.sh --backend qemu|vz --list
 #   scripts/guest-regress/run.sh --evaluate <suite> <run|boot> <output>  one output's TSV rows
+#   scripts/guest-regress/run.sh --stage <dir>     assemble and stage the payload into <dir>/payload
 #
 # A dev tool, never a gate: scripts/test.sh does not run it, and nothing else needs Docker.
 # It assembles the script fresh from this checkout, builds one cached image per distro
@@ -27,10 +30,13 @@
 # (scripts/lab/qemu/lab-session.sh; --keep keeps its root). A real init is there, so lib.sh's
 # fake_systemd stands aside (REGRESS_BACKEND). The VM table is its own: nixos is a container
 # stand-in (an /etc/fstab linked into a read-only /nix/store) and stays docker-only, and the
-# inittab and rc.local suites need the sysvinit Debian. --backend vz (the same suites under
-# Machman's own VZ guests) runs through scripts/lab.sh. A suite with "# BOOT-CHECKS:" lines
-# (grub, automount, console, rclocal) ends its VM run with a tail left installed; the harness
-# reboots the guest and runs it again with REGRESS_PHASE=boot for its after-boot checks
+# inittab and rc.local suites need the sysvinit Debian. --backend vz runs the Debian suites in
+# Machman's own VZ guests: MachmanLabTests' GuestRegressVZTests under scripts/lab.sh --guests
+# (its agent, slot and audits; the distros, --suites and --results pass through as
+# MACHMAN_LAB_REGRESS_*; a --results file inside the repo would trip lab.sh's worktree
+# audit). A suite with "# BOOT-CHECKS:" lines (grub, automount, console, rclocal) ends its VM
+# run with a tail left installed; the harness reboots the guest (under VZ: powers it off and
+# starts it again) and runs it again with REGRESS_PHASE=boot for its after-boot checks
 # (docker reads only "# CHECKS:" and never reboots). --suites narrows each distro's VM suites
 # to those listed. --results appends one TSV row per check: distro, suite, phase, check,
 # pass|fail|missing. Exits 69 without QEMU or without a prepared image.
@@ -445,6 +451,17 @@ while [ $# -gt 0 ]; do
 	--keep) KEEP=1; shift ;;
 	--jobs) [ $# -ge 2 ] || usage; JOBS="$2"; shift 2 ;;
 	--suites) [ $# -ge 2 ] || usage; ONLY_SUITES="$2"; shift 2 ;;
+	--stage)
+		# The payload every VM backend serves, for GuestRegressVZ (it tars it onto a disk).
+		[ $# -eq 2 ] || usage
+		mkdir -p "$2/.assembled" || exit 1
+		sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" \
+			"$2/.assembled/install.sh" >/dev/null || { echo "assemble failed" >&2; exit 1; }
+		rm -rf "$2/payload"
+		stage_payload "$2/.assembled/install.sh" "$2/payload"
+		rm -rf "$2/.assembled"
+		exit 0
+		;;
 	--evaluate)
 		[ $# -eq 4 ] || usage
 		RESULTS=/dev/stdout TOTAL=0
@@ -492,8 +509,16 @@ qemu)
 	. "$LAB/sshd/ssh-opts.sh"
 	backend_qemu "$@" ;;
 vz)
-	echo "the vz backend runs through scripts/lab.sh, which this tree does not have yet" >&2
-	exit 69 ;;
+	for n in ${*:-debian debian-sysv}; do
+		vm_distro "$n" || { echo "unknown VM distro: $n (see --backend vz --list)" >&2; exit 64; }
+		[ "$VM_OS" = debian ] \
+			|| { echo "the vz backend runs debian and debian-sysv, not $n" >&2; exit 64; }
+		pick_suites
+	done
+	case "$RESULTS" in ''|/*) ;; *) RESULTS="$(pwd)/$RESULTS" ;; esac
+	MACHMAN_LAB_REGRESS_DISTROS="${*:-debian debian-sysv}" \
+		MACHMAN_LAB_REGRESS_SUITES="$ONLY_SUITES" MACHMAN_LAB_REGRESS_RESULTS="$RESULTS" \
+		exec bash "$ROOT/scripts/lab.sh" --guests --filter GuestRegressVZTests ${KEEP:+--keep} ;;
 esac
 [ "$FAILED" -eq 0 ] && echo "guest-regress: all $TOTAL checks pass"
 exit "$FAILED"

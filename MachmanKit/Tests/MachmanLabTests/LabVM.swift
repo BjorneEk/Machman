@@ -33,10 +33,13 @@ struct LabVMSpec: Sendable {
 	var network = false
 	var devices: [DeviceKind] = []
 	var mounts: [Mount] = []
+	/// Raw images attached after the boot disk (each as a clone), in order.
+	var extraDisks: [String] = []
 
 	init(
 		name: String, boot: Boot, cpus: Int = 1, memoryGiB: Int = 1, consolePorts: Int = 2,
-		network: Bool = false, devices: [DeviceKind] = [], mounts: [Mount] = []
+		network: Bool = false, devices: [DeviceKind] = [], mounts: [Mount] = [],
+		extraDisks: [String] = []
 	) {
 		self.name = name
 		self.boot = boot
@@ -46,6 +49,7 @@ struct LabVMSpec: Sendable {
 		self.network = network
 		self.devices = devices
 		self.mounts = mounts
+		self.extraDisks = extraDisks
 	}
 
 	func validate() throws {
@@ -112,6 +116,7 @@ final class LabVM: @unchecked Sendable {
 				path, as: "\(spec.name)-\((path as NSString).lastPathComponent)", into: images)
 			try await api.addDisk(vm: spec.name, .image(path: image))
 		}
+		try await vm.attachClones(of: spec.extraDisks)
 		for mount in spec.mounts {
 			try await api.addMount(vm: spec.name, path: mount.path, tag: mount.tag, kind: nil)
 		}
@@ -214,6 +219,53 @@ final class LabVM: @unchecked Sendable {
 	}
 
 	func delete() async throws { try await api.deleteVM(named: name) }
+
+	/// Waits for a VM whose guest powered itself off (VZ has no reset: a guest reboot stops
+	/// the VM too) and for its vmhost to exit — until then the agent still counts the VM as
+	/// hosted and refuses config changes — then drops the vmhost's pid file.
+	func guestStopped(timeout: Duration = .seconds(180)) async throws {
+		try await waitForState(.stopped, timeout: timeout)
+		let file = LabProcesses.pidFile(kind: "vmhost", name: pidName)
+		if let text = try? String(contentsOfFile: file, encoding: .utf8),
+			let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+			_ = await LabProcesses.waitForExit(pid, timeout: .seconds(30))
+		}
+		LabProcesses.removePid(kind: "vmhost", name: pidName)
+	}
+
+	/// A stopped VM's disks replaced by fresh clones of `boot` and `extra` (the old clones
+	/// deleted): the next start sees pristine images under the same VM (and MAC).
+	func replaceDisks(boot: String, extra: [String] = []) async throws {
+		for disk in try await info().disks {
+			try await settled { try await api.removeDisk(vm: name, diskID: disk.id) }
+			if let path = disk.path, path.hasPrefix(agent.scope.imagesDir + "/") {
+				try? FileManager.default.removeItem(atPath: path)
+			}
+		}
+		try await attachClones(of: [boot] + extra)
+	}
+
+	// `body`, retried for a few seconds while the agent still settles a stop (invalidState).
+	private func settled<T>(_ body: () async throws -> T) async throws -> T {
+		let deadline = ContinuousClock.now + .seconds(30)
+		while true {
+			do {
+				return try await body()
+			} catch let error as MachmanError
+				where error.code == .invalidState && ContinuousClock.now < deadline {
+				try await Task.sleep(for: .milliseconds(250))
+			}
+		}
+	}
+
+	fileprivate func attachClones(of paths: [String]) async throws {
+		for path in paths {
+			let image = try await LabFixtures.clone(
+				path, as: "\(name)-\((path as NSString).lastPathComponent)",
+				into: agent.scope.imagesDir)
+			try await api.addDisk(vm: name, .image(path: image))
+		}
+	}
 }
 
 extension LabAgent {
