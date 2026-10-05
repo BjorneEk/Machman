@@ -106,6 +106,12 @@ public struct CanvasTabDrag: Equatable, Sendable {
 		return nil
 	}
 
+	// Whether going from `old` to `new` switches the ghost and drop zones on or off: the one
+	// change worth animating (H50). A drag that starts detached counts as switching on.
+	public static func detachChanges(from old: CanvasTabDrag?, to new: CanvasTabDrag) -> Bool {
+		(old?.detached ?? false) != new.detached
+	}
+
 	// Where `tab` draws in its strip while the drag is attached: under the cursor, less the
 	// siblings it crossed, lifted a little. Other tabs, and a detached drag (the ghost has
 	// it), stay put.

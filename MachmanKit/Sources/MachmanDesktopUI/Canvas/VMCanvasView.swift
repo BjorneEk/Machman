@@ -253,7 +253,8 @@ struct VMCanvasView: View {
 	// MARK: - Drag logic (demo parity)
 
 	// The rules live in CanvasTabDrag; a live reorder it reports moves the tab, animated,
-	// before the drag state is stored.
+	// before the drag state is stored, and the stored state animates when the tab detaches
+	// or docks again (the ghost and drop zones fade, H50).
 	private func updateTabDrag(tab: VMPaneTab, pane: UUID, value: DragGesture.Value) {
 		var drag = tabDrag ?? CanvasTabDrag(
 			tab: tab, paneID: pane, location: value.location,
@@ -266,7 +267,11 @@ struct VMCanvasView: View {
 				mutate { $0.reorder(tab, to: target) }
 			}
 		}
-		tabDrag = drag
+		if CanvasTabDrag.detachChanges(from: tabDrag, to: drag) {
+			withAnimation(.snappy(duration: 0.18)) { tabDrag = drag }
+		} else {
+			tabDrag = drag
+		}
 	}
 
 	private func completeTabDrag() {

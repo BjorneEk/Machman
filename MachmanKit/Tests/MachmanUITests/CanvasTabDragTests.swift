@@ -329,4 +329,28 @@ struct CanvasTabDragTests {
 		#expect(CanvasTabDrag.dropZones(canvas: canvas, frames: noPanes).map(\.zone)
 			== [.newLeading, .newTrailing])
 	}
+
+	// H50: the detach switch is the state change that animates.
+	@Test func detachingOrDockingIsTheChangeThatAnimates() {
+		var drag = CanvasTabDrag(
+			tab: hvc0, paneID: left, location: point(50, 15), translation: .zero)
+		let frames = CanvasTabDrag.Frames(
+			canvasSize: CGSize(width: 800, height: 600),
+			strips: [left: CGRect(x: 0, y: 0, width: 800, height: 30)],
+			tabs: [hvc0: tab(at: 0)])
+		let canvas = CanvasState(panes: [CanvasPane(id: left, tabs: [hvc0])])
+		let attached = drag
+		#expect(!CanvasTabDrag.detachChanges(from: nil, to: attached))
+		_ = drag.update(
+			location: point(60, 15), translation: CGSize(width: 10, height: 0),
+			canvas: canvas, frames: frames)
+		#expect(!CanvasTabDrag.detachChanges(from: attached, to: drag))
+		let moved = drag
+		_ = drag.update(
+			location: point(60, 120), translation: CGSize(width: 10, height: 105),
+			canvas: canvas, frames: frames)
+		#expect(drag.detached)
+		#expect(CanvasTabDrag.detachChanges(from: moved, to: drag))
+		#expect(CanvasTabDrag.detachChanges(from: drag, to: moved))
+	}
 }
