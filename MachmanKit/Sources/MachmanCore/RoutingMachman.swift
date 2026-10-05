@@ -94,6 +94,15 @@ public final class RoutingMachman: MachmanControlling {
 		return RoutingMachman.killVMHost(pid: pid)
 	}
 
+	// A safe start's shadow copy, and where its run roots go. Seams: a test runs a safe start
+	// against a scratch dir with a copy that returns at once (review F9).
+	var copyShadow: (VMCopyRequest) async throws -> Void = { request in
+		_ = try await Task.detached(priority: .userInitiated) {
+			try VMCopier.copy(request)
+		}.value
+	}
+	var safeRunsDir: () -> String = { machmanSafeDir }
+
 	// Late adoption (E21): one in-flight adoption per name, shared by every caller, and the
 	// names whose live vmhost did not answer the last attempt (listed as not responding
 	// until one gets through).

@@ -114,6 +114,32 @@ struct RoutingClaimTests {
 		#expect(canceled == 2)
 	}
 
+	// Review F9: a Stop that lands as the shadow copy finishes — after the copy's last look at
+	// the cancel — still cancels the start; the VM never boots.
+	@Test @MainActor func aStopAsTheShadowCopyEndsStillCancels() async throws {
+		let routing = try makeRouting()
+		var located = 0
+		routing.locateVMHost = {
+			located += 1
+			return nil
+		}
+		let safeDir = TestEnvironment.scratch + "safe-\(UUID().uuidString)"
+		routing.safeRunsDir = { safeDir }
+		routing.copyShadow = { _ in try await routing.stop(vm: "alpha", mode: .force) }
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions(safe: true))
+			Issue.record("the start went on after its stop")
+		} catch let error as MachmanError {
+			#expect(error.message == "The safe run was canceled")
+		}
+		#expect(located == 0)   // before: on to the spawn
+		#expect(((try? FileManager.default.contentsOfDirectory(atPath: safeDir)) ?? []).isEmpty)
+		let card = routing.local.operationCenter.list()
+			.first { $0.kind == OperationInfo.Kind.shadowBuild }
+		#expect(card?.state == OperationInfo.State.cancelled)
+	}
+
 	// The real window: an import into a VM whose idle vmhost does the copy (it proxies while
 	// hosted). Before, a start during it was forwarded to that host and the VM booted on the
 	// config the import was about to change.

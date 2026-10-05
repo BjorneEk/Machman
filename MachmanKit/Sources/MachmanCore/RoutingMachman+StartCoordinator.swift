@@ -214,7 +214,7 @@ extension RoutingMachman {
 	private func startSafe(
 		vm: VirtualMachine, name: String, options: StartOptions, claim: VMClaims.Token
 	) async throws {
-		let runRoot = machmanSafeDir + "/" + SafeRun.runPrefix + UUID().uuidString
+		let runRoot = safeRunsDir() + "/" + SafeRun.runPrefix + UUID().uuidString
 		let unattached = vm.config.unattachedDiskFiles   // the config the shadow copies
 		do {
 			try FileManager.default.createDirectory(
@@ -230,10 +230,7 @@ extension RoutingMachman {
 			// Detached: same-volume clones are instant, but unsafe-marked-safe external
 			// images can be real byte copies.
 			do {
-				let request = build.request
-				try await Task.detached(priority: .userInitiated) {
-					try VMCopier.copy(request)
-				}.value
+				try await copyShadow(build.request)
 			} catch {
 				let canceled = build.canceled.get()
 				center.finish(
@@ -241,6 +238,15 @@ extension RoutingMachman {
 					state: canceled ? OperationInfo.State.cancelled : OperationInfo.State.failed,
 					message: MachmanError.userMessage(for: error))
 				throw canceled ? Self.safeRunCanceled : error
+			}
+			// A cancel that landed after the copy's last look at it, or while its result
+			// waited for the main actor, still cancels: nothing runs yet (review F9). No await
+			// comes between here and the spawn, so no later stop slips past this check.
+			guard !build.canceled.get() else {
+				center.finish(
+					build.operation, state: OperationInfo.State.cancelled,
+					message: Self.safeRunCanceled.message)
+				throw Self.safeRunCanceled
 			}
 			center.finish(build.operation, state: OperationInfo.State.succeeded)
 		} catch {
