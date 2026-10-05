@@ -73,4 +73,32 @@ final class SSHHostFiles {
 	func setReverseKey(_ keyLine: String?, marker: String, vmName: String) throws {
 		try writer.setReverseKey(keyLine, marker: marker, vmName: vmName)
 	}
+
+	// Whether authorized_keys holds a line of this VM's; throws when it can't be read.
+	func hasReverseKey(marker: String) throws -> Bool {
+		try writer.hasReverseKey(marker: marker)
+	}
+
+	// The VMs (by marker) whose authorized_keys trouble was already shown — once per VM, not
+	// per report — and those this daemon saw approved: a line can stay for them after the
+	// guest forgets its key (an uninstall). Both go when the line is gone.
+	private var warned: Set<String> = []
+	private var granted: Set<String> = []
+
+	func firstWarning(for marker: String) -> Bool {
+		warned.insert(marker).inserted
+	}
+
+	func noteGranted(_ marker: String) {
+		granted.insert(marker)
+	}
+
+	func wasGranted(_ marker: String) -> Bool {
+		granted.contains(marker)
+	}
+
+	func lineGone(_ marker: String) {
+		warned.remove(marker)
+		granted.remove(marker)
+	}
 }

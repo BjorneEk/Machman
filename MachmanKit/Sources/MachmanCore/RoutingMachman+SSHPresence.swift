@@ -21,11 +21,27 @@ extension RoutingMachman {
 	func reconcileReverseKey(vm name: String) {
 		guard sshFiles != nil, let marker = existingSSHMarker(name) else { return }
 		Task { [weak self] in
-			guard let self,
-				let ssh = (try? await self.proxy(name).vm(named: name))?.ssh else { return }
-			guard ssh.reverseState != .approved else { return }
-			self.revokeReverseKey(marker: marker, vmName: name)
+			guard let self, let owner = try? await self.proxy(name) else { return }
+			await self.reconcileReverseKey(vm: name, marker: marker, owner: owner)
 		}
+	}
+
+	// The owner's state decides. A line can be there only for a key on file, or for one this
+	// daemon saw approved (an uninstall forgets the key, not the line): only for those is an
+	// unreadable authorized_keys worth saying — it runs at every report of every VM. The
+	// others are reconciled too, which costs a read when the file has no line of theirs.
+	// Internal so tests can drive it against a stub owner.
+	func reconcileReverseKey(vm name: String, marker: String, owner: MachmanControlling) async {
+		guard let files = sshFiles, let ssh = (try? await owner.vm(named: name))?.ssh else {
+			return
+		}
+		if ssh.reverseState == .approved {
+			files.noteGranted(marker)
+			return
+		}
+		revokeReverseKey(
+			marker: marker, vmName: name,
+			lineMayExist: ssh.reversePublicKey != nil || files.wasGranted(marker))
 	}
 
 	// Bounded per-VM resolver in two phases, on one task keyed by identity.id (so
@@ -146,13 +162,29 @@ extension RoutingMachman {
 	// Every guest→Mac grant leaves ~/.ssh/authorized_keys through here: a deleted VM's, a
 	// denied or revoked one, a reset, a key the guest replaced. Never silent (D11, C21): a
 	// line that stays is logged and shown, with what to remove by hand — a deny that left the
-	// key working used to read as done.
-	func revokeReverseKey(marker: String, vmName name: String) {
+	// key working used to read as done. A file that can't be read is said as that, and only
+	// when `lineMayExist`; either trouble is shown once per VM until its line is gone.
+	func revokeReverseKey(marker: String, vmName name: String, lineMayExist: Bool = true) {
 		guard let files = sshFiles else { return }
+		let present: Bool
 		do {
-			try files.setReverseKey(nil, marker: marker, vmName: name)
+			present = try files.hasReverseKey(marker: marker)
+		} catch {
+			MachmanLogger.log(.passiveWarning, "reading authorized_keys for \(name): \(error)")
+			guard lineMayExist, files.firstWarning(for: marker) else { return }
+			registry.events.emit(.log(
+				vm: name, level: .warning,
+				message: "Couldn’t read ~/.ssh/authorized_keys to remove the guest’s key"))
+			return
+		}
+		do {
+			if present {
+				try files.setReverseKey(nil, marker: marker, vmName: name)
+			}
+			files.lineGone(marker)
 		} catch {
 			MachmanLogger.log(.passiveWarning, "revoking \(name)'s reverse key: \(error)")
+			guard files.firstWarning(for: marker) else { return }
 			registry.events.emit(.log(
 				vm: name, level: .warning,
 				message: "Couldn’t remove the guest’s key from ~/.ssh/authorized_keys — "
@@ -251,6 +283,7 @@ extension RoutingMachman {
 				throw error
 			}
 		}
+		files.noteGranted(marker)
 		return info
 	}
 

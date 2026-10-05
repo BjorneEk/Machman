@@ -215,6 +215,13 @@ public struct SSHHostConfigWriter {
 
 	// MARK: - Reverse access (authorized_keys)
 
+	// Whether authorized_keys holds this VM's labeled line; throws when it can't be read.
+	public func hasReverseKey(marker: String) throws -> Bool {
+		let label = Data("machman:\(marker)".utf8)
+		return Self.lines(of: try readUserFile(authorizedKeys))
+			.contains { $0.range(of: label) != nil }
+	}
+
 	// Installs (or removes, keyLine nil) the labeled reverse-key line. Exact-match
 	// surgery: only lines carrying "machman:<marker>" are ever touched, and a removal that
 	// finds none leaves the file as it is.
