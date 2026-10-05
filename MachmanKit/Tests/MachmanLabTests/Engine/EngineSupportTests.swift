@@ -10,6 +10,7 @@ import Testing
 import MachmanAPI
 import MachmanFixtures
 import MachmanTestSupport
+import MachmanClient
 import MachmanUI
 @testable import MachmanDesktopCore
 
@@ -101,6 +102,25 @@ struct EngineSupportTests {
 		])
 		#expect(desktop.toasts.count(equal: "dev started") == 2)
 		#expect(desktop.toasts.entries.first?.spinner == true)
+	}
+
+	@Test("Q18: lab ssh arguments put the host-quiet options before the product's")
+	func sshArgumentsHostQuietFirst() throws {
+		let ssh = SSHInfo(
+			guestUser: "lab", guestHostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIQ tf",
+			alias: TFSSHTarget.alias, identityFilePath: "/tmp/mml.ab12/k/id_ed25519",
+			knownHostsPath: "/tmp/mml.ab12/k/known_hosts", address: "127.0.0.1")
+		let vm = TFSSHTarget.syntheticVM(ssh)
+		let argv = try #require(TFSSHTarget.arguments(for: vm, port: 2222))
+		#expect(Array(argv.prefix(TFSSH.hostQuietPrefix.count)) == TFSSH.hostQuietPrefix)
+		#expect(argv.prefix(2) == ["-F", "/dev/null"])
+		#expect(argv.last == "lab@127.0.0.1")
+		let product = Array(argv.dropFirst(TFSSH.hostQuietPrefix.count + 2))
+		#expect(product == SSHCommand.arguments(for: vm))
+		#expect(argv.contains("IdentityAgent=none"))
+		#expect(argv.contains("GlobalKnownHostsFile=/dev/null"))
+		#expect(argv.contains(#"UserKnownHostsFile="/tmp/mml.ab12/k/known_hosts""#))
+		#expect(!argv.contains { $0.contains(NSHomeDirectory() + "/.ssh") })
 	}
 
 	private func inode(_ path: String) throws -> UInt64 {

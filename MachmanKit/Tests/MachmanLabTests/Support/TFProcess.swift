@@ -83,6 +83,12 @@ enum TFProcess {
 		try await table().filter { $0.command.contains(needle) }.map(\.pid)
 	}
 
+	/// The controlling terminal `ps` shows for `pid` ("ttys014"), or "??" for none.
+	static func controllingTTY(_ pid: pid_t) async throws -> String {
+		let result = try await Subprocess.run("/bin/ps", ["-o", "tty=", "-p", "\(pid)"])
+		return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
 	/// Every descendant of `root` (children, their children, …), not `root` itself.
 	static func descendants(of root: pid_t) async throws -> [pid_t] {
 		descendants(of: root, in: try await table())
