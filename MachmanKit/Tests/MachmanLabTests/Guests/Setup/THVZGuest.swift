@@ -278,13 +278,15 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 		driver = try await vm.loggedInConsole(2, label: "hvc2-again\(boots)")
 	}
 
-	/// The VM stopped from the host (force) and started again: no guest shutdown.
-	func restartFromHost() async throws {
+	/// The VM stopped from the host (force: `sync` first) and started again — a new run of
+	/// its vmhost, which serves the payload by the rules of a start.
+	func restartFromHost(remount: Bool = true) async throws {
+		_ = try? await THConsoleSession.run(driver, "sync", timeout: .seconds(60))
 		driver.close()
 		try await vm.restart(.force)
 		boots += 1
 		driver = try await vm.bootLoggedIn(2, label: "hvc2-boot\(boots)")
-		try await afterBoot()
+		try await afterBoot(remount: remount)
 	}
 
 	func shutdown() async {
