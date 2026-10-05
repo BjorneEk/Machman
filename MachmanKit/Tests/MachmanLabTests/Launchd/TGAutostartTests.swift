@@ -111,6 +111,68 @@ struct TGAutostartTests {
 		}
 	}
 
+	@Test("Autostart matrix: a start before adoption probe-adopts the job's vmhost")
+	func startBeforeAdoptionProbeAdopts() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.alpine("tg-am3", on: agent)
+			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
+			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
+			let label = TGLaunchd.label(vm.name)
+			try await TGLaunchd.withJobs { jobs in
+				try await jobs.bootstrap(plist)
+				// Raw connects only: a list now would adopt the host before the start (F12).
+				#expect(await TG.waitForSocket(vm.socketPath, timeout: .seconds(30)))
+				try await agent.api.start(vm: vm.name, options: StartOptions(openWindow: false))
+				try await vm.waitForState(.running, timeout: .seconds(60))
+				let host = try await vm.hostPID()
+				try vm.fileHostPid(host)
+				#expect(try await TGLaunchd.state(label).pid == host)
+				#expect(try await TG.vmhostPids(socketPath: vm.socketPath) == [host])
+				try await vm.forceStop()
+			}
+		}
+	}
+
+	@Test("Autostart matrix: off while running keeps the VM; off while stopped boots the job out")
+	func switchOffRunningAndStopped() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.alpine("tg-am4", on: agent)
+			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
+			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
+			let label = TGLaunchd.label(vm.name)
+			try await TGLaunchd.withJobs { jobs in
+				try await jobs.bootstrap(plist)
+				#expect(await TG.until(timeout: .seconds(60)) {
+					(try? await vm.info())?.state == .running
+				})
+				let host = try await vm.hostPID()
+				try vm.fileHostPid(host)
+				// Off while it runs: the plist goes, the job and its VM stay.
+				try await agent.api.setStartPolicy(vm: vm.name, policy: Self.manual)
+				#expect(!FileManager.default.fileExists(atPath: plist))
+				let running = try await TGLaunchd.state(label)
+				#expect(running.loaded)
+				#expect(running.pid == host)
+				#expect(try await vm.info().state == .running)
+				try await vm.forceStop()
+				#expect(!LabProcesses.isAlive(host))
+				// The agent drops the host a moment after it exits; until then it boots
+				// nothing out (a live job's guest would go with it).
+				try await Task.sleep(for: .seconds(2))
+				// Off while stopped: the plist goes and the job is booted out.
+				try await TG.settled {
+					try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
+				}
+				#expect(FileManager.default.fileExists(atPath: plist))
+				try await agent.api.setStartPolicy(vm: vm.name, policy: Self.manual)
+				#expect(!FileManager.default.fileExists(atPath: plist))
+				#expect(await TG.until(timeout: .seconds(10)) {
+					(try? await TGLaunchd.state(label).loaded) == false
+				})
+			}
+		}
+	}
+
 	@Test("Autostart matrix: rename moves the plist and delete removes it")
 	func renameMovesDeleteRemoves() async throws {
 		try await TG.withAgent { agent in
