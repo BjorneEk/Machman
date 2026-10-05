@@ -104,6 +104,11 @@ final class OperationCenter {
 		hook()
 	}
 
+	// Whether any operation still runs: a vmhost doesn't exit under one (E34).
+	var hasRunning: Bool {
+		operations.values.contains { $0.state == OperationInfo.State.running }
+	}
+
 	func list() -> [OperationInfo] {
 		operations.values.sorted { $0.startedAt < $1.startedAt }
 	}

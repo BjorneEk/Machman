@@ -11,6 +11,7 @@
 import Foundation
 import AppKit
 import MachmanAPI
+import MachmanClient
 
 public enum VMHostBootstrap {
 	// Save as New VM renames the VM: its vmhost then answers on the saved VM's name-derived
@@ -108,6 +109,13 @@ public enum VMHostBootstrap {
 					// the flush window (E12), which this host must keep serving.
 					weak var stoppedRun = currentRun()
 					try? await Task.sleep(for: .milliseconds(300))   // let replies/events flush
+					// An import or kernel promote into the VM may still run here (E34).
+					if !(await lifecycle.drain(operationsRunning: {
+						api.operationCenter.hasRunning
+					})) {
+						MachmanLogger.log(.passiveWarning,
+							"\(vm)'s vmhost exits under an operation past its deadline")
+					}
 					let run = currentRun()
 					guard lifecycle.stopExitDue(running: run != nil && run !== stoppedRun) else {
 						continue
@@ -125,7 +133,9 @@ public enum VMHostBootstrap {
 			while true {
 				try? await Task.sleep(for: .seconds(180))
 				if lifecycle.hadRunning { return }   // the stop watcher owns the exit now
-				if lifecycle.idleExitDue(startInFlight: currentRun() != nil) {
+				if lifecycle.idleExitDue(
+					startInFlight: currentRun() != nil,
+					operationsRunning: api.operationCenter.hasRunning) {
 					server.stop()
 					exit(0)
 				}
@@ -236,9 +246,28 @@ public enum VMHostBootstrap {
 final class VMHostLifecycle {
 	var hadRunning = false
 
-	// The idle backstop's verdict: never once a run happened, never while a start is in flight.
-	func idleExitDue(startInFlight: Bool) -> Bool {
-		!hadRunning && !startInFlight
+	// The idle backstop's verdict: never once a run happened, never while a start is in flight
+	// or an operation runs — an import proxied to this idle host would die with it (E34).
+	func idleExitDue(startInFlight: Bool, operationsRunning: Bool = false) -> Bool {
+		!hadRunning && !startInFlight && !operationsRunning
+	}
+
+	// After a stop's flush: waits while the vmhost still runs an operation (an import into
+	// the VM that just stopped), so the exit doesn't kill it and leave its staged copy behind
+	// (E34). Bounded by the slow-class deadline its caller already gave up at. True once
+	// nothing runs.
+	func drain(
+		operationsRunning: () -> Bool, limit: Duration = RPCConnection.slowCallDeadline,
+		poll: Duration = .seconds(1),
+		sleep: (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+	) async -> Bool {
+		var waited = Duration.zero
+		while operationsRunning() {
+			guard waited < limit else { return false }
+			await sleep(poll)
+			waited += poll
+		}
+		return true
 	}
 
 	// After a stop's flush: exit unless a new run began meanwhile.
