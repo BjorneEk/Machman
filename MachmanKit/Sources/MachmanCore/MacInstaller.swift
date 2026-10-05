@@ -54,6 +54,15 @@ final class MacInstaller {
 		return "The restore image download stopped at \(got) of \(want)"
 	}
 
+	// A download answered with an error status (a 403 or 404 page) failed: its body is no
+	// restore image (D27). nil for a 2xx, or for a response that isn't HTTP.
+	nonisolated static func downloadFailure(for response: URLResponse?) -> Error? {
+		guard let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode)
+		else { return nil }
+		return VirtualMachineError.critical(
+			"The restore image download failed with HTTP status \(http.statusCode)")
+	}
+
 	// Stage callbacks for a UI controller.
 	var onResolved: ((_ version: String, _ build: String) -> Void)?
 	var onDownloadProgress: ((Progress) -> Void)?
@@ -291,9 +300,13 @@ final class MacInstaller {
 	// holding location inside the handler.
 	private func download(from remote: URL, to local: URL) async throws {
 		let holding: URL = try await withCheckedThrowingContinuation { continuation in
-			let task = URLSession.shared.downloadTask(with: remote) { url, _, error in
+			let task = URLSession.shared.downloadTask(with: remote) { url, response, error in
 				if let error = error {
 					continuation.resume(throwing: error)
+					return
+				}
+				if let failure = Self.downloadFailure(for: response) {
+					continuation.resume(throwing: failure)
 					return
 				}
 				guard let url = url else {

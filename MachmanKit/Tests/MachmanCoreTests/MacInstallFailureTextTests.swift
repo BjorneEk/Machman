@@ -31,6 +31,26 @@ struct MacInstallFailureTextTests {
 			for: MachmanError(code: .installFailure, message: "x"), cancelled: false) == "x")
 	}
 
+	// D27: the download never looked at the HTTP status, so a 403/404 page was taken as the
+	// image and then reported as "The restore image download stopped at 1 KB of 13.4 GB" —
+	// an interrupted download it wasn't.
+	@Test func anErrorStatusIsItsOwnFailure() throws {
+		let url = try #require(URL(string: "https://updates.cdn-apple.com/x/Restore.ipsw"))
+		func response(_ status: Int) -> HTTPURLResponse? {
+			HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)
+		}
+		let failure = try #require(MacInstaller.downloadFailure(for: response(404)))
+		#expect(MachmanError.userMessage(for: failure)
+			== "The restore image download failed with HTTP status 404")
+		for fine in [200, 206] {
+			#expect(MacInstaller.downloadFailure(for: response(fine)) == nil)
+		}
+		#expect(MacInstaller.downloadFailure(for: nil) == nil)
+		#expect(MacInstaller.downloadFailure(for: URLResponse(
+			url: URL(fileURLWithPath: "/x.ipsw"), mimeType: nil, expectedContentLength: 0,
+			textEncodingName: nil)) == nil)
+	}
+
 	@Test func aCanceledInstallSaysSo() {
 		#expect(MacInstaller.failedReason(for: URLError(.cancelled), cancelled: true)
 			== "The macOS install was canceled.")
