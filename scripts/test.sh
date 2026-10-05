@@ -25,6 +25,7 @@ fi
 # Build in the caller's environment: the fake home below would cold-start SwiftPM's caches.
 swift build --build-tests --package-path "$pkg"
 
+sandbox_sweep_stale mmt
 sandbox_create mmt 6
 root="$SANDBOX_ROOT"
 token="$SANDBOX_TOKEN"
