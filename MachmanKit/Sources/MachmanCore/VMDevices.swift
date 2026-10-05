@@ -177,10 +177,14 @@ extension VMConfig {
 		return out
 	}
 
-	func consoleDevices(clipboard device: GuestDevice?) -> [VZConsoleDeviceConfiguration] {
+	// allowSharing false (the lab device policy) keeps the spice port but never shares the
+	// clipboard, whatever the device says.
+	func consoleDevices(
+		clipboard device: GuestDevice?, allowSharing: Bool = true
+	) -> [VZConsoleDeviceConfiguration] {
 		guard let device else { return [] }
 		return [VMConfig.spiceAgentConsoleDeviceConfig(
-			sharesClipboard: device.sharesClipboard ?? true)]
+			sharesClipboard: allowSharing && (device.sharesClipboard ?? true))]
 	}
 
 	// Rosetta rides as an EXTRA directory-sharing device with the well-known "rosetta" tag,
@@ -301,11 +305,45 @@ extension VMConfig {
 	// Assembles the full VZ configuration from the persisted device list (1.0.4). Shared by
 	// the normal boot path (VirtualMachine) and the macOS installer so the device list lives
 	// in exactly one place. attachSerial is false for the installer: it does not run bridges,
-	// and an undrained serial pipe would stall the guest.
-	func makeVZVirtualMachineConfiguration(attachSerial: Bool = true) throws -> BuiltVM {
+	// and an undrained serial pipe would stall the guest. Under a test suite the lab device
+	// policy drops what would reach the host, after resolution: its drops are no warnings,
+	// which become events and toasts.
+	func makeVZVirtualMachineConfiguration(
+		attachSerial: Bool = true, lab: LabEnvironment? = .current
+	) throws -> BuiltVM {
+		let built = try assembleVZConfiguration(attachSerial: attachSerial, lab: lab)
+		do {
+			try built.configuration.validate()
+		} catch {
+			// User-editable devices make validate() the primary failure path — surface a
+			// readable machmanCode'd message instead of leaking "Error Domain=VZErrorDomain…".
+			let ns = error as NSError
+			if ns.domain == VZError.errorDomain {
+				throw MachmanError(
+					code: .virtualizationFailure,
+					message: "\(name) can’t start with its current settings: "
+						+ MachmanError.userMessage(for: error))
+			}
+			throw error
+		}
+		return built
+	}
+
+	// The configuration before VZ validates it (which takes the virtualization entitlement, so
+	// the headless tests stop here).
+	func assembleVZConfiguration(attachSerial: Bool, lab: LabEnvironment?) throws -> BuiltVM {
 		try requireStartableBoot()
 		let resolved = resolvedDevices()
-		let byKind = resolved.attach
+		let policy = LabDevicePolicy.current(lab: lab)
+		var byKind = resolved.attach
+		if let policy {
+			let applied = policy.apply(byKind)
+			byKind = applied.kept
+			if !applied.dropped.isEmpty {
+				MachmanLogger.log(.log, "test mode: \(name) starts without "
+					+ "\(LabDevicePolicy.describe(applied.dropped)) (lab device policy)")
+			}
+		}
 		var warnings = resolved.warnings
 		let vmConfig = VZVirtualMachineConfiguration()
 		vmConfig.cpuCount = effectiveCPUCount
@@ -322,7 +360,8 @@ extension VMConfig {
 		vmConfig.keyboards = keyboards(present: byKind[.keyboard] != nil)
 		vmConfig.pointingDevices = pointingDevices(
 			trackpad: byKind[.trackpad] != nil, pointer: byKind[.pointer] != nil)
-		vmConfig.consoleDevices = consoleDevices(clipboard: byKind[.clipboard])
+		vmConfig.consoleDevices = consoleDevices(
+			clipboard: byKind[.clipboard], allowSharing: policy?.sharesClipboard ?? true)
 		if byKind[.entropy] != nil {
 			vmConfig.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 		}
@@ -379,20 +418,6 @@ extension VMConfig {
 					"Nested virtualization isn’t supported on this Mac or for this boot mode, "
 						+ "so it’s off.")
 			}
-		}
-		do {
-			try vmConfig.validate()
-		} catch {
-			// User-editable devices make validate() the primary failure path — surface a
-			// readable machmanCode'd message instead of leaking "Error Domain=VZErrorDomain…".
-			let ns = error as NSError
-			if ns.domain == VZError.errorDomain {
-				throw MachmanError(
-					code: .virtualizationFailure,
-					message: "\(name) can’t start with its current settings: "
-						+ MachmanError.userMessage(for: error))
-			}
-			throw error
 		}
 		return BuiltVM(configuration: vmConfig, serialWiring: wiring, warnings: warnings)
 	}
