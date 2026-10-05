@@ -1,5 +1,7 @@
 import Testing
 import Foundation
+import Virtualization
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct KernelSettingsTests {
@@ -82,6 +84,42 @@ struct KernelSettingsTests {
 			}
 			#expect(live.kernelPath == moved)
 			#expect(FileManager.default.fileExists(atPath: moved))
+		}
+	}
+
+	// D21: re-tagging the active kernel updated the draft but not the live boot payload, so
+	// the next start failed with "Kernel image not found: …/kernel/v1/…"; and the override
+	// moved to a key built from the tag trimmed of spaces only, while the file moved to one
+	// trimmed of newlines too — orphaning it.
+	@Test func retaggingTheActiveKernelKeepsBootOnIt() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "kboot")
+			let cfg = try VMConfig(name: "kboot", memorySize: 2048, cpuCount: 2)
+			let src = TestEnvironment.scratch + "retag-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let file = (src as NSString).lastPathComponent
+			let old = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: "v1")
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(LinuxKernelBoot(
+				kernelPath: old, initialRamdiskPath: nil, commandLine: "console=hvc0"))
+			try cfg.setKernelOverride(forFileAt: old, commandLine: "quiet", enabled: true)
+
+			let new = try cfg.renameKernelFile(path: old, to: "v2\n")
+
+			#expect(new == cfg.kernelsDirPath() + "/kernel/v2/" + file)
+			for config in [cfg, try VMConfig.load(name: "kboot")] {
+				#expect(config.kernelSettings?.kernelPath == new)
+				guard case .linuxKernel(let live) = config.boot else {
+					Issue.record("expected a kernel boot")
+					return
+				}
+				#expect(live.kernelPath == new)
+				let loader = try config.makeBootLoader() as? VZLinuxBootLoader
+				#expect(loader?.kernelURL.path == new)
+				#expect(config.kernelOverrides.keys.sorted() == ["kernel/v2/" + file])
+			}
 		}
 	}
 

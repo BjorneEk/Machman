@@ -89,6 +89,14 @@ extension VMConfig {
 		"\(file.role.rawValue)/\(file.tag)/\(file.fileName)"
 	}
 
+	// The same key read off an owned file's path: its last three components
+	// (<kernelsDir>/<role>/<tag>/<fileName>). nil for a path too short to carry one.
+	static func kernelOverrideKey(forPath path: String) -> String? {
+		let components = (path as NSString).pathComponents.suffix(3)
+		guard components.count == 3 else { return nil }
+		return components.joined(separator: "/")
+	}
+
 	// Migration (1.0.7): consoleLoginInstaller + sshInstaller collapse into one guestSetup
 	// device — enabled if either was, at the first one's position. Called from load(name:),
 	// which saves when this returns true (the VMDisk migrate-on-load precedent).
@@ -207,12 +215,9 @@ extension VMConfig {
 		try saveVMConfig()
 	}
 
-	// Deleting an owned kernel file drops its override. The key is derivable from the path's
-	// last three components (<kernelsDir>/<role>/<tag>/<fileName>).
+	// Deleting an owned kernel file drops its override.
 	func pruneKernelOverride(forDeletedPath path: String) {
-		let components = (path as NSString).pathComponents.suffix(3)
-		guard components.count == 3 else { return }
-		let key = components.joined(separator: "/")
+		guard let key = VMConfig.kernelOverrideKey(forPath: path) else { return }
 		if kernelOverrides.removeValue(forKey: key) != nil {
 			try? saveVMConfig()
 		}
@@ -281,29 +286,34 @@ extension VMConfig {
 	// references and the per-file override to the new path/key. Returns the new path.
 	@discardableResult
 	func renameKernelFile(path: String, to newTag: String) throws -> String {
-		let kernelsDir = kernelsDirPath()
-		let rel = path.dropFirst(kernelsDir.count + 1).split(separator: "/").map(String.init)
-		let newPath = try KernelStore.rename(path: path, kernelsDir: kernelsDir, newTag: newTag)
-		guard newPath != path else { return path }
+		// KernelStore moves the standardized path, so every comparison here uses it too (a
+		// wire path may carry "." or "..").
+		let oldPath = URL(fileURLWithPath: path).standardized.path
+		let newPath = try KernelStore.rename(
+			path: path, kernelsDir: kernelsDirPath(), newTag: newTag)
+		guard newPath != oldPath else { return newPath }
+		func isOld(_ reference: String?) -> Bool {
+			guard let reference, !reference.isEmpty else { return false }
+			return URL(fileURLWithPath: reference).standardized.path == oldPath
+		}
 		if var settings = kernelSettings {
 			var changed = false
-			if settings.kernelPath == path {
+			if isOld(settings.kernelPath) {
 				settings.kernelPath = newPath
 				changed = true
 			}
-			if settings.initialRamdiskPath == path {
+			if isOld(settings.initialRamdiskPath) {
 				settings.initialRamdiskPath = newPath
 				changed = true
 			}
-			if changed { kernelSettings = settings }
+			if changed { applyKernelSettings(settings) }
 		}
-		// Migrate the override under its new identity (key = role/tag/fileName).
-		if rel.count == 3 {
-			let oldKey = "\(rel[0])/\(rel[1])/\(rel[2])"
-			let newKey = "\(rel[0])/\(newTag.trimmingCharacters(in: .whitespaces))/\(rel[2])"
-			if let value = kernelOverrides.removeValue(forKey: oldKey) {
-				kernelOverrides[newKey] = value
-			}
+		// The override follows the file to the key its NEW path names — KernelStore's
+		// normalized tag, never one rebuilt from the raw text.
+		if let oldKey = VMConfig.kernelOverrideKey(forPath: oldPath),
+			let newKey = VMConfig.kernelOverrideKey(forPath: newPath),
+			let value = kernelOverrides.removeValue(forKey: oldKey) {
+			kernelOverrides[newKey] = value
 		}
 		try saveVMConfig()
 		return newPath

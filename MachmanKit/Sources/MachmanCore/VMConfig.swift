@@ -755,11 +755,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	// Writes the draft and, when kernel boot is active, keeps the live payload in sync.
 	func updateKernelSettings(_ settings: LinuxKernelBoot) throws {
-		kernelSettings = settings
-		if isKernelBoot {
-			boot = .linuxKernel(settings)
-		}
+		applyKernelSettings(settings)
 		try saveVMConfig()
+	}
+
+	// The one way kernel settings change (D21): the draft, and the live boot payload while
+	// kernel boot is on — a start reads boot (makeBootLoader), so an edit that missed it
+	// would boot the old files. No save; callers batch it into theirs.
+	func applyKernelSettings(_ settings: LinuxKernelBoot) {
+		kernelSettings = settings
+		if isKernelBoot { boot = .linuxKernel(settings) }
 	}
 
 	// Owned kernel/initramfs files (copies living under <vm>/kernels).
@@ -817,8 +822,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			changed = true
 		}
 		guard changed else { return }
-		kernelSettings = settings
-		if isKernelBoot { boot = .linuxKernel(settings) }
+		applyKernelSettings(settings)
 	}
 
 	// After deleting an owned kernel file, clear any kernel field that pointed at it.
@@ -828,8 +832,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		if settings.kernelPath == path { settings.kernelPath = ""; changed = true }
 		if settings.initialRamdiskPath == path { settings.initialRamdiskPath = nil; changed = true }
 		if changed {
-			kernelSettings = settings
-			if isKernelBoot { boot = .linuxKernel(settings) }
+			applyKernelSettings(settings)
 			try saveVMConfig()
 		}
 	}
