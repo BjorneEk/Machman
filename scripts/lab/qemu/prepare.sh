@@ -27,7 +27,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../sshd/ssh-opts.sh
 . "$LAB_DIR/sshd/ssh-opts.sh"
 
-GUESTS="freebsd14 freebsd15 debian debian-sysv"
+GUESTS="freebsd14 freebsd15 debian debian-sysv alpine-disk"
 
 usage() {
 	sed -n '5,8p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -40,6 +40,7 @@ guest_dir() {
 	case "$1" in
 	freebsd14|freebsd15) printf '%s\n' "$LAB_DIR/guests/freebsd" ;;
 	debian|debian-sysv) printf '%s\n' "$LAB_DIR/guests/debian" ;;
+	alpine-disk) printf '%s\n' "$LAB_DIR/guests/alpine-disk" ;;
 	*) return 1 ;;
 	esac
 }

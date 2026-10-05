@@ -37,6 +37,8 @@ final class THMac: @unchecked Sendable {
 				return nil
 			}
 		}
+		// One lab sshd per run: a scope that failed half-way may have left its own.
+		_ = try? await LabScripts.run(LabScripts.sshd, ["stop", Lab.runDir], timeout: 60)
 		let sshd = try await LabSSHD.start(bind: bind, home: scope.homeDir)
 		return THMac(sshd: sshd)
 	}
@@ -73,16 +75,36 @@ final class THMac: @unchecked Sendable {
 
 	/// sshd's log lines that contain `text`.
 	func log(containing text: String) -> [String] {
-		let log = (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? ""
-		return log.split(separator: "\n").map(String.init).filter { $0.contains(text) }
+		// Lossy: a client's garbage (a port probe) must not hide the rest of the log.
+		let data = FileManager.default.contents(atPath: logPath) ?? Data()
+		let log = String(decoding: data, as: UTF8.self)
+		// sshd ends its lines with CRLF: one Character to Swift, so split on any newline.
+		return log.split(whereSeparator: \.isNewline).map(String.init)
+			.filter { text.isEmpty || $0.contains(text) }
 	}
 
 	/// Accepted logins so far (sshd: "Accepted publickey for <user> from <address> …").
 	var acceptedLogins: [String] { log(containing: "Accepted publickey for") }
 
+	/// Whether more than `count` logins are logged within 10 s (a session's lines reach the
+	/// log through the listener, a moment after the client returns).
+	func waitForLogins(moreThan count: Int) async -> Bool {
+		let deadline = ContinuousClock.now + .seconds(10)
+		while acceptedLogins.count <= count {
+			if ContinuousClock.now >= deadline { return false }
+			try? await Task.sleep(for: .milliseconds(250))
+		}
+		return true
+	}
+
 	func stop() async {
 		deauthorize()
 		await sshd.stop()
+		// Its log goes with the run's transcripts (the report keeps them).
+		let copy = Lab.transcriptsDir + "/th-sshd-\(THCounter.next()).log"
+		try? FileManager.default.createDirectory(
+			atPath: Lab.transcriptsDir, withIntermediateDirectories: true)
+		try? FileManager.default.copyItem(atPath: logPath, toPath: copy)
 	}
 }
 

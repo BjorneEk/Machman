@@ -14,7 +14,31 @@ import Testing
 
 enum THScriptRuns {
 	/// The guests the unattended rows run on.
-	static let kinds: [THGuestKind] = [.debian]
+	static let kinds: [THGuestKind] = [.debian, .alpine]
+
+	/// Where a run leaves marked files ("/home/": followed where it is a link).
+	static func markedTrees(_ kind: THGuestKind) -> String {
+		kind.isLinux ? "/etc /home/ /root" : "/etc /home/ /root /usr/local/etc"
+	}
+
+	/// Files under the marked trees that carry `marker`, sorted.
+	static func marked(_ g: any THGuest, _ marker: String) async throws -> [String] {
+		try await g.check(
+			"grep -rlF \(marker) \(markedTrees(g.kind)) 2>/dev/null | LC_ALL=C sort; true")
+			.split(separator: "\n").map(String.init)
+			.filter { !$0.isEmpty && !$0.hasSuffix("_history") }
+	}
+
+	/// The unmarked shared files an uninstall names as kept (FreeBSD's kld_list in
+	/// /etc/rc.conf keeps virtio_console: the console devices stay).
+	static func keptByUninstall(_ output: String) -> [String] {
+		output.contains("kld_list keeps virtio_console") ? ["/etc/rc.conf"] : []
+	}
+
+	/// lab's home as the guest resolves it (a link-free path: FreeBSD's /usr/home/lab).
+	static func labHome(_ g: any THGuest) async throws -> String {
+		try await g.check("cd ~lab && pwd -P")
+	}
 
 	/// A setup run as lab with the family's escalation, stdin closed: no question asked.
 	static func setUp(_ g: any THGuest, _ arguments: String) async throws
@@ -59,7 +83,7 @@ struct THScriptRunTests {
 		arguments: THScriptRuns.kinds)
 	func s4(kind: THGuestKind) async throws {
 		try await TH.withGuest(kind) { g in
-			let started = Date()
+			let started = try await g.reportMark()
 			let run = try await THScriptRuns.setUp(g, "-y --two-way")
 			#expect(run.status == 0, "\(run.output)")
 			for question in THScriptRuns.questions {
@@ -69,14 +93,15 @@ struct THScriptRunTests {
 			#expect(try await g.sh(THFacts.sshdEnabled(kind)).status == 0, "sshd is enabled")
 			let marker = try g.marker()
 			let key = try THScriptRuns.macKey(g)
-			let keys = try await g.check("cat /home/lab/.ssh/authorized_keys")
+			let home = try await THScriptRuns.labHome(g)
+			let keys = try await g.check("cat \(home)/.ssh/authorized_keys")
 			#expect(keys.split(separator: "\n").contains {
 				$0.trimmingCharacters(in: .whitespaces) == key
 			}, "\(keys)")
 			#expect(key.contains(" \(marker) "), "the Mac's key carries the marker: \(key)")
 			// `ssh mac`: Machman's block leads lab's config and names the gateway as the Mac.
 			let first = try await g.check(
-				"grep -v -e '^#' -e '^[[:space:]]*$' /home/lab/.ssh/config | head -n 1")
+				"grep -v -e '^#' -e '^[[:space:]]*$' \(home)/.ssh/config | head -n 1")
 			#expect(first == "Host mac", "\(first)")
 			let gateway = try await THScriptRuns.gateway(g)
 			let mac = try await THScriptRuns.resolve(g, "mac", user: "lab")
@@ -96,12 +121,12 @@ struct THScriptRunTests {
 				TH.log("S4: no lab sshd (the doctor refused a bridge listener): ssh mac skipped")
 				return
 			}
-			_ = try await g.agent.api.setSSH(
-				vm: g.vm.name, integrationEnabled: nil, reverseApproved: true, alias: nil)
+			try await g.approveReverse()
 			let logins = labMac.acceptedLogins.count
 			let ssh = try await g.sh("ssh -o BatchMode=yes mac true", user: "lab")
 			#expect(ssh.status == 0, "\(ssh.output)")
-			#expect(labMac.acceptedLogins.count > logins, "the lab sshd saw the login")
+			#expect(await labMac.waitForLogins(moreThan: logins),
+				"the lab sshd saw no login:\n\(labMac.log(containing: "").suffix(15))")
 		}
 	}
 
@@ -114,15 +139,14 @@ struct THScriptRunTests {
 			let run = try await THScriptRuns.setUp(g, "-y --two-way")
 			#expect(run.status == 0, "\(run.output)")
 			let marker = try g.marker()
-			let marked = try await g.check(
-				"grep -rlF \(marker) /etc /home /root 2>/dev/null | LC_ALL=C sort; true")
-				.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+			let marked = try await THScriptRuns.marked(g, marker)
 			#expect(!marked.isEmpty, "the setup left marked files")
 			var stats: [String: THGuestFiles.Stat] = [:]
 			for path in marked { stats[path] = try await THGuestFiles.stat(g, path) }
 			// The user's ssh config becomes a link to a copy: a file the uninstall may not edit.
-			let config = "/home/lab/.ssh/config"
-			let real = "/home/lab/th-config.real"
+			let home = try await THScriptRuns.labHome(g)
+			let config = "\(home)/.ssh/config"
+			let real = "\(home)/th-config.real"
 			try await g.check(
 				"cp -p \(config) \(real) && rm \(config) && ln -s \(real) \(config)"
 					+ " && chown -h lab:lab \(config)")
@@ -132,13 +156,12 @@ struct THScriptRunTests {
 				"--uninstall -y", user: "lab", escalation: kind.escalation)
 			#expect(uninstall.status == 4, "kept lines make it partial:\n\(uninstall.output)")
 			let notes = uninstall.output.split(separator: "\n").filter {
-				$0.contains("\(config) is a symbolic link")
+				$0.contains("/lab/.ssh/config is a symbolic link")
 			}
 			#expect(notes.count == 1, "\(uninstall.output)")
-			let still = try await g.check(
-				"grep -rlF \(marker) /etc /home /root 2>/dev/null | LC_ALL=C sort; true")
-				.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
-			#expect(still == [real], "only the link's target keeps the marker: \(still)")
+			let still = try await THScriptRuns.marked(g, marker)
+			let why = "only the link's target keeps the marker: \(still)\n\(uninstall.output)"
+			#expect(still == [real], Comment(rawValue: why))
 			#expect(try await g.check("cat \(real)") == linked, "the link's target is untouched")
 			for path in marked where path != config {
 				guard try await g.sh("test -f \(ShellQuote.single(path))").status == 0 else {
@@ -151,7 +174,8 @@ struct THScriptRunTests {
 			// the marked files and the link aside.
 			let after = try await THGuestFiles.fingerprint(g)
 			let changed = try await THGuestFiles.changes(
-				g, from: pristine, to: after, ignoring: marked + [real, config])
+				g, from: pristine, to: after,
+				ignoring: marked + [real, config] + THScriptRuns.keptByUninstall(uninstall.output))
 			#expect(changed.isEmpty, "unmarked files changed:\n\(changed)")
 		}
 	}

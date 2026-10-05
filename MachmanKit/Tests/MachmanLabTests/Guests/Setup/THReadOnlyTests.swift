@@ -31,16 +31,19 @@ enum THReadOnlyRows {
 	/// user, sshd state and report path, and changes nothing.
 	static func s2(_ g: any THGuest) async throws {
 		let before = try await THGuestFiles.fingerprint(g)
-		let run = try await g.install("--dry-run", user: "lab")
+		// A BSD guest's share is root's sshfs mount (the guide's escalated line): lab reads
+		// it through the family's escalation.
+		let escalation: GuestEscalation = g.kind.isLinux ? .root : g.kind.escalation
+		let run = try await g.install("--dry-run", user: "lab", escalation: escalation)
 		#expect(run.status == 0, "\(run.output)")
 		#expect(run.output.contains("Dry run — nothing was changed."), "\(run.output)")
 		let plan = THPlan(run.output)
-		let facts = try await THFacts.read(g)
+		let facts = try await THFacts.read(g, reportAs: escalation == .root ? "lab" : nil)
 		#expect(
 			plan["guest"] == "\(facts.osID) \(facts.version) (\(facts.family)), "
 				+ "\(g.kind.initName) init, \(g.kind.packageManager)", "\(run.output)")
-		#expect(plan["payload"] == GuestPaths.share + "/GuestSetup (over virtiofs)"
-			|| plan["payload"] == GuestPaths.share + "/GuestSetup (over sshfs)")
+		let transport = g.kind.isVZ ? "virtiofs" : "sshfs"
+		#expect(plan["payload"] == GuestPaths.share + "/GuestSetup (over \(transport))")
 		#expect(plan["user"] == "lab -> \(facts.labHome)", "\(run.output)")
 		#expect(
 			plan["ssh server"] == (facts.sshdRunning
@@ -65,8 +68,10 @@ enum THReadOnlyRows {
 		}
 		#expect(run.status == 3, "\(run.output)")
 		#expect(run.output.contains("cancelled — nothing was changed."), "\(run.output)")
-		// The menus and "Proceed?" only: a sudo run knows its user (no numbered choice).
-		#expect(run.kinds.allSatisfy { $0 == .toggle || $0 == .proceed }, "\(run.kinds)")
+		// A sudo run knows its user: no question lists the users (a console another tool set
+		// up may still be asked about — a genuine ambiguity).
+		#expect(!run.prompts.contains { $0.prompt == .choose && $0.before.contains("/home/lab") },
+			"\(run.output)")
 		#expect(run.kinds.last == .proceed)
 		#expect(THPlan(run.before(.proceed) ?? "")["user"] == "lab -> /home/lab", "\(run.output)")
 		try await THFingerprint.expectUnchanged(g, since: before)
@@ -80,12 +85,14 @@ enum THReadOnlyRows {
 		try s.start("env -u SUDO_USER -u DOAS_USER TERM=dumb \(TH.installer) --ssh")
 		let run = try await s.drive(
 			choose: { list in
+				// The user question takes lab; another choice keeps its default.
 				THPrompt.numbered(list).first { $0.text.hasPrefix("lab ") }.map {
 					String($0.number)
-				} ?? "q"
+				} ?? ""
 			}, proceed: "q")
 		#expect(run.status == 3, "\(run.output)")
-		let list = run.before(.choose) ?? ""
+		let list = run.prompts.first { $0.prompt == .choose && $0.before.contains("lab ") }?
+			.before ?? ""
 		let choices = THPrompt.numbered(list)
 		#expect(choices.contains { $0.text.hasPrefix("lab ") }, "\(list)")
 		#expect(choices.contains { $0.text.hasPrefix("root ") }, "\(list)")
@@ -305,7 +312,8 @@ struct THFacts {
 	var sshdRunning = false
 	var reportWritableByLab = false
 
-	static func read(_ g: any THGuest) async throws -> THFacts {
+	/// The guest's facts; the report dir's writability as `reportAs` (root when nil).
+	static func read(_ g: any THGuest, reportAs: String?) async throws -> THFacts {
 		var facts = THFacts()
 		if g.kind.isLinux {
 			facts.osID = try await g.check("sed -n 's/^ID=//p' /etc/os-release | tr -d '\"'")
@@ -320,7 +328,7 @@ struct THFacts {
 		facts.sshdRunning = try await g.sh(sshdActive(g.kind)).status == 0
 		facts.reportWritableByLab = try await g.sh(
 			"test -d \(GuestPaths.share)/GuestReport -a -w \(GuestPaths.share)/GuestReport",
-			user: "lab").status == 0
+			user: reportAs).status == 0
 		return facts
 	}
 
@@ -371,6 +379,10 @@ enum THCards {
 		"The plan's consoles line joins devices with a UTF-8 dot on a LANG=C console"
 	static let planWidth: Comment =
 		"The installer's plan lines run past 80 columns on a console"
+	static let generatedGettyReadsActive: Comment =
+		"hvc0's generator login reads active, not active (automatic), on systemd 257"
+	static let uninstallStopsForeignGetty: Comment =
+		"--uninstall stops and disables serial-getty logins Machman never enabled"
 }
 
 // L3 — the installer on the prepared Debian guest under VZ.
@@ -398,4 +410,25 @@ struct THReadOnlyDebianTests {
 
 	@Test("G16: the menu never offers the kernel console; --help and the plan state it")
 	func g16() async throws { try await THShared.row(THReadOnlyRows.g16) }
+}
+
+// L3 — the installer on the prepared Alpine disk guest (OpenRC) under VZ.
+@Suite(
+	"L3 Guest Setup — Alpine read-only rows", .serialized, .enabled(if: Lab.runs(.l3)),
+	.thGuest(.alpine))
+struct THReadOnlyAlpineTests {
+	@Test("S1: install.sh --help and --version exit 0 and name the VM")
+	func s1() async throws { try await THShared.row(THReadOnlyRows.s1) }
+
+	@Test("S2: --dry-run as a user prints the guest's real plan and changes nothing")
+	func s2() async throws { try await THShared.row(THReadOnlyRows.s2) }
+
+	@Test("S3: answering q at the plan exits 3 and leaves the guest untouched")
+	func s3() async throws { try await THShared.row(THReadOnlyRows.s3) }
+
+	@Test("S5: a root console lists the users, and a bogus --user exits 3")
+	func s5() async throws { try await THShared.row(THReadOnlyRows.s5) }
+
+	@Test("G4: the feature menu numbers items on TERM=dumb, takes arrows on xterm")
+	func g4() async throws { try await THShared.row(THReadOnlyRows.g4) }
 }

@@ -59,6 +59,7 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 		async throws -> THVZGuest {
 		let spec = try await spec(kind, options, agent: agent)
 		let vm = try await THVM.create(spec, on: agent)
+		var guest: THVZGuest?
 		do {
 			for (tag, mountKind) in options.mounts {
 				guard let mountKind else { continue }
@@ -68,13 +69,13 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 					vm: vm.name, mountID: mount.id, kind: mountKind)
 			}
 			let driver = try await vm.bootLoggedIn(2, label: "hvc2")
-			let guest = THVZGuest(
+			guest = THVZGuest(
 				kind: kind, agent: agent, vm: vm, mac: nil, driver: driver, options: options,
 				ownsMac: true)
-			try await guest.firstLogin()
-			return guest
+			try await guest!.firstLogin()
+			return guest!
 		} catch {
-			await vm.cleanup()
+			if let guest { await guest.shutdown() } else { await vm.cleanup() }
 			throw error
 		}
 	}
@@ -110,17 +111,18 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 		try await mountShare()
 	}
 
-	// After a boot: rules loaded again (persisted), the share mounted again.
-	private func afterBoot() async throws {
+	// After a boot: rules loaded again (persisted), the share mounted again (`remount`).
+	private func afterBoot(remount: Bool = true) async throws {
 		if options.network {
-			let loaded = try await driver.run(THNet.loadedCheck, timeout: .seconds(30))
+			let loaded = try await THConsoleSession.run(
+				driver, THNet.loadedCheck, timeout: .seconds(30))
 			if loaded.status != 0 {
 				throw LabError.commandFailed(
 					command: "the guest's lab network rules after a boot", status: loaded.status,
 					output: loaded.output)
 			}
 		}
-		try await mountShare()
+		if remount { try await mountShare() }
 	}
 
 	private func makeLabUser() async throws {
@@ -166,10 +168,13 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 	private func defaultGateway() async throws -> String {
 		let deadline = ContinuousClock.now + .seconds(90)
 		while true {
-			let route = try await driver.run(
-				"ip -4 route show default | awk '{ print $3; exit }'", timeout: .seconds(30))
-			if route.status == 0, route.output.split(separator: ".").count == 4 {
-				return route.output
+			let route = try await THConsoleSession.run(
+				driver, "ip -4 route show default | awk '{ print $3; exit }'",
+				timeout: .seconds(30))
+			let address = route.output.trimmingCharacters(in: .whitespacesAndNewlines)
+			if route.status == 0, address.split(separator: ".").compactMap({ UInt8($0) })
+				.count == 4 {
+				return address
 			}
 			if ContinuousClock.now >= deadline {
 				throw LabError.stateTimeout(vm: vm.name, wanted: "a default route", last: "none")
@@ -181,7 +186,7 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 	/// One root command on the driver (it may use the console); a non-zero exit throws.
 	@discardableResult
 	func root(_ command: String, timeout: Duration = .seconds(120)) async throws -> String {
-		let result = try await driver.run(command, timeout: timeout)
+		let result = try await THConsoleSession.run(driver, command, timeout: timeout)
 		guard result.status == 0 else {
 			throw LabError.commandFailed(
 				command: command, status: result.status, output: result.output)
@@ -192,8 +197,9 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 	func exec(_ command: String, user: String?, timeout: Duration) async throws
 		-> (status: Int32, output: String) {
 		let inner = user.map { "su -l \($0) -c \(ShellQuote.single(command))" } ?? command
-		return try await driver.run(
-			"setsid -w sh -c \(ShellQuote.single(inner)) </dev/null 2>&1", timeout: timeout)
+		return try await THConsoleSession.run(
+			driver, "setsid -w sh -c \(ShellQuote.single(inner)) </dev/null 2>&1",
+			timeout: timeout)
 	}
 
 	func asUserShell<T>(_ user: String, _ body: () async throws -> T) async throws -> T {
@@ -215,7 +221,8 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 			try? driver.sendRaw([0x03])
 			try? await Task.sleep(for: .milliseconds(500))
 			try? driver.send("")
-			guard let id = try? await driver.run("id -u", timeout: .seconds(10)) else {
+			guard let id = try? await THConsoleSession.run(driver, "id -u", timeout: .seconds(10))
+			else {
 				continue
 			}
 			let last = id.output.split(separator: "\n").last.map(String.init)
@@ -227,13 +234,48 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 		try? await restartFromHost()
 	}
 
-	func reboot() async throws {
+	func reboot(remount: Bool) async throws {
 		try driver.send(kind == .debian ? "systemctl reboot" : "reboot")
+		boots += 1
+		// VZ restarts the guest in place (the driver's connection sees the new boot's getty);
+		// should the VM stop instead, it is started again.
+		let deadline = ContinuousClock.now + .seconds(240)
+		var inPlace = false
+		while ContinuousClock.now < deadline {
+			if try await vm.info().state == .stopped { break }
+			if (try? await driver.expect("login: *$", timeout: .seconds(5))) != nil {
+				inPlace = true
+				break
+			}
+		}
+		if inPlace, (try? await driver.login(user: "root", timeout: .seconds(60))) != nil {
+			try await afterBoot(remount: remount)
+			return
+		}
+		driver.close()
+		if try await vm.info().state.isRunning {
+			TH.log("\(vm.name): no login after the reboot; booting again")
+			try await vm.stop(.force)
+		} else {
+			try await vm.guestStopped()
+		}
+		driver = try await vm.bootLoggedIn(2, label: "hvc2-boot\(boots)")
+		try await afterBoot(remount: remount)
+	}
+
+	/// The guest powers itself off (the VM stops, its vmhost exits).
+	func powerOff() async throws {
+		try driver.send(kind == .debian ? "systemctl poweroff" : "poweroff")
 		try await vm.guestStopped(timeout: .seconds(180))
 		driver.close()
+	}
+
+	/// A new connection to the driver console with root logged in (after something ended
+	/// the old session).
+	func reconnectDriver() async throws {
+		driver.close()
 		boots += 1
-		driver = try await vm.bootLoggedIn(2, label: "hvc2-boot\(boots)")
-		try await afterBoot()
+		driver = try await vm.loggedInConsole(2, label: "hvc2-again\(boots)")
 	}
 
 	/// The VM stopped from the host (force) and started again: no guest shutdown.

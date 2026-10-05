@@ -32,9 +32,9 @@ protocol THGuest: AnyObject, Sendable {
 	/// Root's shell on the driver as `user` (su -l) for `body`'s sessions, back to root after.
 	func asUserShell<T>(_ user: String, _ body: () async throws -> T) async throws -> T
 
-	/// A guest reboot: the VM stops (VZ has no reset) and boots again; the driver logs in
-	/// again and the share is mounted again unless the guest mounts it itself.
-	func reboot() async throws
+	/// A guest reboot (in place, or the VM stops and is started again); the driver logs in
+	/// again and, with `remount`, the share is mounted again unless the guest mounted it.
+	func reboot(remount: Bool) async throws
 
 	/// Back to root's prompt on the driver after a row that failed half-way (an installer
 	/// still asking, a user's shell): interrupts, leaves, and as a last resort boots again.
@@ -65,6 +65,8 @@ extension THGuest {
 
 	/// A session on the driver console.
 	func session() -> THConsoleSession { THConsoleSession(driver) }
+
+	func reboot() async throws { try await reboot(remount: true) }
 
 	/// The installer with `arguments`, escalated as `escalation` says, run by `user` (root when
 	/// nil): exactly the line a person types.
@@ -98,6 +100,26 @@ extension THGuest {
 
 	/// This VM's marker.
 	func marker() throws -> String { try THGuestFiles.marker(vm) }
+
+	/// The report's stamp now (nil before the first): a later report is newer than it. A
+	/// test clock is no mark — the host's stamp may land in the same second as a Date().
+	func reportMark() async throws -> Date? { try await vm.info().setup?.lastReportAt }
+
+	/// Approves the guest's reverse key once its report offered one (as the inspector's
+	/// button does: there is nothing to approve before).
+	func approveReverse(timeout: Duration = .seconds(60)) async throws {
+		let deadline = ContinuousClock.now + timeout
+		while try await vm.info().ssh?.reverseState != .pending {
+			if ContinuousClock.now >= deadline {
+				throw LabError.stateTimeout(
+					vm: vm.name, wanted: "a reverse key to approve",
+					last: "\(try await vm.info().ssh?.reverseState.rawValue ?? "none")")
+			}
+			try await Task.sleep(for: .milliseconds(500))
+		}
+		_ = try await agent.api.setSSH(
+			vm: vm.name, integrationEnabled: nil, reverseApproved: true, alias: nil)
+	}
 }
 
 enum TH {
@@ -143,6 +165,13 @@ enum TH {
 	}
 
 	static func log(_ text: String) { MachmanLogger.log(.log, "lab: th: \(text)") }
+
+	/// `output` as one line of words: the installer folds its sentences at the terminal's
+	/// width, so a sentence is looked for in this.
+	static func unwrapped(_ output: String) -> String {
+		output.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
+			.joined(separator: " ")
+	}
 }
 
 /// How a TH guest is built.
@@ -155,7 +184,12 @@ struct THGuestOptions: Sendable {
 	}
 
 	var name: String?
+	/// A VZ guest's console ports (hvc2 is the lab's driver).
 	var consoles = 3
+	/// A QEMU BSD guest's virtio consoles and its carrier's console ports: the lab runner
+	/// puts every port on one controller (ttyV0.<n>), Machman one device per port
+	/// (ttyV<n>.0), so beyond one port the names the installer expects are not there.
+	var bsdConsoles = 1
 	var graphics = false
 	var rosetta = false
 	var network = true

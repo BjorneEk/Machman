@@ -22,19 +22,25 @@ enum THKey {
 
 final class THConsoleSession: @unchecked Sendable {
 	let console: LabConsole
+	/// The begin and end markers: printed only by the echo commands around the command
+	/// (split-quoted in what is typed, so an echoed line — wrapped or not — never matches).
+	let begin: String
 	let marker: String
 	private var offset: UInt64 = 0
 
 	init(_ console: LabConsole) {
 		self.console = console
-		marker = "TH\(THCounter.next())Q"
+		let n = THCounter.next()
+		begin = "THB\(n)"
+		marker = "THE\(n)"
 	}
 
-	/// Sends `command` followed by the exit marker (split-quoted, so the echo never matches).
+	/// Sends `command` between the begin and end markers, the end with the exit status.
 	func start(_ command: String) throws {
 		offset = Self.size(of: console.transcriptPath)
-		let split = marker.dropLast(1)
-		try console.send("\(command); echo '\(split)''Q' $?")
+		try console.send(
+			"echo '\(begin.prefix(3))''\(begin.dropFirst(3))'; \(command); "
+				+ "echo '\(marker.prefix(3))''\(marker.dropFirst(3))' $?")
 	}
 
 	@discardableResult
@@ -147,26 +153,40 @@ final class THConsoleSession: @unchecked Sendable {
 		return (status, Self.clean(String(decoding: try await rawUntilMarker(), as: UTF8.self)))
 	}
 
-	/// The bytes the guest sent since start, up to the marker line (CR dropped, escapes
-	/// kept), without the echoed command line.
+	/// The bytes the command printed: after the begin marker's line, up to the end marker
+	/// (CR dropped, escapes kept) — the typed echo, however a line editor wrapped it, is not
+	/// part of it.
 	func raw() async throws -> [UInt8] { try await rawUntilMarker() }
 
 	private func rawUntilMarker() async throws -> [UInt8] {
+		let start = Array("\(begin)\n".utf8)
 		let needle = Array("\(marker) ".utf8)
 		let deadline = ContinuousClock.now + .seconds(5)
 		while true {
 			let bytes = Self.read(console.transcriptPath, from: offset)
 			if let end = Self.index(of: needle, in: bytes) {
 				var slice = Array(bytes[..<end])
-				// The echo of the typed command (one line; a wrapped echo has no newline).
-				if let firstNewline = slice.firstIndex(of: 0x0A) {
-					slice.removeSubrange(...firstNewline)
+				if let first = Self.index(of: start, in: slice) {
+					slice.removeSubrange(..<(first + start.count))
 				}
 				return slice
 			}
 			if ContinuousClock.now >= deadline { return bytes }
 			try await Task.sleep(for: .milliseconds(100))
 		}
+	}
+
+	/// One command with no questions: its status and output (between the markers).
+	static func run(
+		_ console: LabConsole, _ command: String, timeout: Duration = .seconds(120)
+	) async throws -> (status: Int32, output: String) {
+		let s = THConsoleSession(console)
+		try s.start(command)
+		let groups = try await console.expect(
+			"^\(s.begin)\\n(?s:(.*?))^\(s.marker) (\\d+)\\s*$", timeout: timeout)
+		var output = groups[1]
+		if output.hasSuffix("\n") { output.removeLast() }
+		return (Int32(groups[2]) ?? -1, output)
 	}
 
 	private static func size(of path: String) -> UInt64 {

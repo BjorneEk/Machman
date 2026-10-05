@@ -31,9 +31,12 @@ enum THGuestFiles {
 	}
 
 	/// The default trees a "changes nothing" row fingerprints, and what changes on its own.
-	static let trees = ["/etc", "/root", "/home", "/var/lib/machman", "/var/db/machman"]
+	static let trees = [
+		"/etc", "/root", "/home", "/usr/home", "/usr/local/etc", "/var/lib/machman",
+		"/var/db/machman",
+	]
 	static let volatile = [
-		"/etc/resolv.conf", "/etc/adjtime", "/etc/ld.so.cache", ".bash_history", ".lesshst",
+		"/etc/resolv.conf", "/etc/adjtime", "/etc/ld.so.cache", "_history", ".lesshst",
 		".viminfo", "/etc/.pwd.lock", "/root/.ssh/known_hosts",
 	]
 

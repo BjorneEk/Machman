@@ -1,0 +1,9 @@
+# r3-th's lab guest images: <name> <sha256> <size> <url> [<recipe>] — the format of
+# fixtures.lock (scripts/lab/fetch.sh reads every scripts/lab/*.lock). sha256 and size pin the
+# DOWNLOADED file; the recipe converts it (qcow2-raw: a sparse raw). Re-pin after a deliberate
+# upgrade with scripts/lab/fetch.sh pin <name> <url> [<recipe>].
+#
+# Alpine 3.24.2's generic aarch64 cloud image (cloud-init with NoCloud, UEFI via limine), the
+# base of the alpine-disk guest (scripts/lab/guests/alpine-disk). The download's sha512 matches
+# the release's .sha512 (2cbb677c3d21…); the sha256 below was taken on that download.
+alpine-3.24.2-aarch64-cloudinit-r0.raw 02ad5c19df06d9ec6e5c89a2080bdf41fc5830405f50f9d18702614ca5781795 203161600 https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/alpine-3.24.2-aarch64-cloudinit-r0.qcow2 qcow2-raw
