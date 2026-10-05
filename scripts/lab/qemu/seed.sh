@@ -156,4 +156,4 @@ case "${1:-}" in
 --self-check) self_check ;;
 ''|-h|--help) usage ;;
 *) build "$@" ;;
-esac
+esac; exit $?

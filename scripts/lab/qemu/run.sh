@@ -488,4 +488,4 @@ _watch) shift; cmd_watch "$@" ;;
 --self-check) self_check ;;
 --help|-h) usage ;;
 *) usage ;;
-esac
+esac; exit $?

@@ -350,4 +350,4 @@ authorize) shift; cmd_authorize "$@" ;;
 doctor) cmd_doctor ;;
 --self-check) self_check ;;
 *) usage ;;
-esac
+esac; exit $?

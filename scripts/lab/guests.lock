@@ -1,0 +1,9 @@
+# Lab guest images (r3-td): <name> <sha256> <size> <url> [<recipe>] — the format of
+# fixtures.lock (scripts/lab/fetch.sh reads every scripts/lab/*.lock). sha256 and size pin the
+# DOWNLOADED file; the recipe converts it (xz: a sparse raw). Re-pin after a deliberate
+# upgrade with scripts/lab/fetch.sh pin <name> <url> [<recipe>].
+#
+# FreeBSD BASIC-CLOUDINIT (nuageinit) UFS images, aarch64. The sha256s are the release's
+# CHECKSUM.SHA256 lines (14.5: 2026-09-04, 15.1: 2026-06-12), checked on a download.
+freebsd-14.5-aarch64-cloudinit-ufs.raw 26d68ac71da285d89e3143e090818760fd909fc8b644d4a201bee77bdc2a366f 586444324 https://download.freebsd.org/releases/VM-IMAGES/14.5-RELEASE/aarch64/Latest/FreeBSD-14.5-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.raw.xz xz
+freebsd-15.1-aarch64-cloudinit-ufs.raw 6784c274f8f20eb4687de5e79283d5a3486a07278fce4d58d0d01d198d2c45ed 595324072 https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.raw.xz xz
