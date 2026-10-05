@@ -1,9 +1,13 @@
 #!/bin/sh
-# Container regression harness for the ASSEMBLED Guest Setup script: the invariants behind
-# its fixes, checked per distro, each one a named RESULT_<NAME>=pass line.
+# Regression harness for the ASSEMBLED Guest Setup script: the invariants behind its fixes,
+# checked per distro, each one a named RESULT_<NAME>=pass line.
 #
 #   scripts/guest-regress/run.sh [--pull] [--shell <sh|ksh>] [distro…]   every distro if none
 #   scripts/guest-regress/run.sh --list                                  distros and suites
+#   scripts/guest-regress/run.sh --backend qemu [--results <tsv>] [--image <raw>] [--keep]
+#                                [--jobs 1|2] [--shell <sh|ksh>] [distro…]
+#   scripts/guest-regress/run.sh --backend qemu|vz --list
+#   scripts/guest-regress/run.sh --evaluate <suite> <run|boot> <output>  one output's TSV rows
 #
 # A dev tool, never a gate: scripts/test.sh does not run it, and nothing else needs Docker.
 # It assembles the script fresh from this checkout, builds one cached image per distro
@@ -15,6 +19,16 @@
 # only and runs emulated (about 25 s). arch is the community menci/archlinuxarm image (the
 # official one is amd64-only). --shell ksh on alpine runs the script under loksh, OpenBSD's
 # ksh lineage; the suites name every check they expect on their "# CHECKS:" lines.
+#
+# --backend qemu runs the suites inside real guests instead: the lab's prepared images
+# (scripts/lab/qemu/prepare.sh) under its headless QEMU runner, one fresh clone per suite,
+# restricted networking, the payload copied in over ssh. A real init is there, so lib.sh's
+# fake_systemd stands aside (REGRESS_BACKEND). The VM table is its own: nixos is a container
+# stand-in (an /etc/fstab linked into a read-only /nix/store) and stays docker-only, and the
+# inittab and rc.local suites need the sysvinit Debian. --backend vz (the same suites under
+# Machman's own VZ guests) runs through scripts/lab.sh. --results appends one TSV row per
+# check: distro, suite, phase, check, pass|fail|missing. Exits 69 without QEMU or without a
+# prepared image.
 set -u
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(CDPATH= cd -- "$HERE/../.." && pwd)"
@@ -84,46 +98,82 @@ distro() {
 	return 0
 }
 
+VM_ALL="debian debian-sysv freebsd14 freebsd15"
+
+# vm_distro <name> → VM_GUEST (the lab's prepared image), VM_OS (its scripts/lab/guests dir)
+# and SUITES for the VM backends; 1 for an unknown name. A suite that cannot apply in a VM is
+# left out here with its reason, never edited to pass.
+vm_distro() {
+	case "$1" in
+	debian)
+		# console and rclocal need an inittab / rc.local init: debian-sysv runs them.
+		VM_GUEST=debian VM_OS=debian
+		SUITES="smoke systemd grub files uninstall automount" ;;
+	debian-sysv)
+		# systemd, grub and automount assume systemd as PID 1: debian runs them.
+		VM_GUEST=debian-sysv VM_OS=debian
+		SUITES="smoke console rclocal files uninstall" ;;
+	freebsd14|freebsd15)
+		# The Linux suites (systemd, grub, inittab, fstab automounts) do not apply.
+		VM_GUEST="$1" VM_OS=freebsd
+		SUITES="smoke" ;;
+	*)
+		return 1 ;;
+	esac
+	return 0
+}
+
 usage() {
 	echo "usage: run.sh [--pull] [--shell <sh|ksh>] [distro…] | run.sh --list" >&2
+	echo "       run.sh --backend qemu|vz [--results <tsv>] [--image <raw>] [--keep]" \
+		"[--jobs 1|2] [distro…]" >&2
+	echo "       run.sh --evaluate <suite> <run|boot> <output>" >&2
 	exit 64
 }
 
-PULL=""
-SHELL_UNDER_TEST=sh
-while [ $# -gt 0 ]; do
+# evaluate <distro> <suite> <phase> <output>: the suite's named checks for that phase (its
+# "# CHECKS:" lines for run) against the output's RESULT_ lines. Sets EXPECTED and BAD, counts
+# TOTAL, appends a TSV row per check to $RESULTS when set. The one rule every backend uses.
+evaluate() {
+	EXPECTED="$(sed -n "s/^# $(phase_tag "$3"): //p" "$HERE/suites/$2.sh" | tr '\n' ' ')"
+	BAD=""
+	for c in $EXPECTED; do
+		TOTAL=$((TOTAL + 1))
+		case "$(grep "^RESULT_$c=" "$4" | tail -n 1)" in
+		"RESULT_$c=pass") st=pass ;;
+		"") BAD="$BAD MISSING:$c"; st=missing ;;
+		*) BAD="$BAD FAILED:$c"; st=fail ;;
+		esac
+		[ -z "$RESULTS" ] || printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$c" "$st" >> "$RESULTS"
+	done
+}
+
+phase_tag() {
 	case "$1" in
-	--list)
-		for n in $ALL; do
-			distro "$n"
-			printf '%-11s %-38s %-12s %s\n' "$n" "$IMAGE" "${PLATFORM:-native}" "$SUITES"
-		done
-		exit 0
-		;;
-	--pull) PULL=--pull; shift ;;
-	--shell) [ $# -ge 2 ] || usage; SHELL_UNDER_TEST="$2"; shift 2 ;;
-	--) shift; break ;;
-	-*) usage ;;
-	*) break ;;
+	run) echo CHECKS ;;
+	*) echo "unknown phase: $1" >&2; exit 64 ;;
 	esac
-done
-NAMES="${*:-$ALL}"
-for n in $NAMES; do
-	distro "$n" || { echo "unknown distro: $n (see --list)" >&2; exit 64; }
-done
-command -v docker >/dev/null 2>&1 || { echo "Docker is not installed" >&2; exit 69; }
+}
 
-sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" >/dev/null \
-	|| { echo "assemble failed" >&2; exit 1; }
+# report <label> <output>: the per-suite line every backend prints after evaluate.
+report() {
+	if [ -n "$BAD" ]; then
+		FAILED=1
+		echo "== $1:$BAD"
+		grep -v '^RESULT_' "$2" | head -n 20 | sed 's/^/   /'
+	else
+		echo "== $1: $(printf '%s' "$EXPECTED" | wc -w | tr -d ' ') checks pass"
+	fi
+}
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-# The payload Machman would serve, staged once and copied per suite.
-M="machman-regres000001"
-P="$TMP/payload"
-mkdir -p "$P/GuestSetup" "$P/GuestReport" "$P/regress"
-cp "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/dist/install.sh" "$P/GuestSetup/"
-cat > "$P/GuestSetup/machman.env" <<EOF
+# stage_payload <install.sh> <dir>: the payload Machman would serve, staged once and copied
+# per suite.
+stage_payload() {
+	M="machman-regres000001"
+	P="$2"
+	mkdir -p "$P/GuestSetup" "$P/GuestReport" "$P/regress"
+	cp "$1" "$P/GuestSetup/"
+	cat > "$P/GuestSetup/machman.env" <<EOF
 VM_NAME='regression-vm'
 MARKER='$M'
 REPORT_DIR_NAME='GuestReport'
@@ -138,54 +188,232 @@ HOST_USER='gustaf'
 HOST_NAME='Mac'
 HOST_LOCAL='mac.local'
 EOF
-printf 'ssh-ed25519 AAAA_REGRESSION_BLOB %s regression-vm\n' "$M" > "$P/GuestSetup/host_key.pub"
-printf 'sshfs\tprojects\t/Users/g/Projects\nsshfs\tdocs\t/Users/g/My Docs\n' \
-	> "$P/GuestSetup/mounts.list"
-cp "$HERE/lib.sh" "$HERE"/suites/*.sh "$P/regress/"
-# The file-edit helpers on their own, for suites that drive them directly.
-cp "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/setup/05-lib.sh" "$P/regress/"
-# A read-only stand-in for /nix/store, mounted into every container (the nixos suite links
-# /etc/fstab and /etc/systemd/system into it, as NixOS does).
-mkdir -p "$TMP/store/systemd-system"
-: > "$TMP/store/fstab"
+	printf 'ssh-ed25519 AAAA_REGRESSION_BLOB %s regression-vm\n' "$M" > "$P/GuestSetup/host_key.pub"
+	printf 'sshfs\tprojects\t/Users/g/Projects\nsshfs\tdocs\t/Users/g/My Docs\n' \
+		> "$P/GuestSetup/mounts.list"
+	cp "$HERE/lib.sh" "$HERE"/suites/*.sh "$P/regress/"
+	# The file-edit helpers on their own, for suites that drive them directly.
+	cp "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/setup/05-lib.sh" "$P/regress/"
+}
+
+backend_docker() {
+	NAMES="${*:-$ALL}"
+	for n in $NAMES; do
+		distro "$n" || { echo "unknown distro: $n (see --list)" >&2; exit 64; }
+	done
+	command -v docker >/dev/null 2>&1 || { echo "Docker is not installed" >&2; exit 69; }
+
+	sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" >/dev/null \
+		|| { echo "assemble failed" >&2; exit 1; }
+
+	TMP="$(mktemp -d)"
+	trap 'rm -rf "$TMP"' EXIT
+	stage_payload "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/dist/install.sh" \
+		"$TMP/payload"
+	# A read-only stand-in for /nix/store, mounted into every container (the nixos suite links
+	# /etc/fstab and /etc/systemd/system into it, as NixOS does).
+	mkdir -p "$TMP/store/systemd-system"
+	: > "$TMP/store/fstab"
+
+	for n in $NAMES; do
+		distro "$n"
+		tag="machman-regress-$n"
+		start="$(date +%s)"
+		# shellcheck disable=SC2086
+		printf 'FROM %s\nRUN %s\n' "$IMAGE" "$PREP" \
+			| docker build -q $PULL ${PLATFORM:+--platform "$PLATFORM"} -t "$tag" - >/dev/null \
+			|| { echo "== $n: image build failed"; FAILED=1; continue; }
+		for s in $SUITES; do
+			stage="$TMP/$n-$s"
+			cp -R "$TMP/payload" "$stage"
+			out="$TMP/$n-$s.out"
+			docker run --rm ${PLATFORM:+--platform "$PLATFORM"} \
+				-v "$stage:/mnt/machman/share" -v "$TMP/store:/nix/store:ro" \
+				-e "REGRESS_DISTRO=$n" -e "REGRESS_SHELL=$SHELL_UNDER_TEST" "$tag" \
+				sh "/mnt/machman/share/regress/$s.sh" > "$out" 2>&1
+			evaluate "$n" "$s" run "$out"
+			report "$n/$s" "$out"
+		done
+		echo "   ($n: $(( $(date +%s) - start ))s)"
+	done
+}
+
+# --- the qemu backend -----------------------------------------------------------------------
+
+LAB="$ROOT/scripts/lab"
+
+# vm_ssh <guest dir> <command>: the guest's user, its baked key, the lab's ssh options.
+vm_ssh() {
+	(
+		# shellcheck source=/dev/null
+		. "$1/guest.env"
+		LAB_KNOWN_HOSTS="$1/known_hosts" lab_ssh "$TMP" "$GUEST_KEY" \
+			"$GUEST_USER@127.0.0.1" "$GUEST_PORT" "$2"
+	)
+}
+
+# with_timeout <seconds> <command…>: a hung guest command must not hang the harness.
+with_timeout() {
+	perl -e 'alarm shift; exec @ARGV or exit 127' "$@"
+}
+
+# vm_suite <distro> <suite>: one suite in a fresh guest; leaves <distro>-<suite>.run.out.
+vm_suite() {
+	vm_distro "$1"
+	n="$1" s="$2"
+	name="$(printf 'r-%s-%s' "$n" "$s" | cut -c1-32)"
+	stage="$TMP/$n-$s"
+	out="$TMP/$n-$s.run.out"
+	cp -R "$TMP/payload" "$stage"
+	root=""
+	[ "$VM_OS" = freebsd ] && root="doas "
+	if ! d="$("$LAB/guests/$VM_OS/guest.sh" boot "$VM_GUEST" --run "$TMP" --name "$name" \
+		--owner $$ ${VM_IMAGE:+--image "$VM_IMAGE"} 2>"$TMP/$n-$s.boot.err")"; then
+		cat "$TMP/$n-$s.boot.err" > "$out"
+		return 0
+	fi
+	COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$stage" -cf - . \
+		| vm_ssh "$d" "${root}sh -c 'rm -rf /mnt/machman/share && mkdir -p /mnt/machman/share \
+&& tar -xf - --no-same-owner -C /mnt/machman/share'" > "$out" 2>&1
+	vm_run "$d" run >> "$out" 2>&1
+	"$LAB/qemu/run.sh" stop --run "$TMP" --name "$name" --timeout 0
+}
+
+# vm_run <guest dir> <phase>: the suite ($n, $s) as root in the guest, 20 minutes at most.
+vm_run() {
+	with_timeout 1200 sh "$HERE/run.sh" --vm-ssh "$1" "${root}env REGRESS_DISTRO=$n \
+REGRESS_SHELL=$SHELL_UNDER_TEST REGRESS_BACKEND=$BACKEND REGRESS_PHASE=$2 \
+sh /mnt/machman/share/regress/$s.sh"
+}
+
+backend_qemu() {
+	NAMES="${*:-$VM_ALL}"
+	for n in $NAMES; do
+		vm_distro "$n" || { echo "unknown VM distro: $n (see --backend qemu --list)" >&2; exit 64; }
+	done
+	# shellcheck disable=SC2086
+	if [ -n "$VM_IMAGE" ] && [ "$(printf '%s\n' $NAMES | wc -l | tr -d ' ')" != 1 ]; then
+		echo "--image takes exactly one distro" >&2
+		exit 64
+	fi
+	command -v qemu-system-aarch64 >/dev/null 2>&1 \
+		|| { echo "QEMU is not installed (qemu-system-aarch64)" >&2; exit 69; }
+	if [ -z "$VM_IMAGE" ]; then
+		for n in $NAMES; do
+			vm_distro "$n"
+			"$LAB/qemu/prepare.sh" path "$VM_GUEST" --no-build >/dev/null || exit 69
+		done
+	fi
+	# The lab's sandbox (step 11: scripts/lib/sandbox.sh and the lab slot).
+	TMP="$(mktemp -d /tmp/mml.XXXX)"
+	trap '"$LAB/qemu/run.sh" sweep "$TMP" >/dev/null 2>&1; [ -n "$KEEP" ] || rm -rf "$TMP"' EXIT
+	trap 'exit 130' INT TERM HUP
+	export TMP
+	sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" "$TMP/install.sh" \
+		>/dev/null || { echo "assemble failed" >&2; exit 1; }
+	stage_payload "$TMP/install.sh" "$TMP/payload"
+
+	# JOBS suites at a time, each in its own guest; then every output is evaluated in order.
+	jobs_list=""
+	for n in $NAMES; do
+		vm_distro "$n"
+		for s in $SUITES; do jobs_list="$jobs_list $n:$s"; done
+	done
+	start="$(date +%s)"
+	batch=""
+	for j in $jobs_list; do
+		batch="$batch $j"
+		# shellcheck disable=SC2086
+		[ "$(printf '%s\n' $batch | wc -l | tr -d ' ')" -lt "$JOBS" ] && continue
+		# shellcheck disable=SC2086
+		run_batch $batch
+		batch=""
+	done
+	# shellcheck disable=SC2086
+	[ -z "$batch" ] || run_batch $batch
+	for j in $jobs_list; do
+		n="${j%%:*}" s="${j#*:}"
+		evaluate "$n" "$s" run "$TMP/$n-$s.run.out"
+		report "$n/$s" "$TMP/$n-$s.run.out"
+	done
+	echo "   (qemu: $(( $(date +%s) - start ))s)"
+	[ -z "$KEEP" ] || echo "   (kept: $TMP)"
+}
+
+run_batch() { # <distro:suite>…: in parallel, each in its own guest
+	for j in "$@"; do
+		vm_suite "${j%%:*}" "${j#*:}" &
+	done
+	wait
+}
+
+BACKEND=docker
+RESULTS=""
+VM_IMAGE=""
+KEEP=""
+JOBS=1
+LIST=""
+PULL=""
+SHELL_UNDER_TEST=sh
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--list) LIST=1; shift ;;
+	--pull) PULL=--pull; shift ;;
+	--shell) [ $# -ge 2 ] || usage; SHELL_UNDER_TEST="$2"; shift 2 ;;
+	--backend) [ $# -ge 2 ] || usage; BACKEND="$2"; shift 2 ;;
+	--results) [ $# -ge 2 ] || usage; RESULTS="$2"; shift 2 ;;
+	--image) [ $# -ge 2 ] || usage; VM_IMAGE="$2"; shift 2 ;;
+	--keep) KEEP=1; shift ;;
+	--jobs) [ $# -ge 2 ] || usage; JOBS="$2"; shift 2 ;;
+	--evaluate)
+		[ $# -eq 4 ] || usage
+		RESULTS=/dev/stdout TOTAL=0
+		[ -f "$HERE/suites/$2.sh" ] || { echo "no suite $2" >&2; exit 64; }
+		evaluate "${REGRESS_DISTRO:--}" "$2" "$3" "$4"
+		[ -z "$BAD" ]
+		exit $?
+		;;
+	--vm-ssh)
+		# Internal (vm_run under with_timeout): ssh into a booted guest.
+		# shellcheck source=../lab/sshd/ssh-opts.sh
+		. "$ROOT/scripts/lab/sshd/ssh-opts.sh"
+		vm_ssh "$2" "$3"
+		exit $?
+		;;
+	--) shift; break ;;
+	-*) usage ;;
+	*) break ;;
+	esac
+done
+case "$BACKEND" in docker|qemu|vz) ;; *) usage ;; esac
+case "$JOBS" in 1|2) ;; *) echo "--jobs is 1 or 2 (two lab guests at most)" >&2; exit 64 ;; esac
+if [ -n "$LIST" ]; then
+	if [ "$BACKEND" = docker ]; then
+		for n in $ALL; do
+			distro "$n"
+			printf '%-11s %-38s %-12s %s\n' "$n" "$IMAGE" "${PLATFORM:-native}" "$SUITES"
+		done
+	else
+		for n in $VM_ALL; do
+			vm_distro "$n"
+			printf '%-12s %-12s %s\n' "$n" "$VM_GUEST" "$SUITES"
+		done
+	fi
+	exit 0
+fi
+[ -z "$RESULTS" ] || : > "$RESULTS"
 
 FAILED=0
 TOTAL=0
-for n in $NAMES; do
-	distro "$n"
-	tag="machman-regress-$n"
-	start="$(date +%s)"
-	# shellcheck disable=SC2086
-	printf 'FROM %s\nRUN %s\n' "$IMAGE" "$PREP" \
-		| docker build -q $PULL ${PLATFORM:+--platform "$PLATFORM"} -t "$tag" - >/dev/null \
-		|| { echo "== $n: image build failed"; FAILED=1; continue; }
-	for s in $SUITES; do
-		stage="$TMP/$n-$s"
-		cp -R "$P" "$stage"
-		out="$TMP/$n-$s.out"
-		docker run --rm ${PLATFORM:+--platform "$PLATFORM"} \
-			-v "$stage:/mnt/machman/share" -v "$TMP/store:/nix/store:ro" \
-			-e "REGRESS_DISTRO=$n" -e "REGRESS_SHELL=$SHELL_UNDER_TEST" "$tag" \
-			sh "/mnt/machman/share/regress/$s.sh" > "$out" 2>&1
-		expected="$(sed -n 's/^# CHECKS: //p' "$HERE/suites/$s.sh" | tr '\n' ' ')"
-		bad=""
-		for c in $expected; do
-			TOTAL=$((TOTAL + 1))
-			case "$(grep "^RESULT_$c=" "$out" | tail -n 1)" in
-			"RESULT_$c=pass") ;;
-			"") bad="$bad MISSING:$c" ;;
-			*) bad="$bad FAILED:$c" ;;
-			esac
-		done
-		if [ -n "$bad" ]; then
-			FAILED=1
-			echo "== $n/$s:$bad"
-			grep -v '^RESULT_' "$out" | head -n 20 | sed 's/^/   /'
-		else
-			echo "== $n/$s: $(printf '%s' "$expected" | wc -w | tr -d ' ') checks pass"
-		fi
-	done
-	echo "   ($n: $(( $(date +%s) - start ))s)"
-done
+case "$BACKEND" in
+docker) backend_docker "$@" ;;
+qemu)
+	# shellcheck source=../lab/sshd/ssh-opts.sh
+	. "$LAB/sshd/ssh-opts.sh"
+	backend_qemu "$@" ;;
+vz)
+	echo "the vz backend runs through scripts/lab.sh, which this tree does not have yet" >&2
+	exit 69 ;;
+esac
 [ "$FAILED" -eq 0 ] && echo "guest-regress: all $TOTAL checks pass"
 exit "$FAILED"

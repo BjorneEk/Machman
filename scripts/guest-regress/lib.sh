@@ -1,6 +1,10 @@
-# Sourced by every suite, inside its container. The payload is the share Machman would
-# serve (/mnt/machman/share), the report lands in its GuestReport sibling.
+# Sourced by every suite, inside its container or VM guest. The payload is the share Machman
+# would serve (/mnt/machman/share), the report lands in its GuestReport sibling.
 set -u
+# The backend running the suite (run.sh --backend): docker (a container: no PID-1 init, faked
+# where a suite needs one) or a real guest (qemu, vz) whose init and services are real.
+REGRESS_BACKEND="${REGRESS_BACKEND:-docker}"
+on_vm() { [ "$REGRESS_BACKEND" != docker ]; }
 S=/mnt/machman/share/GuestSetup/install.sh
 REPORT=/mnt/machman/share/GuestReport/report.env
 NEW=machman-regres000001
@@ -22,14 +26,17 @@ etcsum() {
 mkuser() {
 	if command -v useradd >/dev/null 2>&1; then
 		useradd -m -s /bin/sh "$1"
+	elif command -v pw >/dev/null 2>&1; then
+		pw useradd -n "$1" -m -s /bin/sh
 	else
 		adduser -D -s /bin/sh "$1"
 	fi
 }
 
 # The script takes its systemd paths on sd_booted's evidence; a container has no PID-1
-# systemd, so the shim answers for it (and logs what it was asked).
+# systemd, so the shim answers for it (and logs what it was asked). A VM has the real one.
 fake_systemd() {
+	on_vm && return 0
 	mkdir -p /run/systemd/system /usr/local/bin
 	# Nothing is running or enabled (is-active/is-enabled answer "inactive"); every other
 	# verb succeeds.
@@ -41,4 +48,18 @@ fake_systemd() {
 # "<mode> <uid> <gid>" — numeric, the distro's ls either way.
 meta() {
 	ls -lnd "$1" | awk '{ print substr($1, 1, 10), $3, $4 }'
+}
+
+# systemctl_did <start|enable> <unit>: whether the script started (enabled) <unit> — the
+# shim's log in a container, systemd itself in a VM.
+systemctl_did() {
+	if on_vm; then
+		case "$1" in
+		start) systemctl is-active --quiet "$2" ;;
+		enable) systemctl is-enabled --quiet "$2" ;;
+		*) return 2 ;;
+		esac
+	else
+		grep -qxF "$1 $2" /tmp/systemctl.log 2>/dev/null
+	fi
 }

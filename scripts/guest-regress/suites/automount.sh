@@ -19,7 +19,7 @@ $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-ins
 # claims mounting only for those (the script folds its lines: read them back unfolded).
 tr '\n' ' ' < /tmp/run1.log | tr -s ' ' > /tmp/run1.flat
 if command -v systemd-escape >/dev/null 2>&1; then
-	grep -q '^start mnt-machman-mounts-projects\.automount$' /tmp/systemctl.log \
+	systemctl_did start mnt-machman-mounts-projects.automount \
 		&& grep -q 'armed (projects, docs) — each mounts on first access' /tmp/run1.flat \
 		&& armed=pass || armed=fail
 else
@@ -27,7 +27,8 @@ else
 		&& ! grep -q 'mounts on first access' /tmp/run1.flat && armed=pass || armed=fail
 fi
 R AUTOMOUNT_ARMED "$armed"
-[ "$armed" = pass ] || { grep -n 'start\|daemon-reload' /tmp/systemctl.log; cat /tmp/run1.flat; echo; }
+[ "$armed" = pass ] || { grep -n 'start\|daemon-reload' /tmp/systemctl.log 2>/dev/null
+	cat /tmp/run1.flat; echo; }
 # A later run that refreshes only the share must leave the sshfs lines alone.
 $SH "$S" -y --user reg --automount-virtiofs --no-automount-sshfs --one-way --no-sshfs \
 	--no-install --no-service >/tmp/run2.log 2>&1

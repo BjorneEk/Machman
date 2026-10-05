@@ -8,9 +8,10 @@
 #             baked key, doas, fusefs-sshfs; stop; print the timings
 #   guest.sh lab-route     the command that sends the guest's default route to the lab gateway
 #
-# Per-run boots take no seed (the key is baked into the prepared image) and have restricted
-# networking; the lab gateway 10.0.2.100 replaces the default route, so the guest's "Mac" is
-# the lab sshd (--lab-gateway <port>) or nothing.
+# 14 and 15 also go by their guest names (freebsd14, freebsd15). Per-run boots take no seed
+# (the key is baked into the prepared image) and have restricted networking; the lab gateway
+# 10.0.2.100 replaces the default route, so the guest's "Mac" is the lab sshd
+# (--lab-gateway <port>) or nothing.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../../qemu/guest-lib.sh
@@ -26,8 +27,8 @@ usage() {
 
 guest_of() {
 	case "${1:-}" in
-	14) echo freebsd14 ;;
-	15) echo freebsd15 ;;
+	14|freebsd14) echo freebsd14 ;;
+	15|freebsd15) echo freebsd15 ;;
 	*) lab_die 64 "the FreeBSD guest is 14 or 15, not '${1:-}'." ;;
 	esac
 }
