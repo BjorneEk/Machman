@@ -114,13 +114,18 @@ extension TreeContext {
 
 	// A plain click selects the row and opens it, a row already selected included (arrow
 	// keys leave rows selected without opening them); ⌘/⇧-clicks stay the List's, a
-	// control-click is a menu click, and a click into a rename field is not an open.
+	// control-click is a menu click, and a click into a rename field is not an open. A
+	// rename elsewhere in the tree doesn't block it: that rename ends as focus leaves it.
 	func clicked(_ node: SidebarNode) {
 		guard NSEvent.modifierFlags.isDisjoint(with: [.command, .shift, .control]),
-			!renamingRoot, renamingNode == nil else { return }
+			!isRenaming(node) else { return }
 		if let torn = viewModel.treeRowClicked(node, vm: vm) {
 			openWindow(id: "torn-tab", value: torn)
 		}
+	}
+
+	func isRenaming(_ node: SidebarNode) -> Bool {
+		(node == .vmRoot && renamingRoot) || renamingNode == node
 	}
 
 	// Move a tab out of the canvas into its own window (or focus the window it already

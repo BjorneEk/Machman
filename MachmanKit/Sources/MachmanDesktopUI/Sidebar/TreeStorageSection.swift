@@ -42,7 +42,7 @@ struct TreeStorageSection: View {
 								ctx.viewModel.renameDisk(
 									ctx.vm.name, diskID: disk.id, newName: newName)
 							} cancel: {
-								ctx.renamingNode = nil
+								if ctx.renamingNode == .disk(disk.id) { ctx.renamingNode = nil }
 							}
 						} else {
 							Text(disk.name ?? Self.lastComponent(disk.path))

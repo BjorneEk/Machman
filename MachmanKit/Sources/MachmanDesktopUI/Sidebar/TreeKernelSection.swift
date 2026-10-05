@@ -77,6 +77,7 @@ struct TreeKernelSection: View {
 			}
 		) {
 			ForEach(entries) { file in
+				let node: SidebarNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
 				HStack(spacing: 6) {
 					if role == .kernel {
 						TuxIcon(size: theme.metrics.iconSize + 1)
@@ -84,13 +85,12 @@ struct TreeKernelSection: View {
 						Image(systemName: MachmanSymbols.initramfs)
 							.font(.system(size: theme.metrics.iconSize))
 					}
-					if ctx.renamingNode == (role == .kernel
-						? SidebarNode.kernel(file.id) : SidebarNode.initramfs(file.id)) {
+					if ctx.renamingNode == node {
 						RenameField(initial: file.label) { tag in
 							ctx.renamingNode = nil
 							ctx.viewModel.renameKernelTag(ctx.vm.name, path: file.id, tag: tag)
 						} cancel: {
-							ctx.renamingNode = nil
+							if ctx.renamingNode == node { ctx.renamingNode = nil }
 						}
 					} else {
 						Text(file.label)
@@ -114,8 +114,7 @@ struct TreeKernelSection: View {
 					}
 				}
 				.treeRow(
-					role == .kernel ? .kernel(file.id) : .initramfs(file.id),
-					opacity: file.active ? 1 : MachmanColors.inactiveEntryOpacity
+					node, opacity: file.active ? 1 : MachmanColors.inactiveEntryOpacity
 				) { ctx.kernelEntryMenu(file, role: role) }
 			}
 			ctx.dropPreview(

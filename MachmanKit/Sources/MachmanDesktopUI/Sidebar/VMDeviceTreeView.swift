@@ -151,10 +151,13 @@ struct VMDeviceTreeView: View {
 				localSelection = viewModel.treeSelection
 			}
 		}
-		// The tree shows ONE VM; stale nodes must not survive into another VM's tree.
+		// The tree shows ONE VM; stale nodes must not survive into another VM's tree, nor a
+		// rename (its Return would rename the next VM, T24).
 		.onChange(of: vm.name) {
 			localSelection = []
 			dragPreview = nil
+			renamingRoot = false
+			renamingNode = nil
 			DispatchQueue.main.async { [weak viewModel] in
 				viewModel?.treeSelection = []
 			}

@@ -306,13 +306,17 @@ public struct AddTile: View {
 
 // MARK: - Rename field ------------------------------------------------------------------------
 
-// In-place rename editor: commits on Return, cancels on Esc, auto-focuses.
+// In-place rename editor: commits on Return, cancels on Esc or when focus moves elsewhere
+// (a click outside it), auto-focuses.
 public struct RenameField: View {
 	private let initial: String
 	private let commit: (String) -> Void
 	private let cancel: () -> Void
 	@State private var draft = ""
 	@FocusState private var focused: Bool
+	// Losing focus ends the rename only once the field had it: not in the frames before the
+	// focus it asks for on appear lands.
+	@State private var hadFocus = false
 
 	public init(
 		initial: String, commit: @escaping (String) -> Void, cancel: @escaping () -> Void
@@ -331,6 +335,13 @@ public struct RenameField: View {
 			.onAppear {
 				draft = initial
 				focused = true
+			}
+			.onChange(of: focused) { _, now in
+				if now {
+					hadFocus = true
+				} else if hadFocus {
+					cancel()
+				}
 			}
 	}
 }
