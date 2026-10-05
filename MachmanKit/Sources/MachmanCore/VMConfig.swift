@@ -377,9 +377,11 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Destructive — confirmation is the caller's job. Ownership = residency: storage raws
 	// and isos living INSIDE the VM dir (imported/promoted) are deleted with their entry;
 	// external files are only disconnected. The config saves first (D22): a failed save
-	// keeps the entry and its file, and a failed delete after it leaves an orphan file —
-	// never an entry naming a file that is gone.
-	func deleteDisk(disk: VMDisk) throws {
+	// keeps the entry and its file. Once it saved, the disk IS removed — an owned file that
+	// won't delete stays behind as an orphan, returned for the caller to report, never
+	// thrown (review F3: the removal happened).
+	@discardableResult
+	func deleteDisk(disk: VMDisk) throws -> String? {
 		let before = disks
 		disks.removeAll { $0 == disk }
 		do {
@@ -388,18 +390,15 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			disks = before
 			throw error
 		}
-		switch disk.kind {
-		case .storage(let name, _):
-			let url = localURL(file: "\(name).raw")
-			if FileManager.default.fileExists(atPath: url.path) {
-				try FileManager.default.removeItem(at: url)
-			}
-		case .iso(let url) where url.path.hasPrefix(vmDirPath() + "/"):
-			if FileManager.default.fileExists(atPath: url.path) {
-				try FileManager.default.removeItem(at: url)
-			}
-		default:
-			break
+		guard let file = ownedFile(of: disk), FileManager.default.fileExists(atPath: file)
+		else { return nil }
+		do {
+			try FileManager.default.removeItem(atPath: file)
+			return nil
+		} catch {
+			MachmanLogger.log(.passiveError,
+				"\(name): removed the disk, but \(file) couldn’t be deleted: \(error)")
+			return file
 		}
 	}
 

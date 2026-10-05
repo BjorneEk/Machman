@@ -86,4 +86,44 @@ struct DiskEditRollbackTests {
 			#expect(!fm.fileExists(atPath: vm.kernelsDirPath() + "/kernel/v2"))
 		}
 	}
+
+	// Review F3: once the config saved, the disk IS removed. A file that won't delete then
+	// (here an owned iso in a read-only subfolder) used to throw — "Removing a disk failed"
+	// while the desktop, with no listChanged, kept showing the disk. It stays as an orphan
+	// now, and a warning names it.
+	@Test func aFileThatWontDeleteAfterTheSaveIsReportedNotThrown() async throws {
+		var registry: VMRegistry!
+		var stream: AsyncStream<VMEvent>!
+		var iso = ""
+		try VMTestDir.withRedirectedDir {
+			_ = try makeVM("orphan")
+			registry = VMRegistry()
+			let vm = try #require(registry.vm(named: "orphan"))
+			let folder = vm.config.configFilePath(file: "isos")
+			try fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+			iso = folder + "/netinst.iso"
+			try Data("iso".utf8).write(to: URL(fileURLWithPath: iso))
+			try vm.config.addIsoDisk(isoUrl: URL(fileURLWithPath: iso))
+			let disk = try #require(vm.config.disks.first)
+			try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder)
+			defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder) }
+			stream = registry.events.stream()
+
+			try registry.removeDisk(disk, from: vm)
+
+			registry.events.emit(.listChanged)   // the end of what removeDisk said
+			#expect(vm.config.disks.isEmpty)
+			#expect(try VMConfig.load(name: "orphan").disks.isEmpty)
+			#expect(fm.fileExists(atPath: iso))
+		}
+		var warnings: [String] = []
+		for await event in stream {
+			if case .log(_, .warning, let message) = event { warnings.append(message) }
+			if case .listChanged = event { break }
+		}
+		#expect(warnings == [
+			"\u{201C}netinst.iso\u{201D} couldn\u{2019}t be deleted from the VM\u{2019}s folder "
+				+ "\u{2014} remove it by hand.",
+		])
+	}
 }

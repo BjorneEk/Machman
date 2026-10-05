@@ -52,8 +52,8 @@ extension VMConfig {
 		}.map { ($0 as NSString).standardizingPath })
 	}
 
-	// The file a disk entry owns — deleteDisk's rule: a storage raw, or an iso inside the
-	// VM's folder. nil for a reference, whose removal only disconnects it.
+	// The file a disk entry owns — what deleteDisk deletes: a storage raw, or an iso inside
+	// the VM's folder. nil for a reference, whose removal only disconnects it.
 	func ownedFile(of disk: VMDisk) -> String? {
 		switch disk.kind {
 		case .storage(let name, _):
@@ -96,10 +96,21 @@ extension VMRegistry {
 				+ "\(owner)’s folder — remove that disk from \(ref.vm) first")
 	}
 
-	// vm.disk.remove: deleting an owned file another VM uses would destroy its disk.
+	// vm.disk.remove: deleting an owned file another VM uses would destroy its disk. An owned
+	// file that won't delete once the entry is gone is an orphan the user is told about — the
+	// removal itself succeeded (review F3).
 	func removeDisk(_ disk: VMDisk, from vm: VirtualMachine) throws {
 		try refuseForeignUse(of: vm.config.ownedFile(of: disk), in: vm)
-		try vm.config.deleteDisk(disk: disk)
+		if let orphan = try vm.config.deleteDisk(disk: disk) {
+			events.emit(.log(
+				vm: vm.config.name, level: .warning, message: Self.orphanWarning(orphan)))
+		}
+	}
+
+	// One sentence without the VM's name: the desktop shows it as "<VM>: …".
+	static func orphanWarning(_ path: String) -> String {
+		"\u{201C}\((path as NSString).lastPathComponent)\u{201D} couldn’t be deleted from the "
+			+ "VM’s folder — remove it by hand."
 	}
 
 	// vm.disk.rename: the owned raw moves, and another VM naming it would lose it.
