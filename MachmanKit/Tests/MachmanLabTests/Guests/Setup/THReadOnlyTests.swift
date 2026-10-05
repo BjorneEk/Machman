@@ -383,6 +383,10 @@ enum THCards {
 		"hvc0's generator login reads active, not active (automatic), on systemd 257"
 	static let bsdRootHome: Comment =
 		"The BSD guide's approved share mount reads /home/root/.ssh/config for a root guest user"
+	static let netbsdAddressPrefix: Comment =
+		"The installer reports a NetBSD guest's address with its prefix length (10.0.2.15/24)"
+	static let netbsdUsermount: Comment =
+		"On NetBSD the user-mount step fails at securelevel 1 and keeps nothing for the next boot"
 	static let uninstallStopsForeignGetty: Comment =
 		"--uninstall stops and disables serial-getty logins Machman never enabled"
 }

@@ -38,10 +38,24 @@ final class THConsoleSession: @unchecked Sendable {
 	/// Sends `command` between the begin and end markers, the end with the exit status.
 	func start(_ command: String) throws {
 		offset = Self.size(of: console.transcriptPath)
-		try console.send(
-			"echo '\(begin.prefix(3))''\(begin.dropFirst(3))'; \(command); "
-				+ "echo '\(marker.prefix(3))''\(marker.dropFirst(3))' $?")
+		let line = "echo '\(begin.prefix(3))''\(begin.dropFirst(3))'; \(command); "
+			+ "echo '\(marker.prefix(3))''\(marker.dropFirst(3))' $?"
+		guard Self.isPaced(console.path) else { return try console.send(line) }
+		// A UART without flow control drops what overruns its FIFO: a long line goes in
+		// 16-byte pieces.
+		let bytes = Array((line + "\n").utf8)
+		for start in stride(from: 0, to: bytes.count, by: 16) {
+			try console.sendRaw(Array(bytes[start..<min(start + 16, bytes.count)]))
+			usleep(20_000)
+		}
 	}
+
+	private static let pacedLock = NSLock()
+	nonisolated(unsafe) private static var pacedPaths: Set<String> = []
+
+	/// Console sockets whose input must be paced (the BSD spikes' PL011).
+	static func pace(_ path: String) { pacedLock.withLock { _ = pacedPaths.insert(path) } }
+	static func isPaced(_ path: String) -> Bool { pacedLock.withLock { pacedPaths.contains(path) } }
 
 	@discardableResult
 	func expect(_ pattern: String, timeout: Duration = .seconds(120)) async throws -> [String] {
