@@ -242,6 +242,18 @@ enum TG {
 		}.sorted()
 	}
 
+	/// Polls an async condition until it holds, `timeout` at most; returns the last answer.
+	static func until(
+		timeout: Duration = .seconds(20), _ condition: () async -> Bool
+	) async -> Bool {
+		let deadline = ContinuousClock.now + timeout
+		while true {
+			if await condition() { return true }
+			if ContinuousClock.now >= deadline { return false }
+			try? await Task.sleep(for: .milliseconds(250))
+		}
+	}
+
 	// MARK: Agent scopes
 
 	/// Lab.withAgent with a step between the scope's creation and the agent's launch (a

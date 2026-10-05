@@ -10,6 +10,7 @@
 import Foundation
 import Testing
 import MachmanAPI
+import MachmanTestSupport
 import MachmanUI
 
 @Suite("Save as New VM", .serialized, .enabled(if: Lab.runs(.l2)))
@@ -116,5 +117,64 @@ struct TGSafeSaveTests {
 			try await vm.forceStop()
 			try await kept.forceStop()
 		}
+	}
+
+	@Test("W2-17: the console tab follows the saved run; the original's console shows its own boot")
+	func consoleTabFollowsSavedRun() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.alpine("tg-w217", policy: Self.safeHeadless, on: agent)
+			let kept = TGVM("tg-w217-kept", on: agent)
+			try await Self.consoleFollowsSave(vm: vm, kept: kept, agent: agent)
+			try await kept.forceStop()
+			try await vm.forceStop()
+		}
+	}
+
+	// W2-17 on the desktop's own view model and terminal registry (T17).
+	@MainActor
+	static func consoleFollowsSave(vm: TGVM, kept: TGVM, agent: LabAgent) async throws {
+		let desktop = try await TGDesktop.make(api: agent.api, scope: agent.scope, showing: vm.name)
+		let model = try #require(desktop.viewModel)
+		model.startPolicyDriven(try #require(desktop.vm(vm.name)), .plain)
+		try #require(await desktop.waitFor(vm.name, .running))
+		#expect(desktop.vm(vm.name)?.safeRun == true)
+		try vm.fileHostPid(try await vm.hostPID())
+		let tab = try await desktop.openConsole(vm: vm.name)
+		let console = try await tab.console()
+		defer { console.close() }
+		let guest = try await TGGuest.ready(console)
+		let run = "run-" + TG.nonce()
+		try await guest.set("TGWHO", run)
+		// Save as New VM from the desktop: the tab and its session go with the run.
+		model.safeSave(vm.name, to: kept.name)
+		try #require(await eventually(timeout: .seconds(30)) { model.selectedName == kept.name })
+		try vm.handOverPid(to: kept)
+		let ref = SerialPortRef(kind: .console, index: 0)
+		#expect(desktop.terminals.controller(vm: kept.name, ref: ref) === tab)
+		#expect(desktop.terminals.controller(vm: vm.name, ref: ref) == nil)
+		#expect(tab.connected)
+		#expect(tab.connectedPaths.count == 1)
+		#expect(try await guest.value(of: "TGWHO") == run)
+		// The original: Start meets the MAC the run still uses and offers Start Anyway.
+		try #require(await desktop.waitFor(vm.name, .stopped))
+		model.startPolicyDriven(try #require(desktop.vm(vm.name)), .plain)
+		try #require(await eventually(timeout: .seconds(30)) { model.pendingForceStart != nil })
+		let pending = try #require(model.pendingForceStart)
+		#expect(pending.name == vm.name)
+		#expect(pending.safe)
+		#expect(model.presentedError == nil)
+		model.startVM(pending.name, headless: pending.headless, force: true, safe: pending.safe)
+		model.pendingForceStart = nil
+		try #require(await desktop.waitFor(vm.name, .running))
+		try vm.fileHostPid(try await vm.hostPID())
+		// Its console tab is a new session that shows its own boot, not the saved run.
+		let fresh = try await desktop.openConsole(vm: vm.name)
+		#expect(fresh !== tab)
+		let freshConsole = try await fresh.console()
+		defer { freshConsole.close() }
+		let other = try await TGGuest.ready(freshConsole)
+		#expect(try await other.value(of: "TGWHO") == "unset")
+		let seen = String(decoding: tab.transcript(), as: UTF8.self)
+		#expect(seen.components(separatedBy: "LAB-READY").count - 1 == 1)
 	}
 }
