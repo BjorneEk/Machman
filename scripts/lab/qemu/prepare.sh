@@ -233,7 +233,8 @@ build() {
 		2>/dev/null
 	ssh-keygen -q -t ed25519 -N '' -C "lab-$GUEST-$KEY" -f "$b/id_ed25519" </dev/null \
 		|| lab_die 1 "ssh-keygen failed."
-	if ! PREP_KEY="$KEY" provision "$b" "$RUN"; then
+	# stdout is the image path alone: the guest's chatter goes to stderr.
+	if ! PREP_KEY="$KEY" provision "$b" "$RUN" >&2; then
 		"$HERE/run.sh" stop --run "$RUN" --name "prep-$GUEST" --timeout 0
 		prep_log "provisioning failed; logs in $RUN/qemu/prep-$GUEST (kept)"
 		exit 1

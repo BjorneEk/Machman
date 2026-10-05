@@ -6,6 +6,7 @@ usage:
   console.py SOCK [--transcript F] run --timeout S -- CMD...
   console.py SOCK [--transcript F] expect REGEX [--nudge S] --timeout S
   console.py SOCK [--transcript F] send TEXT
+  console.py SOCK [--transcript F] firstboot [--root-password P] --timeout S
   console.py SOCK qmp COMMAND [--arguments JSON] --timeout S
   console.py --self-test
 
@@ -15,8 +16,11 @@ we connected), answers the password prompt (empty unless --password) and stops a
 prompt ending in '# ' or '$ '. run sends one shell line,
   echo "__LAB_BEGIN_$((40+2))_<nonce>"; CMD; echo "__LAB_RC_$((40+2))_<nonce>=$?"
 so the tty's echo of the line can never match the markers, prints what CMD printed and exits
-with CMD's status. expect waits for REGEX in what arrives. qmp runs one QMP command and prints
-its return value as JSON. Everything received is appended raw to --transcript.
+with CMD's status. expect waits for REGEX in what arrives. firstboot answers systemd-firstboot
+on the system console (a fresh Debian cloud image asks before its first login): any key, every
+"(empty to skip…)" question empty, the root password twice (empty skips it), until a login
+prompt. qmp runs one QMP command and prints its return value as JSON. Everything received is
+appended raw to --transcript.
 
 Exit codes: the guest command's status (run), 0 (login/expect/send/qmp ok), 1 (refused login,
 QMP error), 124 (timeout), 125 (no console: connect failed or the socket closed), 64 (usage).
@@ -42,6 +46,10 @@ ANSI = re.compile(rb"\x1b\[[0-9;:?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\
 PROMPT = re.compile(rb"(?:^|\n)[^\n]{0,120}[#$] ?$")
 LOGIN = re.compile(rb"login: ?$")
 PASSWORD = re.compile(rb"[Pp]assword: ?$")
+# systemd-firstboot's questions (the colour codes and "(press TAB for no echo)" follow them).
+FB_PASSWORD = re.compile(
+	rb"(root password|again|[Rr]epeat|[Rr]etype)[^\n]*: (\(press TAB[^)]*\) )?$")
+FB_SKIP = re.compile(rb"empty to skip[^\n]*: $")
 
 
 class ConsoleError(Exception):
@@ -146,6 +154,26 @@ class Console:
 				raise ConsoleError(124, f"no end marker within {timeout:g} s")
 			self.pump(min(left, 0.5))
 
+	def firstboot(self, root_password, timeout):
+		deadline = time.monotonic() + timeout
+		pos = 0
+		while time.monotonic() < deadline:
+			self.pump(0.5)
+			new = self.clean(self.buf[pos:])
+			line = new.rsplit(b"\n", 1)[-1]
+			if b"Press any key to proceed" in new:
+				self.send(b"\n")
+			elif FB_PASSWORD.search(line):
+				self.send(root_password.encode() + b"\n")
+			elif FB_SKIP.search(line):
+				self.send(b"\n")
+			elif LOGIN.search(line):
+				return
+			else:
+				continue
+			pos = len(self.buf)
+		raise ConsoleError(124, f"no login prompt after firstboot within {timeout:g} s")
+
 	def expect(self, pattern, timeout, nudge):
 		rx = re.compile(pattern.encode())
 		deadline = time.monotonic() + timeout
@@ -225,6 +253,9 @@ def main(argv):
 	ex.add_argument("--timeout", type=float, required=True)
 	sd = sub.add_parser("send")
 	sd.add_argument("text")
+	fb = sub.add_parser("firstboot")
+	fb.add_argument("--root-password", default="")
+	fb.add_argument("--timeout", type=float, required=True)
 	qm = sub.add_parser("qmp")
 	qm.add_argument("execute")
 	qm.add_argument("--arguments", default="")
@@ -255,6 +286,9 @@ def main(argv):
 			if a.cmd == "expect":
 				m = con.expect(a.regex, a.timeout, a.nudge)
 				print(m.decode("latin-1"))
+				return 0
+			if a.cmd == "firstboot":
+				con.firstboot(a.root_password, a.timeout)
 				return 0
 			if a.cmd == "send":
 				con.send(a.text.encode() + b"\n")
@@ -323,6 +357,32 @@ def fake_firmware(conn):
 	time.sleep(0.5)
 	conn.sendall(b"\x1b[2J\x1b[01;01HUEFI Interactive Shell v2.2\r\nShell> ")
 	time.sleep(2)
+
+
+FIRSTBOOT_ANSWERS = []
+
+
+def fake_firstboot(conn):
+	"""systemd-firstboot on a fresh Debian image, then a getty."""
+	f = conn.makefile("rb")
+	conn.sendall("Welcome to Debian!\r\n\r\n-- Press any key to proceed --".encode())
+	prompts = [
+		"\x1b[0;1m\u2023 Please enter the new timezone name or number (empty to skip, "
+		"\"list\" to list options): ",
+		"\U0001f510 \u2023 Please enter the new root password (empty to skip): "
+		"\x1b[0;38:5:245m(press TAB for no echo) ",
+		"\U0001f510 \u2023 Please enter the new root password again: "
+		"\x1b[0;38:5:245m(press TAB for no echo) ",
+		"\r\n[  OK  ] Reached target multi-user.target\r\n\x1b]104\x07\r\n"
+		"Debian GNU/Linux 13 localhost ttyAMA0\r\n\r\nlocalhost login: ",
+	]
+	f.readline()  # any key
+	for p in prompts:
+		conn.sendall(p.encode())
+		if p.endswith("login: "):
+			break
+		FIRSTBOOT_ANSWERS.append(f.readline().decode().rstrip("\r\n"))
+	time.sleep(1)
 
 
 def fake_qmp(conn):
@@ -410,6 +470,11 @@ def self_test():
 		check("expect times out (124)", rc == 124, f"rc {rc} {err}")
 		rc, out, err, _ = cli(os.path.join(root, "absent.sock"), "send", "x")
 		check("a missing socket is 125", rc == 125, f"rc {rc} {err}")
+		fbs = os.path.join(root, "firstboot.sock")
+		servers.append(serve(fbs, fake_firstboot))
+		rc, out, err, _ = cli(fbs, "firstboot", "--root-password", "pw", "--timeout", "10")
+		check("firstboot answers key, skips, the root password twice, stops at login",
+			rc == 0 and FIRSTBOOT_ANSWERS == ["", "pw", "pw"], f"rc {rc} {FIRSTBOOT_ANSWERS} {err}")
 		rc, out, err, _ = cli(qs, "qmp", "query-status", "--timeout", "5")
 		check("qmp skips events and prints the return", rc == 0
 			and json.loads(out).get("status") == "running", f"rc {rc} {out} {err}")
