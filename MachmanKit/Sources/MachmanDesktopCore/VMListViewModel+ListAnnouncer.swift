@@ -251,7 +251,8 @@ extension VMListViewModel {
 				symbol: MachmanSymbols.warning, message: text, tint: MachmanColors.warning,
 				key: Self.logToastKey(text))
 			// The toast goes in seconds; the activity list keeps the whole text (F6).
-			activity.record(.engineLog(vm: vm, level: level, message: message, at: MachmanClock.now()))
+			activity.record(.engineLog(
+				vm: vm, level: level, message: message, at: MachmanClock.now()))
 		}
 	}
 
