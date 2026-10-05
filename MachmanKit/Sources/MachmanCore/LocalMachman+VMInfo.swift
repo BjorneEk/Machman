@@ -150,9 +150,10 @@ extension LocalMachman {
 				setupSharePath: GuestSetupInstaller.stableSharePath(for: config)
 					?? GuestInstallerWriter.payloadRoot(for: config).path,
 				hostUser: NSUserName(),
-				// The gateway from the last address the guest reported, so the BSD setup
-				// guide has a real target even while the VM is stopped. The daemon
-				// overwrites this with the live one when discovery has an answer.
+				// This Mac seen from the last address the guest reported, when an interface of
+				// this Mac is on that subnet (a vmnet VM runs, or the guest is bridged), so the
+				// BSD setup guide can show it while the VM is stopped. The daemon overwrites
+				// this with the live one when discovery has an answer.
 				hostAddressForGuest: state.lastAddress
 					.flatMap { SSHDiscovery.hostAddress(seenFrom: $0) })
 		}
