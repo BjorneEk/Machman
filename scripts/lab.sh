@@ -31,7 +31,8 @@
 # MACHMAN_LAB_SLOT_DIR, MACHMAN_LAB_XCBUILD.
 #
 # Run dir /tmp/mml.<4-char token>: data/ home/ pids/ logs/ transcripts/ scopes/<NN>/ report/
-# (watch/summary.txt, snapshot-summary.txt, worktree.txt, swift-test.log).
+# (watch/summary.txt, watch/lab-processes.txt, watch/non-lab-machman.txt, snapshot-summary.txt,
+# worktree.txt, swift-test.log).
 #
 # One lab run machine-wide: the slot <review-fix>/locks/lab.1 (or <cache>/locks/lab.1).
 #

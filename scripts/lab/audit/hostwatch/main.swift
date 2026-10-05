@@ -3,10 +3,10 @@
 //  hostwatch
 //
 //  The lab's host-quiet audit helper: a plain CLI, compiled by scripts/lab/audit/build.sh and
-//  never part of the package. Subcommands: watch | snapshot | diff | window-probe | logprobe.
-//  Results go to files named by flags (or stdout), never to stderr. It never creates an
-//  NSApplication outside window-probe, never reads pasteboard contents or window titles,
-//  and never touches anything under <home>/.machman.
+//  never part of the package. Subcommands: watch | snapshot | diff | window-probe | idle |
+//  logprobe. Results go to files named by flags (or stdout), never to stderr. It never
+//  creates an NSApplication outside window-probe, never reads pasteboard contents or window
+//  titles, and never touches anything under <home>/.machman.
 //
 
 import Foundation
@@ -43,6 +43,7 @@ case "watch": runWatch(rest)
 case "snapshot": runSnapshot(rest)
 case "diff": runDiff(rest)
 case "window-probe": runWindowProbe(rest)
+case "idle": runIdle(rest)
 case "logprobe": runLogProbe(rest)
 default: exit(64)
 }

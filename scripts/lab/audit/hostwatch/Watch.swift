@@ -3,9 +3,10 @@
 //  hostwatch
 //
 //  The sampling audits of a lab run: windows, activation policy, active state, frontmost app
-//  and the pasteboard's changeCount of every lab process, every tick. Reads only (window
-//  geometry without titles, NSRunningApplication state, changeCount without contents,
-//  same-uid process arguments); never creates UI.
+//  and the pasteboard's changeCount of every lab process, every tick, and which Machman
+//  processes ran that weren't the lab's (Classify.swift). Reads only (window geometry without
+//  titles, NSRunningApplication state, changeCount without contents, same-uid process
+//  arguments); never creates UI.
 //
 
 import AppKit
@@ -39,7 +40,6 @@ struct Sample {
 	var apps: [Int32: AppInfo] = [:]
 	var frontmost: Frontmost?
 	var changeCount = 0
-	var nonLab: [String: String] = [:]
 	var newApps: [Int32: String] = [:]
 	var injected: Set<String> = []
 }
@@ -120,7 +120,7 @@ final class Watcher {
 	var pasteboardOffset = 0
 	var lastFront: Int32?
 	var finished = false
-	var nonLab: [String: String] = [:]
+	var classifier: LabClassifier
 	var timer: Timer?
 	var signalSource: DispatchSourceSignal?
 
@@ -132,36 +132,15 @@ final class Watcher {
 		self.interval = interval
 		self.injections = injections
 		self.injectAfter = injectAfter
-	}
-
-	func labPids() -> Set<Int32> {
-		var found = Set(pidFilePids(run: run))
-		let needles = ["Machman.test-" + token, "/mml." + token]
-		for pid in allPids() where pid != selfPid {
-			guard let text = processArguments(pid) else { continue }
-			for needle in needles where matches(text, needle) {
-				found.insert(pid)
-			}
-		}
-		found.remove(selfPid)
-		return found
-	}
-
-	/// `needle` followed by a byte outside [A-Za-z0-9] or the end of the text.
-	func matches(_ text: String, _ needle: String) -> Bool {
-		var searchRange = text.startIndex..<text.endIndex
-		while let hit = text.range(of: needle, range: searchRange) {
-			if hit.upperBound == text.endIndex { return true }
-			let next = text[hit.upperBound]
-			if !(next.isASCII && (next.isLetter || next.isNumber)) { return true }
-			searchRange = hit.upperBound..<text.endIndex
-		}
-		return false
+		classifier = LabClassifier(token: token)
 	}
 
 	func takeSample() -> Sample {
 		var sample = Sample()
-		sample.labPids = labPids()
+		var sightings = sightProcesses(skipping: selfPid)
+		injectSightings(&sightings)
+		sample.labPids = classifier.classify(sightings, pidFiles: Set(pidFilePids(run: run)))
+		sample.labPids.remove(selfPid)
 		sample.windows = sampleWindows()
 		for pid in sample.labPids {
 			if let app = NSRunningApplication(processIdentifier: pid) {
@@ -177,13 +156,6 @@ final class Watcher {
 					?? "pid \(front.processIdentifier)")
 		}
 		sample.changeCount = NSPasteboard.general.changeCount
-		for pid in allPids() where !sample.labPids.contains(pid) && pid != selfPid {
-			let pattern = "/Machman[A-Za-z]*\\.app/Contents/MacOS/[^/]+$"
-			if let path = processPath(pid),
-				path.range(of: pattern, options: .regularExpression) != nil {
-				sample.nonLab[String(pid)] = path
-			}
-		}
 		for app in NSWorkspace.shared.runningApplications
 		where app.activationPolicy == .regular && (app.launchDate ?? .distantPast) > start
 			&& !sample.labPids.contains(app.processIdentifier) {
@@ -191,6 +163,39 @@ final class Watcher {
 				app.bundleIdentifier ?? app.localizedName ?? "pid \(app.processIdentifier)"
 		}
 		return sample
+	}
+
+	/// Provoked sightings for the classifier, from tick `injectAfter` on. lab-exit: a lab
+	/// vmhost read whole once, then only by its path (exiting, its pid file already gone).
+	/// lab-exec: one first read mid-exec (unsettled, launchd's arguments), then whole.
+	/// exec-only: one read mid-exec once and never again. non-lab: a vmhost of the .dev suite,
+	/// read whole every tick.
+	func injectSightings(_ sightings: inout [Sighting]) {
+		guard ticks >= injectAfter else { return }
+		let first = ticks == injectAfter
+		let host = "/lab-injected/MachmanVMHost.app/Contents/MacOS/MachmanVMHost"
+		let lab = host + " --socket /x/com.gustaffranzen.Machman.test-\(token)/vm-1.sock"
+		let dev = host + " --socket /x/com.gustaffranzen.Machman.dev/vm-1.sock"
+		for kind in injections {
+			switch kind {
+			case "lab-exit":
+				sightings.append(Sighting(
+					pid: -3, start: 3, path: host, arguments: first ? lab : nil, settled: true))
+			case "lab-exec":
+				sightings.append(Sighting(
+					pid: -4, start: 4, path: host,
+					arguments: first ? "xpcproxy application.com.gustaffranzen.Machman" : lab,
+					settled: !first))
+			case "exec-only" where first:
+				sightings.append(Sighting(
+					pid: -6, start: 6, path: host,
+					arguments: "xpcproxy application.com.gustaffranzen.Machman", settled: false))
+			case "non-lab":
+				sightings.append(Sighting(
+					pid: -5, start: 5, path: host, arguments: dev, settled: true))
+			default: break
+			}
+		}
 	}
 
 	/// The injection layer: provoked breaches, once each, after `injectAfter` ticks.
@@ -305,7 +310,6 @@ final class Watcher {
 			record("warn", "new-app", pid, "\(app) (\(pid)) launched during the run",
 				key: "n\(pid)")
 		}
-		for (pid, path) in sample.nonLab { nonLab[pid] = path }
 	}
 
 	func tick() {
@@ -329,14 +333,19 @@ final class Watcher {
 		finished = true
 		timer?.invalidate()
 		var lines = events.map { "\($0.level.uppercased()) \($0.audit) \($0.detail)" }
+		for process in classifier.unclassified {
+			lines.append("NOTE classify pid \(process.pid) \(process.path) was never read whole, "
+				+ "so it excuses no protected-path change")
+		}
 		for audit in ["window", "policy", "active", "frontmost", "pasteboard"]
 		where !events.contains(where: { $0.level == "breach" && $0.audit == audit }) {
 			lines.append("OK \(audit)")
 		}
 		lines.append("SAMPLES \(samples)")
 		emit(lines, to: out + "/summary.txt")
-		emit(nonLab.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" },
-			to: out + "/non-lab-machman.txt")
+		emit(classifier.nonLab.map { "\($0.pid) \($0.path)" }, to: out + "/non-lab-machman.txt")
+		emit(classifier.labPaths.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" },
+			to: out + "/lab-processes.txt")
 		exit(events.contains { $0.level == "breach" } ? 3 : 0)
 	}
 }

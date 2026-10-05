@@ -2,8 +2,8 @@
 //  Probes.swift
 //  hostwatch
 //
-//  Helpers for lab.sh --self-check: a window that breaches the contract (safely), and a
-//  unified-log line. Neither runs in a normal lab run.
+//  Helpers for lab.sh --self-check: a window that breaches the contract (safely), an idle
+//  stand-in for a lab vmhost, and a unified-log line. None runs in a normal lab run.
 //
 
 import AppKit
@@ -31,6 +31,13 @@ func runWindowProbe(_ args: [String]) {
 	if seconds > ordered {
 		RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds - ordered))
 	}
+	exit(0)
+}
+
+/// `idle --seconds N [ARG]...`: lives N seconds and does nothing else. The self-check runs a
+/// copy at a Machman app path with a run's socket among its arguments, as a lab vmhost.
+func runIdle(_ args: [String]) {
+	Thread.sleep(forTimeInterval: Double(value("--seconds", in: args) ?? "2") ?? 2)
 	exit(0)
 }
 

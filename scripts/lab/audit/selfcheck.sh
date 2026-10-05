@@ -167,6 +167,69 @@ else
 		"$status/$status3/$status4: $(cat "$root/d2.txt" "$root/d3.txt")"
 fi
 
+# 8b: the lab's own vmhosts never pass for non-lab Machman processes. Injected sightings: one
+# read whole once and then only by its path (exiting, its pid file already removed), one first
+# read mid-exec (launchd's arguments), and one only ever read mid-exec (unclassified: a note).
+# A Machman preferences change while only they ran is a breach; the same change while a .dev
+# vmhost ran (read whole) is a warning.
+prefs="$other/Preferences"
+plist="$prefs/com.gustaffranzen.Machman.dev.agent.plist"
+mkdir -p "$prefs"
+"$hw" snapshot --root "$prefs" --out "$root/p1.json"
+echo changed >"$plist"
+"$hw" snapshot --root "$prefs" --out "$root/p2.json"
+watch classify --inject lab-exit --inject lab-exec --inject exec-only --inject-after 2
+classify="$root/w-classify"
+"$hw" diff --before "$root/p1.json" --after "$root/p2.json" --out "$root/d5.txt" \
+	--non-lab "$classify/non-lab-machman.txt" --token "$token"
+status5=$?
+if [[ $WATCH_STATUS == 0 && ! -s "$classify/non-lab-machman.txt" &&
+	"$(grep -c '^-[34] ' "$classify/lab-processes.txt")" == 2 &&
+	"$(grep -c 'NOTE classify' <<<"$summary")" == 1 &&
+	"$summary" == *"NOTE classify pid -6 "* && $status5 == 3 &&
+	"$(cat "$root/d5.txt")" == "BREACH snapshot added $plist" ]]; then
+	ok "audit classify: an exiting or exec'ing lab vmhost leaves a Machman change a breach"
+else
+	fail "audit classify: an exiting or exec'ing lab vmhost leaves a Machman change a breach" \
+		"$WATCH_STATUS/$status5: non-lab [$(cat "$classify/non-lab-machman.txt")] lab [$(
+			grep '^-' "$classify/lab-processes.txt")] $(cat "$root/d5.txt")"
+fi
+watch devhost --inject non-lab --inject-after 2
+"$hw" diff --before "$root/p1.json" --after "$root/p2.json" --out "$root/d6.txt" \
+	--non-lab "$root/w-devhost/non-lab-machman.txt" --token "$token"
+status6=$?
+if [[ "$(cat "$root/w-devhost/non-lab-machman.txt")" == "-5 "*MachmanVMHost && $status6 == 0 &&
+	"$(cat "$root/d6.txt")" == "WARN snapshot added "*"(a non-lab Machman process ran: -5)" ]]; then
+	ok "audit classify: a .dev vmhost read whole is a non-lab Machman process"
+else
+	fail "audit classify: a .dev vmhost read whole is a non-lab Machman process" \
+		"$status6: non-lab [$(cat "$root/w-devhost/non-lab-machman.txt")] $(cat "$root/d6.txt")"
+fi
+
+# 8c: a real stand-in vmhost (a copy of this helper at a Machman app path, the run's socket dir
+# in its arguments, nothing else naming the run) is the lab's
+standin="$other/MachmanVMHost.app/Contents/MacOS/MachmanVMHost"
+mkdir -p "$(dirname "$standin")"
+cp "$hw" "$standin"
+dir="$root/w-standin"
+"$hw" watch --token "$token" --run "$root" --out "$dir" --interval 0.25 &
+wpid=$!
+sleep 1
+env -i "$standin" idle --seconds 1.5 \
+	--socket "$(getconf DARWIN_USER_TEMP_DIR)com.gustaffranzen.Machman.test-$token/vm-sc.sock" &
+spid=$!
+wait "$spid"
+sleep 0.5
+touch "$dir/stop"
+wait "$wpid"
+if grep -q "^$spid .*/MachmanVMHost.app/Contents/MacOS/MachmanVMHost$" "$dir/lab-processes.txt" &&
+	! grep -q "^$spid " "$dir/non-lab-machman.txt"; then
+	ok "audit classify: a real process naming the run's sockets is the lab's"
+else
+	fail "audit classify: a real process naming the run's sockets is the lab's" \
+		"pid $spid; non-lab [$(cat "$dir/non-lab-machman.txt")]"
+fi
+
 # 9
 "$hw" snapshot --token "$token" --out "$root/default.json"
 if python3 - "$root/default.json" "$(id -un)" <<'PY'
