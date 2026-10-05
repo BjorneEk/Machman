@@ -72,22 +72,42 @@ public enum SerialLogMode: String, Codable, Sendable, Equatable {
 }
 
 public struct SerialLogConfig: Codable, Sendable, Equatable {
-	public var mode: SerialLogMode
+	// The mode as written, on disk and on the wire (D26 — the GuestDevice.kind lesson): a
+	// newer Machman's mode survives this build's load and save verbatim. Read and set it
+	// through `mode`.
+	public private(set) var rawMode: String
 	// Cap the log file at this many bytes (oldest trimmed); nil = unlimited (the default).
 	public var maxBytes: UInt64?
 
+	// An unrecognized (newer) mode logs like the default here; setting one replaces it.
+	public var mode: SerialLogMode {
+		get { SerialLogMode(rawValue: rawMode) ?? .resetOnBoot }
+		set { rawMode = newValue.rawValue }
+	}
+
 	public init(mode: SerialLogMode = .resetOnBoot, maxBytes: UInt64? = nil) {
-		self.mode = mode
+		self.rawMode = mode.rawValue
 		self.maxBytes = maxBytes
 	}
 
-	// Tolerant decode: absent mode defaults, and an unrecognized future mode degrades to the
-	// default rather than failing the whole config/VMInfo decode.
+	private enum CodingKeys: String, CodingKey {
+		case mode
+		case maxBytes
+	}
+
+	// Tolerant decode: an absent mode defaults, and an unrecognized one is kept rather than
+	// failing the whole config/VMInfo decode.
 	public init(from decoder: Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
-		let raw = try c.decodeIfPresent(String.self, forKey: .mode) ?? SerialLogMode.resetOnBoot.rawValue
-		self.mode = SerialLogMode(rawValue: raw) ?? .resetOnBoot
+		self.rawMode = try c.decodeIfPresent(String.self, forKey: .mode)
+			?? SerialLogMode.resetOnBoot.rawValue
 		self.maxBytes = try c.decodeIfPresent(UInt64.self, forKey: .maxBytes)
+	}
+
+	public func encode(to encoder: Encoder) throws {
+		var c = encoder.container(keyedBy: CodingKeys.self)
+		try c.encode(rawMode, forKey: .mode)
+		try c.encodeIfPresent(maxBytes, forKey: .maxBytes)
 	}
 }
 

@@ -261,7 +261,8 @@ running VM — currently only uart ports, which macOS gates behind the
 `com.apple.private.virtualization` entitlement from `sinceOSVersion` (26.6.1) on; `message` is a
 ready-to-display explanation. `SerialLogConfig` is
 `{mode: "disabled"|"resetOnBoot"|"continuous", maxBytes?}` (default resetOnBoot, unlimited;
-`maxBytes` 0 or absent = unlimited, at most 1073741824).
+`maxBytes` 0 or absent = unlimited, at most 1073741824). A mode a daemon doesn't know (a newer
+Machman's) is kept as written through its saves and logs like resetOnBoot there.
 
 `disks[].owned?` is true when the backing file lives inside (and travels with) the VM's
 directory — imports/promotes create owned disks; absent means an older daemon.

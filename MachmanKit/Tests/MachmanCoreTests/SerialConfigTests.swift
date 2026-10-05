@@ -194,6 +194,31 @@ struct SerialConfigTests {
 	// com.apple.private.virtualization entitlement (the helper traps decoding them at start for an
 	// unentitled host). The gate must reject exactly [26.6.1, ∞) — a wrong boundary either crashes
 	// every uart VM start or silently disables uarts on working systems.
+	// D26: an unknown log mode decoded as resetOnBoot and was written back as resetOnBoot, so
+	// any save rewrote a newer Machman's setting. The mode now rides through verbatim (this
+	// build still logs it like resetOnBoot).
+	@Test func aNewerLogModeSurvivesASave() throws {
+		try VMTestDir.withRedirectedDir {
+			_ = try makeVM("newer")
+			let path = "\(machmanVMDir)/newer/config"
+			var obj = try #require(try JSONSerialization.jsonObject(
+				with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: Any])
+			obj["consolePorts"] = [["logging": ["mode": "rotate", "maxBytes": 4096]]]
+			try JSONSerialization.data(withJSONObject: obj).write(to: URL(fileURLWithPath: path))
+
+			let loaded = try VMConfig.load(name: "newer")
+			#expect(loaded.consolePorts.first?.logging.mode == .resetOnBoot)
+			try loaded.setCPUCount(1)
+
+			let saved = try JSONSerialization.jsonObject(
+				with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: Any]
+			let ports = saved?["consolePorts"] as? [[String: Any]]
+			let logging = ports?.first?["logging"] as? [String: Any]
+			#expect(logging?["mode"] as? String == "rotate")
+			#expect(logging?["maxBytes"] as? Int == 4096)
+		}
+	}
+
 	@Test func privateSerialRejectionBoundary() {
 		func v(_ a: Int, _ b: Int, _ c: Int) -> OperatingSystemVersion {
 			OperatingSystemVersion(majorVersion: a, minorVersion: b, patchVersion: c)
