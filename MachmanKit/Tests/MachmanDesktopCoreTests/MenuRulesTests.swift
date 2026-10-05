@@ -35,6 +35,16 @@ struct MenuRulesTests {
 		}
 	}
 
+	// P37: unknown is busy — Machman Agent hasn't reached the VM's vmhost, which may well run,
+	// so every stop-first action waits for it (before: all offered, and refused by the agent).
+	@Test func everyStopFirstActionWaitsWhileTheStateIsUnknown() {
+		for vm in [Samples.unreached(), Samples.neverAnswered()] {
+			for action in StoppedOnly.allCases {
+				#expect(vm.refusal(action) == VMInfo.unreachedHelp, "\(action)")
+			}
+		}
+	}
+
 	// H10: the installers menu offers the unified Guest Setup, once.
 	@Test func guestSetupIsOfferedOnlyWhenAbsent() {
 		#expect(!Samples.linux("Debian").canAddGuestSetup)
@@ -53,5 +63,7 @@ struct MenuRulesTests {
 			#expect(!reason.hasSuffix("."), "\(reason)")
 			#expect(reason.count <= 60, "\(reason)")
 		}
+		#expect(!VMInfo.unreachedHelp.hasSuffix("."))
+		#expect(VMInfo.unreachedHelp.count <= 60)
 	}
 }

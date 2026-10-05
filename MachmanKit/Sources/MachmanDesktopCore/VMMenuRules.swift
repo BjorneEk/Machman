@@ -11,6 +11,7 @@
 
 import Foundation
 import MachmanAPI
+import MachmanUI
 
 public enum StoppedOnly: CaseIterable, Sendable {
 	case deleteVM
@@ -52,8 +53,10 @@ extension VMInfo {
 
 	// Why the daemon would refuse the action now, or nil when it is offered. A starting,
 	// stopping or paused VM is hosted too, and one whose vmhost stopped answering may still
-	// be (the daemon refuses while it can't tell).
+	// be (the daemon refuses while it can't tell). Unknown is busy as well (P37): Machman
+	// Agent hasn't reached the VM's vmhost yet, so the reason is to wait, not to stop it.
 	public func refusal(_ action: StoppedOnly) -> String? {
-		state.isRunning || isUnresponsive ? action.stopFirst : nil
+		if state == .unknown { return VMInfo.unreachedHelp }
+		return mayBeRunning ? action.stopFirst : nil
 	}
 }

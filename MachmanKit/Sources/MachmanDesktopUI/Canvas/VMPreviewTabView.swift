@@ -97,7 +97,7 @@ struct VMPreviewTabView: View {
 					}
 					.buttonStyle(.plain)
 					.machmanHoverable(radius: 40, scales: true)
-					.disabled(viewModel.isInstalling(vm))
+					.disabled(!viewModel.canStart(vm))
 					.help("Start \(vm.name)")
 					.accessibilityLabel("Start \(vm.name)")
 					Text(stoppedLine).font(.callout).foregroundStyle(.gray)

@@ -54,10 +54,11 @@ extension VMListViewModel {
 		startVM(vm.name, headless: !options.openWindow, safe: options.safe)
 	}
 
-	// A start already sent but not yet visible in vm.state counts like running; a macOS
+	// A start already sent but not yet visible in vm.state counts like running, and so does
+	// a VM whose state is unknown or that stopped answering (P37, VMBusyRule); a macOS
 	// install holds the VM until it finishes.
 	public func canStart(_ vm: VMInfo) -> Bool {
-		!vm.state.isRunning && !isInstalling(vm) && !isStartPending(vm.name)
+		!vm.mayBeRunning && !isInstalling(vm) && !isStartPending(vm.name)
 	}
 
 	// MARK: - Stop

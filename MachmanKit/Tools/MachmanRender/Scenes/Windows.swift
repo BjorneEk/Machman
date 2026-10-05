@@ -157,6 +157,24 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: true)
 		},
+		// P37: a VM whose vmhost Machman Agent hasn't reached yet is busy, not stopped — the
+		// toolbar shows a spinner instead of Start.
+		RenderScene(
+			"window.main.unknown-state", "VMNavigationView, Debian's vmhost not reached yet",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			vms: Samples.libraryWithUnreachedHost,
+			panels: treeAndInspector
+		) { ctx in
+			mainWindow(ctx, inspector: true)
+		},
+		RenderScene(
+			"window.main.never-answered", "VMNavigationView, Debian's vmhost never answered",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			vms: Samples.libraryWithNeverAnsweredHost,
+			panels: treeAndInspector
+		) { ctx in
+			mainWindow(ctx, inspector: true)
+		},
 		RenderScene(
 			"window.main.mac-unfinished-copy",
 			"VMNavigationView, the copy of a Mac whose install never finished",

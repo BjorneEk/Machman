@@ -53,7 +53,7 @@ struct StartStopGroup: View {
 	var body: some View {
 		Group {
 			switch vm.state {
-			case .stopped, .error, .unknown:
+			case .stopped, .error:
 				// The click set pendingStarts synchronously; the state event is seconds out.
 				if viewModel.isStartPending(vm.name) {
 					transition(.starting)
@@ -78,6 +78,11 @@ struct StartStopGroup: View {
 				}
 			case .starting:
 				transition(.starting)
+			case .unknown:
+				// Machman Agent hasn't reached the VM's vmhost (P37): it may well be running,
+				// so no Start — the spinner says it is being reached.
+				transition(.unknown)
+					.help(VMInfo.unreachedHelp)
 			case .stopping:
 				// A guest that ignores the shutdown request: Force Stop stays in reach (F3).
 				// Immediate, like the running state's; only the ⌘. chords ask (P26).
