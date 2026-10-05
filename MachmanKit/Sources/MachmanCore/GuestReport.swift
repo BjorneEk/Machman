@@ -49,10 +49,54 @@ struct GuestReport {
 	// informational lines; the exact key NOTE is the run's one-sentence summary).
 	static let allowedPrefixes = ["FEATURE_", "CONSOLE_", "AUTOMOUNT_", "ERROR_", "NOTE_"]
 
+	// What one poll of the drop-box found: the file's mtime, and its report — nil when the
+	// file is not one read() takes (so it is not read again until it changes).
+	struct Found {
+		let mtime: Date
+		let report: GuestReport?
+	}
+
+	// nil when there is no report file, or its mtime is still `since`.
+	static func poll(atPath path: String, since: Date?) -> Found? {
+		var info = stat()
+		guard lstat(path, &info) == 0 else { return nil }
+		let mtime = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec)
+			+ TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+		guard mtime != since else { return nil }
+		return Found(mtime: mtime, report: read(atPath: path))
+	}
+
+	// The drop-box is guest-writable, so the name is trusted for nothing: a regular file
+	// within the cap by lstat, opened without following a link (O_NOFOLLOW) or waiting on a
+	// FIFO's writer (O_NONBLOCK), checked again on the descriptor, and never read past
+	// maxBytes + 1 — a file swapped or grown after the checks still cannot make it read more.
 	static func read(atPath path: String) -> GuestReport? {
-		guard let data = FileManager.default.contents(atPath: path),
-			!data.isEmpty, data.count <= maxBytes else { return nil }
-		return parse(String(decoding: data, as: UTF8.self))
+		var info = stat()
+		guard lstat(path, &info) == 0, isReadable(info) else { return nil }
+		let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+		guard fd >= 0 else { return nil }
+		defer { close(fd) }
+		guard fstat(fd, &info) == 0, isReadable(info) else { return nil }
+		var data = Data(count: maxBytes + 1)
+		var filled = 0
+		while filled < data.count {
+			let count = data.withUnsafeMutableBytes { buffer in
+				Darwin.read(fd, buffer.baseAddress! + filled, buffer.count - filled)
+			}
+			if count > 0 {
+				filled += count
+			} else if count < 0, errno == EINTR {
+				continue
+			} else {
+				break
+			}
+		}
+		guard filled > 0, filled <= maxBytes else { return nil }
+		return parse(String(decoding: data.prefix(filled), as: UTF8.self))
+	}
+
+	private static func isReadable(_ info: stat) -> Bool {
+		(info.st_mode & S_IFMT) == S_IFREG && info.st_size > 0 && info.st_size <= maxBytes
 	}
 
 	static func parse(_ text: String) -> GuestReport {

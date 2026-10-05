@@ -82,6 +82,75 @@ struct GuestReportTests {
 		#expect(GuestReport.read(atPath: big.path) == nil)
 	}
 
+	// MARK: - The drop-box read (S40)
+
+	private static func dropBox() throws -> URL {
+		let dir = TestEnvironment.scratchURL
+			.appendingPathComponent("machman-report-\(UUID().uuidString)", isDirectory: true)
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		return dir
+	}
+
+	// S40: the guest owns the drop-box, so a link planted as report.env — to a report, to
+	// a big host file, to /dev/zero — is never followed.
+	@Test func linksInTheDropBoxAreNeverFollowed() throws {
+		let dir = try Self.dropBox()
+		defer { try? FileManager.default.removeItem(at: dir) }
+		let real = dir.appendingPathComponent("real.env")
+		try "USER=admin\n".write(to: real, atomically: true, encoding: .utf8)
+		#expect(GuestReport.read(atPath: real.path)?.values["USER"] == "admin")
+		let link = dir.appendingPathComponent("report.env")
+		try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+		#expect(GuestReport.read(atPath: link.path) == nil)
+		try FileManager.default.removeItem(at: link)
+		try FileManager.default.createSymbolicLink(
+			atPath: link.path, withDestinationPath: "/dev/zero")
+		#expect(GuestReport.read(atPath: link.path) == nil)
+	}
+
+	// A FIFO with no writer would block an open or read forever; a directory, an empty file
+	// and a huge sparse one are refused before a byte is read.
+	@Test func onlyRegularFilesWithinTheCapAreRead() throws {
+		let dir = try Self.dropBox()
+		defer { try? FileManager.default.removeItem(at: dir) }
+		let fifo = dir.appendingPathComponent("fifo.env")
+		#expect(mkfifo(fifo.path, 0o600) == 0)
+		#expect(GuestReport.read(atPath: fifo.path) == nil)
+		#expect(GuestReport.read(atPath: dir.path) == nil)
+		let empty = dir.appendingPathComponent("empty.env")
+		#expect(FileManager.default.createFile(atPath: empty.path, contents: nil))
+		#expect(GuestReport.read(atPath: empty.path) == nil)
+		let sparse = dir.appendingPathComponent("sparse.env")
+		#expect(FileManager.default.createFile(atPath: sparse.path, contents: nil))
+		let handle = try FileHandle(forWritingTo: sparse)
+		try handle.truncate(atOffset: 8 << 30)
+		try handle.close()
+		#expect(GuestReport.read(atPath: sparse.path) == nil)
+		let exact = dir.appendingPathComponent("exact.env")
+		var text = "USER=admin\n"
+		text += String(repeating: "#", count: GuestReport.maxBytes - text.utf8.count - 1) + "\n"
+		try text.write(to: exact, atomically: true, encoding: .utf8)
+		#expect(GuestReport.read(atPath: exact.path)?.values["USER"] == "admin")
+	}
+
+	// The poll reads a file once per mtime: unchanged means nothing, a refused file still
+	// moves the mark (so it is not retried every tick), a missing one is nothing at all.
+	@Test func pollReadsEachVersionOnce() throws {
+		let dir = try Self.dropBox()
+		defer { try? FileManager.default.removeItem(at: dir) }
+		let path = dir.appendingPathComponent("report.env").path
+		#expect(GuestReport.poll(atPath: path, since: nil) == nil)
+		try "USER=admin\n".write(toFile: path, atomically: true, encoding: .utf8)
+		let first = try #require(GuestReport.poll(atPath: path, since: nil))
+		#expect(first.report?.values["USER"] == "admin")
+		#expect(GuestReport.poll(atPath: path, since: first.mtime) == nil)
+		try FileManager.default.removeItem(atPath: path)
+		try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: "/dev/zero")
+		let link = try #require(GuestReport.poll(atPath: path, since: first.mtime))
+		#expect(link.report == nil)
+		#expect(GuestReport.poll(atPath: path, since: link.mtime) == nil)
+	}
+
 	// S22: the drop-box is guest-writable, and USER and the address end up in ~/.ssh —
 	// "USER=a b" stopped every ssh on the Mac. A value without the shape it claims is
 	// ignored and the stored one stays.
