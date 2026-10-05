@@ -133,8 +133,8 @@ final class MacInstaller {
 
 	// MARK: - Restore image resolution
 
-	// Index of all VirtualMac restore images. Third-party INDEX only — the listed download
-	// urls point at Apple's own CDN (updates.cdn-apple.com).
+	// Index of all VirtualMac restore images. A third party's index, so an entry's download
+	// url is taken only when it is https on Apple's own hosts (trustedDownload, D27).
 	struct RestoreImageIndex: Codable {
 		struct Firmware: Codable {
 			var version: String
@@ -190,6 +190,31 @@ final class MacInstaller {
 		return candidates.max { versionLess($0.1, $1.1) }?.0
 	}
 
+	// Apple's update hosts: https on apple.com or cdn-apple.com, or a subdomain of either
+	// (updates.cdn-apple.com serves the restore images).
+	nonisolated static func isAppleRestoreImageURL(_ url: URL) -> Bool {
+		guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else {
+			return false
+		}
+		return ["apple.com", "cdn-apple.com"].contains { host == $0 || host.hasSuffix("." + $0) }
+	}
+
+	// The index entry to download: the newest this host can install, when its url is one of
+	// Apple's. nil falls back to Apple's own "latest supported" — a spoofed or compromised
+	// entry never steers the download (D27).
+	nonisolated static func trustedDownload(
+		in index: RestoreImageIndex, host: OperatingSystemVersion
+	) -> (firmware: RestoreImageIndex.Firmware, url: URL)? {
+		guard let firmware = newestCompatible(in: index, host: host),
+			let url = URL(string: firmware.url) else { return nil }
+		guard isAppleRestoreImageURL(url) else {
+			MachmanLogger.log(.passiveWarning,
+				"restore image index: skipped \(firmware.url), not an https URL on Apple’s hosts")
+			return nil
+		}
+		return (firmware, url)
+	}
+
 	private static func fetchRestoreImageIndex() async throws -> RestoreImageIndex {
 		let (data, _) = try await URLSession.shared.data(from: restoreImageIndexURL)
 		return try JSONDecoder().decode(RestoreImageIndex.self, from: data)
@@ -209,13 +234,14 @@ final class MacInstaller {
 			// Prefer the index: it lets us pick the newest version this HOST can install, not
 			// just the newest for the hardware (which fails late with VZError 10006).
 			if let index = try? await Self.fetchRestoreImageIndex(),
-				let firmware = Self.newestCompatible(in: index, host: host),
-				let remote = URL(string: firmware.url) {
-				onResolved?(firmware.version, firmware.buildid)
-				return try await downloadAndLoad(from: remote, expectedSize: firmware.filesize)
+				let download = Self.trustedDownload(in: index, host: host) {
+				onResolved?(download.firmware.version, download.firmware.buildid)
+				return try await downloadAndLoad(
+					from: download.url, expectedSize: download.firmware.filesize)
 			}
-			// Fallback (index unreachable): Apple's hardware-filtered "latest supported", with
-			// an early host-version check so a too-new image fails BEFORE the multi-GB download.
+			// Fallback (index unreachable, or its entry not on Apple's hosts): Apple's
+			// hardware-filtered "latest supported", with an early host-version check so a
+			// too-new image fails BEFORE the multi-GB download.
 			let remote = try await Self.fetchLatestSupported()
 			let version = remote.operatingSystemVersion
 			guard Self.isVersion(version, atMost: host) else {
