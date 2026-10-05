@@ -140,4 +140,125 @@ struct EngineSkewTests {
 			#expect(try await api.vm(named: "e22-a").cpuCount == 2)
 		}
 	}
+
+	@Test("W3-14: a vmhost started from its autostart job reports this build's version in hello")
+	func autostartHostReportsVersion() async throws {
+		try await Lab.withAgent { agent in
+			let spec = LabVMSpec(name: "e22-auto", boot: .alpine())
+			try await agent.withVM(spec, start: false) { vm in
+				try await agent.api.setStartPolicy(
+					vm: vm.name, policy: StartPolicy(windowed: false, autostart: true))
+				let plistPath = agent.scope.homeDir
+					+ "/Library/LaunchAgents/\(Lab.suiteID).vm.\(vm.name).plist"
+				try await TFWait.until("the autostart plist", timeout: .seconds(10)) {
+					FileManager.default.fileExists(atPath: plistPath)
+				}
+				let data = try Data(contentsOf: URL(fileURLWithPath: plistPath))
+				let plist = try #require(
+					try PropertyListSerialization.propertyList(from: data, format: nil)
+						as? [String: Any])
+				let argv = try #require(plist["ProgramArguments"] as? [String])
+				let env = try #require(plist["EnvironmentVariables"] as? [String: String])
+				#expect(env["MACHMAN_VERSION"] == nil)
+				// launchd's start, without launchd: the job's own argv and environment.
+				let executable = URL(fileURLWithPath: argv[0])
+				let app = executable.deletingLastPathComponent().deletingLastPathComponent()
+					.deletingLastPathComponent()
+				#expect(app.lastPathComponent == "MachmanVMHost.app")
+				let configuration = NSWorkspace.OpenConfiguration()
+				configuration.createsNewApplicationInstance = true
+				configuration.activates = false
+				configuration.addsToRecentItems = false
+				configuration.promptsUserIfNeeded = false
+				configuration.arguments = Array(argv.dropFirst())
+				var environment = env
+				for key in LabAgent.blanked { environment[key] = "" }
+				configuration.environment = environment
+				let launched = try await NSWorkspace.shared.openApplication(
+					at: app, configuration: configuration)
+				let pid = launched.processIdentifier
+				try LabProcesses.writePid(
+					pid, kind: "vmhost", name: TFVM.pidName(scope: agent.scope, vm: vm.name))
+				var host: RemoteMachman?
+				try await TFWait.until("the autostarted vmhost's socket", timeout: .seconds(30)) {
+					host = try? await RemoteMachman(
+						socketPath: MachmanPaths.vmSocketPath(vm: vm.name),
+						clientName: "machman-lab-tf")
+					return host != nil
+				}
+				let version = Bundle(url: app)?.infoDictionary?["CFBundleShortVersionString"]
+					as? String
+				#expect(host?.hello.daemonVersion == "\(version ?? "?")-vmhost")
+				#expect(host?.peerPID == pid)
+				await host?.disconnect()
+				let adopted = try await TFWait.vm(
+					agent.api, vm.name, "adopted", timeout: .seconds(30)
+				) { $0.state == .running }
+				#expect(adopted.outdatedHost == nil)
+				try await agent.api.setStartPolicy(
+					vm: vm.name, policy: StartPolicy(windowed: false, autostart: false))
+			}
+		}
+	}
+
+	@Test(
+		"""
+		W4-21: a too-old agent connects with its version below the floor and its list keeps \
+		updating
+		""")
+	func tooOldAgentConnects() async throws {
+		let floor = try #require(try RepoFiles.daemonFloor())
+		let old = TFBuilds.olderVersion(than: floor)
+		let options = LabAgent.Options(appURL: try await TFBuilds.agentApp(old))
+		try await Lab.withAgent(options) { agent in
+			let connection = TFConnection(agent: agent)
+			connection.start()
+			try await connection.waitFor("connected", timeout: .seconds(20)) {
+				$0 == .connected(daemonVersion: old)
+			}
+			#expect(MachmanVersion.isOlder(old, than: floor))
+			let prompt = DaemonVersionPrompt.tooOld(running: old, floor: floor, canReplace: true)
+			#expect(prompt.message == "It runs version \(old) and this app needs \(floor) or "
+				+ "newer — replacing it keeps your VMs running.")
+			#expect(prompt.buttons == ["Replace", "Not Now"])
+			let desktop = try #require(connection.attaches.last).desktop
+			_ = try await agent.withVM(LabVMSpec(name: "e32", boot: .alpine())) { _ in
+				try await desktop.waitForEntry("e32", "running", timeout: .seconds(15)) {
+					$0.state == .running
+				}
+			}
+			await connection.close()
+		}
+		await TFBuilds.unregisterAll()
+	}
+
+	@Test("W4-28: a Replace sent on the old agent's dropped session retires nothing")
+	func staleReplaceRetiresNothing() async throws {
+		let old = TFBuilds.olderVersion(than: TFBuilds.current)
+		let options = LabAgent.Options(appURL: try await TFBuilds.agentApp(old))
+		try await Lab.withAgent(options) { agent in
+			let stale = try await agent.connect(clientName: "MachmanDesktop-lab")
+			#expect(try await TFAgents.quit(agent, reason: "userQuit"))
+			let newPid = try await TFAgents.launchSecond(scope: agent.scope)
+			var current: RemoteMachman?
+			defer {
+				let held = current
+				Task { await TFAgents.stopSecond(pid: newPid, api: held, scope: agent.scope) }
+			}
+			current = try await TFAgents.connectAfterTakeover(
+				newPid: newPid, oldPid: agent.pid, socketPath: agent.socketPath)
+			#expect(current?.hello.daemonVersion == TFBuilds.current)
+			let floor = try #require(try RepoFiles.daemonFloor())
+			#expect(!MachmanVersion.isOlder(TFBuilds.current, than: floor))
+			do {
+				try await stale.retire()
+				Issue.record("a retire on the dropped session went through")
+			} catch {}
+			try await Task.sleep(for: .seconds(2))
+			#expect(LabProcesses.isAlive(newPid))
+			#expect((try? await current?.listVMs()) != nil)
+			await TFAgents.stopSecond(pid: newPid, api: current, scope: agent.scope)
+		}
+		await TFBuilds.unregisterAll()
+	}
 }
