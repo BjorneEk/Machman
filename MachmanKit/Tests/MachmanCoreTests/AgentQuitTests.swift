@@ -304,4 +304,47 @@ struct AgentPromptTests {
 		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
 		#expect(prompt.info.matches(of: sentenceEnd).count == 1)
 	}
+
+	// TB8: under a test suite the lab answers each prompt by its id (LabAnswers); a prompt
+	// the answers file doesn't list takes its cancel button, else its first.
+	@Test("Q18: every agent prompt has its own lab id and cancel button (TB8)")
+	func everyAgentPromptHasItsOwnLabIDAndCancelButton() {
+		let holder = SessionHolder(vm: "beta", activity: "is still starting", promptsItself: false)
+		let prompts: [(AgentPrompt, String, Int?)] = [
+			(.replaceOlder(running: "1.0.11", mine: "1.0.12"), "agent.replaceOlder", 1),
+			(.replaceRefused(reason: "It is busy"), "agent.replaceRefused", nil),
+			(.sessionEndHeld(reason: .logOut, holders: [holder]), "agent.sessionEndHeld", nil),
+			(.quitDuringWork([holder]), "agent.quitDuringWork", 0),
+			(.cannotStart(reason: "Its socket path is too long"), "agent.cannotStart", nil),
+			(.vmsStillRunning, "agent.vmsStillRunning", 3),
+		]
+		for (prompt, id, cancel) in prompts {
+			#expect(prompt.id == id)
+			#expect(prompt.cancelIndex == cancel, "\(id)")
+			if let cancel {
+				#expect(prompt.buttons.indices.contains(cancel), "\(id)")
+			}
+			#expect(prompt.labPrompt == LabPrompt(
+				id: id, message: prompt.message, info: prompt.info, buttons: prompt.buttons,
+				cancelIndex: cancel))
+		}
+		#expect(Set(prompts.map(\.1)).count == prompts.count)
+	}
+
+	// The two alerts the agent used to build inline, moved here word for word.
+	@Test("Q18: the moved agent prompts keep their words (TB8)")
+	func theMovedAgentPromptsKeepTheirWords() {
+		let quit = AgentPrompt.vmsStillRunning
+		#expect(quit.message == "VMs are still running")
+		#expect(quit.info == "Running VMs live in their own processes: you can quit and leave "
+			+ "them running (the next Machman Agent re-adopts them), ask the guests to shut down "
+			+ "(force-stopped after 30 seconds), or force stop everything now.")
+		#expect(quit.buttons == [
+			"Quit, Leave VMs Running", "Shut Down All & Quit", "Force Stop All & Quit", "Cancel",
+		])
+		let failed = AgentPrompt.cannotStart(reason: "Another copy is already serving its socket")
+		#expect(failed.message == "Machman Agent can\u{2019}t start")
+		#expect(failed.info == "Another copy is already serving its socket")
+		#expect(failed.buttons == ["OK"])
+	}
 }
