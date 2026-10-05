@@ -1,0 +1,200 @@
+#!/bin/bash
+#
+# Self-check of the host-quiet audits: every audit is proven to FAIL on a provoked breach
+# (injected samples, plus one real 1x1 never-activated window at an off-screen origin in a
+# helper process) and to pass a quiet run. Never touches the pasteboard or focus. Prints
+# "ok   <check>" or "FAIL <check>: <why>"; exits with the failure count.
+#
+set -u
+
+here="$(cd "$(dirname "$0")" && pwd -P)"
+repo="$(cd "$here/../../.." && pwd -P)"
+source "$repo/scripts/lib/sandbox.sh"
+
+hw="$("$here/build.sh")" || exit 1
+sandbox_create mml 4
+root="$SANDBOX_ROOT"
+token="$SANDBOX_TOKEN"
+suite="$SANDBOX_SUITE"
+other="$(mktemp -d /tmp/hwsc.XXXXXX)"
+trap 'sandbox_cleanup "$root"; rm -rf "$other"' EXIT
+mkdir -p "$root/pids"
+
+failures=0
+ok() { echo "ok   $1"; }
+fail() {
+	echo "FAIL $1: $2"
+	failures=$((failures + 1))
+}
+
+# watch <dir> [hostwatch args...]: a watch of about 3 s; sets summary.
+watch() {
+	local dir="$root/w-$1"
+	shift
+	"$hw" watch --token "$token" --run "$root" --out "$dir" --interval 0.25 "$@" &
+	local pid=$!
+	sleep 3
+	touch "$dir/stop"
+	wait "$pid"
+	WATCH_STATUS=$?
+	summary="$(cat "$dir/summary.txt" 2>/dev/null)"
+}
+
+# 1
+watch quiet
+if [[ $WATCH_STATUS == 0 && "$summary" != *BREACH* && "$summary" == *"OK window"* ]]; then
+	ok "audit: a quiet run has no breach"
+else
+	fail "audit: a quiet run has no breach" "status $WATCH_STATUS: $summary"
+fi
+
+# 2
+watch window --inject window --inject-after 2
+if [[ $WATCH_STATUS == 3 && "$summary" == *"BREACH window pid -1"* ]]; then
+	ok "audit window: an on-screen window of a lab process is a breach"
+else
+	fail "audit window: an on-screen window of a lab process is a breach" \
+		"status $WATCH_STATUS: $summary"
+fi
+
+# 3: a real window, off every screen, ordered for ~1.2 s by a helper under the test suite
+front_before="$(lsappinfo front 2>/dev/null)"
+dir="$root/w-real"
+"$hw" watch --token "$token" --run "$root" --out "$dir" --interval 0.25 &
+wpid=$!
+sleep 1
+env MACHMAN_SUITE_ID="$suite" "$hw" window-probe --seconds 4 &
+ppid_probe=$!
+wait "$ppid_probe"
+touch "$dir/stop"
+wait "$wpid"
+summary="$(cat "$dir/summary.txt" 2>/dev/null)"
+front_after="$(lsappinfo front 2>/dev/null)"
+if [[ "$summary" == *"BREACH window pid $ppid_probe"* && "$summary" != *"BREACH policy"* &&
+	"$summary" != *"BREACH active"* && "$summary" != *"BREACH frontmost"* &&
+	"$front_before" == "$front_after" ]]; then
+	ok "audit window: a real off-screen window of a lab process is a breach"
+else
+	fail "audit window: a real off-screen window of a lab process is a breach" \
+		"front $front_before -> $front_after: $summary"
+fi
+
+# 4
+watch policy --inject policy --inject-after 2
+if [[ $WATCH_STATUS == 3 && "$summary" == *"BREACH policy pid -1"* ]]; then
+	ok "audit policy: a lab process with a Dock icon is a breach"
+else
+	fail "audit policy: a lab process with a Dock icon is a breach" "$WATCH_STATUS: $summary"
+fi
+
+# 5
+watch front --inject frontmost --inject-after 2
+if [[ $WATCH_STATUS == 3 && "$summary" == *"BREACH frontmost pid -1"* ]]; then
+	ok "audit frontmost: a frontmost lab process is a breach"
+else
+	fail "audit frontmost: a frontmost lab process is a breach" "$WATCH_STATUS: $summary"
+fi
+
+# 6
+watch pb --inject pasteboard --inject-after 2
+if [[ $WATCH_STATUS == 3 && "$summary" == *"BREACH pasteboard changeCount"* ]]; then
+	ok "audit pasteboard: a change while a lab process is frontmost is a breach"
+else
+	fail "audit pasteboard: a change while a lab process is frontmost is a breach" \
+		"$WATCH_STATUS: $summary"
+fi
+
+# 6b the user's own copy is a note, never a breach
+watch pbuser --inject pasteboard-user --inject-after 2
+if [[ $WATCH_STATUS == 0 && "$summary" == *"NOTE pasteboard"*"(user copy?)"* &&
+	"$summary" != *"BREACH pasteboard"* ]]; then
+	ok "audit pasteboard: a change while another app is frontmost is only a note"
+else
+	fail "audit pasteboard: a change while another app is frontmost is only a note" \
+		"$WATCH_STATUS: $summary"
+fi
+
+# 7
+prot="$root/protected"
+mkdir -p "$prot/sub"
+echo a >"$prot/a"
+echo b >"$prot/b"
+echo c >"$prot/sub/c"
+"$hw" snapshot --root "$prot" --out "$root/s1.json"
+sleep 1
+echo changed >"$prot/a"
+rm "$prot/b"
+echo d >"$prot/d"
+"$hw" snapshot --root "$prot" --out "$root/s2.json"
+"$hw" diff --before "$root/s1.json" --after "$root/s2.json" --out "$root/d1.txt"
+status=$?
+count="$(grep -c '^BREACH snapshot' "$root/d1.txt")"
+if [[ $status == 3 && $count == 3 ]]; then
+	ok "audit snapshot: a write under a protected root is a breach"
+else
+	fail "audit snapshot: a write under a protected root is a breach" \
+		"status $status, $count breaches: $(cat "$root/d1.txt")"
+fi
+
+# 8: a change in a path that doesn't name this run, while a non-lab Machman process runs
+mkdir -p "$other/protected/sub"
+echo a >"$other/protected/a"
+"$hw" snapshot --root "$other/protected" --out "$root/o1.json"
+echo b >"$other/protected/b"
+"$hw" snapshot --root "$other/protected" --out "$root/o2.json"
+echo "123 /x/Machman.app/Contents/MacOS/Machman" >"$root/nonlab.txt"
+"$hw" diff --before "$root/o1.json" --after "$root/o2.json" --out "$root/d2.txt" \
+	--non-lab "$root/nonlab.txt" --token "$token"
+status=$?
+# the same change under a path naming the run stays a breach
+named="$root/named"
+mkdir -p "$named"
+echo a >"$named/a"
+"$hw" snapshot --root "$named" --out "$root/n1.json"
+echo b >"$named/b"
+"$hw" snapshot --root "$named" --out "$root/n2.json"
+"$hw" diff --before "$root/n1.json" --after "$root/n2.json" --out "$root/d3.txt" \
+	--non-lab "$root/nonlab.txt" --token "$token"
+status3=$?
+"$hw" diff --before "$root/o1.json" --after "$root/o2.json" --out "$root/d4.txt" \
+	--token "$token"
+status4=$?
+if [[ $status == 0 && "$(grep -c '^WARN snapshot' "$root/d2.txt")" == 1 && $status3 == 3 &&
+	$status4 == 3 ]]; then
+	ok "audit snapshot: with a non-lab Machman process running the same change is a warning"
+else
+	fail "audit snapshot: with a non-lab Machman process running the same change is a warning" \
+		"$status/$status3/$status4: $(cat "$root/d2.txt" "$root/d3.txt")"
+fi
+
+# 9
+"$hw" snapshot --token "$token" --out "$root/default.json"
+if python3 - "$root/default.json" "$(id -un)" <<'PY'
+import json, os, pwd, sys
+doc = json.load(open(sys.argv[1]))
+home = pwd.getpwuid(os.getuid()).pw_dir
+ssh = [r for r in doc["roots"] if r["path"] == home + "/.ssh"]
+assert ssh and ssh[0]["metaOnly"] is True, "no metaOnly .ssh root"
+for path, e in doc["entries"].items():
+    assert not path.startswith(home + "/.machman"), path
+    if path.startswith(home + "/.ssh"):
+        assert "sha256" not in e, path
+PY
+then
+	ok "audit snapshot: default roots read ~/.ssh by metadata only and skip ~/.machman"
+else
+	fail "audit snapshot: default roots read ~/.ssh by metadata only and skip ~/.machman" \
+		"see the python assertion"
+fi
+
+# 10
+home="$(python3 -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"
+"$hw" snapshot --root "$home/.machman/x" --out "$root/refused.json"
+status=$?
+if [[ $status == 64 && ! -e "$root/refused.json" ]]; then
+	ok "audit snapshot: a root under ~/.machman is refused"
+else
+	fail "audit snapshot: a root under ~/.machman is refused" "exit $status"
+fi
+
+exit "$failures"
