@@ -38,6 +38,11 @@ public final class TornTabRegistry: ObservableObject {
 	// window reopens to show it: the app mustn't quit after that last window in between
 	// (review F16). Cleared as the main window appears and whenever a window becomes main.
 	public var holdsQuitForDock = false
+	// Whether the main window is up (its root view mounted; minimized still counts), and the
+	// torn windows that reopened it to dock their session: only those show the session's VM,
+	// so a dock never switches away from the VM the open main window is on (review F20).
+	public var mainWindowOpen = false
+	public var reopenedMainForDock: Set<TornTab> = []
 
 	// The app uses `shared`; tests make their own so parallel tests never share one.
 	public init() {}

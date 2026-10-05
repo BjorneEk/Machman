@@ -64,9 +64,6 @@ public struct VMNavigationView: View {
 			// selection — restore it. Deferred: select() publishes mid-view-update
 			// otherwise.
 			.onAppear {
-				// Up again for a torn session docking back: quitting after the last window
-				// may go ahead again (review F16).
-				viewModel.tornTabs.holdsQuitForDock = false
 				guard let sel = selection, viewModel.selectedName == nil else { return }
 				DispatchQueue.main.async { [weak viewModel] in
 					guard let viewModel, viewModel.selectedName == nil else { return }
@@ -157,6 +154,13 @@ public struct VMNavigationView: View {
 		// and ⌥⌘0 toggles its inspector.
 		.focusedSceneValue(\.machmanWindow, .main)
 		.focusedSceneValue(\.machmanInspector, $viewModel.showInfoPanel)
+		// Whether the main window is up, for a torn session docking back (F20); up again, it
+		// ends the quit hold such a dock may have set (F16).
+		.onAppear {
+			viewModel.tornTabs.mainWindowOpen = true
+			viewModel.tornTabs.holdsQuitForDock = false
+		}
+		.onDisappear { viewModel.tornTabs.mainWindowOpen = false }
 	}
 
 	@ToolbarContentBuilder

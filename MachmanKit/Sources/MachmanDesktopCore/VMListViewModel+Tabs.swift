@@ -41,8 +41,9 @@ extension VMListViewModel {
 		registry.open.remove(payload)
 		viewModel?.dropTabCloseQuestions(askedIn: payload)
 		let ordered = registry.closing.remove(payload) != nil
+		let reopenedMain = registry.reopenedMainForDock.remove(payload) != nil
 		if !ordered, let viewModel, viewModel.docksBack(payload) {
-			viewModel.dock(payload)
+			viewModel.dock(payload, showingItsVM: reopenedMain)
 			return
 		}
 		endTab(payload.tab, vm: payload.vm, terminals: terminals, viewModel: viewModel)
@@ -56,10 +57,12 @@ extension VMListViewModel {
 		return terminals.sshController(vm: payload.vm, ref: ref)?.connected == true
 	}
 
-	// The session's tab joins its VM's active pane, and that VM shows, so the tab is in view;
-	// its canvas mount adopts the live terminal, as the window adopted it at the tear-off.
-	func dock(_ payload: TornTab) {
-		if selectedName != payload.vm { select(name: payload.vm) }
+	// The session's tab joins its VM's active pane; that canvas mount adopts the live
+	// terminal, as the window adopted it at the tear-off. `showingItsVM` (the main window was
+	// reopened for it) also selects that VM, so the tab is in view; an open main window
+	// keeps the VM it is on (review F20).
+	func dock(_ payload: TornTab, showingItsVM: Bool) {
+		if showingItsVM, selectedName != payload.vm { select(name: payload.vm) }
 		var canvas = canvases.canvas(for: payload.vm)
 		canvas.open(payload.tab)
 		canvases.setCanvas(canvas, for: payload.vm)

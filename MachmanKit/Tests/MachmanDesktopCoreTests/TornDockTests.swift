@@ -48,12 +48,25 @@ struct TornDockTests {
 		#expect(h.controllers.first?.disconnects == 0)
 	}
 
-	// Review F16: the docked tab must be in view — its VM shows in the main window.
-	@Test func dockingShowsTheSessionsVM() async {
+	// Review F16: with the main window reopened for the dock, the docked tab is in view —
+	// its VM shows.
+	@Test func dockingIntoAReopenedMainWindowShowsTheSessionsVM() async {
+		let (h, ref, torn) = await tornSession()
+		h.viewModel.select(name: "Alpine")
+		h.tornTabs.reopenedMainForDock.insert(torn)
+		windowClosed(h, torn)
+		#expect(h.viewModel.selectedName == "Debian")
+		#expect(h.canvases.canvas(for: "Debian").activeTab == .ssh(ref))
+		#expect(h.tornTabs.reopenedMainForDock.isEmpty)
+	}
+
+	// Review F20: a main window that stayed open keeps the VM it is on; the session joins
+	// its own VM's canvas.
+	@Test func dockingLeavesAnOpenMainWindowOnItsVM() async {
 		let (h, ref, torn) = await tornSession()
 		h.viewModel.select(name: "Alpine")
 		windowClosed(h, torn)
-		#expect(h.viewModel.selectedName == "Debian")
+		#expect(h.viewModel.selectedName == "Alpine")
 		#expect(h.canvases.canvas(for: "Debian").activeTab == .ssh(ref))
 	}
 

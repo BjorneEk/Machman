@@ -121,6 +121,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			$0 !== window && ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain
 		}
 		if !othersOpen { tornTabs.holdsQuitForDock = true }
+		if !tornTabs.mainWindowOpen { tornTabs.reopenedMainForDock.insert(payload) }
 		openWindow(id: "main")
 	}
 
