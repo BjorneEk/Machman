@@ -60,5 +60,6 @@ struct SwiftCallStringsTests {
 		#expect(SwiftCallStrings.sentences("One. Two.") == 2)
 		#expect(SwiftCallStrings.sentences("Is it? Then go") == 2)
 		#expect(SwiftCallStrings.sentences("v3.1 of \u{27E8}vm.name\u{27E9}") == 1)
+		#expect(SwiftCallStrings.sentences("problem\u{27E8}n == 1 ? \"\" : \"s\"\u{27E9}") == 1)
 	}
 }

@@ -51,9 +51,10 @@ enum SwiftCallStrings {
 	}
 
 	// Sentences in `text`: a terminal . ? or ! followed by whitespace or the end, after a
-	// trailing ellipsis (a menu title's “…”) is set aside.
+	// trailing ellipsis (a menu title's “…”) is set aside. A placeholder counts as a word:
+	// its expression's own ? and : are code, not punctuation.
 	static func sentences(_ text: String) -> Int {
-		var body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		var body = words(text).trimmingCharacters(in: .whitespacesAndNewlines)
 		for ellipsis in ["\u{2026}", "..."] where body.hasSuffix(ellipsis) {
 			body.removeLast(ellipsis.count)
 		}
@@ -65,6 +66,16 @@ enum SwiftCallStrings {
 		// Text without a terminal mark is one sentence (a fragment), as tooltips mostly are.
 		let last = chars.last.map { ".?!".contains($0) } ?? true
 		return count + (last ? 0 : 1)
+	}
+}
+
+extension SwiftCallStrings {
+	// An interpolation's placeholder, as `literal()` writes it.
+	static let placeholder = "\u{27E8}[^\u{27E9}]*\u{27E9}"
+
+	// `text` with each placeholder as one neutral word: what a person reads around it.
+	static func words(_ text: String, placeholderAs word: String = "x") -> String {
+		text.replacingOccurrences(of: placeholder, with: word, options: .regularExpression)
 	}
 }
 
