@@ -140,7 +140,7 @@ struct SerialInspector: View {
 			if gate != nil {
 				LabeledContent("Path", value: "— (not attached on this host)")
 			} else if let sock = port?.socketPath {
-				PathRow(label: "Path", path: sock) { reveal(sock) }
+				PathRow(label: "Path", path: sock) { Finder.reveal(sock) }
 			} else {
 				LabeledContent("Path", value: "— (socket exists while running)")
 			}
@@ -162,7 +162,7 @@ struct SerialInspector: View {
 			}
 			.disabled(port?.logging.mode == .disabled)
 			if let logPath = port?.logPath {
-				PathRow(label: "Log file", path: logPath) { reveal(logPath) }
+				PathRow(label: "Log file", path: logPath) { Finder.reveal(logPath) }
 			}
 		}
 	}
@@ -182,10 +182,6 @@ struct SerialInspector: View {
 		let shown = ByteSize.display(cap)
 		let preset = logCapPresets.contains { $0 != cap && ByteSize.display($0) == shown }
 		return preset ? ByteSize.format(cap) : shown
-	}
-
-	private func reveal(_ path: String) {
-		NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
 	}
 
 	private var modeBinding: Binding<SerialLogMode> {

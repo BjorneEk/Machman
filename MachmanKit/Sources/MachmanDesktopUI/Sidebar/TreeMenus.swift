@@ -54,7 +54,7 @@ extension TreeContext {
 			Button("Copy") {
 				EntityClipboard.write(EntityClipboard(kind: .disk, path: path))
 			}
-			Button("Show in Finder") { Self.revealInFinder(path) }
+			Button("Show in Finder") { Finder.reveal(path) }
 			Divider()
 		}
 		Button(disk.isEnabled ? "Disable" : "Enable") {
@@ -84,7 +84,7 @@ extension TreeContext {
 			EntityClipboard.write(EntityClipboard(
 				kind: .mount, path: mount.path, tag: mount.tag))
 		}
-		Button("Show in Finder") { Self.revealInFinder(mount.path) }
+		Button("Show in Finder") { Finder.reveal(mount.path) }
 		Divider()
 		Button(mount.isEnabled ? "Disable" : "Enable") {
 			viewModel.setEnabled(vm.name, mounts: [mount.id: !mount.isEnabled])
@@ -193,7 +193,7 @@ extension TreeContext {
 			EntityClipboard.write(EntityClipboard(
 				kind: role == .kernel ? .kernel : .initramfs, path: file.id))
 		}
-		Button("Show in Finder") { Self.revealInFinder(file.id) }
+		Button("Show in Finder") { Finder.reveal(file.id) }
 		if file.owned {
 			Button("Rename") {
 				renamingNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
@@ -227,9 +227,5 @@ extension TreeContext {
 		NSPasteboard.general.clearContents()
 		NSPasteboard.general.setString(value, forType: .string)
 		PasteboardWatch.general.refresh()
-	}
-
-	private static func revealInFinder(_ path: String) {
-		NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
 	}
 }

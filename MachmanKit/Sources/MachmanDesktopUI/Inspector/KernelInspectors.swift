@@ -180,10 +180,7 @@ private struct KernelFileInfoSection: View {
 			LabeledContent("File", value: entry.fileName)
 			LabeledContent("Ownership",
 				value: entry.owned ? "Owned (in VM directory)" : "External reference")
-			PathRow(label: "Path", path: entry.path) {
-				NSWorkspace.shared.activateFileViewerSelecting(
-					[URL(fileURLWithPath: entry.path)])
-			}
+			PathRow(label: "Path", path: entry.path) { Finder.reveal(entry.path) }
 			if entry.active {
 				LabeledContent("Status") {
 					Label("Active", systemImage: MachmanSymbols.activeEntry)

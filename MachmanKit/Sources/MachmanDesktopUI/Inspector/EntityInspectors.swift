@@ -56,7 +56,7 @@ struct DiskInspector: View {
 					}
 					LabeledContent("Type", value: typeLabel(disk))
 					if let path = disk.path {
-						PathRow(label: "Path", path: path) { reveal(path) }
+						PathRow(label: "Path", path: path) { Finder.reveal(path) }
 					}
 				}
 				Section("Behavior") {
@@ -191,10 +191,6 @@ struct DiskInspector: View {
 			get: { disk.isEnabled },
 			set: { viewModel.setEnabled(vm.name, disks: [diskID: $0]) })
 	}
-
-	private func reveal(_ path: String) {
-		NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-	}
 }
 
 // MARK: - Mount -------------------------------------------------------------------------------
@@ -222,10 +218,7 @@ struct MountInspector: View {
 			Form {
 				Section("Info") {
 					tagField(mount)
-					PathRow(label: "Host path", path: mount.path) {
-						NSWorkspace.shared.activateFileViewerSelecting(
-							[URL(fileURLWithPath: mount.path)])
-					}
+					PathRow(label: "Host path", path: mount.path) { Finder.reveal(mount.path) }
 					// macOS guests have no kind choice: the share automounts, and sshfs
 					// would need macFUSE (the daemon refuses it too).
 					if vm.boot.mode != .macOS {
