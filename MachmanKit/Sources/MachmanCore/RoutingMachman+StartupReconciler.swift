@@ -155,8 +155,8 @@ extension RoutingMachman {
 	// live-pid run root — a live pid means some vmhost owns the name's socket, and the
 	// probe/hosted guards arbitrate that. A pid-NIL root can be an in-flight safe start's
 	// shadow build (marker written, pid stamped only after the spawn) — safe to purge here
-	// solely because the only caller is start(), which runs under the pendingStarts
-	// reservation: a second start of the same name is refused before it can reach this.
+	// solely because the only caller is start(), which runs under its start claim: a second
+	// start of the same name is refused before it can reach this.
 	func purgeDeadShadows(for name: String, isPidAlive: (Int32) -> Bool = SafeRun.defaultPidAlive) {
 		let fm = FileManager.default
 		guard let entries = try? fm.contentsOfDirectory(atPath: machmanSafeDir) else { return }

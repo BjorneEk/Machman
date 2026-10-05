@@ -35,10 +35,10 @@ extension RoutingMachman {
 				code: .invalidState,
 				message: "\(name) can’t start while macOS is installing")
 		}
-		// Reserved before the first await; the defer releases on every exit, success or
+		// Claimed before the first await; the defer releases on every exit, success or
 		// throw. Everything below (probe, spawn, shadow build) runs under this claim.
-		reserveStart(name, mac: vm.config.macAddress)
-		defer { releaseStart(name) }
+		let claim = try claims.claim(name, .starting, mac: vm.config.macAddress)
+		defer { claims.release(claim) }
 		if let host = hosted[name] {
 			// An idle host from an earlier start whose forward never happened (the daemon
 			// died in between, E12): it takes this start instead of idling out — unless it
@@ -397,7 +397,7 @@ extension RoutingMachman {
 				code: .invalidState, message: "\(name) is not running in safe mode")
 		}
 		guard registry.vm(named: newName) == nil, hosted[newName] == nil,
-			!pendingStarts.contains(newName) else {
+			claims.claims(on: newName).isEmpty else {
 			throw MachmanError(
 				code: .alreadyExists,
 				message: "A VM named \u{201C}\(newName)\u{201D} already exists")
@@ -405,8 +405,8 @@ extension RoutingMachman {
 		// The new name is claimed while the save is in flight: the vmhost serves at the new
 		// name's socket before it replies, and nothing may start or late-adopt it there
 		// meanwhile (residence says starting).
-		reserveStart(newName, mac: nil)
-		defer { releaseStart(newName) }
+		let claim = try claims.claim(newName, .saving)
+		defer { claims.release(claim) }
 		let library = host.identity.library ?? machmanVMDir
 		let hadSavedConfig = FileManager.default.fileExists(
 			atPath: library + "/" + newName + "/config")

@@ -39,7 +39,7 @@ struct RoutingPendingStartTests {
 	// winner's half-spawned vmhost.
 	@Test @MainActor func secondStartIsRefusedWhileAStartIsPending() async throws {
 		let routing = try makeRouting(names: ["pending-alpha"])
-		routing.pendingStarts.insert("pending-alpha")
+		routing.reserveStart("pending-alpha", mac: nil)
 
 		do {
 			try await routing.start(vm: "pending-alpha", options: StartOptions())
@@ -54,7 +54,7 @@ struct RoutingPendingStartTests {
 	// about to be) reading the very files they would move or delete.
 	@Test @MainActor func guardedOpsRefuseWhileAStartIsPending() async throws {
 		let routing = try makeRouting(names: ["pending-alpha"])
-		routing.pendingStarts.insert("pending-alpha")
+		routing.reserveStart("pending-alpha", mac: nil)
 
 		let ops: [(String, () async throws -> Void)] = [
 			("delete", { try await routing.deleteVM(named: "pending-alpha") }),
@@ -88,7 +88,7 @@ struct RoutingPendingStartTests {
 	// say starting instead of stopped.
 	@Test @MainActor func proxiedCallsRefuseWhileAStartIsPending() async throws {
 		let routing = try makeRouting(names: ["pending-alpha"])
-		routing.pendingStarts.insert("pending-alpha")
+		routing.reserveStart("pending-alpha", mac: nil)
 		let vm = "pending-alpha"
 
 		let ops: [(String, () async throws -> Void)] = [
@@ -144,7 +144,7 @@ struct RoutingPendingStartTests {
 	// The preview poller's read never errors: a VM that is starting has no preview yet.
 	@Test @MainActor func previewIsNilWhileAStartIsPending() async throws {
 		let routing = try makeRouting(names: ["pending-alpha"])
-		routing.pendingStarts.insert("pending-alpha")
+		routing.reserveStart("pending-alpha", mac: nil)
 		#expect(try await routing.preview(vm: "pending-alpha", maxWidth: nil) == nil)
 	}
 

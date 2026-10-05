@@ -36,33 +36,30 @@ public final class RoutingMachman: MachmanControlling {
 
 	var hosted: [String: HostedVM] = [:]   // keyed by VM name
 
-	// The start-window reservation. `hosted[name]` is written only after the NSWorkspace
-	// launch, the connect poll, and (for safe runs) a possibly minutes-long shadow build —
-	// so a guard that reads only `hosted` has a window where a booting VM looks idle: a
-	// second start would adopt-then-kill the half-spawned host, a delete would remove the
-	// directory under it, and a concurrent purgeDeadShadows would eat the in-flight shadow
-	// build. A name lives in here from start()'s first line until the start completed or
-	// failed; main-actor confinement makes the check-then-insert atomic. Internal (not
-	// private) as a test seam — tests reserve a name to exercise the guards.
-	var pendingStarts: Set<String> = []
-	// The MAC each in-flight start will boot with, and the order the starts reserved in:
-	// the MAC-conflict check counts starts still in their spawn window, and the earlier
-	// reservation wins. Internal read for tests.
-	private(set) var pendingStartMACs: [String: (order: Int, mac: String)] = [:]
-	private var nextStartOrder = 0
+	// The start-window reservation, and every other claim on a VM's files (VMClaims).
+	// `hosted[name]` is written only after the NSWorkspace launch, the connect poll, and (for
+	// safe runs) a possibly minutes-long shadow build — so a guard that reads only `hosted`
+	// has a window where a booting VM looks idle: a second start would adopt-then-kill the
+	// half-spawned host, a delete would remove the directory under it, and a concurrent
+	// purgeDeadShadows would eat the in-flight shadow build. A start claims its name from
+	// start()'s first check until the start completed or failed. Internal as a test seam.
+	let claims = VMClaims()
+
+	// The names a start (or Save as New VM) holds, and the MAC each start will boot with and
+	// the order the starts claimed in: the MAC-conflict check counts starts still in their
+	// spawn window, and the earlier claim wins. Internal reads for tests.
+	var pendingStarts: Set<String> { claims.startingNames }
+	var pendingStartMACs: [String: (order: Int, mac: String)] { claims.startMACs }
 
 	// Claims the name (and its MAC) for a start; internal so tests can stage a start in flight.
 	func reserveStart(_ name: String, mac: String?) {
-		pendingStarts.insert(name)
-		if let mac {
-			pendingStartMACs[name] = (nextStartOrder, mac)
-		}
-		nextStartOrder += 1
+		claims.insert(name, .starting, mac: mac)
 	}
 
 	func releaseStart(_ name: String) {
-		pendingStarts.remove(name)
-		pendingStartMACs[name] = nil
+		for claim in claims.claims(on: name) where claim.kind == .starting {
+			claims.release(VMClaims.Token(name: name, order: claim.order))
+		}
 	}
 
 	// E20: how long one vmhost may take to answer a list, get, operations or preview probe
