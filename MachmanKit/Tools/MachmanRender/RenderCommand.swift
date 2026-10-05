@@ -73,6 +73,10 @@ enum RenderCommand {
 		}
 
 		var failures = 0
+		// AppKit's "reentrant operation in its NSTableView delegate" (an assert to come, T26):
+		// counted per scene and in total, so a UI change that adds one shows in its sweep.
+		var tableWarnings = 0
+		let caught = RenderSandbox.dataDir.appendingPathComponent("scene-stderr.log")
 		for scene in scenes {
 			for width in widths.map({ $0.map { Optional($0) } }) ?? scene.widths {
 				for dark in schemes {
@@ -83,9 +87,18 @@ enum RenderCommand {
 					// while its window exists; this catches what outlives the scene.
 					let rendered: (data: Data, size: CGSize)?
 					do {
-						rendered = try Offscreen.png(
-							scene.make(context), width: width, height: scene.height, dark: dark,
-							chrome: scene.chrome, panels: scene.panels?(context) ?? [])
+						let drawn = try Console.capturingErrors(in: caught) {
+							try Offscreen.png(
+								scene.make(context), width: width, height: scene.height,
+								dark: dark, chrome: scene.chrome,
+								panels: scene.panels?(context) ?? [])
+						}
+						rendered = drawn.result
+						let warnings = Self.tableWarnings(in: drawn.errors)
+						if warnings > 0 {
+							Console.err("WARN \(file): AppKit table warnings ×\(warnings)")
+							tableWarnings += warnings
+						}
 					} catch {
 						return stop(at: file)
 					}
@@ -106,6 +119,7 @@ enum RenderCommand {
 				}
 			}
 		}
+		Console.out("AppKit table warnings: \(tableWarnings)")
 		// A scene wrote the real home's defaults (see RenderSandbox): fail here, where the
 		// writer ran, rather than only in the next run's refusal.
 		let leftovers = RenderSandbox.standardDomainKeys()
@@ -116,6 +130,12 @@ enum RenderCommand {
 			return 1
 		}
 		return failures == 0 ? 0 : 1
+	}
+
+	static func tableWarnings(in log: String) -> Int {
+		log.components(separatedBy: "\n")
+			.filter { $0.contains("reentrant operation in its NSTableView delegate") }
+			.count
 	}
 
 	private static func stop(at file: String) -> Int32 {
