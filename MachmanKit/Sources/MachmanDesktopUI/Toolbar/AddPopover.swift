@@ -228,20 +228,7 @@ private struct NewDiskForm: View {
 
 	var body: some View {
 		VStack(spacing: 0) {
-			HStack(spacing: 6) {
-				Button(action: back) {
-					Image(systemName: MachmanSymbols.back)
-						.font(.system(size: 10, weight: .bold))
-				}
-				.buttonStyle(.plain)
-				.machmanHoverable()
-				.help("Back")
-				.accessibilityLabel("Back")
-				Text("New Disk")
-					.font(.system(size: 12, weight: .semibold))
-				Spacer()
-			}
-			.padding(8)
+			PopoverPageHeader(title: "New Disk", back: back)
 			Divider()
 			VStack(spacing: 8) {
 				TextField("Name", text: $name)

@@ -218,20 +218,7 @@ private struct NewVMTemplateView: View {
 
 	var body: some View {
 		VStack(spacing: 0) {
-			HStack(spacing: 6) {
-				Button(action: back) {
-					Image(systemName: MachmanSymbols.back)
-						.font(.system(size: 10, weight: .bold))
-				}
-				.buttonStyle(.plain)
-				.machmanHoverable()
-				.help("Back")
-				.accessibilityLabel("Back")
-				Text("New VM")
-					.font(.system(size: 12, weight: .semibold))
-				Spacer()
-			}
-			.padding(8)
+			PopoverPageHeader(title: "New VM", back: back)
 			Divider()
 			VStack(spacing: 2) {
 				Self.row(title: "Blank", caption: "No devices — add exactly what you need",
@@ -290,20 +277,7 @@ private struct NewMacSourceView: View {
 
 	var body: some View {
 		VStack(spacing: 0) {
-			HStack(spacing: 6) {
-				Button(action: back) {
-					Image(systemName: MachmanSymbols.back)
-						.font(.system(size: 10, weight: .bold))
-				}
-				.buttonStyle(.plain)
-				.machmanHoverable()
-				.help("Back")
-				.accessibilityLabel("Back")
-				Text("macOS")
-					.font(.system(size: 12, weight: .semibold))
-				Spacer()
-			}
-			.padding(8)
+			PopoverPageHeader(title: "macOS", back: back)
 			Divider()
 			VStack(spacing: 2) {
 				NewVMTemplateView.row(
