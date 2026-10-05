@@ -171,6 +171,26 @@ extension RoutingMachman {
 		}
 	}
 
+	// Adopts each name's vmhost at once, each bounded by the hello and answer deadlines, so a
+	// busy host costs its own wait and never the next one's (E43). Main-actor Tasks that
+	// suspend inside the RPC, like the list probes.
+	func adoptLiveHosts(_ names: [String]) async -> [String: Result<HostedVM, Error>] {
+		let attempts = names.map { name in
+			(name, Task { () -> Result<HostedVM, Error> in
+				do {
+					return .success(try await self.adoptLiveHost(name))
+				} catch {
+					return .failure(error)
+				}
+			})
+		}
+		var results: [String: Result<HostedVM, Error>] = [:]
+		for (name, attempt) in attempts {
+			results[name] = await attempt.value
+		}
+		return results
+	}
+
 	// Fire-and-forget adoption for the read paths; a no-op while one is in flight.
 	func scheduleAdoption(_ name: String) {
 		guard adoptions[name] == nil else { return }

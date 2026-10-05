@@ -185,4 +185,48 @@ struct RoutingAdoptionTests {
 		#expect(stub.calls.filter { $0 == "setHardware" }.count == 2)
 		#expect(routing.adoptionAttempts == 1)   // the second caller joined the first
 	}
+
+	// E43: startup adoption asked one surviving vmhost at a time, and every request waits for
+	// it — two or three busy hosts outlasted a client's first vm.list (30 s). Both hosts here
+	// hold their first answer; each is asked before either answers. One at a time, the second
+	// was asked only once the first's (here 30 s) deadline ran out.
+	@Test @MainActor func startupAdoptsSurvivingHostsAtOnce() async throws {
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			for name in ["alpha", "beta"] {
+				try VMConfig.createNewVMDirectory(name: name)
+				try VMConfig(name: name, memorySize: 2048, cpuCount: 2).saveVMConfig()
+			}
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }
+		}
+		routing.hostProbeDeadline = .seconds(30)
+		let paths = [
+			"alpha": TestEnvironment.socketPath("mm-boot-a"),
+			"beta": TestEnvironment.socketPath("mm-boot-b"),
+		]
+		routing.socketPathForVM = { paths[$0] ?? $0 + ".none" }
+		var stubs: [StubMachman] = []
+		var servers: [MachmanServer] = []
+		for name in ["alpha", "beta"] {
+			let stub = StubMachman()
+			stub.vms[name] = StubMachman.makeInfo(name, state: .running)
+			stub.stalled = ["vm"]
+			let server = MachmanServer(
+				api: stub, socketPath: paths[name]!, daemonVersion: "test")
+			try startServing(server)
+			stubs.append(stub)
+			servers.append(server)
+		}
+		defer {
+			for stub in stubs { stub.stalled = [] }
+			for server in servers { server.stop() }
+		}
+
+		let adoption = Task { await routing.adoptExistingHosts() }
+		#expect(await eventually { stubs.allSatisfy { $0.calls.contains("vm") } })
+		for stub in stubs { stub.stalled = [] }
+		await adoption.value
+		#expect(routing.hostedNames.sorted() == ["alpha", "beta"])
+	}
 }

@@ -17,28 +17,34 @@ extension RoutingMachman {
 	// keeps running (its VM never noticed the daemon restart); a stale socket is reclaimed.
 	// This is the daemon's whole startup reconciliation, so it also has to cope with the
 	// ungraceful cases — force quit, crash, power loss — where nothing got to clean up.
+	// Every request but hello and retire waits for this, so the hosts are adopted at once
+	// (E43): one at a time, two or three busy hosts outlasted a client's first vm.list.
 	public func adoptExistingHosts() async {
 		pruneDeadHostSockets()
-		for vm in registry.list() {
-			let name = vm.name
-			guard hosted[name] == nil else { continue }
+		let names = registry.list().map(\.name).filter { name in
 			let socketPath = hostSocketPath(for: name)
-			guard FileManager.default.fileExists(atPath: socketPath),
-				hostHolding(socketPath) == nil else { continue }
-			do {
-				let host = try await adoptLiveHost(name)
+			return hosted[name] == nil && FileManager.default.fileExists(atPath: socketPath)
+				&& hostHolding(socketPath) == nil
+		}
+		let adoptions = await adoptLiveHosts(names)
+		for name in names {
+			switch adoptions[name] {
+			case .success(let host):
 				MachmanLogger.log(.log, "adopted running vmhost for \(host.identity.name)")
-			} catch {
+			case .failure(let error):
 				// NEVER unlink a live socket (single-writer rule, probe-adopt's guard): a
 				// vmhost whose main actor is busy misses hello but still owns the VM.
 				// Without its socket it turned invisible and unstoppable, and the next start
 				// spawned a second VZ against the same disks (E21).
+				let socketPath = hostSocketPath(for: name)
 				guard !UDSListener.isLive(path: socketPath) else {
 					MachmanLogger.log(.passiveWarning,
 						"kept \(name)'s live vmhost socket (\(error)) — adopting it on next use")
 					continue
 				}
 				unlink(socketPath)
+			case nil:
+				break
 			}
 		}
 	}
