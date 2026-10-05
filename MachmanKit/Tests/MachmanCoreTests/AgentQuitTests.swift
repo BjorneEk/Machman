@@ -52,6 +52,25 @@ struct AgentQuitDecisionTests {
 			== .ask)
 	}
 
+	// E47: with no VM running, the user's own quit stopped a copy or an install without a
+	// word. It asks now; a session end cancels and says what runs (C13).
+	@Test func workTheAgentRunsHoldsAQuit() {
+		let copying = SessionHolder(vm: "gamma", activity: "is being copied", promptsItself: false)
+		#expect(AgentQuitDecision.decide(reason: .userQuit, runningVMs: 0, holders: [copying])
+			== .askAboutWork([copying]))
+		for reason in sessionEnds {
+			#expect(AgentQuitDecision.decide(reason: reason, runningVMs: 0, holders: [copying])
+				== .cancelAndExplain([copying]))
+		}
+		let one = AgentPrompt.quitDuringWork([copying])
+		#expect(one.message == "gamma is being copied \u{2014} quit anyway?")
+		#expect(one.info == "Quitting Machman Agent now stops it.")
+		#expect(one.buttons == ["Cancel", "Quit Anyway"])   // the default keeps it
+		let two = AgentPrompt.quitDuringWork([copying, copying])
+		#expect(two.message == "2 VMs are busy \u{2014} quit anyway?")
+		#expect(two.info == "Quitting Machman Agent now stops them.")
+	}
+
 	@Test func theAgentsAlertIsOneSentence() throws {
 		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
 		let one = AgentPrompt.sessionEndHeld(reason: .logOut, holders: [starting])
@@ -177,6 +196,43 @@ struct RoutingRunningVMTests {
 		#expect(routing.sessionHolders == [
 			SessionHolder(vm: "beta", activity: "is still starting", promptsItself: false),
 		])
+	}
+
+	// C13: work the agent runs itself dies with it, so it holds a log out too — one entry per
+	// VM, however many copies run into it.
+	@Test @MainActor func theAgentsOwnWorkHoldsALogOut() throws {
+		let routing = try makeRouting()
+		routing.claims.insert("alpha", .importingDisk)
+		routing.claims.insert("alpha", .promotingDisk)
+		routing.claims.insert("beta", .copying)
+		routing.claims.insert("gamma", .importingDisk, inDaemon: false)   // its vmhost's
+		#expect(routing.runningVMNames.isEmpty)
+		#expect(routing.sessionHolders == [
+			SessionHolder(vm: "alpha", activity: "is importing a disk", promptsItself: false),
+			SessionHolder(vm: "beta", activity: "is being copied", promptsItself: false),
+		])
+	}
+
+	@Test @MainActor func aMacOSInstallHoldsALogOut() throws {
+		var finish: (() -> Void)?
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "mac")
+			try VMConfig(name: "mac", memorySize: 2048, cpuCount: 2).saveVMConfig()
+			let registry = VMRegistry()
+			var open = false
+			registry.installRunner = { _, _ in
+				while !open { try await Task.sleep(for: .milliseconds(10)) }
+				throw CocoaError(.userCancelled)
+			}
+			finish = { open = true }
+			let routing = RoutingMachman(registry: registry, daemonVersion: "test")
+			try registry.installSession(for: #require(registry.vm(named: "mac")))
+				.startInstall(source: InstallSource(kind: .ipsw, path: "/nonexistent.ipsw"))
+			#expect(routing.sessionHolders == [
+				SessionHolder(vm: "mac", activity: "is installing macOS", promptsItself: false),
+			])
+		}
+		finish?()
 	}
 
 	// V10: only a vmhost running its VM and answering cancels a log out in front itself.

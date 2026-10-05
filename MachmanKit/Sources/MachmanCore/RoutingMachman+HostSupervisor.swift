@@ -121,22 +121,33 @@ extension RoutingMachman {
 	// whether its own vmhost cancels in front and says what to do. Only a vmhost running its
 	// VM and answering does; a start in flight (its vmhost not there yet, or idle until the
 	// start arrives), a host that stopped answering and one that never answered leave it to
-	// the agent.
+	// the agent — as does work the agent runs itself on a VM that runs nothing (C13). One
+	// entry per VM.
 	public var sessionHolders: [SessionHolder] {
 		let starting = pendingStarts
-		var holders: [SessionHolder] = starting.map {
-			SessionHolder(vm: $0, activity: "is still starting", promptsItself: false)
+		var holders: [String: SessionHolder] = [:]
+		for name in starting {
+			holders[name] = SessionHolder(
+				vm: name, activity: "is still starting", promptsItself: false)
 		}
-		for host in hosted.values where !starting.contains(host.identity.name) {
+		for host in hosted.values where holders[host.identity.name] == nil {
+			let name = host.identity.name
 			if host.unresponsive || host.lastState == nil {
-				holders.append(SessionHolder(
-					vm: host.identity.name, activity: "is not responding", promptsItself: false))
+				holders[name] = SessionHolder(
+					vm: name, activity: "is not responding", promptsItself: false)
 			} else if host.lastState?.isRunning == true {
-				holders.append(SessionHolder(
-					vm: host.identity.name, activity: "is still running", promptsItself: true))
+				holders[name] = SessionHolder(
+					vm: name, activity: "is still running", promptsItself: true)
 			}
 		}
-		return holders.sorted { $0.vm < $1.vm }
+		for (name, kind) in claims.inDaemon where holders[name] == nil {
+			holders[name] = SessionHolder(vm: name, activity: kind.activity, promptsItself: false)
+		}
+		for vm in registry.list() where holders[vm.name] == nil && registry.isInstalling(vm) {
+			holders[vm.name] = SessionHolder(
+				vm: vm.name, activity: "is installing macOS", promptsItself: false)
+		}
+		return holders.values.sorted { $0.vm < $1.vm }
 	}
 
 	// The vmhost serving `name`, adopting one this daemon has not met yet: a launch-agent

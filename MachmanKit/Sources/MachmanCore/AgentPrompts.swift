@@ -19,22 +19,30 @@ public enum AgentQuitDecision: Equatable, Sendable {
 	// a vmhost that doesn't answer (V10). The agent cancels, and says what in its own alert.
 	case cancelAndExplain([SessionHolder])
 	case ask             // the user quit the agent: its prompt offers what happens to the VMs
+	// The user quit the agent while it runs work of its own and no VM runs (E47): quitting
+	// would stop the work, so it asks first.
+	case askAboutWork([SessionHolder])
 
 	public static func decide(
 		reason: VMHostQuitReason, runningVMs: Int, holders: [SessionHolder]
 	) -> AgentQuitDecision {
-		guard reason != .userQuit else { return runningVMs > 0 ? .ask : .quit }
+		if reason == .userQuit {
+			if runningVMs > 0 { return .ask }
+			return holders.isEmpty ? .quit : .askAboutWork(holders)
+		}
 		guard !holders.isEmpty else { return .quit }
 		let unexplained = holders.filter { !$0.promptsItself }
 		return unexplained.isEmpty ? .cancelQuietly : .cancelAndExplain(unexplained)
 	}
 }
 
-// One VM that holds a log out, restart or shut down while the agent runs it, and whether its
-// own vmhost says so: only a vmhost running its VM, and answering, cancels in front (V1).
+// One VM that holds a log out, restart or shut down while the agent runs, and whether its own
+// vmhost says so: only a vmhost running its VM, and answering, cancels in front (V1). Work
+// the agent runs itself — a copy, an import into a stopped VM, a macOS install — holds it
+// too, since it would die with the agent (C13).
 public struct SessionHolder: Equatable, Sendable {
 	public let vm: String
-	// What it does, after its name: "is still starting", "is not responding".
+	// What it does, after its name: "is still starting", "is being copied".
 	public let activity: String
 	public let promptsItself: Bool
 
@@ -75,6 +83,18 @@ public struct AgentPrompt: Equatable, Sendable {
 			info: "\(canceled): wait for \(one ? "it" : "them") or stop \(one ? "it" : "them") "
 				+ "in Machman, then \(again).",
 			buttons: ["OK"])
+	}
+
+	// The user quit the agent while it runs work of its own (E47). The first button, the
+	// default, keeps it.
+	public static func quitDuringWork(_ holders: [SessionHolder]) -> AgentPrompt {
+		let one = holders.count == 1
+		return AgentPrompt(
+			message: (one
+				? "\(holders[0].vm) \(holders[0].activity)" : "\(holders.count) VMs are busy")
+				+ " — quit anyway?",
+			info: "Quitting Machman Agent now stops \(one ? "it" : "them").",
+			buttons: ["Cancel", "Quit Anyway"])
 	}
 
 	// A newly launched agent that finds an older one serving: replace it, or leave it be.

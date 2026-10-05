@@ -215,6 +215,12 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 				_ = await MainRunLoopCallout.run { Self.runInFront(prompt) }
 			}
 			return .terminateCancel
+		case .askAboutWork(let holders):
+			// The user's own quit, while the agent runs work no VM window knows of (E47).
+			guard Self.runInFront(AgentPrompt.quitDuringWork(holders))
+				== .alertSecondButtonReturn else { return .terminateCancel }
+			Daemon.server.stop()
+			return .terminateNow
 		case .ask:
 			break
 		}
