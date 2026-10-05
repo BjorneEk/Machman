@@ -62,6 +62,24 @@ struct MacInstallRetryTests {
 		#expect(config.boot == before)
 	}
 
+	// F12: a cancel that landed between stages — while the index loaded, or between the
+	// download and the installer — had no task or progress to cancel, so the 13 GB download
+	// or the install started anyway. Each stage boundary reads the flag now; the first one
+	// is reached even before a local image loads.
+	@Test func aCancelBeforeAStageStopsIt() async throws {
+		let config = try JSONDecoder().decode(
+			VMConfig.self,
+			from: Data(#"{"name":"mac","memorySize":2048,"cpuCount":2,"created":1000}"#.utf8))
+		let installer = MacInstaller(config: config)
+		installer.cancel()
+		let error = await #expect(throws: (any Error).self) {
+			try await installer.install(
+				source: .localIPSW(URL(fileURLWithPath: "/nonexistent/restore.ipsw")))
+		}
+		#expect(error.map(MacInstaller.isCancellation) == true, "\(String(describing: error))")
+		#expect(config.boot == .efi)
+	}
+
 	// The API entry refuses before any session phase changes.
 	@Test func theAPIRefusesAnInstallOnAnInstalledMac() async throws {
 		var api: LocalMachman!

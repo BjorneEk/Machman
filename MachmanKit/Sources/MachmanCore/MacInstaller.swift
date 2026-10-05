@@ -107,6 +107,9 @@ final class MacInstaller {
 				try? FileManager.default.removeItem(at: downloaded)
 			}
 		}
+		// The last stage boundary: from here to installer.install() nothing awaits, so a
+		// cancel can't land in between.
+		try throwIfCancelled()
 		guard let requirements = image.mostFeaturefulSupportedConfiguration else {
 			throw VirtualMachineError.critical("This Mac can’t install that restore image")
 		}
@@ -152,6 +155,13 @@ final class MacInstaller {
 		cancelled = true
 		downloadTask?.cancel()
 		progress?.cancel()
+	}
+
+	// A cancel that lands between stages — while the index loads, or between the download
+	// and the installer — has no task or progress to cancel, so each stage boundary reads
+	// the flag instead (F12).
+	private func throwIfCancelled() throws {
+		if cancelled { throw CocoaError(.userCancelled) }
 	}
 
 	// MARK: - Restore image resolution
@@ -247,6 +257,7 @@ final class MacInstaller {
 	// caller must remove once the install is over).
 	private func resolveRestoreImage(
 		_ source: Source) async throws -> (image: VZMacOSRestoreImage, downloaded: URL?) {
+		try throwIfCancelled()
 		switch source {
 		case .localIPSW(let url):
 			let image = try await VZMacOSRestoreImage.image(from: url)
@@ -313,6 +324,7 @@ final class MacInstaller {
 	// deletes the downloaded temp file when the completion handler returns, so it is moved to a
 	// holding location inside the handler.
 	private func download(from remote: URL, to local: URL) async throws {
+		try throwIfCancelled()   // the index or Apple's lookup may have taken a while
 		let holding: URL = try await withCheckedThrowingContinuation { continuation in
 			let task = URLSession.shared.downloadTask(with: remote) { url, response, error in
 				if let error = error {
