@@ -599,6 +599,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Machman VM$(MACHMAN_NAME_SUFFIX)";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025 Gustaf Franzen. All rights reserved.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A VM’s guest uses your microphone as its audio input.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -624,6 +625,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Machman VM$(MACHMAN_NAME_SUFFIX)";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025 Gustaf Franzen. All rights reserved.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A VM’s guest uses your microphone as its audio input.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
