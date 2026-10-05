@@ -86,11 +86,13 @@ struct TreeKernelSection: View {
 							.font(.system(size: theme.metrics.iconSize))
 					}
 					if ctx.renamingNode == node {
-						RenameField(initial: file.label) { tag in
-							ctx.renamingNode = nil
-							ctx.viewModel.renameKernelTag(ctx.vm.name, path: file.id, tag: tag)
+						RenameField(
+							initial: ctx.renameDraft ?? file.label,
+							problem: { ctx.renameProblem(node, $0) }
+						) {
+							ctx.commitRename(node, to: $0)
 						} cancel: {
-							if ctx.renamingNode == node { ctx.renamingNode = nil }
+							ctx.endRename(node)
 						}
 					} else {
 						Text(file.label)

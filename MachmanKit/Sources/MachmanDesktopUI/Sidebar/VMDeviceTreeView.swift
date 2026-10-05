@@ -52,14 +52,17 @@ struct VMDeviceTreeView: View {
 	@Environment(\.openWindow) private var openWindow
 
 	// Render scenes: `dragPreview` starts the tree with a drag already hovering, `filter` with
-	// text in the filter field, `hovered` with those rows drawn under a pointer. `pasteboard`
-	// defaults to the general pasteboard's watch.
+	// text in the filter field, `hovered` with those rows drawn under a pointer, `renaming`
+	// with that row's rename field open on `renameDraft`. `pasteboard` defaults to the
+	// general pasteboard's watch.
 	private let hovered: Set<SidebarNode>
+	private let renameDraft: String?
 
 	init(
 		viewModel: VMListViewModel, sessions: TerminalSessions, canvases: CanvasStateStore,
 		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil,
-		filter: String = "", hovered: Set<SidebarNode> = [], pasteboard: PasteboardWatch? = nil
+		filter: String = "", hovered: Set<SidebarNode> = [], renaming: SidebarNode? = nil,
+		renameDraft: String? = nil, pasteboard: PasteboardWatch? = nil
 	) {
 		self.viewModel = viewModel
 		_tornTabs = ObservedObject(wrappedValue: viewModel.tornTabs)
@@ -70,7 +73,10 @@ struct VMDeviceTreeView: View {
 		self.vm = vm
 		_dragPreview = State(initialValue: dragPreview)
 		_filter = State(initialValue: filter)
+		_renamingRoot = State(initialValue: renaming == .vmRoot)
+		_renamingNode = State(initialValue: renaming == .vmRoot ? nil : renaming)
 		self.hovered = hovered
+		self.renameDraft = renameDraft
 	}
 
 	var body: some View {
@@ -84,8 +90,9 @@ struct VMDeviceTreeView: View {
 	private var context: TreeContext {
 		TreeContext(
 			viewModel: viewModel, sessions: sessions, canvases: canvases, tornTabs: tornTabs,
-			pasteboard: pasteboard, vm: vm, filter: filter, renamingRoot: $renamingRoot,
-			renamingNode: $renamingNode, dragPreview: $dragPreview, expanded: $expanded,
+			pasteboard: pasteboard, profiles: profiles, vm: vm, filter: filter,
+			renamingRoot: $renamingRoot, renamingNode: $renamingNode, renameDraft: renameDraft,
+			dragPreview: $dragPreview, expanded: $expanded,
 			dragTouched: { dragGeneration &+= 1 }, openWindow: openWindow)
 	}
 
@@ -198,11 +205,12 @@ struct VMDeviceTreeView: View {
 		HStack(spacing: 6) {
 			VMStatusDot(vm: vm, size: 8)
 			if renamingRoot {
-				RenameField(initial: vm.name) { newName in
-					renamingRoot = false
-					commitRename(to: newName)
+				RenameField(
+					initial: renameDraft ?? vm.name, problem: { ctx.renameProblem(.vmRoot, $0) }
+				) {
+					ctx.commitRename(.vmRoot, to: $0)
 				} cancel: {
-					renamingRoot = false
+					ctx.endRename(.vmRoot)
 				}
 			} else {
 				Text(vm.name).fontWeight(.semibold)
@@ -213,10 +221,5 @@ struct VMDeviceTreeView: View {
 		}
 		.padding(.leading, TreeIndent.root)
 		.treeRow(.vmRoot, onClick: { ctx.clicked(.vmRoot) }) { ctx.rootMenu() }
-	}
-
-	// In-place rename: Return commits (Esc cancels), so no extra confirmation dialog.
-	private func commitRename(to newName: String) {
-		viewModel.requestRename(vm, to: newName, profiles: profiles)
 	}
 }

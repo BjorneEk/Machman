@@ -605,6 +605,18 @@ enum WindowScenes {
 			return hoveredTree(
 				ctx, [.disk("storage:system"), .group("Mounts"), .group("Serial")])
 		},
+		// H37: the tree's rename runs the inspector field's checks; a draft with a problem
+		// keeps the field open with the warning triangle (its help is the reason).
+		RenderScene(
+			"sidebar.tree.rename-problem",
+			"VMDeviceTreeView, Alpine's system disk renamed to a name with a leading dot",
+			widths: [270], height: 360, vms: { [Samples.linux("Alpine")] }
+		) { ctx in
+			AnyView(VMDeviceTreeView(
+				viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
+				profiles: ctx.profiles, vm: ctx.vm, renaming: .disk("storage:system"),
+				renameDraft: ".system"))
+		},
 		RenderScene(
 			"sidebar.tree.drop-kernel-empty",
 			"VMDeviceTreeView, a kernel image dragged onto the empty Kernel section",

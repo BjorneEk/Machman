@@ -3,11 +3,11 @@
 //  MachmanDesktopCore
 //
 //  The inspector's rename fields (PR8): the VM name, a disk's name, a mount's tag and an
-//  owned kernel file's tag say
-//  why a draft can't be used while it is typed, in the daemon's own words, and a refusal
-//  the daemon sends back shows under the field instead of as an alert. Return sends only
-//  a draft the field shows as valid. The tree's rename-in-place keeps its alert: it has no
-//  field left to show a reason under.
+//  owned kernel file's tag say why a draft can't be used while it is typed, in the daemon's
+//  own words, and a refusal the daemon sends back shows under the field instead of as an
+//  alert. Return sends only a draft the field shows as valid. The tree's rename in place
+//  runs the same checks through the same entry points (H37); a refusal from the daemon
+//  comes back as an alert there, the field having closed.
 //
 
 import Foundation
@@ -28,7 +28,7 @@ extension VMListViewModel {
 	public func submitRename(
 		_ vm: VMInfo, draft: String, profiles: TerminalProfileStore,
 		reverted: @escaping @MainActor () -> Void = {},
-		refused: @escaping @MainActor (String) -> Void
+		refused: (@MainActor (String) -> Void)? = nil
 	) -> Bool {
 		guard vm.refusal(.renameVM) == nil, vmRenameProblem(draft, for: vm) == nil else {
 			return false
@@ -57,7 +57,7 @@ extension VMListViewModel {
 	@discardableResult
 	public func submitDiskRename(
 		_ vm: VMInfo, diskID: String, draft: String,
-		refused: @escaping @MainActor (String) -> Void
+		refused: (@MainActor (String) -> Void)? = nil
 	) -> Bool {
 		let name = NameRule.diskName.trimmed(draft)
 		guard vm.refusal(.renameDisk) == nil,
@@ -124,7 +124,7 @@ extension VMListViewModel {
 	@discardableResult
 	public func submitKernelTag(
 		_ vm: VMInfo, path: String, draft: String,
-		refused: @escaping @MainActor (String) -> Void
+		refused: (@MainActor (String) -> Void)? = nil
 	) -> Bool {
 		let tag = NameRule.kernelTag.trimmed(draft)
 		guard vm.refusal(.renameKernelFile) == nil,
@@ -133,5 +133,40 @@ extension VMListViewModel {
 		else { return false }
 		renameKernelTag(vm.name, path: path, tag: tag, refused: refused)
 		return true
+	}
+
+	// MARK: - The tree's rename in place (H37)
+
+	// Why the tree's draft for `node` can't be sent, or nil: the inspector field's check,
+	// after the stop-first reason while the VM runs.
+	public func treeRenameProblem(_ node: SidebarNode, draft: String, on vm: VMInfo) -> String? {
+		switch node {
+		case .vmRoot:
+			return vm.refusal(.renameVM) ?? vmRenameProblem(draft, for: vm)
+		case .disk(let id):
+			return vm.refusal(.renameDisk) ?? diskRenameProblem(draft, diskID: id, on: vm)
+		case .kernel(let path), .initramfs(let path):
+			return vm.refusal(.renameKernelFile) ?? kernelTagProblem(draft, path: path, on: vm)
+		case .group, .mount, .serial, .device, .sshSession:
+			return nil
+		}
+	}
+
+	// The tree field's Return: what the inspector field sends — trimmed, never an unchanged
+	// name or a draft with a problem. False when nothing went out.
+	@discardableResult
+	public func submitTreeRename(
+		_ node: SidebarNode, draft: String, on vm: VMInfo, profiles: TerminalProfileStore
+	) -> Bool {
+		switch node {
+		case .vmRoot:
+			return submitRename(vm, draft: draft, profiles: profiles)
+		case .disk(let id):
+			return submitDiskRename(vm, diskID: id, draft: draft)
+		case .kernel(let path), .initramfs(let path):
+			return submitKernelTag(vm, path: path, draft: draft)
+		case .group, .mount, .serial, .device, .sshSession:
+			return false
+		}
 	}
 }

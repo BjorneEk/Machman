@@ -37,12 +37,13 @@ struct TreeStorageSection: View {
 							.font(.system(size: theme.metrics.iconSize))
 							.foregroundStyle(disk.owned == false ? Color.secondary : Color.primary)
 						if ctx.renamingNode == .disk(disk.id) {
-							RenameField(initial: disk.name ?? "") { newName in
-								ctx.renamingNode = nil
-								ctx.viewModel.renameDisk(
-									ctx.vm.name, diskID: disk.id, newName: newName)
+							RenameField(
+								initial: ctx.renameDraft ?? disk.name ?? "",
+								problem: { ctx.renameProblem(.disk(disk.id), $0) }
+							) {
+								ctx.commitRename(.disk(disk.id), to: $0)
 							} cancel: {
-								if ctx.renamingNode == .disk(disk.id) { ctx.renamingNode = nil }
+								ctx.endRename(.disk(disk.id))
 							}
 						} else {
 							Text(disk.name ?? Self.lastComponent(disk.path))

@@ -24,11 +24,14 @@ struct TreeContext: DynamicProperty {
 	@ObservedObject var canvases: CanvasStateStore
 	@ObservedObject var tornTabs: TornTabRegistry
 	@ObservedObject var pasteboard: PasteboardWatch
+	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	let filter: String
 	@Binding var renamingRoot: Bool
 	// Entry being renamed in place (owned storage disks + owned kernel files).
 	@Binding var renamingNode: SidebarNode?
+	// A render scene's draft for the rename it starts with.
+	let renameDraft: String?
 	// A drag hovering a section: drives the would-be preview row + copy/forbidden cursor.
 	@Binding var dragPreview: TreeDragPreview?
 	@Binding var expanded: Set<SidebarNode>
@@ -126,6 +129,26 @@ extension TreeContext {
 
 	func isRenaming(_ node: SidebarNode) -> Bool {
 		(node == .vmRoot && renamingRoot) || renamingNode == node
+	}
+
+	// The rename in place runs the inspector fields' checks and entry points (H37): a draft
+	// with a problem stays in the field with its reason, an unchanged one sends nothing.
+	func renameProblem(_ node: SidebarNode, _ draft: String) -> String? {
+		viewModel.treeRenameProblem(node, draft: draft, on: vm)
+	}
+
+	func commitRename(_ node: SidebarNode, to draft: String) {
+		endRename(node)
+		viewModel.submitTreeRename(node, draft: draft, on: vm, profiles: profiles)
+	}
+
+	// Ends `node`'s rename only: a field losing focus to another row's rename leaves that one.
+	func endRename(_ node: SidebarNode) {
+		if node == .vmRoot {
+			renamingRoot = false
+		} else if renamingNode == node {
+			renamingNode = nil
+		}
 	}
 
 	// Move a tab out of the canvas into its own window (or focus the window it already

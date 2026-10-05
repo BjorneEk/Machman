@@ -307,9 +307,11 @@ public struct AddTile: View {
 // MARK: - Rename field ------------------------------------------------------------------------
 
 // In-place rename editor: commits on Return, cancels on Esc or when focus moves elsewhere
-// (a click outside it), auto-focuses.
+// (a click outside it), auto-focuses. A draft with a `problem` shows the warning triangle
+// with the reason as its help, and Return leaves it in the field.
 public struct RenameField: View {
 	private let initial: String
+	private let problem: (String) -> String?
 	private let commit: (String) -> Void
 	private let cancel: () -> Void
 	@State private var draft = ""
@@ -319,18 +321,33 @@ public struct RenameField: View {
 	@State private var hadFocus = false
 
 	public init(
-		initial: String, commit: @escaping (String) -> Void, cancel: @escaping () -> Void
+		initial: String, problem: @escaping (String) -> String? = { _ in nil },
+		commit: @escaping (String) -> Void, cancel: @escaping () -> Void
 	) {
 		self.initial = initial
+		self.problem = problem
 		self.commit = commit
 		self.cancel = cancel
 	}
 
 	public var body: some View {
+		HStack(spacing: 4) {
+			field
+			if let reason = problem(draft) {
+				Image(systemName: MachmanSymbols.warning)
+					.font(.system(size: 10))
+					.foregroundStyle(MachmanColors.warning)
+					.help(reason)
+					.accessibilityLabel(reason)
+			}
+		}
+	}
+
+	private var field: some View {
 		TextField("", text: $draft)
 			.textFieldStyle(.plain)
 			.focused($focused)
-			.onSubmit { commit(draft) }
+			.onSubmit { if problem(draft) == nil { commit(draft) } }
 			.onExitCommand { cancel() }
 			.onAppear {
 				draft = initial
