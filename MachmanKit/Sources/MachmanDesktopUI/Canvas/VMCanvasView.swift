@@ -157,6 +157,10 @@ struct VMCanvasView: View {
 			}
 			paneContent(pane)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
+				// A click inside the pane makes it the active one (T23).
+				.background(PaneClickWatcher {
+					viewModel.paneClicked(pane.id, vm: vm.name)
+				})
 		}
 		.onGeometryChange(for: CGRect.self) { proxy in
 			proxy.frame(in: .named("machman-canvas"))
@@ -181,7 +185,7 @@ struct VMCanvasView: View {
 						hasSiblings: pane.tabs.count > 1,
 						tabStyle: theme.tabStyle,
 						metrics: theme.metrics,
-						onSelect: { mutate { $0.activate(tab) } },
+						onSelect: { viewModel.tabClicked(tab, vm: vm.name) },
 						onClose: { close(tab) },
 						onCloseOthers: { closeOthers(than: tab, in: pane) },
 						onSplit: { mutate { $0.split(tab, trailing: true) } },
@@ -216,7 +220,7 @@ struct VMCanvasView: View {
 		}
 		.contentShape(Rectangle())
 		.simultaneousGesture(TapGesture().onEnded {
-			mutate { $0.activatePane(pane.id) }
+			viewModel.paneClicked(pane.id, vm: vm.name)
 		})
 	}
 

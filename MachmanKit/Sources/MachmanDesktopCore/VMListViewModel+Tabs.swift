@@ -102,8 +102,8 @@ extension VMListViewModel {
 		}
 	}
 
-	// The tree mirrors the canvas (T8): when the shown VM's active tab CHANGES — a tab
-	// click, ⇧⌘[ / ], a pane click, a close's fallback, a drag between panes — its row is
+	// The tree mirrors the canvas (T8): when the shown VM's active tab CHANGES — ⇧⌘[ / ],
+	// a close's fallback, a drag between panes; clicks select on their own (T23) — its row is
 	// selected, so the inspector follows the tab the user is working in. Divider drags,
 	// reorders, other VMs' canvases and renames (the incoming layouts lack the old key)
 	// leave the selection alone, and so does an empty canvas filling with its
@@ -117,6 +117,39 @@ extension VMListViewModel {
 		guard let after = incoming[name]?.activeTab, after != before else { return }
 		if after == .config && old.allOpenTabs.isEmpty { return }
 		let node = Self.treeNode(for: after)
+		if treeSelection != [node] { treeSelection = [node] }
+	}
+
+	// MARK: - Clicks (T23)
+
+	// A click on a canvas tab: it becomes the active tab and its row is selected — even when
+	// it already was active. T8's sync runs only when the active tab changes, so clicking
+	// the tab you were typing in, after selecting a disk, left the inspector on the disk.
+	public func tabClicked(_ tab: VMPaneTab, vm: String) {
+		var canvas = canvases.canvas(for: vm)
+		if canvas.activeTab != tab {
+			canvas.activate(tab)
+			canvases.setCanvas(canvas, for: vm)
+		}
+		selectRow(for: tab, vm: vm)
+	}
+
+	// A click in a pane, on its strip or anywhere in its content: it becomes the active pane
+	// (where tree opens and ⌘-cycling land, and the one keystrokes go to) and its tab's row
+	// is selected.
+	public func paneClicked(_ paneID: UUID, vm: String) {
+		var canvas = canvases.canvas(for: vm)
+		if canvas.activePaneID != paneID, canvas.panes.contains(where: { $0.id == paneID }) {
+			canvas.activatePane(paneID)
+			canvases.setCanvas(canvas, for: vm)
+		}
+		guard let tab = canvases.canvas(for: vm).activeTab else { return }
+		selectRow(for: tab, vm: vm)
+	}
+
+	private func selectRow(for tab: VMPaneTab, vm: String) {
+		guard vm == selectedName else { return }
+		let node = Self.treeNode(for: tab)
 		if treeSelection != [node] { treeSelection = [node] }
 	}
 
