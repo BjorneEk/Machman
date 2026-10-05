@@ -47,4 +47,27 @@ struct LabKnobTests {
 		#expect(keepAlive("x") == .seconds(3600))
 		#expect(keepAlive("-3") == .seconds(3600))
 	}
+
+	@Test("Q18: the ssh readiness deadline is three minutes outside a lab run")
+	func readinessDefault() {
+		let env = ["MACHMAN_LAB_SSH_READY_SECONDS": "20"]
+		#expect(RoutingMachman.sshReadyDeadline(lab: nil) == 180)
+		#expect(RoutingMachman.sshReadyDeadline(lab: Self.lab(Self.dev, env)) == 180)
+		#expect(RoutingMachman.sshReadyDeadline(lab: Self.lab(Self.release, env)) == 180)
+		#expect(RoutingMachman.sshReadyDeadline(lab: Self.lab(Self.test, env, debug: false))
+			== 180)
+		#expect(RoutingMachman.sshReadyDeadline(lab: Self.lab(Self.test, [:])) == 180)
+	}
+
+	@Test("Q18: a lab run sets the ssh readiness deadline from its variable")
+	func readinessFromLab() {
+		func deadline(_ value: String) -> TimeInterval {
+			RoutingMachman.sshReadyDeadline(
+				lab: Self.lab(Self.test, ["MACHMAN_LAB_SSH_READY_SECONDS": value]))
+		}
+		#expect(deadline("20") == 20)
+		#expect(deadline("2.5") == 2.5)
+		#expect(deadline("0") == 180)
+		#expect(deadline("never") == 180)
+	}
 }

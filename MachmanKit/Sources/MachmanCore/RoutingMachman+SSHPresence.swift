@@ -111,6 +111,13 @@ extension RoutingMachman {
 		registry.events.emit(.sshChanged(vm: host.identity.name))
 	}
 
+	// How long the readiness probe tries before it says "unreachable": three minutes, unless
+	// a lab run sets MACHMAN_LAB_SSH_READY_SECONDS (test mode only). The detail text keeps
+	// saying three minutes either way.
+	nonisolated static func sshReadyDeadline(lab: LabEnvironment? = .current) -> TimeInterval {
+		lab?.seconds("MACHMAN_LAB_SSH_READY_SECONDS") ?? 180
+	}
+
 	// Phase 2. Tight while a guest is still booting, then slower, and bounded: a VM whose
 	// sshd never comes up gets an answer ("unreachable", with the reason) instead of a
 	// spinner that never stops. vm.ssh.refresh starts the whole thing over — that is what
@@ -118,7 +125,7 @@ extension RoutingMachman {
 	private func probeSSHReadiness(
 		id: UUID, address: String, probes: SSHDiscovery.Probes
 	) async {
-		let deadline = Date().addingTimeInterval(180)
+		let deadline = Date().addingTimeInterval(Self.sshReadyDeadline())
 		var tries = 0
 		while !Task.isCancelled {
 			let answered = await probes.sshd(address)

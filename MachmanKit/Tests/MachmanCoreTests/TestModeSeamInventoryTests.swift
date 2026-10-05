@@ -55,6 +55,8 @@ struct TestModeSeamInventoryTests {
 			"no TCP probe to a guest without the local-network opt-in (SSHProbeLabTests)",
 		"MachmanKit/Sources/MachmanCore/MachmanServer.swift":
 			"the socket keep-alive knob (LabKnobTests)",
+		"MachmanKit/Sources/MachmanCore/RoutingMachman+SSHPresence.swift":
+			"the ssh readiness deadline knob (LabKnobTests)",
 		"MachmanDesktop/DaemonConnection.swift":
 			"its Debug-only daemon handling (pre-dates the lab)",
 	]
