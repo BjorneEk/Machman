@@ -197,6 +197,20 @@ enum SSHDiscovery {
 		}
 	}
 
+	// MARK: - Probes
+
+	// Where discovery looks: the live tables and a connect to port 22, or a test's
+	// stand-ins.
+	struct Probes: Sendable {
+		var address: @Sendable (_ mac: String) async -> Answer?
+		var sshd: @Sendable (_ address: String) async -> Bool
+
+		static let live = Probes(
+			// Detached: the live loaders read /var/db and run arp — off the main actor.
+			address: { mac in await Task.detached { discoverLive(mac: mac) }.value },
+			sshd: { await probeTCP(host: $0, timeout: 1.5) })
+	}
+
 	// MARK: - Orchestration
 
 	// Leases first (authoritative while fresh), ARP as fallback (needs recent guest

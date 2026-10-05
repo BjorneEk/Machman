@@ -37,37 +37,33 @@ extension RoutingMachman {
 	//   2. reachability — does the guest's sshd actually answer? Only for VMs whose guest
 	//      has run the setup script (without a reported user there is nothing to connect
 	//      as, and "waiting for SSH" would be noise on every other VM).
-	func startSSHDiscovery(_ host: HostedVM) {
+	//
+	// The VM's name is read at every ask and every announcement, never kept: Save as New
+	// VM re-keys a running host, and a run that went on under the original's name sent
+	// clients to refetch a stopped VM while the saved one's row stayed "waiting" (E42).
+	// `probes` is where it looks: the live tables and port 22, or a test's stand-ins.
+	func startSSHDiscovery(_ host: HostedVM, probes: SSHDiscovery.Probes = .live) {
 		host.sshDiscoveryTask?.cancel()
 		guard let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
-		let name = host.identity.name
-		let client = host.client
 		host.sshReach = .unknown
 		host.sshReachDetail = nil
 		host.sshReadySince = nil
 		host.sshDiscoveryTask = Task { [weak self] in
-			// Whether this guest has SSH set up must be read from the process that OWNS
-			// the config — the vmhost. The daemon's registry copy was parsed at scan time
-			// and never sees the guest's first report, so asking it left readiness stuck
-			// at "unknown" for exactly the run where the user just ran the script.
-			let wantsSSH = (try? await client.vm(named: name))?.ssh?.guestUser != nil
+			let wantsSSH = await self?.guestHasSSH(hostID: id) ?? false
 			if wantsSSH, let self, let host = self.host(withID: id) {
 				host.sshReach = .waiting
-				self.registry.events.emit(.sshChanged(vm: name))
+				self.announceSSH(of: host)
 			}
 			var attempt = 0
 			var address: String?
 			while !Task.isCancelled, address == nil {
-				// Detached: the live loaders read /var/db and run arp — off the main actor.
-				let answer = await Task.detached {
-					SSHDiscovery.discoverLive(mac: mac)
-				}.value
+				let answer = await probes.address(mac)
 				guard let self, let host = self.host(withID: id) else { return }
 				if let answer {
 					if host.sshAnswer != answer {
 						host.sshAnswer = answer
-						self.registry.events.emit(.sshChanged(vm: name))
+						self.announceSSH(of: host)
 						// The alias's HostName just became known/changed.
 						self.scheduleSSHHostConfigWrite()
 					}
@@ -78,35 +74,53 @@ extension RoutingMachman {
 				try? await Task.sleep(for: attempt < 24 ? .seconds(5) : .seconds(60))
 			}
 			guard wantsSSH, let address else { return }
-			await self?.probeSSHReadiness(id: id, name: name, address: address)
+			await self?.probeSSHReadiness(id: id, address: address, probes: probes)
 		}
+	}
+
+	// Whether this run's guest has SSH set up, read from the process that OWNS the config —
+	// the vmhost: the daemon's registry copy was parsed at scan time and never sees the
+	// guest's first report, which left readiness stuck at "unknown" for exactly the run
+	// where the user just ran the script. Asked under the name the host serves now; a host
+	// that can't say (its Save as New VM renamed the VM under the ask) is taken at its last
+	// answer — the saved VM keeps the run's guest user.
+	private func guestHasSSH(hostID id: UUID) async -> Bool {
+		guard let host = host(withID: id) else { return false }
+		let answer = try? await host.client.vm(named: host.identity.name)
+		return (answer ?? self.host(withID: id)?.lastAnswer)?.ssh?.guestUser != nil
+	}
+
+	private func announceSSH(of host: HostedVM) {
+		registry.events.emit(.sshChanged(vm: host.identity.name))
 	}
 
 	// Phase 2. Tight while a guest is still booting, then slower, and bounded: a VM whose
 	// sshd never comes up gets an answer ("unreachable", with the reason) instead of a
 	// spinner that never stops. vm.ssh.refresh starts the whole thing over — that is what
 	// the desktop's retry and session reconnect call.
-	private func probeSSHReadiness(id: UUID, name: String, address: String) async {
+	private func probeSSHReadiness(
+		id: UUID, address: String, probes: SSHDiscovery.Probes
+	) async {
 		let deadline = Date().addingTimeInterval(180)
-		var probes = 0
+		var tries = 0
 		while !Task.isCancelled {
-			let answered = await SSHDiscovery.probeTCP(host: address, timeout: 1.5)
+			let answered = await probes.sshd(address)
 			guard let host = self.host(withID: id) else { return }
 			if answered {
 				host.sshReach = .ready
 				host.sshReachDetail = nil
 				host.sshReadySince = Date()
-				registry.events.emit(.sshChanged(vm: name))
+				announceSSH(of: host)
 				return
 			}
 			if Date() >= deadline {
 				host.sshReach = .unreachable
 				host.sshReachDetail = "no answer on \(address):22 after 3 minutes"
-				registry.events.emit(.sshChanged(vm: name))
+				announceSSH(of: host)
 				return
 			}
-			probes += 1
-			try? await Task.sleep(for: probes < 15 ? .seconds(2) : .seconds(5))
+			tries += 1
+			try? await Task.sleep(for: tries < 15 ? .seconds(2) : .seconds(5))
 		}
 	}
 
