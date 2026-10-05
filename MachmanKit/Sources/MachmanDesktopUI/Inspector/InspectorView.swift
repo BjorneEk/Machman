@@ -212,6 +212,7 @@ struct VMInspector: View {
 					// so the install needs its own way in.
 					if vm.boot.mode == .macOS && !viewModel.isInstalling(vm) {
 						Button("Install macOS…") { macSwitchSheet = true }
+							.stopFirst(vm, .installMacOS)
 					}
 				}
 				// EFI and kernel boots only: a newer Machman's mode may not take it either.

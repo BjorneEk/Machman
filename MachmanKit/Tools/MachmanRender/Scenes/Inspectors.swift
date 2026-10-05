@@ -88,6 +88,10 @@ enum InspectorScenes {
 			"machine.newer-boot", "VMInspector, a boot mode a newer Machman wrote",
 			vms: { [Samples.newerBootMode()] }, select: "Alpine", node: nil),
 		inspector(
+			"vm.mac-install-unreached",
+			"VMInspector, an unfinished Mac Machman Agent hasn't reached (Install waits)",
+			vms: { [Samples.macOSUnfinishedUnreached()] }, select: "Sequoia", node: nil),
+		inspector(
 			"vm.not-responding", "VMInspector, vmhost not responding",
 			vms: Samples.libraryWithStalledHost, node: nil),
 		RenderScene(

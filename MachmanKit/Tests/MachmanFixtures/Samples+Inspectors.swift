@@ -35,6 +35,14 @@ extension Samples {
 		return vm
 	}
 
+	// An unfinished Mac (its install failed) that Machman Agent hasn't reached since a
+	// restart (P37): state unknown, so Install macOS… waits instead of offering itself.
+	public static func macOSUnfinishedUnreached(_ name: String = "Sequoia") -> VMInfo {
+		var vm = macOSFailedInstallReadable(name)
+		vm.state = .unknown
+		return vm
+	}
+
 	// A VM whose vmhost never answered, as the daemon serves it: state unknown, marked
 	// unresponsive. Not "running", yet the daemon refuses stop-first actions on it.
 	public static func neverAnswered(_ name: String = "Alpine") -> VMInfo {
