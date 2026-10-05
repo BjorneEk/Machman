@@ -72,3 +72,12 @@ func excludeFromBackup(path: String) {
 	values.isExcludedFromBackup = true
 	try? url.setResourceValues(values)
 }
+
+// A file's size with symlinks followed: a disk image reached through a link measures as the
+// image, never as the link (FileManager.attributesOfItem is lstat — D23). nil when nothing is
+// there.
+func fileSize(atPath path: String) -> UInt64? {
+	var info = stat()
+	guard stat(path, &info) == 0 else { return nil }
+	return UInt64(max(info.st_size, 0))
+}

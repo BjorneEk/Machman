@@ -360,6 +360,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return configFilePath(file: "config")
 	}
 
+	// The backing file's size, through a link when the entry names one (D23).
 	func getDiskSize(disk: VMDisk) -> UInt64? {
 		let url = switch disk.kind {
 			case .fromUrl(let url):
@@ -369,15 +370,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			case .iso(let url):
 				url
 		}
-		do {
-			let fileAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
-			if let fileSizeBytes = fileAttributes[.size] as? NSNumber {
-				return UInt64(Double(truncating: fileSizeBytes))
-			}
-		} catch {
-			return nil
-		}
-		return nil
+		return fileSize(atPath: url.path)
 	}
 
 	// Removes the disk from the config; for .storage also deletes the backing image file.

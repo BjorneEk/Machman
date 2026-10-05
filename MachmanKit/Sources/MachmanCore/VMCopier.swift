@@ -180,8 +180,7 @@ enum VMCopier {
 			case (.fromUrl(let url), .clone):
 				// A cloned external image becomes an OWNED storage disk — the only shape
 				// whose path follows the directory through shadow runs and promotion.
-				let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? UInt64)
-					.flatMap { $0 } ?? 0
+				let size = fileSize(atPath: url.path) ?? 0
 				let name = storageName(for: url, taken: takenNames)
 				takenNames.insert(name)
 				externalClones.append((url.path, "\(name).raw", size))
@@ -465,8 +464,7 @@ enum FileTransfer {
 		isCancelled: (@Sendable () -> Bool)? = nil,
 		allowClone: Bool = true
 	) throws {
-		let size = (try? FileManager.default.attributesOfItem(atPath: src)[.size] as? UInt64)
-			.flatMap { $0 } ?? 0
+		let size = fileSize(atPath: src) ?? 0
 		let throttle = ProgressThrottle(total: size, report: progress)
 		try VMCopier.cloneOrCopy(
 			src, dst, base: 0, size: size, throttle: throttle, isCancelled: isCancelled,

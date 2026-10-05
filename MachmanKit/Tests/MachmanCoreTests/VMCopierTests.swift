@@ -462,6 +462,32 @@ struct VMCopierTests {
 		#expect(values.isExcludedFromBackup == true)
 	}
 
+	// D23: clonefile follows a link, so a fromUrl image reached through one clones as the
+	// image — and its storage entry must carry the image's size, never the link's.
+	@Test func aLinkedExternalImageClonesAtItsRealSize() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let external = library + "/ubuntu-cloud.img"
+		try Data(repeating: 0xAB, count: 4096).write(to: URL(fileURLWithPath: external))
+		let link = library + "/linked.img"
+		try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: external)
+		let disk = VMDisk(kind: .fromUrl(URL(fileURLWithPath: link)))
+		let src = try makeSourceVM(in: library, disks: [disk])
+
+		let dst = try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "copy",
+			diskPolicies: [disk.id: .clone], regenerateMAC: false))
+		guard case .storage(let name, let size) = try loadConfig(dst).disks.first?.kind else {
+			Issue.record("expected a storage rewrite")
+			return
+		}
+		#expect(size == 4096)
+		let clone = dst + "/\(name).raw"
+		#expect(try Data(contentsOf: URL(fileURLWithPath: clone)).count == 4096)
+		let type = try FileManager.default.attributesOfItem(atPath: clone)[.type]
+		#expect(type as? FileAttributeType == .typeRegular)
+	}
+
 	@Test func externalCloneNameCollisionUniquified() throws {
 		let library = try makeLibrary()
 		defer { try? FileManager.default.removeItem(atPath: library) }

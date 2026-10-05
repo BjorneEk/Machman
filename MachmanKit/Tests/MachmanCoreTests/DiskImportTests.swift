@@ -98,6 +98,52 @@ struct DiskImportTests {
 		}
 	}
 
+	// D23: attributesOfItem is lstat, so a raw image passed as a symlink measured as the link
+	// itself (a hundred-odd bytes) and was refused as misaligned; a fromUrl disk that is a
+	// link showed the link's length, and a copy's progress total took it too.
+	@Test func aRawImageReachedThroughALinkMeasuresAsTheImage() throws {
+		let dir = try makeDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let fm = FileManager.default
+		let vmDir = dir + "/vm"
+		try fm.createDirectory(atPath: vmDir, withIntermediateDirectories: true)
+		try fm.createDirectory(atPath: dir + "/images", withIntermediateDirectories: true)
+		let image = dir + "/images/cloud.img"
+		let bytes = Data(repeating: 0xCD, count: 4096)
+		try bytes.write(to: URL(fileURLWithPath: image))
+		let link = dir + "/cloud-link.img"
+		try fm.createSymbolicLink(atPath: link, withDestinationPath: image)
+
+		let disk = try DiskImport.importFile(src: link, vmDir: vmDir, takenStorageNames: [])
+		guard case .storage(let name, let size) = disk.kind else {
+			Issue.record("expected a storage entry")
+			return
+		}
+		#expect(size == 4096)
+		#expect(try Data(contentsOf: URL(fileURLWithPath: vmDir + "/\(name).raw")) == bytes)
+
+		let config = try JSONDecoder().decode(
+			VMConfig.self,
+			from: Data(#"{"name":"seed","memorySize":2048,"cpuCount":2,"created":1000}"#.utf8))
+		#expect(config.getDiskSize(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: link))))
+			== 4096)
+
+		final class Totals: @unchecked Sendable {
+			let lock = NSLock()
+			var values: [UInt64] = []
+			func add(_ total: UInt64) {
+				lock.lock()
+				values.append(total)
+				lock.unlock()
+			}
+		}
+		let totals = Totals()
+		try FileTransfer.copy(
+			src: link, dst: dir + "/copy.raw", progress: { totals.add($1) }, allowClone: false)
+		#expect(!totals.values.isEmpty)
+		#expect(totals.values.allSatisfy { $0 == 4096 })
+	}
+
 	@Test func importIsoLandsInDirAndUniquifies() throws {
 		let dir = try makeDir()
 		defer { try? FileManager.default.removeItem(atPath: dir) }

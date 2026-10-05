@@ -54,8 +54,7 @@ enum DiskImport {
 		guard fm.fileExists(atPath: src) else {
 			throw MachmanError(code: .notFound, message: "No file at \(src)")
 		}
-		let size = (try? fm.attributesOfItem(atPath: src)[.size] as? UInt64)
-			.flatMap { $0 } ?? 0
+		let size = fileSize(atPath: src) ?? 0
 		switch DiskFormat.sniff(path: src) {
 		case .qcow:
 			throw MachmanError(
