@@ -88,6 +88,28 @@ struct NewStorageDiskTests {
 		}
 	}
 
+	// D24: vm.disk.resize only checked that the size grew, so a wire client could leave a raw
+	// at a size VZ refuses at the next start ("Couldn’t attach main.raw"). Add's rule holds
+	// for grow now.
+	@Test func growRefusesASizeOffTheSectorGrid() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM()
+			try vm.addNewStorageDisk(name: "main", size: mib)
+			let path = vm.configFilePath(file: "main.raw")
+			for bad in [mib + 100, UInt64(Int64.max) + 512] {
+				let error = try #require(throws: MachmanError.self, "\(bad)") {
+					try vm.growStorageDisk(id: "storage:main", to: bad)
+				}
+				#expect(error.code == .invalidArgument)
+				#expect(error.message == "A disk’s size must be a positive multiple of 512 bytes")
+			}
+			#expect(fileSize(atPath: path) == mib)
+			try vm.growStorageDisk(id: "storage:main", to: 2 * mib)
+			#expect(fileSize(atPath: path) == 2 * mib)
+			#expect(vm.disks.first?.kind == .storage("main", 2 * mib))
+		}
+	}
+
 	@Test func macSystemDiskDodgesAnOrphan() throws {
 		try VMTestDir.withRedirectedDir {
 			let vm = try makeVM()

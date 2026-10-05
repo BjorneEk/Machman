@@ -482,14 +482,10 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	// A new owned image, <name>.raw. The name follows the disk-name rule and must be new to
 	// this VM — in its config and in its folder: creating over an existing file would wipe
-	// that disk, even under a running VM (D15). VZ needs raw images in whole sectors.
+	// that disk, even under a running VM (D15).
 	public func addNewStorageDisk(name raw: String, size: UInt64) throws {
 		let name = try NameRule.diskName.normalized(raw)
-		guard size > 0, size % 512 == 0, size <= UInt64(Int64.max) else {
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "A new disk’s size must be a positive multiple of 512 bytes")
-		}
+		try Self.validateRawSize(size)
 		let taken = disks.contains {
 			if case .storage(let existing, _) = $0.kind { return existing == name }
 			return false
@@ -508,6 +504,17 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			disks.removeAll { $0.id == "storage:\(name)" }
 			try? FileManager.default.removeItem(atPath: path)
 			throw error
+		}
+	}
+
+	// One size rule for every raw this engine sizes, new or grown (D24): VZ attaches raw
+	// images in whole 512-byte sectors only — anything else fails the next start with
+	// "Couldn’t attach x.raw" — and ftruncate takes an off_t.
+	static func validateRawSize(_ size: UInt64) throws {
+		guard size > 0, size % 512 == 0, size <= UInt64(Int64.max) else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "A disk’s size must be a positive multiple of 512 bytes")
 		}
 	}
 

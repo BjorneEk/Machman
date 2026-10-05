@@ -324,6 +324,7 @@ extension VMConfig {
 				code: .invalidArgument,
 				message: "Disks only grow — enter more than \(ByteSize.display(current))")
 		}
+		try VMConfig.validateRawSize(newSize)
 		let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
 		defer { try? handle.close() }
 		try handle.truncate(atOffset: newSize)
