@@ -2,9 +2,11 @@
 //  VMRegistry.swift
 //  Machman
 //
-//  The engine facade: the single authority over which VMs exist and which are running. Owns the
-//  event bus and the window presenter; enforces cross-VM invariants (unique names, no
-//  delete/rename while running). This is what LocalMachman wraps for the API.
+//  The engine facade: which VMs exist, and which run in THIS process. Owns the event bus and
+//  the window presenter; enforces the cross-VM invariants it can see (unique names, no
+//  delete/rename of a VM running here). In the daemon no VM runs in-process, so those runtime
+//  checks are inert there: the router's residence (RoutingMachman) decides what runs. This is
+//  what LocalMachman wraps for the API.
 //
 
 import Foundation

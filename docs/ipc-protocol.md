@@ -417,8 +417,8 @@ connection to a vmhost that is still running is re-established — meanwhile the
 `unresponsive`; only the vmhost's exit ends the run (and discards a safe run's shadow).
 
 While a start is in flight (the vmhost's spawn window, a safe run's shadow build) the VM lists
-as `starting`, and its per-VM calls answer `invalidState` ("… is starting — try again once it
-is running"); `vm.preview` answers `null`. Whole-VM edits (rename, copy, delete, MAC, disk
+as `starting`, and most of its per-VM calls refuse with `invalidState`, saying the VM is
+starting; `vm.preview` answers `null`. Whole-VM edits (rename, copy, delete, MAC, disk
 files, serial ports, kernel files, macOS install) also refuse while any vmhost answers on the
 VM's socket, adopted by this daemon or not. A vmhost the daemon has not adopted yet (busy when
 the daemon started, or started by a launch agent) is adopted on its VM's next per-VM call or

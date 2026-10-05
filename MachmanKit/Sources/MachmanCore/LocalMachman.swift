@@ -2,10 +2,10 @@
 //  LocalMachman.swift
 //  Machman
 //
-//  The in-process implementation of MachmanControlling: a straight passthrough from the API
-//  seam to VMRegistry, mapping engine types to DTOs. Phase 2 puts the same protocol behind a
-//  socket (MachmanAgent serving, RemoteMachman consuming) — clients built against the seam don't
-//  change.
+//  The engine's implementation of MachmanControlling: a straight passthrough from the API seam
+//  to VMRegistry, mapping engine types to DTOs. Each vmhost serves one for its VM, and the
+//  daemon keeps one behind RoutingMachman for the VMs no vmhost runs; clients reach either only
+//  over a socket.
 //
 
 import Foundation

@@ -2,9 +2,9 @@
 //  MachmanControlling.swift
 //  MachmanAPI
 //
-//  The seam between interfaces and the VM engine. Phase 1: the GUI talks to an in-process
-//  LocalMachman. Phase 2: the same protocol is served over JSON-RPC by the MachmanAgent daemon and
-//  consumed through RemoteMachman — clients don't change.
+//  The seam between interfaces and the VM engine. The MachmanAgent daemon serves it over
+//  JSON-RPC (RoutingMachman, which hands a running VM's calls to its vmhost's own engine), and
+//  every client consumes it through RemoteMachman — no client links the engine.
 //
 //  Everything is DTOs; no live objects cross this boundary. The one deliberate absence is the
 //  VM display: VZVirtualMachineView cannot leave the process that owns the VM, so VM windows
@@ -116,11 +116,10 @@ public protocol MachmanControlling: AnyObject {
 	// The guest keeps what the script installed; SSH state has its own reset.
 	func resetSetup(vm name: String) async throws -> VMInfo
 
-	// Whether the share serves the installer payload right now (additive, 1.0.7). ON
-	// forces it (the install surface is open — write it live for a running VM); OFF
-	// removes an installed guest's payload immediately and lets each boot's copy vanish
-	// once its report is ingested, so the share stays clean between installs. Fresh
-	// (never-installed) guests always serve.
+	// Whether the share serves the installer payload (additive, 1.0.7). ON forces it (the
+	// install surface is open — written live for a running VM). OFF is saved and deferred: a
+	// running guest's payload is never removed under it, it leaves with the run, and the next
+	// start registers the share empty. Fresh (never-installed) guests always serve.
 	func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo
 
 	// MARK: Operations (1.0.4)

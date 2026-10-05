@@ -351,9 +351,9 @@ public enum RPCParams {
 		}
 	}
 
-	// vm.setup.serve: whether the share serves the installer payload right now. Serving
-	// is forced while the user has the install surface open; off, an installed guest's
-	// payload is removed after each boot report so the share stays clean.
+	// vm.setup.serve: whether the share serves the installer payload. Serving is forced
+	// while the user has the install surface open; off takes effect when the run ends — a
+	// running guest's payload is never removed under it.
 	public struct SetupServe: Codable, Equatable, Sendable {
 		public var name: String
 		public var serve: Bool
