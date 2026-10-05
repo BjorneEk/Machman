@@ -79,6 +79,7 @@ enum Offscreen {
 		window.setContentSize(size)
 		host.frame = CGRect(origin: .zero, size: size)
 		settle(host)
+		scrollToTops(in: host)
 
 		// Window chrome lives in the theme frame, above the content view.
 		let target: NSView = chrome == .window ? (host.superview ?? host) : host
@@ -131,6 +132,22 @@ enum Offscreen {
 		return NSApp.isActive
 			|| NSApp.windows.contains { $0.isVisible }
 			|| onScreen.contains { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
+	}
+
+	// A List or Form can settle its scroll position a point off from one run to the next; a
+	// window that just opened shows every scroll view at its top, so the picture does too.
+	static func scrollToTops(in root: NSView) {
+		func walk(_ v: NSView) {
+			if let scroll = v as? NSScrollView, scroll.documentView?.isFlipped == true {
+				let insets = scroll.contentInsets
+				scroll.contentView.scroll(to: NSPoint(x: -insets.left, y: -insets.top))
+				scroll.reflectScrolledClipView(scroll.contentView)
+			}
+			v.subviews.forEach(walk)
+		}
+		walk(root)
+		root.layoutSubtreeIfNeeded()
+		root.displayIfNeeded()
 	}
 
 	// Run the main run loop until `done` or the timeout (async work the scenes wait on).
