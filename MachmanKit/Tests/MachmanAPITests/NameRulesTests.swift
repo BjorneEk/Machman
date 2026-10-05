@@ -133,4 +133,18 @@ struct NameRulesTests {
 			#expect(!GuestValueRule.isPublicKeyLine(key), "\(key)")
 		}
 	}
+
+	// Review F2: ssh expands ${VAR} in the key and pin paths a VM's name ends up in, with no
+	// escape, so a VM named x${y} got ssh paths that broke or silently moved. New names refuse
+	// it; "$" and braces alone stay fine, and other kinds are not affected.
+	@Test func vmNamesRefuseADollarBrace() {
+		#expect(NameRule.vmName.problem("x${y}") == "A VM name can’t contain \u{201C}${\u{201D}")
+		#expect(NameRule.vmName.problem("${HOME}") == "A VM name can’t contain \u{201C}${\u{201D}")
+		for fine in ["x$y", "x{y}", "$5 {x}", "a$ {b}"] {
+			#expect(NameRule.vmName.problem(fine) == nil, "\(fine) should pass")
+		}
+		#expect(NameRule.diskName.problem("x${y}") == nil)
+		#expect(SSHConfigQuote.argument("/vms/x${y}/id", expandsTokens: true) == nil)
+		#expect(SSHConfigQuote.argument("x${y}", expandsTokens: false) == #""x${y}""#)
+	}
 }

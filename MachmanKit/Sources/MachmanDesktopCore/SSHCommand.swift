@@ -24,10 +24,8 @@ public enum SSHCommand {
 	// does: a VM named "50% off" made ssh die, one named dev"x made it refuse the option (C28).
 	public static func arguments(for vm: VMInfo) -> [String]? {
 		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
-			let identity = ssh.identityFilePath else { return nil }
-		// A legacy name with a line break can't be quoted: -i takes it raw.
-		var arguments = SSHConfigQuote.argument(identity, expandsTokens: true)
-			.map { ["-o", "IdentityFile=\($0)"] } ?? ["-i", identity]
+			let identity = ssh.identityFilePath,
+			var arguments = identityArguments(identity) else { return nil }
 		arguments += [
 			"-o", "IdentitiesOnly=yes",
 			"-o", "ConnectTimeout=10",
@@ -51,13 +49,25 @@ public enum SSHCommand {
 		return arguments + ["\(user)@\(address)"]
 	}
 
+	// The key as ssh reads it intact: a quoted IdentityFile option; for a name stored before
+	// VM names refused a line break (no quoting carries one), -i with "%" doubled. nil for a
+	// path holding "${": ssh expands ${VAR} in both, with no escape, so it would read another
+	// file or die — a VM whose name holds one gets no session tab and no copied line.
+	static func identityArguments(_ path: String) -> [String]? {
+		if let quoted = SSHConfigQuote.argument(path, expandsTokens: true) {
+			return ["-o", "IdentityFile=\(quoted)"]
+		}
+		guard !path.contains("${") else { return nil }
+		return ["-i", path.replacingOccurrences(of: "%", with: "%%")]
+	}
+
 	// The same connection as one line to paste into a terminal: self-contained, so it works
 	// without the ~/.ssh integration. The key path carries the VM's name, so it goes in
-	// quoted (C26).
-	// ssh expands %-tokens in -i too, so a literal % doubles there (C28).
+	// quoted (C26). ssh expands %-tokens in -i too, so a literal % doubles there (C28); a
+	// path holding "${" gives no line (see identityArguments).
 	public static func shellLine(for vm: VMInfo) -> String? {
 		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
-			let identity = ssh.identityFilePath else { return nil }
+			let identity = ssh.identityFilePath, !identity.contains("${") else { return nil }
 		let key = ShellQuote.single(identity.replacingOccurrences(of: "%", with: "%%"))
 		return "ssh -i \(key) -o IdentitiesOnly=yes \(user)@\(address)"
 	}

@@ -58,6 +58,11 @@ public enum NameRule: Sendable {
 		if Self.hasControlCharacters(name) {
 			return "\(subject) can’t contain tabs, line breaks or other control characters"
 		}
+		// ssh expands ${VAR} in the key and pin paths a VM's name ends up in, and has no
+		// escape for it.
+		if self == .vmName, name.contains("${") {
+			return "A VM name can’t contain \u{201C}${\u{201D}"
+		}
 		if self == .mountTag,
 			let refused = name.unicodeScalars.first(where: { Self.shareNameRefused.contains($0) }) {
 			return "A mount tag can’t contain \u{201C}\(refused)\u{201D}"

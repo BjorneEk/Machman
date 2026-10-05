@@ -79,6 +79,8 @@ keep working — nothing is rejected at load.
 - VM, disk and mount names and kernel tags: not empty, no `/`, no leading `.`, no control
   characters (tab, line break …), at most 255 UTF-8 bytes (disk names 251: the file adds
   `.raw`).
+- VM names also exclude `${` (ssh expands `${VAR}` in the key and pin paths that carry the
+  name, with no escape).
 - Mount tags also exclude `: \ * ? | < >` (Virtualization's shared-folder rule) and the
   reserved payload names (`alreadyExists`).
 - Disk names and tags are trimmed. VM names with leading or trailing spaces are refused

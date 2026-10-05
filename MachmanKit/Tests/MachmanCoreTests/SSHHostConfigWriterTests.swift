@@ -237,6 +237,16 @@ struct SSHHostConfigWriterTests {
 		#expect(other.status == 0, "\(other.output)")
 	}
 
+	// Review F2: ssh expands ${VAR} in IdentityFile with no escape — the entry is left out.
+	@Test func aPathHoldingADollarBraceDropsTheEntry() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		try SSHHostConfigWriter(sshDir: root).apply(
+			entries: [entry(name: "x${y}", identity: "/vms/x${y}/ssh/id_ed25519")])
+		#expect(!FileManager.default.fileExists(
+			atPath: root.appendingPathComponent("machman/config").path))
+	}
+
 	@Test func aPathWithALineBreakDropsTheEntry() throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }

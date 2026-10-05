@@ -87,4 +87,23 @@ struct SSHCommandTests {
 		#expect(SSHCommand.shellLine(for: vm)
 			== "ssh -i '/vms/50%% off/ssh/id_ed25519' -o IdentitiesOnly=yes demo@192.168.64.7")
 	}
+
+	// Review F2: ssh expands ${VAR} in -i and in IdentityFile with no escape — a VM named
+	// x${NOPE} (stored before names refused it) made ssh die, or read another file when the
+	// variable was set. Such a VM gets no session tab and no copied line.
+	@Test func aKeyPathHoldingADollarBraceGivesNoCommand() {
+		var vm = pinned(alias: "x.machman")
+		vm.ssh?.identityFilePath = "/vms/x${NOPE}/ssh/id_ed25519"
+		vm.ssh?.knownHostsPath = "/vms/x${NOPE}/ssh/known_hosts"
+		#expect(SSHCommand.arguments(for: vm) == nil)
+		#expect(SSHCommand.shellLine(for: vm) == nil)
+	}
+
+	// A legacy name with a line break can't be quoted: -i takes it raw, "%" doubled.
+	@Test func aKeyPathWithALineBreakGoesInRaw() throws {
+		var vm = pinned(alias: "x.machman")
+		vm.ssh?.identityFilePath = "/vms/a\nb 50% off/ssh/id_ed25519"
+		let arguments = try #require(SSHCommand.arguments(for: vm))
+		#expect(Array(arguments.prefix(2)) == ["-i", "/vms/a\nb 50%% off/ssh/id_ed25519"])
+	}
 }
