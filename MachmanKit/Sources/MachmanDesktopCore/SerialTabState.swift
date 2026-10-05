@@ -47,8 +47,4 @@ public enum SerialTabState: Equatable {
 			}
 		}
 	}
-
-	// What an unreached tab says: VMInfo.unreachedHelp's words (P37, r3-2b's, not on this
-	// lane's base; fold at integration) as a sentence.
-	public static let unreachedText = "Wait for Machman Agent to reach this VM."
 }

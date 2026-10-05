@@ -35,7 +35,8 @@ struct TerminalTabContent: View {
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 		case .unreached:
-			placeholder(SerialTabState.unreachedText)
+			// The words that hold Start back for it (P37), as a sentence.
+			placeholder(VMInfo.unreachedHelp + ".")
 		case .startVM:
 			placeholder("Start the VM to open \(guestName).")
 		case .restartVM:
