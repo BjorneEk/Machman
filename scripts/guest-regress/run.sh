@@ -22,7 +22,9 @@
 #
 # --backend qemu runs the suites inside real guests instead: the lab's prepared images
 # (scripts/lab/qemu/prepare.sh) under its headless QEMU runner, one fresh clone per suite,
-# restricted networking, the payload copied in over ssh. A real init is there, so lib.sh's
+# restricted networking, the payload copied in over ssh — inside a lab run: scripts/lab.sh's
+# (MACHMAN_LAB_RUN, e.g. from MachmanLabTests), else one of its own that holds the lab slot
+# (scripts/lab/qemu/lab-session.sh; --keep keeps its root). A real init is there, so lib.sh's
 # fake_systemd stands aside (REGRESS_BACKEND). The VM table is its own: nixos is a container
 # stand-in (an /etc/fstab linked into a read-only /nix/store) and stays docker-only, and the
 # inittab and rc.local suites need the sysvinit Debian. --backend vz (the same suites under
@@ -247,6 +249,14 @@ backend_docker() {
 
 LAB="$ROOT/scripts/lab"
 
+# in_lab_run: a live lab run is ours to use — MACHMAN_LAB_RUN names a /tmp/mml.<token> root
+# whose owner (lab.sh or a lab session) is alive and holds the lab slot.
+in_lab_run() {
+	case "${MACHMAN_LAB_RUN:-}" in /tmp/mml.*) ;; *) return 1 ;; esac
+	[ -d "$MACHMAN_LAB_RUN" ] && [ -f "$MACHMAN_LAB_RUN/.owner" ] || return 1
+	kill -0 "$(head -n 1 "$MACHMAN_LAB_RUN/.owner" | tr -cd '0-9')" 2>/dev/null
+}
+
 # vm_ssh <guest dir> <command>: the guest's user, its baked key, the lab's ssh options.
 vm_ssh() {
 	(
@@ -274,7 +284,8 @@ vm_suite() {
 	cp -R "$TMP/payload" "$stage"
 	root=""
 	[ "$VM_OS" = freebsd ] && root="doas "
-	if ! d="$("$LAB/guests/$VM_OS/guest.sh" boot "$VM_GUEST" --run "$TMP" --name "$name" \
+	echo "$name" >> "$TMP/guests"
+	if ! d="$("$LAB/guests/$VM_OS/guest.sh" boot "$VM_GUEST" --run "$RUN" --name "$name" \
 		--owner $$ ${VM_IMAGE:+--image "$VM_IMAGE"} 2>"$TMP/$n-$s.boot.err")"; then
 		cat "$TMP/$n-$s.boot.err" > "$out"
 		return 0
@@ -287,7 +298,17 @@ vm_suite() {
 		vm_reboot "$d" > "$TMP/$n-$s.boot.out" 2>&1 \
 			&& vm_run "$d" boot >> "$TMP/$n-$s.boot.out" 2>&1
 	fi
-	"$LAB/qemu/run.sh" stop --run "$TMP" --name "$name" --timeout 0
+	"$LAB/qemu/run.sh" stop --run "$RUN" --name "$name" --timeout 0
+	rm -f "$d/disk.raw"
+}
+
+# stop_guests: this harness's guests, never another's in a shared lab run.
+stop_guests() {
+	[ -f "$TMP/guests" ] || return 0
+	while IFS= read -r g; do
+		"$LAB/qemu/run.sh" stop --run "$RUN" --name "$g" --timeout 0 >/dev/null 2>&1
+		rm -f "$RUN/qemu/$g/disk.raw"
+	done < "$TMP/guests"
 }
 
 has_boot_checks() { grep -q '^# BOOT-CHECKS: ' "$HERE/suites/$1.sh"; }
@@ -336,11 +357,18 @@ backend_qemu() {
 			"$LAB/qemu/prepare.sh" path "$VM_GUEST" --no-build >/dev/null || exit 69
 		done
 	fi
-	# The lab's sandbox (step 11: scripts/lib/sandbox.sh and the lab slot).
-	TMP="$(mktemp -d /tmp/mml.XXXX)"
-	trap '"$LAB/qemu/run.sh" sweep "$TMP" >/dev/null 2>&1; [ -n "$KEEP" ] || rm -rf "$TMP"' EXIT
+	# Guests boot inside a lab run (the slot, scripts/lib/sandbox.sh): lab.sh's, or our own.
+	if ! in_lab_run; then
+		exec bash "$LAB/qemu/lab-session.sh" ${KEEP:+--keep} sh "$0" --backend qemu \
+			${RESULTS:+--results "$RESULTS"} ${VM_IMAGE:+--image "$VM_IMAGE"} --jobs "$JOBS" \
+			--shell "$SHELL_UNDER_TEST" "$@"
+	fi
+	RUN="$MACHMAN_LAB_RUN"
+	TMP="$RUN/regress.$$"
+	mkdir -p "$TMP"
+	trap 'stop_guests' EXIT
 	trap 'exit 130' INT TERM HUP
-	export TMP
+	export TMP RUN
 	sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" "$TMP/install.sh" \
 		>/dev/null || { echo "assemble failed" >&2; exit 1; }
 	stage_payload "$TMP/install.sh" "$TMP/payload"
@@ -372,8 +400,7 @@ backend_qemu() {
 		evaluate "$n" "$s" boot "$TMP/$n-$s.boot.out"
 		report "$n/$s after boot" "$TMP/$n-$s.boot.out"
 	done
-	echo "   (qemu: $(( $(date +%s) - start ))s)"
-	[ -z "$KEEP" ] || echo "   (kept: $TMP)"
+	echo "   (qemu: $(( $(date +%s) - start ))s; outputs in $TMP)"
 }
 
 run_batch() { # <distro:suite>…: in parallel, each in its own guest

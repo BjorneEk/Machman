@@ -41,7 +41,7 @@ boot() { # <guest> <args…>: three virtconsoles unless asked otherwise
 }
 
 cmd_check() {
-	local guest="$1" run="" own="" cache=""
+	local guest="$1" run="" cache=""
 	shift
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -51,12 +51,14 @@ cmd_check() {
 		esac
 	done
 	if [ -z "$run" ]; then
-		run="$(lab_new_root)"
-		own="$run"
+		# It boots QEMU: inside a lab run (the slot), its own unless one is running already.
+		lab_in_run || { lab_session "$HERE/guest.sh" check "$guest" ${cache:+--cache "$cache"}
+			return $?; }
+		run="$MACHMAN_LAB_RUN"
 	fi
-	CHECK_RUN="$run" CHECK_OWN="$own"
-	trap '"$LAB_QEMU_DIR/run.sh" sweep "$CHECK_RUN" >/dev/null 2>&1
-		[ -n "$CHECK_OWN" ] && rm -rf "$CHECK_OWN"' EXIT
+	CHECK_RUN="$run" CHECK_NAME="chk-$guest"
+	trap '"$LAB_QEMU_DIR/run.sh" stop --run "$CHECK_RUN" --name "$CHECK_NAME" --timeout 0 \
+		>/dev/null 2>&1' EXIT
 	local d py out pid1 fails="" t0 login
 	d="$(boot "$guest" --run "$run" --name "chk-$guest" --owner $$ ${cache:+--cache "$cache"})" \
 		|| exit $?

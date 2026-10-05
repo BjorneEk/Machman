@@ -16,8 +16,10 @@
 # manifest, stamp}. A miss first seeds from another worktree's cache (APFS clone, stamp
 # verified), then builds.
 #
-# The base: --base, else <cache>/fixtures/<lock name> with fetch.sh's stamp (step 11 resolves
-# it through scripts/lab/fetch.sh path). Builds boot QEMU: the caller holds the lab slot.
+# The base: --base, else the lock name through scripts/lab/fetch.sh path (cached, verified and
+# converted; fetched on a miss), keyed by its stamp's output sha256 — a new pin re-keys every
+# image built on it. Builds boot QEMU, so they run inside a lab run: scripts/lab.sh's
+# (MACHMAN_LAB_RUN), --run <root> (the caller holds the slot), or a lab run of their own.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=common.sh
@@ -76,14 +78,10 @@ resolve_base() {
 		BASE_ID="$(sha_memo "$BASE")"
 		return 0
 	fi
-	local f="$CACHE/fixtures/$GUEST_BASE"
-	if [ -f "$f" ] && [ -f "$f.stamp" ]; then
-		BASE="$f"
-		BASE_ID="$(cut -d' ' -f3 "$f.stamp")"
-		return 0
-	fi
-	lab_die 69 "no base image $GUEST_BASE for $GUEST: pass --base <raw>" \
-		"(step 11 resolves it with scripts/lab/fetch.sh path $GUEST_BASE)."
+	BASE="$("$LAB_DIR/fetch.sh" path "$GUEST_BASE")" && [ -f "$BASE.stamp" ] \
+		|| lab_die 69 "no base image $GUEST_BASE for $GUEST (scripts/lab/fetch.sh path" \
+			"$GUEST_BASE failed)."
+	BASE_ID="$(cut -d' ' -f3 "$BASE.stamp")"
 }
 
 prep_key() {
@@ -213,12 +211,9 @@ sweep_work() {
 	done
 }
 
+# build: in $RUN, a lab run's root (its owner holds the slot).
 build() {
-	local own_run="" b w
-	if [ -z "$RUN" ]; then
-		RUN="$(lab_new_root)"
-		own_run="$RUN"
-	fi
+	local b w
 	lab_check_run_root "$RUN"
 	lab_refuse_main_checkout
 	b="$RUN/prepare-$GUEST"
@@ -252,7 +247,7 @@ build() {
 	mv "$b/stamp" "$w/stamp"
 	install_work "$w"
 	sweep_work
-	[ -n "$own_run" ] && { "$HERE/run.sh" sweep "$own_run"; rm -rf "$own_run"; }
+	rm -rf "$b"
 	return 0
 }
 
@@ -298,6 +293,18 @@ main() {
 	fi
 	[ "$nobuild" = 0 ] \
 		|| lab_die 69 "no prepared $GUEST image (scripts/lab/qemu/prepare.sh build $GUEST)."
+	if [ -z "$RUN" ]; then
+		if lab_in_run; then
+			RUN="$MACHMAN_LAB_RUN"
+		else
+			# A lab run of its own (the slot), building in a child; then report the image.
+			lab_session "$HERE/prepare.sh" build "$GUEST" ${BASE_ARG:+--base "$BASE_ARG"} \
+				$([ "$force" = 1 ] && echo --force) >&2 || exit $?
+			cached || lab_die 1 "$GUEST: the build left no image."
+			printf '%s\n' "$CACHE/prepared/$GUEST-$KEY.raw"
+			return 0
+		fi
+	fi
 	build
 	printf '%s\n' "$CACHE/prepared/$GUEST-$KEY.raw"
 }

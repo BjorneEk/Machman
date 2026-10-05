@@ -25,6 +25,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 VERSION=7.9
 SOURCE="" RUN="" KEEP=""
+ARGS=("$@")
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--source) SOURCE="${2:-}"; shift 2 ;;
@@ -37,17 +38,16 @@ done
 PY="$(lab_tool python3)"
 CON="$LAB_QEMU_DIR/console.py"
 spike="$(lab_cache_dir)/spike"
-[ -n "$SOURCE" ] || SOURCE="$(lab_cache_dir)/fixtures/openbsd-$VERSION-arm64-install.img"
+[ -n "$SOURCE" ] || SOURCE="$("$LAB_DIR/fetch.sh" path "openbsd-$VERSION-arm64-install.img")"
 [ -f "$SOURCE" ] || lab_die 69 "no OpenBSD install image: pass --source <install${VERSION/./}.img>."
 if [ -z "$RUN" ]; then
-	RUN="$(lab_new_root)"
-	OWN_RUN="$RUN"
-else
-	OWN_RUN=""
+	# It boots QEMU: inside a lab run (the slot), its own unless one is running already.
+	lab_in_run || { lab_session ${KEEP:+--keep} "$0" ${ARGS[@]+"${ARGS[@]}"}; exit $?; }
+	RUN="$MACHMAN_LAB_RUN"
 fi
 lab_check_run_root "$RUN"
-trap '"$LAB_QEMU_DIR/run.sh" sweep "$RUN" >/dev/null 2>&1
-	[ -n "$OWN_RUN" ] && [ -z "$KEEP" ] && rm -rf "$OWN_RUN"' EXIT
+trap 'for n in obsd-install obsd; do
+	"$LAB_QEMU_DIR/run.sh" stop --run "$RUN" --name "$n" --timeout 0 >/dev/null 2>&1; done' EXIT
 out="$RUN/openbsd"
 mkdir -p "$out"
 answer() { echo "$*" | tee -a "$out/answer.txt"; }

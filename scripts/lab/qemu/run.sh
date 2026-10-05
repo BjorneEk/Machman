@@ -21,7 +21,8 @@
 # could reach the real Remote Login sshd); the guest's lab gateway 10.0.2.100 forwards port 22
 # to the lab sshd on 127.0.0.1 (--lab-gateway <port>) or to /usr/bin/true (connects fail at
 # once). Open networking (--net open) only for image preparation (MACHMAN_LAB_PREPARE=1).
-# The caller holds the lab slot (scripts/lab.sh does; lane-time boots took it by hand).
+# start trusts its caller to hold the lab slot: a script inside scripts/lab.sh's run, or one
+# that took a lab run of its own (common.sh lab_session; --self-check does).
 #
 # Refusals exit 64 with one sentence and start nothing; a missing tool exits 69.
 set -u
@@ -399,8 +400,9 @@ self_check() {
 	rm -f "$root/pids/qemu-sc-a.pid" "$root/pids/vmhost-sc-b.pid"
 	# The main checkout: a copy of the scripts inside a fresh repository whose .git is its own.
 	local fake="$root/fake"
-	mkdir -p "$fake/scripts/lab/qemu"
+	mkdir -p "$fake/scripts/lab/qemu" "$fake/scripts/lib"
 	cp "$HERE/run.sh" "$HERE/common.sh" "$HERE/console.py" "$fake/scripts/lab/qemu/"
+	cp "$LAB_REPO/scripts/lib/sandbox.sh" "$fake/scripts/lib/"
 	"$(lab_tool git)" -C "$fake" init -q >/dev/null 2>&1
 	refused "the main checkout" "$fake/scripts/lab/qemu/run.sh" start --run "$root" \
 		--name sc-x --firmware-only
@@ -485,7 +487,9 @@ stop) shift; cmd_stop "$@" ;;
 status) shift; cmd_status "$@" ;;
 sweep) shift; cmd_sweep "$@" ;;
 _watch) shift; cmd_watch "$@" ;;
---self-check) self_check ;;
+--self-check)
+	# It boots QEMU: inside a lab run (the slot), its own unless one is running already.
+	if lab_in_run; then self_check; else lab_session "$HERE/run.sh" --self-check; fi ;;
 --help|-h) usage ;;
 *) usage ;;
 esac; exit $?
