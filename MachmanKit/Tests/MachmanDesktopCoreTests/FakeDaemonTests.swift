@@ -68,22 +68,28 @@ struct FakeDaemonTests {
 		let stream = await remote.events()
 		#expect(await daemon.waitForRequest(RPCMethod.eventsSubscribe.rawValue))
 		daemon.send(.stateChanged(vm: "Debian", state: .running))
-		// Bounded: a missing event fails the test at the deadline instead of hanging the run.
-		let first = await withTaskGroup(of: VMEvent?.self) { group in
-			group.addTask {
-				var events = stream.makeAsyncIterator()
-				return await events.next()
-			}
-			group.addTask {
-				try? await Task.sleep(for: .seconds(10))
-				return nil
-			}
-			let first = await group.next() ?? nil
-			group.cancelAll()
-			return first
-		}
-		#expect(first == .stateChanged(vm: "Debian", state: .running))
+		let first = await FirstEvent.of(stream, within: .seconds(10))
+		#expect(first == .event(.stateChanged(vm: "Debian", state: .running)))
 		await remote.disconnect()
+	}
+
+	// RPCConnection.events() adds a subscriber whether or not the connection already died, and
+	// only a live teardown finishes subscribers: a store that subscribes just after a drop
+	// waits on its stream forever (the loop reconnects with new stores; the old task leaks).
+	@Test("Q18: an event stream opened after the connection dropped ends at once")
+	func streamOpenedAfterADropEnds() async throws {
+		let daemon = try FakeDaemon()
+		defer { daemon.close() }
+		daemon.otherwise = .agent()
+		let dropped = DropFlag()
+		let remote = try await daemon.remote(onDrop: { dropped.set() })
+		daemon.dropAll()
+		#expect(await eventually { dropped.isSet })
+		let stream = await remote.events()
+		let first = await FirstEvent.of(stream, within: .seconds(2))
+		withKnownIssue("An event stream opened on a lost connection never ends") {
+			#expect(first == .ended)
+		}
 	}
 
 	@Test("Q18: each connection takes the next script, and a stopped listener reads as not running")

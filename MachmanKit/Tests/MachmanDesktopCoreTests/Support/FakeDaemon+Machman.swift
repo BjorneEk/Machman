@@ -70,3 +70,27 @@ final class DropFlag: @unchecked Sendable {
 
 	func set() { lock.withLock { value = true } }
 }
+
+// What a stream yields first, bounded: a stream that never yields fails a test at the
+// deadline instead of hanging the run.
+enum FirstEvent: Equatable {
+	case event(VMEvent)
+	case ended
+	case timedOut
+
+	static func of(_ stream: AsyncStream<VMEvent>, within deadline: Duration) async -> Self {
+		await withTaskGroup(of: FirstEvent.self) { group in
+			group.addTask {
+				var events = stream.makeAsyncIterator()
+				return await events.next().map(FirstEvent.event) ?? .ended
+			}
+			group.addTask {
+				try? await Task.sleep(for: deadline)
+				return .timedOut
+			}
+			let first = await group.next() ?? .timedOut
+			group.cancelAll()
+			return first
+		}
+	}
+}
