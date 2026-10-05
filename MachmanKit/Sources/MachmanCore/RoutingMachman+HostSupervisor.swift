@@ -141,11 +141,13 @@ extension RoutingMachman {
 			}
 		}
 		for (name, kind) in claims.inDaemon where holders[name] == nil {
-			holders[name] = SessionHolder(vm: name, activity: kind.activity, promptsItself: false)
+			holders[name] = SessionHolder(
+				vm: name, activity: kind.activity, promptsItself: false, isAgentWork: true)
 		}
 		for vm in registry.list() where holders[vm.name] == nil && registry.isInstalling(vm) {
 			holders[vm.name] = SessionHolder(
-				vm: vm.name, activity: "is installing macOS", promptsItself: false)
+				vm: vm.name, activity: "is installing macOS", promptsItself: false,
+				isAgentWork: true)
 		}
 		return holders.values.sorted { $0.vm < $1.vm }
 	}

@@ -49,7 +49,17 @@ struct AgentQuitDecisionTests {
 
 	@Test func theUsersOwnQuitAsks() {
 		#expect(AgentQuitDecision.decide(reason: .userQuit, runningVMs: 2, holders: [running])
-			== .ask)
+			== .ask([]))
+	}
+
+	// Review F10: with a VM running AND a copy in the agent, "Quit, Leave VMs Running" stopped
+	// the copy without a word. The VMs' question now carries the work, to ask about it too.
+	@Test func theUsersQuitWithVMsRunningCarriesTheAgentsWork() {
+		let copying = SessionHolder(
+			vm: "beta", activity: "is being copied", promptsItself: false, isAgentWork: true)
+		#expect(AgentQuitDecision.decide(
+			reason: .userQuit, runningVMs: 1, holders: [running, copying])
+			== .ask([copying]))
 	}
 
 	// E47: with no VM running, the user's own quit stopped a copy or an install without a
@@ -208,8 +218,11 @@ struct RoutingRunningVMTests {
 		routing.claims.insert("gamma", .importingDisk, inDaemon: false)   // its vmhost's
 		#expect(routing.runningVMNames.isEmpty)
 		#expect(routing.sessionHolders == [
-			SessionHolder(vm: "alpha", activity: "is importing a disk", promptsItself: false),
-			SessionHolder(vm: "beta", activity: "is being copied", promptsItself: false),
+			SessionHolder(
+				vm: "alpha", activity: "is importing a disk", promptsItself: false,
+				isAgentWork: true),
+			SessionHolder(
+				vm: "beta", activity: "is being copied", promptsItself: false, isAgentWork: true),
 		])
 	}
 
@@ -229,7 +242,9 @@ struct RoutingRunningVMTests {
 			try registry.installSession(for: #require(registry.vm(named: "mac")))
 				.startInstall(source: InstallSource(kind: .ipsw, path: "/nonexistent.ipsw"))
 			#expect(routing.sessionHolders == [
-				SessionHolder(vm: "mac", activity: "is installing macOS", promptsItself: false),
+				SessionHolder(
+					vm: "mac", activity: "is installing macOS", promptsItself: false,
+					isAgentWork: true),
 			])
 		}
 		finish?()

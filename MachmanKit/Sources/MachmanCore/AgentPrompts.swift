@@ -18,7 +18,9 @@ public enum AgentQuitDecision: Equatable, Sendable {
 	// …and some of what holds it has no window of its own to say so: a start still in flight,
 	// a vmhost that doesn't answer (V10). The agent cancels, and says what in its own alert.
 	case cancelAndExplain([SessionHolder])
-	case ask             // the user quit the agent: its prompt offers what happens to the VMs
+	// The user quit the agent: its prompt offers what happens to the VMs. Work the agent runs
+	// itself rides along — any way of quitting stops it, so it is asked about too (F10).
+	case ask([SessionHolder])
 	// The user quit the agent while it runs work of its own and no VM runs (E47): quitting
 	// would stop the work, so it asks first.
 	case askAboutWork([SessionHolder])
@@ -27,7 +29,7 @@ public enum AgentQuitDecision: Equatable, Sendable {
 		reason: VMHostQuitReason, runningVMs: Int, holders: [SessionHolder]
 	) -> AgentQuitDecision {
 		if reason == .userQuit {
-			if runningVMs > 0 { return .ask }
+			if runningVMs > 0 { return .ask(holders.filter(\.isAgentWork)) }
 			return holders.isEmpty ? .quit : .askAboutWork(holders)
 		}
 		guard !holders.isEmpty else { return .quit }
@@ -45,11 +47,14 @@ public struct SessionHolder: Equatable, Sendable {
 	// What it does, after its name: "is still starting", "is being copied".
 	public let activity: String
 	public let promptsItself: Bool
+	// Work the agent runs itself, not a VM that runs: quitting the agent stops it.
+	public let isAgentWork: Bool
 
-	public init(vm: String, activity: String, promptsItself: Bool) {
+	public init(vm: String, activity: String, promptsItself: Bool, isAgentWork: Bool = false) {
 		self.vm = vm
 		self.activity = activity
 		self.promptsItself = promptsItself
+		self.isAgentWork = isAgentWork
 	}
 }
 

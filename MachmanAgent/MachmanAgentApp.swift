@@ -233,11 +233,17 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 				== .alertSecondButtonReturn else { return .terminateCancel }
 			Daemon.server.stop()
 			return .terminateNow
-		case .ask:
-			break
+		case .ask(let work):
+			return askAboutVMs(sender, stopping: work)
 		}
+	}
 
-		// The user's own quit: in front, where they can see it.
+	// The user's own quit while VMs run. Each way of quitting also stops the work the agent
+	// runs itself, so that is asked about after the choice (F10).
+	private func askAboutVMs(
+		_ sender: NSApplication, stopping work: [SessionHolder]
+	) -> NSApplication.TerminateReply {
+		// In front, where they can see it.
 		NSApp.activate(ignoringOtherApps: true)
 		let alert = NSAlert()
 		alert.messageText = "VMs are still running"
@@ -248,7 +254,16 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		alert.addButton(withTitle: "Shut Down All & Quit")
 		alert.addButton(withTitle: "Force Stop All & Quit")
 		alert.addButton(withTitle: "Cancel")
-		switch alert.runModal() {
+		let choice = alert.runModal()
+		let quitting: [NSApplication.ModalResponse] = [
+			.alertFirstButtonReturn, .alertSecondButtonReturn, .alertThirdButtonReturn,
+		]
+		guard quitting.contains(choice) else { return .terminateCancel }
+		if !work.isEmpty,
+			Self.runInFront(AgentPrompt.quitDuringWork(work)) != .alertSecondButtonReturn {
+			return .terminateCancel
+		}
+		switch choice {
 		case .alertFirstButtonReturn:
 			Daemon.server.stop()
 			return .terminateNow
