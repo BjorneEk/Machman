@@ -446,9 +446,7 @@ struct VMCanvasView: View {
 		case .config:
 			return vm.name
 		case .terminal(let ref):
-			let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-			return ports?.first(where: { $0.index == ref.index })?
-				.displayName(mode: vm.boot.mode)
+			return vm.port(for: ref)?.displayName(mode: vm.boot.mode)
 				?? ref.displayName(mode: vm.boot.mode)
 		case .ssh(let ref):
 			return sessions.sshSessionName(vm: vm.name, ref: ref)

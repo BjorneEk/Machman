@@ -45,8 +45,8 @@ extension VMListViewModel {
 		case .vmRoot:
 			return revealTab(.config, vm: vm.name)
 		case .serial(let ref):
-			guard let port = vm.allSerialPorts.first(where: { SerialPortRef($0) == ref }),
-				port.unavailable == nil, port.enabled ?? true else { return nil }
+			guard let port = vm.port(for: ref), port.unavailable == nil, port.enabled ?? true
+			else { return nil }
 			return revealTab(.terminal(ref), vm: vm.name)
 		case .sshSession(let ref):
 			// Rows exist only for OPEN sessions: this focuses wherever it lives.
@@ -82,7 +82,7 @@ extension VMListViewModel {
 			case .mount(let id):
 				return vm.mounts.contains { $0.id == id }
 			case .serial(let ref):
-				return vm.allSerialPorts.contains { SerialPortRef($0) == ref }
+				return vm.port(for: ref) != nil
 			case .device(let kind):
 				return (vm.devices ?? []).contains { $0.kind == kind }
 			case .kernel(let path):

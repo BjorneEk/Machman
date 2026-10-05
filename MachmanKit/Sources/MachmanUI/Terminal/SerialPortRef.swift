@@ -30,3 +30,12 @@ public struct SerialPortRef: Hashable, Codable, Sendable {
 		"\(vm)|\(kind.rawValue)|\(index)"
 	}
 }
+
+extension VMInfo {
+	// The served port a ref stands for, if the VM has it: the one lookup every tab, title,
+	// inspector and tree row uses (Q12).
+	public func port(for ref: SerialPortRef) -> SerialPortInfo? {
+		let ports = ref.kind == .console ? consolePorts : uartPorts
+		return ports?.first { $0.index == ref.index }
+	}
+}

@@ -18,6 +18,15 @@ struct SerialTabStateTests {
 	private let console = SerialPortRef(kind: .console, index: 0)
 	private let uart = SerialPortRef(kind: .uart, index: 0)
 
+	// Q12: the one lookup every tab, title, inspector and tree row uses.
+	@Test func aPortIsFoundByItsRef() {
+		let vm = Samples.kernelBoot()
+		#expect(vm.port(for: console)?.kind == .console)
+		#expect(vm.port(for: uart)?.guestDevice == vm.uartPorts?.first?.guestDevice)
+		#expect(vm.port(for: SerialPortRef(kind: .console, index: 1)) == nil)
+		#expect(Samples.bareLinux().port(for: console) == nil)
+	}
+
 	@Test func aLiveSocketWins() {
 		let vm = Samples.linux("Debian", state: .running)
 		#expect(SerialTabState(vm: vm, ref: console)

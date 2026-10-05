@@ -27,10 +27,7 @@ struct SerialInspector: View {
 	private var kind: SerialPortKind { ref.kind }
 	private var index: Int { ref.index }
 	private var macGuest: Bool { vm.boot.mode == .macOS }
-	private var port: SerialPortInfo? {
-		let ports = kind == .console ? vm.consolePorts : vm.uartPorts
-		return ports?.first { $0.index == index }
-	}
+	private var port: SerialPortInfo? { vm.port(for: ref) }
 	private var gate: UnavailabilityInfo? { port?.unavailable }
 	// The compacted index the guest actually sees (older daemons don't serve it — fall
 	// back to the config position, matching their config-indexed guestDevice).

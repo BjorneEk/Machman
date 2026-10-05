@@ -23,9 +23,8 @@ extension TornTab {
 		case .terminal(let ref):
 			let info = vms?.first(where: { $0.name == vm })
 			let mode = info?.boot.mode ?? .efi
-			let port = (ref.kind == .console ? info?.consolePorts : info?.uartPorts)?
-				.first(where: { $0.index == ref.index })
-			let name = port?.displayName(mode: mode) ?? ref.displayName(mode: mode)
+			let name = info?.port(for: ref)?.displayName(mode: mode)
+				?? ref.displayName(mode: mode)
 			return "\(vm) — \(name)"
 		case .ssh(let ref):
 			return "\(vm) — \(terminals.sshSessionName(vm: vm, ref: ref))"

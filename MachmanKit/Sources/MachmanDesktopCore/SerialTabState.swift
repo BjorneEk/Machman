@@ -24,8 +24,7 @@ public enum SerialTabState: Equatable {
 	// First match wins. A live socket beats everything: a port disabled mid-run stays
 	// attached until the VM stops.
 	public init(vm: VMInfo, ref: SerialPortRef) {
-		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-		let port = ports?.first(where: { $0.index == ref.index })
+		let port = vm.port(for: ref)
 		if let socket = port?.socketPath {
 			self = .live(socketPath: socket)
 		} else if let gate = port?.unavailable {

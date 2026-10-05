@@ -104,10 +104,7 @@ struct TerminalTabContent: View {
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 	}
 
-	private var port: SerialPortInfo? {
-		let ports = ref.kind == .console ? vm.consolePorts : vm.uartPorts
-		return ports?.first(where: { $0.index == ref.index })
-	}
+	private var port: SerialPortInfo? { vm.port(for: ref) }
 
 	private var guestName: String {
 		port?.displayName(mode: vm.boot.mode) ?? ref.displayName(mode: vm.boot.mode)
