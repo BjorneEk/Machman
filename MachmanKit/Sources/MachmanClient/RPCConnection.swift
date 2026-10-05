@@ -224,10 +224,8 @@ public actor RPCConnection {
 		_ method: RPCMethod, _ params: P?, expecting: R.Type,
 		deadline: Duration = RPCConnection.defaultCallDeadline
 	) async throws -> R {
+		// An error reply already failed the wait (dispatch read it); this is the one typed read.
 		let line = try await roundTrip(method, params, deadline: deadline)
-		if let failure = try? MachmanWire.decoder().decode(RPCErrorReply.self, from: line) {
-			throw failure.error.machmanError
-		}
 		return try MachmanWire.decoder().decode(RPCResult<R>.self, from: line).result
 	}
 
@@ -310,12 +308,11 @@ public actor RPCConnection {
 	// MARK: - Incoming
 
 	private func dispatch(line: Data) {
-		guard let peek = try? MachmanWire.decoder().decode(RPCPeek.self, from: line) else {
+		guard let incoming = try? MachmanWire.decoder().decode(Incoming.self, from: line) else {
 			return
 		}
-		if peek.isNotification, peek.method == RPCMethod.event.rawValue {
-			if let call = try? MachmanWire.decoder().decode(RPCCall<VMEvent>.self, from: line),
-				let event = call.params {
+		if incoming.id == nil, incoming.method == RPCMethod.event.rawValue {
+			if let event = incoming.event {
 				for continuation in eventSubscribers.values {
 					continuation.yield(event)
 				}
@@ -325,12 +322,41 @@ public actor RPCConnection {
 			}
 			return
 		}
-		if case .number(let id)? = peek.id, let call = pending.removeValue(forKey: id) {
-			// The raw line goes back; the typed caller decodes result or error itself.
-			// A reply whose id is no longer pending (timed out, cancelled) falls through
-			// here and is dropped — abandoning a call must tolerate its late answer.
+		if case .number(let id)? = incoming.id, let call = pending.removeValue(forKey: id) {
+			// An error ends the call here; a result goes back as its raw line, for the typed
+			// caller to decode. A reply whose id is no longer pending (timed out, cancelled)
+			// falls through here and is dropped — abandoning a call must tolerate its late
+			// answer.
 			call.timer.cancel()
-			call.continuation.resume(returning: line)
+			if let error = incoming.error {
+				call.continuation.resume(throwing: error.machmanError)
+			} else {
+				call.continuation.resume(returning: line)
+			}
+		}
+	}
+
+	// One parse per incoming line (Q5): what routes it, an error reply's error and an event's
+	// payload. Only a result is read again, as the caller's own type. Before, a reply was
+	// parsed three times (route, error attempt, result) and an event twice.
+	private struct Incoming: Decodable {
+		let id: RPCID?
+		let method: String?
+		let error: RPCErrorBody?
+		let event: VMEvent?
+
+		private enum CodingKeys: String, CodingKey {
+			case id, method, error, params
+		}
+
+		init(from decoder: Decoder) throws {
+			let c = try decoder.container(keyedBy: CodingKeys.self)
+			id = try c.decodeIfPresent(RPCID.self, forKey: .id)
+			method = try c.decodeIfPresent(String.self, forKey: .method)
+			error = try c.decodeIfPresent(RPCErrorBody.self, forKey: .error)
+			// An event that doesn't decode is dropped, as before; the line still routes.
+			event = id == nil && method == RPCMethod.event.rawValue
+				? try? c.decodeIfPresent(VMEvent.self, forKey: .params) : nil
 		}
 	}
 

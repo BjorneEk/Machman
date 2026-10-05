@@ -84,6 +84,11 @@ final class ScriptedPeer: @unchecked Sendable {
 		send(#"{"jsonrpc":"2.0","id":\#(id),"result":\#(resultJSON)}"#)
 	}
 
+	// Any line, as written: a reply or event the typed helpers don't make.
+	func sendLine(_ line: String) {
+		send(line)
+	}
+
 	// The peer goes away mid-connection: the client reads EOF.
 	func dropConnection() {
 		lock.withLock {
