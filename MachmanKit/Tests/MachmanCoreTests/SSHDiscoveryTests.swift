@@ -107,14 +107,39 @@ struct SSHDiscoveryTests {
 			mac: "de:ad:be:ef:00:01", leasesText: leases, arpText: arp) == nil)
 	}
 
-	// vmnet answers on <net>.1 — what the guest calls "the Mac", shown in the BSD setup
-	// guide before any guest has reported its own default route.
-	@Test func hostAddressIsTheGuestSubnetsGateway() {
-		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.9") == "192.168.64.1")
-		#expect(SSHDiscovery.hostAddress(seenFrom: "10.0.3.55") == "10.0.3.1")
-		#expect(SSHDiscovery.hostAddress(seenFrom: "not-an-address") == nil)
-		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64") == nil)
-		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.999") == nil)
+	// What the guest calls "the Mac", shown in the BSD setup guide before any guest has
+	// reported its own default route: the Mac's address on the guest's subnet. C25: it was
+	// the ".1 of a /24", wrong for any other vmnet subnet and the router for a bridged guest.
+	@Test func hostAddressIsTheMacsAddressOnTheGuestsSubnet() throws {
+		func interface(_ address: String, _ mask: String) throws -> SSHDiscovery.IPv4Interface {
+			try #require(SSHDiscovery.IPv4Interface(address, mask: mask))
+		}
+		let vmnet = try interface("192.168.64.1", "255.255.255.0")
+		let lan = try interface("192.168.1.20", "255.255.255.0")
+		let wide = try interface("10.10.0.1", "255.255.0.0")
+		let loopback = try interface("127.0.0.1", "255.0.0.0")
+		let all = [loopback, lan, vmnet, wide]
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.9", interfaces: all)
+			== "192.168.64.1")
+		#expect(SSHDiscovery.hostAddress(seenFrom: "10.10.3.7", interfaces: all)
+			== "10.10.0.1")   // the /24 guess said 10.10.3.1
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.1.50", interfaces: all)
+			== "192.168.1.20")   // a bridged guest: the Mac, not the router
+		#expect(SSHDiscovery.hostAddress(seenFrom: "172.16.5.5", interfaces: all) == nil)
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.9", interfaces: []) == nil)
+		// The most specific subnet wins.
+		let inner = try interface("10.10.3.1", "255.255.255.0")
+		#expect(SSHDiscovery.hostAddress(seenFrom: "10.10.3.7", interfaces: [wide, inner])
+			== "10.10.3.1")
+		#expect(SSHDiscovery.hostAddress(seenFrom: "not-an-address", interfaces: all) == nil)
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64", interfaces: all) == nil)
+		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.999", interfaces: all) == nil)
+	}
+
+	// The live list reads getifaddrs right: every Mac has loopback.
+	@Test func theLiveInterfacesIncludeLoopback() throws {
+		let loopback = try #require(SSHDiscovery.IPv4Interface("127.0.0.1", mask: "255.0.0.0"))
+		#expect(SSHDiscovery.currentIPv4Interfaces().contains(loopback))
 	}
 
 	// C25: one guest whose DHCP hostname isn't UTF-8 (a Latin-1 "café") made the strict

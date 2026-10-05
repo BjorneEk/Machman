@@ -226,8 +226,9 @@ the payload; the setup script's own boot-time sshfs mount of the share goes thro
 rename-stable link in the library instead (`<library>/.machman-shares/<marker>`). `address`/`addressSource`/`hostAddressForGuest`/`reachability*`/`readySince`
 are a daemon overlay (like `safeRun`), present only while the VM runs — `reachability`
 (1.0.6+) is this run's answer to "does the guest's sshd actually respond", never
-persisted. Treat unknown `reverseState`/`reachability` strings as a state you don't
-recognize.
+persisted. `hostAddressForGuest` is this Mac's own address on the interface whose
+subnet holds the guest's address, absent when none does (never a guessed `.1`). Treat
+unknown `reverseState`/`reachability` strings as a state you don't recognize.
 `setup` (1.0.7+) is `{installed?, guestOS?, guestOSFamily?, guestOSVersion?,
 guestInit?, lastReportAt?, scriptVersion?, currentScriptVersion?, lastRunStatus?,
 lastRunNote?, lastTransport?, errors?: [{step, message}], notes?: [{step, message}],

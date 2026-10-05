@@ -81,13 +81,81 @@ enum SSHDiscovery {
 		return nil
 	}
 
-	// The address the guest reaches this Mac at. vmnet's bootpd hands out <net>.x and
-	// answers on <net>.1 — the same value the guest's own default route reports, derived
-	// here so the UI can show it before any guest has reported anything.
-	static func hostAddress(seenFrom guestAddress: String) -> String? {
-		let parts = guestAddress.split(separator: ".")
-		guard parts.count == 4, parts.allSatisfy({ UInt8($0) != nil }) else { return nil }
-		return parts.dropLast().joined(separator: ".") + ".1"
+	// MARK: - This Mac, seen from the guest
+
+	// One IPv4 interface of this Mac: its address and netmask, host byte order.
+	struct IPv4Interface: Equatable, Sendable {
+		var address: UInt32
+		var mask: UInt32
+
+		init(address: UInt32, mask: UInt32) {
+			self.address = address
+			self.mask = mask
+		}
+
+		init?(_ address: String, mask: String) {
+			guard let address = SSHDiscovery.ipv4(address), let mask = SSHDiscovery.ipv4(mask)
+			else { return nil }
+			self.init(address: address, mask: mask)
+		}
+	}
+
+	// The address the guest reaches this Mac at, shown before any guest has reported its own
+	// route: the Mac's address on the interface whose subnet holds the guest — vmnet's bridge
+	// for a NAT guest, whatever subnet and mask vmnet was given, and the Mac's LAN address for
+	// a bridged one. The most specific subnet wins; none holding the guest gives nil, never a
+	// guess. (The ".1 of a /24" this replaced was wrong for any other vmnet subnet, and named
+	// the router for a bridged guest.) vmnet's own config is readable by root only.
+	static func hostAddress(
+		seenFrom guestAddress: String, interfaces: [IPv4Interface] = currentIPv4Interfaces()
+	) -> String? {
+		guard let guest = ipv4(guestAddress) else { return nil }
+		return interfaces
+			.filter { $0.mask != 0 && $0.address != guest
+				&& $0.address & $0.mask == guest & $0.mask }
+			.max { $0.mask.nonzeroBitCount < $1.mask.nonzeroBitCount }
+			.map { dotted($0.address) }
+	}
+
+	// The Mac's IPv4 interfaces that are up, from getifaddrs.
+	static func currentIPv4Interfaces() -> [IPv4Interface] {
+		var head: UnsafeMutablePointer<ifaddrs>?
+		guard getifaddrs(&head) == 0, let first = head else { return [] }
+		defer { freeifaddrs(head) }
+		var result: [IPv4Interface] = []
+		for entry in sequence(first: first, next: { $0.pointee.ifa_next }) {
+			let item = entry.pointee
+			guard item.ifa_flags & UInt32(IFF_UP) != 0, let address = item.ifa_addr,
+				address.pointee.sa_family == sa_family_t(AF_INET), let mask = item.ifa_netmask
+			else { continue }
+			result.append(IPv4Interface(address: ipv4(of: address), mask: ipv4(of: mask)))
+		}
+		return result
+	}
+
+	// A netmask's sockaddr can be cut short (its sa_len); the bytes it leaves out are zero.
+	private static func ipv4(of socketAddress: UnsafeMutablePointer<sockaddr>) -> UInt32 {
+		var storage = sockaddr_in()
+		let length = min(Int(socketAddress.pointee.sa_len), MemoryLayout<sockaddr_in>.size)
+		withUnsafeMutableBytes(of: &storage) {
+			$0.copyMemory(from: UnsafeRawBufferPointer(start: socketAddress, count: length))
+		}
+		return UInt32(bigEndian: storage.sin_addr.s_addr)
+	}
+
+	static func ipv4(_ text: String) -> UInt32? {
+		let parts = text.split(separator: ".", omittingEmptySubsequences: false)
+		guard parts.count == 4 else { return nil }
+		var value: UInt32 = 0
+		for part in parts {
+			guard let octet = UInt8(part) else { return nil }
+			value = value << 8 | UInt32(octet)
+		}
+		return value
+	}
+
+	static func dotted(_ address: UInt32) -> String {
+		[24, 16, 8, 0].map { String(address >> $0 & 0xFF) }.joined(separator: ".")
 	}
 
 	// MARK: - Liveness
