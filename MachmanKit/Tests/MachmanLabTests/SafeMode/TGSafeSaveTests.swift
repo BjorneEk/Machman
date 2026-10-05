@@ -177,4 +177,153 @@ struct TGSafeSaveTests {
 		let seen = String(decoding: tab.transcript(), as: UTF8.self)
 		#expect(seen.components(separatedBy: "LAB-READY").count - 1 == 1)
 	}
+
+	/// The draft card for the guard order a plain start meets (r3-tg, E/QUALITY).
+	static let startAnywayCard = Comment(rawValue: "A plain Start offers Start Anyway where "
+		+ "the disk-sharing guard refuses every start")
+
+	/// The original can't start while the saved VM runs on its disk, force or not. A plain
+	/// start meets the MAC guard first (the run still uses the original's MAC) and is
+	/// offered Start Anyway, which the disk guard then refuses.
+	static func expectDiskRefusal(_ vm: TGVM, _ sentence: String) async throws {
+		let plain = try await vm.startError(StartOptions(openWindow: false))
+		#expect(plain != nil)
+		withKnownIssue(startAnywayCard) {
+			#expect(plain?.code == .invalidState)
+			#expect(plain?.message == sentence)
+		}
+		let forced = try await vm.startError(StartOptions(openWindow: false, force: true))
+		#expect(forced?.code == .invalidState)
+		#expect(forced?.message == sentence)
+	}
+
+	@Test("W2-37: an unsafe disk moves into the saved VM, and the original references it there")
+	func unsafeDiskMovesIntoSavedVM() async throws {
+		try await TG.withAgent { agent in
+			let data = TGDisk(name: "data", mib: 64, safe: false)
+			let vm = try await TGVM.alpine(
+				"tg-o37", disks: [data], policy: Self.safeHeadless, on: agent)
+			let kept = TGVM("tg-o37-kept", on: agent)
+			let events = await TGEvents.record(agent.api)
+			defer { events.stop() }
+			try await vm.start(try await vm.info().startOptions(.plain))
+			let guest = try await vm.guest()
+			defer { guest.console.close() }
+			try await guest.loadBlockDriver(count: 1)
+			let device = try await guest.device(sectors: data.sectors)
+			let first = "TG37A-" + TG.nonce()
+			try await guest.writeMarker(first, device: device, sector: 8)
+			let mark = events.mark()
+			_ = try await agent.api.safeSave(vm: "tg-o37", to: "tg-o37-kept")
+			try vm.handOverPid(to: kept)
+			// The file moved into the saved VM's folder: its own disk there…
+			let moved = kept.dir + "/data.raw"
+			let manager = FileManager.default
+			#expect(manager.fileExists(atPath: moved))
+			#expect(!manager.fileExists(atPath: vm.dir + "/data.raw"))
+			let keptDisk = try await kept.disk(named: "data")
+			#expect(keptDisk.owned == true)
+			// …and a reference from the original.
+			let reference = try await vm.info().disks.first { $0.path == moved }
+			#expect(reference?.type == .image)
+			#expect(reference?.owned == false)
+			// One warning, the saved VM's.
+			let sentence = "tg-o37\u{2019}s disk data.raw now lives in this VM\u{2019}s folder, so "
+				+ "this VM can\u{2019}t be deleted while tg-o37 uses it."
+			try await events.waitFor(after: mark) {
+				if case .log("tg-o37-kept", .warning, _) = $0 { return true }
+				return false
+			}
+			#expect(events.warnings(vm: "tg-o37-kept", after: mark) == [sentence])
+			// The guest's later writes land in the moved file.
+			let second = "TG37B-" + TG.nonce()
+			try await guest.writeMarker(second, device: device, sector: 16)
+			#expect(await TG.waitForBytes(moved, offset: 8192, second))
+			// The original can't start beside it, force or not.
+			let sharing = "tg-o37-kept is running with data.raw attached \u{2014} stop "
+				+ "tg-o37-kept before starting tg-o37"
+			try await Self.expectDiskRefusal(vm, sharing)
+			guest.console.close()
+			try await kept.forceStop()
+			// Deleting the saved VM is refused while the original uses its disk.
+			let deleteRefused = await #expect(throws: MachmanError.self) {
+				try await TG.settled { try await agent.api.deleteVM(named: "tg-o37-kept") }
+			}
+			#expect(deleteRefused?.message == "tg-o37 uses data.raw from tg-o37-kept\u{2019}s "
+				+ "folder \u{2014} remove that disk from tg-o37 first")
+			try await TG.settled { try await agent.api.deleteVM(named: "tg-o37") }
+			#expect(manager.fileExists(atPath: moved))
+			#expect(await TG.waitForBytes(moved, offset: 4096, first, timeout: .zero))
+			#expect(await TG.waitForBytes(moved, offset: 8192, second, timeout: .zero))
+		}
+	}
+
+	@Test("W2-43: a disabled unshadowed disk stays with the original as a disabled reference")
+	func disabledUnshadowedDiskStays() async throws {
+		try await TG.withAgent { agent in
+			let data1 = TGDisk(name: "data1", mib: 64)
+			let data2 = TGDisk(name: "data2", mib: 96, safe: false, enabled: false)
+			let vm = try await TGVM.alpine(
+				"tg-o43", disks: [data1, data2], policy: Self.safeHeadless, on: agent)
+			let kept = TGVM("tg-o43-kept", on: agent)
+			#expect(try await vm.disk(named: "data2").enabled == false)
+			try await vm.start(try await vm.info().startOptions(.plain))
+			do {
+				let guest = try await vm.guest()
+				defer { guest.console.close() }
+				try await guest.loadBlockDriver(count: 1)
+				// Only the enabled disk shows in the guest.
+				#expect(try await guest.disks() == ["vda": data1.sectors])
+			}
+			_ = try await agent.api.safeSave(vm: "tg-o43", to: "tg-o43-kept")
+			try vm.handOverPid(to: kept)
+			let original = vm.dir + "/data2.raw"
+			#expect(FileManager.default.fileExists(atPath: original))
+			let keptInfo = try await kept.info()
+			let reference = keptInfo.disks.first { $0.path == original }
+			#expect(reference?.type == .image)
+			#expect(reference?.owned == false)
+			#expect(reference?.enabled == false)
+			let own = try await kept.disk(named: "data1")
+			#expect(own.owned == true)
+			#expect(FileManager.default.fileExists(atPath: kept.dir + "/data1.raw"))
+			#expect(!FileManager.default.fileExists(atPath: kept.dir + "/data2.raw"))
+			try await kept.forceStop()
+		}
+	}
+
+	@Test("W2-44: an unshadowed disk switched off mid-run still moves into the saved VM")
+	func disabledMidRunDiskMoves() async throws {
+		try await TG.withAgent { agent in
+			let data = TGDisk(name: "data", mib: 64, safe: false)
+			let vm = try await TGVM.alpine(
+				"tg-o44", disks: [data], policy: Self.safeHeadless, on: agent)
+			let kept = TGVM("tg-o44-kept", on: agent)
+			try await vm.start(try await vm.info().startOptions(.plain))
+			do {
+				let guest = try await vm.guest()
+				defer { guest.console.close() }
+				try await guest.loadBlockDriver(count: 1)
+				#expect(try await guest.disks() == ["vda": data.sectors])
+			}
+			// The run attaches the unshadowed disk by reference to the original's file.
+			let real = vm.dir + "/data.raw"
+			let id = try await vm.disk(path: real).id
+			try await agent.api.setEnabled(
+				vm: "tg-o44", disks: [id: false], mounts: nil, console: nil, uart: nil)
+			#expect(try await vm.disk(path: real).enabled == false)
+			_ = try await agent.api.safeSave(vm: "tg-o44", to: "tg-o44-kept")
+			try vm.handOverPid(to: kept)
+			let moved = kept.dir + "/data.raw"
+			#expect(FileManager.default.fileExists(atPath: moved))
+			#expect(!FileManager.default.fileExists(atPath: vm.dir + "/data.raw"))
+			let reference = try await vm.info().disks.first { $0.path == moved }
+			#expect(reference?.type == .image)
+			#expect(reference?.owned == false)
+			let sharing = "tg-o44-kept is running with data.raw attached \u{2014} stop "
+				+ "tg-o44-kept before starting tg-o44"
+			try await Self.expectDiskRefusal(vm, sharing)
+			try await kept.forceStop()
+		}
+	}
 }

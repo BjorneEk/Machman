@@ -254,6 +254,22 @@ enum TG {
 		}
 	}
 
+	/// `body`, retried for a few seconds while the agent still counts a VM that just stopped
+	/// as hosted (its "Stop <VM> before …" refusal): the vmhost's exit reaches it a moment
+	/// after the VM lists stopped.
+	static func settled<T>(_ body: () async throws -> T) async throws -> T {
+		let deadline = ContinuousClock.now + .seconds(15)
+		while true {
+			do {
+				return try await body()
+			} catch let error as MachmanError
+				where error.code == .invalidState && error.message.hasPrefix("Stop ")
+					&& ContinuousClock.now < deadline {
+				try await Task.sleep(for: .milliseconds(250))
+			}
+		}
+	}
+
 	// MARK: Agent scopes
 
 	/// Lab.withAgent with a step between the scope's creation and the agent's launch (a
