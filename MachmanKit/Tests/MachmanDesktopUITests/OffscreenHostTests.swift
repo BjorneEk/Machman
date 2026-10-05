@@ -79,6 +79,18 @@ struct OffscreenHostTests {
 		}
 	}
 
+	@Test("Q18: a breach recorded outside a host fails the next host")
+	func earlierBreachFailsTheNextHost() async throws {
+		try await OffscreenHost.exclusively {
+			_ = HostQuietApplication.takeBreaches()
+			NSApp.activate()   // host-quiet: provokes the tripwire
+			let error = await #expect(throws: OffscreenHost.ReachedScreen.self) {
+				try await OffscreenHost.withHost(Text("Next")) { _ in }
+			}
+			#expect(error?.breaches == ["before this host: NSApp.activate() was called"])
+		}
+	}
+
 	@Test("Q18: a hosted window refuses to be ordered")
 	func hostedWindowRefusesOrdering() async throws {
 		var hostedWindow: NSWindow?

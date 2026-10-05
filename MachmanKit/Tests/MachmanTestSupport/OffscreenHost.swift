@@ -162,9 +162,10 @@ public enum OffscreenHost {
 		}
 	}
 
-	// One hosted window (or tripwire test) at a time per process. Not reentrant: a body
-	// running under it must not call withHost or exclusively again.
+	// One hosted window (or tripwire test) at a time per process. A body already holding it
+	// (the task-local says so) nests without waiting; a task it detaches does not hold it.
 	private static let gate = AsyncGate(limit: 1)
+	@TaskLocal private static var holdsGate = false
 
 	// Make HostQuietApplication the process's NSApp with the .prohibited policy (no Dock
 	// icon, never active), with in-process accessibility on. Idempotent. An NSApp made
@@ -199,10 +200,14 @@ public enum OffscreenHost {
 	public static func exclusively<T>(
 		_ body: @MainActor () async throws -> T
 	) async throws -> T {
+		if holdsGate {
+			prepare()
+			return try await body()
+		}
 		await gate.enter()
 		do {
 			prepare()
-			let result = try await body()
+			let result = try await $holdsGate.withValue(true) { try await body() }
 			await gate.leave()
 			return result
 		} catch {
@@ -219,7 +224,9 @@ public enum OffscreenHost {
 		chrome: Chrome = .none, _ body: @MainActor (HostedView) async throws -> T
 	) async throws -> T {
 		try await exclusively {
-			_ = HostQuietApplication.takeBreaches()   // a stray earlier one is not ours
+			// Recorded since the last host, by prepare() or a test that hosts nothing (a product
+			// path reaching NSApp.activate or runModal): never dropped, this host reports it.
+			let earlier = HostQuietApplication.takeBreaches().map { "before this host: \($0)" }
 			let baseline = HostQuiet.baseline()
 			let (window, host) = makeWindow(
 				view, width: width, height: height, dark: dark, chrome: chrome)
@@ -232,7 +239,7 @@ public enum OffscreenHost {
 				outcome = .failure(error)
 			}
 			// Checked before the window goes: a sheet or child ordered with it is still there.
-			var breaches = HostQuiet.breaches(since: baseline)
+			var breaches = earlier + HostQuiet.breaches(since: baseline)
 			window.contentView = nil
 			window.close()
 			breaches += HostQuietApplication.takeBreaches() + window.breaches
