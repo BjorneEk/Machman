@@ -103,4 +103,43 @@ struct GuestScriptSshfsTests {
 				""", "\(shell): \(r.out)")
 		}
 	}
+
+	// MARK: - The mount point (S43)
+
+	// S43: "ready" came right after the step that failed it; now only a mount point that
+	// exists, with the fuse driver loaded, is ready.
+	@Test func theMountPointIsReadyOnlyWhenItIs() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=1000
+				U="$(id -un)"
+				GROUP="$(id -gn)"
+				FUSE_PERSISTED=1
+				OS_FAMILY=freebsd
+				kldstat() { :; }
+				kldload() { return 1; }
+				MOUNTPOINT="$D/mnt"
+				sshfs_act_fuse_ready 2>&1 | sed "s|$D|D|g"
+				echo ---
+				OS_FAMILY=debian
+				: > "$D/file"
+				MOUNTPOINT="$D/file/mnt"
+				sshfs_act_fuse_ready 2>&1 | sed "s|$D|D|g"
+				echo ---
+				MOUNTPOINT="$D/mnt"
+				sshfs_act_fuse_ready 2>&1 | sed "s|$D|D|g"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				[!!] could not load the fusefs module
+				   Load it yourself: kldload fusefs
+				---
+				[!!] could not create D/file/mnt
+				   Create it yourself, or pass --mountpoint <path>.
+				---
+				[ok] D/mnt is ready for host folders
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }

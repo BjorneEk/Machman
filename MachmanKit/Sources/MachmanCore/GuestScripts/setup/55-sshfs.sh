@@ -115,7 +115,10 @@ sshfs_act_fuse_ready() {
 	if [ -d "$MOUNTPOINT" ] || [ "$DRY_RUN" -eq 1 ]; then
 		run "giving $U the mount point" chown -h "$U:$GROUP" "$MOUNTPOINT" || true
 	fi
-	ok "$MOUNTPOINT is ready for host folders"
+	# Ready only when it is: a failed module load or mkdir said why above.
+	if [ "$DRY_RUN" -eq 0 ] && [ -d "$MOUNTPOINT" ] && fuse_loaded; then
+		ok "$MOUNTPOINT is ready for host folders"
+	fi
 	return 0
 }
 
