@@ -74,4 +74,39 @@ struct TGHelperTests {
 		#expect(TG.marker(dir + "/run-A") == TG.Marker(vm: "tg-r1", pid: 4242))
 		#expect(TG.marker(dir + "/run-B") == nil)
 	}
+
+	@Test("Q18: TG launchd helpers refuse a label or plist outside this run's suite")
+	func launchdGuard() throws {
+		let suite = "com.gustaffranzen.Machman.test-Ab12"
+		let run = "/tmp/mml.Ab12"
+		let plist = run + "/scopes/01/home/Library/LaunchAgents/\(suite).vm.tg.plist"
+		#expect(throws: Never.self) {
+			try TGLaunchd.check(label: suite + ".vm.tg", plist: plist, suite: suite, runDir: run)
+		}
+		// Another suite's job, the dev suite's, a bare suite label: refused.
+		for label in [
+			"com.gustaffranzen.Machman.test-Zz99.vm.tg", "com.gustaffranzen.Machman.dev.vm.tg",
+			suite + ".vm.", suite + ".agent",
+		] {
+			#expect(throws: LabError.self) {
+				try TGLaunchd.check(label: label, plist: nil, suite: suite, runDir: run)
+			}
+		}
+		// A plist outside the run dir (the user's own LaunchAgents), or escaping it: refused.
+		for path in [
+			"/Users/lab/Library/LaunchAgents/\(suite).vm.tg.plist",
+			run + "/../mml.Zz99/\(suite).vm.tg.plist", "/tmp/mml.Ab123/x.plist",
+		] {
+			#expect(throws: LabError.self) {
+				try TGLaunchd.check(label: suite + ".vm.tg", plist: path, suite: suite, runDir: run)
+			}
+		}
+		// No suite or no run dir: nothing passes.
+		#expect(throws: LabError.self) {
+			try TGLaunchd.check(label: ".vm.tg", plist: nil, suite: "", runDir: run)
+		}
+		#expect(throws: LabError.self) {
+			try TGLaunchd.check(label: suite + ".vm.tg", plist: plist, suite: suite, runDir: "")
+		}
+	}
 }

@@ -3,7 +3,8 @@
 //  MachmanLabTests
 //
 //  L2 — how a safe policy's VM starts: every plain Start (agent menu, desktop, the wire with
-//  the policy's options) gives a safe headless run.
+//  the policy's options) gives a safe headless run, and a login vmhost never autostarts a
+//  VM whose hand-edited config asks for a safe run.
 //
 
 import Foundation
@@ -84,5 +85,45 @@ struct TGSafeStartTests {
 		let info = try #require(desktop.vm(vm.name))
 		#expect(info.state == .stopped)
 		desktop.viewModel.startPolicyDriven(info, headless ? .headless : .plain)
+	}
+
+	@Test("14b: a login vmhost for a hand-edited autostart and safe VM exits 70 without booting")
+	func loginHostRefusesSafeAutostart() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.alpine("tg-r14", on: agent)
+			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
+			defer { try? FileManager.default.removeItem(atPath: plist) }
+			// The wire refuses the pair.
+			let both = await #expect(throws: MachmanError.self) {
+				try await agent.api.setStartPolicy(
+					vm: vm.name, policy: StartPolicy(windowed: false, safe: true, autostart: true))
+			}
+			#expect(both?.code == .invalidArgument)
+			#expect(both?.message == "A safe run can\u{2019}t start automatically")
+			#expect(!FileManager.default.fileExists(atPath: plist))
+			try await agent.api.setStartPolicy(
+				vm: vm.name, policy: StartPolicy(windowed: false, autostart: true))
+			let job = try TGLaunchd.readPlist(plist)
+			#expect(job.label == TGLaunchd.label(vm.name))
+			#expect(job.arguments.suffix(7) == [
+				"--data-dir", TG.vmsDir(agent.scope), "--vm", vm.name, "--socket", vm.socketPath,
+				"--autostart",
+			])
+			#expect(job.environment["MACHMAN_SUITE_ID"] == Lab.suiteID)
+			// A hand edit puts both on; the login vmhost refuses before it boots anything.
+			try TG.editConfig(agent.scope, vm.name) { TG.setPolicy("safe", true, in: &$0) }
+			let mark = LabLog.mark()
+			let result = try await TGLaunchd.spawnLikeLaunchd(job)
+			#expect(result.status == 70)
+			_ = try await LabLog.waitFor(
+				"autostart of tg-r14 refused: safe runs cannot autostart", after: mark,
+				process: "MachmanVMHost")
+			#expect(await !TG.isSocketLive(vm.socketPath))
+			#expect(TG.runRoots(agent.scope).isEmpty)
+			#expect(try await vm.info().state == .stopped)
+			// Undone by hand, the plist first: the agent never boots a job out in L2.
+			try FileManager.default.removeItem(atPath: plist)
+			try TG.editConfig(agent.scope, vm.name) { TG.setPolicy("safe", false, in: &$0) }
+		}
 	}
 }
