@@ -51,6 +51,15 @@ struct MenuBarRulesTests {
 			== "Couldn\u{2019}t end the process of \u{201C}Debian\u{201D}")
 	}
 
+	// Review F11: the user's own Stop while a safe start prepared is no failure to report.
+	@Test func aCanceledStartIsNoFailure() {
+		let canceled = MachmanError(code: .cancelled, message: "The safe run was canceled")
+		#expect(MenuBarFailure(
+			vm: "Debian", action: .start(StartOptions(safe: true)), error: canceled).isCanceled)
+		#expect(!MenuBarFailure(vm: "Debian", action: .start(StartOptions()), error: refused)
+			.isCanceled)
+	}
+
 	@Test func theQuitAsksAboutEveryVMItLeftRunning() throws {
 		let one = EndProcessPrompt.forQuit(leaving: ["Debian"])
 		#expect(one.title == EndProcessPrompt.forVM("Debian").title)

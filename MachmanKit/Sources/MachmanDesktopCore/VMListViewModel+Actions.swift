@@ -140,6 +140,8 @@ extension VMListViewModel {
 			refresh: .list,
 			failed: { $0.pendingStarts.remove(name) },
 			recover: { model, error in
+				// The user's own Stop or ✕ while it prepared: nothing to report (F11).
+				if error.code == .cancelled { return true }
 				// Not a dead end: the same start succeeds with force, so offer it.
 				guard error.code == .macConflict else { return false }
 				model.pendingForceStart = PendingForceStart(

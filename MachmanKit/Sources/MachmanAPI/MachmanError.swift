@@ -22,6 +22,9 @@ public struct MachmanError: Error, Codable, Sendable, Equatable {
 		// A bounded call got no reply before its client-side deadline (1.0.9+, additive:
 		// the call fails, the connection and the serving process are left alone).
 		case timeout
+		// The user canceled what the call was doing — a Stop or ✕ while a safe start prepared
+		// (additive, review F11): a never-mind, not a failure. Older clients read internalError.
+		case cancelled
 
 		public init(from decoder: Decoder) throws {
 			let raw = try decoder.singleValueContainer().decode(String.self)

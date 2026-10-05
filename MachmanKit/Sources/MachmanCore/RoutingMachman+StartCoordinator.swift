@@ -288,7 +288,7 @@ extension RoutingMachman {
 	}
 
 	nonisolated static let safeRunCanceled = MachmanError(
-		code: .ioFailure, message: "The safe run was canceled")
+		code: .cancelled, message: "The safe run was canceled")
 
 	struct ShadowBuild {
 		let operation: String

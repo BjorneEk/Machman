@@ -132,6 +132,7 @@ struct RoutingClaimTests {
 			Issue.record("the start went on after its stop")
 		} catch let error as MachmanError {
 			#expect(error.message == "The safe run was canceled")
+			#expect(error.code == .cancelled)   // a never-mind for clients (review F11)
 		}
 		#expect(located == 0)   // before: on to the spawn
 		#expect(((try? FileManager.default.contentsOfDirectory(atPath: safeDir)) ?? []).isEmpty)

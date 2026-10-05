@@ -120,6 +120,7 @@ public final class MenuBarModel: ObservableObject {
 			}
 		} catch {
 			let failure = MenuBarFailure(vm: name, action: action, error: error)
+			if failure.isCanceled { return }
 			if failure.offersEndProcess {
 				// The stop ran out the daemon's bound: ask about the process instead.
 				await endProcessIfConfirmed(name)

@@ -30,12 +30,15 @@ public struct MenuBarFailure: Equatable, Sendable {
 	// A Force Stop the vmhost didn't answer in time (timeout): not a failure to report, but
 	// the cue to ask about ending its process (C9).
 	public let offersEndProcess: Bool
+	// The user canceled it — a Stop while a safe start prepared: nothing to report (F11).
+	public let isCanceled: Bool
 
 	public init(vm: String, action: MenuBarAction, error: Error) {
 		self.vm = vm
 		let quoted = "\u{201C}\(vm)\u{201D}"
 		let conflict = (error as? MachmanError)?.code == .macConflict
 		offersEndProcess = action == .stop(.force) && (error as? MachmanError)?.code == .timeout
+		isCanceled = (error as? MachmanError)?.code == .cancelled
 		switch action {
 		case .start(let options):
 			if conflict && !options.force {

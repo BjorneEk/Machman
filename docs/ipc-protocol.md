@@ -67,7 +67,9 @@ Standard JSON-RPC codes (-32700 parse, -32600 invalid request, -32601 method not
 `ioFailure`, `virtualizationFailure`, `installFailure`, `internalError`, `timeout`
 (1.0.9+: the daemon's own bounded call to a vmhost got no reply — the vmhost is left
 alone; its message names the deadline, e.g. "No answer within 30 seconds"; unknown codes decode as
-`internalError`, so the list is additively extensible). Messages are one sentence for people
+`internalError`, so the list is additively extensible), `cancelled` (the user canceled what the
+call was doing — a `vm.stop` or `op.cancel` while a safe start prepared its shadow; a never-mind
+for clients, not a failure). Messages are one sentence for people
 to read; match on the code, never on the text, which a newer daemon may reword.
 
 ### Names
@@ -407,7 +409,7 @@ the ORIGINAL requires `force` (macConflict). Safe runs survive
 daemon restarts (the daemon re-attaches by matching the shadow's recorded vmhost pid
 against the socket peer) and reset on host reboot. Building the shadow is a `shadowBuild`
 operation that `op.cancel` stops, and so does `vm.stop` in either mode (nothing runs yet); the
-start then answers "The safe run was canceled". A start
+start then answers `cancelled` ("The safe run was canceled"). A start
 that fails after the VM listed as `starting` is followed by a `listChanged`.
 
 ## Per-VM host processes (invisible on the wire)

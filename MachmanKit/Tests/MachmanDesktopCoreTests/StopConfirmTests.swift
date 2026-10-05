@@ -76,6 +76,20 @@ struct StopConfirmTests {
 		#expect(h.viewModel.pendingEndProcess == nil)
 	}
 
+	// Review F11: a safe start the user stopped while it prepared comes back canceled; no
+	// "Starting … failed" alert follows the user's own action.
+	@Test func aCanceledSafeStartSaysNothing() async throws {
+		let h = await DesktopHarness.make()
+		h.stub.fail("start", with: MachmanError(
+			code: .cancelled, message: "The safe run was canceled"))
+		h.viewModel.startVM("Debian", safe: true)
+		#expect(await eventually {
+			h.stub.calls.contains("start") && !h.viewModel.pendingStarts.contains("Debian")
+		})
+		try await Task.sleep(for: .milliseconds(50))
+		#expect(h.viewModel.presentedError == nil)
+	}
+
 	@Test func theProcessQuestionIsOneSentenceEach() throws {
 		let prompt = PendingEndProcess(vm: "Debian").prompt
 		#expect(prompt.title
