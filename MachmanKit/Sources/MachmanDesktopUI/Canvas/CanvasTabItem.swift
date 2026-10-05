@@ -61,6 +61,13 @@ struct CanvasTabItem: View {
 		)
 		.contextMenu { menu }
 		.help(title)
+		// One element for VoiceOver (H39): a button that selects the tab, with closing as a
+		// named action — the close button inside is the pointer's, not a second element.
+		.accessibilityElement(children: .ignore)
+		.accessibilityLabel(title)
+		.accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+		.accessibilityAction { onSelect() }
+		.accessibilityAction(named: "Close Tab") { onClose() }
 	}
 
 	// Xcode behavior: the tab's icon swaps to a close button on hover — and the icon AREA

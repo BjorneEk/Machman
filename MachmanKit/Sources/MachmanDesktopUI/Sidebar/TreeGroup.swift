@@ -268,6 +268,8 @@ struct TreeRow<MenuItems: View>: ViewModifier {
 			row
 				.contentShape(Rectangle())
 				.simultaneousGesture(TapGesture().onEnded { onClick() })
+				// The click as an action VoiceOver can perform (H39).
+				.accessibilityAction(named: "Open") { onClick() }
 				.tag(node)
 				.contextMenu { menu() }
 		} else {
