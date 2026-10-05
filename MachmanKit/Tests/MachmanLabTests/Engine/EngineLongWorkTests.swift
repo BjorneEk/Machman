@@ -208,4 +208,80 @@ struct EngineLongWorkTests {
 			_ = try await copying.value
 		}
 	}
+
+	@Test("R3W2-30: a newer agent's Replace is refused while the serving agent copies a VM")
+	func newerReplaceRefused() async throws {
+		let answers: [String: Any] = [
+			"agent.replaceOlder": "Replace", "agent.replaceRefused": "OK",
+		]
+		try await Self.onHFS("e45a", answers: answers) { agent, _ in
+			let api = agent.api
+			_ = try await Self.devWithDisk(agent)
+			let copying = Task {
+				try await api.copyVM(
+					vm: "dev", newName: "dev copy", diskIDs: nil, mountIDs: nil,
+					regenerateMAC: true)
+			}
+			let op = try await Self.running(api, "dev copy", "dev")
+			let newer = TFBuilds.newerVersion(than: TFBuilds.current)
+			let ownData = agent.scope.dir + "/newer-data"
+			try FileManager.default.createDirectory(
+				atPath: ownData, withIntermediateDirectories: true)
+			let mark = LabLog.mark()
+			let pid = try await TFAgents.launchSecond(
+				scope: agent.scope,
+				options: LabAgent.Options(
+					environment: ["MACHMAN_DATA_DIR": ownData],
+					appURL: try await TFBuilds.agentApp(newer)))
+			defer { Task { await TFAgents.stopSecond(pid: pid, api: nil, scope: agent.scope) } }
+			#expect(await LabProcesses.waitForExit(pid, timeout: .seconds(30)))
+			let lines = TFAgents.logLines(after: mark, pid: pid, matching: "test prompt|retire")
+			let asked = lines.firstIndex { $0.contains("test prompt agent.replaceOlder") }
+			let refused = lines.firstIndex { $0.contains("test prompt agent.replaceRefused") }
+			#expect(asked != nil && refused != nil && asked! < refused!)
+			#expect(lines.contains {
+				$0.contains("can't retire yet (dev is being copied — try again when it finishes)")
+			})
+			#expect(LabProcesses.isAlive(agent.pid))
+			let check = try await agent.connect(clientName: "machman-lab-tf")
+			#expect(check.hello.daemonVersion == TFBuilds.current)
+			await check.disconnect()
+			try await Self.stillRunning(api, op)
+			_ = try await copying.value
+			let names = Set(try await api.listVMs().map(\.name))
+			#expect(names.isSuperset(of: ["dev", "dev copy"]))
+		}
+		await TFBuilds.unregisterAll()
+	}
+
+	@Test("R3W2-30: a desktop Replace during a copy is refused with the copy as the reason")
+	func desktopReplaceRefused() async throws {
+		try await Self.onHFS("e45d") { agent, _ in
+			let api = agent.api
+			_ = try await Self.devWithDisk(agent)
+			let copying = Task {
+				try await api.copyVM(
+					vm: "dev", newName: "dev copy", diskIDs: nil, mountIDs: nil,
+					regenerateMAC: true)
+			}
+			let op = try await Self.running(api, "dev copy", "dev")
+			let desktop = try await agent.connect(clientName: "MachmanDesktop-lab")
+			var refusal: MachmanError?
+			do {
+				try await desktop.retire()
+			} catch let error as MachmanError {
+				refusal = error
+			}
+			await desktop.disconnect()
+			let error = try #require(refusal)
+			#expect(error.code == .invalidState)
+			#expect(error.message == "dev is being copied — try again when it finishes")
+			let prompt = DaemonVersionPrompt.replaceRefused(reason: error.message)
+			#expect(prompt.title == "Machman Agent can’t be replaced yet")
+			#expect(prompt.message == error.message + ".")
+			try await Self.stillRunning(api, op)
+			#expect(try await agent.control("ping") == "ok")
+			_ = try await copying.value
+		}
+	}
 }
