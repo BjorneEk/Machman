@@ -5,7 +5,7 @@
 #   scripts/guest-regress/run.sh [--pull] [--shell <sh|ksh>] [distro…]   every distro if none
 #   scripts/guest-regress/run.sh --list                                  distros and suites
 #   scripts/guest-regress/run.sh --backend qemu [--results <tsv>] [--image <raw>] [--keep]
-#                                [--jobs 1|2] [--shell <sh|ksh>] [distro…]
+#                                [--jobs 1|2] [--suites '<suite>…'] [--shell <sh|ksh>] [distro…]
 #   scripts/guest-regress/run.sh --backend qemu|vz --list
 #   scripts/guest-regress/run.sh --evaluate <suite> <run|boot> <output>  one output's TSV rows
 #
@@ -31,9 +31,9 @@
 # Machman's own VZ guests) runs through scripts/lab.sh. A suite with "# BOOT-CHECKS:" lines
 # (grub, automount, console, rclocal) ends its VM run with a tail left installed; the harness
 # reboots the guest and runs it again with REGRESS_PHASE=boot for its after-boot checks
-# (docker reads only "# CHECKS:" and never reboots). --results appends one TSV row per check:
-# distro, suite, phase, check, pass|fail|missing. Exits 69 without QEMU or without a prepared
-# image.
+# (docker reads only "# CHECKS:" and never reboots). --suites narrows each distro's VM suites
+# to those listed. --results appends one TSV row per check: distro, suite, phase, check,
+# pass|fail|missing. Exits 69 without QEMU or without a prepared image.
 set -u
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(CDPATH= cd -- "$HERE/../.." && pwd)"
@@ -128,10 +128,23 @@ vm_distro() {
 	return 0
 }
 
+# pick_suites: SUITES (of distro $n) narrowed to --suites; a suite it does not run is an error.
+pick_suites() {
+	[ -n "$ONLY_SUITES" ] || return 0
+	_picked=""
+	for _w in $ONLY_SUITES; do
+		case " $SUITES " in
+		*" $_w "*) _picked="$_picked $_w" ;;
+		*) echo "$n does not run suite $_w (see --backend $BACKEND --list)" >&2; exit 64 ;;
+		esac
+	done
+	SUITES="${_picked# }"
+}
+
 usage() {
 	echo "usage: run.sh [--pull] [--shell <sh|ksh>] [distro…] | run.sh --list" >&2
 	echo "       run.sh --backend qemu|vz [--results <tsv>] [--image <raw>] [--keep]" \
-		"[--jobs 1|2] [distro…]" >&2
+		"[--jobs 1|2] [--suites '<suite>…'] [distro…]" >&2
 	echo "       run.sh --evaluate <suite> <run|boot> <output>" >&2
 	exit 64
 }
@@ -343,6 +356,7 @@ backend_qemu() {
 	NAMES="${*:-$VM_ALL}"
 	for n in $NAMES; do
 		vm_distro "$n" || { echo "unknown VM distro: $n (see --backend qemu --list)" >&2; exit 64; }
+		pick_suites
 	done
 	# shellcheck disable=SC2086
 	if [ -n "$VM_IMAGE" ] && [ "$(printf '%s\n' $NAMES | wc -l | tr -d ' ')" != 1 ]; then
@@ -361,7 +375,7 @@ backend_qemu() {
 	if ! in_lab_run; then
 		exec bash "$LAB/qemu/lab-session.sh" ${KEEP:+--keep} sh "$0" --backend qemu \
 			${RESULTS:+--results "$RESULTS"} ${VM_IMAGE:+--image "$VM_IMAGE"} --jobs "$JOBS" \
-			--shell "$SHELL_UNDER_TEST" "$@"
+			${ONLY_SUITES:+--suites "$ONLY_SUITES"} --shell "$SHELL_UNDER_TEST" "$@"
 	fi
 	RUN="$MACHMAN_LAB_RUN"
 	TMP="$RUN/regress.$$"
@@ -377,6 +391,7 @@ backend_qemu() {
 	jobs_list=""
 	for n in $NAMES; do
 		vm_distro "$n"
+		pick_suites
 		for s in $SUITES; do jobs_list="$jobs_list $n:$s"; done
 	done
 	start="$(date +%s)"
@@ -415,6 +430,7 @@ RESULTS=""
 VM_IMAGE=""
 KEEP=""
 JOBS=1
+ONLY_SUITES=""
 LIST=""
 PULL=""
 SHELL_UNDER_TEST=sh
@@ -428,6 +444,7 @@ while [ $# -gt 0 ]; do
 	--image) [ $# -ge 2 ] || usage; VM_IMAGE="$2"; shift 2 ;;
 	--keep) KEEP=1; shift ;;
 	--jobs) [ $# -ge 2 ] || usage; JOBS="$2"; shift 2 ;;
+	--suites) [ $# -ge 2 ] || usage; ONLY_SUITES="$2"; shift 2 ;;
 	--evaluate)
 		[ $# -eq 4 ] || usage
 		RESULTS=/dev/stdout TOTAL=0
