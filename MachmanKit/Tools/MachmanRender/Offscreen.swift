@@ -41,10 +41,16 @@ enum Offscreen {
 		// Liquid Glass (glassEffect) never draws under cacheDisplay: its platter goes missing
 		// and its adaptive foreground turns dark on dark. Reduce Transparency switches
 		// MachmanGlassSurface to its opaque form, a surface the app really draws, so toasts,
-		// cards and the VM indicator keep their true text and state colours.
+		// cards and the VM indicator keep their true text and state colours. A picture is one
+		// instant: implicit animations (a starting VM's pulsing ring) jump to their end state
+		// instead of showing whatever phase the capture lands on, so runs match (Q16).
 		let root = view
 			.environment(\._accessibilityReduceTransparency, true)
 			.background(Color(nsColor: .windowBackgroundColor))
+			.transaction {
+				$0.disablesAnimations = true
+				$0.animation = nil
+			}
 		let host = NSHostingView(rootView: root)
 		let initial = NSRect(x: 0, y: 0, width: width ?? 1200, height: height ?? 2400)
 		let style: NSWindow.StyleMask = chrome == .window

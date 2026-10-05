@@ -168,15 +168,15 @@ extension Samples {
 	}
 
 	// A macOS guest whose install failed, with the engine's own reason: the whole error's
-	// description (MacInstaller stores "\(error)"), as long as VZ's run.
+	// description (MacInstaller stores "\(error)"), as long as VZ's run. Spelled out: an
+	// NSError's description lists its userInfo in a different order from run to run (Q16).
 	public static func macOSFailedInstall(_ name: String = "Sequoia") -> VMInfo {
 		var vm = macOS(name)
-		let error = NSError(domain: "VZErrorDomain", code: 10007, userInfo: [
-			NSLocalizedDescriptionKey: "Installation failed.",
-			NSLocalizedFailureReasonErrorKey:
-				"A software update is required to complete the installation.",
-		])
-		vm.boot.macInstallState = MacInstallState(kind: .failed, message: "\(error)")
+		let message = "Error Domain=VZErrorDomain Code=10007 \"Installation failed.\" "
+			+ "UserInfo={NSLocalizedDescription=Installation failed., "
+			+ "NSLocalizedFailureReason=A software update is required to complete the "
+			+ "installation.}"
+		vm.boot.macInstallState = MacInstallState(kind: .failed, message: message)
 		return vm
 	}
 }
