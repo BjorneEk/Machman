@@ -11,7 +11,7 @@ import SwiftUI
 import MachmanUI
 import MachmanDesktopCore
 
-// Group parents are dimmed and NOT selectable (no tag — selection skips them); their add
+// Group labels are dimmed and NOT selectable (no tag — selection skips them); their add
 // actions live in a row-level context menu on the label. `accessory` renders as a trailing
 // control before the count (the SSH group's +). `selectable` is for the groups that ARE a
 // thing in their own right and carry an inspector (Kernel, SSH): they keep a tag and full
@@ -53,15 +53,19 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 		self.content = content
 	}
 
+	// Only an unselectable label dims: its rows carry their own state (a disabled disk dims
+	// itself, an enabled one doesn't), so the group's dim never reaches them (H36). Parked
+	// dims the whole group.
 	var body: some View {
 		Group {
 			label
+				.opacity(selectable || parked ? 1 : MachmanColors.dimmedRowOpacity)
 			if isExpanded {
 				content()
 					.padding(.leading, TreeIndent.rows)
 			}
 		}
-		.opacity(parked ? 0.45 : (selectable ? 1 : MachmanColors.dimmedRowOpacity))
+		.opacity(parked ? 0.45 : 1)
 	}
 
 	@ViewBuilder
