@@ -1,0 +1,129 @@
+//
+//  TGDiskOwnershipTests.swift
+//  MachmanLabTests
+//
+//  L2 — disk ownership on the lab agent, no guest booted: an import copies an image into
+//  the VM's folder as its own, a reference stays the user's file and can be promoted in
+//  place, the format sniff and the size rule refuse what the VM can't use, and a duplicate
+//  takes its own copy of an owned ISO.
+//
+
+import Foundation
+import Testing
+import MachmanAPI
+
+@Suite("Disk ownership", .serialized, .enabled(if: Lab.runs(.l2)))
+struct TGDiskOwnershipTests {
+	static let qcowRefusal = "Machman can\u{2019}t use qcow2 images \u{2014} convert to raw first "
+		+ "(qemu-img convert -O raw)"
+
+	/// The draft card for a qcow2 attached by reference (r3-tg, D/RISK).
+	static let qcowByReferenceCard = Comment(
+		rawValue: "A disk added by reference skips the format sniff: a qcow2 attaches as raw bytes")
+
+	/// A file whose first bytes are qcow2's magic ("QFI\u{FB}"), 64 KiB in all.
+	static func writeQcow(_ path: String) throws {
+		var bytes = Data([0x51, 0x46, 0x49, 0xFB, 0x00, 0x00, 0x00, 0x03])
+		bytes.append(Data(repeating: 0x11, count: (64 << 10) - bytes.count))
+		try bytes.write(to: URL(fileURLWithPath: path))
+	}
+
+	static func listing(_ dir: String) -> [String] {
+		((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).sorted()
+	}
+
+	@Test("17a: a raw image imports as an owned copy or attaches as a promotable reference")
+	func rawImportAndReference() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.blank("tg-d17", on: agent)
+			let source = agent.scope.imagesDir + "/src.img"
+			try await TG.writeFile(source, size: 4 << 20, fill: 0x5A)
+			let sum = try await TG.sha256(source)
+			let before = try await vm.info().disks
+			let imported = try await agent.api.importDisk(vm: vm.name, path: source)
+			let copy = try #require(imported.disks.first { !before.contains($0) })
+			#expect(copy.type == .storage)
+			#expect(copy.owned == true)
+			let copyPath = try #require(copy.path)
+			#expect(copyPath.hasPrefix(vm.dir + "/"))
+			#expect(try await TG.sha256(copyPath) == sum)
+			#expect(try await TG.sha256(source) == sum)
+			// An owned disk has nothing to promote.
+			let promote = await #expect(throws: MachmanError.self) {
+				_ = try await agent.api.promoteDisk(vm: vm.name, diskID: copy.id)
+			}
+			#expect(promote?.code == .invalidState)
+			#expect(promote?.message == "This disk is already owned by the VM")
+			// By reference: the user's own file, promotable.
+			try await agent.api.addDisk(vm: vm.name, .image(path: source))
+			let reference = try await vm.disk(path: source)
+			#expect(reference.type == .image)
+			#expect(reference.owned == false)
+			#expect(try await TG.sha256(source) == sum)
+		}
+	}
+
+	@Test("17a: a qcow2 import is refused with the convert sentence")
+	func qcowImportRefused() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.blank("tg-d17q", on: agent)
+			let qcow = agent.scope.imagesDir + "/disk.qcow2"
+			try Self.writeQcow(qcow)
+			let files = Self.listing(vm.dir)
+			let disks = try await vm.info().disks
+			let refused = await #expect(throws: MachmanError.self) {
+				_ = try await agent.api.importDisk(vm: vm.name, path: qcow)
+			}
+			#expect(refused?.code == .invalidArgument)
+			#expect(refused?.message == Self.qcowRefusal)
+			// Nothing staged or left behind, no entry added.
+			#expect(Self.listing(vm.dir) == files)
+			#expect(try await vm.info().disks == disks)
+		}
+	}
+
+	@Test("17a: a qcow2 added by reference is refused with the convert sentence")
+	func qcowReferenceRefused() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.blank("tg-d17r", on: agent)
+			let qcow = agent.scope.imagesDir + "/ref.qcow2"
+			try Self.writeQcow(qcow)
+			var refusal: MachmanError?
+			do {
+				try await agent.api.addDisk(vm: vm.name, .image(path: qcow))
+			} catch let error as MachmanError {
+				refusal = error
+			}
+			let attached = try await vm.info().disks.contains { $0.path == qcow }
+			withKnownIssue(Self.qcowByReferenceCard) {
+				#expect(refusal?.message == Self.qcowRefusal)
+				#expect(!attached)
+			}
+		}
+	}
+
+	@Test("20a: an unaligned .txt is refused and an aligned .raw imports as an owned disk")
+	func textRefusedRawImported() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.blank("tg-d20", on: agent)
+			let notes = agent.scope.imagesDir + "/notes.txt"
+			try Data("lab notes\n".utf8).write(to: URL(fileURLWithPath: notes))
+			let files = Self.listing(vm.dir)
+			let refused = await #expect(throws: MachmanError.self) {
+				_ = try await agent.api.importDisk(vm: vm.name, path: notes)
+			}
+			#expect(refused?.code == .invalidArgument)
+			#expect(refused?.message
+				== "Raw disk images must be a non-empty multiple of 512 bytes, and notes.txt "
+					+ "is 10 bytes")
+			#expect(Self.listing(vm.dir) == files)
+			let raw = agent.scope.imagesDir + "/disk.raw"
+			try await TG.writeFile(raw, size: 1 << 20)
+			let imported = try await agent.api.importDisk(vm: vm.name, path: raw)
+			let disk = try #require(imported.disks.first { $0.name == "disk" })
+			#expect(disk.type == .storage)
+			#expect(disk.owned == true)
+			#expect(disk.path == vm.dir + "/disk.raw")
+		}
+	}
+}
