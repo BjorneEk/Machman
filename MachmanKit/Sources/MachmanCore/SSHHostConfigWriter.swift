@@ -156,10 +156,12 @@ public struct SSHHostConfigWriter {
 			}
 			config.append("")
 		}
-		try write(config.joined(separator: "\n") + "\n", to: managedConfig, userFile: false)
 		try write(
-			pins.joined(separator: "\n") + (pins.isEmpty ? "" : "\n"), to: knownHosts,
+			Data((config.joined(separator: "\n") + "\n").utf8), to: managedConfig,
 			userFile: false)
+		try write(
+			Data((pins.joined(separator: "\n") + (pins.isEmpty ? "" : "\n")).utf8),
+			to: knownHosts, userFile: false)
 		try setIncludeLine(present: true)
 	}
 
@@ -179,11 +181,13 @@ public struct SSHHostConfigWriter {
 	}
 
 	// HostName values from the current managed file, keyed by alias — the fallback that
-	// makes whole-file regeneration keep last-known addresses.
+	// makes whole-file regeneration keep last-known addresses. Decoded lossily: a stray byte
+	// someone typed into it must not forget every address.
 	private func previousHostNames() -> [String: String] {
-		guard let text = try? String(contentsOf: managedConfig, encoding: .utf8) else {
+		guard let data = FileManager.default.contents(atPath: managedConfig.path) else {
 			return [:]
 		}
+		let text = String(decoding: data, as: UTF8.self)
 		var result: [String: String] = [:]
 		var currentAlias: String?
 		for rawLine in text.components(separatedBy: .newlines) {
@@ -202,17 +206,17 @@ public struct SSHHostConfigWriter {
 
 	private func setIncludeLine(present: Bool) throws {
 		let fm = FileManager.default
-		let existing = (try? String(contentsOf: userConfig, encoding: .utf8)) ?? ""
-		var lines = existing.isEmpty ? [] : existing.components(separatedBy: "\n")
-		let had = lines.contains(Self.includeLine)
+		var lines = Self.lines(of: try readUserFile(userConfig))
+		let include = Data(Self.includeLine.utf8)
+		let had = lines.contains(include)
 		if present, !had {
 			// At the top: Include must sit outside any Host block to apply globally.
 			try fm.createDirectory(at: sshDir, withIntermediateDirectories: true)
 			try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: sshDir.path)
-			lines.insert(Self.includeLine, at: 0)
+			lines.insert(include, at: 0)
 		} else if !present, had {
-			lines.removeAll { $0 == Self.includeLine }
-			if lines.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+			lines.removeAll { $0 == include }
+			if lines.allSatisfy({ $0.allSatisfy { $0 == 0x20 || $0 == 0x09 } }) {
 				// The file was ours alone — but deleting the user's config file is not
 				// our call; leave an empty file rather than removing it.
 				lines = []
@@ -220,19 +224,20 @@ public struct SSHHostConfigWriter {
 		} else {
 			return
 		}
-		try write(lines.joined(separator: "\n"), to: userConfig, userFile: true)
+		try write(Self.joined(lines), to: userConfig, userFile: true)
 	}
 
 	// MARK: - Reverse access (authorized_keys)
 
 	// Installs (or removes, keyLine nil) the labeled reverse-key line. Exact-match
-	// surgery: only lines carrying "machman:<marker>" are ever touched.
+	// surgery: only lines carrying "machman:<marker>" are ever touched, and a removal that
+	// finds none leaves the file as it is.
 	public func setReverseKey(_ keyLine: String?, marker: String, vmName: String) throws {
 		let fm = FileManager.default
 		let label = "machman:\(marker)"
-		let existing = (try? String(contentsOf: authorizedKeys, encoding: .utf8)) ?? ""
-		var lines = existing.components(separatedBy: "\n")
-			.filter { !$0.contains(label) }
+		let all = Self.lines(of: try readUserFile(authorizedKeys))
+		var lines = all.filter { $0.range(of: Data(label.utf8)) == nil }
+		if keyLine == nil, lines.count == all.count { return }
 		while lines.last?.isEmpty == true { lines.removeLast() }
 		if let keyLine {
 			let trimmed = keyLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -248,14 +253,39 @@ public struct SSHHostConfigWriter {
 			let labelName = vmName.unicodeScalars.map {
 				NameRule.hasControlCharacters(String($0)) ? "-" : String($0)
 			}.joined()
-			lines.append("\(trimmed) \(label):\(labelName)")
-		} else if existing.isEmpty {
-			return   // nothing to remove, don't create the file
+			lines.append(Data("\(trimmed) \(label):\(labelName)".utf8))
 		}
 		try fm.createDirectory(at: sshDir, withIntermediateDirectories: true)
-		try write(
-			lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n"), to: authorizedKeys,
-			userFile: true)
+		var content = Self.joined(lines)
+		if !lines.isEmpty { content.append(0x0A) }
+		try write(content, to: authorizedKeys, userFile: true)
+	}
+
+	// MARK: - The user's files, as bytes
+
+	// The user's file as it is on disk: empty when there is none, an error when it exists but
+	// can't be read. Never "empty" for that — the write that follows would replace the file
+	// with Machman's line alone (C20).
+	private func readUserFile(_ url: URL) throws -> Data {
+		do {
+			return try Data(contentsOf: url)
+		} catch CocoaError.fileReadNoSuchFile {
+			return Data()
+		} catch {
+			throw MachmanError(
+				code: .ioFailure,
+				message: "Couldn’t read \(url.path): \(MachmanError.userMessage(for: error))")
+		}
+	}
+
+	// Lines are split and joined on the newline byte and compared as bytes, so a user's line
+	// in any encoding (a Latin-1 "café" comment) goes back exactly as it came.
+	private static func lines(of data: Data) -> [Data] {
+		data.isEmpty ? [] : data.split(separator: 0x0A, omittingEmptySubsequences: false)
+	}
+
+	private static func joined(_ lines: [Data]) -> Data {
+		Data(lines.joined(separator: [0x0A]))
 	}
 
 	// Machman's own files are 0600. The user's own files (~/.ssh/config, authorized_keys)
@@ -263,17 +293,21 @@ public struct SSHHostConfigWriter {
 	// at: an atomic write to the link's path would replace the link with a plain file and
 	// silently detach the user's managed copy (S23). A link to a missing or unwritable file
 	// (a broken stow link, the read-only nix store) is refused, never replaced.
-	private func write(_ content: String, to url: URL, userFile: Bool) throws {
+	private func write(_ content: Data, to url: URL, userFile: Bool) throws {
 		let fm = FileManager.default
 		let target = userFile ? try writeTarget(for: url) : url
 		let priorMode = (try? fm.attributesOfItem(atPath: target.path))?[.posixPermissions]
 			as? NSNumber
 		do {
-			try Data(content.utf8).write(to: target, options: .atomic)
+			try content.write(to: target, options: .atomic)
 		} catch where target != url {
 			throw MachmanError(
 				code: .ioFailure,
 				message: "\(url.path) links to \(target.path), which can’t be written")
+		} catch {
+			throw MachmanError(
+				code: .ioFailure,
+				message: "Couldn’t write \(url.path): \(MachmanError.userMessage(for: error))")
 		}
 		let mode = userFile ? priorMode?.intValue ?? 0o600 : 0o600
 		try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: target.path)

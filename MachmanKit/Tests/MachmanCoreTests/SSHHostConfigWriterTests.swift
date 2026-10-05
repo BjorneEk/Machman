@@ -343,4 +343,99 @@ struct SSHHostConfigWriterTests {
 		text = try String(contentsOf: ak, encoding: .utf8)
 		#expect(text == "ssh-ed25519 USERKEY personal-laptop\n")
 	}
+
+	// MARK: - C20: the user's files are bytes, and an unreadable one is never "empty"
+
+	// "café" and "göran" in Latin-1: 0xE9 and 0xF6 are not UTF-8. Read as UTF-8 text these
+	// files counted as empty, and the next write replaced them with Machman's line alone.
+	private let latin1Config = Data("Host work\n\tHostName work.example # caf".utf8)
+		+ Data([0xE9]) + Data("\n".utf8)
+	private let latin1Keys = Data("ssh-ed25519 USERKEY g".utf8) + Data([0xF6])
+		+ Data("ran@laptop\n".utf8)
+
+	@Test func aLatin1ConfigKeepsEveryByte() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let userConfig = root.appendingPathComponent("config")
+		try latin1Config.write(to: userConfig)
+		let writer = SSHHostConfigWriter(sshDir: root)
+
+		try writer.apply(entries: [entry()])
+		#expect(try Data(contentsOf: userConfig)
+			== Data((SSHHostConfigWriter.includeLine + "\n").utf8) + latin1Config)
+
+		try writer.apply(entries: [])
+		#expect(try Data(contentsOf: userConfig) == latin1Config)
+	}
+
+	@Test func aLatin1AuthorizedKeysKeepsTheUsersLine() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let ak = root.appendingPathComponent("authorized_keys")
+		try latin1Keys.write(to: ak)
+		let writer = SSHHostConfigWriter(sshDir: root)
+
+		try writer.setReverseKey("ssh-ed25519 GUESTKEY g", marker: "machman-abc", vmName: "dev")
+		#expect(try Data(contentsOf: ak)
+			== latin1Keys + Data("ssh-ed25519 GUESTKEY g machman:machman-abc:dev\n".utf8))
+
+		try writer.setReverseKey(nil, marker: "machman-abc", vmName: "dev")
+		#expect(try Data(contentsOf: ak) == latin1Keys)
+	}
+
+	@Test func anUnreadableFileIsRefusedAndLeftAlone() throws {
+		let root = try makeRoot()
+		let fm = FileManager.default
+		let userConfig = root.appendingPathComponent("config")
+		let ak = root.appendingPathComponent("authorized_keys")
+		try latin1Config.write(to: userConfig)
+		try latin1Keys.write(to: ak)
+		for file in [userConfig, ak] {
+			try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+		}
+		defer {
+			for file in [userConfig, ak] {
+				try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+			}
+			try? fm.removeItem(at: root)
+		}
+		let writer = SSHHostConfigWriter(sshDir: root)
+
+		let attempts: [() throws -> Void] = [
+			{ try writer.apply(entries: [entry()]) },
+			{ try writer.setReverseKey("ssh-ed25519 G g", marker: "machman-abc", vmName: "v") },
+			{ try writer.setReverseKey(nil, marker: "machman-abc", vmName: "v") },
+		]
+		for attempt in attempts {
+			do {
+				try attempt()
+				Issue.record("expected an unreadable file to be refused")
+			} catch let error as MachmanError {
+				#expect(error.code == .ioFailure)
+				#expect(error.message.hasPrefix("Couldn’t read "))
+			}
+		}
+		for file in [userConfig, ak] {
+			try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+		}
+		#expect(try Data(contentsOf: userConfig) == latin1Config)
+		#expect(try Data(contentsOf: ak) == latin1Keys)
+	}
+
+	@Test func aRemovalWithNothingOfOursLeavesTheFileAlone() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		let fm = FileManager.default
+		let ak = root.appendingPathComponent("authorized_keys")
+		let original = Data("ssh-ed25519 USERKEY mine\n\n\n".utf8)
+		try original.write(to: ak)
+		let before = try fm.attributesOfItem(atPath: ak.path)[.systemFileNumber] as? NSNumber
+
+		try SSHHostConfigWriter(sshDir: root).setReverseKey(
+			nil, marker: "machman-abc", vmName: "dev")
+		#expect(try Data(contentsOf: ak) == original)
+		// Not even rewritten: an atomic write would have replaced the file.
+		#expect(try fm.attributesOfItem(atPath: ak.path)[.systemFileNumber] as? NSNumber
+			== before)
+	}
 }
