@@ -165,8 +165,9 @@ public enum OffscreenHost {
 	private static let gate = AsyncGate(limit: 1)
 
 	// Make HostQuietApplication the process's NSApp with the .prohibited policy (no Dock
-	// icon, never active). Idempotent. An NSApp made before this (a plain NSApplication) has
-	// no tripwire, which is itself a breach the next host reports.
+	// icon, never active), with in-process accessibility on. Idempotent. An NSApp made
+	// before this (a plain NSApplication: SwiftUI makes one implicitly for the first hosting
+	// view) has no tripwire, which is itself a breach the next host reports.
 	public static func prepare() {
 		let existing: NSApplication? = NSApp
 		if let existing, !(existing is HostQuietApplication) {
@@ -178,7 +179,18 @@ public enum OffscreenHost {
 		if app.activationPolicy() != .prohibited {
 			_ = app.setActivationPolicy(.prohibited)
 		}
+		if !accessibilityOn {
+			// SwiftUI builds its accessibility tree only while assistive tech is on. This is
+			// the attribute an AX client sets on an app, set by the app on itself: in-process,
+			// no AX server, no TCC (AXSnapshot). Through the selector: the setter is deprecated.
+			_ = app.perform(
+				NSSelectorFromString("accessibilitySetValue:forAttribute:"),
+				with: NSNumber(value: true), with: "AXEnhancedUserInterface")
+			accessibilityOn = true
+		}
 	}
+
+	private static var accessibilityOn = false
 
 	// `body` alone under the gate: for a test that pokes the app or a HostWindow directly,
 	// so its breaches never mix with a hosted view's.
