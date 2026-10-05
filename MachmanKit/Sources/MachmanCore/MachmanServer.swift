@@ -56,12 +56,23 @@ public final class MachmanServer {
 		guard listener == nil else { return }
 		// $TMPDIR/<suite>/ is created on demand; it won't survive a reboot.
 		ensureDirectory((socketPath as NSString).deletingLastPathComponent)
-		listener = try UDSListener(path: socketPath, queue: acceptQueue) { [weak self] fd in
+		listener = try UDSListener(
+			path: socketPath, queue: acceptQueue, keepAlive: Self.keepAlive()
+		) { [weak self] fd in
 			Task { @MainActor [weak self] in
 				self?.accept(fd)
 			}
 		}
 		MachmanLogger.log(.log, "serving \(socketPath)")
+	}
+
+	// How often the socket's timestamps are refreshed: UDSListener's hour, unless a lab run
+	// sets MACHMAN_LAB_KEEPALIVE_SECONDS (test mode only; at least a second).
+	nonisolated static func keepAlive(lab: LabEnvironment? = .current) -> DispatchTimeInterval {
+		guard let seconds = lab?.seconds("MACHMAN_LAB_KEEPALIVE_SECONDS") else {
+			return UDSListener.defaultKeepAlive
+		}
+		return .milliseconds(Int((max(seconds, 1) * 1000).rounded()))
 	}
 
 	// Keeps serving, at a new path: a vmhost's socket follows its VM's new name at Save as

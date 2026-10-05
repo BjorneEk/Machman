@@ -53,6 +53,8 @@ struct TestModeSeamInventoryTests {
 			"Open Machman recorded, never performed (AgentQuietLintTests, TB10)",
 		"MachmanKit/Sources/MachmanCore/SSHDiscovery.swift":
 			"no TCP probe to a guest without the local-network opt-in (SSHProbeLabTests)",
+		"MachmanKit/Sources/MachmanCore/MachmanServer.swift":
+			"the socket keep-alive knob (LabKnobTests)",
 		"MachmanDesktop/DaemonConnection.swift":
 			"its Debug-only daemon handling (pre-dates the lab)",
 	]
