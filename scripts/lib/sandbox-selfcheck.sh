@@ -121,4 +121,87 @@ else
 	fail "sweep: a directory that is not a sandbox name is never touched" "it was removed"
 fi
 
+# 8
+mk mmt
+mkdir -p "$root/main/.git"
+mkdir -p "$root/linked"
+echo "gitdir: /x" > "$root/linked/.git"
+sandbox_refuse_main_checkout "$root/main" 2>/dev/null
+a=$?
+sandbox_refuse_main_checkout "$root/linked"
+b=$?
+if [[ $a == 64 && $b == 0 ]]; then
+	ok "refuse: a checkout whose .git is a directory is the main checkout"
+else
+	fail "refuse: a checkout whose .git is a directory is the main checkout" "got $a and $b"
+fi
+
+# 9
+mk mmt
+SANDBOX_SLOT=
+if SANDBOX_SLOT_LABEL=selfcheck sandbox_take_slot "$root/slots" lab.t &&
+	[[ "$(cut -d' ' -f1 "$root/slots/lab.t/owner")" == "$$" ]]; then
+	sandbox_release_slot
+	if [[ ! -e "$root/slots/lab.t" ]]; then
+		ok "slot: a free slot is taken and released by its owner"
+	else
+		fail "slot: a free slot is taken and released by its owner" "release left it"
+	fi
+else
+	fail "slot: a free slot is taken and released by its owner" "could not take it"
+fi
+
+# 10
+mk mmt
+sleep 30 &
+holder=$!
+mkdir -p "$root/slots/lab.t"
+echo "$holder holder" > "$root/slots/lab.t/owner"
+SANDBOX_SLOT_WAIT=0 sandbox_take_slot "$root/slots" lab.t
+rc=$?
+kill "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+if [[ $rc == 75 ]]; then
+	ok "slot: a held slot makes a non-waiting taker return 75"
+else
+	fail "slot: a held slot makes a non-waiting taker return 75" "returned $rc"
+fi
+
+# 11
+mk mmt
+mkdir -p "$root/slots/lab.t"
+echo "$(dead_pid) gone" > "$root/slots/lab.t/owner"
+if SANDBOX_SLOT_WAIT=0 sandbox_take_slot "$root/slots" lab.t &&
+	[[ "$(cut -d' ' -f1 "$root/slots/lab.t/owner")" == "$$" ]]; then
+	ok "slot: a slot whose owner died is reclaimed"
+else
+	fail "slot: a slot whose owner died is reclaimed" "not reclaimed"
+fi
+sandbox_release_slot
+
+# 12
+mk mmt
+mkdir -p "$root/slots/lab.t"
+echo "1 someone-else" > "$root/slots/lab.t/owner"
+SANDBOX_SLOT="$root/slots/lab.t"
+sandbox_release_slot
+if [[ -d "$root/slots/lab.t" ]]; then
+	ok "slot: release leaves another owner's slot alone"
+else
+	fail "slot: release leaves another owner's slot alone" "it was removed"
+fi
+
+# 13
+if [[ ${#temp} == 49 ]]; then
+	if sandbox_path_budget "com.gustaffranzen.Machman.test-abcd" &&
+		! sandbox_path_budget "com.gustaffranzen.Machman.test-abcdef"; then
+		ok "budget: a 4-character test token fits sun_path, a 6-character one does not"
+	else
+		fail "budget: a 4-character test token fits sun_path, a 6-character one does not" \
+			"unexpected budget answer"
+	fi
+else
+	echo "skip budget: temp dir is ${#temp} characters"
+fi
+
 exit "$failures"

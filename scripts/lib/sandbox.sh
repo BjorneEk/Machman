@@ -70,3 +70,92 @@ sandbox_sweep_stale() {
 	done
 	return 0
 }
+
+# sandbox_refuse_main_checkout <repo>: the main checkout (a .git directory, not a linked
+# worktree's .git file) builds the products the user runs; no lab run may start there.
+sandbox_refuse_main_checkout() {
+	if [[ -d "$1/.git" ]]; then
+		echo "lab.sh: refusing to run in the main checkout ($1): it builds the products you" \
+			"run; use a linked worktree (git worktree add)" >&2
+		return 64
+	fi
+	return 0
+}
+
+# sandbox_review_fix_dir <repo>: the orchestrator's review-fix dir (slot locks, xcbuild),
+# reached through the git common dir; prints nothing when this clone has none.
+sandbox_review_fix_dir() {
+	local common
+	common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ||
+		return 0
+	common="${common%/.git}/.worktrees/machmand-refactor/docs/local/review-fix"
+	[[ -d "$common" ]] && echo "$common"
+	return 0
+}
+
+# sandbox_lab_cache: the fixture cache (several GB, outside the repo).
+sandbox_lab_cache() {
+	echo "${MACHMAN_LAB_CACHE:-$HOME/Library/Caches/com.gustaffranzen.Machman.lab}"
+}
+
+# sandbox_slot_dir <repo>: where the machine-wide lab slot lives.
+sandbox_slot_dir() {
+	local rf
+	if [[ -n "${MACHMAN_LAB_SLOT_DIR:-}" ]]; then
+		echo "$MACHMAN_LAB_SLOT_DIR"
+		return 0
+	fi
+	rf="$(sandbox_review_fix_dir "$1")"
+	if [[ -n "$rf" && -d "$rf/locks" ]]; then
+		echo "$rf/locks"
+	else
+		echo "$(sandbox_lab_cache)/locks"
+	fi
+}
+
+# sandbox_take_slot <dir> <name>: mkdir lock + owner file, stale-pid reclaim. Sets
+# SANDBOX_SLOT. SANDBOX_SLOT_WAIT=0 returns 75 instead of waiting.
+sandbox_take_slot() {
+	local dir="$1" name="$2" slot owner
+	slot="$dir/$name"
+	mkdir -p "$dir"
+	while :; do
+		if [[ -d "$slot" ]]; then
+			if [[ -f "$slot/owner" ]]; then
+				owner="$(cut -d' ' -f1 "$slot/owner" 2>/dev/null | tr -cd '0-9')"
+				if [[ -z "$owner" ]] || ! kill -0 "$owner" 2>/dev/null; then
+					rm -rf "$slot"
+				fi
+			elif [[ -n "$(find "$slot" -maxdepth 0 -mmin +10 2>/dev/null)" ]]; then
+				rm -rf "$slot"
+			fi
+		fi
+		if mkdir "$slot" 2>/dev/null; then
+			echo "$$ ${SANDBOX_SLOT_LABEL:-$PWD}" > "$slot/owner"
+			SANDBOX_SLOT="$slot"
+			return 0
+		fi
+		if [[ "${SANDBOX_SLOT_WAIT:-1}" == 0 ]]; then
+			return 75
+		fi
+		echo "lab.sh: the lab slot is held by $(cat "$slot/owner" 2>/dev/null), waiting 30 s" >&2
+		sleep 30
+	done
+}
+
+# sandbox_release_slot: drop the slot, only when this process owns it.
+sandbox_release_slot() {
+	[[ -n "${SANDBOX_SLOT:-}" && -f "$SANDBOX_SLOT/owner" ]] || return 0
+	if [[ "$(cut -d' ' -f1 "$SANDBOX_SLOT/owner" 2>/dev/null)" == "$$" ]]; then
+		rm -rf "$SANDBOX_SLOT"
+	fi
+	return 0
+}
+
+# sandbox_path_budget <suite>: <temp><suite>/tty-<8 hex>.sock must fit sun_path (103 bytes
+# plus NUL); see MachmanPaths.serialSocketPath. 18 = "/tty-" + 8 hex + ".sock".
+sandbox_path_budget() {
+	local t
+	t="$(getconf DARWIN_USER_TEMP_DIR)"
+	(( ${#t} + ${#1} + 18 <= 103 ))
+}
