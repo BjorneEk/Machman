@@ -34,6 +34,10 @@ public final class TornTabRegistry: ObservableObject {
 	// on it: their teardown ends the tab. A window the user closes isn't here, and its live
 	// SSH session docks back into the canvas instead (C18).
 	public var closing: Set<TornTab> = []
+	// Set while the last window open, a torn SSH window, docks its session back and the main
+	// window reopens to show it: the app mustn't quit after that last window in between
+	// (review F16). The main window clears it as it appears.
+	public var holdsQuitForDock = false
 
 	// The app uses `shared`; tests make their own so parallel tests never share one.
 	public init() {}

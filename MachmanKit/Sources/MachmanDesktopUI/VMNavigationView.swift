@@ -64,6 +64,9 @@ public struct VMNavigationView: View {
 			// selection — restore it. Deferred: select() publishes mid-view-update
 			// otherwise.
 			.onAppear {
+				// Up again for a torn session docking back: quitting after the last window
+				// may go ahead again (review F16).
+				viewModel.tornTabs.holdsQuitForDock = false
 				guard let sel = selection, viewModel.selectedName == nil else { return }
 				DispatchQueue.main.async { [weak viewModel] in
 					guard let viewModel, viewModel.selectedName == nil else { return }

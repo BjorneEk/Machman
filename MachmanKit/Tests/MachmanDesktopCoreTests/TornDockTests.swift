@@ -48,6 +48,15 @@ struct TornDockTests {
 		#expect(h.controllers.first?.disconnects == 0)
 	}
 
+	// Review F16: the docked tab must be in view — its VM shows in the main window.
+	@Test func dockingShowsTheSessionsVM() async {
+		let (h, ref, torn) = await tornSession()
+		h.viewModel.select(name: "Alpine")
+		windowClosed(h, torn)
+		#expect(h.viewModel.selectedName == "Debian")
+		#expect(h.canvases.canvas(for: "Debian").activeTab == .ssh(ref))
+	}
+
 	@Test func theWindowOfAnEndedSessionJustCloses() async {
 		let (h, ref, torn) = await tornSession()
 		h.terminals.sshController(vm: "Debian", ref: ref)?.disconnect()

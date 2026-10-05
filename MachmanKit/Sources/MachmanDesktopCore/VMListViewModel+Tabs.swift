@@ -49,15 +49,16 @@ extension VMListViewModel {
 
 	// Whether a torn window closing on its own docks its tab back: an SSH session whose ssh
 	// still runs, of a VM still in the list. Anything else just closes.
-	func docksBack(_ payload: TornTab) -> Bool {
+	public func docksBack(_ payload: TornTab) -> Bool {
 		guard case .ssh(let ref) = payload.tab, vms.contains(where: { $0.name == payload.vm })
 		else { return false }
 		return terminals.sshController(vm: payload.vm, ref: ref)?.connected == true
 	}
 
-	// The session's tab joins its VM's active pane; that canvas mount adopts the live
-	// terminal, as the window adopted it when the tab tore off.
+	// The session's tab joins its VM's active pane, and that VM shows, so the tab is in view;
+	// its canvas mount adopts the live terminal, as the window adopted it at the tear-off.
 	func dock(_ payload: TornTab) {
+		if selectedName != payload.vm { select(name: payload.vm) }
 		var canvas = canvases.canvas(for: payload.vm)
 		canvas.open(payload.tab)
 		canvases.setCanvas(canvas, for: payload.vm)

@@ -95,6 +95,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		.onChange(of: tornTabs.orders[payload]) { _, order in
 			resolve(order)
 		}
+		.background(WindowCloseWatcher { windowWillClose($0) })
 		// The OUTER view disappears only when the window closes (branch flips inside keep
 		// it mounted) — closing the window closes the tab, tearing down its terminal (the
 		// view model's one close path, which works without a view model mid-reconnect).
@@ -107,6 +108,19 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 					payload, registry: .shared, terminals: terminals, viewModel: viewModel)
 			}
 		}
+	}
+
+	// The user is closing this window (no order): a live SSH session docks back into the
+	// canvas (C18), so the main window opens to show it. Here, before AppKit's last-window
+	// check: from onDisappear the app would already have quit with the session (review F16).
+	private func windowWillClose(_ window: NSWindow) {
+		guard !tornTabs.closing.contains(payload),
+			connection.viewModel?.docksBack(payload) == true else { return }
+		let othersOpen = NSApp.windows.contains {
+			$0 !== window && $0.isVisible && $0.canBecomeMain
+		}
+		if !othersOpen { tornTabs.holdsQuitForDock = true }
+		openWindow(id: "main")
 	}
 
 	// Act on the view model's order for this window. Consume first: acting closes the

@@ -109,11 +109,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 		Self.connection?.operationsStore.activity.flush()
 	}
 
-	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting.
+	// A pure manager: VMs live in MachmanAgent and are unaffected by this app quitting. Not
+	// while a torn SSH window, the last one, docks its session back and the main window is
+	// reopening to show it (C18, review F16).
 	nonisolated func applicationShouldTerminateAfterLastWindowClosed(
 		_ sender: NSApplication
 	) -> Bool {
-		true
+		MainActor.assumeIsolated { !TornTabRegistry.shared.holdsQuitForDock }
 	}
 
 	// ⌘W belongs to Close Tab (1.0.4 design); the system Close moves to ⇧⌘W. SwiftUI
