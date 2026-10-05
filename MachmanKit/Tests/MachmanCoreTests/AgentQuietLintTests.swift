@@ -17,7 +17,9 @@ struct AgentQuietLintTests {
 	// Written as escaped patterns, so this file never spells the calls it bans.
 	static let alertPatterns = [#"NSAlert\("#, #"runModal"#]
 	static let frontPatterns = [
-		#"activate\(ignoringOtherApps"#, #"setActivationPolicy\(\.(regular|accessory)\)"#,
+		#"\.activate\((ignoringOtherApps|options|\))"#,
+		#"setActivationPolicy\(\.(regular|accessory)\)"#,
+		#"requestUserAttention"#,
 	]
 
 	@Test("Q18: the agent shows no alert, Dock icon or activation of its own (TB10)")
@@ -61,14 +63,18 @@ struct AgentQuietLintTests {
 	func theAgentLintsFlagAProvokedCall() throws {
 		let provoked = [
 			"let alert = NSAlert" + "()", "alert.runModal" + "()",
-			"NSApp.activate(ignoringOtherApps" + ": true)",
+			"NSApp.activate(ignoringOtherApps" + ": true)", "NSApp.activate" + "()",
+			"NSRunningApplication.current.activate" + "(options: [])",
 			"NSApp.setActivationPolicy(.reg" + "ular)", "app.setActivationPolicy(.acc" + "essory)",
+			"NSApp.requestUserAttention" + "(.criticalRequest)",
 		]
 		for line in provoked {
 			let flagged = try (Self.alertPatterns + Self.frontPatterns)
 				.contains { SourceScan.code(line).contains(try Regex($0)) }
 			#expect(flagged, "\(line)")
 		}
+		let tabs = SourceScan.code("panes[i].activate(tab)")
+		#expect(!tabs.contains(try Regex(Self.frontPatterns[0])))
 		#expect(!SourceScan.code("NSApp.setActivationPolicy(.prohibited)")
 			.contains(try Regex(Self.frontPatterns[1])))
 		#expect(!SourceScan.code("// alert.runModal" + "()").contains(try Regex("runModal")))
