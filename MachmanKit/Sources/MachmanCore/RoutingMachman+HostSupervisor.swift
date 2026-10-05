@@ -413,8 +413,13 @@ extension RoutingMachman {
 		// OpenConfiguration.environment REPLACES the child's environment (no inheritance),
 		// which scrubs any MACHMAN_DATA_DIR override for free. The bundle id identifies the
 		// suite and the bundle version the vmhost's build (E22); MACHMAN_VERSION is only the
-		// fallback for an unversioned build.
-		configuration.environment = ["MACHMAN_VERSION": daemonVersion]
+		// fallback for an unversioned build. Outside test mode that is all it gets.
+		let lab = LabEnvironment.current
+		configuration.environment = Self.vmhostEnvironment(daemonVersion: daemonVersion, lab: lab)
+		if let lab {
+			MachmanLogger.log(.log, "test mode: vmhost for \(name) inherits "
+				+ lab.forwardedVariables.keys.sorted().joined(separator: ", "))
+		}
 
 		let app: NSRunningApplication
 		do {
@@ -453,6 +458,17 @@ extension RoutingMachman {
 		app.forceTerminate()
 		throw MachmanError(
 			code: .internalError, message: Self.hostDidNotStart(name, reason: lastError))
+	}
+
+	// A vmhost's whole environment. Under a test suite it also inherits the suite, the fake
+	// home, the data dir and the lab's variables: without them it would resolve the .dev
+	// suite (its sockets, its log subsystem) and run with test mode off. A lab key never
+	// replaces MACHMAN_VERSION.
+	nonisolated static func vmhostEnvironment(
+		daemonVersion: String, lab: LabEnvironment?
+	) -> [String: String] {
+		(lab?.forwardedVariables ?? [:])
+			.merging(["MACHMAN_VERSION": daemonVersion]) { _, version in version }
 	}
 
 	func connectHost(identity: HostIdentity) async throws -> RemoteMachman {
