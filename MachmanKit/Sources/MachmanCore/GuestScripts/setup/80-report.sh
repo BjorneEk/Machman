@@ -3,9 +3,9 @@
 # writable — including on failure, so Machman can say what went wrong instead of just
 # "no report yet". v2's keys are kept verbatim (the host's parser whitelists and old
 # daemons ignore what they don't know); v3 adds FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_ lines,
-# v4 no keys, v5 NOTE_ lines. An AUTOMOUNT_ row is TAB-separated only when its mount name
-# has a space, and NOTE_ lines carry what the run noted without failing (an older daemon
-# drops them).
+# v4 and v6 no keys, v5 NOTE_ lines. An AUTOMOUNT_ row is TAB-separated only when its mount
+# name has a space, and NOTE_ lines carry what the run noted without failing (an older
+# daemon drops them).
 
 # Set for real by 90-main; defaulted here so the failure trap can report from any phase.
 FEATURES="${FEATURES:-}"

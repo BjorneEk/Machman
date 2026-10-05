@@ -218,7 +218,7 @@ struct GuestSetupInstallerTests {
 		// its own machman.env says.
 		#expect(s.contains(#"REPORT_DIR="${BOOT_REPORT_DIR:-$PAYLOAD_DIR/../$REPORT_DIR_NAME}""#))
 		// The script owns its version; Swift reads it back rather than declaring a twin.
-		#expect(GuestSetupInstaller.script.version == 5)
+		#expect(GuestSetupInstaller.script.version == 6)
 		#expect(GuestSetupInstaller.scriptVersion == GuestSetupInstaller.script.version)
 	}
 

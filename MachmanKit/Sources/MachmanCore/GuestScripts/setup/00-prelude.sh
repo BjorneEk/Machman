@@ -18,8 +18,10 @@ set -eu
 # Raised when a fix must reach guests that ran an older copy: the inspector offers a re-run
 # to every guest that reported a lower one (4: link-safe, mode-keeping edits, rc.local
 # re-enabled; 5: a boot-time report copy kept in the guest, console re-runs that keep every
-# login, state that remembers unselected features, Void and NetBSD consoles, notes).
-SCRIPT_VERSION=5
+# login, state that remembers unselected features, Void and NetBSD consoles, notes; 6:
+# 'ssh mac' ahead of the user's Host * defaults, OpenBSD consoles, NetBSD's user-mount
+# sysctl checked, the share's link mounted with a trailing slash).
+SCRIPT_VERSION=6
 
 # ------------------------------------------------------------------- payload bootstrap ----
 
