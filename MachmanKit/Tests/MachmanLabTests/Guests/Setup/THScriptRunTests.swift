@@ -14,7 +14,7 @@ import Testing
 
 enum THScriptRuns {
 	/// The guests the unattended rows run on.
-	static let kinds: [THGuestKind] = [.debian, .alpine]
+	static let kinds: [THGuestKind] = [.debian, .alpine, .freebsd15]
 
 	/// Where a run leaves marked files ("/home/": followed where it is a link).
 	static func markedTrees(_ kind: THGuestKind) -> String {
@@ -122,6 +122,8 @@ struct THScriptRunTests {
 				return
 			}
 			try await g.approveReverse()
+			// Only Machman's grant may let it in (a BSD guest's bootstrap keys go first).
+			(g as? THBSDGuest)?.dropBootstrapKeys()
 			let logins = labMac.acceptedLogins.count
 			let ssh = try await g.sh("ssh -o BatchMode=yes mac true", user: "lab")
 			#expect(ssh.status == 0, "\(ssh.output)")

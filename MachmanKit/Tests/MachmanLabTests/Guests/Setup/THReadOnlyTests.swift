@@ -432,3 +432,27 @@ struct THReadOnlyAlpineTests {
 	@Test("G4: the feature menu numbers items on TERM=dumb, takes arrows on xterm")
 	func g4() async throws { try await THShared.row(THReadOnlyRows.g4) }
 }
+
+// L3 — the installer on FreeBSD 15 under QEMU, through its carrier VM's share over sshfs.
+@Suite(
+	"L3 Guest Setup — FreeBSD read-only rows", .serialized, .enabled(if: Lab.runs(.l3)),
+	.thGuest(.freebsd15))
+struct THReadOnlyFreeBSDTests {
+	@Test("S1: install.sh --help and --version exit 0 and name the VM")
+	func s1() async throws { try await THShared.row(THReadOnlyRows.s1) }
+
+	@Test("S2: --dry-run as a user prints the guest's real plan and changes nothing")
+	func s2() async throws { try await THShared.row(THReadOnlyRows.s2) }
+
+	@Test("S3: answering q at the plan exits 3 and leaves the guest untouched")
+	func s3() async throws { try await THShared.row(THReadOnlyRows.s3) }
+
+	@Test("S5: a root console lists the users, and a bogus --user exits 3")
+	func s5() async throws { try await THShared.row(THReadOnlyRows.s5) }
+
+	@Test("S8: a vt100 LANG=C console run is ASCII, colourless and within 80 columns")
+	func s8() async throws { try await THShared.row(THReadOnlyRows.s8) }
+
+	@Test("G4: the feature menu numbers items on TERM=dumb, takes arrows on xterm")
+	func g4() async throws { try await THShared.row(THReadOnlyRows.g4) }
+}

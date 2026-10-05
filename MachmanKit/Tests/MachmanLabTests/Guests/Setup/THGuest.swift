@@ -161,6 +161,9 @@ enum TH {
 		if kind.isVZ, kind != .vzfreebsd {
 			return try await THVZGuest.boot(kind, options, agent: agent)
 		}
+		if kind == .freebsd14 || kind == .freebsd15 {
+			return try await THBSDGuest.boot(kind, options, agent: agent)
+		}
 		throw LabError.specInvalid("no TH boot for \(kind) yet")
 	}
 
