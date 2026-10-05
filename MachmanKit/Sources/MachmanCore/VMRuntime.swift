@@ -30,8 +30,7 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 	private(set) var attachedDiskFiles: Set<String> = []
 	// SSH report ingestion (1.0.5): mtime-poll of the guest-writable drop-box while the
 	// VM runs — this process owns the config, so ingestion persists here (single writer).
-	private var sshReportTimer: Timer?
-	private var sshReportMtime: Date?
+	private var reportPoller: GuestReportPoller?
 	// Called exactly once, after the VZ machine is gone (guest stop, forced stop, or crash).
 	var onTeardown: (() -> Void)?
 	// This run's system key capture: starts as the display device's default, then only the
@@ -172,9 +171,8 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 		for bridge in serialBridges { bridge.stop() }
 		serialBridges.removeAll()
 		// One final poll: a report written seconds before shutdown must not be lost.
-		pollSSHReport()
-		sshReportTimer?.invalidate()
-		sshReportTimer = nil
+		reportPoller?.stop()
+		reportPoller = nil
 		// Payloads are ephemeral (1.0.7): served while the VM runs, regenerated at the
 		// next start — removing them here (AFTER the final ingest) means a stopped VM can
 		// never offer a stale script from an older build.
@@ -186,28 +184,21 @@ final class VMRuntime: NSObject, VZVirtualMachineDelegate {
 
 	// MARK: - Guest report ingestion (1.0.5; unified drop-box 1.0.7)
 
+	// The poller always takes its last look at teardown; it polls during the run only while
+	// Guest Setup is on.
 	private func startSSHReportPolling() {
-		guard config.devices.contains(where: {
-			$0.deviceKind == .guestSetup && $0.enabled
-		}) else { return }
-		// A report is a rare, tiny file: a 2 s mtime stat is effectively free
-		// (InstallSession's timer pattern; the body hops back to the main actor).
-		sshReportTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) {
-			[weak self] _ in
-			Task { @MainActor [weak self] in
-				self?.pollSSHReport()
-			}
+		let config = config
+		let poller = GuestReportPoller(path: { GuestSetupInstaller.reportFilePath(for: config) }) {
+			[weak self] report in
+			self?.ingestReport(report)
+		}
+		reportPoller = poller
+		if config.devices.contains(where: { $0.deviceKind == .guestSetup && $0.enabled }) {
+			poller.start()
 		}
 	}
 
-	private func pollSSHReport() {
-		let path = GuestSetupInstaller.reportFilePath(for: config)
-		guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-			let mtime = attrs[.modificationDate] as? Date, mtime != sshReportMtime else {
-			return
-		}
-		sshReportMtime = mtime
-		guard let report = GuestReport.read(atPath: path) else { return }
+	private func ingestReport(_ report: GuestReport) {
 		do {
 			let changes = try report.apply(to: config, stampedAt: Date())
 			if changes.ssh {
