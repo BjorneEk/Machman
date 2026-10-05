@@ -197,4 +197,33 @@ struct SSHAliasAssignmentTests {
 		#expect(SSHAliasAssignment.firstFree(
 			"a.machman", taken: ["a.machman", "a-2.machman"]) == "a-3.machman")
 	}
+
+	// C24: a hosted VM takes an alias through its vmhost, which saves it to disk while the
+	// daemon's copy predates the run. vm.ssh.set checked that copy, so another VM could store
+	// the same alias (and an alias the VM had given up stayed refused).
+	@Test func aNewAliasIsCheckedAgainstTheConfigsOnDisk() throws {
+		try VMTestDir.withRedirectedDir {
+			try makeVM("alpha")
+			let beta = try makeVM("beta")
+			var ssh = SSHConfig()
+			ssh.alias = "old.machman"
+			beta.ssh = ssh
+			try beta.saveVMConfig()
+			let routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }
+			// beta's vmhost moves it to another alias: on disk only.
+			beta.ssh?.alias = "taken.machman"
+			try beta.saveVMConfig()
+			#expect(routing.registry.vm(named: "beta")?.config.ssh?.alias == "old.machman")
+
+			do {
+				try routing.requireSSHAliasFree("taken.machman", for: "alpha")
+				Issue.record("expected beta's alias to be refused")
+			} catch let error as MachmanError {
+				#expect(error.message == "beta already answers to \u{201C}taken.machman\u{201D}")
+			}
+			try routing.requireSSHAliasFree("old.machman", for: "alpha")
+			try routing.requireSSHAliasFree("taken.machman", for: "beta")
+		}
+	}
 }

@@ -171,12 +171,7 @@ extension RoutingMachman {
 		if let alias {
 			let wanted = alias.trimmingCharacters(in: .whitespaces)
 			if !wanted.isEmpty {
-				for other in registry.list() where other.name != name {
-					guard other.config.effectiveSSHAlias == wanted else { continue }
-					throw MachmanError(
-						code: .invalidArgument,
-						message: "\(other.name) already answers to \u{201C}\(wanted)\u{201D}")
-				}
+				try requireSSHAliasFree(wanted, for: name)
 			}
 		}
 		let record = {
@@ -198,6 +193,24 @@ extension RoutingMachman {
 		}
 		scheduleSSHHostConfigWrite()
 		return info
+	}
+
+	// Whether another VM already answers to `wanted`, from each VM's config ON DISK (C24): a
+	// hosted VM's vmhost saves the alias it takes there, while the daemon's copy predates the
+	// run. The registry copy speaks only for a VM with no config there. Internal so tests can
+	// run it under the redirect lock.
+	func requireSSHAliasFree(_ wanted: String, for name: String) throws {
+		let onDisk = Dictionary(
+			SSHAliasAssignment.claims(inLibrary: machmanVMDir).map { ($0.name, $0) },
+			uniquingKeysWith: { first, _ in first })
+		for other in registry.list() where other.name != name {
+			let alias = onDisk[other.name].map { $0.stored ?? other.config.resolvedDefaultAlias }
+				?? other.config.effectiveSSHAlias
+			guard alias == wanted else { continue }
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "\(other.name) already answers to \u{201C}\(wanted)\u{201D}")
+		}
 	}
 
 	// Approving guest→Mac access (C21). The key line goes in first: a Mac that refuses it
