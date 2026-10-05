@@ -156,7 +156,7 @@ let package = Package(
 		),
 		.testTarget(
 			name: "MachmanUITests",
-			dependencies: ["MachmanAPI", "MachmanUI", "MachmanTestSupport"],
+			dependencies: ["MachmanAPI", "MachmanUI", "MachmanFixtures", "MachmanTestSupport"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 		.testTarget(

@@ -31,6 +31,8 @@ enum Daemon {
 			sshHostConfig: SSHHostConfigWriter())
 	}()
 	static let server = MachmanServer(api: api, daemonVersion: version)
+	// The menu's model, built at launch; it lists nothing until beginServing begins it (V9).
+	static let menuBar = MenuBarModel(api: api)
 
 	static var version: String {
 		(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
@@ -43,7 +45,7 @@ struct MachmanAgentApp: App {
 	@StateObject private var model: MenuBarModel
 
 	init() {
-		_model = StateObject(wrappedValue: MenuBarModel(api: Daemon.api))
+		_model = StateObject(wrappedValue: Daemon.menuBar)
 	}
 
 	var body: some Scene {
@@ -55,6 +57,10 @@ struct MachmanAgentApp: App {
 
 @MainActor
 final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
+	// Whether this process ever served the socket (V9). One that stepped aside for another
+	// agent quits at once: its engine never ran, so it has no VMs to ask about.
+	private static var served = false
+
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		do {
 			try Daemon.server.start()
@@ -86,8 +92,10 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	// Everything that follows a successful server.start(): the retire hook (exit
-	// leave-VMs-running, bypassing the quit prompt) and startup reconciliation.
+	// leave-VMs-running, bypassing the quit prompt), startup reconciliation and the menu's
+	// list.
 	private static func beginServing() {
+		served = true
 		Daemon.api.onRetire = {
 			MachmanLogger.log(.log, "retired; exiting and leaving vmhosts running")
 			Daemon.server.stop()
@@ -109,6 +117,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			Daemon.api.healLaunchAgents()
 			Daemon.registry.sweepCopyStaging()
 		})
+		Daemon.menuBar.begin()
 	}
 
 	// The launch-side skew prompt: a newly launched MachmanAgent that finds an OLDER build serving
@@ -183,6 +192,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+		guard Self.served else { return .terminateNow }
 		let reason = VMHostQuitReason.current()
 		let running = Daemon.api.runningVMNames
 		switch AgentQuitDecision.decide(reason: reason, runningVMs: running.count) {

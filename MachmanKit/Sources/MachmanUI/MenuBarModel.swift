@@ -21,6 +21,15 @@ public final class MenuBarModel: ObservableObject {
 
 	public init(api: MachmanControlling) {
 		self.api = api
+	}
+
+	// Lists the VMs and follows the engine's events from now on; a second call does nothing.
+	// Only an agent that serves the socket calls it (V9): a list adopts every live vmhost it
+	// meets, so an agent that stepped aside for another (a same-version copy, or the
+	// replace-older prompt answered with Cancel) took that agent's VMs over, and its own quit
+	// prompt then offered to stop them.
+	public func begin() {
+		guard eventTask == nil else { return }
 		eventTask = Task { [weak self] in
 			guard let api = self?.api else { return }
 			let stream = await api.events()
