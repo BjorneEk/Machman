@@ -1,0 +1,121 @@
+//
+//  MenuBarModel.swift
+//  MachmanUI
+//
+//  The menu-bar agent's model: its VM list, kept current from the engine's events, and the
+//  actions its menu sends. Here rather than in the agent's app target so it tests headlessly
+//  on a stub engine, as MenuBarRules does.
+//
+
+import SwiftUI
+import AppKit
+import MachmanAPI
+
+@MainActor
+public final class MenuBarModel: ObservableObject {
+	let api: MachmanControlling
+	@Published public private(set) var vms: [VMInfo] = []
+	// Live macOS install phases by VM: an install's start emits no listChanged (P23).
+	@Published private(set) var installPhases: [String: InstallPhase.Kind] = [:]
+	private var eventTask: Task<Void, Never>?
+
+	public init(api: MachmanControlling) {
+		self.api = api
+		eventTask = Task { [weak self] in
+			guard let api = self?.api else { return }
+			let stream = await api.events()
+			await self?.reload()
+			for await event in stream {
+				guard let self = self else { return }
+				switch event {
+				case .stateChanged(let name, let state):
+					if let index = self.vms.firstIndex(where: { $0.name == name }) {
+						self.vms[index].state = state
+					}
+				case .listChanged:
+					await self.reload()
+				case .installPhaseChanged(let name, let phase):
+					// Progress ticks twice a second; only a new kind republishes.
+					if self.installPhases[name] != phase.kind {
+						self.installPhases[name] = phase.kind
+					}
+				case .log, .copyProgress, .operationChanged, .sshChanged, .setupChanged,
+					.unknown:
+					break
+				}
+			}
+		}
+	}
+
+	deinit {
+		eventTask?.cancel()
+	}
+
+	func reload() async {
+		if let list = try? await api.listVMs() {
+			vms = list
+		}
+	}
+
+	// Start waits for a running macOS install, as the desktop's does.
+	public func canStart(_ vm: VMInfo) -> Bool {
+		!vm.state.isRunning && !vm.isInstallingMacOS(phase: installPhases[vm.name])
+	}
+
+	// The desktop's start rule (StartIntent): the policy, overridden only where named.
+	public func start(_ vm: VMInfo, _ intent: StartIntent) {
+		let name = vm.name
+		let options = vm.startOptions(intent)
+		Task { await perform(.start(options), vm: name) }
+	}
+
+	public func stop(_ name: String, mode: StopMode) {
+		Task { await perform(.stop(mode), vm: name) }
+	}
+
+	public func openWindow(_ name: String) {
+		Task { await perform(.openWindow, vm: name) }
+	}
+
+	public func closeWindow(_ name: String) {
+		Task { await perform(.closeWindow, vm: name) }
+	}
+
+	// A failed action says so in an alert (P23); a MAC conflict offers Start Anyway, as the
+	// desktop does, and a forced start that fails too just reports it.
+	private func perform(_ action: MenuBarAction, vm name: String) async {
+		do {
+			switch action {
+			case .start(let options): try await api.start(vm: name, options: options)
+			case .stop(let mode): try await api.stop(vm: name, mode: mode)
+			case .openWindow: try await api.openWindow(vm: name)
+			case .closeWindow: try await api.closeWindow(vm: name)
+			}
+		} catch {
+			let failure = MenuBarFailure(vm: name, action: action, error: error)
+			// Logged first: the alert of an LSUIElement app can end up behind everything.
+			MachmanLogger.log(.interactionError, "\(failure.title): \(failure.message)")
+			// Not modal inside this main-actor job: that would hold every other one, the
+			// daemon's request handling included, until the alert is dismissed.
+			let startAnyway = await MainRunLoopCallout.run { Self.present(failure) }
+			if startAnyway, let forced = failure.forceStart {
+				await perform(.start(forced), vm: name)
+			}
+		}
+	}
+
+	// True when the user chose Start Anyway.
+	private static func present(_ failure: MenuBarFailure) -> Bool {
+		NSApp.activate(ignoringOtherApps: true)
+		let alert = NSAlert()
+		alert.messageText = failure.title
+		alert.informativeText = failure.message
+		guard failure.forceStart != nil else {
+			alert.runModal()
+			return false
+		}
+		alert.addButton(withTitle: "Start Anyway")
+		alert.addButton(withTitle: "Cancel")
+		return alert.runModal() == .alertFirstButtonReturn
+	}
+}
