@@ -83,9 +83,9 @@ extension VMListViewModel {
 
 	// MARK: - Dock menu
 
-	// One Dock item per VM: Shut Down while it runs, Start otherwise. The list is the
-	// app-scoped store's, so it shows while reconnecting — with every item disabled until a
-	// view model can act on it.
+	// One Dock item per VM: Shut Down while it may be running (its state unknown too, C15),
+	// Start otherwise. The list is the app-scoped store's, so it shows while reconnecting —
+	// with every item disabled until a view model can act on it.
 	public struct DockMenuItem: Equatable, Sendable {
 		public let vm: String
 		public let title: String
@@ -97,7 +97,7 @@ extension VMListViewModel {
 		vms: [VMInfo], viewModel: VMListViewModel?
 	) -> [DockMenuItem] {
 		vms.map { vm in
-			let running = vm.state.isRunning
+			let running = vm.mayBeRunning
 			return DockMenuItem(
 				vm: vm.name,
 				title: running ? "Shut Down \(vm.name)" : "Start \(vm.name)",
@@ -109,7 +109,7 @@ extension VMListViewModel {
 	// Read at click time: the menu was built from a list that may have moved since.
 	public func performDockItem(vm name: String) {
 		guard let vm = vms.first(where: { $0.name == name }) else { return }
-		if vm.state.isRunning {
+		if vm.mayBeRunning {
 			stopVM(name, mode: .soft)
 		} else {
 			startPolicyDriven(vm)

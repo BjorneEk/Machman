@@ -80,23 +80,19 @@ struct StartStopGroup: View {
 				transition(.starting)
 			case .unknown:
 				// Machman Agent hasn't reached the VM's vmhost (P37): it may well be running,
-				// so no Start — the spinner says it is being reached.
-				transition(.unknown)
-					.help(VMInfo.unreachedHelp)
+				// so no Start — the spinner says it is being reached. Force Stop stays in
+				// reach, as while stopping: the way out of a vmhost that never answers (C15).
+				HStack(spacing: 4) {
+					transition(.unknown)
+						.help(VMInfo.unreachedHelp)
+					forceStop
+				}
 			case .stopping:
 				// A guest that ignores the shutdown request: Force Stop stays in reach (F3).
 				// Immediate, like the running state's; only the ⌘. chords ask (P26).
 				HStack(spacing: 4) {
 					transition(.stopping)
-					ControlGroup {
-						Button {
-							viewModel.stopVM(vm.name, mode: .force)
-						} label: {
-							Image(systemName: MachmanSymbols.forceStop)
-						}
-						.help("Force Stop")
-						.accessibilityLabel("Force Stop")
-					}
+					forceStop
 				}
 			case .running, .paused:
 				ControlGroup {
@@ -118,6 +114,19 @@ struct StartStopGroup: View {
 			}
 		}
 		.animation(.snappy(duration: 0.25), value: vm.state)
+	}
+
+	// Force Stop on its own, beside a transition's spinner.
+	private var forceStop: some View {
+		ControlGroup {
+			Button {
+				viewModel.stopVM(vm.name, mode: .force)
+			} label: {
+				Image(systemName: MachmanSymbols.forceStop)
+			}
+			.help("Force Stop")
+			.accessibilityLabel("Force Stop")
+		}
 	}
 
 	// The state's own progress word (H8), as the canvas shows it.

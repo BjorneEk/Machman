@@ -194,13 +194,13 @@ struct MachmanCommands: Commands {
 				viewModel.requestStop(vm, mode: .soft)
 			}
 			.keyboardShortcut(".")
-			.disabled(!vm.state.isRunning)
+			.disabled(!vm.mayBeRunning)
 			Button("Force Stop \(vm.name)…") {
 				showMainIfNeeded(target)
 				viewModel.requestStop(vm, mode: .force)
 			}
 			.keyboardShortcut(".", modifiers: [.option, .command])
-			.disabled(!vm.state.isRunning)
+			.disabled(!vm.mayBeRunning)
 			Divider()
 		}
 		ForEach(viewModel.vms) { vm in
@@ -210,13 +210,13 @@ struct MachmanCommands: Commands {
 				}) {
 					Label("Shut Down", systemImage: MachmanSymbols.shutDown)
 				}
-				.disabled(!vm.state.isRunning)
+				.disabled(!vm.mayBeRunning)
 				Button(action: {
 					viewModel.stopVM(vm.name, mode: .force)
 				}) {
 					Label("Force Stop", systemImage: MachmanSymbols.forceStop)
 				}
-				.disabled(!vm.state.isRunning)
+				.disabled(!vm.mayBeRunning)
 			}
 		}
 	}

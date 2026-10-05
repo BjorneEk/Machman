@@ -181,7 +181,7 @@ private struct VMPickerRow: View {
 			Button("Start") { viewModel.startPolicyDriven(vm) }
 			Button("Start Safe") { viewModel.startPolicyDriven(vm, .safe) }
 		}
-		if vm.state.isRunning {
+		if vm.mayBeRunning {
 			Button("Shut Down") { viewModel.stopVM(vm.name, mode: .soft) }
 			Button("Force Stop") { viewModel.stopVM(vm.name, mode: .force) }
 		}

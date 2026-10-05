@@ -33,12 +33,4 @@ struct UnknownStateTests {
 			#expect(!h.viewModel.isStartPending("Debian"))
 		}
 	}
-
-	@Test func theDockOffersNoStartForAnUnknownVM() async {
-		let h = await DesktopHarness.make(Samples.libraryWithUnreachedHost())
-		let item = VMListViewModel.dockMenuItems(vms: h.viewModel.vms, viewModel: h.viewModel)
-			.first { $0.vm == "Debian" }
-		#expect(item?.title == "Start Debian")
-		#expect(item?.enabled == false)
-	}
 }
