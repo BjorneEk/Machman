@@ -39,7 +39,21 @@ enum Daemon {
 	}
 }
 
+// The entry point. Under a test suite (the lab) the agent is a plain NSApplication with no
+// SwiftUI scene: a MenuBarExtra makes an NSStatusItem even when it isn't inserted, and AppKit
+// saves that item's visibility into the agent's preferences — the dev agent's own domain, as
+// the lab agent shares its bundle id. Everywhere else it is the SwiftUI app below.
 @main
+enum MachmanAgentMain {
+	@MainActor static func main() {
+		if MachmanTestMode.isActive {
+			MachmanAgentDelegate.runWithoutScenes()
+		} else {
+			MachmanAgentApp.main()
+		}
+	}
+}
+
 struct MachmanAgentApp: App {
 	@NSApplicationDelegateAdaptor(MachmanAgentDelegate.self) var delegate
 	@StateObject private var model: MenuBarModel
@@ -48,13 +62,8 @@ struct MachmanAgentApp: App {
 		_model = StateObject(wrappedValue: Daemon.menuBar)
 	}
 
-	// Under a test suite (the lab) there is no menu-bar item at all: nothing draws in the menu
-	// bar, and no status-item position is saved into the dev agent's preferences.
 	var body: some Scene {
-		MenuBarExtra(
-			"Machman", systemImage: MachmanSymbols.menuBarExtra,
-			isInserted: .constant(!MachmanTestMode.isActive)
-		) {
+		MenuBarExtra("Machman", systemImage: MachmanSymbols.menuBarExtra) {
 			MenuBarView(model: model)
 		}
 	}
@@ -68,6 +77,20 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	// Test mode only: the lab's control socket, and the reason its last `quit` asked for.
 	private static var labControl: LabControlServer?
 	private static var labQuitReason: LabQuitReason?
+	// Test mode only: the delegate of the scene-less run (NSApp holds its delegate weakly).
+	private static var sceneless: MachmanAgentDelegate?
+
+	// Test mode only: AppKit's run loop with this delegate and nothing else — no scene, no
+	// status item, no window. Launch, quit and the lab's seams take the same paths as in the
+	// SwiftUI app.
+	static func runWithoutScenes() {
+		let app = NSApplication.shared
+		app.setActivationPolicy(.prohibited)
+		let delegate = MachmanAgentDelegate()
+		sceneless = delegate
+		app.delegate = delegate
+		app.run()
+	}
 
 	// Under a test suite the agent can never become active or show UI, even through a path
 	// the prompts' routing (PromptAlert) missed; the banner is what the lab waits for.
