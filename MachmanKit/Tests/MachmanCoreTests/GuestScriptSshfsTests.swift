@@ -104,6 +104,54 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// MARK: - NetBSD user mounts (S38)
+
+	// S38: NetBSD lets users mount only with vfs.generic.usermount=1 — checked, never
+	// assumed; asked like FreeBSD's vfs.usermount (no by default), set with sysctl -w, and
+	// kept across reboots like it.
+	@Test func netbsdUserMountsAreCheckedNotAssumed() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=1000
+				OS_FAMILY=netbsd
+				SYSCTL_CONF="$D/sysctl.conf"
+				: > "$D/usermount"
+				sysctl() {
+					case "$1" in
+					-n) [ -s "$D/usermount" ] && cat "$D/usermount" || echo 0 ;;
+					-w) echo "sysctl $*" >> "$D/sysctl.log"; echo 1 > "$D/usermount" ;;
+					esac
+				}
+				user_mounts_allowed && echo allowed || echo "not allowed"
+				sshfs_decide >/dev/null 2>&1
+				echo "$USER_MOUNT_PLAN"
+				WANT_MOUNT_SETUP=1
+				sshfs_decide >/dev/null 2>&1
+				echo "$USER_MOUNT_PLAN"
+				sshfs_act_user_mounts
+				cat "$D/sysctl.log" "$SYSCTL_CONF"
+				user_mounts_allowed && echo allowed
+				WANT_MOUNT_SETUP=""
+				sshfs_decide >/dev/null 2>&1
+				echo "$USER_MOUNT_PLAN"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				not allowed
+				left off — mount as root
+				enable vfs.generic.usermount=1
+				[ok] user mounts allowed (vfs.generic.usermount=1)
+				sysctl -w vfs.generic.usermount=1
+				# BEGIN \(GuestScriptHarness.marker)-usermount
+				vfs.generic.usermount=1
+				# END \(GuestScriptHarness.marker)-usermount
+				allowed
+				already allowed
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - The mount point (S43)
 
 	// S43: "ready" came right after the step that failed it; now only a mount point that

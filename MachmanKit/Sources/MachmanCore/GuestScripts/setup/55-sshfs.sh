@@ -73,11 +73,11 @@ sshfs_decide() {
 		WANT_MOUNT_SETUP=0
 	else
 		if [ -z "$WANT_MOUNT_SETUP" ]; then
-			ask_yes_no "Let ANY user of this guest mount filesystems (vfs.usermount=1)? Root can mount without it." n
+			ask_yes_no "Let ANY user of this guest mount filesystems ($(usermount_knob)=1)? Root can mount without it." n
 			WANT_MOUNT_SETUP="$R_YES"
 		fi
 		if [ "$WANT_MOUNT_SETUP" = 1 ]; then
-			USER_MOUNT_PLAN="enable vfs.usermount=1"
+			USER_MOUNT_PLAN="enable $(usermount_knob)=1"
 		else
 			USER_MOUNT_PLAN="left off — mount as root"
 		fi
@@ -125,14 +125,18 @@ sshfs_act_fuse_ready() {
 # The permission. Only ever reached when the user said yes to exactly this.
 sshfs_act_user_mounts() {
 	[ "$WANT_MOUNT_SETUP" = "1" ] || return 0
-	[ "$OS_FAMILY" = freebsd ] || return 0
-	if ! run "allowing user mounts" sysctl vfs.usermount=1; then
-		step_failed mount-setup "could not set vfs.usermount" \
-			"Set it yourself: sysctl vfs.usermount=1"
+	_sau_knob="$(usermount_knob)"
+	[ -n "$_sau_knob" ] || return 0
+	# NetBSD's sysctl sets with -w; FreeBSD's takes name=value as it is.
+	_sau_w=""
+	[ "$OS_FAMILY" = netbsd ] && _sau_w=-w
+	if ! run "allowing user mounts" sysctl ${_sau_w:+"$_sau_w"} "$_sau_knob=1"; then
+		step_failed mount-setup "could not set $_sau_knob" \
+			"Set it yourself: sysctl ${_sau_w:+$_sau_w }$_sau_knob=1"
 		return 0
 	fi
-	ok "user mounts allowed (vfs.usermount=1)"
-	sshfs_keep_sysctl vfs.usermount 1
+	ok "user mounts allowed ($_sau_knob=1)"
+	sshfs_keep_sysctl "$_sau_knob" 1
 	return 0
 }
 
@@ -188,16 +192,17 @@ sshfs_uninstall() {
 	# never removed them either. The kld_list entry stays with the package — sshfs
 	# without a boot-loaded fusefs just breaks mysteriously on the next reboot. All
 	# deliberate keeps are DISCLOSED here, with their one-line reverts.
-	if [ "$OS_FAMILY" = freebsd ]; then
-		if sysrc -n kld_list 2>/dev/null | grep -q fusefs; then
-			note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
-		fi
-		if [ "$(sysctl -n vfs.usermount 2>/dev/null || true)" = 1 ]; then
-			if grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; then
-				note "vfs.usermount=1 stays — 'sysctl vfs.usermount=0' and the $MARKER-usermount block in $SYSCTL_CONF revert it."
-			else
-				note "vfs.usermount=1 stays — 'sysctl vfs.usermount=0' plus its $SYSCTL_CONF line revert it."
-			fi
+	if [ "$OS_FAMILY" = freebsd ] && sysrc -n kld_list 2>/dev/null | grep -q fusefs; then
+		note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
+	fi
+	_su_knob="$(usermount_knob)"
+	if [ -n "$_su_knob" ] && [ "$(sysctl -n "$_su_knob" 2>/dev/null || true)" = 1 ]; then
+		_su_off="sysctl $_su_knob=0"
+		[ "$OS_FAMILY" = netbsd ] && _su_off="sysctl -w $_su_knob=0"
+		if grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; then
+			note "$_su_knob=1 stays — '$_su_off' and the $MARKER-usermount block in $SYSCTL_CONF revert it."
+		else
+			note "$_su_knob=1 stays — '$_su_off' plus its $SYSCTL_CONF line revert it."
 		fi
 	fi
 	return 0

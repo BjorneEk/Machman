@@ -398,9 +398,19 @@ fuse_persisted() {
 	esac
 }
 
+# The sysctl that lets any user mount: FreeBSD's vfs.usermount, NetBSD's
+# vfs.generic.usermount; none elsewhere.
+usermount_knob() {
+	case "$OS_FAMILY" in
+	freebsd) echo vfs.usermount ;;
+	netbsd) echo vfs.generic.usermount ;;
+	esac
+	return 0
+}
+
 user_mounts_allowed() {
 	case "$OS_FAMILY" in
-	freebsd) [ "$(sysctl -n vfs.usermount 2>/dev/null || echo 0)" = "1" ] ;;
+	freebsd|netbsd) [ "$(sysctl -n "$(usermount_knob)" 2>/dev/null || echo 0)" = "1" ] ;;
 	# OpenBSD removed kern.usermount in 5.7: mounting is root-only, full stop.
 	openbsd) return 1 ;;
 	*) return 0 ;;
