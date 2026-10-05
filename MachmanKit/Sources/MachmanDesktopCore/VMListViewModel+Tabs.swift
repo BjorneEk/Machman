@@ -78,13 +78,17 @@ extension VMListViewModel {
 	}
 
 	// Take a tab off the canvas for its own window. The controller stays: the window adopts
-	// it. The caller opens the window a turn later, once this mount is gone.
+	// it. The caller opens the window a turn later, once this mount is gone. The tab counts
+	// as torn from here (T11): in the turns before the window appears, a row click or an
+	// open must focus that window, not mount the tab in the canvas again.
 	public func tearOff(_ tab: VMPaneTab, vm: String) -> TornTab {
 		var canvas = canvases.canvas(for: vm)
 		canvas.close(tab)
 		canvases.setCanvas(canvas, for: vm)
+		let torn = TornTab(vm: vm, tab: tab)
+		tornTabs.open.insert(torn)
 		tabClosed(tab, vm: vm)   // the next row click focuses the window
-		return TornTab(vm: vm, tab: tab)
+		return torn
 	}
 
 	// A tab's row goes with it, so the inspector stops showing a tab that closed. Every

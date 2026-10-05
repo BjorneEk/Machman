@@ -80,7 +80,8 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			}
 		}
 		.onAppear {
-			// Deferred: the registry is @Published; inserting mid-view-update warns.
+			// Deferred: the registry is @Published; inserting mid-view-update warns. A tear-off
+			// registered it already (T11); this covers a window the system restored.
 			DispatchQueue.main.async {
 				TornTabRegistry.shared.open.insert(payload)
 				// A restored window can appear AFTER the last list refresh — reconcile
