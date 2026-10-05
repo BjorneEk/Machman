@@ -77,7 +77,7 @@ public struct CommandBlock: View {
 			CopyToClipboardButton(command, tooltip: tooltip)
 		}
 		.padding(6)
-		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
+		.background(RoundedRectangle(cornerRadius: 5).fill(MachmanColors.fieldFill))
 	}
 }
 

@@ -33,9 +33,11 @@ public struct MachmanButtonStyle: ButtonStyle {
 		@State private var hovering = false
 
 		private var backgroundOpacity: Double {
-			if configuration.isPressed { return 0.16 }
-			if hovering { return flat ? 0.08 : 0.12 }
-			return flat ? 0 : 0.06
+			if configuration.isPressed { return MachmanColors.pressedOverlay }
+			if hovering {
+				return flat ? MachmanColors.quietHoverOverlay : MachmanColors.activeOverlay
+			}
+			return flat ? 0 : MachmanColors.hoverOverlay
 		}
 
 		var body: some View {
@@ -47,7 +49,7 @@ public struct MachmanButtonStyle: ButtonStyle {
 						.fill(Color.primary.opacity(backgroundOpacity))
 				)
 				.contentShape(RoundedRectangle(cornerRadius: 5))
-				.opacity(isEnabled ? 1 : 0.4)
+				.opacity(isEnabled ? 1 : MachmanColors.disabledOpacity)
 				.onHover { hovering = $0 && isEnabled }
 				.animation(.easeOut(duration: 0.1), value: hovering)
 		}

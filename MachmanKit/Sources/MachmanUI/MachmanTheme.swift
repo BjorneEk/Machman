@@ -28,12 +28,15 @@ public enum MachmanColors {
 	public static let selection = Color.accentColor        // must track the user's accent
 	public static let activeEntry = Color.accentColor      // active kernel / initramfs
 
-	// Interaction overlay strengths (MachmanButtonStyle's long-standing values).
+	// Interaction overlay strengths, as opacities of the primary color (MachmanButtonStyle's
+	// long-standing values): a button at rest, a hovered row or flat control, a hovered
+	// button or the selected tab, a pressed one; and a disabled control's opacity.
 	public static let hoverOverlay = 0.06
-	public static let quietHoverOverlay = 0.08             // a hovered row or flat control
+	public static let quietHoverOverlay = 0.08
 	public static let activeOverlay = 0.12
 	public static let pressedOverlay = 0.16
 	public static let disabledOpacity = 0.4
+	public static let fieldFill = Color.primary.opacity(0.05)   // a plain field's background
 	public static let inactiveEntryOpacity = 0.55          // non-active kernels, disabled rows
 	public static let dimmedRowOpacity = 0.7               // group parents, config-less devices
 }

@@ -182,7 +182,7 @@ struct HelpCommand: View {
 			CopyToClipboardButton(text, tooltip: "Copy")
 		}
 		.padding(7)
-		.background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
+		.background(RoundedRectangle(cornerRadius: 5).fill(MachmanColors.fieldFill))
 		.padding(.leading, 28)
 	}
 }

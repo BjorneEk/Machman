@@ -284,8 +284,7 @@ struct CmdlineEditor: View {
 				.frame(minHeight: 64, maxHeight: 120)
 				.scrollContentBackground(.hidden)
 				.padding(4)
-				.background(RoundedRectangle(cornerRadius: 5)
-					.fill(Color.primary.opacity(0.05)))
+				.background(RoundedRectangle(cornerRadius: 5).fill(MachmanColors.fieldFill))
 			let joined = joinedText
 			if joined != text {
 				Text("Passed as: \(joined)")

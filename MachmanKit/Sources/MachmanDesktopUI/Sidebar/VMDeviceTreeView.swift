@@ -112,7 +112,7 @@ struct VMDeviceTreeView: View {
 		.padding(.horizontal, 7)
 		.padding(.vertical, 4)
 		.background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-			.fill(Color.primary.opacity(0.05)))
+			.fill(MachmanColors.fieldFill))
 		.padding(.horizontal, 10)
 		.padding(.top, 8)
 	}
