@@ -4,7 +4,8 @@
 //
 //  What a serial tab can show (T10). Only a port with a socket has a terminal; every other
 //  case says why there is none, so a running VM never reads "Start the VM": the port is
-//  disabled, it was enabled after the start, the VM is still starting, or this Mac can't
+//  disabled, it was enabled after the start, the VM is still starting, Machman Agent hasn't
+//  reached it yet (an unknown state, when Start is held back too, P37), or this Mac can't
 //  attach it (a gated UART). Reads the served port as it is, so an open or restored tab
 //  follows the list.
 //
@@ -16,6 +17,7 @@ import MachmanUI
 public enum SerialTabState: Equatable {
 	case live(socketPath: String)
 	case waiting                    // the VM is starting; its bridges come up with it
+	case unreached                  // state unknown: the agent hasn't reached the VM yet
 	case startVM                    // stopped (or gone): a start attaches it
 	case restartVM                  // enabled while the VM ran: attached at the next start
 	case disabled(running: Bool)    // enable it, then (re)start the VM
@@ -29,6 +31,9 @@ public enum SerialTabState: Equatable {
 			self = .live(socketPath: socket)
 		} else if let gate = port?.unavailable {
 			self = .unavailable(reason: gate.message)
+		} else if vm.state == .unknown {
+			// It may well be running: neither "start" nor "enable and start" holds yet.
+			self = .unreached
 		} else if port?.enabled == false {
 			let running = [.running, .paused, .starting].contains(vm.state)
 			self = .disabled(running: running)
@@ -42,4 +47,8 @@ public enum SerialTabState: Equatable {
 			}
 		}
 	}
+
+	// What an unreached tab says: VMInfo.unreachedHelp's words (P37, r3-2b's, not on this
+	// lane's base; fold at integration) as a sentence.
+	public static let unreachedText = "Wait for Machman Agent to reach this VM."
 }

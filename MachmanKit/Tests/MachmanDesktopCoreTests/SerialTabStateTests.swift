@@ -27,6 +27,19 @@ struct SerialTabStateTests {
 		#expect(Samples.bareLinux().port(for: console) == nil)
 	}
 
+	// P37 (review F1): a VM whose state is unknown may be running and has Start held back, so
+	// its tab said “Start the VM to open hvc0.” for a Start that wasn't on offer.
+	@Test func anUnknownVMWaitsForTheAgent() {
+		#expect(SerialTabState(vm: Samples.linux("Debian", state: .unknown), ref: console)
+			== .unreached)
+		#expect(SerialTabState(vm: Samples.disabledConsole(state: .unknown), ref: console)
+			== .unreached)
+		// The host's gate still says what it is.
+		let gated = Samples.gatedUART(state: .unknown)
+		#expect(SerialTabState(vm: gated, ref: uart)
+			== .unavailable(reason: gated.uartPorts?.first?.unavailable?.message ?? ""))
+	}
+
 	@Test func aLiveSocketWins() {
 		let vm = Samples.linux("Debian", state: .running)
 		#expect(SerialTabState(vm: vm, ref: console)

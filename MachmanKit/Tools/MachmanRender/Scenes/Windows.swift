@@ -477,6 +477,14 @@ enum WindowScenes {
 		) { ctx in
 			serialTab(ctx, uart)
 		},
+		// P37: a VM whose state is unknown waits for the agent; Start is held back too.
+		RenderScene(
+			"canvas.serial-tab.unreached",
+			"TerminalTabContent, Console 0 of a VM Machman Agent hasn't reached",
+			widths: [320, 640], height: 360, vms: { [Samples.linux("Debian", state: .unknown)] }
+		) { ctx in
+			serialTab(ctx, InspectorScenes.console)
+		},
 		// T25: a live port whose socket refused (the sample's is under /var/empty) says so.
 		RenderScene(
 			"canvas.serial-tab.disconnected",

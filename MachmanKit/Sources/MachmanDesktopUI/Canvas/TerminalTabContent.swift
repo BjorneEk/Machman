@@ -34,6 +34,8 @@ struct TerminalTabContent: View {
 					.foregroundColor(.secondary)
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
+		case .unreached:
+			placeholder(SerialTabState.unreachedText)
 		case .startVM:
 			placeholder("Start the VM to open \(guestName).")
 		case .restartVM:
