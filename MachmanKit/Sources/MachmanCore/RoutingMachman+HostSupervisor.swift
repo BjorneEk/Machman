@@ -245,14 +245,16 @@ extension RoutingMachman {
 	// and wait for the hosts to drain. Every per-host stop is bounded: a vmhost that stopped
 	// answering fails its call after the deadline, is logged, and is LEFT RUNNING (the quit
 	// prompt's leave-VMs-running semantics; the next daemon re-adopts it) — one wedged host
-	// must never make the daemon unquittable by stalling the terminate reply (E5).
-	public func stopAllHosted(softFirst: Bool, graceSeconds: Double) async {
-		let stopDeadline = Duration.seconds(15)
+	// must never make the daemon unquittable by stalling the terminate reply (E5). Returns
+	// the VMs whose force stop failed and still run, for the caller to offer ending their
+	// processes (C9); the drain doesn't wait for them.
+	@discardableResult
+	public func stopAllHosted(softFirst: Bool, graceSeconds: Double) async -> [String] {
 		if softFirst {
 			for (name, host) in hosted {
 				guard hosted[name] != nil else { continue }   // exited during the loop
 				do {
-					try await host.client.stop(vm: name, mode: .soft, deadline: stopDeadline)
+					try await host.client.stop(vm: name, mode: .soft, deadline: forceStopDeadline)
 				} catch {
 					MachmanLogger.log(.passiveError,
 						"quit: soft stop of \(name) failed (\(error)) — leaving it running")
@@ -263,18 +265,45 @@ extension RoutingMachman {
 				try? await Task.sleep(for: .milliseconds(500))
 			}
 		}
+		var failed: Set<String> = []
 		for (name, host) in hosted {
 			guard hosted[name] != nil else { continue }
 			do {
-				try await host.client.stop(vm: name, mode: .force, deadline: stopDeadline)
+				try await stopHosted(host, name: name, mode: .force)
 			} catch {
+				failed.insert(name)
 				MachmanLogger.log(.passiveError,
 					"quit: force stop of \(name) failed (\(error)) — leaving it running")
 			}
 		}
 		let deadline = Date().addingTimeInterval(10)
-		while Date() < deadline, !hosted.isEmpty {
+		while Date() < deadline, !Set(hosted.keys).subtracting(failed).isEmpty {
 			try? await Task.sleep(for: .milliseconds(250))
+		}
+		return failed.filter { hosted[$0] != nil }.sorted()
+	}
+
+	// A stop for a VM its vmhost runs (E36). Shut Down asks the guest through the host, so
+	// one listed as not responding is refused at once instead of after the call's deadline.
+	// Force Stop is bounded: a host that misses the bound is marked not responding and the
+	// stop answers `timeout` — the clients' cue to ask about ending its process
+	// (vm.process.end, C9). Nothing here ends a process.
+	func stopHosted(_ host: HostedVM, name: String, mode: StopMode) async throws {
+		switch mode {
+		case .soft:
+			guard !host.unresponsive else {
+				throw MachmanError(
+					code: .invalidState, message: "\(name) is not responding — use Force Stop")
+			}
+			try await host.client.stop(vm: name, mode: .soft)
+		case .force:
+			do {
+				try await host.client.stop(vm: name, mode: .force, deadline: forceStopDeadline)
+			} catch let error as MachmanError where error.code == .timeout {
+				markUnresponsive(host, reason: "missed its force stop deadline")
+				throw MachmanError(
+					code: .timeout, message: "\(name) isn’t answering, so it didn’t stop")
+			}
 		}
 	}
 

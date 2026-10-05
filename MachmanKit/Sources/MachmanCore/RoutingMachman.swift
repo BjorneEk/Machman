@@ -70,6 +70,9 @@ public final class RoutingMachman: MachmanControlling {
 	var helloDeadline: Duration = .seconds(10)
 	// How long a start waits for a host that is exiting after its VM stopped (E12).
 	var hostExitGrace: Duration = .seconds(3)
+	// How long a vmhost may take to answer a force stop (E36): the quit path's bound, and
+	// inside a client's own 30 s for the call.
+	var forceStopDeadline: Duration = .seconds(15)
 	// Whether a vmhost process still exists (E8). A seam: an in-process test host's peer is
 	// the test itself, so a test that ends a host says so here.
 	var isProcessAlive: (Int32) -> Bool = SafeRun.defaultPidAlive
@@ -682,7 +685,12 @@ public final class RoutingMachman: MachmanControlling {
 			cancel()
 			return
 		}
-		try await proxy(name).stop(vm: name, mode: mode)
+		let target = try await proxy(name)
+		guard let host = hosted[name] else {
+			try await target.stop(vm: name, mode: mode)
+			return
+		}
+		try await stopHosted(host, name: name, mode: mode)
 	}
 
 	public func openWindow(vm name: String) async throws {
