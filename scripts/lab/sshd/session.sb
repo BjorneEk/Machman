@@ -1,0 +1,10 @@
+;; The lab sshd's session profile (a template: sshd.sh start fills @RUN@ and @TEMP@ with
+;; physical paths). Everything is allowed except writing files outside the run sandbox,
+;; /dev and the user's temp dir: a guest that logs in as "the Mac" cannot change anything real.
+(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write*
+	(subpath "@RUN@")
+	(subpath "/dev")
+	(subpath "@TEMP@"))
