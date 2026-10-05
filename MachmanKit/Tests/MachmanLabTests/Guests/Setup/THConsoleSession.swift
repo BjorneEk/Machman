@@ -78,6 +78,8 @@ final class THConsoleSession: @unchecked Sendable {
 		case proceed
 		/// Any other yes/no question.
 		case yesNo
+		/// A password (sudo's, doas's, su's).
+		case password
 	}
 
 	struct Driven {
@@ -94,13 +96,15 @@ final class THConsoleSession: @unchecked Sendable {
 	}
 
 	/// Answers the installer's questions until it exits, as a person keeping the defaults
-	/// would: Enter for a menu and a choice, `toggle` for the numbered menu, `multiKeys` for
+	/// would: Enter for a menu and a choice, `toggle` (given what was printed before it) for a
+	/// numbered menu, `multiKeys` for
 	/// the arrow menu, `choose` (given what was printed before it) for a numbered choice,
-	/// `proceed` for "Proceed?", Enter for any other yes/no.
+	/// `proceed` for "Proceed?", `yesNo` for any other yes/no, `password` when sudo, doas or
+	/// su asks.
 	func drive(
-		toggle: String = "", multiKeys: [[UInt8]] = [THKey.enter],
-		choose: ((String) -> String)? = nil, proceed: String = "q",
-		timeout: Duration = .seconds(180)
+		toggle: @escaping (String) -> String = { _ in "" }, multiKeys: [[UInt8]] = [THKey.enter],
+		choose: ((String) -> String)? = nil, proceed: String = "q", yesNo: String = "",
+		password: String? = nil, timeout: Duration = .seconds(180)
 	) async throws -> Driven {
 		let pattern = "(?s:(.*?))(?:"
 			+ "(Toggle numbers \\(space-separated\\), empty keeps the selection: *$)"
@@ -109,6 +113,8 @@ final class THConsoleSession: @unchecked Sendable {
 			+ "|(\\(arrows, enter\\) *$)"
 			+ "|(Proceed\\? \\[Y/n\\] *$)"
 			+ "|(\\[[yY]/[nN]\\] *$)"
+			+ "|(\\[sudo\\] password for [^:]*: *$|^doas \\([^)]*\\) password: *$"
+			+ "|^Password: *$)"
 			+ "|(\(marker) (\\d+)\\s*$))"
 		var prompts: [(prompt: Prompt, before: String)] = []
 		let deadline = ContinuousClock.now + timeout
@@ -119,18 +125,19 @@ final class THConsoleSession: @unchecked Sendable {
 			}
 			let g = try await console.expect(pattern, timeout: left)
 			let before = g[1]
-			if !g[8].isEmpty {
-				let status = Int32(g[9]) ?? -1
+			if !g[9].isEmpty {
+				let status = Int32(g[10]) ?? -1
 				let output = Self.clean(String(decoding: try await rawUntilMarker(), as: UTF8.self))
 				return Driven(status: status, output: output, prompts: prompts)
 			}
 			let prompt: Prompt =
 				!g[2].isEmpty ? .toggle : !g[3].isEmpty ? .choose : !g[4].isEmpty ? .multi
-				: !g[5].isEmpty ? .select : !g[6].isEmpty ? .proceed : .yesNo
+				: !g[5].isEmpty ? .select : !g[6].isEmpty ? .proceed
+				: !g[7].isEmpty ? .yesNo : .password
 			prompts.append((prompt, before))
 			try await Task.sleep(for: .milliseconds(300))
 			switch prompt {
-			case .toggle: try console.send(toggle)
+			case .toggle: try console.send(toggle(before))
 			case .choose: try console.send(choose?(before) ?? "")
 			case .multi:
 				// The menu is drawn after its header: give it a moment before the keys.
@@ -141,7 +148,12 @@ final class THConsoleSession: @unchecked Sendable {
 				try await Task.sleep(for: .seconds(1))
 				try await keys([THKey.enter])
 			case .proceed: try console.send(proceed)
-			case .yesNo: try console.send("")
+			case .yesNo: try console.send(yesNo)
+			case .password:
+				guard let password else {
+					throw LabError.consoleUnavailable("asked for a password:\n\(before)")
+				}
+				try console.send(password)
 			}
 		}
 	}
