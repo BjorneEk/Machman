@@ -20,6 +20,8 @@ struct CanvasTabItem: View {
 	let dragOffset: CGSize
 	let canSplit: Bool
 	let hasSiblings: Bool
+	// Closing it asks first (a connected SSH session, H42): its menu item says so with “…”.
+	let closeAsks: Bool
 	let tabStyle: MachmanTabStyle
 	let metrics: MachmanMetrics
 	let onSelect: () -> Void
@@ -125,7 +127,7 @@ struct CanvasTabItem: View {
 
 	@ViewBuilder
 	private var menu: some View {
-		Button("Close Tab") { onClose() }
+		Button(closeAsks ? "Close Tab\u{2026}" : "Close Tab") { onClose() }
 		if hasSiblings {
 			Button("Close Other Tabs") { onCloseOthers() }
 		}

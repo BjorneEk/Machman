@@ -66,6 +66,16 @@ public final class VMListViewModel: ObservableObject {
 	public let canvases: CanvasStateStore
 	// Which torn-off tabs have windows, and the orders the list reconcile posts to them.
 	public let tornTabs: TornTabRegistry
+	// Closing a connected SSH session asks first, one question at a time (H42, +Tabs).
+	@Published var tabCloseQueue = PresentationQueue<PendingTabClose>()
+	public var isTabClosePresented: Bool {
+		get { tabCloseQueue.current != nil }
+		set {
+			if !newValue, tabCloseQueue.dismiss() { presentNext { $0.tabCloseQueue.advance() } }
+		}
+	}
+	// Tests: whether a connected session's close asks, in place of the stored preference.
+	var sshCloseAskOverride: Bool?
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published public var showInfoPanel = false

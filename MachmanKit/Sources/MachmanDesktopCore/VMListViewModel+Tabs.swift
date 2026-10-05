@@ -67,14 +67,56 @@ extension VMListViewModel {
 		return nil
 	}
 
-	// True when a tab was closed (⌘W falls back to closing the window otherwise).
+	// True when a tab was closed or its close asks first (⌘W falls back to closing the
+	// window otherwise).
 	@discardableResult
 	public func closeActiveTab() -> Bool {
 		guard let name = selectedName, let tab = canvases.canvas(for: name).activeTab else {
 			return false
 		}
-		closeTab(tab, vm: name)
+		requestCloseTab(tab, vm: name)
 		return true
+	}
+
+	// MARK: - Asking before a session ends (H42)
+
+	public static let skipSSHCloseQuestionKey = "MachmanSkipSSHCloseQuestion"
+
+	public static func closeSessionTitle(_ name: String) -> String {
+		"Close \u{201C}\(name)\u{201D}?"
+	}
+
+	public static let closeSessionMessage = "The SSH session ends."
+
+	// The close a user asked for: at once, or after the question when closeAsks says so.
+	// `window` is the torn tab whose window asked (nil: the main window): the question
+	// shows there.
+	public func requestCloseTab(_ tab: VMPaneTab, vm: String, from window: TornTab? = nil) {
+		guard closeAsks(tab, vm: vm), case .ssh(let ref) = tab else {
+			closeTab(tab, vm: vm)
+			return
+		}
+		tabCloseQueue.enqueue(
+			PendingTabClose(
+				vm: vm, tab: tab, name: terminals.sshSessionName(vm: vm, ref: ref),
+				window: window),
+			duplicate: { $0.vm == $1.vm && $0.tab == $1.tab })
+	}
+
+	// Closing an SSH session whose ssh still runs ends a remote shell and its scrollback, so
+	// it asks first unless “Don’t ask again” was ticked (C3). Serial tabs only disconnect —
+	// the guest keeps running — and the configuration tab holds nothing; both close at once.
+	public func closeAsks(_ tab: VMPaneTab, vm: String) -> Bool {
+		guard case .ssh(let ref) = tab,
+			terminals.sshController(vm: vm, ref: ref)?.connected == true else { return false }
+		return sshCloseAskOverride
+			?? !UserDefaults.standard.bool(forKey: Self.skipSSHCloseQuestionKey)
+	}
+
+	public var pendingTabClose: PendingTabClose? { tabCloseQueue.current }
+
+	public func confirmTabClose(_ pending: PendingTabClose) {
+		closeTab(pending.tab, vm: pending.vm)
 	}
 
 	// Take a tab off the canvas for its own window. The controller stays: the window adopts
@@ -218,4 +260,14 @@ extension VMListViewModel {
 		canvas.activate(pane.tabs[(index + (forward ? 1 : count - 1)) % count])
 		canvases.setCanvas(canvas, for: name)
 	}
+}
+
+// A connected SSH session waiting on “Close “Session 1”?” (H42); `window` is the torn tab
+// whose window asked, nil for the main window.
+public struct PendingTabClose: Identifiable, Equatable {
+	public let id = UUID()
+	public let vm: String
+	public let tab: VMPaneTab
+	public let name: String
+	public let window: TornTab?
 }

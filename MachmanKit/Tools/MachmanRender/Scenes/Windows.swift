@@ -105,7 +105,8 @@ enum WindowScenes {
 				CanvasTabItem(
 					title: tab.title, symbol: tab.symbol, isTerminal: tab.terminal,
 					selected: index == 0, dragging: false, detachedDrag: false,
-					dragOffset: .zero, canSplit: true, hasSiblings: true, tabStyle: style,
+					dragOffset: .zero, canSplit: true, hasSiblings: true, closeAsks: false,
+					tabStyle: style,
 					metrics: MachmanMetrics(), onSelect: {}, onClose: {}, onCloseOthers: {},
 					onSplit: {}, onTearOff: {}, onDragChanged: { _ in }, onDragEnded: {},
 					reportFrame: { _ in }, hoverPreview: index == 1)

@@ -18,6 +18,7 @@ struct SSHSessionInspector: View {
 	@ObservedObject var profiles: TerminalProfileStore
 	let vm: VMInfo
 	let ref: SSHSessionRef
+	@Environment(\.tornTabWindow) private var window
 	@State private var draftName = ""
 
 	var body: some View {
@@ -62,9 +63,11 @@ struct SSHSessionInspector: View {
 					}
 				}
 				// One close path (Q3): a torn window is ordered closed, a canvas tab
-				// closes, and either way ssh ends and the session's row goes.
-				Button("Close Session", role: .destructive) {
-					viewModel.closeTab(.ssh(ref), vm: vm.name)
+				// closes, and either way ssh ends and the session's row goes. A live
+				// session asks first, in the window this inspector is in (H42).
+				let asks = viewModel.closeAsks(.ssh(ref), vm: vm.name)
+				Button(asks ? "Close Session\u{2026}" : "Close Session", role: .destructive) {
+					viewModel.requestCloseTab(.ssh(ref), vm: vm.name, from: window)
 				}
 			}
 		}

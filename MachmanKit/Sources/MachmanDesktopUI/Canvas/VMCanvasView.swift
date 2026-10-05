@@ -86,6 +86,7 @@ struct VMCanvasView: View {
 		}
 		.coordinateSpace(name: "machman-canvas")
 		.background(Color(nsColor: .underPageBackgroundColor))
+		.modifier(TabCloseQuestion(viewModel: viewModel, window: nil))
 		.onAppear { ensureConfigTab() }
 		.onChange(of: vm.name) {
 			tabDrag = nil
@@ -197,6 +198,7 @@ struct VMCanvasView: View {
 						dragOffset: dragOffset(for: tab),
 						canSplit: canvas.panes.count < CanvasState.maxPanes,
 						hasSiblings: pane.tabs.count > 1,
+						closeAsks: viewModel.closeAsks(tab, vm: vm.name),
 						tabStyle: theme.tabStyle,
 						metrics: theme.metrics,
 						onSelect: { viewModel.tabClicked(tab, vm: vm.name) },
@@ -244,8 +246,9 @@ struct VMCanvasView: View {
 
 	// MARK: - Tab actions
 
+	// A connected SSH session asks first (H42); every other tab closes at once.
 	private func close(_ tab: VMPaneTab) {
-		viewModel.closeTab(tab, vm: vm.name)
+		viewModel.requestCloseTab(tab, vm: vm.name)
 	}
 
 	private func closeOthers(than tab: VMPaneTab, in pane: CanvasPane) {

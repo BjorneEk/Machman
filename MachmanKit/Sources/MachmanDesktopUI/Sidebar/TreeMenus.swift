@@ -162,8 +162,11 @@ extension TreeContext {
 				Label("Move to New Window", systemImage: MachmanSymbols.newWindow)
 			}
 		}
-		// Canvas tab or torn window alike: closeTab knows which.
-		Button("Close Session") { viewModel.closeTab(.ssh(ref), vm: vm.name) }
+		// Canvas tab or torn window alike: closeTab knows which. A live session asks first.
+		let asks = viewModel.closeAsks(.ssh(ref), vm: vm.name)
+		Button(asks ? "Close Session\u{2026}" : "Close Session") {
+			viewModel.requestCloseTab(.ssh(ref), vm: vm.name)
+		}
 	}
 
 	@ViewBuilder

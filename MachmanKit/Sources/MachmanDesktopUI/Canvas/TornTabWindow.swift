@@ -58,9 +58,10 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		}
 		.navigationTitle(payload.windowTitle(vms: connection.viewModel?.vms, terminals: terminals))
 		// The tab's own inspector rides along: the serial inspector for terminals, the VM
-		// inspector for the config/preview tab.
+		// inspector for the config/preview tab. A question it asks shows in this window.
 		.inspector(isPresented: $showInspector) {
 			inspector
+				.environment(\.tornTabWindow, payload)
 				.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
 		}
 		// The menu commands act on the key window (P22): this torn tab's VM and terminal,
@@ -165,6 +166,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			SSHTabContent(
 				sessions: connection.terminals, viewModel: viewModel, profiles: profiles,
 				vm: vm, ref: ref, stillWanted: { true }, adoptOnly: true)
+				.modifier(TabCloseQuestion(viewModel: viewModel, window: payload))
 		}
 	}
 }
