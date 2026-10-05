@@ -144,6 +144,36 @@ struct TGSafeRunTests {
 		}
 	}
 
+	@Test("13: run defaults are refused during a safe run; a disk shield flip reverts after it")
+	func runDefaultsRefusedShieldReverts() async throws {
+		try await TG.withAgent { agent in
+			let vm = try await TGVM.alpine(
+				"tg-r13", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
+				on: agent)
+			let id = try await vm.disk(named: "data").id
+			try await vm.start(try await vm.info().startOptions(.plain))
+			#expect(try await vm.info().safeRun == true)
+			let refusal = await #expect(throws: MachmanError.self) {
+				try await vm.api.setStartPolicy(
+					vm: "tg-r13", policy: StartPolicy(windowed: true, safe: true))
+			}
+			#expect(refusal?.code == .invalidState)
+			#expect(refusal?.message
+				== "Run defaults can\u{2019}t change during a safe run \u{2014} stop tg-r13 "
+					+ "or save it first")
+			// The shield flip goes to the run's own (discardable) config.
+			try await vm.api.setSafety(vm: "tg-r13", disks: [id: false], mounts: nil)
+			#expect(try await vm.disk(named: "data").safe == false)
+			#expect(try await vm.info().startPolicy == Self.safeHeadless)
+			try await vm.forceStop()
+			#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
+			#expect(try await vm.disk(named: "data").safe == true)
+			let disks = try TG.config(agent.scope, "tg-r13")["disks"] as? [[String: Any]]
+			#expect(disks?.count == 1)
+			#expect(disks?.first?["safe"] as? Bool == true)
+		}
+	}
+
 	@Test("5: a safe run leaves an external image marked safe byte-for-byte unchanged")
 	func safeExternalImageUnchanged() async throws {
 		try await TG.withAgent { agent in
