@@ -137,7 +137,8 @@ struct TGSafeSaveTests {
 		let model = try #require(desktop.viewModel)
 		model.startPolicyDriven(try #require(desktop.vm(vm.name)), .plain)
 		try #require(await desktop.waitFor(vm.name, .running))
-		#expect(desktop.vm(vm.name)?.safeRun == true)
+		// The state comes as an event, the shield with the list after it.
+		#expect(await eventually(timeout: .seconds(20)) { desktop.vm(vm.name)?.safeRun == true })
 		try vm.fileHostPid(try await vm.hostPID())
 		let tab = try await desktop.openConsole(vm: vm.name)
 		let console = try await tab.console()
