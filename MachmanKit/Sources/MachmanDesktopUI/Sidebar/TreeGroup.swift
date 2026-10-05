@@ -79,7 +79,10 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 		if selectable {
 			row.tag(node)
 		} else {
+			// Nothing to select: a click folds it instead, so no row is a dead target (C5).
 			row
+				.contentShape(Rectangle())
+				.onTapGesture { if folds { TreeGroupChevron.toggle($isExpanded) } }
 		}
 	}
 }
@@ -139,7 +142,7 @@ struct TreeGroupChevron: View {
 
 	var body: some View {
 		Button {
-			withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+			Self.toggle($isExpanded)
 		} label: {
 			Image(systemName: MachmanSymbols.disclosure)
 				.font(.system(size: 8.5, weight: .heavy))
@@ -150,6 +153,10 @@ struct TreeGroupChevron: View {
 		}
 		.buttonStyle(.plain)
 		.accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+	}
+
+	static func toggle(_ isExpanded: Binding<Bool>) {
+		withAnimation(.easeOut(duration: 0.15)) { isExpanded.wrappedValue.toggle() }
 	}
 }
 
