@@ -127,7 +127,7 @@ extension Samples {
 		vm.setup?.automounts = []
 		vm.ssh?.hostUser = "demo"
 		vm.ssh?.hostAddressForGuest = "192.168.64.1"
-		vm.ssh?.setupSharePath = "\(vmsRoot)/\(name)/share"
+		vm.ssh?.setupSharePath = "\(vmsRoot)/.machman-shares/machman-3f2a9c1d7e4b"
 		return vm
 	}
 

@@ -105,8 +105,8 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 	// its machman.env, which its fstab or rc.local embeds: <vmdir>/share would strand it at
 	// the first rename. It gets a link in the library instead, hidden (no VM) and named by
 	// the VM's marker, which a rename keeps: <library>/.machman-shares/<marker> ->
-	// ../<vm>/share, re-pointed at every start. (ssh.setupSharePath, the first by-hand
-	// mount, stays the real path: it is used before a rename can matter.)
+	// ../<vm>/share, re-pointed at every start. ssh.setupSharePath, the BSD guide's by-hand
+	// mount, serves the same link once it exists (C26): it carries no VM name either.
 	static let shareLinksDirectoryName = ".machman-shares"
 
 	static func shareLinksDirectory(for config: VMConfig) -> URL {

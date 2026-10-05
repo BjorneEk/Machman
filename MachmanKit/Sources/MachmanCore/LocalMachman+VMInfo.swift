@@ -145,7 +145,10 @@ extension LocalMachman {
 				alias: config.effectiveSSHAlias,
 				identityFilePath: hasKey ? keyPath : nil,
 				knownHostsPath: hasPin ? pinPath : nil,
-				setupSharePath: GuestInstallerWriter.payloadRoot(for: config).path,
+				// The rename-stable link once a start has pointed it: no VM name to quote, and
+				// a mount made by hand outlives the next rename (C26).
+				setupSharePath: GuestSetupInstaller.stableSharePath(for: config)
+					?? GuestInstallerWriter.payloadRoot(for: config).path,
 				hostUser: NSUserName(),
 				// The gateway from the last address the guest reported, so the BSD setup
 				// guide has a real target even while the VM is stopped. The daemon

@@ -67,7 +67,7 @@ struct GuestSetupCommandTests {
 		}
 		#expect(GuestEscalation.doas.apply(shareMount(approved: true))
 			== "doas mkdir -p /mnt/machman/share && doas sshfs -F /home/demo/.ssh/config "
-				+ "mac:'/Users/demo/VMs/Debian/share' /mnt/machman/share "
+				+ "mac:'/Users/demo/VMs/Debian/share/' /mnt/machman/share "
 				+ "-o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
 	}
 
@@ -97,7 +97,7 @@ struct GuestSetupCommandTests {
 			let sh = try await Subprocess.run("/bin/sh", ["-c", Self.standIns + line.text])
 			#expect(sh.status == 0)
 			let words = sh.output.split(separator: "\n").map(String.init)
-			let source = approved ? "mac:" + sharePath : "demo@192.168.64.1:" + sharePath
+			let source = (approved ? "mac:" : "demo@192.168.64.1:") + sharePath + "/"
 			#expect(words.contains(source), "\(words)")
 			#expect(words.filter { $0 == "---" }.count == 2)
 		}
@@ -118,6 +118,6 @@ struct GuestSetupCommandTests {
 		let words = sh.output.split(separator: "\n").map(String.init)
 		#expect(words.filter { $0 == "doas" }.count == 2, "\(words)")
 		#expect(Array(words.prefix(5)) == ["doas", "mkdir", "-p", "/mnt/machman/share", "---"])
-		#expect(words.contains("mac:" + sharePath))
+		#expect(words.contains("mac:" + sharePath + "/"))
 	}
 }
