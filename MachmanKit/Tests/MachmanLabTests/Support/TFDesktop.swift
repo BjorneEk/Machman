@@ -6,7 +6,9 @@
 //  the app's: VMStore and OperationsStore attached to their own connection, a VMListViewModel
 //  over them. Never the stores' default files (they point at Application Support/<suite> of
 //  this process): the canvas and profile stores live in the scope's desktop/ dir, the
-//  activity list in memory. PreviewService is built and never attached (no preview polls).
+//  activity list in memory. PreviewService is built, and attached only by a test that needs
+//  the app's preview polls (showPreviews: the selected VM's poll is what notices a stalled
+//  vmhost, E20).
 //  Terminals default to a recorder that never opens a socket or a process.
 //
 
@@ -80,7 +82,15 @@ final class TFDesktop {
 		return found!
 	}
 
+	/// The main window shows `names`: the preview service polls them, as the app's does for
+	/// the selected VM (the black test-mode fallback frame; no window, no capture).
+	func showPreviews(of names: Set<String>) {
+		previews.attach(api: api)
+		previews.setVisible(names)
+	}
+
 	func close() async {
+		previews.detach()
 		store.detach()
 		operations.detach()
 		await remote?.disconnect()
