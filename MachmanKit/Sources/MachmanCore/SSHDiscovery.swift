@@ -150,8 +150,15 @@ enum SSHDiscovery {
 	// The live variant — reads /var/db/dhcpd_leases and runs arp. Call off the main
 	// actor (Process + file reads block their thread).
 	static func discoverLive(mac: String) -> Answer? {
-		let leases = try? String(contentsOfFile: "/var/db/dhcpd_leases", encoding: .utf8)
-		return discover(mac: mac, leasesText: leases, arpText: currentARPOutput())
+		discover(mac: mac, leasesText: leases(atPath: leasesPath), arpText: currentARPOutput())
+	}
+
+	static let leasesPath = "/var/db/dhcpd_leases"
+
+	// Decoded lossily: name= is the hostname a guest chose, and one that isn't UTF-8 made a
+	// strict decode fail for the WHOLE table — every VM fell back to ARP (C25).
+	static func leases(atPath path: String) -> String? {
+		FileManager.default.contents(atPath: path).map { String(decoding: $0, as: UTF8.self) }
 	}
 
 	static func currentARPOutput() -> String? {

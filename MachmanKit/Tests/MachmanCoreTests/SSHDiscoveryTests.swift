@@ -11,6 +11,7 @@
 // before any guest has reported anything.
 import Testing
 import Foundation
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct SSHDiscoveryTests {
@@ -114,5 +115,24 @@ struct SSHDiscoveryTests {
 		#expect(SSHDiscovery.hostAddress(seenFrom: "not-an-address") == nil)
 		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64") == nil)
 		#expect(SSHDiscovery.hostAddress(seenFrom: "192.168.64.999") == nil)
+	}
+
+	// C25: one guest whose DHCP hostname isn't UTF-8 (a Latin-1 "café") made the strict
+	// read of the whole table fail, so every VM fell back to ARP.
+	@Test func aLeaseNameThatIsNotUTF8KeepsTheTableReadable() throws {
+		let path = TestEnvironment.scratch + "leases-\(UUID().uuidString)"
+		defer { try? FileManager.default.removeItem(atPath: path) }
+		let table = Data("{\n\tname=caf".utf8) + Data([0xE9])
+			+ Data("\n\tip_address=192.168.64.3\n\thw_address=1,aa:bb:cc:0:0:1\n}\n".utf8)
+			+ Data(leases.utf8)
+		try table.write(to: URL(fileURLWithPath: path))
+		#expect((try? String(contentsOfFile: path, encoding: .utf8)) == nil)   // the old read
+
+		let text = try #require(SSHDiscovery.leases(atPath: path))
+		#expect(SSHDiscovery.leaseIP(for: "A6:83:E7:12:03:45", inLeasesText: text)
+			== "192.168.64.9")
+		#expect(SSHDiscovery.leaseIP(for: "aa:bb:cc:00:00:01", inLeasesText: text)
+			== "192.168.64.3")
+		#expect(SSHDiscovery.leases(atPath: path + "-missing") == nil)
 	}
 }
