@@ -22,19 +22,24 @@ struct LabSSHD: Sendable {
 	let host: String
 	let port: Int
 	let root: String
+	/// The fake home sessions run in (the run's home unless start named another).
+	let home: String
 
 	/// The public host key guests pin (`<root>/sshd/ssh_host_ed25519_key.pub`).
 	var hostKeyPath: String { root + "/sshd/ssh_host_ed25519_key.pub" }
 
-	/// The fake home sessions run in (the run's home, which the agent writes too).
-	var home: String { root + "/home" }
-
 	/// The Mac user, the only account the lab sshd lets in.
 	static var macUser: String { NSUserName() }
 
-	static func start(bind: Bind = .loopback, password: Bool = false) async throws -> LabSSHD {
+	/// `home`: the fake home sessions run in and whose .ssh/authorized_keys sshd reads (inside
+	/// the run root; default the run's home) — an agent scope's home, where the product writes
+	/// its reverse approvals.
+	static func start(
+		bind: Bind = .loopback, password: Bool = false, home: String? = nil
+	) async throws -> LabSSHD {
 		var arguments = ["start", "--run", Lab.runDir, "--bind", bind.rawValue]
 		if password { arguments.append("--password") }
+		if let home { arguments += ["--home", home] }
 		let output = try await LabScripts.check(LabScripts.sshd, arguments, timeout: 120)
 		let address = LabScripts.lastLine(output)
 		guard let colon = address.lastIndex(of: ":"),
@@ -43,7 +48,9 @@ struct LabSSHD: Sendable {
 			throw LabError.commandFailed(command: "sshd.sh start", status: 0, output: output)
 		}
 		LabScripts.log("lab sshd on \(address)")
-		return LabSSHD(host: String(address[..<colon]), port: port, root: Lab.runDir)
+		return LabSSHD(
+			host: String(address[..<colon]), port: port, root: Lab.runDir,
+			home: home ?? Lab.runDir + "/home")
 	}
 
 	/// Lets `publicKey` (one OpenSSH public key line) log in as the Mac user.
@@ -78,9 +85,10 @@ struct LabSSHD: Sendable {
 extension LabSSHD {
 	/// A lab sshd for `body`; stopped on every path.
 	static func with<T>(
-		bind: Bind = .loopback, password: Bool = false, _ body: (LabSSHD) async throws -> T
+		bind: Bind = .loopback, password: Bool = false, home: String? = nil,
+		_ body: (LabSSHD) async throws -> T
 	) async throws -> T {
-		let sshd = try await start(bind: bind, password: password)
+		let sshd = try await start(bind: bind, password: password, home: home)
 		do {
 			let result = try await body(sshd)
 			await sshd.stop()
