@@ -3,7 +3,7 @@
 //  MachmanLabTests
 //
 //  L2 smoke — the lab agent and the Alpine fixture end to end; lab.sh --quick runs it.
-//  L3 smoke — the Debian fixture under VZ; lab.sh --full and --guests run it.
+//  L3 smoke — the Debian fixture (prepared) under VZ; lab.sh --full and --guests run it.
 //  Needs r3-tb's seams in the build: lab.sh refuses the agent tiers without them.
 //
 
@@ -67,19 +67,25 @@ struct LabSmokeTests {
 
 @Suite("Lab smoke L3", .serialized, .enabled(if: Lab.runs(.l3)))
 struct LabSmokeL3Tests {
+	// The fixture as the lab prepared it (scripts/lab/qemu/prepare.sh debian): the raw nocloud
+	// image stops its first boot at systemd-firstboot's prompts on the system console and has
+	// no root login until a password is set; the prepared one booted once, keeps root's
+	// console login passwordless and runs a getty on hvc2 (hence three consoles).
 	@Test("Q18: the Debian fixture boots to a login prompt on hvc0")
 	func debianLogin() async throws {
+		let image = try await LabGuest.debian.imagePath()
 		try await Lab.withAgent { agent in
 			let spec = LabVMSpec(
-				name: "lab-debian", boot: .efiImage(fixture: "debian-13-nocloud-arm64.raw"),
-				cpus: 2, memoryGiB: 2, consolePorts: 1)
+				name: "lab-debian", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
+				consolePorts: 3)
 			try await agent.withVM(spec) { vm in
-				let console = try await vm.console(0)
+				let console = try await vm.loggedInConsole(0, label: "hvc0")
 				defer { console.close() }
-				try await console.login(user: "root", timeout: .seconds(300))
 				let arch = try await console.run("uname -m")
 				#expect(arch.status == 0)
 				#expect(arch.output == "aarch64")
+				let tty = try await console.run("tty")
+				#expect(tty.output == "/dev/hvc0")
 			}
 		}
 	}

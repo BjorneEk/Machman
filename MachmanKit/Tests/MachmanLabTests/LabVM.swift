@@ -175,6 +175,33 @@ final class LabVM: @unchecked Sendable {
 			try await consoleSocketPath(index), transcript: "\(pidName)-hvc\(index)")
 	}
 
+	/// A console on port `index` with `user` logged in. A login that stalls (seen on Debian
+	/// 13 under VZ, about once in ten logins right after a start: the typed name is never
+	/// echoed and the getty answers nothing more on that connection) is retried on a fresh
+	/// connection, three tries in all, each logged.
+	func loggedInConsole(
+		_ index: Int, user: String = "root", label: String, timeout: Duration = .seconds(300)
+	) async throws -> LabConsole {
+		var attempt = 1
+		while true {
+			let suffix = attempt == 1 ? "" : "-try\(attempt)"
+			let console = try await LabConsole.connect(
+				try await consoleSocketPath(index), transcript: "\(pidName)-\(label)\(suffix)")
+			do {
+				try await console.login(user: user, timeout: attempt == 1 ? timeout : .seconds(60))
+				return console
+			} catch let error as LabError where attempt < 3 {
+				MachmanLogger.log(
+					.passiveWarning,
+					"lab: \(name) console \(index): login try \(attempt) failed, reconnecting: "
+						+ "\(error)")
+				console.close()
+				attempt += 1
+				try await Task.sleep(for: .seconds(1))
+			}
+		}
+	}
+
 	/// The vmhost's pid, through its socket's peer.
 	func hostPID(socketPath: String? = nil) async throws -> pid_t {
 		let host = try await RemoteMachman(
