@@ -19,12 +19,12 @@ extension RoutingMachman {
 	// pending — and the line installed for the old key has to go with it, or that key
 	// keeps its way in with nothing in the UI offering to revoke it.
 	func reconcileReverseKey(vm name: String) {
-		guard let files = sshFiles, let marker = existingSSHMarker(name) else { return }
+		guard sshFiles != nil, let marker = existingSSHMarker(name) else { return }
 		Task { [weak self] in
 			guard let self,
 				let ssh = (try? await self.proxy(name).vm(named: name))?.ssh else { return }
 			guard ssh.reverseState != .approved else { return }
-			try? files.setReverseKey(nil, marker: marker, vmName: name)
+			self.revokeReverseKey(marker: marker, vmName: name)
 		}
 	}
 
@@ -129,9 +129,10 @@ extension RoutingMachman {
 		info.ssh = ssh
 	}
 
-	// A deleted VM's guest→Mac grant leaves ~/.ssh/authorized_keys. Best-effort by nature —
-	// the VM is gone, and the key's private half with it — but never silent (D11): a line
-	// that stays is logged and shown, with what to remove by hand.
+	// Every guest→Mac grant leaves ~/.ssh/authorized_keys through here: a deleted VM's, a
+	// denied or revoked one, a reset, a key the guest replaced. Never silent (D11, C21): a
+	// line that stays is logged and shown, with what to remove by hand — a deny that left the
+	// key working used to read as done.
 	func revokeReverseKey(marker: String, vmName name: String) {
 		guard let files = sshFiles else { return }
 		do {
@@ -178,20 +179,56 @@ extension RoutingMachman {
 				}
 			}
 		}
-		let info = try await target.setSSH(
-			vm: name, integrationEnabled: integrationEnabled,
-			reverseApproved: reverseApproved, alias: alias)
-		// Host-side effects AFTER the config write succeeded, from the RETURNED state —
-		// the daemon's registry copy is stale while the VM is hosted (setStartPolicy
-		// precedent). Approving with no key is refused engine-side, so the force-unwrap
-		// shape never arises here.
-		if let files = sshFiles, let reverseApproved,
-			let marker = existingSSHMarker(name) {
-			try? files.setReverseKey(
-				reverseApproved ? info.ssh?.reversePublicKey : nil,
-				marker: marker, vmName: name)
+		let record = {
+			try await target.setSSH(
+				vm: name, integrationEnabled: integrationEnabled,
+				reverseApproved: reverseApproved, alias: alias)
+		}
+		// The host-side line reads the OWNER's state, never the registry copy — stale while
+		// the VM is hosted (setStartPolicy precedent).
+		let marker = existingSSHMarker(name)
+		let info: VMInfo
+		if reverseApproved == true, let marker {
+			info = try await approveReverseKey(vm: name, marker: marker, on: target, record: record)
+		} else {
+			info = try await record()
+			if reverseApproved == false, let marker {
+				revokeReverseKey(marker: marker, vmName: name)
+			}
 		}
 		scheduleSSHHostConfigWrite()
+		return info
+	}
+
+	// Approving guest→Mac access (C21). The key line goes in first: a Mac that refuses it
+	// refuses the approval, and nothing is recorded — the toggle used to say approved with no
+	// line installed. Then `record` saves the approval with the config's owner, and a record
+	// that fails takes the line back out. Internal so tests can drive it against a stub owner.
+	func approveReverseKey(
+		vm name: String, marker: String, on target: MachmanControlling,
+		record: () async throws -> VMInfo
+	) async throws -> VMInfo {
+		// No key reported: nothing to install, and the owner refuses the approval itself.
+		guard let files = sshFiles,
+			let key = try await target.vm(named: name).ssh?.reversePublicKey
+		else { return try await record() }
+		try files.setReverseKey(key, marker: marker, vmName: name)
+		let info: VMInfo
+		do {
+			info = try await record()
+		} catch {
+			revokeReverseKey(marker: marker, vmName: name)
+			throw error
+		}
+		// A report that replaced the key during the call: the line follows what was approved.
+		if let approved = info.ssh?.reversePublicKey, approved != key {
+			do {
+				try files.setReverseKey(approved, marker: marker, vmName: name)
+			} catch {
+				revokeReverseKey(marker: marker, vmName: name)
+				throw error
+			}
+		}
 		return info
 	}
 
@@ -200,8 +237,8 @@ extension RoutingMachman {
 		try refuseSSHWhileSafe(name)
 		let marker = existingSSHMarker(name)
 		let info = try await target.resetSSH(vm: name)
-		if let files = sshFiles, let marker {
-			try? files.setReverseKey(nil, marker: marker, vmName: name)
+		if let marker {
+			revokeReverseKey(marker: marker, vmName: name)
 		}
 		scheduleSSHHostConfigWrite()
 		return info
