@@ -223,7 +223,7 @@ struct GuestSetupGuidePage: View {
 			+ "unattended.")
 		HelpSectionTitle("Consoles")
 		HelpIntro("The script adds logins on the consoles that lack one (systemd often covers "
-			+ "the first) and skips OpenBSD, which has no virtio-console driver.")
+			+ "the first).")
 		HelpSectionTitle("FreeBSD and OpenBSD")
 		HelpIntro("They have no virtiofs driver, so the setup folder comes over sshfs and the "
 			+ "same script runs from it.")
