@@ -50,7 +50,8 @@ struct LabVMSpec: Sendable {
 
 	func validate() throws {
 		if name.isEmpty || name.contains("/") || name.hasPrefix(".") {
-			throw LabError.specInvalid("a lab VM name can't be empty, contain '/' or start with '.'")
+			throw LabError.specInvalid(
+				"a lab VM name can't be empty, contain '/' or start with '.'")
 		}
 		guard (1...2).contains(cpus) else {
 			throw LabError.specInvalid("a lab VM gets 1 or 2 vCPUs, not \(cpus)")

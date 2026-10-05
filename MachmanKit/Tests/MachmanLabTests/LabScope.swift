@@ -35,7 +35,8 @@ struct LabScope: Sendable {
 			if manager.fileExists(atPath: dir) { continue }
 			try manager.createDirectory(atPath: dir, withIntermediateDirectories: false)
 			for sub in ["data", "home", "images"] {
-				try manager.createDirectory(atPath: dir + "/" + sub, withIntermediateDirectories: false)
+				try manager.createDirectory(
+					atPath: dir + "/" + sub, withIntermediateDirectories: false)
 			}
 			let scope = LabScope(
 				id: id, dir: dir, dataDir: dir + "/data", homeDir: dir + "/home",

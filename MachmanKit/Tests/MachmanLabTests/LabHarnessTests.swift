@@ -152,7 +152,7 @@ struct LabHarnessTests {
 	// MARK: agent, scope, VM spec and fixtures (TC4-TC6): pure, nothing is launched
 
 	@Test(
-		"TC4: an agent's environment carries the suite, its scope and the lab variables, nothing else"
+		"TC4: an agent's environment carries the suite, its scope and the lab variables only"
 	)
 	func agentEnvironment() throws {
 		let scope = try LabScope.make(in: TestEnvironment.scratch + "scopes-\(UUID().uuidString)")

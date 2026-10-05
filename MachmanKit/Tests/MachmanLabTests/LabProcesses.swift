@@ -10,7 +10,9 @@ import Foundation
 
 enum LabProcesses {
 	static func pidFile(kind: String, name: String, in dir: String = Lab.pidsDir) -> String {
-		let safe = String(name.map { $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0)) ? $0 : "_" })
+		let safe = String(name.map { c in
+			c.isASCII && (c.isLetter || c.isNumber || "._-".contains(c)) ? c : "_"
+		})
 		return dir + "/\(kind)-\(safe).pid"
 	}
 
@@ -32,11 +34,13 @@ enum LabProcesses {
 	/// Live guests: alive pids in qemu-*.pid and vmhost-*.pid.
 	static func liveGuestCount(in dir: String = Lab.pidsDir) -> Int {
 		let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-		return names.filter { ($0.hasPrefix("qemu-") || $0.hasPrefix("vmhost-")) && $0.hasSuffix(".pid") }
-			.filter { name in
+		let guests = names.filter {
+			($0.hasPrefix("qemu-") || $0.hasPrefix("vmhost-")) && $0.hasSuffix(".pid")
+		}
+		return guests.filter { name in
 				let text = (try? String(contentsOfFile: dir + "/" + name, encoding: .utf8)) ?? ""
-				guard let pid = text.split(whereSeparator: { !$0.isNumber }).first.flatMap({ pid_t($0) })
-				else { return false }
+				let digits = text.split(whereSeparator: { !$0.isNumber }).first
+				guard let pid = digits.flatMap({ pid_t($0) }) else { return false }
 				return isAlive(pid)
 			}.count
 	}
