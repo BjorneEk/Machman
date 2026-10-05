@@ -68,6 +68,9 @@ struct ActionRunnerTests {
 			Case("stop", "Force stopping \(q("Debian")) failed") {
 				$0.stopVM("Debian", mode: .force)
 			},
+			Case("endProcess", "Ending the process of \(q("Debian")) failed") {
+				$0.endProcess("Debian")
+			},
 			Case("createVM", "Creating a VM failed") { vm in Task { _ = await vm.createVM() } },
 			Case("deleteVM", "Deleting \(q("Alpine")) failed") {
 				$0.performDeleteVM(Samples.linux("Alpine"))

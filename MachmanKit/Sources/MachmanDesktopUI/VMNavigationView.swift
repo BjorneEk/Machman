@@ -271,6 +271,20 @@ private struct ConfirmationDialogs: ViewModifier {
 			} message: { pending in
 				Text(pending.message)
 			}
+			// A Force Stop that can't reach a VM's vmhost asks once more before its process
+			// ends (C9).
+			.alert(
+				viewModel.pendingEndProcess?.prompt.title ?? "",
+				isPresented: $viewModel.isEndProcessPresented,
+				presenting: viewModel.pendingEndProcess
+			) { pending in
+				Button(pending.prompt.confirm, role: .destructive) {
+					viewModel.endProcess(pending.vm)
+				}
+				Button(pending.prompt.cancel, role: .cancel) {}
+			} message: { pending in
+				Text(pending.prompt.message)
+			}
 	}
 
 	// isPresented bridge for item-backed confirmationDialogs (dismiss clears the item).

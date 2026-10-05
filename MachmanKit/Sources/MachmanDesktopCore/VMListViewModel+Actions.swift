@@ -162,9 +162,29 @@ extension VMListViewModel {
 		perform("Closing the \u{201C}\(name)\u{201D} window") { try await $0.closeWindow(vm: name) }
 	}
 
+	// Every Stop path ends here. A Force Stop can't reach a VM whose vmhost doesn't answer:
+	// one listed as not responding, or one whose stop ran out the daemon's bound (timeout),
+	// is asked about once more — ending its process is its own call (C9).
 	public func stopVM(_ name: String, mode: StopMode = .force) {
+		if mode == .force, vms.first(where: { $0.name == name })?.isUnresponsive == true {
+			pendingEndProcess = PendingEndProcess(vm: name)
+			return
+		}
 		let action = mode == .soft ? "Shutting down" : "Force stopping"
-		perform("\(action) \u{201C}\(name)\u{201D}") { try await $0.stop(vm: name, mode: mode) }
+		perform(
+			"\(action) \u{201C}\(name)\u{201D}",
+			recover: { model, error in
+				guard mode == .force, error.code == .timeout else { return false }
+				model.pendingEndProcess = PendingEndProcess(vm: name)
+				return true
+			}
+		) { try await $0.stop(vm: name, mode: mode) }
+	}
+
+	public func endProcess(_ name: String) {
+		perform("Ending the process of \u{201C}\(name)\u{201D}") {
+			try await $0.endProcess(vm: name)
+		}
 	}
 
 	public func createVM(template: VMTemplate? = nil) async -> String? {

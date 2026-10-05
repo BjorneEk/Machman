@@ -24,6 +24,14 @@ public struct PresentedError: Identifiable {
 	public let message: String
 }
 
+// A Force Stop that can't reach a VM whose vmhost doesn't answer, held so the alert can end
+// its process instead — only after this second, explicit question (C9).
+public struct PendingEndProcess: Identifiable {
+	public let id = UUID()
+	public let vm: String
+	public var prompt: EndProcessPrompt { .forVM(vm) }
+}
+
 // A start refused with macConflict, held so the alert can retry it with force.
 public struct PendingForceStart: Identifiable {
 	public let id = UUID()
@@ -76,6 +84,11 @@ public final class VMListViewModel: ObservableObject {
 	public var isForceStartPresented: Bool {
 		get { pendingForceStart != nil }
 		set { if !newValue { pendingForceStart = nil } }
+	}
+	@Published public var pendingEndProcess: PendingEndProcess?
+	public var isEndProcessPresented: Bool {
+		get { pendingEndProcess != nil }
+		set { if !newValue { pendingEndProcess = nil } }
 	}
 	// Pending destructive/choice confirmations, presented as confirmationDialogs by
 	// VMNavigationView (the HIG successor to the old modal NSAlerts).
