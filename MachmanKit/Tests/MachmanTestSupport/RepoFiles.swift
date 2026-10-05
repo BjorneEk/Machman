@@ -106,6 +106,19 @@ public enum RepoFiles {
 		}
 	}
 
+	// The desktop's oldestCompatibleDaemonVersion, read from its source (the app target is
+	// not a package product); nil when the line moved. CLAUDE.md's version policy names it.
+	public static func daemonFloor() throws -> String? {
+		let source = try text("MachmanDesktop/DaemonConnection.swift")
+		let pattern = try NSRegularExpression(
+			pattern: #"static let oldestCompatibleDaemonVersion = "([0-9.]+)""#)
+		guard let match = pattern.firstMatch(
+			in: source, range: NSRange(source.startIndex..., in: source)),
+			let range = Range(match.range(at: 1), in: source)
+		else { return nil }
+		return String(source[range])
+	}
+
 	public static func relativePath(_ file: URL) -> String {
 		let rootPath = root.standardizedFileURL.path
 		let path = file.standardizedFileURL.path

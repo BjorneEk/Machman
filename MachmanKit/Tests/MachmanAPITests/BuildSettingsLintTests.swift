@@ -99,21 +99,8 @@ struct BuildSettingsLintTests {
 		let debug = try #require(project.projectSettings["Debug"]?["MARKETING_VERSION"])
 		let release = try #require(project.projectSettings["Release"]?["MARKETING_VERSION"])
 		#expect(debug == release)
-		let floor = try #require(try Self.daemonFloor())
+		let floor = try #require(try RepoFiles.daemonFloor())
 		#expect(!MachmanVersion.isOlder(debug, than: floor),
 			"MARKETING_VERSION \(debug) is below oldestCompatibleDaemonVersion \(floor)")
-	}
-
-	// The desktop's oldestCompatibleDaemonVersion, read from its source (the app target is
-	// not a package product): nil when the line moved.
-	static func daemonFloor() throws -> String? {
-		let source = try RepoFiles.text("MachmanDesktop/DaemonConnection.swift")
-		let pattern = try NSRegularExpression(
-			pattern: #"static let oldestCompatibleDaemonVersion = "([0-9.]+)""#)
-		guard let match = pattern.firstMatch(
-			in: source, range: NSRange(source.startIndex..., in: source)),
-			let range = Range(match.range(at: 1), in: source)
-		else { return nil }
-		return String(source[range])
 	}
 }
