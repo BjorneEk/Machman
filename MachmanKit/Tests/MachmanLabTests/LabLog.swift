@@ -43,8 +43,8 @@ enum LabLog {
 	static func count(_ pattern: String, after: UInt64 = 0, path: String = Lab.logPath) -> Int {
 		guard let regex = try? NSRegularExpression(pattern: pattern) else { return 0 }
 		return entries(after: after, path: path).filter {
-			regex.firstMatch(in: $0.eventMessage, range: NSRange($0.eventMessage.startIndex..., in: $0.eventMessage))
-				!= nil
+			let range = NSRange($0.eventMessage.startIndex..., in: $0.eventMessage)
+			return regex.firstMatch(in: $0.eventMessage, range: range) != nil
 		}.count
 	}
 

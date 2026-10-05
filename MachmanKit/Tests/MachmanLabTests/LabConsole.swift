@@ -187,7 +187,8 @@ final class LabConsole: @unchecked Sendable {
 		let n = seq
 		try send("\(command); echo 'LAB''\(n)X' $?")
 		let groups = try await expect("\\A(?s:(.*?))LAB\(n)X (\\d+)\\n", timeout: timeout)
-		var lines = groups[1].split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+		var lines = groups[1].split(separator: "\n", omittingEmptySubsequences: false)
+			.map(String.init)
 		if let echoed = lines.lastIndex(where: { $0.contains("\(n)X' $?") }) {
 			lines.removeSubrange(0...echoed)
 		}
@@ -209,7 +210,8 @@ final class LabConsole: @unchecked Sendable {
 		try await expect("[#$] *$", timeout: .seconds(60))
 		let probe = try await run("true")
 		guard probe.status == 0 else {
-			throw LabError.commandFailed(command: "true", status: probe.status, output: probe.output)
+			throw LabError.commandFailed(
+				command: "true", status: probe.status, output: probe.output)
 		}
 	}
 }
