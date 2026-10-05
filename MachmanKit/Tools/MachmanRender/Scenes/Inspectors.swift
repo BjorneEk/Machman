@@ -366,5 +366,17 @@ enum InspectorScenes {
 			"device.graphics.newer-capture",
 			"GraphicsInspector, a capture mode from a newer Machman",
 			vms: { [Samples.linuxNewerCaptureMode()] }, node: .device(.graphics)),
+		// RunDefaults narrow width: the Default start toggles at the inspector's 250 pt floor.
+		RenderScene(
+			"inspector.vm.default-start.floor",
+			"VMInspector at the inspector's 250 pt floor, Start at login on",
+			widths: [250], height: height, vms: { [Samples.linuxAutostart()] }
+		) { ctx in
+			ctx.viewModel.select(name: "Alpine")
+			ctx.viewModel.treeSelection = []
+			return AnyView(InspectorView(
+				viewModel: ctx.viewModel, sessions: ctx.terminals, profiles: ctx.profiles,
+				vm: ctx.vm))
+		},
 	]
 }

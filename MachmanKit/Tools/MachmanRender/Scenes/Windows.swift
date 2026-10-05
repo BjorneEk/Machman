@@ -693,5 +693,14 @@ enum WindowScenes {
 		) { ctx in
 			treeWithDrop(ctx, Samples.mixedDrop().filter(\.hasDirectoryPath))
 		},
+		// W4-32: a starting VM's canvas in a narrow pane — Starting… shrinks before it is cut.
+		RenderScene(
+			"canvas.preview.starting.narrow",
+			"VMPreviewTabView, Kernel Lab starting, in a 120 and a 160 pt pane",
+			widths: [120, 160], height: 200
+		) { ctx in
+			ctx.viewModel.select(name: "Kernel Lab")
+			return AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
 	]
 }

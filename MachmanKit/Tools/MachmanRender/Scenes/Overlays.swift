@@ -148,5 +148,20 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		// W4-8: the agent menu's VM glyphs, green while running, a yellow shield on a safe
+		// run (a live menu may flatten them to a template).
+		RenderScene(
+			"menubar.status-icons",
+			"StatusIcon: stopped, running windowed, running headless, a safe run",
+			widths: [180], height: 48
+		) { _ in
+			AnyView(HStack(spacing: 18) {
+				StatusIcon(state: .stopped, windowOpen: false)
+				StatusIcon(state: .running, windowOpen: true)
+				StatusIcon(state: .running, windowOpen: false)
+				StatusIcon(state: .running, windowOpen: true, safeRun: true)
+			}
+			.padding(12))
+		},
 	]
 }
