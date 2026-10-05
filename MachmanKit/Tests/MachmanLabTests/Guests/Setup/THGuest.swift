@@ -103,7 +103,48 @@ extension THGuest {
 
 	/// The report's stamp now (nil before the first): a later report is newer than it. A
 	/// test clock is no mark — the host's stamp may land in the same second as a Date().
+	/// The host restamps only a report whose content changed (a boot's that says what the
+	/// last run said leaves it): reportFileDate marks a write.
 	func reportMark() async throws -> Date? { try await vm.info().setup?.lastReportAt }
+
+	/// Polls the VM's VMInfo until `condition` holds.
+	@discardableResult
+	func waitForInfo(
+		_ what: String, timeout: Duration = .seconds(60), _ condition: (VMInfo) -> Bool
+	) async throws -> VMInfo {
+		let deadline = ContinuousClock.now + timeout
+		while true {
+			let info = try await vm.info()
+			if condition(info) { return info }
+			if ContinuousClock.now >= deadline {
+				throw LabError.stateTimeout(vm: vm.name, wanted: what, last: "not yet")
+			}
+			try await Task.sleep(for: .milliseconds(500))
+		}
+	}
+
+	/// When the guest last wrote report.env, by the host's file (nil while there is none).
+	func reportFileDate() -> Date? {
+		(try? FileManager.default.attributesOfItem(atPath: vm.reportFile))?[.modificationDate]
+			as? Date
+	}
+
+	/// Waits until the guest writes report.env after `since` (the host's file date), then
+	/// long enough for the vmhost's 2 s poll to ingest it.
+	func waitForReportFile(newerThan since: Date?, timeout: Duration = .seconds(360))
+		async throws {
+		let deadline = ContinuousClock.now + timeout
+		while true {
+			if let now = reportFileDate(), since.map({ now > $0 }) ?? true { break }
+			if ContinuousClock.now >= deadline {
+				throw LabError.stateTimeout(
+					vm: vm.name, wanted: "report.env written again",
+					last: "\(String(describing: since))")
+			}
+			try await Task.sleep(for: .milliseconds(500))
+		}
+		try await Task.sleep(for: .seconds(5))
+	}
 
 	/// Approves the guest's reverse key once its report offered one (as the inspector's
 	/// button does: there is nothing to approve before).
