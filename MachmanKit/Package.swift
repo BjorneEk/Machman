@@ -174,7 +174,7 @@ let package = Package(
 			name: "MachmanLabTests",
 			dependencies: [
 				"MachmanAPI", "MachmanClient", "MachmanUI", "MachmanDesktopCore",
-				"MachmanFixtures", "MachmanTestSupport",
+				"MachmanDesktopUI", "MachmanFixtures", "MachmanTestSupport",
 			],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
