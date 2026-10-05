@@ -108,4 +108,18 @@ enum SSHSetupInstaller {
 		}
 		try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
 	}
+
+	// Re-keys an existing pin whose name is no longer the VM's alias (C23). The alias moves on
+	// a rename (the default follows the name), a stored collision suffix or a newer default
+	// mapping — with or without the Guest Setup device that used to be the only re-pin — and
+	// session tabs check HostKeyAlias=<alias> strictly: a pin under the old name failed them
+	// with "Host key verification failed". Never creates a pin; cheap when there is none.
+	static func repinIfAliasMoved(for config: VMConfig) {
+		guard let data = FileManager.default.contents(atPath: knownHostsPath(for: config))
+		else { return }
+		let pinned = String(decoding: data, as: UTF8.self)
+			.split(separator: " ", maxSplits: 1).first.map(String.init)
+		guard pinned != config.effectiveSSHAlias else { return }
+		writeKnownHosts(for: config)
+	}
 }

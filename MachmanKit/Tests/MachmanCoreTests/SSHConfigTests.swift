@@ -141,4 +141,61 @@ struct SSHConfigTests {
 		let re = try JSONEncoder().encode(decoded)
 		#expect(String(data: re, encoding: .utf8)!.contains("futureThing"))
 	}
+
+	// MARK: - C23: the session tabs' pin follows the alias
+
+	private let hostKey = "ssh-ed25519 AAAAHOST host"
+
+	// A set-up VM whose Guest Setup device is gone: a pinned host key, nothing re-pins at start.
+	private func pinnedVM(_ name: String) throws -> VMConfig {
+		try VMConfig.createNewVMDirectory(name: name)
+		let vm = try VMConfig(name: name, memorySize: 1 << 30, cpuCount: 2)
+		var state = SSHConfig()
+		state.guestUser = "admin"
+		state.guestHostKey = hostKey
+		vm.ssh = state
+		try FileManager.default.createDirectory(
+			atPath: vm.configFilePath(file: "ssh"), withIntermediateDirectories: true)
+		try vm.saveVMConfig()
+		SSHSetupInstaller.writeKnownHosts(for: vm)
+		return vm
+	}
+
+	private func pin(_ vm: VMConfig) -> String? {
+		try? String(contentsOfFile: SSHSetupInstaller.knownHostsPath(for: vm), encoding: .utf8)
+	}
+
+	@Test @MainActor func aRenameRePinsUnderTheNewAlias() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try pinnedVM("before")
+			#expect(pin(vm) == "before.machman ssh-ed25519 AAAAHOST\n")
+
+			try vm.rename(to: "after copy")
+			#expect(pin(vm) == "after-copy.machman ssh-ed25519 AAAAHOST\n")
+		}
+	}
+
+	// A pin left by an older build — an unmapped alias, or a rename before this fix — heals
+	// at the VM's next save (every start saves).
+	@Test @MainActor func aStalePinHealsAtTheNextSave() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try pinnedVM("Debian copy")
+			try "Debian copy.machman ssh-ed25519 AAAAHOST\n".write(
+				toFile: SSHSetupInstaller.knownHostsPath(for: vm), atomically: true,
+				encoding: .utf8)
+
+			try vm.saveVMConfig()
+			#expect(pin(vm) == "Debian-copy.machman ssh-ed25519 AAAAHOST\n")
+		}
+	}
+
+	@Test @MainActor func aSaveNeverCreatesAPin() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try pinnedVM("nopin")
+			try FileManager.default.removeItem(atPath: SSHSetupInstaller.knownHostsPath(for: vm))
+
+			try vm.saveVMConfig()
+			#expect(pin(vm) == nil)
+		}
+	}
 }

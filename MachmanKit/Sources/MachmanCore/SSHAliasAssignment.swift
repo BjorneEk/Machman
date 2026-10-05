@@ -180,8 +180,10 @@ extension VMConfig {
 
 	// Called by every save: an older collision's suffix, served so far by resolution
 	// alone, becomes this VM's stored alias, so a later change to the other VM can't move
-	// it. Nothing to do for a VM that stores an alias or keeps its plain default.
+	// it. Nothing to do for a VM that stores an alias or keeps its plain default. Every save
+	// is also where an alias move becomes real, so the session tabs' pin follows it here.
 	func persistResolvedDefaultAlias() {
+		defer { SSHSetupInstaller.repinIfAliasMoved(for: self) }
 		guard ssh?.alias == nil else { return }
 		let resolved = resolvedDefaultAlias
 		guard resolved != SSHHostConfigWriter.defaultAlias(for: name) else { return }
