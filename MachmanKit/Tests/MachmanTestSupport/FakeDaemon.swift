@@ -122,7 +122,9 @@ public final class FakeDaemon: @unchecked Sendable {
 		func stop() { lock.withLock { stopped = true } }
 	}
 
+	// Idempotent: listening already, it does nothing.
 	public func listen() throws {
+		guard lock.withLock({ self.listener == nil }) else { return }
 		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard fd >= 0 else { throw Self.failure("socket", errno) }
 		var address = sockaddr_un()
@@ -150,11 +152,7 @@ public final class FakeDaemon: @unchecked Sendable {
 		}
 		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 		let listener = Listener(fd: fd, device: info.st_dev, inode: info.st_ino)
-		let previous = lock.withLock { () -> Listener? in
-			defer { self.listener = listener }
-			return self.listener
-		}
-		previous?.stop()
+		lock.withLock { self.listener = listener }
 		let path = socketPath
 		Thread.detachNewThread { [weak self] in
 			while !listener.isStopped, self != nil {
