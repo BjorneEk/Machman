@@ -36,6 +36,10 @@ protocol THGuest: AnyObject, Sendable {
 	/// again and the share is mounted again unless the guest mounts it itself.
 	func reboot() async throws
 
+	/// Back to root's prompt on the driver after a row that failed half-way (an installer
+	/// still asking, a user's shell): interrupts, leaves, and as a last resort boots again.
+	func recoverDriver() async
+
 	/// Stops and removes what the guest started; for every exit path.
 	func shutdown() async
 }
@@ -168,6 +172,18 @@ enum THShared {
 
 	static func require() throws -> any THGuest {
 		try #require(guest, "no shared TH guest (the suite needs .thGuest(<kind>))")
+	}
+
+	/// A row on the shared guest: a row that throws half-way leaves the driver at root's
+	/// prompt for the next one.
+	static func row(_ body: (any THGuest) async throws -> Void) async throws {
+		let g = try require()
+		do {
+			try await body(g)
+		} catch {
+			await g.recoverDriver()
+			throw error
+		}
 	}
 }
 

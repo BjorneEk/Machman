@@ -64,7 +64,8 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 				guard let mountKind else { continue }
 				let info = try await vm.info()
 				guard let mount = info.mounts.first(where: { $0.tag == tag }) else { continue }
-				_ = try await agent.api.setMountKind(vm: vm.name, mountID: mount.id, kind: mountKind)
+				_ = try await agent.api.setMountKind(
+					vm: vm.name, mountID: mount.id, kind: mountKind)
 			}
 			let driver = try await vm.bootLoggedIn(2, label: "hvc2")
 			let guest = THVZGuest(
@@ -204,14 +205,26 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 			try await driver.expect("[#] *$", timeout: .seconds(30))
 			return result
 		} catch {
-			// Back to root's shell whatever the body left behind (a prompt, a menu).
-			try? driver.sendRaw([0x03])
-			try? await Task.sleep(for: .milliseconds(300))
-			try? driver.send("")
-			try? driver.send("exit")
-			_ = try? await driver.expect("[#] *$", timeout: .seconds(20))
+			await recoverDriver()
 			throw error
 		}
+	}
+
+	func recoverDriver() async {
+		for _ in 0..<4 {
+			try? driver.sendRaw([0x03])
+			try? await Task.sleep(for: .milliseconds(500))
+			try? driver.send("")
+			guard let id = try? await driver.run("id -u", timeout: .seconds(10)) else {
+				continue
+			}
+			let last = id.output.split(separator: "\n").last.map(String.init)
+			if id.status == 0 && last == "0" { return }
+			try? driver.send("exit")
+			try? await Task.sleep(for: .seconds(1))
+		}
+		TH.log("\(vm.name): the driver did not come back; booting again")
+		try? await restartFromHost()
 	}
 
 	func reboot() async throws {

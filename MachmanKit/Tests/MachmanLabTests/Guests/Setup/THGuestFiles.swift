@@ -60,6 +60,20 @@ enum THGuestFiles {
 		let digest: String
 	}
 
+	/// The files whose content, owner or mode differ between two fingerprints (or that only
+	/// one of them has), but those whose path contains an `ignoring` item; "" when none.
+	static func changes(
+		_ g: any THGuest, from a: Fingerprint, to b: Fingerprint, ignoring: [String]
+	) async throws -> String {
+		let filter = ignoring.isEmpty ? "cat"
+			: "grep -v -F " + ignoring.map { "-e \(ShellQuote.single($0))" }
+				.joined(separator: " ")
+		let out = try await g.sh(
+			"\(filter) < \(a.path) > \(a.path).f; \(filter) < \(b.path) > \(b.path).f;"
+				+ " diff \(a.path).f \(b.path).f | grep '^[<>]' | head -n 60; true")
+		return out.output.trimmingCharacters(in: .whitespacesAndNewlines)
+	}
+
 	/// The lines that differ between two fingerprints (for a failure message).
 	static func diff(_ g: any THGuest, _ a: Fingerprint, _ b: Fingerprint) async -> String {
 		(try? await g.sh("diff \(a.path) \(b.path) | head -n 40").output) ?? "?"
