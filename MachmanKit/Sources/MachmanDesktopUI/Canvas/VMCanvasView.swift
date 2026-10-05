@@ -81,6 +81,8 @@ struct VMCanvasView: View {
 			.onGeometryChange(for: CGSize.self) { $0.size } action: { size in
 				frames.canvasSize = size
 			}
+			// A fast drag outruns the 9 pt divider: its pointer stays until the release.
+			.pointerStyle(dividerDrag != nil ? .columnResize : nil)
 		}
 		.coordinateSpace(name: "machman-canvas")
 		.background(Color(nsColor: .underPageBackgroundColor))
@@ -135,9 +137,9 @@ struct VMCanvasView: View {
 		}
 		.frame(width: dividerWidth)
 		.contentShape(Rectangle())
-		.onHover { inside in
-			if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-		}
+		// The system's column-resize pointer, set by hover — not a push/pop that a divider
+		// leaving mid-hover (a collapsed pane, a VM switch) leaves unbalanced (H43).
+		.pointerStyle(.columnResize)
 		.gesture(
 			DragGesture(coordinateSpace: .named("machman-canvas"))
 				.onChanged { value in
