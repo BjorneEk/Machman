@@ -657,6 +657,12 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {
+		// A VM still preparing a safe run has nothing running yet: stopping it cancels the
+		// preparation, and its start fails as canceled (C14).
+		if let cancel = claims.cancelHook(for: name) {
+			cancel()
+			return
+		}
 		try await proxy(name).stop(vm: name, mode: mode)
 	}
 

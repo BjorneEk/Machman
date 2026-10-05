@@ -200,6 +200,9 @@ extension RoutingMachman {
 				ShadowMarker(vm: name, createdAt: Date(), pid: nil), runRoot: runRoot)
 			let build = beginShadowBuild(vm, runRoot: runRoot)
 			let center = local.operationCenter
+			// Nothing runs yet: a stop meanwhile cancels the preparation (C14).
+			claims.setCancel(claim) { build.canceled.set() }
+			defer { claims.setCancel(claim, nil) }
 			// Detached: same-volume clones are instant, but unsafe-marked-safe external
 			// images can be real byte copies.
 			do {

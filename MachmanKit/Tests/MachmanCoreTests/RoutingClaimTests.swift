@@ -92,6 +92,28 @@ struct RoutingClaimTests {
 		#expect(error.message == "beta is being copied — try again when it finishes")
 	}
 
+	// C14: a VM still preparing a safe run runs nothing yet, so Shut Down and Force Stop
+	// cancel the preparation; in the spawn window (no cancel) a stop still waits.
+	@Test @MainActor func aStopCancelsASafeRunsPreparation() async throws {
+		let routing = try makeRouting()
+		let start = routing.claims.insert("alpha", .starting)
+		var canceled = 0
+		routing.claims.setCancel(start) { canceled += 1 }
+
+		try await routing.stop(vm: "alpha", mode: .soft)
+		try await routing.stop(vm: "alpha", mode: .force)
+		#expect(canceled == 2)   // before: "alpha is starting — try again once it is running"
+
+		routing.claims.setCancel(start, nil)
+		do {
+			try await routing.stop(vm: "alpha", mode: .force)
+			Issue.record("a stop went through in the spawn window")
+		} catch let error as MachmanError {
+			#expect(error.message == "alpha is starting — try again once it is running")
+		}
+		#expect(canceled == 2)
+	}
+
 	// The real window: an import into a VM whose idle vmhost does the copy (it proxies while
 	// hosted). Before, a start during it was forwarded to that host and the VM booted on the
 	// config the import was about to change.

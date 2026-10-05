@@ -56,6 +56,9 @@ final class VMClaims {
 		// Whether the work runs in this process. A copy proxied to the VM's vmhost runs there
 		// and outlives this daemon.
 		let inDaemon: Bool
+		// What stopping the VM does while the claim holds it: a safe start's shadow build
+		// cancels (C14). nil: a stop is refused.
+		var cancel: (() -> Void)?
 	}
 
 	// Names one claim, for its release.
@@ -97,6 +100,17 @@ final class VMClaims {
 
 	func claims(on name: String) -> [Claim] {
 		table[name] ?? []
+	}
+
+	func setCancel(_ token: Token, _ cancel: (() -> Void)?) {
+		guard let index = table[token.name]?.firstIndex(where: { $0.order == token.order })
+		else { return }
+		table[token.name]?[index].cancel = cancel
+	}
+
+	// What a stop of `name` cancels instead, if anything.
+	func cancelHook(for name: String) -> (() -> Void)? {
+		table[name]?.lazy.compactMap(\.cancel).first
 	}
 
 	// Why `name` can't start or change as a whole right now, or nil when nothing holds it.
