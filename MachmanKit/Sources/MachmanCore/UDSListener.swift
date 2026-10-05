@@ -45,6 +45,7 @@ public enum UDSError: Error, CustomStringConvertible, LocalizedError {
 
 final class UDSListener {
 	private let fd: Int32
+	private let bound: BoundSocket
 	private let queue: DispatchQueue
 	private let source: DispatchSourceRead
 	private let keepAliveTimer: DispatchSourceTimer
@@ -65,7 +66,7 @@ final class UDSListener {
 	) throws {
 		self.path = path
 		self.queue = queue
-		var addr = try Self.makeAddr(path)
+		_ = try Self.makeAddr(path)   // the sun_path ceiling, before touching any file
 
 		// A leftover socket file: connect-probe it. A live daemon accepts (refuse to start);
 		// a dead one refuses (stale file — remove and take over). Force quits and power losses
@@ -79,23 +80,10 @@ final class UDSListener {
 			unlink(path)
 		}
 
-		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-		guard fd >= 0 else { throw UDSError.systemError("socket", errno) }
-		let bound = withUnsafePointer(to: &addr) {
-			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
-			}
-		}
-		// A full backlog, not just a dead socket, makes a UNIX-socket connect fail with
-		// ECONNREFUSED, so a short one would let isLive(path:) misread a busy listener as
-		// dead — and the router acts on that (unlink, route to the local engine).
-		guard bound, listen(fd, SOMAXCONN) == 0 else {
-			let err = errno
-			close(fd)
-			throw UDSError.systemError("bind/listen", err)
-		}
-		chmod(path, 0o600)   // same-user only; the socket IS the auth boundary
+		let bound = try BoundSocket.listen(at: path)
+		let fd = bound.fd
 		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+		self.bound = bound
 		self.fd = fd
 
 		source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
@@ -143,11 +131,16 @@ final class UDSListener {
 		}
 	}
 
+	// The file goes BEFORE the descriptor closes, and only while it is still ours (E44). A
+	// closed listener's file reads dead, and a successor probing in that gap (the agent's
+	// takeover polls every 200 ms) unlinks it and binds its own — which an unlink after the
+	// close then removed, leaving the new daemon serving a socket nobody could reach. Closing
+	// never unlinks: the CURRENT path goes.
 	func shutdown() {
 		keepAliveTimer.cancel()
 		source.cancel()
+		queue.sync { bound.unlinkIfOurs(path) }
 		close(fd)
-		unlink(queue.sync { path })   // closing never unlinks: the CURRENT path goes
 	}
 
 	// For tests that stand in for a forked child holding a copy of the listener.
@@ -231,6 +224,56 @@ final class UDSListener {
 			}
 		}
 		return addr
+	}
+}
+
+// A listening socket bound at a path, and the identity of the file it bound (E44). The control
+// sockets (UDSListener) and the serial bridges share it, so both listen with the full backlog
+// and only ever remove their own file.
+struct BoundSocket {
+	let fd: Int32
+	private let device: dev_t
+	private let inode: ino_t
+
+	// Binds, listens and restricts the file to its owner; the caller cleared any dead leftover
+	// at `path` first. A failure leaves neither a descriptor nor a file behind.
+	static func listen(at path: String) throws -> BoundSocket {
+		var addr = try UDSListener.makeAddr(path)
+		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+		guard fd >= 0 else { throw UDSError.systemError("socket", errno) }
+		let didBind = withUnsafePointer(to: &addr) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+			}
+		}
+		var info = stat()
+		guard didBind, lstat(path, &info) == 0 else {
+			let err = errno
+			close(fd)
+			throw UDSError.systemError("bind/listen", err)
+		}
+		let bound = BoundSocket(fd: fd, device: info.st_dev, inode: info.st_ino)
+		// A full backlog, not just a dead socket, makes a UNIX-socket connect fail with
+		// ECONNREFUSED, so a short one would let isLive(path:) misread a busy listener as
+		// dead — and the router acts on that (unlink, route to the local engine), as does the
+		// startup prune of serial sockets.
+		guard Darwin.listen(fd, SOMAXCONN) == 0 else {
+			let err = errno
+			bound.unlinkIfOurs(path)
+			close(fd)
+			throw UDSError.systemError("bind/listen", err)
+		}
+		chmod(path, 0o600)   // same-user only; the socket IS the auth boundary
+		return bound
+	}
+
+	// Removes the file at `path` if it is still the one this socket bound (a rename keeps it):
+	// a successor may own the path by now. Called before the descriptor closes — while the
+	// socket still listens a probe reads it live, so nothing replaces the file in between.
+	func unlinkIfOurs(_ path: String) {
+		var info = stat()
+		guard lstat(path, &info) == 0, info.st_dev == device, info.st_ino == inode else { return }
+		unlink(path)
 	}
 }
 
