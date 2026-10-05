@@ -501,6 +501,8 @@ extension RoutingMachman {
 	func finishSafeSave(
 		_ host: HostedVM, from name: String, to newName: String, reply info: VMInfo
 	) -> VMInfo {
+		// Either way the library gained a VM: ~/.ssh/machman follows it, as after a copy (C27).
+		defer { scheduleSSHHostConfigWrite() }
 		let library = host.identity.library ?? machmanVMDir
 		guard hosted[name] === host else {
 			// The run ended while it saved: the saved VM is on disk, stopped.
