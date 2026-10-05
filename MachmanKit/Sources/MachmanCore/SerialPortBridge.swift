@@ -35,7 +35,7 @@ final class SerialPortBridge {
 	private var ring = Data()
 	private var clients: [Int32: DispatchSourceRead] = [:]
 	private var warnedDrop: Set<Int32> = []
-	private var listenerFD: Int32 = -1
+	private var listener: BoundSocket?
 	private var acceptSource: DispatchSourceRead?
 	// The socket's timestamps, refreshed like the control sockets' (E30): the temp cleaner
 	// reaps entries untouched for three days, and a console socket then can't be attached.
@@ -120,11 +120,12 @@ final class SerialPortBridge {
 			self.clients.removeAll()
 			try? self.log?.close()
 			self.log = nil
-			// Only a socket this bridge bound: the path may be another run's (E27).
-			if self.listenerFD >= 0 {
-				close(self.listenerFD)
-				self.listenerFD = -1
-				unlink(self.socketPath)
+			// Only a socket this bridge bound: the path may be another run's (E27), or a
+			// successor's by now — so only the file it bound, and before closing (E44).
+			if let listener = self.listener {
+				listener.unlinkIfOurs(self.socketPath)
+				close(listener.fd)
+				self.listener = nil
 			}
 		}
 	}
@@ -345,38 +346,23 @@ final class SerialPortBridge {
 				message: "serial bridge \(kind.rawValue)\(index): \(socketPath) is in use")
 		}
 		unlink(socketPath)
-		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-		guard fd >= 0 else { throw bridgeError("socket") }
-		var addr = sockaddr_un()
-		addr.sun_family = sa_family_t(AF_UNIX)
-		guard socketPath.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else {
-			close(fd)
-			throw bridgeError("socket path too long")
+		// The control sockets' binding (E44): the sun_path ceiling, the full backlog (a short
+		// one let the startup prune's isLive read a busy bridge as dead), the bound file's
+		// identity for stop.
+		do {
+			listener = try BoundSocket.listen(at: socketPath)
+		} catch {
+			throw MachmanError(
+				code: .ioFailure, message: "serial bridge \(kind.rawValue)\(index): \(error)")
 		}
-		withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-			raw.copyBytes(from: Array(socketPath.utf8))
-		}
-		let bound = withUnsafePointer(to: &addr) { p in
-			p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-				bind(fd, sa, socklen_t(MemoryLayout<sockaddr_un>.size))
-			}
-		}
-		guard bound == 0 else { close(fd); throw bridgeError("bind") }
-		chmod(socketPath, 0o600)
-		guard listen(fd, 8) == 0 else {
-			let error = bridgeError("listen")
-			close(fd)
-			unlink(socketPath)   // bound here a moment ago: ours to remove
-			throw error
-		}
-		listenerFD = fd
 	}
 
 	private func installAccept() {
+		guard let listenerFD = listener?.fd else { return }
 		let source = DispatchSource.makeReadSource(fileDescriptor: listenerFD, queue: queue)
 		source.setEventHandler { [weak self] in
 			guard let self = self, !self.stopped else { return }
-			let fd = accept(self.listenerFD, nil, nil)
+			let fd = accept(listenerFD, nil, nil)
 			if fd >= 0 { self.addClient(fd) }
 		}
 		acceptSource = source
@@ -403,13 +389,6 @@ final class SerialPortBridge {
 	// What the two head-trimmed buffers' storage spans (E31) — a test seam.
 	var retainedForTesting: (ring: Int, guestInput: Int) {
 		queue.sync { (ring.endIndex, guestInput.endIndex) }
-	}
-
-	private func bridgeError(_ what: String) -> MachmanError {
-		MachmanError(
-			code: .ioFailure,
-			message: "serial bridge \(kind.rawValue)\(index) \(what): "
-				+ String(cString: strerror(errno)))
 	}
 }
 

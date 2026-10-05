@@ -5,7 +5,8 @@
 //  A serial port's data-plane socket (tty-*.sock) is bound by its bridge, outside
 //  UDSListener. E30: it gets the same keep-alive against the temp cleaner as the control
 //  sockets (E10); the tests run the timer at 100 ms over bare pipes (no VZ). E27: a bridge
-//  never takes over, or removes, a socket another run is serving.
+//  never takes over, or removes, a socket another run is serving. E44: nor one a successor
+//  bound after its own was unlinked — stop removes only the file the bridge bound.
 //
 
 import Testing
@@ -90,5 +91,19 @@ struct SerialBridgeKeepAliveTests {
 
 		#expect(inode(path) == served)              // before: unlinked and rebound
 		#expect(UDSListener.isLive(path: path))     // before: removed at stop
+	}
+
+	@Test func aStoppedBridgeLeavesASuccessorsSocket() throws {
+		let port = makeBridge("ttysucc")
+		port.bridge.start()
+		#expect(UDSListener.isLive(path: port.socketPath))
+		// What a successor does to a socket it read as dead: unlink it and bind its own.
+		unlink(port.socketPath)
+		let successor = try UDSListener(
+			path: port.socketPath, queue: DispatchQueue(label: "mm-tty-succ")) { fd in close(fd) }
+		defer { successor.shutdown() }
+		port.bridge.stop()
+		_ = port.bridge.currentLogPath()   // runs on the bridge's queue, after stop's teardown
+		#expect(UDSListener.isLive(path: port.socketPath))   // before: removed at stop
 	}
 }
