@@ -6,6 +6,7 @@
 
 SSHFS_PLAN=""
 MOUNT_PLAN=""
+SYSCTL_CONF=/etc/sysctl.conf   # where an allowed user mount is kept across reboots
 USER_MOUNT_PLAN=""
 avail_sshfs=0
 reason_sshfs=""
@@ -127,10 +128,25 @@ sshfs_act_user_mounts() {
 			"Set it yourself: sysctl vfs.usermount=1"
 		return 0
 	fi
-	if [ "$DRY_RUN" -eq 0 ] && ! grep -q '^vfs.usermount' /etc/sysctl.conf 2>/dev/null; then
-		echo 'vfs.usermount=1' >> /etc/sysctl.conf
-	fi
 	ok "user mounts allowed (vfs.usermount=1)"
+	sshfs_keep_sysctl vfs.usermount 1
+	return 0
+}
+
+# sshfs_keep_sysctl <name> <value> — kept across reboots in SYSCTL_CONF, in a block tagged
+# $MARKER-usermount that the uninstall can name; a file already setting it is left alone.
+sshfs_keep_sysctl() {
+	if [ "$DRY_RUN" -eq 1 ]; then
+		acting "would keep $1=$2 in $SYSCTL_CONF"
+		return 0
+	fi
+	_sks_name="$(printf '%s' "$1" | sed 's/\./\\./g')"
+	grep -Eq "^[[:space:]]*${_sks_name}[[:space:]]*=[[:space:]]*${2}[[:space:]]*\$" \
+		"$SYSCTL_CONF" 2>/dev/null && return 0
+	if ! put_block "$SYSCTL_CONF" "$MARKER-usermount" "$1=$2"; then
+		step_failed mount-setup "could not keep $1=$2 across reboots: $R_ERROR" \
+			"Add '$1=$2' to $SYSCTL_CONF yourself."
+	fi
 	return 0
 }
 
@@ -174,7 +190,11 @@ sshfs_uninstall() {
 			note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
 		fi
 		if [ "$(sysctl -n vfs.usermount 2>/dev/null || true)" = 1 ]; then
-			note "vfs.usermount=1 stays — 'sysctl vfs.usermount=0' plus its /etc/sysctl.conf line revert it."
+			if grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; then
+				note "vfs.usermount=1 stays — 'sysctl vfs.usermount=0' and the $MARKER-usermount block in $SYSCTL_CONF revert it."
+			else
+				note "vfs.usermount=1 stays — 'sysctl vfs.usermount=0' plus its $SYSCTL_CONF line revert it."
+			fi
 		fi
 	fi
 	return 0

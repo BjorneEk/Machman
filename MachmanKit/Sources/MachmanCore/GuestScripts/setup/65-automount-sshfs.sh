@@ -7,6 +7,7 @@
 SSHFSAUTO_PLAN=""
 SSHFSAUTO_SELECTED=""      # mount names chosen, one per line ("@share" = the share)
 SSHFSAUTO_DONE=""          # the names configured, TAB-separated (names carry spaces)
+SSHFS_BOOT_SCRIPT=/etc/local.d/machman-sshfs.start   # openrc's boot mounts
 avail_sshfsauto=0
 reason_sshfsauto=""
 
@@ -294,13 +295,21 @@ EOF
 sshfsauto_write_boot_script() {
 	case "$INIT" in
 	openrc)
-		{
-			printf '#!/bin/sh\n# %s — machman sshfs automounts\n' "$MARKER"
-			printf '%s' "$1"
-		} > /etc/local.d/machman-sshfs.start
-		chmod 755 /etc/local.d/machman-sshfs.start
+		mkdir -p "${SSHFS_BOOT_SCRIPT%/*}" 2>/dev/null || true
+		# A here-doc, not a pipe: write_file must run in this shell to hand back R_ERROR.
+		_sbs_shebang='#!/bin/sh'
+		if ! write_file -m 755 "$SSHFS_BOOT_SCRIPT" <<EOF
+$_sbs_shebang
+# $MARKER — machman sshfs automounts
+$(printf '%s' "$1")
+EOF
+		then
+			step_failed automount-sshfs "could not write $SSHFS_BOOT_SCRIPT: $R_ERROR" \
+				"Add the sshfs lines to it yourself."
+			return 0
+		fi
 		run "enabling the local boot scripts" rc-update add local default || true
-		ok "sshfs folders mount at boot (/etc/local.d/machman-sshfs.start)"
+		ok "sshfs folders mount at boot ($SSHFS_BOOT_SCRIPT)"
 		;;
 	*)
 		if ! rc_local_ready automount-sshfs; then
@@ -326,7 +335,7 @@ sshfsauto_report() {
 }
 
 sshfsauto_uninstall() {
-	rm -f /etc/local.d/machman-sshfs.start 2>/dev/null || true
+	rm -f "$SSHFS_BOOT_SCRIPT" 2>/dev/null || true
 	strip_block /etc/rc.local || uninstall_kept
 	return 0
 }

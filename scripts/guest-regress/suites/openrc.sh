@@ -3,7 +3,7 @@
 # source's marker on every machman artifact).
 # CHECKS: CLONE_NOTE CLONE_SWEPT CLONE_REVERSE REPORT_SSH SSHFS_SPACE SSHFS_BOOT_OPTS
 # CHECKS: IDEMPOTENT_ALPINE HOOK_INSTALLED FSTAB_VERIFY_ALPINE REPORT_ONLY_CLEAN HOOK_REMOVED
-# CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL LOOKALIKE_KEPT
+# CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL LOOKALIKE_KEPT BOOT_MODE
 . /mnt/machman/share/regress/lib.sh
 # Machman markers are always 12 hex chars — the sweep matches exactly that shape.
 OLD=machman-0ddc105e9999
@@ -57,6 +57,12 @@ if grep -q "BatchMode=yes" "$BOOT" 2>/dev/null && ! grep -q "nofail" "$BOOT" \
 	R SSHFS_BOOT_OPTS pass
 else
 	R SSHFS_BOOT_OPTS fail; grep -n "sshfs" "$BOOT" 2>/dev/null | head -2
+fi
+# S43: the boot script is the lib's write_file output — root's, executable, marker-tagged.
+if [ "$(meta "$BOOT")" = "-rwxr-xr-x 0 0" ] && grep -q "^# $NEW " "$BOOT"; then
+	R BOOT_MODE pass
+else
+	R BOOT_MODE fail; meta "$BOOT"; head -2 "$BOOT"
 fi
 
 etcsum /etc > /tmp/sum-1
