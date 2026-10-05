@@ -8,7 +8,10 @@
 import Foundation
 import Testing
 import MachmanAPI
+import MachmanFixtures
 import MachmanTestSupport
+import MachmanUI
+@testable import MachmanDesktopCore
 
 @Suite("Engine support (harness)", .enabled(if: Lab.runs(.harness)))
 struct EngineSupportTests {
@@ -76,6 +79,28 @@ struct EngineSupportTests {
 		let gap = probe.stop()
 		#expect(gap >= .milliseconds(250))
 		#expect(gap < .seconds(5))
+	}
+
+	@Test("Q18: the toast log counts each toast once")
+	@MainActor
+	func toastLogCountsOnce() async throws {
+		let dir = TestEnvironment.scratch + "tf-toasts-\(UUID().uuidString)"
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let desktop = TFDesktop(api: StubMachman.serving([]), dir: dir)
+		defer { Task { await desktop.close() } }
+		let view = desktop.viewModel
+		let connecting = "dev: SSH connecting…"
+		view.pushToast(symbol: MachmanSymbols.start, message: connecting, key: "k", spinner: true)
+		view.pushToast(symbol: MachmanSymbols.start, message: connecting, key: "k", spinner: true)
+		#expect(desktop.toasts.messages == ["dev: SSH connecting…"])
+		view.pushToast(symbol: MachmanSymbols.start, message: "dev: SSH ready", key: "k")
+		view.pushToast(symbol: MachmanSymbols.start, message: "dev started")
+		view.pushToast(symbol: MachmanSymbols.start, message: "dev started")
+		#expect(desktop.toasts.messages == [
+			"dev: SSH connecting…", "dev: SSH ready", "dev started", "dev started",
+		])
+		#expect(desktop.toasts.count(equal: "dev started") == 2)
+		#expect(desktop.toasts.entries.first?.spinner == true)
 	}
 
 	private func inode(_ path: String) throws -> UInt64 {
