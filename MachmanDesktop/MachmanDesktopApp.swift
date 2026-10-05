@@ -100,6 +100,7 @@ struct MachmanDesktopApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
 	static weak var connection: DaemonConnection?
 	static weak var profiles: TerminalProfileStore?
+	private var mainWindowObserver: NSObjectProtocol?
 
 	// Settings writes land off the main thread, so a quit waits for the pending ones (a
 	// divider dragged just before ⌘Q, a profile edit) instead of dropping them (T9).
@@ -119,9 +120,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	// ⌘W belongs to Close Tab (1.0.4 design); the system Close moves to ⇧⌘W. SwiftUI
-	// rebuilds menus, so the remap re-runs on every activation (idempotent).
+	// rebuilds menus, so the remap re-runs on every activation (idempotent). A window that
+	// becomes main ends a dock's quit hold too: the main window it waited for is up, or
+	// another window is (review F19 — the main window's appearance alone could miss it).
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		DispatchQueue.main.async { Self.remapCloseShortcut() }
+		mainWindowObserver = NotificationCenter.default.addObserver(
+			forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main
+		) { _ in
+			MainActor.assumeIsolated { TornTabRegistry.shared.holdsQuitForDock = false }
+		}
 	}
 
 	func applicationDidBecomeActive(_ notification: Notification) {

@@ -116,8 +116,9 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	private func windowWillClose(_ window: NSWindow) {
 		guard !tornTabs.closing.contains(payload),
 			connection.viewModel?.docksBack(payload) == true else { return }
+		// A minimized window is still open: AppKit wouldn't quit, so nothing is held (F19).
 		let othersOpen = NSApp.windows.contains {
-			$0 !== window && $0.isVisible && $0.canBecomeMain
+			$0 !== window && ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain
 		}
 		if !othersOpen { tornTabs.holdsQuitForDock = true }
 		openWindow(id: "main")
