@@ -143,6 +143,23 @@ struct EngineSupportTests {
 		#expect(MachmanVersion.isOlder("1.0.12", than: TFBuilds.newerVersion(than: "1.0.12")))
 	}
 
+	@Test("Q18: lab volumes are created and mounted only under the run sandbox")
+	func volumesStayInSandbox() {
+		let root = "/tmp/mml.ab12"
+		for format in TFVolume.Format.allCases {
+			let lines = TFVolume.commandLines(format, gib: 2, name: "v", root: root)
+			#expect(lines.image == root + "/tf-volumes/v.sparsebundle")
+			#expect(lines.mountPoint == root + "/tf-volumes/v.mnt")
+			#expect(lines.create.contains(format.rawValue))
+			#expect(lines.create.last == lines.image)
+			#expect(lines.attach.contains("-nobrowse"))
+			#expect(lines.attach.contains("-noautoopen"))
+			let mount = lines.attach.firstIndex(of: "-mountpoint").map { lines.attach[$0 + 1] }
+			#expect(mount == lines.mountPoint)
+			#expect(lines.attach.last == lines.image)
+		}
+	}
+
 	private func inode(_ path: String) throws -> UInt64 {
 		let attributes = try FileManager.default.attributesOfItem(atPath: path)
 		return (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
