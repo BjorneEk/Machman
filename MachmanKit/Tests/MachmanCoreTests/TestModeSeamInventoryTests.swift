@@ -51,6 +51,8 @@ struct TestModeSeamInventoryTests {
 			"no menu-bar item or activation, the lab control socket (TB10, TB12)",
 		"MachmanAgent/MenuBarView.swift":
 			"Open Machman recorded, never performed (AgentQuietLintTests, TB10)",
+		"MachmanKit/Sources/MachmanCore/SSHDiscovery.swift":
+			"no TCP probe to a guest without the local-network opt-in (SSHProbeLabTests)",
 		"MachmanDesktop/DaemonConnection.swift":
 			"its Debug-only daemon handling (pre-dates the lab)",
 	]

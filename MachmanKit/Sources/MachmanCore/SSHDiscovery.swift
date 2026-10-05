@@ -11,7 +11,9 @@
 //
 
 import Foundation
+import MachmanAPI
 import Network
+import os
 
 enum SSHDiscovery {
 	struct Answer: Equatable, Sendable {
@@ -160,9 +162,26 @@ enum SSHDiscovery {
 
 	// MARK: - Liveness
 
+	// Under a test suite (the lab) no connect leaves for a guest unless the run opted into the
+	// local network: a TCP connect to the VM network can raise macOS's Local Network prompt.
+	// Loopback stays allowed. nil (every process outside test mode) allows everything.
+	static func probeAllowed(host: String, lab: LabEnvironment? = .current) -> Bool {
+		guard let lab, !lab.allowsLocalNetwork else { return true }
+		return ["127.0.0.1", "::1", "localhost"].contains(host)
+	}
+
+	private static let refusedProbeLogged = OSAllocatedUnfairLock(initialState: false)
+
 	static func probeTCP(
 		host: String, port: UInt16 = 22, timeout: TimeInterval = 1.0
 	) async -> Bool {
+		guard probeAllowed(host: host) else {
+			if refusedProbeLogged.withLock({ logged in defer { logged = true }; return !logged }) {
+				MachmanLogger.log(.log, "test mode: no TCP probes to guests "
+					+ "(MACHMAN_LAB_LOCAL_NETWORK is not 1); \(host):\(port) reads as closed")
+			}
+			return false
+		}
 		final class Once: @unchecked Sendable {
 			private let lock = NSLock()
 			private var done = false

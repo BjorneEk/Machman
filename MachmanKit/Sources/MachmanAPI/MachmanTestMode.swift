@@ -104,6 +104,12 @@ public struct LabEnvironment: Equatable, Sendable {
 			environment: ProcessInfo.processInfo.environment)
 		: nil
 
+	// MACHMAN_LAB_LOCAL_NETWORK=1: the run may open TCP to guests on the VM network. Off by
+	// default — such a connect can raise macOS's Local Network prompt (SSHDiscovery.probeTCP).
+	public var allowsLocalNetwork: Bool {
+		forwardedVariables["MACHMAN_LAB_LOCAL_NETWORK"] == "1"
+	}
+
 	// A MACHMAN_LAB_* interval the lab shortens (seconds, positive and finite), else nil.
 	public func seconds(_ name: String) -> Double? {
 		guard name.hasPrefix(Self.labPrefix),
