@@ -126,7 +126,9 @@ struct LabDevicePolicyTests {
 	@Test("Q18: the lab policy leaves resolvedDevices' warnings alone (TB5)")
 	func theLabPolicyLeavesTheWarningsAlone() throws {
 		try VMTestDir.withRedirectedDir {
-			let addTrackpad: (VMConfig) -> Void = { $0.devices.append(GuestDevice(kind: .trackpad)) }
+			let addTrackpad: (VMConfig) -> Void = {
+				$0.devices.append(GuestDevice(kind: .trackpad))
+			}
 			let plain = try Self.build("warn-plain", lab: nil, mutate: addTrackpad)
 			let lab = try Self.build("warn-lab", lab: Self.lab(), mutate: addTrackpad)
 			#expect(plain.warnings.contains { $0.contains("trackpad") })
