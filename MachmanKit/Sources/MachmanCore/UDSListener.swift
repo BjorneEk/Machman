@@ -200,7 +200,9 @@ final class UDSListener {
 
 	// The pid of the process listening on this socket, nil when nothing accepts. A connect is
 	// enough: LOCAL_PEERPID answers for the listener before it accepts (probe-checked), so
-	// the probe never waits on the holder.
+	// the probe never waits on the holder. It answers only while the connection stands: a
+	// holder that accepts and hangs up before the ask leaves nothing to answer for (ENOTCONN,
+	// nil). No server here does that — each keeps a connection until its peer leaves (Q17).
 	static func holderPID(path: String) -> pid_t? {
 		guard var addr = try? makeAddr(path) else { return nil }
 		let probe = socket(AF_UNIX, SOCK_STREAM, 0)

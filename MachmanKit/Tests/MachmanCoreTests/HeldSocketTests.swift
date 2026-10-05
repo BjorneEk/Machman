@@ -27,11 +27,18 @@ struct HeldSocketTests {
 		}
 	}
 
+	// The holder keeps what it accepts, as every real server does until its peer leaves (Q17):
+	// LOCAL_PEERPID answers only while the probe's connection stands, and a holder that hung up
+	// at once beat the ask under load — the lookup read nil.
 	@Test func theHolderOfABoundSocketIsThisProcess() throws {
 		let path = TestEnvironment.socketPath("mm-holder")
 		#expect(UDSListener.holderPID(path: path) == nil)
-		let listener = try UDSListener(path: path, queue: .global()) { fd in close(fd) }
-		defer { listener.shutdown() }
+		let kept = KeptConnections()
+		let listener = try UDSListener(path: path, queue: .global()) { fd in kept.keep(fd) }
+		defer {
+			listener.shutdown()
+			kept.closeAll()
+		}
 		#expect(UDSListener.holderPID(path: path) == getpid())
 	}
 
@@ -51,6 +58,23 @@ struct HeldSocketTests {
 			#expect(held.description.contains("this test process: yes"))
 			#expect(held.description.contains("inode "))
 			#expect(held.siblings == [(path as NSString).lastPathComponent])
+		}
+	}
+}
+
+// Accepted descriptors, held until the test is done with the listener.
+private final class KeptConnections: @unchecked Sendable {
+	private let lock = NSLock()
+	private var fds: [Int32] = []
+
+	func keep(_ fd: Int32) {
+		lock.withLock { fds.append(fd) }
+	}
+
+	func closeAll() {
+		lock.withLock {
+			for fd in fds { close(fd) }
+			fds.removeAll()
 		}
 	}
 }
