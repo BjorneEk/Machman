@@ -95,10 +95,11 @@ final class LabConsole: @unchecked Sendable {
 			lock.unlock()
 			transcript?.write(Data(chunk.filter { $0 != 0x0D }))
 		}
+		// Under the lock, so close() never shuts down a descriptor number this already freed.
 		lock.lock()
 		closed = true
-		lock.unlock()
 		Darwin.close(fd)
+		lock.unlock()
 		try? transcript?.close()
 	}
 
@@ -120,9 +121,9 @@ final class LabConsole: @unchecked Sendable {
 
 	func close() {
 		lock.lock()
+		defer { lock.unlock() }
 		closing = true
-		lock.unlock()
-		shutdown(fd, SHUT_RDWR)
+		if !closed { shutdown(fd, SHUT_RDWR) }
 	}
 
 	/// The last 2,000 characters of the output nobody matched yet.
