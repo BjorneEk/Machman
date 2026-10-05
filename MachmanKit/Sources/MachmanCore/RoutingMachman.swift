@@ -30,8 +30,9 @@ public final class RoutingMachman: MachmanControlling {
 	// construction. nil = no agents are written; policy toggles still persist.
 	let launchAgents: LaunchAgentManager?
 	// Same rule for ~/.ssh: injected by the daemon, nil in tests — SSH switches still
-	// persist, only the host-side files stay untouched.
-	let sshHostConfig: SSHHostConfigWriter?
+	// persist, only the host-side files stay untouched. Every write goes through this one
+	// owner (+SSHPresence).
+	let sshFiles: SSHHostFiles?
 
 	var hosted: [String: HostedVM] = [:]   // keyed by VM name
 
@@ -108,7 +109,7 @@ public final class RoutingMachman: MachmanControlling {
 		self.local = LocalMachman(registry: registry)
 		self.daemonVersion = daemonVersion
 		self.launchAgents = launchAgents
-		self.sshHostConfig = sshHostConfig
+		self.sshFiles = sshHostConfig.map(SSHHostFiles.init(writer:))
 	}
 
 	// MARK: - Host plumbing

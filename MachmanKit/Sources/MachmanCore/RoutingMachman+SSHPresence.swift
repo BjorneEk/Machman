@@ -3,7 +3,8 @@
 //  MachmanCore
 //
 //  The daemon's SSH half: address discovery and sshd readiness for running VMs, the
-//  VMInfo overlay that serves them, vm.ssh.set and vm.ssh.reset, and every ~/.ssh write.
+//  VMInfo overlay that serves them, vm.ssh.set and vm.ssh.reset, and every ~/.ssh write
+//  (through the one owner, SSHHostFiles).
 //
 
 import Foundation
@@ -18,12 +19,12 @@ extension RoutingMachman {
 	// pending — and the line installed for the old key has to go with it, or that key
 	// keeps its way in with nothing in the UI offering to revoke it.
 	func reconcileReverseKey(vm name: String) {
-		guard let writer = sshHostConfig, let marker = existingSSHMarker(name) else { return }
+		guard let files = sshFiles, let marker = existingSSHMarker(name) else { return }
 		Task { [weak self] in
 			guard let self,
 				let ssh = (try? await self.proxy(name).vm(named: name))?.ssh else { return }
 			guard ssh.reverseState != .approved else { return }
-			try? writer.setReverseKey(nil, marker: marker, vmName: name)
+			try? files.setReverseKey(nil, marker: marker, vmName: name)
 		}
 	}
 
@@ -132,9 +133,9 @@ extension RoutingMachman {
 	// the VM is gone, and the key's private half with it — but never silent (D11): a line
 	// that stays is logged and shown, with what to remove by hand.
 	func revokeReverseKey(marker: String, vmName name: String) {
-		guard let writer = sshHostConfig else { return }
+		guard let files = sshFiles else { return }
 		do {
-			try writer.setReverseKey(nil, marker: marker, vmName: name)
+			try files.setReverseKey(nil, marker: marker, vmName: name)
 		} catch {
 			MachmanLogger.log(.passiveWarning, "revoking \(name)'s reverse key: \(error)")
 			registry.events.emit(.log(
@@ -184,9 +185,9 @@ extension RoutingMachman {
 		// the daemon's registry copy is stale while the VM is hosted (setStartPolicy
 		// precedent). Approving with no key is refused engine-side, so the force-unwrap
 		// shape never arises here.
-		if let writer = sshHostConfig, let reverseApproved,
+		if let files = sshFiles, let reverseApproved,
 			let marker = existingSSHMarker(name) {
-			try? writer.setReverseKey(
+			try? files.setReverseKey(
 				reverseApproved ? info.ssh?.reversePublicKey : nil,
 				marker: marker, vmName: name)
 		}
@@ -199,8 +200,8 @@ extension RoutingMachman {
 		try refuseSSHWhileSafe(name)
 		let marker = existingSSHMarker(name)
 		let info = try await target.resetSSH(vm: name)
-		if let writer = sshHostConfig, let marker {
-			try? writer.setReverseKey(nil, marker: marker, vmName: name)
+		if let files = sshFiles, let marker {
+			try? files.setReverseKey(nil, marker: marker, vmName: name)
 		}
 		scheduleSSHHostConfigWrite()
 		return info
@@ -216,14 +217,14 @@ extension RoutingMachman {
 	// Rebuild ~/.ssh/machman/config (+ Include line) from current state. Fire-and-forget
 	// with whole-state writes — concurrent triggers converge on last-write-wins.
 	func scheduleSSHHostConfigWrite() {
-		guard sshHostConfig != nil else { return }
+		guard sshFiles != nil else { return }
 		Task { [weak self] in
 			await self?.writeSSHHostConfig()
 		}
 	}
 
 	private func writeSSHHostConfig() async {
-		guard let writer = sshHostConfig else { return }
+		guard let files = sshFiles else { return }
 		var entries: [SSHHostConfigWriter.VMEntry] = []
 		for vm in registry.list() {
 			let name = vm.name
@@ -254,7 +255,7 @@ extension RoutingMachman {
 				identityFilePath: ssh.identityFilePath, hostKey: ssh.guestHostKey))
 		}
 		do {
-			try writer.apply(entries: entries)
+			try files.apply(entries: entries)
 		} catch {
 			MachmanLogger.log(.passiveError, "cannot write ~/.ssh/machman/config: \(error)")
 		}
