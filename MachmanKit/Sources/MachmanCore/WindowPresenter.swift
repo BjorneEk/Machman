@@ -55,6 +55,33 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	// Keyed by window, not name: safeSave renames the VM under an open window.
 	private var keyCaptures: [ObjectIdentifier: KeyCaptureController] = [:]
 
+	// Under a test suite (the lab, and the headless tests) this presenter never reaches the
+	// screen: it opens no window (so no Dock icon, activation or key capture), captures no
+	// preview (no Screen Recording prompt) and answers its prompts from the lab's answers
+	// file. nil everywhere else.
+	var lab: LabEnvironment? = LabEnvironment.current
+	private var reportedLabPreviews: Set<String> = []
+
+	// Who answers a prompt: a test's seam, then the lab, then the person (an alert).
+	enum PromptRoute: Equatable {
+		case seam
+		case lab
+		case alert
+	}
+
+	nonisolated static func route(hasSeam: Bool, lab: LabEnvironment?) -> PromptRoute {
+		if hasSeam { return .seam }
+		return lab == nil ? .alert : .lab
+	}
+
+	nonisolated static func opensWindows(lab: LabEnvironment?) -> Bool {
+		lab == nil
+	}
+
+	nonisolated static func capturesPreviews(lab: LabEnvironment?) -> Bool {
+		lab == nil
+	}
+
 	override init() {
 		super.init()
 		softStopFollowUp.isRunning = { [weak self] name in self?.isRunning?(name) ?? false }
@@ -67,6 +94,10 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	}
 
 	func openWindow(name: String, vz: VZVirtualMachine) {
+		guard Self.opensWindows(lab: lab) else {
+			MachmanLogger.log(.log, "test mode: no window for \(name) under the test suite")
+			return
+		}
 		if let existing = windows[name] {
 			// Re-surfacing must foreground the app, not just order the window forward.
 			if managesActivationPolicy {
@@ -284,15 +315,29 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 
 	// A prompt AppKit asks for (the close button, a quit), from its own event dispatch.
 	func present(_ prompt: HostPrompt) -> HostChoice {
-		answerPrompt?(prompt) ?? runAlert(prompt)
+		switch Self.route(hasSeam: answerPrompt != nil, lab: lab) {
+		case .seam: return answerPrompt?(prompt) ?? .cancel
+		case .lab: return labAnswer(prompt)
+		case .alert: return runAlert(prompt)
+		}
 	}
 
 	// A prompt a Task asks (a refused or failed stop, the follow-up): modal inside that
 	// main-actor job it would stop this vmhost's server answering the daemon until it is
-	// dismissed, so it starts from a run-loop callout (MainRunLoopCallout).
+	// dismissed, so it starts from a run-loop callout (MainRunLoopCallout). A held lab answer
+	// does the same.
 	func ask(_ prompt: HostPrompt) async -> HostChoice {
-		if let answerPrompt { return answerPrompt(prompt) }
-		return await MainRunLoopCallout.run { self.runAlert(prompt) }
+		switch Self.route(hasSeam: answerPrompt != nil, lab: lab) {
+		case .seam: return answerPrompt?(prompt) ?? .cancel
+		case .lab: return await MainRunLoopCallout.run { self.labAnswer(prompt) }
+		case .alert: return await MainRunLoopCallout.run { self.runAlert(prompt) }
+		}
+	}
+
+	// Logged and answered from the answers file, never shown.
+	private func labAnswer(_ prompt: HostPrompt) -> HostChoice {
+		let index = LabAnswers.answerIfTesting(prompt.labPrompt, lab: lab)
+		return index.map(prompt.choice(forButtonAt:)) ?? .cancel
 	}
 
 	// Brought to the front (PromptActivation): a windowless host is lent a Dock icon for the
@@ -341,6 +386,12 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 	// private-framebuffer PreviewSource (researched, deferred).
 	func captureImage(name: String) async -> NSImage {
 		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
+		guard Self.capturesPreviews(lab: lab) else {
+			if reportedLabPreviews.insert(name).inserted {
+				MachmanLogger.log(.log, "test mode: no preview for \(name) under the test suite")
+			}
+			return fallback
+		}
 		guard let window = windows[name] else { return fallback }
 		// One capture at a time. This process is its own TCC responsible process now, so
 		// preflight would answer honestly — but an undetermined grant still blocks the call on
