@@ -4,7 +4,8 @@
 //
 //  L3 — the installer on FreeBSD under QEMU (beside its carrier VM): key and config edits on a
 //  second run, owners and modes kept through an uninstall, the /dev/fd question for the key
-//  step, and the user-mount sysctl kept across a reboot (and no "ready" claim without fuse).
+//  step, the user-mount sysctl kept across a reboot (and no "ready" claim without fuse), and
+//  the share's boot automount after the VM's rename.
 //
 
 import Foundation
@@ -87,6 +88,28 @@ struct THBSDScriptTests {
 				"sh /tmp/thsh/GuestSetup/install.sh -y --sshfs --mount-setup")
 			#expect(!TH.unwrapped(again.output).contains("ready for host folders"),
 				"\(again.output)")
+		}
+	}
+
+	@Test("W2-11: the FreeBSD share automounts after the VM's rename and the report refreshes")
+	func shareAutomountAfterRename() async throws {
+		try await TH.withGuest(.freebsd15) { guest in
+			let g = try #require(guest as? THBSDGuest)
+			let marker = try g.marker()
+			let run = try await g.install(
+				"-y --two-way --automount-sshfs", user: "lab", escalation: .doas)
+			#expect(run.status == 0, "\(run.output)")
+			try await g.approveReverse()
+			g.dropBootstrapKeys()
+			let mark = try await g.reportMark()
+			// The carrier stops, takes a new name and starts: the share's link follows it.
+			try await g.vm.stop(.force)
+			try await g.vm.rename(to: "bsd renamed")
+			try await g.vm.start()
+			try await g.reboot(remount: false)
+			let atBoot = try await THBSDGuide.shareMount(g)
+			#expect(atBoot.contains(".machman-shares/\(marker)/"), "\(atBoot)")
+			try await g.waitForReport(newerThan: mark, timeout: .seconds(360))
 		}
 	}
 }
