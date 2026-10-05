@@ -143,7 +143,7 @@ keep working — nothing is rejected at load.
 | `op.cancel` | `{id}` | `{}` (1.0.4+; `notFound` when finished/unknown, `invalidState` when the op can't cancel) |
 | `host.installRosetta` | — | `{}` (1.0.4+; system-prompted install, reported as an operation; macOS 27 makes it a no-op success) |
 | `events.subscribe` | — | `{}`; events then arrive on this connection (1.0.12+: the subscription is in place before the reply) |
-| `daemon.retire` | — | `{}`; the daemon then stops serving and exits, leaving vmhosts (and their VMs) running for a successor to re-adopt. Only the daemon honors it; a vmhost refuses with `invalidState` |
+| `daemon.retire` | — | `{}`; the daemon then stops serving and exits, leaving vmhosts (and their VMs) running for a successor to re-adopt. Refused with `invalidState` while the daemon itself runs work that would die with it — a start, a copy, an import or promote into a stopped VM, a macOS install — naming it ("… is installing macOS — try again when it finishes"). Only the daemon honors it; a vmhost refuses with `invalidState` |
 
 ## DTOs (abridged)
 

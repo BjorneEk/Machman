@@ -714,10 +714,30 @@ public final class RoutingMachman: MachmanControlling {
 	// first — the handler only schedules the shutdown.
 	public var onRetire: (() -> Void)?
 
+	// The first piece of work this process runs itself, as the refusal that names it: a start
+	// or copy whose work runs here (a proxied copy runs in its vmhost), or a macOS install,
+	// whose half-downloaded restore image a successor would delete. nil when it runs none.
+	// Sync, so tests can stage an install under the redirect lock.
+	func daemonWorkRefusal() -> MachmanError? {
+		if let (name, kind) = claims.inDaemon.first {
+			return MachmanError(
+				code: .invalidState,
+				message: "\(name) \(kind.activity) — try again when it finishes")
+		}
+		if let installing = registry.list().filter(registry.isInstalling).map(\.name).min() {
+			return MachmanError(
+				code: .invalidState,
+				message: "\(installing) is installing macOS — try again when it finishes")
+		}
+		return nil
+	}
+
 	public func retire() async throws {
 		guard let onRetire else {
 			throw MachmanError(code: .invalidState, message: "This process can’t retire")
 		}
+		// Vmhosts outlive this process; the work it runs itself dies with it (E45).
+		if let busy = daemonWorkRefusal() { throw busy }
 		MachmanLogger.log(.log, "retiring on request; vmhosts keep running")
 		Task { @MainActor in
 			try? await Task.sleep(for: .milliseconds(200))   // let the reply flush

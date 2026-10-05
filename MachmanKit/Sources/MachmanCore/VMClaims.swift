@@ -118,6 +118,15 @@ final class VMClaims {
 		table[name]?.first.map { Self.refusal(name, $0.kind) }
 	}
 
+	// The work that runs in this process, oldest first.
+	var inDaemon: [(name: String, kind: Kind)] {
+		table.flatMap { name, claims in
+			claims.filter(\.inDaemon).map { (name: name, kind: $0.kind, order: $0.order) }
+		}
+		.sorted { $0.order < $1.order }
+		.map { ($0.name, $0.kind) }
+	}
+
 	// The names a start or a save holds: the router lists them as starting.
 	var startingNames: Set<String> {
 		Set(table.filter { $0.value.contains { $0.kind == .starting || $0.kind == .saving } }
