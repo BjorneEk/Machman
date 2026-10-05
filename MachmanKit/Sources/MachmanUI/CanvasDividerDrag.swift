@@ -33,6 +33,12 @@ public struct CanvasDividerDrag: Equatable, Sendable {
 		fractions = canvas.fractions
 	}
 
+	// Whether the drag still describes `canvas`: the same panes it started on. A pane that
+	// closed or split mid-drag leaves it about a layout that's gone (review F18).
+	public func fits(_ canvas: CanvasState) -> Bool {
+		canvas.panes.map(\.id) == base.panes.map(\.id)
+	}
+
 	// The layout to store on release: `canvas` with the dragged divider where it ended.
 	public func committed(to canvas: CanvasState) -> CanvasState {
 		var result = canvas

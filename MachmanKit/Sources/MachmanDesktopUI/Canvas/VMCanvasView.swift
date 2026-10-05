@@ -48,8 +48,10 @@ struct VMCanvasView: View {
 	}
 	@State private var frames = FrameStore()
 	// A divider drag in flight: the canvas draws its fractions and stores them on release
-	// (P9), so a drag event re-renders only this view, not the window and its menus.
-	@State private var dividerDrag: CanvasDividerDrag?
+	// (P9), so a drag event re-renders only this view, not the window and its menus. Gesture
+	// state, so a drag SwiftUI cancels (its divider went with a closing pane) resets instead
+	// of keeping the resize pointer up and handing its stale layout to the next drag (F18).
+	@GestureState private var dividerDrag: CanvasDividerDrag?
 	@Environment(\.machmanTheme) private var theme
 	@Environment(\.openWindow) private var openWindow
 
@@ -90,7 +92,6 @@ struct VMCanvasView: View {
 		.onAppear { ensureConfigTab() }
 		.onChange(of: vm.name) {
 			tabDrag = nil
-			dividerDrag = nil
 			frames.panes = [:]
 			frames.strips = [:]
 			frames.tabs = [:]
@@ -115,10 +116,13 @@ struct VMCanvasView: View {
 
 	// The drag's fractions while one is in flight over this layout, else the stored ones.
 	private func fractions(of c: CanvasState) -> [Double] {
-		guard let drag = dividerDrag, drag.fractions.count == c.panes.count else {
-			return c.fractions
-		}
+		guard let drag = dividerDrag, drag.fits(c) else { return c.fractions }
 		return drag.fractions
+	}
+
+	// The width a divider drag measures its movement against: the panes' total.
+	private var dividerSpan: CGFloat {
+		max(200, frames.canvasSize.width - dividerWidth * CGFloat(canvas.panes.count - 1))
 	}
 
 	private func mutate(_ change: (inout CanvasState) -> Void) {
@@ -143,16 +147,17 @@ struct VMCanvasView: View {
 		.pointerStyle(.columnResize)
 		.gesture(
 			DragGesture(coordinateSpace: .named("machman-canvas"))
-				.onChanged { value in
-					var drag = dividerDrag ?? CanvasDividerDrag(index: index, canvas: canvas)
-					let available = max(200, frames.canvasSize.width
-						- dividerWidth * CGFloat(canvas.panes.count - 1))
-					drag.update(translation: value.translation.width, available: available)
-					dividerDrag = drag
+				.updating($dividerDrag) { value, drag, _ in
+					if drag?.fits(canvas) != true {
+						drag = CanvasDividerDrag(index: index, canvas: canvas)
+					}
+					drag?.update(translation: value.translation.width, available: dividerSpan)
 				}
-				.onEnded { _ in
-					guard let drag = dividerDrag else { return }
-					dividerDrag = nil
+				.onEnded { value in
+					// The gesture state has reset by now: the same drag, worked out again
+					// from the layout it started on (the store wasn't written), is stored.
+					var drag = CanvasDividerDrag(index: index, canvas: canvas)
+					drag.update(translation: value.translation.width, available: dividerSpan)
 					mutate { $0 = drag.committed(to: $0) }
 				}
 		)
