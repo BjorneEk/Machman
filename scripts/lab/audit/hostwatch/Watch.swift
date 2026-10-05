@@ -173,12 +173,14 @@ final class Watcher {
 		if let front = NSWorkspace.shared.frontmostApplication {
 			sample.frontmost = Frontmost(
 				pid: front.processIdentifier,
-				name: front.bundleIdentifier ?? front.localizedName ?? "pid \(front.processIdentifier)")
+				name: front.bundleIdentifier ?? front.localizedName
+					?? "pid \(front.processIdentifier)")
 		}
 		sample.changeCount = NSPasteboard.general.changeCount
 		for pid in allPids() where !sample.labPids.contains(pid) && pid != selfPid {
-			if let path = processPath(pid), path.range(
-				of: "/Machman[A-Za-z]*\\.app/Contents/MacOS/[^/]+$", options: .regularExpression) != nil {
+			let pattern = "/Machman[A-Za-z]*\\.app/Contents/MacOS/[^/]+$"
+			if let path = processPath(pid),
+				path.range(of: pattern, options: .regularExpression) != nil {
 				sample.nonLab[String(pid)] = path
 			}
 		}
@@ -254,7 +256,8 @@ final class Watcher {
 			let detail = "pid \(window.pid) (\(name(window.pid))) window \(window.number) layer "
 				+ "\(window.layer) \(place)" + suffix("window")
 			if window.onscreen {
-				record("breach", "window", window.pid, detail, key: "w\(window.pid).\(window.number)")
+				record("breach", "window", window.pid, detail,
+					key: "w\(window.pid).\(window.number)")
 			} else {
 				record("note", "window", window.pid, detail + " (off screen)",
 					key: "w\(window.pid).\(window.number)")
@@ -293,12 +296,14 @@ final class Watcher {
 				record("note", "pasteboard", who.pid, detail + " (user copy?)",
 					key: "pb\(sample.changeCount)")
 			} else {
-				record("breach", "pasteboard", who?.pid ?? 0, detail, key: "pb\(sample.changeCount)")
+				record("breach", "pasteboard", who?.pid ?? 0, detail,
+					key: "pb\(sample.changeCount)")
 			}
 			baselineCount = sample.changeCount
 		}
 		for (pid, app) in sample.newApps {
-			record("warn", "new-app", pid, "\(app) (\(pid)) launched during the run", key: "n\(pid)")
+			record("warn", "new-app", pid, "\(app) (\(pid)) launched during the run",
+				key: "n\(pid)")
 		}
 		for (pid, path) in sample.nonLab { nonLab[pid] = path }
 	}

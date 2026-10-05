@@ -74,7 +74,8 @@ private func entry(at path: String, metaOnly: Bool) -> [String: Any] {
 	switch info.st_mode & S_IFMT {
 	case S_IFREG:
 		result["type"] = "file"
-		if !metaOnly, info.st_size < 1 << 20, let data = FileManager.default.contents(atPath: path) {
+		if !metaOnly, info.st_size < 1 << 20,
+			let data = FileManager.default.contents(atPath: path) {
 			result["sha256"] = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 		}
 	case S_IFDIR:
