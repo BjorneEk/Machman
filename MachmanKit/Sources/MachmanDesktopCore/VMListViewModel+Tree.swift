@@ -4,7 +4,8 @@
 //
 //  The device tree's model side. Selecting a row and opening it are separate (T7): the
 //  List's selection only selects — arrow keys, type-select and ⌘/⇧-clicks never open a tab
-//  or connect a socket — and a plain click or Return opens the row through openTreeRow.
+//  or connect a socket — and a plain click (treeRowClicked) or Return opens the row through
+//  openTreeRow.
 //
 
 import Foundation
@@ -20,6 +21,15 @@ extension VMListViewModel {
 		case .vmRoot, .serial, .sshSession: return true
 		case .group, .disk, .mount, .device, .kernel, .initramfs: return false
 		}
+	}
+
+	// A plain click on a row that opens something: it selects the row, then opens it (T22).
+	// Its selection never waits on the List, which doesn't see a click its row's own click
+	// action takes — so an open console's row, the VM root with its configuration showing
+	// and a host-gated port (whose inspector explains the gate) all select like any row.
+	public func treeRowClicked(_ node: SidebarNode, vm: VMInfo) -> TornTab? {
+		if treeSelection != [node] { treeSelection = [node] }
+		return openTreeRow(node, vm: vm)
 	}
 
 	// The tree's List selection, mirrored. Never opens anything.
