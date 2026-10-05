@@ -85,7 +85,7 @@ public struct SSHHostConfigWriter {
 			// A VM directory path the file can't carry (a line break in a legacy VM name)
 			// would end the line early and inject the rest as config.
 			if let identity = entry.identityFilePath,
-				Self.quoted(identity, expandsTokens: true) == nil {
+				SSHConfigQuote.argument(identity, expandsTokens: true) == nil {
 				MachmanLogger.log(.log,
 					"\(entry.name): its key path can't be written into ~/.ssh — skipped")
 				return nil
@@ -114,7 +114,8 @@ public struct SSHHostConfigWriter {
 			removeEmptyDirectory(managedDir.path)
 			return
 		}
-		guard let knownHostsValue = Self.quoted(knownHosts.path, expandsTokens: true) else {
+		guard let knownHostsValue = SSHConfigQuote.argument(knownHosts.path, expandsTokens: true)
+		else {
 			throw MachmanError(
 				code: .ioFailure, message: "The ~/.ssh path can’t be written into an ssh config")
 		}
@@ -137,7 +138,7 @@ public struct SSHHostConfigWriter {
 				config.append("\tUser \(user)")
 			}
 			if let identity = entry.identityFilePath.flatMap({
-				Self.quoted($0, expandsTokens: true)
+				SSHConfigQuote.argument($0, expandsTokens: true)
 			}) {
 				config.append("\tIdentityFile \(identity)")
 				config.append("\tIdentitiesOnly yes")
@@ -163,21 +164,6 @@ public struct SSHHostConfigWriter {
 			Data((pins.joined(separator: "\n") + (pins.isEmpty ? "" : "\n")).utf8),
 			to: knownHosts, userFile: false)
 		try setIncludeLine(present: true)
-	}
-
-	// A path as one quoted ssh_config argument. OpenSSH's quoted-argument parser takes \"
-	// and \\ inside quotes, so a VM named dev"x no longer ends the argument early (which
-	// made ssh refuse the whole file). IdentityFile and UserKnownHostsFile expand %-tokens,
-	// so a literal % doubles. nil for control characters: no quoting carries a line break.
-	static func quoted(_ value: String, expandsTokens: Bool) -> String? {
-		guard !NameRule.hasControlCharacters(value) else { return nil }
-		var escaped = value
-			.replacingOccurrences(of: "\\", with: "\\\\")
-			.replacingOccurrences(of: "\"", with: "\\\"")
-		if expandsTokens {
-			escaped = escaped.replacingOccurrences(of: "%", with: "%%")
-		}
-		return "\"" + escaped + "\""
 	}
 
 	// HostName values from the current managed file, keyed by alias — the fallback that

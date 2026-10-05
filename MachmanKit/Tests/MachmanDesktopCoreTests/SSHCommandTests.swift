@@ -57,4 +57,34 @@ struct SSHCommandTests {
 		#expect(sh.output.split(separator: "\n").map(String.init)
 			== ["-i", identity, "-o", "IdentitiesOnly=yes", "demo@192.168.64.7"])
 	}
+
+	// C28: the session tab's paths went to ssh unescaped. A VM named with "%" made ssh die
+	// ("percent_dollar_expand: failed": the path options expand %-tokens, -i too) and one
+	// with a double quote made it refuse the option — so its SSH tabs never connected.
+	@Test func pathsWithPercentSignsAndQuotesReachSSHIntact() async throws {
+		let dir = #"/vms/50% off "x"/ssh/"#
+		var vm = pinned(alias: "x.machman")
+		vm.ssh?.identityFilePath = dir + "id_ed25519"
+		vm.ssh?.knownHostsPath = dir + "known_hosts"
+		let arguments = try #require(SSHCommand.arguments(for: vm))
+		#expect(arguments.contains(#"IdentityFile="/vms/50%% off \"x\"/ssh/id_ed25519""#))
+		#expect(arguments.contains(#"UserKnownHostsFile="/vms/50%% off \"x\"/ssh/known_hosts""#))
+		guard FileManager.default.isExecutableFile(atPath: "/usr/bin/ssh") else { return }
+
+		// ssh -G resolves the options it was given and exits without connecting. It prints
+		// IdentityFile as written (its tokens expand when the key loads, as in the managed
+		// ~/.ssh file) and UserKnownHostsFile expanded.
+		let ssh = try await Subprocess.run(
+			"/usr/bin/ssh", ["-G", "-F", "/dev/null"] + arguments.dropLast() + ["x.invalid"])
+		#expect(ssh.status == 0, "\(ssh.output)")
+		#expect(ssh.output.contains(#"identityfile /vms/50%% off "x"/ssh/id_ed25519"#))
+		#expect(ssh.output.contains("userknownhostsfile " + dir + "known_hosts"))
+	}
+
+	@Test func theShellLineDoublesAPercentSign() throws {
+		var vm = Samples.linuxApostropheName("50% off")
+		vm.ssh?.identityFilePath = "/vms/50% off/ssh/id_ed25519"
+		#expect(SSHCommand.shellLine(for: vm)
+			== "ssh -i '/vms/50%% off/ssh/id_ed25519' -o IdentitiesOnly=yes demo@192.168.64.7")
+	}
 }
