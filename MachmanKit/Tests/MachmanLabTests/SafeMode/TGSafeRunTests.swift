@@ -104,6 +104,46 @@ struct TGSafeRunTests {
 		}
 	}
 
+	@Test("4: a safe run shares only the unsafe mount; a plain run shares both")
+	func safeRunSharesUnsafeMountOnly() async throws {
+		try await TG.withAgent { agent in
+			let shares = agent.scope.dir + "/shares"
+			for name in ["a", "b"] {
+				try FileManager.default.createDirectory(
+					atPath: shares + "/" + name, withIntermediateDirectories: true)
+				try Data("tg \(name)\n".utf8)
+					.write(to: URL(fileURLWithPath: shares + "/\(name)/hello.txt"))
+			}
+			let vm = try await TGVM.alpine(
+				"tg-r4",
+				mounts: [
+					TGMount(path: shares + "/a", tag: "tga"),
+					TGMount(path: shares + "/b", tag: "tgb", safe: false),
+				],
+				policy: Self.safeHeadless, on: agent)
+			let mounts = try await vm.info().mounts
+			#expect(mounts.first { $0.tag == "tga" }?.safe == true)
+			#expect(mounts.first { $0.tag == "tgb" }?.safe == false)
+			try await vm.start(try await vm.info().startOptions(.plain))
+			#expect(try await vm.info().safeRun == true)
+			do {
+				let guest = try await vm.guest()
+				defer { guest.console.close() }
+				#expect(try await guest.shareTags() == ["tgb"])
+				#expect(try await guest.run("cat /mnt/s/tgb/hello.txt") == "tg b")
+			}
+			try await vm.forceStop()
+			#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
+			try await vm.start(StartOptions(openWindow: false))
+			do {
+				let guest = try await vm.guest()
+				defer { guest.console.close() }
+				#expect(try await guest.shareTags() == ["tga", "tgb"])
+			}
+			try await vm.forceStop()
+		}
+	}
+
 	@Test("5: a safe run leaves an external image marked safe byte-for-byte unchanged")
 	func safeExternalImageUnchanged() async throws {
 		try await TG.withAgent { agent in
