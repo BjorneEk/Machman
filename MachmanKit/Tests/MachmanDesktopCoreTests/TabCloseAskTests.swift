@@ -122,4 +122,23 @@ struct TabCloseAskTests {
 		h.viewModel.requestCloseTab(.ssh(ref), vm: "Debian", from: torn)
 		#expect(h.viewModel.pendingTabClose?.window == torn)
 	}
+
+	// Review F17: a question asked in a torn window that then went away by an order stayed
+	// showing for no window, and every later close question queued behind it for good.
+	@Test func aQuestionFromAWindowThatWentAwayGivesWay() async throws {
+		let (h, refs) = await sessions(["Session 1", "Session 2"])
+		let torn = h.viewModel.tearOff(.ssh(refs[0]), vm: "Debian")
+		h.viewModel.requestCloseTab(.ssh(refs[0]), vm: "Debian", from: torn)
+		#expect(h.viewModel.pendingTabClose?.window == torn)
+		// The window goes by an order (the reconcile's close), not by the user.
+		h.tornTabs.closing.insert(torn)
+		VMListViewModel.tornWindowClosed(
+			torn, registry: h.tornTabs, terminals: h.terminals, viewModel: h.viewModel)
+		h.viewModel.requestCloseTab(.ssh(refs[1]), vm: "Debian")
+		#expect(await eventually { h.viewModel.pendingTabClose?.tab == .ssh(refs[1]) })
+		let pending = try #require(h.viewModel.pendingTabClose)
+		#expect(pending.window == nil)
+		h.viewModel.confirmTabClose(pending)
+		#expect(!isOpen(h, .ssh(refs[1])))
+	}
 }

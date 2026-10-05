@@ -37,6 +37,11 @@ public struct PresentationQueue<Item> {
 		return !waiting.isEmpty
 	}
 
+	// Drops the waiting items that match; the one showing stays (dismiss it to go on).
+	public mutating func removeWaiting(where match: (Item) -> Bool) {
+		waiting.removeAll(where: match)
+	}
+
 	public mutating func advance() {
 		guard current == nil, !waiting.isEmpty else { return }
 		current = waiting.removeFirst()

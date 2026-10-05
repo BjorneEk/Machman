@@ -39,6 +39,7 @@ extension VMListViewModel {
 		viewModel: VMListViewModel?
 	) {
 		registry.open.remove(payload)
+		viewModel?.dropTabCloseQuestions(askedIn: payload)
 		let ordered = registry.closing.remove(payload) != nil
 		if !ordered, let viewModel, viewModel.docksBack(payload) {
 			viewModel.dock(payload)
@@ -138,6 +139,14 @@ extension VMListViewModel {
 	}
 
 	public var pendingTabClose: PendingTabClose? { tabCloseQueue.current }
+
+	// Questions asked in a torn window that went away (a rename swap, its VM removed, a close
+	// from the tree) have no window left to answer them in: they go. The one showing would
+	// otherwise hold every later close question behind it (review F17).
+	func dropTabCloseQuestions(askedIn window: TornTab) {
+		tabCloseQueue.removeWaiting { $0.window == window }
+		if tabCloseQueue.current?.window == window { isTabClosePresented = false }
+	}
 
 	public func confirmTabClose(_ pending: PendingTabClose) {
 		closeTab(pending.tab, vm: pending.vm)
