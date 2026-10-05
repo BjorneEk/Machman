@@ -82,6 +82,19 @@ public final class RemoteMachman: MachmanControlling {
 		await connection.interruptedCalls()
 	}
 
+	// The calls that legitimately run long answer within the slow-class deadline: whole-file
+	// byte copies (copy, disk import and promote, kernel import, Save as New VM across
+	// volumes), a forwarded boot with its shadow build, Rosetta's download. Every other call
+	// gets the default (E5). One list, so a copy is never left on the default (E40).
+	public static let slowMethods: Set<RPCMethod> = [
+		.vmCopy, .diskImport, .diskPromote, .kernelPromote, .safeSave, .start, .installRosetta,
+	]
+
+	public static func deadline(for method: RPCMethod) -> Duration {
+		slowMethods.contains(method)
+			? RPCConnection.slowCallDeadline : RPCConnection.defaultCallDeadline
+	}
+
 	private func void<P: Codable>(
 		_ method: RPCMethod, _ params: P?,
 		deadline: Duration = RPCConnection.defaultCallDeadline
@@ -141,7 +154,7 @@ public final class RemoteMachman: MachmanControlling {
 			RPCParams.Copy(
 				name: name, newName: newName, diskIDs: diskIDs, regenerateMAC: regenerateMAC,
 				mountIDs: mountIDs),
-			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
+			expecting: VMInfo.self, deadline: Self.deadline(for: .vmCopy))
 	}
 
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {
@@ -169,13 +182,13 @@ public final class RemoteMachman: MachmanControlling {
 		// Copies the external image into VM ownership — byte-copy class, like vm.copy.
 		try await connection.call(
 			.diskImport, RPCParams.ImportDisk(name: name, path: path),
-			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
+			expecting: VMInfo.self, deadline: Self.deadline(for: .diskImport))
 	}
 
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
 		try await connection.call(
 			.diskPromote, RPCParams.RemoveDisk(name: name, diskID: diskID),
-			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
+			expecting: VMInfo.self, deadline: Self.deadline(for: .diskPromote))
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
@@ -345,13 +358,18 @@ public final class RemoteMachman: MachmanControlling {
 	}
 
 	public func cancelOperation(id: String) async throws {
-		try await void(.operationCancel, RPCParams.CancelOperation(id: id))
+		try await cancelOperation(id: id, deadline: RPCConnection.defaultCallDeadline)
+	}
+
+	// Deadline seam, like vm(named:deadline:): the daemon asks its vmhosts at once (E40).
+	public func cancelOperation(id: String, deadline: Duration) async throws {
+		try await void(.operationCancel, RPCParams.CancelOperation(id: id), deadline: deadline)
 	}
 
 	public func installRosetta() async throws {
 		// Downloads from Apple behind the scenes — slow-class, not the 30 s default.
 		try await void(.installRosetta, RPCEmpty?.none,
-			deadline: RPCConnection.slowCallDeadline)
+			deadline: Self.deadline(for: .installRosetta))
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
@@ -366,7 +384,7 @@ public final class RemoteMachman: MachmanControlling {
 			.kernelPromote,
 			RPCParams.PromoteKernel(
 				name: name, role: role, sourcePath: sourcePath, tag: tag),
-			expecting: VMInfo.self)
+			expecting: VMInfo.self, deadline: Self.deadline(for: .kernelPromote))
 	}
 
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
@@ -378,7 +396,7 @@ public final class RemoteMachman: MachmanControlling {
 		// Covers the daemon's whole start: spawn + forwarded boot, and for safe runs a
 		// shadow build that byte-copies external images — slow-class by construction.
 		try await void(.start, RPCParams.Start(name: name, options: options),
-			deadline: RPCConnection.slowCallDeadline)
+			deadline: Self.deadline(for: .start))
 	}
 
 	public func stop(vm name: String, mode: StopMode) async throws {
@@ -433,7 +451,7 @@ public final class RemoteMachman: MachmanControlling {
 		// Shadow promotion can copy across volumes (the engine's own caveat) — slow-class.
 		try await connection.call(
 			.safeSave, RPCParams.Rename(name: name, newName: newName),
-			expecting: VMInfo.self, deadline: RPCConnection.slowCallDeadline)
+			expecting: VMInfo.self, deadline: Self.deadline(for: .safeSave))
 	}
 
 	public func retire() async throws {

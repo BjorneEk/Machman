@@ -222,6 +222,46 @@ struct RoutingUnresponsiveTests {
 		#expect(ops.map(\.id) == ["op-beta"])
 	}
 
+	// E40: op.cancel asked the vmhosts one at a time with the 30 s default, so a stalled host
+	// held a cancel meant for another, and an unknown id failed with timeout, not notFound.
+	@Test @MainActor func aCancelReachesItsHostPastAStalledOne() async throws {
+		let rig = try await makeRig(deadline: .seconds(1))
+		defer { finish(rig) }
+		var op = Samples.copyOperation(vm: "beta")
+		op.id = "op-beta"
+		rig.beta.ops = [op]
+		rig.alpha.stalled = ["cancelOperation"]
+
+		let clock = ContinuousClock()
+		let started = clock.now
+		try await rig.routing.cancelOperation(id: "op-beta")
+		#expect(clock.now - started < .seconds(10))   // before: up to 30 s behind alpha
+		#expect(rig.beta.ops.isEmpty)
+	}
+
+	@Test @MainActor func aCancelNobodyAnswersNamesTheStalledHost() async throws {
+		let rig = try await makeRig(deadline: .seconds(1))
+		defer { finish(rig) }
+		rig.alpha.stalled = ["cancelOperation"]
+
+		let clock = ContinuousClock()
+		let started = clock.now
+		do {
+			try await rig.routing.cancelOperation(id: "op-unknown")
+			Issue.record("expected a refusal")
+		} catch let error as MachmanError {
+			// Before: timeout after 30 s. The op may run on the host that didn't answer.
+			#expect(error.code == .invalidState)
+			#expect(error.message == "alpha is not responding \u{2014} try again in a moment")
+		}
+		#expect(clock.now - started < .seconds(10))
+
+		rig.alpha.stalled = []
+		await #expect(throws: MachmanError.self) {
+			try await rig.routing.cancelOperation(id: "op-unknown")
+		}
+	}
+
 	// The desktop lists only on listChanged, so a stall nobody lists would go unseen; the
 	// preview poll is the read that keeps coming. A preview that misses the deadline checks
 	// the host the way a list does, and a marked host is not asked for previews at all.

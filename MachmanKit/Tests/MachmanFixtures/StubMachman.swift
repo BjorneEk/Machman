@@ -25,7 +25,7 @@ public final class StubMachman: MachmanControlling {
 	private var failures: [String: Error] = [:]
 	// Base names whose calls park while listed: a stalled vmhost (E20). They answer once
 	// removed, or after a minute. Honored by vm(named:), operations(), preview, safeSave,
-	// importDisk and stop.
+	// importDisk, stop and cancelOperation.
 	public var stalled: Set<String> = []
 
 	public init() {}
@@ -312,6 +312,7 @@ public final class StubMachman: MachmanControlling {
 	}
 	public func cancelOperation(id: String) async throws {
 		try gate()
+		await stallWhileScripted("cancelOperation")
 		guard ops.contains(where: { $0.id == id }) else {
 			throw MachmanError(code: .notFound, message: "no operation '\(id)'")
 		}

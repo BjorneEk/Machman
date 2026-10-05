@@ -638,6 +638,10 @@ public final class RoutingMachman: MachmanControlling {
 		return all.sorted { $0.startedAt < $1.startedAt }
 	}
 
+	// The daemon's own operations first, then every vmhost at once, each bounded like a list
+	// probe (E40): a stalled host costs one deadline, never a queue in front of the host that
+	// runs the operation. The owner's answer wins; then a host that didn't answer (it may be
+	// the owner); then "already ended".
 	public func cancelOperation(id: String) async throws {
 		do {
 			try await local.cancelOperation(id: id)
@@ -645,14 +649,29 @@ public final class RoutingMachman: MachmanControlling {
 		} catch let error as MachmanError where error.code == .notFound {
 			// Not a daemon-side operation — try the vmhosts.
 		}
-		for host in hosted.values {
-			do {
-				try await host.client.cancelOperation(id: id)
-				return
-			} catch let error as MachmanError where error.code == .notFound {
-				continue
+		let deadline = hostProbeDeadline
+		let asks = hosted.sorted { $0.key < $1.key }.map { name, host in
+			(name, Task { () -> Error? in
+				do {
+					try await host.client.cancelOperation(id: id, deadline: deadline)
+					return nil
+				} catch {
+					return error
+				}
+			})
+		}
+		var stalled: String?
+		var refusal: Error?
+		for (name, ask) in asks {
+			guard let error = await ask.value else { return }
+			switch (error as? MachmanError)?.code {
+			case .notFound?: continue
+			case .timeout?: stalled = stalled ?? name
+			default: refusal = refusal ?? error
 			}
 		}
+		if let refusal { throw refusal }
+		if let stalled { throw notResponding(stalled) }
 		throw MachmanError(code: .notFound, message: "That operation already ended")
 	}
 
