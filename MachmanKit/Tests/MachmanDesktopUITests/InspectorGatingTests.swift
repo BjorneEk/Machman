@@ -46,26 +46,13 @@ struct InspectorGatingTests {
 		return try #require(found, "no \(text): \(tree.dump())", sourceLocation: sourceLocation)
 	}
 
-	// A Form row's control: grouped forms read a labelled control as its label's static text
-	// followed by the control itself (a toggle, a picker), siblings in the row's group.
+	// A Form row's control by the label beside it (FormControls).
 	private func control(
 		_ tree: AXSnapshot, labelled title: String,
 		sourceLocation: SourceLocation = #_sourceLocation
 	) throws -> AXSnapshot {
-		try #require(Self.control(in: tree, labelled: title),
+		try #require(tree.control(labelled: title),
 			"no control labelled \(title): \(tree.dump())", sourceLocation: sourceLocation)
-	}
-
-	static func control(in node: AXSnapshot, labelled title: String) -> AXSnapshot? {
-		let kids = node.children
-		if let label = kids.firstIndex(where: { $0.role == "AXStaticText" && $0.text == title }),
-			let next = kids[(label + 1)...].first(where: { $0.role != "AXStaticText" }) {
-			return next
-		}
-		for kid in kids {
-			if let found = control(in: kid, labelled: title) { return found }
-		}
-		return nil
 	}
 
 	// MARK: - Default start
