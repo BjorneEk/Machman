@@ -59,7 +59,7 @@ final class LabConsole: @unchecked Sendable {
 		}
 	}
 
-	private static func connectOnce(_ path: String) -> Int32 {
+	static func connectOnce(_ path: String) -> Int32 {
 		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard fd >= 0 else { return -1 }
 		var one: Int32 = 1

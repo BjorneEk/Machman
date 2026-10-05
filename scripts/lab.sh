@@ -189,7 +189,7 @@ lab_selfcheck() {
 	mkdir -p "$MACHMAN_LAB_CACHE"
 	sandbox_sweep_stale mml mmt
 	((build)) && swift build --build-tests --package-path "$pkg"
-	SANDBOX_SLOT_LABEL="$repo" sandbox_take_slot "$(sandbox_slot_dir "$repo")" lab.1
+	# The self-check boots nothing (harness tier only), so it needs no slot.
 	sandbox_create mml 4
 	root="$SANDBOX_ROOT"
 	token="$SANDBOX_TOKEN"

@@ -148,4 +148,142 @@ struct LabHarnessTests {
 		#expect(found.count == 1)
 		#expect(found.first?.eventMessage == "good")
 	}
+
+	// MARK: agent, scope, VM spec and fixtures (TC4-TC6): pure, nothing is launched
+
+	@Test(
+		"TC4: an agent's environment carries the suite, its scope and the lab variables, nothing else"
+	)
+	func agentEnvironment() throws {
+		let scope = try LabScope.make(in: TestEnvironment.scratch + "scopes-\(UUID().uuidString)")
+		let inherited = [
+			"MACHMAN_SUITE_ID": "com.gustaffranzen.Machman.test-abcd", "MACHMAN_LAB": "1",
+			"MACHMAN_LAB_RUN": "/tmp/mml.abcd", "MACHMAN_LAB_TIERS": "smoke",
+			"SSH_AUTH_SOCK": "/tmp/agent.sock", "SECRET": "x", "HOME": "/Users/real",
+			"TMPDIR": "/var/folders/xx/T/", "USER": "me", "LOGNAME": "me",
+			"MACHMAN_DATA_DIR": "/tmp/mml.abcd/data",
+		]
+		let environment = LabAgent.environment(
+			scope: scope, inherited: inherited, extra: ["MACHMAN_LAB_DEVICES": "hid"])
+		#expect(environment["MACHMAN_SUITE_ID"] == "com.gustaffranzen.Machman.test-abcd")
+		#expect(environment["MACHMAN_DATA_DIR"] == scope.dataDir)
+		#expect(environment["CFFIXED_USER_HOME"] == scope.homeDir)
+		#expect(environment["HOME"] == scope.homeDir)
+		#expect(environment["TMPDIR"] == "/var/folders/xx/T/")
+		#expect(environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin")
+		#expect(environment["MACHMAN_LAB_RUN"] == "/tmp/mml.abcd")
+		#expect(environment["MACHMAN_LAB_TIERS"] == "smoke")
+		#expect(environment["MACHMAN_LAB_DEVICES"] == "hid")
+		#expect(environment["MACHMAN_LAB_ANSWERS"] == scope.answersPath)
+		#expect(environment["MACHMAN_LAB_AGENT_CONTROL"] == scope.controlPath)
+		#expect(environment["USER"] == "me")
+		#expect(environment["MACHMAN_LAB"] == nil)
+		#expect(environment["SSH_AUTH_SOCK"] == nil)
+		#expect(environment["SECRET"] == nil)
+	}
+
+	@Test(
+		"TC4: every scope gets its own library, home, answers and control socket inside the run"
+	)
+	func scopesAreSeparate() throws {
+		let dir = TestEnvironment.scratch + "scopes-\(UUID().uuidString)"
+		let first = try LabScope.make(in: dir)
+		let second = try LabScope.make(in: dir)
+		#expect(first.id != second.id)
+		#expect(first.dataDir != second.dataDir && first.homeDir != second.homeDir)
+		#expect(first.answersPath != second.answersPath)
+		for scope in [first, second] {
+			#expect(scope.dir.hasPrefix(dir))
+			let answers = try Data(contentsOf: URL(fileURLWithPath: scope.answersPath))
+			let object = try JSONSerialization.jsonObject(with: answers) as? [String: Any]
+			#expect(object?.isEmpty == true)
+		}
+		// Under a real run the control path names the run's token and fits sun_path.
+		let real = try LabScope.make(in: Lab.scopesDir)
+		#expect(real.controlPath.contains(Lab.token))
+		#expect(real.controlPath.utf8.count <= 103)
+	}
+
+	@Test("TC4: answers written to a scope read back as the agent reads them")
+	func answersRoundTrip() throws {
+		let scope = try LabScope.make(in: TestEnvironment.scratch + "scopes-\(UUID().uuidString)")
+		try scope.writeAnswers([
+			"agent.quit": "Quit", "vmhost.stop": ["button": "Stop", "holdSeconds": 2],
+		])
+		let data = try Data(contentsOf: URL(fileURLWithPath: scope.answersPath))
+		let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+		#expect(object["agent.quit"] as? String == "Quit")
+		let held = try #require(object["vmhost.stop"] as? [String: Any])
+		#expect(held["button"] as? String == "Stop")
+		#expect(held["holdSeconds"] as? Int == 2)
+	}
+
+	@Test("TC5: a lab VM stays within two vCPUs, 2 GB, four consoles and no audio")
+	func specLimits() throws {
+		let alpine = LabVMSpec.Boot.alpine()
+		try LabVMSpec(name: "ok", boot: alpine, cpus: 2, memoryGiB: 2, consolePorts: 4).validate()
+		let bad: [LabVMSpec] = [
+			LabVMSpec(name: "", boot: alpine), LabVMSpec(name: "a/b", boot: alpine),
+			LabVMSpec(name: ".hidden", boot: alpine), LabVMSpec(name: "x", boot: alpine, cpus: 3),
+			LabVMSpec(name: "x", boot: alpine, cpus: 0),
+			LabVMSpec(name: "x", boot: alpine, memoryGiB: 3),
+			LabVMSpec(name: "x", boot: alpine, consolePorts: 5),
+			LabVMSpec(name: "x", boot: alpine, consolePorts: 0),
+			LabVMSpec(name: "x", boot: alpine, devices: [.audioInput]),
+			LabVMSpec(name: "x", boot: alpine, devices: [.keyboard, .audioOutput]),
+		]
+		for spec in bad {
+			#expect(throws: LabError.self) { try spec.validate() }
+		}
+	}
+
+	@Test("TC5: lab guests count running vmhost and QEMU pid files toward the cap of two")
+	func guestCount() throws {
+		let dir = TestEnvironment.scratch + "pids-\(UUID().uuidString)"
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		try LabProcesses.writePid(getpid(), kind: "vmhost", name: "01-a", in: dir)
+		let dead = Process()
+		dead.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+		try dead.run()
+		dead.waitUntilExit()
+		try LabProcesses.writePid(dead.processIdentifier, kind: "qemu", name: "b", in: dir)
+		try LabProcesses.writePid(getpid(), kind: "agent", name: "01", in: dir)
+		#expect(LabProcesses.liveGuestCount(in: dir) == 1)
+		try LabProcesses.writePid(getpid(), kind: "qemu", name: "c", in: dir)
+		#expect(LabProcesses.liveGuestCount(in: dir) == 2)
+	}
+
+	@Test("TC5: a lab pid file name keeps only safe characters")
+	func pidFileName() {
+		let path = LabProcesses.pidFile(kind: "vmhost", name: "01-dev copy/x", in: "/p")
+		#expect(path == "/p/vmhost-01-dev_copy_x.pid")
+	}
+
+	@Test("TC6: a fixture that was never fetched names the fetch command")
+	func fixtureMissing() {
+		let cache = TestEnvironment.scratch + "cache-\(UUID().uuidString)"
+		do {
+			_ = try LabFixtures.path("nothing-here.raw", cache: cache)
+			Issue.record("a missing fixture should throw")
+		} catch {
+			#expect("\(error)".contains("scripts/lab/fetch.sh fetch nothing-here.raw"))
+		}
+	}
+
+	@Test("TC6: a fixture clone is a writable copy in the scope's images dir")
+	func fixtureClone() async throws {
+		let cache = TestEnvironment.scratch + "cache-\(UUID().uuidString)"
+		let fixtures = cache + "/fixtures"
+		try FileManager.default.createDirectory(atPath: fixtures, withIntermediateDirectories: true)
+		try Data("kernel bytes".utf8).write(to: URL(fileURLWithPath: fixtures + "/k"))
+		try Data("stamp".utf8).write(to: URL(fileURLWithPath: fixtures + "/k.stamp"))
+		chmod(fixtures + "/k", 0o444)
+		let source = try LabFixtures.path("k", cache: cache)
+		let images = TestEnvironment.scratch + "images-\(UUID().uuidString)"
+		let clone = try await LabFixtures.clone(source, as: "vm-Image", into: images)
+		#expect(clone == images + "/vm-Image")
+		#expect(try String(contentsOfFile: clone, encoding: .utf8) == "kernel bytes")
+		let mode = try FileManager.default.attributesOfItem(atPath: clone)[.posixPermissions]
+		#expect((mode as? NSNumber)?.intValue == 0o644)
+	}
 }
