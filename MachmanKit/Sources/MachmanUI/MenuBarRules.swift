@@ -16,6 +16,8 @@ public enum MenuBarAction: Sendable, Equatable {
 	case stop(StopMode)
 	case openWindow
 	case closeWindow
+	// Ends the process of a VM's vmhost that doesn't answer, once confirmed (C9).
+	case endProcess
 }
 
 // What the agent's alert says about an action that failed.
@@ -25,11 +27,15 @@ public struct MenuBarFailure: Equatable, Sendable {
 	public let message: String
 	// A MAC conflict on a plain start: the same start, forced, if the user says so.
 	public let forceStart: StartOptions?
+	// A Force Stop the vmhost didn't answer in time (timeout): not a failure to report, but
+	// the cue to ask about ending its process (C9).
+	public let offersEndProcess: Bool
 
 	public init(vm: String, action: MenuBarAction, error: Error) {
 		self.vm = vm
 		let quoted = "\u{201C}\(vm)\u{201D}"
 		let conflict = (error as? MachmanError)?.code == .macConflict
+		offersEndProcess = action == .stop(.force) && (error as? MachmanError)?.code == .timeout
 		switch action {
 		case .start(let options):
 			if conflict && !options.force {
@@ -49,6 +55,9 @@ public struct MenuBarFailure: Equatable, Sendable {
 			forceStart = nil
 		case .closeWindow:
 			title = "Couldn’t close \(vm)’s window"
+			forceStart = nil
+		case .endProcess:
+			title = "Couldn’t end the process of \(quoted)"
 			forceStart = nil
 		}
 		// The desktop's rule (MachmanError.userMessage): the daemon's own sentence, never a

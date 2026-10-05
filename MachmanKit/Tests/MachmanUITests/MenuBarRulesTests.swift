@@ -36,6 +36,34 @@ struct MenuBarRulesTests {
 			== "Couldn’t close Debian’s window")
 	}
 
+	// C9 (E36): a Force Stop the vmhost didn't answer in time is the cue to ask about ending
+	// its process, never a failure to report; nothing else is.
+	@Test func aTimedOutForceStopOffersEndingTheProcess() {
+		let timeout = MachmanError(
+			code: .timeout, message: "Debian isn\u{2019}t answering, so it didn\u{2019}t stop")
+		#expect(MenuBarFailure(vm: "Debian", action: .stop(.force), error: timeout)
+			.offersEndProcess)
+		#expect(!MenuBarFailure(vm: "Debian", action: .stop(.soft), error: timeout)
+			.offersEndProcess)
+		#expect(!MenuBarFailure(vm: "Debian", action: .stop(.force), error: refused)
+			.offersEndProcess)
+		#expect(MenuBarFailure(vm: "Debian", action: .endProcess, error: refused).title
+			== "Couldn\u{2019}t end the process of \u{201C}Debian\u{201D}")
+	}
+
+	@Test func theQuitAsksAboutEveryVMItLeftRunning() throws {
+		let one = EndProcessPrompt.forQuit(leaving: ["Debian"])
+		#expect(one.title == EndProcessPrompt.forVM("Debian").title)
+		#expect(one.confirm == "End Process")
+		#expect(one.cancel == "Leave Running")
+		let two = EndProcessPrompt.forQuit(leaving: ["Debian", "Alpine"])
+		#expect(two.title == "2 VMs aren\u{2019}t answering \u{2014} end their processes?")
+		#expect(two.message == "Ending their Machman VM processes stops them at once, like "
+			+ "pulling their power cords.")
+		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
+		#expect(two.message.matches(of: sentenceEnd).count == 1)
+	}
+
 	// As the desktop: a MAC conflict offers the same start, forced.
 	@Test func aMACConflictOffersStartAnyway() {
 		let failure = MenuBarFailure(

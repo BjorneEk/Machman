@@ -18,6 +18,11 @@ public final class MenuBarModel: ObservableObject {
 	// Live macOS install phases by VM: an install's start emits no listChanged (P23).
 	@Published private(set) var installPhases: [String: InstallPhase.Kind] = [:]
 	private var eventTask: Task<Void, Never>?
+	// Asks the user, a second time, whether to end a VM's process (C9). A seam: tests
+	// answer it; the agent shows the alert in front, never modal inside a main-actor job.
+	public var confirmEndProcess: @MainActor (EndProcessPrompt) async -> Bool = { prompt in
+		await MainRunLoopCallout.run { prompt.runInFront() }
+	}
 
 	public init(api: MachmanControlling) {
 		self.api = api
@@ -79,8 +84,19 @@ public final class MenuBarModel: ObservableObject {
 		Task { await perform(.start(options), vm: name) }
 	}
 
+	// A Force Stop can't reach a VM whose vmhost doesn't answer: one listed as not
+	// responding is asked about first, as the desktop does (C9).
 	public func stop(_ name: String, mode: StopMode) {
+		if mode == .force, vms.first(where: { $0.name == name })?.isUnresponsive == true {
+			Task { await endProcessIfConfirmed(name) }
+			return
+		}
 		Task { await perform(.stop(mode), vm: name) }
+	}
+
+	private func endProcessIfConfirmed(_ name: String) async {
+		guard await confirmEndProcess(.forVM(name)) else { return }
+		await perform(.endProcess, vm: name)
 	}
 
 	public func openWindow(_ name: String) {
@@ -100,9 +116,15 @@ public final class MenuBarModel: ObservableObject {
 			case .stop(let mode): try await api.stop(vm: name, mode: mode)
 			case .openWindow: try await api.openWindow(vm: name)
 			case .closeWindow: try await api.closeWindow(vm: name)
+			case .endProcess: try await api.endProcess(vm: name)
 			}
 		} catch {
 			let failure = MenuBarFailure(vm: name, action: action, error: error)
+			if failure.offersEndProcess {
+				// The stop ran out the daemon's bound: ask about the process instead.
+				await endProcessIfConfirmed(name)
+				return
+			}
 			// Logged first: the alert of an LSUIElement app can end up behind everything.
 			MachmanLogger.log(.interactionError, "\(failure.title): \(failure.message)")
 			// Not modal inside this main-actor job: that would hold every other one, the

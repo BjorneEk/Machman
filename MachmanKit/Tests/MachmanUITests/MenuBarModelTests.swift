@@ -42,4 +42,46 @@ struct MenuBarModelTests {
 		#expect(await eventually { model.vms.map(\.name) == ["Alpine", "Debian"] })
 		#expect(stub.calls.filter { $0 == "events" }.count == 1)
 	}
+
+	// C9 (E36): Force Stop on a VM listed as not responding asks a second time, and only a
+	// yes ends its process; the stop itself is never sent to a host that won't answer.
+	@Test func aForceStopOfANotRespondingVMAsksFirst() async {
+		let stub = StubMachman()
+		var debian = Samples.linux("Debian", state: .running)
+		debian.unresponsive = true
+		stub.vms["Debian"] = debian
+		let model = MenuBarModel(api: stub)
+		var asked: [EndProcessPrompt] = []
+		var answer = false
+		model.confirmEndProcess = { prompt in
+			asked.append(prompt)
+			return answer
+		}
+		model.begin()
+		#expect(await eventually { !model.vms.isEmpty })
+
+		model.stop("Debian", mode: .force)
+		#expect(await eventually { asked == [.forVM("Debian")] })
+		#expect(!stub.calls.contains("endProcess"))   // "Cancel"
+
+		answer = true
+		model.stop("Debian", mode: .force)
+		#expect(await eventually { stub.calls.contains("endProcess") })
+		#expect(!stub.calls.contains("stop"))
+	}
+
+	// A host that wedged after the list last said so: the bounded stop's timeout asks too.
+	@Test func aTimedOutForceStopAsksAboutTheProcess() async {
+		let stub = StubMachman()
+		stub.vms["Debian"] = Samples.linux("Debian", state: .running)
+		stub.fail("stop", with: MachmanError(
+			code: .timeout, message: "Debian isn\u{2019}t answering, so it didn\u{2019}t stop"))
+		let model = MenuBarModel(api: stub)
+		model.confirmEndProcess = { _ in true }
+		model.begin()
+		#expect(await eventually { !model.vms.isEmpty })
+
+		model.stop("Debian", mode: .force)
+		#expect(await eventually { stub.calls.contains("endProcess") })
+	}
 }
