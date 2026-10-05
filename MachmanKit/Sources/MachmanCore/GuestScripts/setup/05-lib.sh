@@ -885,12 +885,13 @@ _mf_strip() {
 		END { for (i = 1; i <= held; i++) print buf[i] }'
 }
 
-# <marker> — stripped, then the block (body from ENVIRON _MF_BODY, verbatim: awk -v would
-# unescape fstab's \040) added before a final exit statement (rc.local: nothing after
-# "exit 0" ever runs), else at the end. Machman blocks are not the file's own code: older
-# runs appended theirs after that exit, and those (another VM's included) stay inert there.
+# <marker> [top] — stripped, then the block (body from ENVIRON _MF_BODY, verbatim: awk -v
+# would unescape fstab's \040) added first with "top", else before a final exit statement
+# (rc.local: nothing after "exit 0" ever runs), else at the end. Machman blocks are not the
+# file's own code: older runs appended theirs after that exit, and those (another VM's
+# included) stay inert there.
 _mf_put() {
-	_mf_strip "$1" | awk -v m="$1" '
+	_mf_strip "$1" | awk -v m="$1" -v top="${2:-}" '
 		{
 			line[++n] = $0
 			if ($0 ~ /^# BEGIN machman-/) inb = 1
@@ -901,7 +902,8 @@ _mf_put() {
 			body = ENVIRON["_MF_BODY"]
 			sub(/\n+$/, "", body)
 			at = n + 1
-			for (i = n; i >= 1; i--) {
+			if (top != "") at = 1
+			for (i = n; i >= 1 && top == ""; i--) {
 				if (ours[i] || line[i] ~ /^[ \t]*(#.*)?$/) continue
 				if (line[i] ~ /^[ \t]*exit([ \t;].*)?$/) at = i
 				break
@@ -929,15 +931,18 @@ strip_block() {
 	rewrite_file "$1" _mf_strip "$_sb_m"
 }
 
-# put_block [-m <mode>] [-o <user:group>] <file> <marker> <body> — replace that marker's
-# block with <body>; a missing file is created first (-m/-o apply only then).
+# put_block [-m <mode>] [-o <user:group>] [-t] <file> <marker> <body> — replace that
+# marker's block with <body>, first in the file with -t; a missing file is created first
+# (-m/-o apply only then).
 put_block() {
 	_pb_mode=644
 	_pb_own=""
+	_pb_top=""
 	while :; do
 		case "$1" in
 		-m) _pb_mode="$2"; shift 2 ;;
 		-o) _pb_own="$2"; shift 2 ;;
+		-t) _pb_top=top; shift ;;
 		*) break ;;
 		esac
 	done
@@ -951,7 +956,7 @@ put_block() {
 	_MF_BODY="$3"
 	export _MF_BODY
 	_pb_code=0
-	rewrite_file "$1" _mf_put "$2" || _pb_code=$?
+	rewrite_file "$1" _mf_put "$2" ${_pb_top:+"$_pb_top"} || _pb_code=$?
 	unset _MF_BODY
 	return "$_pb_code"
 }

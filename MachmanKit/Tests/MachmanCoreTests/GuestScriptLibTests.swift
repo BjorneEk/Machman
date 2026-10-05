@@ -289,6 +289,42 @@ struct GuestScriptLibTests {
 		}
 	}
 
+	// S42: -t puts the block first — and moves one an older run left elsewhere there — and
+	// stripping it gives back the file as it was, byte for byte.
+	@Test func topBlocksGoFirstAndStripClean() async throws {
+		for shell in Self.shells {
+			let r = try await run("""
+				printf 'Host *\\n\\tUser me\\n' > "$D/config"
+				cp "$D/config" "$D/config.orig"
+				put_block -t "$D/config" "$MARKER" 'Host mac'
+				cat "$D/config"
+				echo ---
+				strip_block "$D/config"
+				put_block "$D/config" "$MARKER" 'old place'
+				put_block -t "$D/config" "$MARKER" 'Host mac'
+				cat "$D/config"
+				strip_block "$D/config"
+				cmp -s "$D/config" "$D/config.orig" && echo restored
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				# BEGIN \(Self.marker)
+				Host mac
+				# END \(Self.marker)
+				Host *
+				\tUser me
+				---
+				# BEGIN \(Self.marker)
+				Host mac
+				# END \(Self.marker)
+				Host *
+				\tUser me
+				restored
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// D17: mount names are host text; "*.txt" stays "*.txt" beside a.txt.
 	@Test func itemListsAreNeverGlobbed() async throws {
 		for shell in Self.shells {
