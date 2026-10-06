@@ -4,7 +4,7 @@
 //
 //  A second volume for the cross-volume rows: a sparse APFS disk image under the run dir,
 //  attached with -nobrowse (no Finder window or Desktop icon) at a mount point inside the
-//  run dir, detached when the test ends (lab.sh's lab_detach_images is the backstop).
+//  run dir, detached when the test ends (the lab's sandbox_detach_images is the backstop).
 //  MACHMAN_LAB_VOLUMES=0 opts a run out (B-2): these tests then skip.
 //
 

@@ -102,18 +102,6 @@ lab_in_run() {
 	kill -0 "$p" 2>/dev/null
 }
 
-# lab_token_pids <token>: same-uid processes whose command line or environment names the run
-# /tmp/mml.<token> or its suite (everything a run starts carries MACHMAN_LAB_RUN) — never this
-# shell, nor the ps and awk doing the scan.
-lab_token_pids() {
-	ps -axwwE -o pid=,command= -U "$(id -u)" 2>/dev/null | awk -v t="$1" -v me="$$" '
-		$1 == me { next }
-		$2 ~ /(^|\/)(ps|awk)$/ { next }
-		$0 ~ ("/mml\\." t "([^A-Za-z0-9]|$)") || $0 ~ ("Machman\\.test-" t "([^A-Za-z0-9]|$)") {
-			print $1
-		}'
-}
-
 # lab_kill_tree <pid>: <pid> and its descendants — frozen top-down first, so none starts
 # another while the tree is collected, then terminated.
 lab_kill_tree() {
@@ -125,19 +113,15 @@ lab_kill_tree() {
 	return 0
 }
 
-# lab_end_run <root>: stop what a run started — every process carrying its token (ps shows
-# the environment of most, not of every platform binary: a session also kills its command's
-# process tree), then its QEMU guests (daemonized, so swept by pid file) and its lab sshd.
+# lab_end_run <root>: stop what a run started, with lab.sh's teardown (sandbox.sh's
+# sandbox_lab_teardown): every process carrying its token (ps shows the environment of most,
+# not of every platform binary: a session also kills its command's process tree), its QEMU
+# guests and lab sshd, its disk images and its test-labelled launchd jobs. The stale sweep
+# (sandbox_sweep_stale) runs the same teardown for a dead run's root.
 lab_end_run() {
-	local p
-	for p in $(lab_token_pids "${1##*.}"); do kill -TERM "$p" 2>/dev/null; done
-	"$LAB_QEMU_DIR/run.sh" sweep "$1" >/dev/null 2>&1
-	"$LAB_DIR/sshd/sshd.sh" sweep "$1" >/dev/null 2>&1
-	return 0
+	# shellcheck disable=SC2046
+	sandbox_lab_teardown "$1" $(sandbox_token_pids "${1##*.}")
 }
-
-# What a dead run left behind (sandbox_sweep_stale calls this per stale root).
-sandbox_presweep_hook() { lab_end_run "$1"; }
 
 # lab_session [--keep] <command…>: <command> inside a lab run of its own, for a script started
 # outside scripts/lab.sh that boots guests: the stale sweep, the machine-wide slot (it waits

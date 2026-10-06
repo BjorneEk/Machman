@@ -220,4 +220,32 @@ else
 	fail "awake: a command runs under PreventSystemSleep and keeps its exit status" "exit $rc"
 fi
 
+# 15: a dead lab run's disk image, attached and mounted under its root, is detached by the
+# stale sweep before the root goes (the root is never removed through a mounted volume). The
+# volume's contents are never read: only hdiutil and mount see it.
+sandbox_create mml 4
+root="$SANDBOX_ROOT"
+made+=("$root")
+dead_pid > "$root/.owner"
+img=""
+if hdiutil create -quiet -size 1m -fs HFS+ -volname mmlsc "$root/v.dmg" &&
+	hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$root/v.mnt" "$root/v.dmg"; then
+	img="$(sandbox_images_under "$root")"
+fi
+if [[ -z "$img" ]] || ! sandbox_mounted_under "$root"; then
+	fail "sweep: a dead lab run's mounted disk image is detached before its root goes" \
+		"could not attach and find a test image (got '$img')"
+else
+	sandbox_sweep_root "$root"
+	if [[ ! -e "$root" ]] && ! hdiutil info | grep -qF "$img" &&
+		[[ -z "$(sandbox_images_under "$root")" ]]; then
+		ok "sweep: a dead lab run's mounted disk image is detached before its root goes"
+	else
+		fail "sweep: a dead lab run's mounted disk image is detached before its root goes" \
+			"root $([[ -e "$root" ]] && echo stayed || echo went), $img $(hdiutil info |
+				grep -qF "$img" && echo "still attached" || echo detached)"
+		hdiutil detach -force "$img" >/dev/null 2>&1
+	fi
+fi
+
 exit "$failures"

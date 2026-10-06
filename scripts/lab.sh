@@ -92,19 +92,6 @@ lab_export() {
 	unset SSH_AUTH_SOCK SSH_ASKPASS
 }
 
-# lab_token_pids <token>: same-uid processes whose argv or environment name this run's suite
-# or sandbox (exact token). Never this script's own shells, nor the ps and awk doing the scan.
-lab_token_pids() {
-	ps -axwwE -o pid=,command= -U "$(id -u)" 2>/dev/null | awk -v t="$1" -v me="$$" -v pp="$PPID" '
-		{
-			if ($1 == me || $1 == pp) next
-			if ($2 ~ /(^|\/)(ps|awk)$/) next
-			if ($2 ~ /(^|\/)bash$/ && $0 ~ /lab\.sh/) next
-			if ($0 ~ ("Machman\\.test-" t "([^A-Za-z0-9]|$)") ||
-				$0 ~ ("/mml\\." t "([^A-Za-z0-9]|$)")) print $1
-		}'
-}
-
 # lab_pidfile_pids <root>: live pids named by <root>/pids/*.pid.
 lab_pidfile_pids() {
 	local f pid
@@ -112,78 +99,6 @@ lab_pidfile_pids() {
 		[[ -f "$f" ]] || continue
 		pid="$(head -n1 "$f" | tr -cd '0-9')"
 		[[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && echo "$pid"
-	done
-	return 0
-}
-
-# lab_kill_pids <pid>...: TERM, wait up to 5 s, then KILL the survivors.
-lab_kill_pids() {
-	local p n alive
-	local pids=()
-	for p in "$@"; do
-		[[ -n "$p" && "$p" != "$$" && "$p" != "$PPID" ]] || continue
-		kill -TERM "$p" 2>/dev/null && pids+=("$p")
-	done
-	((${#pids[@]})) || return 0
-	for n in 1 2 3 4 5 6 7 8 9 10; do
-		alive=0
-		for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null && alive=1; done
-		((alive)) || return 0
-		sleep 0.5
-	done
-	for p in "${pids[@]}"; do kill -KILL "$p" 2>/dev/null || true; done
-	return 0
-}
-
-# lab_bootout_jobs <token>: test-labelled launchd jobs of this run, never any other label.
-lab_bootout_jobs() {
-	local label
-	for label in $(launchctl list 2>/dev/null |
-		awk -v p="com.gustaffranzen.Machman.test-$1." 'index($3, p) == 1 { print $3 }'); do
-		launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
-	done
-	return 0
-}
-
-# lab_r3td_sweeps <root>: r3-td's QEMU and sshd sweeps, when those scripts exist.
-lab_r3td_sweeps() {
-	[[ -x "$repo/scripts/lab/qemu/run.sh" ]] && "$repo/scripts/lab/qemu/run.sh" sweep "$1" || true
-	[[ -x "$repo/scripts/lab/sshd/sshd.sh" ]] && "$repo/scripts/lab/sshd/sshd.sh" sweep "$1" || true
-	return 0
-}
-
-# lab_presweep <root>: stop what a dead /tmp/mml.* run left behind (token scan only: pids in
-# its pid files may have been reused since).
-lab_presweep() {
-	local t
-	[[ "$1" == /tmp/mml.* ]] || return 0
-	t="${1##*.}"
-	lab_kill_pids $(lab_token_pids "$t")
-	lab_r3td_sweeps "$1"
-	lab_bootout_jobs "$t"
-	return 0
-}
-sandbox_presweep_hook() { lab_presweep "$1"; }
-
-# lab_detach_images <root>: force-detach any disk image attached from under <root>.
-lab_detach_images() {
-	local dev
-	for dev in $(hdiutil info -plist 2>/dev/null | plutil -convert json -o - - 2>/dev/null |
-		python3 -c '
-import json, sys
-root = sys.argv[1] + "/"
-try:
-    doc = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-for image in doc.get("images", []):
-    if str(image.get("image-path", "")).startswith(root):
-        for entity in image.get("system-entities", []):
-            dev = entity.get("dev-entry", "")
-            if dev and not dev[-1:].isalpha() and "s" not in dev.rsplit("disk", 1)[-1]:
-                print(dev)
-' "$1"); do
-		hdiutil detach -force "$dev" >/dev/null 2>&1 || true
 	done
 	return 0
 }
@@ -206,10 +121,9 @@ lab_finish() {
 	set +e
 	lab_stop_helpers
 	if [[ -n "${root:-}" && -d "${root:-}" ]]; then
-		lab_kill_pids $( { lab_pidfile_pids "$root"; lab_token_pids "${token:-}"; } | sort -u)
-		lab_r3td_sweeps "$root"
-		lab_bootout_jobs "${token:-}"
-		lab_detach_images "$root"
+		# shellcheck disable=SC2046
+		sandbox_lab_teardown "$root" $( { lab_pidfile_pids "$root"
+			sandbox_token_pids "${token:-}"; } | sort -u)
 		if ((${keep:-0})); then
 			touch "$root/.keep"
 			echo "lab: kept $root"
@@ -450,12 +364,10 @@ lab_run() {
 	wait $!
 	ts="$(cat "$root/report/test-status" 2>/dev/null || echo 1)"
 	((ts != 0)) && teststatus=1
-	# Sweep, then stop the audits and compare.
-	lab_kill_pids $( { lab_pidfile_pids "$root"; lab_token_pids "$token"; } | sort -u |
-		grep -vxF -e "$WATCHPID" -e "$LOGPID")
-	lab_r3td_sweeps "$root"
-	lab_bootout_jobs "$token"
-	lab_detach_images "$root"
+	# Sweep (the audits still watching), then stop the audits and compare.
+	# shellcheck disable=SC2046
+	sandbox_lab_teardown "$root" $( { lab_pidfile_pids "$root"; sandbox_token_pids "$token"; } |
+		sort -u | grep -vxF -e "$WATCHPID" -e "$LOGPID")
 	touch "$root/report/watch/stop"
 	waited=0
 	while kill -0 "$WATCHPID" 2>/dev/null && ((waited < 30)); do

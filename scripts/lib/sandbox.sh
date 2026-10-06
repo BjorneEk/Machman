@@ -38,7 +38,16 @@ sandbox_cleanup() (
 	token="${base#*.}"
 	suite="com.gustaffranzen.Machman.test-$token"
 	temp="$(getconf DARWIN_USER_TEMP_DIR)"
-	rm -rf "$1"
+	# Never through a mounted volume: detach what is still attached, and leave the root to the
+	# next sweep while a volume stays mounted in it (-x: rm never crosses a mount point).
+	if sandbox_mounted_under "$1"; then
+		sandbox_detach_images "$1"
+		if sandbox_mounted_under "$1"; then
+			echo "sandbox: a volume is still mounted under $1; not removing it" >&2
+			return 0
+		fi
+	fi
+	rm -rfx "$1"
 	rm -rf "${temp}${suite}"                              # MachmanPaths.runtimeDir
 	rm -f "${temp}_private_tmp_${base}_"*                 # SwiftPM locks named after the fake home
 	rm -rf "$HOME/Library/Application Support/$suite"     # defaultDataDir in the real home
@@ -64,13 +73,15 @@ sandbox_is_stale() {
 	[[ -n "$(find "$1" -maxdepth 0 -mmin +1440 2>/dev/null)" ]]
 }
 
-# sandbox_sweep_root <root>: clean <root> when it is a sandbox name and its run is gone.
-# A caller may define sandbox_presweep_hook <root> to stop what the dead run left running.
+# sandbox_sweep_root <root>: clean <root> when it is a sandbox name and its run is gone. A
+# dead lab run's leftovers are stopped first (sandbox_lab_teardown, by token: pids in its pid
+# files may have been reused since).
 sandbox_sweep_root() {
 	[[ -d "$1" && "$1" =~ ^/tmp/(mmt|mml)\.[A-Za-z0-9]+$ ]] || return 0
 	sandbox_is_stale "$1" || return 0
-	if declare -F sandbox_presweep_hook >/dev/null; then
-		sandbox_presweep_hook "$1"
+	if [[ "$1" == /tmp/mml.* ]]; then
+		# shellcheck disable=SC2046
+		sandbox_lab_teardown "$1" $(sandbox_token_pids "${1##*.}")
 	fi
 	sandbox_cleanup "$1"
 }
@@ -83,6 +94,108 @@ sandbox_sweep_stale() {
 			[[ -d "$dir" ]] && sandbox_sweep_root "$dir"
 		done
 	done
+	return 0
+}
+
+# --- what a lab run leaves behind: lab.sh's end of run, its stale sweep and
+# scripts/lab/qemu/common.sh's lab_session all stop it with sandbox_lab_teardown -------------
+
+# sandbox_token_pids <token>: same-uid processes whose argv or environment name the run's suite
+# or sandbox (the exact token). Never this shell or its parent, the ps and awk doing the scan,
+# nor a lab.sh shell (lab.sh's own subshells carry its token).
+sandbox_token_pids() {
+	[[ -n "${1:-}" ]] || return 0
+	ps -axwwE -o pid=,command= -U "$(id -u)" 2>/dev/null | awk -v t="$1" -v me="$$" -v pp="$PPID" '
+		{
+			if ($1 == me || $1 == pp) next
+			if ($2 ~ /(^|\/)(ps|awk)$/) next
+			if ($2 ~ /(^|\/)bash$/ && $0 ~ /lab\.sh/) next
+			if ($0 ~ ("Machman\\.test-" t "([^A-Za-z0-9]|$)") ||
+				$0 ~ ("/mml\\." t "([^A-Za-z0-9]|$)")) print $1
+		}'
+}
+
+# sandbox_kill_pids <pid>...: TERM, up to 5 s for them to go, then KILL the survivors.
+sandbox_kill_pids() {
+	local p n alive
+	local pids=()
+	for p in "$@"; do
+		[[ -n "$p" && "$p" != "$$" && "$p" != "$PPID" ]] || continue
+		kill -TERM "$p" 2>/dev/null && pids+=("$p")
+	done
+	((${#pids[@]})) || return 0
+	for n in 1 2 3 4 5 6 7 8 9 10; do
+		alive=0
+		for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null && alive=1; done
+		((alive)) || return 0
+		sleep 0.5
+	done
+	for p in "${pids[@]}"; do kill -KILL "$p" 2>/dev/null || true; done
+	return 0
+}
+
+# sandbox_images_under <root>: the whole-disk device of every disk image attached from under
+# <root> or mounted under it. hdiutil names the physical path (/private/tmp/...), so /tmp/...
+# matches in both spellings.
+sandbox_images_under() {
+	local real
+	real="$(cd "$1" 2>/dev/null && pwd -P)" || real="$1"
+	hdiutil info 2>/dev/null | awk -v a="$1/" -v b="$real/" -v c="/private$1/" '
+		function under(p) { return index(p, a) == 1 || index(p, b) == 1 || index(p, c) == 1 }
+		function flush() {
+			if (disk != "" && (hit || under(path))) print disk
+			path = ""; disk = ""; hit = 0
+		}
+		/^=+$/ { flush(); next }
+		/^image-path *: / { path = $0; sub(/^image-path *: /, "", path); next }
+		/^\/dev\/disk/ {
+			n = split($0, f, "\t")
+			if (disk == "" && f[1] ~ /^\/dev\/disk[0-9]+$/) disk = f[1]
+			if (n >= 3 && under(f[3] "/")) hit = 1
+		}
+		END { flush() }'
+}
+
+# sandbox_detach_images <root>: force-detach every disk image sandbox_images_under finds.
+sandbox_detach_images() {
+	local dev
+	for dev in $(sandbox_images_under "$1"); do
+		hdiutil detach -force "$dev" >/dev/null 2>&1 || true
+	done
+	return 0
+}
+
+# sandbox_mounted_under <root>: 0 when a volume is mounted at or under <root>.
+sandbox_mounted_under() {
+	local real
+	real="$(cd "$1" 2>/dev/null && pwd -P)" || real="$1"
+	mount | awk -v a=" on $1/" -v b=" on $real/" -v c=" on $1 (" -v d=" on $real (" '
+		index($0, a) || index($0, b) || index($0, c) || index($0, d) { found = 1 }
+		END { exit !found }'
+}
+
+# sandbox_bootout_jobs <token>: the run's test-labelled launchd jobs, never any other label.
+sandbox_bootout_jobs() {
+	local label
+	[[ -n "${1:-}" ]] || return 0
+	for label in $(launchctl list 2>/dev/null |
+		awk -v p="com.gustaffranzen.Machman.test-$1." 'index($3, p) == 1 { print $3 }'); do
+		launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
+	done
+	return 0
+}
+
+# sandbox_lab_teardown <root> [<pid>...]: stop everything a lab run left: <pid>... (TERM,
+# then KILL), its QEMU guests and lab sshd (scripts/lab's sweeps), the disk images attached
+# from under it, and its test-labelled launchd jobs. Removes nothing (sandbox_cleanup does).
+sandbox_lab_teardown() {
+	local root="$1" lab="$SANDBOX_LIB_REPO/scripts/lab"
+	shift
+	sandbox_kill_pids "$@"
+	[[ -x "$lab/qemu/run.sh" ]] && "$lab/qemu/run.sh" sweep "$root" >/dev/null 2>&1
+	[[ -x "$lab/sshd/sshd.sh" ]] && "$lab/sshd/sshd.sh" sweep "$root" >/dev/null 2>&1
+	sandbox_detach_images "$root"
+	sandbox_bootout_jobs "${root##*.}"
 	return 0
 }
 

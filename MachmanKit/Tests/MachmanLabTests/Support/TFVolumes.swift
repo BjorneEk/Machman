@@ -5,8 +5,8 @@
 //  A second volume for the library rows: a sparse disk image formatted exFAT, HFS+ or APFS,
 //  created and mounted ONLY under the run root (<run>/tf-volumes), attached -nobrowse (no
 //  Finder, no Desktop icon), -noautoopen and -owners off (an exFAT root is root-owned 0700
-//  otherwise, measured), detached at the end; lab.sh detaches whatever an
-//  interrupted run left (lab_detach_images). On by default (B-2: the one-time Removable
+//  otherwise, measured), detached at the end; the lab detaches whatever an
+//  interrupted run left (sandbox_detach_images). On by default (B-2: the one-time Removable
 //  Volumes prompt is accepted); MACHMAN_LAB_VOLUMES=0 opts out.
 //
 
