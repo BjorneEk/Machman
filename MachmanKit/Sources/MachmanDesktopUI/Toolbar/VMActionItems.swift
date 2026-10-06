@@ -24,12 +24,14 @@ struct WindowToggleItem: View {
 			get: { vm.state == .running ? vm.windowOpen : policy.windowed },
 			set: { _ in toggleWindow() })
 		) {
-			Image(systemName: MachmanSymbols.vmRunningWindowed)
+			// Image-only in the bar; the title is what VoiceOver (H32) and the toolbar's
+			// » menu (H33) read.
+			Label(help, systemImage: MachmanSymbols.vmRunningWindowed)
+				.labelStyle(.iconOnly)
 		}
 		.toggleStyle(.button)
 		.disabled(vm.state != .running)
 		.help(help)
-		.accessibilityLabel(help)   // image-only: VoiceOver reads the help (H32)
 	}
 
 	private var policy: StartPolicy { vm.startPolicy ?? StartPolicy() }
@@ -58,21 +60,25 @@ struct StartStopGroup: View {
 				if viewModel.isStartPending(vm.name) {
 					transition(.starting)
 				} else {
-					ControlGroup {
+					// Titled, the group reads by its first action in the toolbar's » menu (H33).
+					ControlGroup(viewModel.startHelp(vm)) {
 						Button {
 							viewModel.startPolicyDriven(vm)
 						} label: {
-							Image(systemName: MachmanSymbols.start)
+							Self.icon(viewModel.startHelp(vm), MachmanSymbols.start)
 						}
 						.help(viewModel.startHelp(vm))
-						.accessibilityLabel(viewModel.startHelp(vm))
 						Button {
 							viewModel.startPolicyDriven(vm, .safe)
 						} label: {
-							SafeStartGlyph(size: 12)
+							Label {
+								Text(Self.startSafe)
+							} icon: {
+								SafeStartGlyph(size: 12)
+							}
+							.labelStyle(.iconOnly)
 						}
-						.help("Start Safe — run on a discardable shadow")
-						.accessibilityLabel("Start Safe — run on a discardable shadow")
+						.help(Self.startSafe)
 					}
 					.disabled(!viewModel.canStart(vm))
 				}
@@ -95,21 +101,19 @@ struct StartStopGroup: View {
 					forceStop
 				}
 			case .running, .paused:
-				ControlGroup {
+				ControlGroup("Shut Down") {
 					Button {
 						viewModel.stopVM(vm.name, mode: .soft)
 					} label: {
-						Image(systemName: MachmanSymbols.shutDown)
+						Self.icon("Shut Down", MachmanSymbols.shutDown)
 					}
 					.help("Shut Down")
-					.accessibilityLabel("Shut Down")
 					Button {
 						viewModel.stopVM(vm.name, mode: .force)
 					} label: {
-						Image(systemName: MachmanSymbols.forceStop)
+						Self.icon("Force Stop", MachmanSymbols.forceStop)
 					}
 					.help("Force Stop")
-					.accessibilityLabel("Force Stop")
 				}
 			}
 		}
@@ -118,15 +122,24 @@ struct StartStopGroup: View {
 
 	// Force Stop on its own, beside a transition's spinner.
 	private var forceStop: some View {
-		ControlGroup {
+		ControlGroup("Force Stop") {
 			Button {
 				viewModel.stopVM(vm.name, mode: .force)
 			} label: {
-				Image(systemName: MachmanSymbols.forceStop)
+				Self.icon("Force Stop", MachmanSymbols.forceStop)
 			}
 			.help("Force Stop")
-			.accessibilityLabel("Force Stop")
 		}
+	}
+
+	private static let startSafe = "Start Safe — run on a discardable shadow"
+
+
+	// An image-only toolbar button's label: titled, so VoiceOver (H32) and the toolbar's »
+	// menu (H33) read its name; the bar shows the icon.
+	private static func icon(_ title: String, _ symbol: String) -> some View {
+		Label(title, systemImage: symbol)
+			.labelStyle(.iconOnly)
 	}
 
 	// The state's own progress word (H8), as the canvas shows it.

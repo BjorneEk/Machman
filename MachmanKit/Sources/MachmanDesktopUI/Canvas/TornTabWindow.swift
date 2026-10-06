@@ -97,10 +97,11 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 				Button {
 					showInspector.toggle()
 				} label: {
-					Image(systemName: MachmanSymbols.inspectorToggle)
+					// A title for the toolbar's » menu and VoiceOver; the bar shows the icon (H33).
+					Label(inspectorHelp, systemImage: MachmanSymbols.inspectorToggle)
+						.labelStyle(.iconOnly)
 				}
 				.help(inspectorHelp)
-				.accessibilityLabel(inspectorHelp)
 			}
 		}
 		.onAppear {

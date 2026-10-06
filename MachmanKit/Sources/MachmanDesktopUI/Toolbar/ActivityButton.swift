@@ -27,16 +27,21 @@ struct ActivityButton: View {
 		Button {
 			shown.toggle()
 		} label: {
-			Image(systemName: MachmanSymbols.activity)
-				.overlay(alignment: .topTrailing) {
-					if activity.unseenProblems > 0 {
-						ActivityBadge(count: activity.unseenProblems)
-							.offset(x: 7, y: -6)
+			// Titled for the toolbar's » menu and VoiceOver; the bar shows the icon (H33).
+			Label {
+				Text(tooltip)
+			} icon: {
+				Image(systemName: MachmanSymbols.activity)
+					.overlay(alignment: .topTrailing) {
+						if activity.unseenProblems > 0 {
+							ActivityBadge(count: activity.unseenProblems)
+								.offset(x: 7, y: -6)
+						}
 					}
-				}
+			}
+			.labelStyle(.iconOnly)
 		}
 		.help(tooltip)
-		.accessibilityLabel(tooltip)
 		.popover(isPresented: $shown, arrowEdge: .bottom) {
 			ActivityPopover(activity: activity)
 		}

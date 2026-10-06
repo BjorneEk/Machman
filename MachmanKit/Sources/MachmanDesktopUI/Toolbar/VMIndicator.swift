@@ -27,39 +27,18 @@ struct VMIndicatorCluster: View {
 		Button {
 			pickerShown.toggle()
 		} label: {
-			HStack(spacing: 7) {
-				if let vm {
-					VMStatusDot(vm: vm)
-					VStack(alignment: .leading, spacing: 1) {
-						// Middle: copies differ at the end ("… copy 2"), so keep both ends.
-						Text(vm.name)
-							.font(.system(size: 12.5, weight: .semibold))
-							.lineLimit(1)
-							.truncationMode(.middle)
-						if vm.isUnresponsive {
-							NotRespondingBadge(size: 9)
-						} else {
-							BootBadge(mode: vm.boot.mode, size: 9)
-						}
-					}
-					.frame(maxWidth: 220, alignment: .leading)
-				} else {
-					Text("No VM")
-						.font(.system(size: 12.5, weight: .semibold))
-						.foregroundStyle(.secondary)
-				}
-				Image(systemName: MachmanSymbols.pickerChevron)
-					.font(.system(size: 8, weight: .bold))
-					.foregroundStyle(.secondary)
-					.opacity(hovering || pickerShown ? 1 : 0)
+			// Titled by the VM for the toolbar's » menu; the bar shows the whole cluster (H33).
+			Label {
+				Text(vm?.name ?? "No VM")
+			} icon: {
+				cluster
 			}
-			.padding(.horizontal, 10)
-			.padding(.vertical, 4)
-			.machmanGlassCapsule()
-			.contentShape(Capsule())
-			.animation(.easeOut(duration: 0.12), value: hovering)
+			.labelStyle(.iconOnly)
 		}
 		.buttonStyle(.plain)
+		// VoiceOver reads the cluster as it reads in the bar: the state, the name, the boot
+		// mode (the title alone would drop the state).
+		.accessibilityLabel(spoken)
 		.onHover { hovering = $0 }
 		// The name truncates at 220 pt; the tooltip carries all of it (L5).
 		.help(vm.map { "\($0.name) — Switch VM" } ?? "Switch VM")
@@ -85,6 +64,48 @@ struct VMIndicatorCluster: View {
 		}
 	}
 
+	private var spoken: String {
+		guard let vm else { return "No VM" }
+		let mode = vm.isUnresponsive ? "Not responding" : vm.boot.mode.displayLabel
+		return [vm.stateLabel, vm.name, mode].joined(separator: ", ")
+	}
+
+	// Status dot, name and boot badge in a glass capsule, with the chevron that fades in on
+	// hover.
+	private var cluster: some View {
+		HStack(spacing: 7) {
+			if let vm {
+				VMStatusDot(vm: vm)
+				VStack(alignment: .leading, spacing: 1) {
+					// Middle: copies differ at the end ("… copy 2"), so keep both ends.
+					Text(vm.name)
+						.font(.system(size: 12.5, weight: .semibold))
+						.lineLimit(1)
+						.truncationMode(.middle)
+					if vm.isUnresponsive {
+						NotRespondingBadge(size: 9)
+					} else {
+						BootBadge(mode: vm.boot.mode, size: 9)
+					}
+				}
+				.frame(maxWidth: 220, alignment: .leading)
+			} else {
+				Text("No VM")
+					.font(.system(size: 12.5, weight: .semibold))
+					.foregroundStyle(.secondary)
+			}
+			Image(systemName: MachmanSymbols.pickerChevron)
+				.font(.system(size: 8, weight: .bold))
+				.foregroundStyle(.secondary)
+				.opacity(hovering || pickerShown ? 1 : 0)
+		}
+		.padding(.horizontal, 10)
+		.padding(.vertical, 4)
+		.machmanGlassCapsule()
+		.contentShape(Capsule())
+		.animation(.easeOut(duration: 0.12), value: hovering)
+	}
+
 	private func showChooser() {
 		guard viewModel.newVMChooserRequested else { return }
 		viewModel.newVMChooserRequested = false
@@ -98,7 +119,9 @@ struct VMIndicatorCluster: View {
 // styling can kick in.
 struct SafeModeChip: View {
 	var body: some View {
-		Image(systemName: MachmanSymbols.safe)
+		// Titled for the toolbar's » menu; the bar shows the shield (H33).
+		Label("Safe Mode", systemImage: MachmanSymbols.safe)
+			.labelStyle(.iconOnly)
 			.font(.system(size: 13, weight: .medium))
 			.foregroundStyle(MachmanColors.safeMode)
 			.padding(.horizontal, 8)

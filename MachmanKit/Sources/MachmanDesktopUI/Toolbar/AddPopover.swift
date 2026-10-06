@@ -20,14 +20,17 @@ struct AddButton: View {
 	let vm: VMInfo
 	@State private var shown = false
 
+	private static let title = "Add Disk, Mount, Serial Port, or Device"
+
 	var body: some View {
 		Button {
 			shown.toggle()
 		} label: {
-			Image(systemName: MachmanSymbols.add)
+			// Titled for the toolbar's » menu and VoiceOver; the bar shows the icon (H33).
+			Label(Self.title, systemImage: MachmanSymbols.add)
+				.labelStyle(.iconOnly)
 		}
-		.help("Add Disk, Mount, Serial Port, or Device")
-		.accessibilityLabel("Add Disk, Mount, Serial Port, or Device")
+		.help(Self.title)
 		.popover(isPresented: $shown, arrowEdge: .bottom) {
 			AddPopover(viewModel: viewModel, vm: vm)
 		}

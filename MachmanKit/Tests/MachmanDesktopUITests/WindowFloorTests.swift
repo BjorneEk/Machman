@@ -10,6 +10,7 @@
 //  growing the window and frame restore are live-window behaviour (manual).
 //
 
+import AppKit
 import SwiftUI
 import Testing
 import MachmanAPI
@@ -114,6 +115,49 @@ struct WindowFloorTests {
 		let closed = try await roomy(h, "Debian")
 		let alone = try #require(closed.find(text: message)?.frame)
 		#expect(alone.maxX >= 1280 - 40, "the toast \(alone) left the window's corner")
+	}
+
+	// H33: an item that goes behind the toolbar's » shows in its menu by its title, so every
+	// item needs one, image-only or not. The overflow menu itself is AppKit's (manual row).
+	@Test("H33: every main and torn toolbar item has a title for the overflow menu")
+	func everyToolbarItemHasATitle() async throws {
+		let h = await UIHarness.make([
+			Samples.linuxSafeRun("Debian"), Samples.linux("Alpine"),
+			Samples.kernelBoot(state: .starting), Samples.stoppingLinux("Fedora"),
+		], select: "Debian")
+		h.viewModel.showInfoPanel = true
+		// Each item's name in the » menu: its label, else its menu form's title (a spinner
+		// item has only that); a group's controls each need theirs too.
+		func items(_ view: some View) async throws -> [(id: String, label: String)] {
+			try await OffscreenHost.withHost(view, width: 1280, height: 720, chrome: .window) {
+				// Spaces and the split view's separators are layout, not items to name.
+				($0.window.toolbar?.items ?? [])
+					.filter { item in
+						let id = item.itemIdentifier.rawValue
+						return !id.hasPrefix("NSToolbar") && !id.contains("Separator")
+					}
+					.flatMap { item -> [(id: String, label: String)] in
+						let name = item.label.isEmpty
+							? item.menuFormRepresentation?.title ?? "" : item.label
+						let parts = (item as? NSToolbarItemGroup)?.subitems ?? []
+						return [(item.itemIdentifier.rawValue, name)]
+							+ parts.map { ("\(name) ▸ \($0.itemIdentifier.rawValue)", $0.label) }
+					}
+			}
+		}
+		// Running safe, stopped, starting and stopping: each state's start/stop controls.
+		var main: [(id: String, label: String)] = []
+		for vm in ["Debian", "Alpine", "Kernel Lab", "Fedora"] {
+			h.viewModel.select(name: vm)
+			main += try await items(window(h, vm))
+		}
+		let torn = try await items(TornTabWindowView(
+			connection: h.connection, profiles: h.profiles,
+			payload: TornTab(vm: "Debian", tab: .config)))
+		#expect(main.count >= 20, "\(main)")
+		#expect(!torn.isEmpty, "\(torn)")
+		let blank = (main + torn).filter { $0.label.isEmpty }
+		#expect(blank.isEmpty, "untitled toolbar items: \(blank.map(\.id)) of \(main + torn)")
 	}
 
 	@Test("15: the toolbar's safe chip shows only while the VM runs safe")
