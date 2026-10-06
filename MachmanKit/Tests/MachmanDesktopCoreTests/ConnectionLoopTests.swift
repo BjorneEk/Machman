@@ -15,7 +15,10 @@ import MachmanClient
 import MachmanTestSupport
 @testable import MachmanDesktopCore
 
+// A stop is awaited on the loop's own status report (LoopRecorder.stopped), never against a wall
+// clock: a 5 s deadline failed at load ~13. The suite's time limit bounds a hang.
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct ConnectionLoopTests {
 
 	// P1: before, every failed hello also reported a drop, and the drop restarted the loop
@@ -26,7 +29,7 @@ struct ConnectionLoopTests {
 		let recorder = LoopRecorder()
 		let loop = makeLoop(connector, recorder, policy: .fast(maxAttempts: 5))
 		loop.start()
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
 		#expect(loop.status.problemKind == .unreachable)
 		#expect(connector.connects == 5)
 		#expect(connector.launches == 1)
@@ -42,7 +45,7 @@ struct ConnectionLoopTests {
 		let recorder = LoopRecorder()
 		let loop = makeLoop(connector, recorder)
 		loop.start()
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
 		#expect(loop.status.problemKind == .notAnswering)
 		#expect(connector.connects == 2)
 		#expect(connector.launches == 0)
@@ -54,7 +57,7 @@ struct ConnectionLoopTests {
 		let recorder = LoopRecorder()
 		let loop = makeLoop(connector, recorder)
 		loop.start()
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
 		#expect(loop.status == .unavailable(ConnectionProblem(
 			kind: .incompatible, detail: "It speaks API version 2, and this app needs version 1.")))
 		#expect(connector.connects == 1)
@@ -145,7 +148,7 @@ struct ConnectionLoopTests {
 			})
 			session.die()
 		}
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
 		#expect(loop.status.problemKind == .unreachable)
 		try? await Task.sleep(for: .milliseconds(50))
 		#expect(connector.connects == 3)
@@ -160,7 +163,7 @@ struct ConnectionLoopTests {
 		let recorder = LoopRecorder()
 		let loop = makeLoop(connector, recorder)
 		loop.start()
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
 		let session = FakeSession("S", daemonVersion: "1.0.11")
 		connector.script = [.session(session)]
 		loop.retry()
@@ -176,11 +179,13 @@ struct ConnectionLoopTests {
 		let recorder = LoopRecorder()
 		let loop = makeLoop(connector, recorder, policy: .fast(maxAttempts: 3))
 		loop.start()
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
+		#expect(connector.connects == 3)
 		#expect(connector.launches == 1)
 		loop.retry(launched: true)
-		#expect(await eventually(timeout: .seconds(5)) { connector.connects == 6 })
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped(times: 2)
+		#expect(loop.status.problemKind == .unreachable)
+		#expect(connector.connects == 6)
 		#expect(connector.launches == 1)
 	}
 
@@ -220,7 +225,7 @@ struct ConnectionLoopTests {
 		loop.start()
 		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A"] })
 		a.die()
-		#expect(await eventually(timeout: .seconds(5)) { loop.status.problemKind != nil })
+		await recorder.stopped()
 		connector.script = [.session(FakeSession("B"))]
 		loop.retry()
 		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A", "B"] })

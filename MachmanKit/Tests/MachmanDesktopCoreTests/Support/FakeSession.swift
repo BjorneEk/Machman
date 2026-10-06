@@ -119,9 +119,29 @@ final class LoopRecorder {
 	var attached: [FakeSession] = []
 	var carried: [[InterruptedCall]] = []   // per attach, what it was handed
 	var detaches = 0
-	var statuses: [ConnectionStatus] = []
+	private(set) var statuses: [ConnectionStatus] = []
+	private var stopWaiters: [(stops: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
 	var attachedNames: [String] { attached.map(\.name) }
+	// How many times the loop stopped and reported a problem.
+	var stops: Int { statuses.filter { $0.problemKind != nil }.count }
+
+	func record(_ status: ConnectionStatus) {
+		statuses.append(status)
+		let stops = self.stops
+		stopWaiters.removeAll { waiter in
+			guard stops >= waiter.stops else { return false }
+			waiter.continuation.resume()
+			return true
+		}
+	}
+
+	// Returns once the loop has stopped `count` times. Event-driven, with no wall-clock
+	// deadline: a loaded run can't fail it by being slow (the test's time limit bounds a hang).
+	func stopped(times count: Int = 1) async {
+		guard stops < count else { return }
+		await withCheckedContinuation { stopWaiters.append((count, $0)) }
+	}
 }
 
 extension ConnectionPolicy {
@@ -148,7 +168,7 @@ func makeLoop(
 			recorder.carried.append(interrupted)
 		},
 		detach: { recorder.detaches += 1 },
-		onStatus: { recorder.statuses.append($0) })
+		onStatus: { recorder.record($0) })
 }
 
 extension ConnectionStatus {
