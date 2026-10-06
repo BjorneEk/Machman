@@ -14,6 +14,9 @@ public struct VMNavigationView: View {
 	@StateObject var viewModel: VMListViewModel
 	let profiles: TerminalProfileStore
 	let daemonVersion: String?
+	// What the tree's Paste items read: nil is the app's watch over the general pasteboard;
+	// renders pass an inert one so a scene never reads the user's pasteboard (Q21).
+	private let pasteboard: PasteboardWatch?
 	@Binding private var selection: String?
 	// The inspector column's live width (it is resizable): the corner's toasts and cards move
 	// left by it while the inspector shows (H44).
@@ -21,12 +24,14 @@ public struct VMNavigationView: View {
 
 	public init(
 		viewModel: VMListViewModel, selection: Binding<String?>,
-		profiles: TerminalProfileStore, daemonVersion: String? = nil
+		profiles: TerminalProfileStore, daemonVersion: String? = nil,
+		pasteboard: PasteboardWatch? = nil
 	) {
 		_viewModel = StateObject(wrappedValue: viewModel)
 		self._selection = selection
 		self.profiles = profiles
 		self.daemonVersion = daemonVersion
+		self.pasteboard = pasteboard
 	}
 
 	public var body: some View {
@@ -38,7 +43,8 @@ public struct VMNavigationView: View {
 				if let vm = viewModel.selected {
 					VMDeviceTreeView(
 						viewModel: viewModel, sessions: viewModel.terminals,
-						canvases: viewModel.canvases, profiles: profiles, vm: vm)
+						canvases: viewModel.canvases, profiles: profiles, vm: vm,
+						pasteboard: pasteboard)
 				} else {
 					VStack(spacing: 12) {
 						Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VM selected")

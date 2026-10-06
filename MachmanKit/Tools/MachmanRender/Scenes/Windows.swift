@@ -20,7 +20,7 @@ enum WindowScenes {
 	static func tree(_ ctx: SceneContext) -> AnyView {
 		AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm))
+			profiles: ctx.profiles, vm: ctx.vm, pasteboard: ctx.pasteboard))
 	}
 
 	// The tree with text in its filter field.
@@ -28,7 +28,7 @@ enum WindowScenes {
 	static func filteredTree(_ ctx: SceneContext, _ filter: String) -> AnyView {
 		AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, filter: filter))
+			profiles: ctx.profiles, vm: ctx.vm, filter: filter, pasteboard: ctx.pasteboard))
 	}
 
 	// The tree with `hovered` drawn under a pointer (hover itself doesn't render).
@@ -36,7 +36,8 @@ enum WindowScenes {
 	static func hoveredTree(_ ctx: SceneContext, _ hovered: Set<SidebarNode>) -> AnyView {
 		AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, hovered: hovered))
+			profiles: ctx.profiles, vm: ctx.vm, hovered: hovered,
+			pasteboard: ctx.pasteboard))
 	}
 
 	// The tree with a Finder drag hovering one of its groups (the files don't exist, so the
@@ -49,7 +50,8 @@ enum WindowScenes {
 			section: section, urls: urls, isDirectory: { $0.hasDirectoryPath })
 		return AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, dragPreview: preview))
+			profiles: ctx.profiles, vm: ctx.vm, dragPreview: preview,
+			pasteboard: ctx.pasteboard))
 	}
 
 	@MainActor
@@ -57,7 +59,7 @@ enum WindowScenes {
 		ctx.viewModel.showInfoPanel = inspector
 		return AnyView(VMNavigationView(
 			viewModel: ctx.viewModel, selection: .constant(ctx.vm.name),
-			profiles: ctx.profiles, daemonVersion: "1.0.10"))
+			profiles: ctx.profiles, daemonVersion: "1.0.10", pasteboard: ctx.pasteboard))
 	}
 
 	// Two SSH sessions with fixed identities: SSHSessionRef lives in MachmanUI, which the
@@ -701,7 +703,7 @@ enum WindowScenes {
 			AnyView(VMDeviceTreeView(
 				viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
 				profiles: ctx.profiles, vm: ctx.vm, renaming: .disk("storage:system"),
-				renameDraft: ".system"))
+				renameDraft: ".system", pasteboard: ctx.pasteboard))
 		},
 		RenderScene(
 			"sidebar.tree.drop-kernel-empty",

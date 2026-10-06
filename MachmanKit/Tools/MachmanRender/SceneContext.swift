@@ -27,6 +27,8 @@ final class SceneContext {
 	let profiles: TerminalProfileStore
 	let previews: PreviewService
 	let tornTabs = TornTabRegistry()
+	// What a scene's tree reads for its Paste items: nothing, never the user's pasteboard (Q21).
+	let pasteboard = PasteboardWatch(triggers: [], changeCount: { 0 }, read: { .empty })
 	let viewModel: VMListViewModel
 
 	private static var counter = 0
