@@ -75,13 +75,13 @@ if [[ "$mode" == selfcheck ]]; then
 fi
 
 status=0
-# run_pass [swift test args]: one swift test process in this run's sandbox; the first failing
-# pass's status is the run's.
+# run_pass [swift test args]: one swift test process in this run's sandbox, with the Mac kept
+# awake (sandbox_awake); the first failing pass's status is the run's.
 run_pass() {
 	local rc=0
-	env MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$root/data" CFFIXED_USER_HOME="$root/home" \
-		swift test --skip-build --disable-xctest --package-path "$pkg" \
-		--skip 'MachmanLabTests\.' "$@" || rc=$?
+	sandbox_awake env MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$root/data" \
+		CFFIXED_USER_HOME="$root/home" swift test --skip-build --disable-xctest \
+		--package-path "$pkg" --skip 'MachmanLabTests\.' "$@" || rc=$?
 	((status)) || status=$rc
 }
 

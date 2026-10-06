@@ -15,6 +15,18 @@ sandbox_create() {
 	echo "$$" > "$SANDBOX_ROOT/.owner"
 }
 
+# sandbox_awake <command>...: run <command> with the Mac held out of sleep: idle sleep (-i)
+# and, on AC power, the maintenance sleep that ends a dark wake (-s; -i alone does not hold a
+# dark wake). ContinuousClock counts sleep, so every deadline running across one expires at the
+# wake: one test.sh run lost 53 checks to a 15-minute maintenance sleep. No display assertion.
+sandbox_awake() {
+	if [[ -x /usr/bin/caffeinate ]]; then
+		/usr/bin/caffeinate -i -s "$@"
+	else
+		"$@"
+	fi
+}
+
 # sandbox_cleanup <root>: remove the root and everything derived from its token.
 sandbox_cleanup() (
 	# Every path below derives from the token; do nothing on any surprise.

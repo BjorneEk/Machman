@@ -204,4 +204,20 @@ else
 	echo "skip budget: temp dir is ${#temp} characters"
 fi
 
+# 14
+# shellcheck disable=SC2016
+sandbox_awake sh -c 'i=0
+while [ "$i" -lt 50 ]; do
+	pmset -g assertions | grep -A1 "PreventSystemSleep named" | grep -q "(pid $$)" && exit 7
+	sleep 0.1
+	i=$((i + 1))
+done
+exit 1'
+rc=$?
+if [[ $rc == 7 ]]; then
+	ok "awake: a command runs under PreventSystemSleep and keeps its exit status"
+else
+	fail "awake: a command runs under PreventSystemSleep and keeps its exit status" "exit $rc"
+fi
+
 exit "$failures"

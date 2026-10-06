@@ -399,12 +399,13 @@ lab_run() {
 	echo "lab: audits armed"
 	filt='MachmanLabTests\.'
 	[[ -n "$filter" ]] && filt="MachmanLabTests\\..*($filter)"
-	# In the background and waited for, so an interrupt reaches the trap at once.
+	# In the background and waited for, so an interrupt reaches the trap at once. The Mac stays
+	# awake for it (sandbox_awake): a console wait timed out across a maintenance sleep.
 	rm -f "$root/report/test-status"
 	{
 		set +e
-		swift test --skip-build --disable-xctest --no-parallel --package-path "$pkg" \
-			--filter "$filt" 2>&1
+		sandbox_awake swift test --skip-build --disable-xctest --no-parallel \
+			--package-path "$pkg" --filter "$filt" 2>&1
 		echo $? > "$root/report/test-status"
 	} | tee "$root/report/swift-test.log" &
 	wait $!
