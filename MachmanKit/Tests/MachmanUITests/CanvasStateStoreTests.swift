@@ -169,4 +169,27 @@ struct CanvasStateStoreTests {
 		store.setCanvas(canvas, for: "debian")
 		#expect(await eventually { FileManager.default.fileExists(atPath: url.path) })
 	}
+
+	// A click on the active tab, or any tap on a strip, hands back the layout unchanged; it
+	// republished the whole store (window, menus, torn windows) and queued a write anyway.
+	@Test("P36: an unchanged layout neither republishes nor writes")
+	func anUnchangedLayoutIsANoOp() throws {
+		let url = tempURL()
+		defer { try? FileManager.default.removeItem(at: url) }
+		var canvas = CanvasState()
+		canvas.open(.config)
+		canvas.open(.terminal(hvc0))
+		let store = CanvasStateStore(fileURL: url, saveDelay: .seconds(5))
+		store.setCanvas(canvas, for: "debian")
+		store.flush()
+		try FileManager.default.removeItem(at: url)
+		var publishes = 0
+		let watch = store.objectWillChange.sink { publishes += 1 }
+		store.setCanvas(canvas, for: "debian")
+		store.setCanvas(store.canvas(for: "debian"), for: "debian")
+		watch.cancel()
+		store.flush()
+		#expect(publishes == 0)
+		#expect(!FileManager.default.fileExists(atPath: url.path))
+	}
 }

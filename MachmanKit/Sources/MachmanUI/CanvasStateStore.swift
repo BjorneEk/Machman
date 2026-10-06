@@ -49,7 +49,10 @@ public final class CanvasStateStore: ObservableObject {
 		canvases[vm] ?? CanvasState()
 	}
 
+	// An unchanged layout (a click on the active tab, a tap on a strip) is no change: it
+	// would republish every observer and queue a write for nothing (P36).
 	public func setCanvas(_ canvas: CanvasState, for vm: String) {
+		guard canvases[vm] != canvas else { return }
 		canvases[vm] = canvas
 		save()
 	}
