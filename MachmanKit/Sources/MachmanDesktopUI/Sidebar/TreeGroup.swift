@@ -223,12 +223,64 @@ struct TreeGroupChevron: View {
 // The usual group icon: the section's symbol, secondary.
 struct TreeGroupSymbol: View {
 	let symbol: String
+
+	var body: some View {
+		TreeIcon(symbol: symbol)
+			.foregroundStyle(.secondary)
+	}
+}
+
+// A row's or group's leading icon at the row's icon size. Decoration only: the row's text
+// names the entry, so VoiceOver skips it rather than read a symbol's name or a wrong word
+// ("Move" for a folder, H51). nil is Tux, the kernel rows' glyph.
+struct TreeIcon: View {
+	let symbol: String?
 	@Environment(\.machmanTheme) private var theme
+
+	static let tux = TreeIcon(symbol: nil)
+
+	var body: some View {
+		Group {
+			if let symbol {
+				Image(systemName: symbol)
+					.font(.system(size: theme.metrics.iconSize))
+			} else {
+				TuxIcon(size: theme.metrics.iconSize + 1)
+			}
+		}
+		.accessibilityHidden(true)
+	}
+}
+
+// A small trailing badge on a row: its tooltip says what it means, and VoiceOver reads that
+// same sentence instead of the symbol (H51).
+struct TreeBadge<Style: ShapeStyle>: View {
+	let symbol: String
+	let help: String
+	var size: CGFloat = 9
+	let style: Style
 
 	var body: some View {
 		Image(systemName: symbol)
-			.font(.system(size: theme.metrics.iconSize))
-			.foregroundStyle(.secondary)
+			.font(.system(size: size))
+			.foregroundStyle(style)
+			.help(help)
+			.accessibilityLabel(help)
+	}
+}
+
+extension TreeBadge where Style == HierarchicalShapeStyle {
+	// The quiet badges (link, sshfs, automount, torn window): tertiary at 9 pt.
+	init(symbol: String, help: String) {
+		self.init(symbol: symbol, help: help, style: .tertiary)
+	}
+}
+
+extension TreeBadge where Style == Color {
+	// A host gate or a missing kernel: the warning triangle at 10 pt.
+	static func warning(_ help: String) -> TreeBadge<Color> {
+		TreeBadge(
+			symbol: MachmanSymbols.warning, help: help, size: 10, style: MachmanColors.warning)
 	}
 }
 

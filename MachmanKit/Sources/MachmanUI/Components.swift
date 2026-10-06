@@ -109,7 +109,8 @@ extension BootInfo.Mode {
 	}
 }
 
-// Boot-kind icon + label (the VM indicator subtitle and picker rows).
+// Boot-kind icon + label (the VM indicator subtitle and picker rows). The label names the
+// mode, so VoiceOver skips the glyph (EFI's read "Advanced", H51).
 public struct BootBadge: View {
 	private let mode: BootInfo.Mode
 	private let size: CGFloat
@@ -122,6 +123,7 @@ public struct BootBadge: View {
 	public var body: some View {
 		HStack(spacing: 3) {
 			BootGlyph(mode: mode, size: size)
+				.accessibilityHidden(true)
 			Text(mode.displayLabel)
 		}
 		.font(.system(size: size))

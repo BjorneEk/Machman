@@ -42,16 +42,12 @@ struct TreeSerialSection: View {
 		let gated = port.unavailable != nil
 		let enabled = port.enabled ?? true
 		return HStack(spacing: 6) {
-			Image(systemName: port.kind == .console
+			TreeIcon(symbol: port.kind == .console
 				? MachmanSymbols.serialConsole : MachmanSymbols.serialUart)
-				.font(.system(size: theme.metrics.iconSize))
 			Text(port.displayName(mode: ctx.vm.boot.mode))
 			Spacer()
 			if gated {
-				Image(systemName: MachmanSymbols.warning)
-					.font(.system(size: 10))
-					.foregroundStyle(MachmanColors.warning)
-					.help(port.unavailable?.message ?? "Unavailable on this host")
+				TreeBadge.warning(port.unavailable?.message ?? "Unavailable on this host")
 			}
 			if open {
 				Circle().fill(theme.accentColor)

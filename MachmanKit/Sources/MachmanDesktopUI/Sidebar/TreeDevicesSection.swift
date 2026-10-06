@@ -12,7 +12,6 @@ import MachmanDesktopCore
 
 struct TreeDevicesSection: View {
 	let ctx: TreeContext
-	@Environment(\.machmanTheme) private var theme
 
 	var body: some View {
 		installerGroup
@@ -64,16 +63,12 @@ struct TreeDevicesSection: View {
 
 	private func deviceRow(_ device: DeviceInfo) -> some View {
 		HStack(spacing: 6) {
-			Image(systemName: device.kind.displaySymbol)
-				.font(.system(size: theme.metrics.iconSize))
+			TreeIcon(symbol: device.kind.displaySymbol)
 			Text(device.kind.displayLabel)
 				.lineLimit(1)
 			Spacer()
 			if let gate = device.unavailable {
-				Image(systemName: MachmanSymbols.warning)
-					.font(.system(size: 10))
-					.foregroundStyle(MachmanColors.warning)
-					.help(gate.message)
+				TreeBadge.warning(gate.message)
 			}
 		}
 		.treeRow(

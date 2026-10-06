@@ -52,12 +52,7 @@ struct TreeKernelSection: View {
 			folds: TreeSection.folds(rows: entries.count, previewing: ctx.previews(.kernel(role))),
 			isExpanded: ctx.groupBinding(.group(title)),
 			icon: {
-				if role == .kernel {
-					TuxIcon(size: theme.metrics.iconSize + 1)
-				} else {
-					Image(systemName: MachmanSymbols.initramfs)
-						.font(.system(size: theme.metrics.iconSize))
-				}
+				role == .kernel ? TreeIcon.tux : TreeIcon(symbol: MachmanSymbols.initramfs)
 			},
 			menu: {
 				Button("Add From Disk…") {
@@ -69,22 +64,14 @@ struct TreeKernelSection: View {
 			},
 			accessory: {
 				if role == .kernel && missingKernelWarning {
-					Image(systemName: MachmanSymbols.warning)
-						.font(.system(size: 10))
-						.foregroundStyle(MachmanColors.warning)
-						.help("No kernel selected — the VM cannot start")
+					TreeBadge.warning("No kernel selected — the VM cannot start")
 				}
 			}
 		) {
 			ForEach(entries) { file in
 				let node: SidebarNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
 				HStack(spacing: 6) {
-					if role == .kernel {
-						TuxIcon(size: theme.metrics.iconSize + 1)
-					} else {
-						Image(systemName: MachmanSymbols.initramfs)
-							.font(.system(size: theme.metrics.iconSize))
-					}
+					role == .kernel ? TreeIcon.tux : TreeIcon(symbol: MachmanSymbols.initramfs)
 					if ctx.renamingNode == node {
 						RenameField(
 							initial: ctx.renameDraft ?? file.label,
@@ -103,16 +90,14 @@ struct TreeKernelSection: View {
 					}
 					Spacer()
 					if !file.owned {
-						Image(systemName: MachmanSymbols.externalReference)
-							.font(.system(size: 9))
-							.foregroundStyle(.tertiary)
-							.help("External file — promote to copy it into the VM")
+						TreeBadge(
+							symbol: MachmanSymbols.externalReference,
+							help: "External file — promote to copy it into the VM")
 					}
 					if file.active {
-						Image(systemName: MachmanSymbols.activeEntry)
-							.font(.system(size: 10))
-							.foregroundStyle(theme.accentColor)
-							.help("Active")
+						TreeBadge(
+							symbol: MachmanSymbols.activeEntry, help: "Active", size: 10,
+							style: theme.accentColor)
 					}
 				}
 				.treeRow(

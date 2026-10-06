@@ -12,7 +12,6 @@ import MachmanDesktopCore
 
 struct TreeStorageSection: View {
 	let ctx: TreeContext
-	@Environment(\.machmanTheme) private var theme
 
 	var body: some View {
 		diskGroup
@@ -33,8 +32,7 @@ struct TreeStorageSection: View {
 				}) {
 				ForEach(disks) { disk in
 					HStack(spacing: 6) {
-						Image(systemName: Self.symbol(for: disk.type))
-							.font(.system(size: theme.metrics.iconSize))
+						TreeIcon(symbol: Self.symbol(for: disk.type))
 							.foregroundStyle(disk.owned == false ? Color.secondary : Color.primary)
 						if ctx.renamingNode == .disk(disk.id) {
 							RenameField(
@@ -52,10 +50,9 @@ struct TreeStorageSection: View {
 						}
 						Spacer()
 						if disk.owned == false {
-							Image(systemName: MachmanSymbols.externalReference)
-								.font(.system(size: 9))
-								.foregroundStyle(.tertiary)
-								.help("Referenced — lives outside the VM directory")
+							TreeBadge(
+								symbol: MachmanSymbols.externalReference,
+								help: "Referenced — lives outside the VM directory")
 						}
 					}
 					.treeRow(
@@ -84,8 +81,7 @@ struct TreeStorageSection: View {
 				}) {
 				ForEach(mounts) { mount in
 					HStack(spacing: 6) {
-						Image(systemName: MachmanSymbols.mount)
-							.font(.system(size: theme.metrics.iconSize))
+						TreeIcon(symbol: MachmanSymbols.mount)
 						Text(Self.abbreviate(mount.path))
 							.truncationMode(.middle)
 							.lineLimit(1)
@@ -94,16 +90,14 @@ struct TreeStorageSection: View {
 						// Trailing badges (the disks' externalReference pattern): how the
 						// mount travels, and whether the guest mounts it at boot.
 						if mount.effectiveKind == MountKind.sshfs {
-							Image(systemName: MachmanSymbols.mountSSHFS)
-								.font(.system(size: 9))
-								.foregroundStyle(.tertiary)
-								.help("sshfs — the guest mounts this over its SSH link")
+							TreeBadge(
+								symbol: MachmanSymbols.mountSSHFS,
+								help: "sshfs — the guest mounts this over its SSH link")
 						}
 						if mount.automounted == true {
-							Image(systemName: MachmanSymbols.automounted)
-								.font(.system(size: 9))
-								.foregroundStyle(.tertiary)
-								.help(mount.automountedAt.map { "Mounts at boot at \($0)" }
+							TreeBadge(
+								symbol: MachmanSymbols.automounted,
+								help: mount.automountedAt.map { "Mounts at boot at \($0)" }
 									?? "Mounted at boot by Guest Setup")
 						}
 					}

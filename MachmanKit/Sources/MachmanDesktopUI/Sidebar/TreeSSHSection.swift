@@ -51,16 +51,12 @@ struct TreeSSHSection: View {
 	private func sshSessionRow(_ ref: SSHSessionRef) -> some View {
 		let torn = ctx.isTorn(.ssh(ref))
 		return HStack(spacing: 6) {
-			Image(systemName: MachmanSymbols.tabTerminal)
-				.font(.system(size: theme.metrics.iconSize))
+			TreeIcon(symbol: MachmanSymbols.tabTerminal)
 			Text(ctx.sessions.sshSessionName(vm: ctx.vm.name, ref: ref))
 				.lineLimit(1)
 			Spacer()
 			if torn {
-				Image(systemName: MachmanSymbols.newWindow)
-					.font(.system(size: 9))
-					.foregroundStyle(.tertiary)
-					.help("Open in its own window")
+				TreeBadge(symbol: MachmanSymbols.newWindow, help: "Open in its own window")
 			}
 			// theme.accentColor: List rows reset Color.accentColor to the system's (H20).
 			Circle().fill(theme.accentColor)

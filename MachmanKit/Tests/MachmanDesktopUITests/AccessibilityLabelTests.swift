@@ -94,6 +94,42 @@ struct AccessibilityLabelTests {
 		#expect(deleteStopped.help == nil)
 	}
 
+	// H51: a tree row's icon is decoration (the row's text names the entry), and a badge says
+	// what its tooltip says. A symbol-name check alone would miss "Move" (folder.fill) and
+	// "Syncing" (the automount badge), so every image left must read exactly its help.
+	@Test("H51: the device tree's icons read nothing or their help")
+	func treeIconsReadNothingOrTheirHelp() async throws {
+		let h = await UIHarness.make(
+			[Samples.linuxWithMounts("Debian"), Samples.kernelBoot()], select: "Debian")
+		// An open session and a torn-off one, so the session rows and their badges show.
+		let open = SSHSessionRef(title: "Session 1")
+		let torn = SSHSessionRef(title: "Session 2")
+		var canvas = h.canvases.canvas(for: "Debian")
+		canvas.open(.ssh(open))
+		h.canvases.setCanvas(canvas, for: "Debian")
+		h.tornTabs.open.insert(TornTab(vm: "Debian", tab: .ssh(torn)))
+		var images: [AXSnapshot] = []
+		for (vm, section) in [
+			("Debian", { AnyView(TreeStorageSection(ctx: $0)) }),
+			("Debian", { AnyView(TreeSerialSection(ctx: $0)) }),
+			("Debian", { AnyView(TreeSSHSection(ctx: $0)) }),
+			("Debian", { AnyView(TreeDevicesSection(ctx: $0)) }),
+			("Kernel Lab", { AnyView(TreeKernelSection(ctx: $0)) }),
+		] as [(String, @MainActor (TreeContext) -> AnyView)] {
+			let tree = try await h.snapshot(
+				TreeSectionProbe(harness: h, vm: h.vm(vm), content: section))
+			images += tree.findAll { $0.role == "AXImage" }
+		}
+		let mute = images.filter { $0.help == nil || $0.label != $0.help }
+		#expect(mute.isEmpty, "\(mute.map { "\($0.label ?? "nil") / \($0.help ?? "nil")" })")
+		#expect(images.contains { $0.label == "Mounts at boot at /mnt/machman/src" },
+			"\(images.map { $0.label ?? "nil" })")
+		// The root row's boot badge: its text names the mode, so its glyph says nothing.
+		let badge = try await h.snapshot(BootBadge(mode: .efi))
+		#expect(badge.findAll { $0.role == "AXImage" }.isEmpty, "\(badge.dump())")
+		#expect(badge.find(text: "EFI") != nil)
+	}
+
 	private static func tab(_ title: String, selected: Bool) -> some View {
 		CanvasTabItem(
 			title: title, symbol: MachmanSymbols.tabConfig, isTerminal: !selected,
