@@ -220,6 +220,9 @@ struct SSHInspector: View {
 	let vm: VMInfo
 	private let aliasDraft: String?
 	@State private var resetConfirm = false
+	// Read off the main actor when the served SSH state changes (a reset forgets the key, a
+	// setup run makes a new one), never in body (P11).
+	@State private var publicKey: String?
 
 	// `aliasDraft` opens the alias field on an unsent draft (render scenes).
 	init(viewModel: VMListViewModel, vm: VMInfo, aliasDraft: String? = nil) {
@@ -232,13 +235,9 @@ struct SSHInspector: View {
 		Form {
 			NetworkSSHSection(viewModel: viewModel, vm: vm, initialAliasDraft: aliasDraft)
 			Section("Keys") {
-				if let identity = vm.ssh?.identityFilePath,
-					let pub = try? String(contentsOfFile: identity + ".pub",
-						encoding: .utf8) {
+				if let publicKey {
 					LabeledContent("Public key") {
-						CopyToClipboardButton(
-							pub.trimmingCharacters(in: .whitespacesAndNewlines),
-							tooltip: "Copy this Mac’s public key")
+						CopyToClipboardButton(publicKey, tooltip: "Copy this Mac’s public key")
 					}
 				}
 				if vm.ssh?.sshfsAvailable != nil {
@@ -255,6 +254,13 @@ struct SSHInspector: View {
 							+ "approvals — the guest keeps what the script installed.")
 					}
 			}
+		}
+		.task(id: vm.ssh) {
+			guard let identity = vm.ssh?.identityFilePath else {
+				publicKey = nil
+				return
+			}
+			publicKey = await SSHPublicKey.read(identityPath: identity)
 		}
 	}
 

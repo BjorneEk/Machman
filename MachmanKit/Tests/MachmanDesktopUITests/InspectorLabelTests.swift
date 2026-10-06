@@ -133,6 +133,35 @@ struct InspectorLabelTests {
 		#expect(plain.isEmpty, "plain number fields in \(plain)")
 	}
 
+	@Test("P11: the SSH inspector offers this Mac's public key once read")
+	func theSSHInspectorReadsTheKeyOffMain() async throws {
+		let dir = TestEnvironment.scratch + UUID().uuidString
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		let identity = dir + "/id_ed25519"
+		try "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForTheTest demo@mac\n"
+			.write(toFile: identity + ".pub", atomically: true, encoding: .utf8)
+		var vm = Samples.linux("Alpine")
+		vm.ssh?.identityFilePath = identity
+		let h = await UIHarness.make([vm])
+		h.viewModel.treeSelection = [.group("SSH")]
+		let copy = try await OffscreenHost.withHost(
+			InspectorView(
+				viewModel: h.viewModel, sessions: h.terminals, profiles: h.profiles,
+				vm: h.vm("Alpine")),
+			width: 320, height: 820
+		) { hosted in
+			// The read lands a few turns after the first layout, never inside it.
+			for _ in 0..<20 where hosted.snapshot().find(label: Self.copyKey) == nil {
+				await hosted.settle()
+			}
+			return hosted.snapshot().find(label: Self.copyKey)
+		}
+		#expect(copy?.role == "AXButton")
+		#expect(copy?.isEnabled == true)
+	}
+
+	static let copyKey = "Copy this Mac\u{2019}s public key"
+
 	@Test("W4-7: the disk, mount and kernel trash buttons say what they remove")
 	func trashButtonsSayWhatTheyRemove() async throws {
 		var ownedISO = Samples.linux("Fedora")
