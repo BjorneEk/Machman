@@ -191,8 +191,7 @@ public final class VMListViewModel: ObservableObject {
 
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
-	private var operationsForwarder: AnyCancellable?
-	private var canvasForwarder: AnyCancellable?
+	private var installStageForwarder: AnyCancellable?
 	private var activeTabReactor: AnyCancellable?
 	private var listReactor: AnyCancellable?
 
@@ -213,17 +212,19 @@ public final class VMListViewModel: ObservableObject {
 		self.previews = previews
 		self.canvases = canvases
 		self.tornTabs = tornTabs ?? .shared
-		// Views observe this object, not the stores — forward their changes.
+		// The list is what views read through this object: forward its changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
 		}
-		operationsForwarder = operations.objectWillChange.sink { [weak self] in
-			self?.objectWillChange.send()
-		}
-		// Canvas changes flip menu state (Save Terminal follows the active tab).
-		canvasForwarder = canvases.objectWillChange.sink { [weak self] in
-			self?.objectWillChange.send()
-		}
+		// Progress and layouts are not (P9): the views showing them observe OperationsStore
+		// and CanvasStateStore themselves, and the menus follow MenuModel. What this object's
+		// own answers read of them is an install's stage (isInstalling, installPhase(for:)'s
+		// kind), so only a change of stage is passed on, never a progress tick.
+		installStageForwarder = operations.$installPhases
+			.map { $0.mapValues(\.kind) }
+			.removeDuplicates()
+			.dropFirst()
+			.sink { [weak self] _ in self?.objectWillChange.send() }
 		// Canvas → tree (T8): a switch of the shown VM's active tab selects that tab's row.
 		// $canvases emits the incoming layouts on willSet, so the store still holds the old
 		// ones to compare against; dropFirst skips the replay of the stored layouts at init.

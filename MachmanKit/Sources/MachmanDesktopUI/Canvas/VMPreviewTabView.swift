@@ -20,12 +20,15 @@ struct VMPreviewTabView: View {
 	@ObservedObject var viewModel: VMListViewModel
 	// Re-render on each preview frame without churning the whole canvas.
 	@ObservedObject private var previews: PreviewStore
+	// The install banner's progress: the view model passes on only an install's stage (P9).
+	@ObservedObject private var operations: OperationsStore
 	@Environment(\.machmanTheme) private var theme
 
 	init(vm: VMInfo, viewModel: VMListViewModel) {
 		self.vm = vm
 		self.viewModel = viewModel
 		self.previews = viewModel.previewImages
+		self.operations = viewModel.operationsStore
 	}
 
 	var body: some View {
