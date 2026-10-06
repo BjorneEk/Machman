@@ -30,6 +30,7 @@ scripts/lab.sh                           # L2: every lab suite but the guests
 scripts/lab.sh --guests | --full         # L3 guests | everything (L2 + L3)
 scripts/lab.sh --filter <TypeName>       # one suite (Swift Testing ids, never display names)
 scripts/lab.sh --launchd                 # adds the launchd tier (off by default)
+scripts/lab.sh … -v | -vv                # live progress + the lab log | + the guest consoles
 scripts/lab.sh --doctor | --self-check   # tools, fixtures, seams | the lab's own audits proven
 ```
 
@@ -38,13 +39,22 @@ own, so main-actor-heavy view tests never starve timing-sensitive engine tests) 
 Mac awake for the run (`caffeinate -i -s`), as `lab.sh` does: a maintenance sleep mid-run reads
 as dozens of timeouts.
 
+`lab.sh` prints its progress live, read from Swift Testing's event stream (`swift test` holds
+its own output back while it writes to a file): each test's start, end, duration and issues,
+and after a quiet minute a stall line naming the running test, the step its harness is in and
+the last console line. Harness waits that run past 5 s narrate themselves in the lab log
+(`LabStep`); `-v` shows that log, `-vv` the guest consoles too. Every run keeps
+`report/progress.log` (the `-vv` stream) and `report/test-times.tsv`.
+
 `lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
 a sandbox (`/tmp/mml.<4-char token>`, suite `com.gustaffranzen.Machman.test-<token>`, a fake
 home and library), holds the machine-wide lab slot, runs `MachmanLabTests` under the audits
 and sweeps everything at exit. Fixtures (Alpine netboot kernel and initramfs, Debian 13 and
 FreeBSD 14/15 cloud images, prepared images) are pinned by SHA-256 in `scripts/lab/*.lock` and
 cached in the git-ignored `scripts/lab/cache/` (APFS clones between worktrees; each run boots
-clones, never the cache). `scripts/guest-regress/run.sh --backend docker|qemu|vz` runs the
+clones, never the cache). The vzfreebsd image is copied in by hand, never fetched or built:
+`scripts/lab/guests/vzfreebsd/import.sh <a vzfreebsd checkout's work/out/release.raw>`; its
+tests skip, naming that command, while the cache has none. `scripts/guest-regress/run.sh --backend docker|qemu|vz` runs the
 guest-script suites in containers (Docker) or real VMs.
 
 ## One example per tier
