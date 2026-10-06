@@ -353,6 +353,58 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// S44: a re-run whose lines change format between versions reloaded init even when its
+	// session sat on one of the rewritten consoles — the reload ends that login. It says the
+	// change waits for the next boot instead; a session on a console whose line stays as it
+	// is lets init reload.
+	private static let reloadProbe = """
+		UI_COLS=1000
+		CONSOLE_DEVICES="hvc0 hvc1"
+		kill() { echo "kill $*" >> "$D/kill.log"; }
+		console_act_inittab hvc0
+		console_act_inittab hvc1
+		console_flush_and_reload "$D/inittab" | sed "s|$D|D|g"
+		echo "kills: $(cat "$D/kill.log" 2>/dev/null)"
+
+		"""
+
+	@Test("S44: a re-run that rewrites its own console's line leaves init alone and says so")
+	func aReRunRewritingItsOwnConsoleLeavesInitAlone() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				printf '# BEGIN %s\\nhvc0::respawn:/sbin/getty -L 115200 hvc0 vt100\\n' \\
+					"$MARKER" > "$D/inittab"
+				printf '# END %s\\n' "$MARKER" >> "$D/inittab"
+				console_inittab_is_busybox() { return 0; }
+				GETTY_MECH=inittab
+				console_session_device() { printf hvc0; }
+
+				""" + Self.reloadProbe, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				   D/inittab changes take effect at the next boot \u{2014} reloading init now \
+				would end this session on hvc0.
+				[ok] logins land in D/inittab
+				kills: \n
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	@Test("S44: a re-run that rewrites only other consoles' lines still reloads init")
+	func aReRunRewritingOtherConsolesReloadsInit() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.busyboxInittab + """
+				console_session_device() { printf hvc0; }
+
+				""" + Self.reloadProbe, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				[ok] logins land in D/inittab
+				kills: kill -HUP 1\n
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// sysvinit ids name the device, never the console's place in this run's selection: a
 	// re-run selecting another set never renames a line init runs. An older run's index id
 	// for a device being staged again is replaced, not doubled.

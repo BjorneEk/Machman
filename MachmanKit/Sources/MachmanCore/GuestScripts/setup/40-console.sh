@@ -594,6 +594,15 @@ PLIST
 	return 0
 }
 
+# The ERE of <dev>'s line in the shared getty file: inittab's getty entry, a ttys line.
+console_line_re() {
+	if [ "$GETTY_MECH" = inittab ]; then
+		console_inittab_re "$1"
+	else
+		printf '^%s[[:space:]]' "$(console_dev_esc "$1")"
+	fi
+}
+
 # The marker block's lines in <file> now; with "keep", only those for devices this run
 # staged nothing for (unselected, or skipped as absent) — staged lines replace the rest.
 console_block_lines() { # <file> [keep]
@@ -601,13 +610,8 @@ console_block_lines() { # <file> [keep]
 	_cbl_res=""
 	if [ "${2:-}" = keep ]; then
 		for _cbl_dev in $CONSOLE_STAGED_DEVS; do
-			if [ "$GETTY_MECH" = inittab ]; then
-				_cbl_re="$(console_inittab_re "$_cbl_dev")"
-			else
-				_cbl_re="^$(console_dev_esc "$_cbl_dev")[[:space:]]"
-			fi
 			_cbl_res="${_cbl_res:+$_cbl_res
-}$_cbl_re"
+}$(console_line_re "$_cbl_dev")"
 		done
 	fi
 	# The patterns travel through ENVIRON: awk -v would unescape the dots' backslashes.
@@ -637,6 +641,42 @@ console_flush_lines() {
 			"Add the getty lines yourself, then re-run."
 		return 1
 	fi
+	return 0
+}
+
+# The staged consoles whose line in <file>'s block the flush changes — a new line, or one in
+# another format (an adopted console's original went out of the file): init's reload
+# restarts their gettys.
+console_changed_devs() { # <file>
+	_ccd_i=0
+	for _ccd_dev in $CONSOLE_STAGED_DEVS; do
+		_ccd_i=$((_ccd_i + 1))
+		_ccd_new="$(printf '%s\n' "$CONSOLE_STAGE" | sed -n "${_ccd_i}p")"
+		_ccd_old="$(console_block_lines "$1" \
+			| _CB_RE="$(console_line_re "$_ccd_dev")" awk '$0 ~ ENVIRON["_CB_RE"]')"
+		[ "$_ccd_old" = "$_ccd_new" ] || printf '%s ' "$_ccd_dev"
+	done
+	return 0
+}
+
+# init rereads <file> later: now it would end this session on <dev>.
+console_reload_deferred() { # <file> <dev>
+	note "$1 changes take effect at the next boot — reloading init now would end this session on $2."
+}
+
+# The staged lines land in <file> and init rereads it — unless this run's session sits on a
+# console whose line changed: the reload would end that login (S44), so it waits for the
+# next boot, said so.
+console_flush_and_reload() { # <file>
+	_cfr_changed="$(console_changed_devs "$1")"
+	console_flush_lines "$1" || return 0
+	_cfr_own="$(console_session_device)"
+	if [ -n "$_cfr_own" ] && has_word "$_cfr_own" "$_cfr_changed"; then
+		console_reload_deferred "$1" "$_cfr_own"
+	else
+		run "reloading init" kill -HUP 1 || true
+	fi
+	ok "logins land in $1"
 	return 0
 }
 
@@ -743,18 +783,8 @@ console_act() {
 	done
 	if [ "$DRY_RUN" -eq 0 ] && [ "$_ca_flush" -eq 1 ]; then
 		case "$GETTY_MECH" in
-		inittab)
-			if console_flush_lines /etc/inittab; then
-				run "reloading init" kill -HUP 1 || true
-				ok "logins land in /etc/inittab"
-			fi
-			;;
-		ttys)
-			if console_flush_lines /etc/ttys; then
-				run "reloading init" kill -HUP 1 || true
-				ok "logins land in /etc/ttys"
-			fi
-			;;
+		inittab) console_flush_and_reload /etc/inittab ;;
+		ttys) console_flush_and_reload /etc/ttys ;;
 		esac
 	fi
 	return 0
@@ -840,7 +870,7 @@ console_session_kept() {
 # that would end: then the change waits for the next boot, said so.
 console_uninstall_reload() {
 	if [ -n "$_cu_own" ]; then
-		note "$1 changes take effect at the next boot — reloading init now would end this session on $_cu_own."
+		console_reload_deferred "$1" "$_cu_own"
 	else
 		kill -HUP 1 2>/dev/null || true
 	fi

@@ -159,6 +159,38 @@ struct THConsoleLoginTests {
 		}
 	}
 
+	// S44: a re-run whose getty line changes form (an older Machman named sysvinit ids by
+	// the console's index) reloaded init under the session sitting on that console, and
+	// sysvinit ends a changed entry's processes. The run says the reload waits instead.
+	@Test(
+		"S44: a re-run from a console whose line changes form keeps that session",
+		arguments: [THGuestKind.debianSysv])
+	func reRunFromARewrittenConsole(kind: THGuestKind) async throws {
+		try await TH.withGuest(kind) { g in
+			let setUp = try await g.install("-y --consoles \"hvc0 hvc1\"")
+			#expect(setUp.status == 0, "\(setUp.output)")
+			// hvc1's line as an older Machman wrote it, and init running it so.
+			_ = try await g.check("sed -i 's/^hv1:/M1:/' /etc/inittab && kill -HUP 1")
+			let block = try await THConsoles.block(g, "/etc/inittab", marker: try g.marker())
+			try #require(block.contains { $0.hasPrefix("M1:") }, "\(block)")
+			let hvc1 = try await g.vm.console(1, label: "hvc1")
+			defer { hvc1.close() }
+			try await hvc1.login(user: "root", timeout: .seconds(60))
+			let s = THConsoleSession(hvc1)
+			try s.start("\(TH.installer) -y --consoles \"hvc0 hvc1\"")
+			let run = try await s.finish(timeout: .seconds(300))
+			#expect(run.status == 0, "\(run.output)")
+			#expect(TH.unwrapped(run.output).contains("/etc/inittab changes take effect at the"
+				+ " next boot — reloading init now would end this session on hvc1."),
+				"\(run.output)")
+			let alive = try await THConsoleSession.run(hvc1, "echo th-alive")
+			#expect(alive.output == "th-alive", "the session on hvc1 still answers")
+			let now = try await THConsoles.block(g, "/etc/inittab", marker: try g.marker())
+			#expect(now.contains { $0.hasPrefix("hv1:") } && !now.contains { $0.hasPrefix("M1:") },
+				"\(now)")
+		}
+	}
+
 	@Test(
 		"R3W2-19: uninstall from a hvc1 login keeps the session until the next boot",
 		arguments: [THGuestKind.debian, .alpine])
