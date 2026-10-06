@@ -10,7 +10,8 @@
 //  neither sudo nor doas, OpenBSD ships doas, most Linux ships sudo, and a root console
 //  needs none — so the guide adapts instead of assuming.
 //
-//  The frame, the +20% type scale and the building blocks are HelpSheet.swift's.
+//  The steps are worded by GuestSetupGuide (MachmanDesktopCore); the frame, the +20% type
+//  scale and the building blocks are HelpSheet.swift's.
 //
 
 import SwiftUI
@@ -95,99 +96,24 @@ struct GuestSetupGuidePage: View {
 
 	var body: some View {
 		switch tab {
-		case .linux: linuxSteps
-		case .macOS: macOSSteps
-		case .bsd: bsdSteps
+		case .linux: steps(GuestSetupGuide.linux(vm))
+		case .macOS: steps(GuestSetupGuide.macOS(vm, escalation: escalation))
+		case .bsd: steps(GuestSetupGuide.bsd(vm))
 		case .info: infoPage
 		}
 	}
 
-	// MARK: - Linux (steps only)
-
-	// What the guest already does on its own — steps skip what the last setup run
-	// configured (the share automount, the guest → host key).
-	private var shareAutomount: GuestAutomountInfo? {
-		(vm.setup?.automounts ?? []).first {
-			$0.kind == MountKind.virtiofs
-				|| ($0.kind == MountKind.sshfs && $0.target == "@share")
-		}
-	}
-	private var reverseApproved: Bool { vm.ssh?.reverseState == .approved }
+	// MARK: - Linux, macOS, BSD (steps only; GuestSetupGuide words them)
 
 	@ViewBuilder
-	private var linuxSteps: some View {
-		HelpStep(1, "Add (+) › Installers › Guest Setup, then boot the guest.")
-		if let auto = shareAutomount {
-			HelpStep(2, "The share automounts (\(auto.kind)) at \(auto.path) — run the script:")
-			command(GuestSetupInstallerInfo.runCommand())
-		} else {
-			HelpStep(2, "Mount the share and run the script:")
-			command(GuestSetupCommands.mountShareLine.and(GuestSetupInstallerInfo.runCommand()))
+	private func steps(_ lines: [GuestSetupGuide.Line]) -> some View {
+		ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+			switch line {
+			case .step(let number, let text): HelpStep(number, text)
+			case .command(let command, let escalate): self.command(command, escalate: escalate)
+			case .note(let text): HelpNote(text)
+			}
 		}
-		HelpNote("It asks per feature — console logins, kernel boot output, SSH, boot "
-			+ "automounts — and re-running it later reconfigures.")
-		HelpStep(3, "Undo it later:")
-		command(GuestSetupInstallerInfo.runCommand() + " --uninstall")
-	}
-
-	// MARK: - macOS guest (steps only)
-
-	@ViewBuilder
-	private var macOSSteps: some View {
-		HelpStep(1, "Add (+) › Installers › Guest Setup, then boot the guest — the share "
-			+ "automounts (macOS 13+).")
-		HelpStep(2, "In the guest’s Terminal, run the script:")
-		command(GuestSetupInstallerInfo.runFromAutomountCommand)
-		HelpNote("Volume missing (macOS 12)? Mount the share and run the script from there:")
-		command(GuestSetupCommands.macOS12MountShareAndRun(escalation), escalate: false)
-		HelpStep(3, "Undo it later:")
-		command(GuestSetupInstallerInfo.runFromAutomountCommand + " --uninstall")
-	}
-
-	// MARK: - BSD (steps only — no virtiofs driver, so the payload arrives over SSH)
-
-	private var hostUser: String { vm.ssh?.hostUser ?? "<mac-user>" }
-	private var hostAddress: String { vm.ssh?.hostAddressForGuest ?? "<mac-address>" }
-	private var sharePath: String { vm.ssh?.setupSharePath ?? "<machman-share>" }
-
-	@ViewBuilder
-	private var bsdSteps: some View {
-		if let auto = shareAutomount {
-			HelpStep(1, "Start the VM — the share appears at \(auto.path).")
-			HelpStep(2, "Run the installer:")
-			command(GuestSetupInstallerInfo.runCommand())
-			HelpStep(3, "Undo it later:")
-			command(GuestSetupInstallerInfo.runCommand() + " --uninstall")
-		} else {
-			bsdBootstrapSteps
-		}
-	}
-
-	@ViewBuilder
-	private var bsdBootstrapSteps: some View {
-		HelpStep(1, "Start the VM.")
-		HelpStep(2, "Turn on Remote Login on this Mac (System Settings › General › Sharing).")
-		HelpStep(3, "Install sshfs in the guest:")
-		command("pkg install fusefs-sshfs")
-		HelpNote("On OpenBSD, run this instead and skip step 4:")
-		command("pkg_add sshfs-fuse")
-		HelpStep(4, "FreeBSD only — load the fuse driver (skipped if it is already loaded):")
-		command(GuestSetupCommands.bsdFuseLoad)
-		let approvedUser = reverseApproved ? vm.ssh?.guestUser : nil
-		if approvedUser != nil {
-			HelpStep(5, "Mount Machman’s setup folder — the approved key needs no password:")
-		} else {
-			HelpStep(5, "Mount Machman’s setup folder (it asks for your Mac password once):")
-		}
-		command(GuestSetupCommands.bsdShareMount(
-			approvedGuestUser: approvedUser, hostUser: hostUser, hostAddress: hostAddress,
-			sharePath: sharePath))
-		if vm.ssh?.setupSharePath == nil || vm.ssh?.hostAddressForGuest == nil {
-			HelpNote("Boot the VM once so Machman can fill in this Mac’s address and the real "
-				+ "path above.")
-		}
-		HelpStep(6, "Run the installer:")
-		command(GuestSetupInstallerInfo.runCommand())
 	}
 
 	// MARK: - Info (everything that is not a step)
@@ -238,12 +164,7 @@ struct GuestSetupGuidePage: View {
 	// A copyable command line, carrying the page's escalation on every command in it — a
 	// chained "sudo a && b" would run b as the user. `escalate: false` shows a line that
 	// already carries it.
-	private func command(_ line: GuestCommand, escalate: Bool = true) -> some View {
+	private func command(_ line: GuestCommand, escalate: Bool) -> some View {
 		HelpCommand(escalate ? escalation.apply(line) : line.text)
-	}
-
-	// One command — chains are built as a GuestCommand — or a line already escalated.
-	private func command(_ raw: String, escalate: Bool = true) -> some View {
-		command(GuestCommand(raw), escalate: escalate)
 	}
 }
