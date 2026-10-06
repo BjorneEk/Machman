@@ -4,7 +4,7 @@
 # .test-<token> suite, driven over their socket by MachmanKit's MachmanLabTests target.
 #
 #   scripts/lab.sh [--quick|--full|--guests|--harness] [--launchd] [--filter REGEX] [--keep]
-#                  [--out DIR] [--no-build] [-v|-vv]
+#                  [--out DIR] [--no-build] [-v|-vv] [--plain]
 #   scripts/lab.sh --self-check | --doctor | --help
 #
 #   --quick     tiers harness,smoke (the lab agent and the Alpine fixture, no L3 guests)
@@ -18,9 +18,12 @@
 #   --keep      keep the sandbox for a day (after the run: lab: kept <root>)
 #   --out DIR   copy report, logs and transcripts to DIR (absolute; git-ignored if in the repo)
 #   --no-build  skip the xcodebuild and swift build steps
-#   -v, -vv     live progress (scripts/lab/progress.py), always timestamped: each test's start,
-#               end, duration and issues, skips, and a stall line after a quiet minute; -v adds
-#               the lab log (agent, vmhost, harness steps), -vv the guest consoles too
+#   -v, -vv     more live progress (scripts/lab/progress.py), which always shows each test's
+#               result, duration and issues by what the test does: -v adds the lab log (agent,
+#               vmhost, the harness's narrated waits), -vv the guest consoles too. On a terminal
+#               the running test and its latest output sit in a block that collapses into the
+#               test's result; piped or redirected, every line is printed with its time
+#   --plain     timestamped lines on a terminal too
 #   --self-check  prove the lab's own machinery: script self-checks, then the harness tests
 #                 with every audit armed
 #   --doctor    check tools, cache, fixtures and seams; runs nothing, writes nothing
@@ -57,6 +60,7 @@ keep=0
 out=""
 build=1
 verbose=0
+plain=()
 products=""
 root=""
 token=""
@@ -78,6 +82,7 @@ while (($#)); do
 	--no-build) build=0 ;;
 	-v | --verbose) verbose=$((verbose < 2 ? verbose + 1 : 2)) ;;
 	-vv) verbose=2 ;;
+	--plain) plain=(--plain) ;;
 	*) echo "lab.sh: unknown argument $1 (see --help)" >&2; exit 64 ;;
 	esac
 	shift
@@ -379,7 +384,7 @@ lab_run() {
 		events=(--event-stream-output-path "$root/report/events.jsonl" --event-stream-version 0)
 		: > "$root/report/events.jsonl"
 		python3 "$repo/scripts/lab/progress.py" --run "$root" --level "$verbose" \
-			--stop "$root/report/progress.stop" &
+			${plain[@]+"${plain[@]}"} --stop "$root/report/progress.stop" &
 		FOLLOWPID=$!
 	else
 		echo "lab: no live progress (python3 or swift test's event stream missing)"

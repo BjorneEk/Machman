@@ -1,27 +1,35 @@
 #!/usr/bin/env python3
 """lab.sh's live progress: a run's Swift Testing event stream, its lab log and its console
-transcripts as timestamped lines, while the run goes.
+transcripts, shown while the run goes. Tests are named by what they do: the "<id>: " their
+names start with is left out.
 
-  progress.py --run ROOT [--level 0|1|2] [--stop FILE] [--stall SECONDS]
+  progress.py --run ROOT [--level 0|1|2] [--plain] [--stop FILE] [--stall SECONDS]
   progress.py --self-check
 
-  level 0  each test's start, its end with its duration, its issues and known issues; a stall
-           line after a minute without output (the running test, the step its harness
-           narrates, the last console line); skips counted by reason at the end
-  level 1  + each skip, suite starts and ends, and the lab log: agent, vmhost and harness
-           lines, LabStep's narrations
+On a terminal the running test sits at the bottom with its elapsed time, the step its harness
+is in (level 0) or the last lines of its output in a window that scrolls in place (levels 1
+and 2); when the test ends that block collapses into its result line. Piped, redirected or
+with --plain, everything is a timestamped line, and a quiet minute gets a stall line naming
+the running test, its step and the last console line.
+
+  level 0  each test's result (duration, issues, known issues); skips counted at the end
+  level 1  + each skip, suite starts and ends, the lab log (agent, vmhost and harness lines,
+           the harness's narrated waits)
   level 2  + the guest consoles, line by line
 
 Inputs (lab.sh's run dir ROOT): report/events.jsonl (swift test --event-stream-output-path,
 version 0), logs/unified.ndjson (log stream --style ndjson), transcripts/*.log, pids/*.pid.
-Writes report/progress.log (level 2, whatever --level is) and report/test-times.tsv.
+Writes report/progress.log (level 2, plain, whatever --level is) and report/test-times.tsv.
 Stops when FILE exists and the inputs are drained; exit 0 when the run's summary came, 2 when
 it never did (the test process crashed or was killed).
 """
+import collections
 import glob
 import json
 import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -29,10 +37,19 @@ import time
 from datetime import datetime
 
 ESCAPES = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Za-z]")
+CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# A row or card id a known issue's title starts with ("V14: ", "R3W2-24: "): it has a digit.
+CARD = re.compile(r"\b(?=[A-Z0-9-]*\d)[A-Z][A-Z0-9]*(?:-\d+[a-z]?)?: ")
 STEP = "lab: step "
 SKIPPED = re.compile(r'^Test ".*?" skipped(?:: (.*?))?\.?$')
+CONSOLE = re.compile(r"^(.+?)-(hvc\d+|ttyV[\d.]*|ttyVI\d+|ttyu\d+|serial|uart\d*|ssh)$")
 PROCESSES = {"MachmanAgent": "agent", "MachmanVMHost": "vmhost",
              "swiftpm-testing-helper": "test", "hostwatch": "audit"}
+
+# A record: (epoch, level, text, role). Roles: "result" stays on screen; "start" is a test's
+# start (a line when plain, the live block's header on a terminal); "detail" and "step" (a
+# narrated wait) are output (lines when plain, the live window on a terminal); "stall" is
+# plain only.
 
 
 def clock(epoch):
@@ -44,10 +61,22 @@ def span(seconds):
     return "%d s" % seconds if seconds < 60 else "%dm%02ds" % (seconds // 60, seconds % 60)
 
 
-def short_id(name):
-    """The row or card id of "R2: …", else the whole name."""
-    head = name.split(":", 1)[0]
-    return head if ":" in name and head and len(head) <= 16 and " " not in head else name
+def about(display):
+    """What a test does: its display name without the "<id>: " it starts with or an id tag
+    like " (TB14)" it ends with."""
+    head, sep, rest = display.partition(": ")
+    if sep and head and len(head) <= 16 and " " not in head and rest:
+        display = rest
+    return re.sub(r" \([A-Z]{1,3}\d+[a-z]?\)$", "", display)
+
+
+def console_title(name):
+    """A transcript's name as "<vm> <console>" (scope numbers, counters and retries left out)."""
+    name = re.sub(r"^(th|qemu)-", "", name)
+    name = re.sub(r"^\d+-", "", name)
+    name = re.sub(r"(-(try|boot)\d+|-again|-[0-9a-fA-F]{6,}|-\d+)+$", "", name)
+    match = CONSOLE.match(name)
+    return "%s %s" % match.groups() if match else name
 
 
 def vm_of(pid):
@@ -59,6 +88,11 @@ def vm_of(pid):
         return None
     match = re.search(r"--vm (.+?)(?= --|$)", args.strip())
     return match.group(1) if match else None
+
+
+def fit(text, width):
+    text = CONTROLS.sub("", text.expandtabs(4))
+    return text if len(text) <= width else text[:max(1, width - 1)] + "…"
 
 
 class Tail:
@@ -87,20 +121,51 @@ class Tail:
         return parts
 
 
+class Screen:
+    """The live block at the bottom of a terminal, rewritten in place: erase it, print what
+    stays above it, draw it again."""
+
+    def __init__(self, out, colour, size=None):
+        self.out, self.colour, self.size, self.drawn = out, colour, size, 0
+
+    def dimensions(self):
+        if self.size is not None:
+            return self.size
+        size = shutil.get_terminal_size((100, 30))
+        return max(40, size.columns), max(10, size.lines)
+
+    def paint(self, code, text):
+        return "\x1b[%sm%s\x1b[0m" % (code, text) if self.colour else text
+
+    def update(self, above, block):
+        width = self.dimensions()[0] - 1
+        parts = ["\x1b[?2026h"]  # synchronized update, where the terminal knows it
+        if self.drawn:
+            parts.append("\r\x1b[%dA\x1b[J" % self.drawn)
+        parts.extend(line + "\n" for line in above)
+        parts.extend(self.paint(code, fit(text, width)) + "\n" for code, text in block)
+        parts.append("\x1b[?2026l")
+        self.out.write("".join(parts))
+        self.out.flush()
+        self.drawn = len(block)
+
+
 class Follower:
-    def __init__(self, root, level, out, log, stall=60.0):
+    def __init__(self, root, level, out, log, stall=60.0, tty=False, size=None):
         self.root, self.level, self.out, self.log, self.stall = root, level, out, log, stall
+        self.screen = Screen(out, "NO_COLOR" not in os.environ, size) if tty else None
         self.events = Tail(os.path.join(root, "report", "events.jsonl"))
         self.unified = Tail(os.path.join(root, "logs", "unified.ndjson"))
         self.consoles = {}
-        self.plan, self.order = {}, []
+        self.plan = {}
         self.started = {}            # test id -> (index, start epoch)
         self.skipped = {}            # reason -> count
         self.issues = {}             # test id -> [(known, where)]
-        self.results = []            # (id, display, status, seconds)
+        self.results = []            # (id, about, status, seconds)
         self.current = None
         self.step = None             # (epoch, text) of the latest narration
-        self.console = None          # (name, last line)
+        self.console = None          # (title, last line)
+        self.window = collections.deque(maxlen=200)
         self.pids = {}
         self.summary = None
         self.run_started = None
@@ -108,32 +173,66 @@ class Follower:
 
     # --- output -----------------------------------------------------------------------------
 
-    def emit(self, records):
-        for epoch, level, text in sorted(records, key=lambda r: r[0]):
-            # A multi-line message keeps the time column: its other lines are indented under it.
-            rest = [l.rstrip() for l in text.split("\n")[1:] if l.strip()]
-            if len(rest) > 12:
-                rest = rest[:12] + ["… %d more lines" % (len(rest) - 12)]
-            line = "%s %s" % (clock(epoch), text.split("\n", 1)[0].rstrip()) + "".join(
-                "\n" + " " * 13 + l for l in rest)
+    def line(self, epoch, text):
+        # A multi-line message keeps the time column: its other lines are indented under it.
+        rest = [l.rstrip() for l in text.split("\n")[1:] if l.strip()]
+        if len(rest) > 12:
+            rest = rest[:12] + ["… %d more lines" % (len(rest) - 12)]
+        return "%s %s" % (clock(epoch), text.split("\n", 1)[0].rstrip()) + "".join(
+            "\n" + " " * 13 + l for l in rest)
+
+    def emit(self, records, now):
+        above = []
+        for epoch, level, text, role in sorted(records, key=lambda r: r[0]):
+            line = self.line(epoch, text)
             self.log.write(line + "\n")
-            if level <= self.level:
-                self.out.write(line + "\n")
-                self.printed = time.time()
-        self.out.flush()
+            if self.screen is None:
+                if level <= self.level:
+                    above.append(line)
+            elif role == "result" and level <= self.level:
+                above.append(self.colour_result(line))
+            elif role in ("detail", "step") and level <= self.level and (
+                    self.current is None or epoch >= self.started[self.current][1]):
+                # (A line older than the running test is the last one's teardown, late.)
+                parts = text.strip().split("\n")
+                self.window.append("%s %s" % (clock(epoch), parts[0].rstrip()))
+                self.window.extend(" " * 9 + p.strip() for p in parts[1:] if p.strip())
         self.log.flush()
+        if self.screen is None:
+            if above:
+                self.out.write("".join(l + "\n" for l in above))
+                self.out.flush()
+                self.printed = now
+        else:
+            self.screen.update(above, self.block(now))
+
+    def colour_result(self, line):
+        glyph = line[9:10]
+        code = {"✔": "32", "✘": "31", "~": "33", "!": "33"}.get(glyph.strip() or line[11:12])
+        return self.screen.paint(code, line) if code else line
+
+    def block(self, now):
+        """The live block: the running test's header, then its step (level 0) or the last
+        lines of its output (levels 1 and 2)."""
+        rows = []
+        if self.current is not None:
+            index, start = self.started[self.current]
+            rows.append(("1", "▶ %s %s · %s" % (
+                self.of(index), about(self.display(self.current)), span(now - start))))
+        if self.level == 0:
+            if self.current is not None and self.step is not None \
+                    and self.step[0] >= self.started[self.current][1] \
+                    and not self.step[1].startswith(("✓", "✘")):
+                rows.append(("2", "  " + self.step[1]))
+        else:
+            height = min(10, max(3, self.screen.dimensions()[1] // 3))
+            rows.extend(("2", "  " + l) for l in list(self.window)[-height:])
+        return rows
 
     # --- the event stream -------------------------------------------------------------------
 
     def display(self, test_id):
         return self.plan.get(test_id, test_id)
-
-    def name(self, test_id):
-        """The test's id, or its display name when other tests share that id (Q18)."""
-        display = self.display(test_id)
-        ident = short_id(display)
-        shared = sum(1 for d in self.plan.values() if short_id(d) == ident) > 1
-        return (display[:70] + ("…" if len(display) > 70 else "")) if shared else ident
 
     def of(self, index):
         """"5/184": the index among the planned tests not skipped so far."""
@@ -144,7 +243,6 @@ class Follower:
         if record.get("kind") == "test":
             if payload.get("kind") == "function":
                 self.plan[payload["id"]] = payload.get("displayName") or payload.get("name", "")
-                self.order.append(payload["id"])
             return
         kind = payload.get("kind")
         when = payload.get("instant", {}).get("since1970", time.time())
@@ -153,14 +251,17 @@ class Follower:
         first = messages[0]["text"] if messages else ""
         if kind == "runStarted":
             self.run_started = when
-            out.append((when, 0, "lab: %d tests planned" % len(self.plan)))
+            out.append((when, 0, "lab: %d test%s planned" % (
+                len(self.plan), "" if len(self.plan) == 1 else "s"), "result"))
         elif kind == "testStarted" and test_id in self.plan:
             index = len(self.started) + 1
             self.started[test_id] = (index, when)
             self.current = test_id
-            out.append((when, 0, "▶ %s %s" % (self.of(index), self.display(test_id))))
+            self.window.clear()
+            out.append((when, 0, "▶ %s %s" % (self.of(index), about(self.display(test_id))),
+                        "start"))
         elif kind == "testStarted":
-            out.append((when, 1, "· %s" % first))
+            out.append((when, 1, "· %s" % first, "detail"))
         elif kind == "issueRecorded":
             issue = payload.get("issue", {})
             known = bool(issue.get("isKnown"))
@@ -170,17 +271,19 @@ class Follower:
                 self.issues.setdefault(test_id, []).append((known, at))
             symbol = messages[0].get("symbol") if messages else ""
             glyph = "~" if known else ("!" if symbol == "warning" else "✘")
-            text = " ".join(m["text"] for m in messages if m.get("text"))
-            out.append((when, 0, "  %s %s: %s" % (glyph, at, text[:2000])))
+            text = CARD.sub("", " ".join(m["text"] for m in messages if m.get("text")))
+            out.append((when, 0, "  %s %s: %s" % (glyph, at, text[:2000]), "result"))
         elif kind == "testSkipped" and test_id in self.plan:
             match = SKIPPED.match(first)
             reason = match.group(1) if match and match.group(1) else ""
             self.skipped[reason] = self.skipped.get(reason, 0) + 1
-            self.results.append((test_id, self.display(test_id), "skipped", 0.0))
-            out.append((when, 1, "– skip %s%s" % (
-                self.display(test_id), (" — " + reason) if reason else "")))
+            self.results.append((test_id, about(self.display(test_id)), "skipped", 0.0))
+            # A skip with a reason says something (-v); one for a tier not in this run doesn't.
+            out.append((when, 1 if reason else 2, "– skipped: %s%s" % (
+                about(self.display(test_id)), (" — " + reason) if reason else ""), "result"))
         elif kind == "testSkipped":
-            out.append((when, 1, "– %s" % first))
+            match = SKIPPED.match(first.replace("Suite", "Test", 1))
+            out.append((when, 1 if match and match.group(1) else 2, "– %s" % first, "result"))
         elif kind == "testEnded" and test_id in self.started:
             index, start = self.started[test_id]
             seconds = when - start
@@ -189,18 +292,19 @@ class Follower:
                 m.get("symbol") == "fail" for m in messages)
             known = any(k for k, _ in issues)
             status = "failed" if failed else ("known issue" if known else "passed")
-            glyph = "✘" if failed else "✔"
-            note = " (known issue)" if known and not failed else ""
-            self.results.append((test_id, self.display(test_id), status, seconds))
+            note = " · known issue" if known and not failed else ""
+            self.results.append((test_id, about(self.display(test_id)), status, seconds))
             out.append((when, 0, "%s %s %s · %s%s" % (
-                glyph, self.of(index), self.name(test_id), span(seconds), note)))
+                "✘" if failed else "✔", self.of(index), about(self.display(test_id)),
+                span(seconds), note), "result"))
             if self.current == test_id:
                 self.current = None
+                self.window.clear()
         elif kind == "testEnded":
-            out.append((when, 1, "· %s" % first))
+            out.append((when, 1, "· %s" % first, "detail"))
         elif kind == "runEnded":
             self.summary = first
-            out.append((when, 0, first))
+            out.append((when, 0, first, "result"))
 
     # --- the lab log and the consoles -------------------------------------------------------
 
@@ -237,31 +341,33 @@ class Follower:
             when = datetime.strptime(entry["timestamp"], "%Y-%m-%d %H:%M:%S.%f%z").timestamp()
         except (KeyError, ValueError):
             when = time.time()
-        text = re.sub(r"^\[log\] ", "", message)
-        text = re.sub(r"^\[([a-z-]+)\] ", r"\1: ", text)
         if STEP in message:
             self.step = (when, message.split(STEP, 1)[1])
-        out.append((when, 1, "  %-14s %s" % (self.who(entry), text[:2000])))
+            out.append((when, 1, "  step %s" % self.step[1], "step"))
+            return
+        text = re.sub(r"^\[log\] ", "", message)
+        text = re.sub(r"^\[([a-z-]+)\] ", r"\1: ", text)
+        out.append((when, 1, "  %-14s %s" % (self.who(entry), text[:2000]), "detail"))
 
     def on_console(self, name, raw, now, out):
         line = ESCAPES.sub(b"", raw).replace(b"\r", b"").decode("utf-8", "replace").rstrip()
         if not line.strip():
             return
-        self.console = (name, line.strip())
-        out.append((now, 2, "  [%s] %s" % (name, line)))
+        title = console_title(name)
+        self.console = (title, line.strip())
+        out.append((now, 2, "  [%s] %s" % (title, line), "detail"))
 
     def stalled(self, now, out):
-        if self.current is None or now - self.printed < self.stall:
+        if self.screen is not None or self.current is None or now - self.printed < self.stall:
             return
         index, start = self.started[self.current]
-        parts = ["… %s %s running %s" % (
-            self.of(index), self.name(self.current), span(now - start))]
+        parts = ["… %s %s · running %s" % (
+            self.of(index), about(self.display(self.current)), span(now - start))]
         if self.step is not None and self.step[0] >= start:
             parts.append("step " + self.step[1])
         if self.console is not None:
             parts.append("[%s] %s" % (self.console[0], self.console[1][:120]))
-        out.append((now, 0, " · ".join(parts)))
-        self.printed = now
+        out.append((now, 0, " · ".join(parts), "stall"))
 
     # --- the loop ---------------------------------------------------------------------------
 
@@ -279,13 +385,15 @@ class Follower:
                 continue
         for path in sorted(glob.glob(os.path.join(self.root, "transcripts", "*.log"))):
             tail = self.consoles.setdefault(path, Tail(path, partial=1.0))
-            name = os.path.basename(path)[:-4]
             for raw in tail.lines(now):
-                self.on_console(name, raw, now, out)
-        self.emit(out)
-        out = []
+                self.on_console(os.path.basename(path)[:-4], raw, now, out)
         self.stalled(now, out)
-        self.emit(out)
+        self.emit(out, now)
+
+    def close(self):
+        """Takes the live block off the screen (an interrupted run leaves no half block)."""
+        if self.screen is not None and self.screen.drawn:
+            self.screen.update([], [])
 
     def finish(self):
         now, out = time.time(), []
@@ -293,32 +401,33 @@ class Follower:
             if tail.rest:
                 self.on_console(os.path.basename(path)[:-4], tail.rest, now, out)
                 tail.rest = b""
+        self.current = None
         if self.summary is None:
-            running = (" in %s" % self.name(self.current)) if self.current else ""
-            out.append((now, 0, "lab: the test run ended without its summary%s" % running))
+            out.append((now, 0, "lab: the test run ended without its summary", "result"))
         counts = {}
         for _, _, status, _ in self.results:
             counts[status] = counts.get(status, 0) + 1
         ran = [r for r in self.results if r[2] != "skipped"]
         took = span(now - self.run_started) if self.run_started else "?"
         out.append((now, 0, "lab: %d tests · %s · %s" % (len(self.results), " · ".join(
-            "%d %s" % (counts[s], s) for s in ("passed", "known issue", "failed", "skipped")
-            if counts.get(s)) or "none ran", took)))
+            "%d %s%s" % (counts[s], s, "s" if s == "known issue" and counts[s] > 1 else "")
+            for s in ("passed", "known issue", "failed", "skipped")
+            if counts.get(s)) or "none ran", took), "result"))
         if self.skipped:
-            out.append((now, 0, "lab: skipped: " + " · ".join(
-                "%d %s" % (n, reason or "(not in this run's tiers)") for reason, n in sorted(
-                    self.skipped.items(), key=lambda item: -item[1]))))
+            out.append((now, 0, "lab: skipped\n" + "\n".join(
+                "%7d  %s" % (n, reason or "not in this run's tiers") for reason, n in sorted(
+                    self.skipped.items(), key=lambda item: -item[1])), "result"))
         slowest = sorted(ran, key=lambda r: -r[3])[:5]
         if slowest:
-            out.append((now, 0, "lab: slowest: " + " · ".join(
-                "%s %s" % (self.name(r[0]), span(r[3])) for r in slowest)))
+            out.append((now, 0, "lab: slowest\n" + "\n".join(
+                "%7s  %s" % (span(r[3]), r[1]) for r in slowest), "result"))
         failed = [r for r in ran if r[2] == "failed"]
         if failed:
-            out.append((now, 0, "lab: failed: " + " · ".join(
-                "%s (%s)" % (self.name(r[0]), ", ".join(
+            out.append((now, 0, "lab: failed\n" + "\n".join(
+                "%s (%s)" % (r[1], ", ".join(
                     at for known, at in self.issues.get(r[0], []) if not known) or "?")
-                for r in failed)))
-        self.emit(out)
+                for r in failed), "result"))
+        self.emit(out, now)
         with open(os.path.join(self.root, "report", "test-times.tsv"), "w") as f:
             f.write("seconds\tstatus\ttest\n")
             for _, name, status, seconds in sorted(self.results, key=lambda r: -r[3]):
@@ -326,20 +435,57 @@ class Follower:
         return 0 if self.summary is not None else 2
 
 
-def follow(root, level, stop, stall=60.0, interval=0.5, out=None):
+def follow(root, level, stop, stall=60.0, interval=0.5, out=None, tty=None, size=None):
+    out = out or sys.stdout
+    if tty is None:
+        tty = out.isatty() and os.environ.get("TERM", "dumb") != "dumb"
     os.makedirs(os.path.join(root, "report"), exist_ok=True)
     with open(os.path.join(root, "report", "progress.log"), "a", buffering=1) as log:
-        follower = Follower(root, level, out or sys.stdout, log, stall)
-        while True:
-            done = stop is not None and os.path.exists(stop)
-            follower.tick()
-            if done:
+        follower = Follower(root, level, out, log, stall, tty, size)
+        try:
+            while True:
+                done = stop is not None and os.path.exists(stop)
                 follower.tick()
-                return follower.finish()
-            time.sleep(interval)
+                if done:
+                    follower.tick()
+                    return follower.finish()
+                time.sleep(interval)
+        finally:
+            follower.close()
 
 
 # --- self-check ----------------------------------------------------------------------------
+
+class Terminal:
+    """Enough of a terminal to replay the live block's output: text, \\n, \\r, CSI n A, CSI J,
+    and the codes it ignores (colours, synchronized updates)."""
+
+    def __init__(self):
+        self.rows, self.row = [""], 0
+
+    def feed(self, data):
+        i = 0
+        while i < len(data):
+            match = re.match(r"\x1b\[(\??)(\d*)([A-Za-z])", data[i:])
+            if match:
+                n = int(match.group(2) or 1)
+                if match.group(3) == "A":
+                    self.row = max(0, self.row - n)
+                elif match.group(3) == "J":
+                    del self.rows[self.row + 1:]
+                    self.rows[self.row] = ""
+                i += match.end()
+                continue
+            c = data[i]
+            if c == "\n":
+                self.row += 1
+                if self.row == len(self.rows):
+                    self.rows.append("")
+            elif c != "\r":
+                self.rows[self.row] += c
+            i += 1
+        return [r for r in self.rows if r]
+
 
 def self_check():
     import io
@@ -371,104 +517,164 @@ def self_check():
             for r in records:
                 f.write((r if isinstance(r, str) else json.dumps(r)) + "\n")
 
-    t0 = time.time() - 300
-    r1 = "Mod.Suite/one()/File.swift:10:3"
-    r2 = "Mod.Suite/two()/File.swift:20:3"
-    r3 = "Mod.Suite/three()/File.swift:30:3"
-    issue = {"isKnown": False, "sourceLocation": {"fileID": "Mod/File.swift", "line": 42}}
-    known = {"isKnown": True, "sourceLocation": {"fileID": "Mod/File.swift", "line": 7}}
-    stamp = datetime.fromtimestamp(t0 + 5).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f%z")
-    with tempfile.TemporaryDirectory() as root:
+    def stamp(epoch):
+        return datetime.fromtimestamp(epoch).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f%z")
+
+    def run_dir(root, t0):
+        r1 = "Mod.Suite/one()/File.swift:10:3"
+        r2 = "Mod.Suite/two()/File.swift:20:3"
+        r3 = "Mod.Suite/three()/File.swift:30:3"
+        issue = {"isKnown": False, "sourceLocation": {"fileID": "Mod/File.swift", "line": 42}}
+        known = {"isKnown": True, "sourceLocation": {"fileID": "Mod/File.swift", "line": 7}}
         write(root + "/report/events.jsonl", [
-            test("R1: the first row", "one()"), test("E7: the second row", "two()", 20),
-            test("a test without an id", "three()", 30),
+            test("R1: the guest answers on its console", "one()"),
+            test("E7: a known one stays known", "two()", 20),
+            test("a test without an id (TB14)", "three()", 30),
             event("runStarted", t0, messages=[("default", "Test run started.")]),
             event("testStarted", t0 + 1, r1),
             event("issueRecorded", t0 + 2, r1, [("fail", "Expectation failed: 1 == 2\nsecond\n")],
                   issue=issue),
-            event("testEnded", t0 + 70, r1, [("fail", 'Test "R1: the first row" failed.')]),
+            event("testEnded", t0 + 70, r1, [("fail", "failed")]),
             event("testStarted", t0 + 71, r2),
             event("issueRecorded", t0 + 72, r2, [("pass", "Known issue: E7: a known one")],
                   issue=known),
             event("testSkipped", t0 + 73, r3,
                   [("skip", 'Test "a test without an id" skipped: "no image"')]),
-            event("testSkipped", t0 + 73, "Mod.Other",
-                  [("skip", 'Suite "Other" skipped.')]),
+            event("testSkipped", t0 + 73, "Mod.Other", [("skip", 'Suite "Other" skipped.')]),
             event("testEnded", t0 + 75, r2, [("pass", "passed")]),
             event("runEnded", t0 + 77, messages=[
                 ("fail", "Test run with 3 tests in 1 suite failed after 77 seconds.")]),
         ])
         write(root + "/pids/agent-03.pid", ["4242"])
         write(root + "/logs/unified.ndjson", [
-            {"timestamp": stamp, "processImagePath": "/x/MachmanAgent", "processID": 4242,
-             "eventMessage": "[log] serving machman.sock"},
-            {"timestamp": stamp, "processImagePath": "/x/MachmanVMHost", "processID": 4243,
-             "eventMessage": "[warning] gone already"},
-            {"timestamp": stamp, "processImagePath": "/x/swiftpm-testing-helper",
-             "processID": 1, "eventMessage": "[log] lab: step R1 ▸ waiting for login — 5 s"},
+            {"timestamp": stamp(t0 + 5), "processImagePath": "/x/MachmanAgent",
+             "processID": 4242, "eventMessage": "[log] serving machman.sock"},
+            {"timestamp": stamp(t0 + 5), "processImagePath": "/x/MachmanVMHost",
+             "processID": 4243, "eventMessage": "[warning] gone already"},
+            {"timestamp": stamp(t0 + 6), "processImagePath": "/x/swiftpm-testing-helper",
+             "processID": 1, "eventMessage": "[log] lab: step ▸ waiting for a login — 5 s"},
             "{not json",
         ])
         os.makedirs(root + "/transcripts")
-        with open(root + "/transcripts/01-r1-hvc0.log", "wb") as f:
+        with open(root + "/transcripts/01-lab-debian-hvc0-try2.log", "wb") as f:
             f.write(b"\x1b[1mDebian GNU/Linux 13\x1b[0m\r\nlab-deb login: ")
+
+    t0 = time.time() - 300
+    with tempfile.TemporaryDirectory() as root:
+        run_dir(root, t0)
         open(root + "/stop-now", "w").close()
         buf = io.StringIO()
-        status = follow(root, 2, root + "/stop-now", interval=0.05, out=buf)
+        status = follow(root, 2, root + "/stop-now", interval=0.05, out=buf, tty=False)
         text = buf.getvalue()
-        check("a test's start reads its index, the plan's size and its display name",
-              "▶ 1/3 R1: the first row" in text)
-        check("a skip shrinks the plan's size", "▶ 2/3 E7: the second row" in text
-              and "✔ 2/2 E7 · 4 s (known issue)" in text)
-        check("a failed test reads ✘ with its id and duration", "✘ 1/3 R1 · 1m09s" in text)
+        check("plain: a test's start reads its index, the plan's size and what it does",
+              "▶ 1/3 the guest answers on its console" in text)
+        check("no test line shows the id its name starts with",
+              "R1" not in text and "E7" not in text)
+        check("a failed test reads ✘ with what it does and its duration",
+              "✘ 1/3 the guest answers on its console · 1m09s" in text)
         check("an issue reads its file:line and message, its other lines indented",
               "✘ File.swift:42: Expectation failed: 1 == 2\n" + " " * 13 + "second\n" in text)
-        check("a known issue reads ~ and its test passes with a note",
-              "~ File.swift:7:" in text and "(known issue)" in text)
+        check("a skip shrinks the plan's size; a known issue passes with a note",
+              "▶ 2/3 a known one stays known" in text
+              and "✔ 2/2 a known one stays known · 4 s · known issue" in text
+              and "~ File.swift:7:" in text)
         check("a skip reads its reason (level 1)",
-              "– skip a test without an id — \"no image\"" in text)
-        check("skips are counted by reason", 'lab: skipped: 1 "no image"' in text)
+              "– skipped: a test without an id — \"no image\"" in text)
         check("the run's summary line is kept verbatim (igate greps it)",
               "Test run with 3 tests in 1 suite failed" in text)
-        check("the closing summary counts and names the failure",
+        check("a suite's skip is no test; the summary counts and names the failure",
               "lab: 3 tests · 1 known issue · 1 failed · 1 skipped · " in text
-              and "lab: failed: R1 (File.swift:42)" in text)
+              and "lab: failed\n" + " " * 13 + "the guest answers on its console (File.swift:42)"
+              in text)
+        check("skips are counted by reason", 'lab: skipped\n' + " " * 13 + '      1  "no image"'
+              in text)
+        check("an id tag a name ends with is left out", "(TB14)" not in text)
+        check("a known issue's card id is left out", "Known issue: a known one" in text)
         check("an agent line carries its scope, a vmhost line its VM or pid",
               "agent 03       serving machman.sock" in text
               and "vmhost 4243    warning: gone already" in text)
-        check("a suite's skip is no test", "lab: 3 tests ·" in text)
-        check("a console's prompt comes out without a newline, escapes and CRs stripped",
-              "[01-r1-hvc0] Debian GNU/Linux 13" in text and "[01-r1-hvc0] lab-deb login:" in text)
+        check("a narrated wait reads as a step", "step ▸ waiting for a login — 5 s" in text)
+        check("a console line reads its VM and console; escapes, CRs and the retry go",
+              "[lab-debian hvc0] Debian GNU/Linux 13" in text
+              and "[lab-debian hvc0] lab-deb login:" in text)
         check("a malformed log line is skipped", "not json" not in text)
         check("the run's summary came: exit 0", status == 0)
         with open(root + "/report/progress.log") as f:
-            check("progress.log keeps the level-2 stream", "[01-r1-hvc0]" in f.read())
+            check("progress.log keeps the level-2 stream", "[lab-debian hvc0]" in f.read())
         with open(root + "/report/test-times.tsv") as f:
             rows = f.read().splitlines()
-        check("test-times.tsv lists the slowest first",
-              rows[0] == "seconds\tstatus\ttest" and rows[1].startswith("69.0\tfailed\tR1"))
+        check("test-times.tsv lists the slowest first, by what each test does",
+              rows[0] == "seconds\tstatus\ttest"
+              and rows[1] == "69.0\tfailed\tthe guest answers on its console")
+
+    for name, title in [("th-01-th-vzfb-ttyV-9", "th-vzfb ttyV"),
+                        ("02-lab-vzfreebsd-ttyV0.0", "lab-vzfreebsd ttyV0.0"),
+                        ("qemu-q-freebsd15-serial", "q-freebsd15 serial"),
+                        ("05-tg-copy-hvc0-1a2b3c4d", "tg-copy hvc0")]:
+        check("console title of %s reads %r" % (name, title), console_title(name) == title)
 
     with tempfile.TemporaryDirectory() as root:
+        now = time.time()
         write(root + "/report/events.jsonl", [
-            test("R1: the first row", "one()"),
-            event("runStarted", time.time() - 120),
-            event("testStarted", time.time() - 100, r1),
+            test("R1: the guest answers on its console", "one()"),
+            event("runStarted", now - 120),
+            event("testStarted", now - 100, "Mod.Suite/one()/File.swift:10:3"),
         ])
         write(root + "/logs/unified.ndjson", [
-            {"timestamp": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S.%f%z"),
-             "processImagePath": "/x/swiftpm-testing-helper", "processID": 1,
-             "eventMessage": "[log] lab: step R1 … hvc0: waiting ≤3m for /login/ — 45 s"}])
+            {"timestamp": stamp(now - 1), "processImagePath": "/x/swiftpm-testing-helper",
+             "processID": 1,
+             "eventMessage": "[log] lab: step … deb hvc0: waiting ≤3m for a login — 45 s"}])
         quiet = io.StringIO()
         stop = root + "/stop"
         timer = threading.Timer(0.6, lambda: open(stop, "w").close())
         timer.start()
-        status = follow(root, 0, stop, stall=0.2, interval=0.05, out=quiet)
+        status = follow(root, 0, stop, stall=0.2, interval=0.05, out=quiet, tty=False)
         timer.join()
         text = quiet.getvalue()
-        check("level 0 leaves the lab log out", "  test " not in text)
+        check("level 0 leaves the lab log out", "  step " not in text)
         check("a quiet run gets a stall line naming the test and its step",
-              "… 1/1 R1 running" in text and "step R1 … hvc0: waiting ≤3m for /login/" in text)
+              "… 1/1 the guest answers on its console · running" in text
+              and "step … deb hvc0: waiting ≤3m for a login" in text)
         check("a run that never summarized says so and exits 2",
-              "ended without its summary in R1" in text and status == 2)
+              "ended without its summary" in text and status == 2)
+
+    # The terminal: the live block while a test runs, its collapse when the test ends.
+    with tempfile.TemporaryDirectory() as root:
+        now = time.time()
+        r1 = "Mod.Suite/one()/File.swift:10:3"
+        write(root + "/report/events.jsonl", [
+            test("R1: the guest answers on its console", "one()"),
+            event("runStarted", now - 30), event("testStarted", now - 20, r1)])
+        os.makedirs(root + "/transcripts")
+        with open(root + "/transcripts/01-lab-debian-hvc0.log", "w") as f:
+            f.write("".join("boot line %d\n" % i for i in range(30)))
+        write(root + "/logs/unified.ndjson", [
+            {"timestamp": stamp(now - 25), "processImagePath": "/x/MachmanAgent",
+             "processID": 9, "eventMessage": "[log] the last test's teardown"}])
+        screen = io.StringIO()
+        log = io.StringIO()
+        follower = Follower(root, 2, screen, log, tty=True, size=(80, 30))
+        follower.screen.colour = False
+        follower.tick()
+        shown = Terminal().feed(screen.getvalue())
+        live = shown[next(i for i, l in enumerate(shown) if l.startswith("▶")):]
+        check("a running test's block: its header with elapsed time, then its last lines",
+              live[0].startswith("▶ 1/1 the guest answers on its console · 2")
+              and live[1].startswith("  " + clock(now)[:5])
+              and live[-1].endswith(" [lab-debian hvc0] boot line 29") and len(live) == 11)
+        check("a line from before the test started stays out of its block",
+              not any("teardown" in l for l in live))
+        check("block lines are cut to the terminal's width", all(len(l) <= 79 for l in live))
+        write(root + "/report/events.jsonl", [
+            event("testEnded", now - 1, r1, [("pass", "passed")]),
+            event("runEnded", now, messages=[("pass", "Test run with 1 test passed.")])])
+        follower.tick()
+        follower.finish()
+        shown = Terminal().feed(screen.getvalue())
+        check("when the test ends its block collapses into its result line",
+              not any("boot line" in l for l in shown)
+              and any("✔ 1/1 the guest answers on its console · 19 s" in l for l in shown))
+        check("the output it showed stays in progress.log", "boot line 29" in log.getvalue())
 
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
@@ -476,10 +682,15 @@ def self_check():
 
 def main(argv):
     args = {"--level": "0", "--stall": "60"}
+    plain = False
     i = 0
     while i < len(argv):
         if argv[i] == "--self-check":
             return self_check()
+        if argv[i] == "--plain":
+            plain = True
+            i += 1
+            continue
         if argv[i] in ("--run", "--level", "--stop", "--stall") and i + 1 < len(argv):
             args[argv[i]] = argv[i + 1]
             i += 2
@@ -489,9 +700,10 @@ def main(argv):
     if "--run" not in args:
         sys.stderr.write(__doc__)
         return 64
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
         return follow(args["--run"], int(args["--level"]), args.get("--stop"),
-                      stall=float(args["--stall"]))
+                      stall=float(args["--stall"]), tty=False if plain else None)
     except KeyboardInterrupt:
         return 130
 
