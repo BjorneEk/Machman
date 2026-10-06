@@ -95,6 +95,15 @@ else
 	fail "audit frontmost: a frontmost lab process is a breach" "$WATCH_STATUS: $summary"
 fi
 
+# 5b
+watch active --inject active --inject-after 2
+if [[ $WATCH_STATUS == 3 && "$summary" == *"BREACH active pid -1"* &&
+	"$summary" != *"OK active"* ]]; then
+	ok "audit active: an active lab process is a breach"
+else
+	fail "audit active: an active lab process is a breach" "$WATCH_STATUS: $summary"
+fi
+
 # 6
 watch pb --inject pasteboard --inject-after 2
 if [[ $WATCH_STATUS == 3 && "$summary" == *"BREACH pasteboard changeCount"* ]]; then
@@ -253,6 +262,29 @@ then
 else
 	fail "audit snapshot: default roots read ~/.ssh by metadata only and skip ~/.machman" \
 		"see the python assertion"
+fi
+
+# 9b: the default roots catch a change under a home: a Machman preferences plist (the
+# namePrefix walk) and a launch agent are flagged, another app's preferences are not.
+fake="$root/fakehome"
+mkdir -p "$fake/Library/Preferences" "$fake/Library/LaunchAgents"
+echo a >"$fake/Library/Preferences/com.example.other.plist"
+"$hw" snapshot --home "$fake" --token "$token" --out "$root/h1.json"
+agentplist="$fake/Library/Preferences/com.gustaffranzen.Machman.dev.agent.plist"
+jobplist="$fake/Library/LaunchAgents/com.gustaffranzen.Machman.dev.vm.selfcheck.plist"
+echo b >"$agentplist"
+echo c >"$jobplist"
+echo d >"$fake/Library/Preferences/com.example.other.plist"
+"$hw" snapshot --home "$fake" --token "$token" --out "$root/h2.json"
+"$hw" diff --before "$root/h1.json" --after "$root/h2.json" --out "$root/d7.txt"
+status7=$?
+if [[ $status7 == 3 ]] && grep -qxF "BREACH snapshot added $agentplist" "$root/d7.txt" &&
+	grep -qxF "BREACH snapshot added $jobplist" "$root/d7.txt" &&
+	! grep -q "com.example.other" "$root/d7.txt"; then
+	ok "audit snapshot: default roots flag a Machman preferences plist and a launch agent"
+else
+	fail "audit snapshot: default roots flag a Machman preferences plist and a launch agent" \
+		"status $status7: $(cat "$root/d7.txt")"
 fi
 
 # 10

@@ -286,10 +286,44 @@ lab_tiers() {
 	echo "$t"
 }
 
+# lab_worktree_status <repo> <file>: the worktree's status, untracked files included.
+lab_worktree_status() {
+	git -C "$1" status --porcelain=v1 --untracked-files=all > "$2"
+}
+
+# lab_worktree_audit <before> <after> <out>: OK, or a breach with the difference.
+lab_worktree_audit() {
+	if cmp -s "$1" "$2"; then
+		echo "OK worktree" > "$3"
+	else
+		{
+			echo "BREACH worktree the run changed the worktree"
+			diff "$1" "$2"
+		} > "$3" || true
+	fi
+}
+
+# lab_count_audits <report dir>: prints each BREACH and WARN line of the audit reports and
+# sets LAB_BREACHES and LAB_WARNS.
+lab_count_audits() {
+	local f line
+	LAB_BREACHES=0
+	LAB_WARNS=0
+	for f in "$1/watch/summary.txt" "$1/snapshot-summary.txt" "$1/worktree.txt"; do
+		[[ -f "$f" ]] || continue
+		while IFS= read -r line; do
+			case "$line" in
+			BREACH*) LAB_BREACHES=$((LAB_BREACHES + 1)); echo "lab: audit $line" ;;
+			WARN*) LAB_WARNS=$((LAB_WARNS + 1)); echo "lab: audit $line" ;;
+			esac
+		done < "$f"
+	done
+}
+
 # lab_run <tiers> <seams-needed 0|1>: build, arm the audits, run the tests, sweep, report.
 # In --self-check the products and the slot are skipped (tiers = harness).
 lab_run() {
-	local tiers="$1" seams=0 xcb filt hw ts breaches=0 warns=0 f line report
+	local tiers="$1" seams=0 xcb filt hw ts breaches=0 warns=0 report inject=()
 	local teststatus="${3:-0}" watchstatus=0 need_slot=0 selfcheck="${2:-0}"
 	sandbox_refuse_main_checkout "$repo" || exit 64
 	if [[ -n "$out" ]]; then
@@ -357,7 +391,7 @@ lab_run() {
 	fi
 	mkdir -p "$root"/{pids,logs,transcripts,scopes,report}
 	echo '{}' > "$root/answers.json"
-	git -C "$repo" status --porcelain=v1 --untracked-files=all > "$root/report/git-before.txt"
+	lab_worktree_status "$repo" "$root/report/git-before.txt"
 	env -u CFFIXED_USER_HOME -u MACHMAN_DATA_DIR -u MACHMAN_SUITE_ID \
 		"$hw" snapshot --token "$token" --out "$root/report/snapshot-before.json"
 	lab_export "$tiers" "$seams"
@@ -385,7 +419,12 @@ lab_run() {
 			exit 69
 		fi
 	done
-	"$hw" watch --token "$token" --run "$root" --out "$root/report/watch" &
+	# lab.sh --self-check's armed pass provokes one breach (harness tier only).
+	if [[ -n "${MACHMAN_LAB_SELFCHECK_INJECT:-}" && "$tiers" == harness ]]; then
+		inject=(--inject "$MACHMAN_LAB_SELFCHECK_INJECT" --inject-after 2)
+	fi
+	"$hw" watch --token "$token" --run "$root" --out "$root/report/watch" \
+		${inject[@]+"${inject[@]}"} &
 	WATCHPID=$!
 	waited=0
 	until [[ -f "$root/report/watch/started" ]]; do
@@ -435,25 +474,13 @@ lab_run() {
 		--after "$root/report/snapshot-after.json" \
 		--non-lab "$root/report/watch/non-lab-machman.txt" --token "$token" \
 		--out "$root/report/snapshot-summary.txt" || true
-	git -C "$repo" status --porcelain=v1 --untracked-files=all > "$root/report/git-after.txt"
-	if cmp -s "$root/report/git-before.txt" "$root/report/git-after.txt"; then
-		echo "OK worktree" > "$root/report/worktree.txt"
-	else
-		{
-			echo "BREACH worktree the run changed the worktree"
-			diff "$root/report/git-before.txt" "$root/report/git-after.txt"
-		} > "$root/report/worktree.txt" || true
-	fi
+	lab_worktree_status "$repo" "$root/report/git-after.txt"
+	lab_worktree_audit "$root/report/git-before.txt" "$root/report/git-after.txt" \
+		"$root/report/worktree.txt"
 	report="$root/report"
-	for f in "$report/watch/summary.txt" "$report/snapshot-summary.txt" "$report/worktree.txt"; do
-		[[ -f "$f" ]] || continue
-		while IFS= read -r line; do
-			case "$line" in
-			BREACH*) breaches=$((breaches + 1)); echo "lab: audit $line" ;;
-			WARN*) warns=$((warns + 1)); echo "lab: audit $line" ;;
-			esac
-		done < "$f"
-	done
+	lab_count_audits "$report"
+	breaches=$LAB_BREACHES
+	warns=$LAB_WARNS
 	echo "lab: audits: $breaches breaches, $warns warnings"
 	if ((teststatus)); then
 		echo "lab: tests FAILED (swift test exit $ts)"
@@ -559,6 +586,56 @@ lab_doctor() {
 	exit $((missing ? 69 : 0))
 }
 
+# lab_selfcheck_audits: lab.sh's own audit plumbing fails on a provoked breach — the worktree
+# audit (a change in a scratch repo), the count over the three report files, and one armed
+# harness pass with an injected window breach, which must end "1 breaches" with exit 3.
+# Prints "ok   <check>" or "FAIL <check>: <why>"; returns the failure count.
+lab_selfcheck_audits() {
+	local failures=0 sc out rc
+	ok() { echo "ok   $1"; }
+	fail() { echo "FAIL $1: $2"; failures=$((failures + 1)); }
+	sc="$(mktemp -d /tmp/mml-selfcheck.XXXXXX)"
+	git init -q "$sc/repo"
+	lab_worktree_status "$sc/repo" "$sc/before"
+	lab_worktree_status "$sc/repo" "$sc/same"
+	echo x > "$sc/repo/stray"
+	lab_worktree_status "$sc/repo" "$sc/after"
+	lab_worktree_audit "$sc/before" "$sc/same" "$sc/quiet.txt"
+	lab_worktree_audit "$sc/before" "$sc/after" "$sc/changed.txt"
+	if [[ "$(cat "$sc/quiet.txt")" == "OK worktree" ]] &&
+		[[ "$(head -n1 "$sc/changed.txt")" == "BREACH worktree"* ]] &&
+		grep -qF "?? stray" "$sc/changed.txt"; then
+		ok "audit worktree: a file the run adds to the worktree is a breach"
+	else
+		fail "audit worktree: a file the run adds to the worktree is a breach" \
+			"$(cat "$sc/quiet.txt" "$sc/changed.txt")"
+	fi
+	mkdir -p "$sc/report/watch"
+	printf 'BREACH window x\nOK policy\nNOTE frontmost y\n' > "$sc/report/watch/summary.txt"
+	printf 'BREACH snapshot added x\nWARN snapshot changed y\n' > "$sc/report/snapshot-summary.txt"
+	cp "$sc/changed.txt" "$sc/report/worktree.txt"
+	lab_count_audits "$sc/report" > /dev/null
+	if [[ "$LAB_BREACHES/$LAB_WARNS" == 3/1 ]]; then
+		ok "audit count: every report file's breaches and warnings are counted"
+	else
+		fail "audit count: every report file's breaches and warnings are counted" \
+			"$LAB_BREACHES breaches, $LAB_WARNS warnings"
+	fi
+	rm -rf "$sc"
+	out="$(MACHMAN_LAB_SELFCHECK_INJECT=window "$repo/scripts/lab.sh" --harness --no-build \
+		--filter 'LabHarnessTests/tiersParse' 2>&1)"
+	rc=$?
+	if [[ $rc == 3 ]] && grep -qxF "lab: audits: 1 breaches, 0 warnings" <<<"$out" &&
+		grep -q "^lab: audit BREACH window pid -1 .*(injected)" <<<"$out" &&
+		grep -qxF "lab: tests passed" <<<"$out"; then
+		ok "audit run: an armed pass with one injected breach reports it and exits 3"
+	else
+		fail "audit run: an armed pass with one injected breach reports it and exits 3" \
+			"exit $rc: $(grep '^lab' <<<"$out")"
+	fi
+	return "$failures"
+}
+
 case "$mode" in
 selfcheck)
 	sandbox_refuse_main_checkout "$repo" || exit 64
@@ -570,10 +647,17 @@ selfcheck)
 	"$repo/scripts/lab/fetch.sh" --self-check || scriptfail=1
 	"$repo/scripts/lab/guests/alpine/build.sh" --self-check || scriptfail=1
 	"$repo/scripts/lab/audit/selfcheck.sh" || scriptfail=1
+	lab_selfcheck_audits || scriptfail=1
 	((scriptfail)) && echo "lab: a script self-check FAILED"
 	lab_run harness 1 "$scriptfail"
 	;;
-run) lab_run "$(lab_tiers)" ;;
+run)
+	# The self-check's injected pass (lab_selfcheck_audits) needs no products, like --self-check.
+	if [[ -n "${MACHMAN_LAB_SELFCHECK_INJECT:-}" && "$(lab_tiers)" == harness ]]; then
+		lab_run harness 1
+	fi
+	lab_run "$(lab_tiers)"
+	;;
 doctor) lab_doctor ;;
 *)
 	echo "lab.sh: --$mode isn't available yet" >&2

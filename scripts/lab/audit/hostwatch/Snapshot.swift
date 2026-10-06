@@ -112,15 +112,19 @@ private func walk(_ root: SnapshotRoot, into entries: inout [String: [String: An
 	}
 }
 
-/// `snapshot --out FILE [--token T] [--root PATH]... [--meta-only PATH]...`
+/// `snapshot --out FILE [--token T] [--root PATH]... [--meta-only PATH]... [--home DIR]`
+/// --home: the default roots under DIR in place of this user's home (the self-check's fake
+/// home); ~/.machman stays refused either way.
 func runSnapshot(_ args: [String]) {
 	guard let out = value("--out", in: args) else { exit(64) }
 	let home = realHome()
+	let rootsHome = value("--home", in: args) ?? home
 	let explicit = values("--root", in: args).map { SnapshotRoot(path: $0, metaOnly: false) }
 		+ values("--meta-only", in: args).map { SnapshotRoot(path: $0, metaOnly: true) }
-	if explicit.contains(where: { isUnderDotMachman($0.path, home: home) }) { exit(64) }
+	if explicit.contains(where: { isUnderDotMachman($0.path, home: home) })
+		|| isUnderDotMachman(rootsHome, home: home) { exit(64) }
 	var roots = explicit.isEmpty
-		? defaultRoots(home: home, token: value("--token", in: args)) : explicit
+		? defaultRoots(home: rootsHome, token: value("--token", in: args)) : explicit
 	roots.removeAll { isUnderDotMachman($0.path, home: home) }
 	var entries: [String: [String: Any]] = [:]
 	var described: [[String: Any]] = []

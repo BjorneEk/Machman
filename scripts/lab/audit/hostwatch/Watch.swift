@@ -216,6 +216,11 @@ final class Watcher {
 					sample.apps[-1] = AppInfo(pid: -1, name: "injected", policy: .regular,
 						isActive: false)
 					sample.injected.insert("policy")
+				case "active":
+					sample.labPids.insert(-1)
+					sample.apps[-1] = AppInfo(pid: -1, name: "injected", policy: .accessory,
+						isActive: true)
+					sample.injected.insert("active")
 				case "frontmost":
 					sample.labPids.insert(-1)
 					sample.frontmost = Frontmost(pid: -1, name: "injected")
@@ -275,8 +280,8 @@ final class Watcher {
 					key: "p\(pid)")
 			}
 			if app.isActive {
-				record("breach", "active", pid, "pid \(pid) (\(app.name)) became active",
-					key: "a\(pid)")
+				record("breach", "active", pid,
+					"pid \(pid) (\(app.name)) became active" + suffix("active"), key: "a\(pid)")
 			}
 		}
 		if let front = sample.frontmost {
