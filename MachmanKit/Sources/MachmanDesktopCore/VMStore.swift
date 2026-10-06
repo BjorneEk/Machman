@@ -11,7 +11,7 @@
 //  and the store retries with a backoff until a list lands (P13). One fetch is in flight at
 //  a time (P8): what is asked meanwhile — events, actions' refreshes — is answered by the
 //  fetch after it, so a burst costs two fetches, not one each, and an older reply can never
-//  land over a newer list.
+//  land over a newer list — nor over a state patched while it was out.
 //
 
 import Foundation
@@ -34,6 +34,11 @@ public final class VMStore: ObservableObject {
 	private var fetchID = 0
 	private(set) var asked = 0
 	private var answered = 0
+	// States patched while the fetch in flight was out: its list may have been read before
+	// them, so they are laid over it, and the follow-up they asked for is the authority. A
+	// list that put an older state back flipped the VM for a round trip, toasting each flip
+	// (review F6).
+	private var patchedDuringFetch: [String: VMState] = [:]
 
 	public init(retryDelays: [Duration] = RetryBackoff.standardDelays) {
 		backoff = RetryBackoff(delays: retryDelays)
@@ -64,6 +69,7 @@ public final class VMStore: ObservableObject {
 		fetch?.cancel()
 		fetch = nil
 		fetchID += 1
+		patchedDuringFetch = [:]
 		api = nil
 	}
 
@@ -88,6 +94,7 @@ public final class VMStore: ObservableObject {
 		fetchID += 1
 		let id = fetchID
 		let covers = asked
+		patchedDuringFetch = [:]
 		fetch = Task { [weak self] in
 			await self?.fetchList(from: api, answering: covers)
 			guard let self, self.fetchID == id else { return }
@@ -111,7 +118,11 @@ public final class VMStore: ObservableObject {
 		}
 		guard self.api === api else { return }
 		answered = max(answered, covers)
-		vms = list
+		var landed = list
+		for index in landed.indices {
+			if let state = patchedDuringFetch[landed[index].name] { landed[index].state = state }
+		}
+		vms = landed
 		listProblem = nil
 		if capabilities == nil, let caps = try? await api.hostCapabilities(),
 			self.api === api {
@@ -155,8 +166,12 @@ public final class VMStore: ObservableObject {
 			if let index = vms.firstIndex(where: { $0.name == name }) {
 				vms[index].state = state
 			}
-			// The list in flight may predate this change: the fetch after it reads it again.
-			if fetch != nil { asked += 1 }
+			// The list in flight may predate this change: it lands with the patch laid over
+			// it, and the fetch after it reads the state again.
+			if fetch != nil {
+				asked += 1
+				patchedDuringFetch[name] = state
+			}
 		case .listChanged:
 			requestReload()
 		default:

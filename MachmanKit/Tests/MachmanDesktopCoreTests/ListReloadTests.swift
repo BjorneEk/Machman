@@ -72,4 +72,40 @@ struct ListReloadTests {
 		await first.value
 		#expect(h.store.vms.contains { $0.name == "Newcomer" })
 	}
+
+	// A fetch read Debian running; Debian stopped before its reply came. Its older list put
+	// "running" back over the patch until the follow-up fetch landed: the state flipped for
+	// one round trip and each flip toasted (review F6).
+	@Test("P8: a state change during a fetch is never undone by its list")
+	func aPatchOutlivesTheFetchItOvertook() async throws {
+		let h = await DesktopHarness.make()
+		h.viewModel.toastLifetimeOverride = .seconds(60)
+		let gate = ReplyGate()
+		var calls = 0
+		h.stub.pause = { method in
+			guard method == "listVMs" else { return }
+			calls += 1
+			if calls == 1 { await gate.wait() }   // the fetch that read Debian running
+		}
+		var states: [VMState] = []
+		let watch = h.store.$vms.sink { list in
+			if let state = list.first(where: { $0.name == "Debian" })?.state {
+				states.append(state)
+			}
+		}
+		let before = fetches(h)
+		h.stub.emit(.listChanged)
+		#expect(await eventually { gate.held == 1 })
+		h.stub.vms["Debian"]?.state = .stopped
+		h.stub.emit(.stateChanged(vm: "Debian", state: .stopped))
+		#expect(await eventually { h.store.vms.first { $0.name == "Debian" }?.state == .stopped })
+		gate.open()
+		#expect(await eventually { fetches(h) == before + 2 })   // the fetch and its follow-up
+		try await Task.sleep(for: .milliseconds(100))
+		watch.cancel()
+		let stopped = try #require(states.firstIndex(of: .stopped))
+		#expect(!states[stopped...].contains(.running), "\(states)")
+		#expect(h.viewModel.toasts.filter { $0.message == "Debian stopped" }.count == 1)
+		#expect(!h.viewModel.toasts.contains { $0.message == "Debian started" })
+	}
 }
