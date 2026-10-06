@@ -191,7 +191,7 @@ private struct VMPickerRow: View {
 			}
 			.buttonStyle(.plain)
 			Menu {
-				quickActions
+				VMPickerQuickActions(viewModel: viewModel, vm: vm, dismiss: dismiss)
 			} label: {
 				Image(systemName: MachmanSymbols.more)
 					.font(.system(size: 11))
@@ -210,10 +210,17 @@ private struct VMPickerRow: View {
 			: Color.primary.opacity(hovering ? MachmanColors.hoverOverlay : 0)))
 		.onHover { hovering = $0 }
 	}
+}
 
-	// Start follows the VM's start policy; Start Safe overrides only safety (decision 7).
-	@ViewBuilder
-	private var quickActions: some View {
+// A picker row's ⋯ menu, apart from the row so a test can lay it out (Q21). State
+// alternates (Start ↔ Shut Down) stay hidden; stop-first actions show dimmed with the reason
+// (P14). Start follows the VM's start policy; Start Safe overrides only safety (decision 7).
+struct VMPickerQuickActions: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let vm: VMInfo
+	let dismiss: () -> Void
+
+	var body: some View {
 		if viewModel.canStart(vm) {
 			Button("Start") { viewModel.startPolicyDriven(vm) }
 			Button("Start Safe") { viewModel.startPolicyDriven(vm, .safe) }

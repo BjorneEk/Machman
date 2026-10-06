@@ -173,6 +173,42 @@ struct SheetSettingsTests {
 		}
 	}
 
+	// A row's ⋯ menu laid out as views (its content reaches no tree until it opens).
+	private func quickActions(_ h: UIHarness, _ vm: String) async throws -> AXSnapshot {
+		try await h.snapshot(VStack {
+			VMPickerQuickActions(viewModel: h.viewModel, vm: h.vm(vm), dismiss: {})
+		})
+	}
+
+	@Test("W2-18: a running VM's picker ⋯ menu shows Delete… dimmed with the reason")
+	func aRunningVMsPickerMenuDimsDelete() async throws {
+		let h = await UIHarness.make(select: "Debian")
+		let menu = try await quickActions(h, "Debian")
+		let delete = try #require(menu.find(role: "AXButton", text: "Delete\u{2026}"),
+			"\(menu.dump())")
+		#expect(!delete.isEnabled)
+		#expect(delete.help == "Stop the VM to delete it")
+		#expect(menu.find(role: "AXButton", text: "Shut Down")?.isEnabled == true)
+		#expect(menu.find(role: "AXButton", text: "Start") == nil)
+		let stopped = try await quickActions(h, "Alpine")
+		#expect(stopped.find(role: "AXButton", text: "Delete\u{2026}")?.isEnabled == true)
+		#expect(stopped.find(role: "AXButton", text: "Start")?.isEnabled == true)
+	}
+
+	@Test("R3W2-8: an unreached VM's picker ⋯ menu offers Shut Down and Force Stop but no Start")
+	func anUnreachedVMsPickerMenuWaits() async throws {
+		let h = await UIHarness.make([Samples.unreached()])
+		let menu = try await quickActions(h, "Debian")
+		#expect(menu.find(role: "AXButton", text: "Shut Down")?.isEnabled == true,
+			"\(menu.dump())")
+		#expect(menu.find(role: "AXButton", text: "Force Stop")?.isEnabled == true)
+		#expect(menu.find(role: "AXButton", text: "Start") == nil)
+		#expect(menu.find(role: "AXButton", text: "Start Safe") == nil)
+		let delete = try #require(menu.find(role: "AXButton", text: "Delete\u{2026}"))
+		#expect(!delete.isEnabled)
+		#expect(delete.help == VMInfo.unreachedHelp)
+	}
+
 	@Test("W4-10: Settings ▸ Terminal's profile buttons read their names")
 	func profileButtonsReadTheirNames() async throws {
 		let h = await UIHarness.make()
