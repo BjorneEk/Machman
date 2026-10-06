@@ -56,12 +56,14 @@ enum LabProcesses {
 	}
 
 	static func waitForExit(_ pid: pid_t, timeout: Duration) async -> Bool {
-		let deadline = ContinuousClock.now + timeout
-		while isAlive(pid) {
-			if ContinuousClock.now >= deadline { return false }
-			try? await Task.sleep(for: .milliseconds(100))
+		return await LabStep.run("waiting ≤\(LabStep.format(timeout)) for pid \(pid) to exit") {
+			let deadline = ContinuousClock.now + timeout
+			while isAlive(pid) {
+				if ContinuousClock.now >= deadline { return false }
+				try? await Task.sleep(for: .milliseconds(100))
+			}
+			return true
 		}
-		return true
 	}
 
 	static func signal(_ pid: pid_t, _ sig: Int32) {

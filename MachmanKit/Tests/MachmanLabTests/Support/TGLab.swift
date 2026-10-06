@@ -90,12 +90,18 @@ enum TG {
 	static func waitForBytes(
 		_ path: String, offset: UInt64, _ text: String, timeout: Duration = .seconds(10)
 	) async -> Bool {
-		let expected = Data(text.utf8)
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			if (try? bytes(path, offset: offset, count: expected.count)) == expected { return true }
-			if ContinuousClock.now >= deadline { return false }
-			try? await Task.sleep(for: .milliseconds(200))
+		let file = (path as NSString).lastPathComponent
+		return await LabStep.run(
+			"waiting ≤\(LabStep.format(timeout)) for \(text.count) bytes at \(offset) of \(file)"
+		) {
+			let expected = Data(text.utf8)
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				let found = try? bytes(path, offset: offset, count: expected.count)
+				if found == expected { return true }
+				if ContinuousClock.now >= deadline { return false }
+				try? await Task.sleep(for: .milliseconds(200))
+			}
 		}
 	}
 
@@ -221,11 +227,16 @@ enum TG {
 	static func waitForSocket(
 		_ path: String, live: Bool = true, timeout: Duration = .seconds(30)
 	) async -> Bool {
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			if await isSocketLive(path) == live { return true }
-			if ContinuousClock.now >= deadline { return false }
-			try? await Task.sleep(for: .milliseconds(200))
+		let socket = (path as NSString).lastPathComponent
+		return await LabStep.run(
+			"waiting ≤\(LabStep.format(timeout)) for \(socket) to \(live ? "accept" : "close")"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				if await isSocketLive(path) == live { return true }
+				if ContinuousClock.now >= deadline { return false }
+				try? await Task.sleep(for: .milliseconds(200))
+			}
 		}
 	}
 
@@ -244,13 +255,16 @@ enum TG {
 
 	/// Polls an async condition until it holds, `timeout` at most; returns the last answer.
 	static func until(
-		timeout: Duration = .seconds(20), _ condition: () async -> Bool
+		_ what: String = "a condition", timeout: Duration = .seconds(20),
+		_ condition: () async -> Bool
 	) async -> Bool {
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			if await condition() { return true }
-			if ContinuousClock.now >= deadline { return false }
-			try? await Task.sleep(for: .milliseconds(250))
+		return await LabStep.run("waiting ≤\(LabStep.format(timeout)) for \(what)") {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				if await condition() { return true }
+				if ContinuousClock.now >= deadline { return false }
+				try? await Task.sleep(for: .milliseconds(250))
+			}
 		}
 	}
 

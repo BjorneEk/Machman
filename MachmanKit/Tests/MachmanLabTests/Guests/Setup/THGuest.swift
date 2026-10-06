@@ -83,18 +83,24 @@ extension THGuest {
 	@discardableResult
 	func waitForReport(newerThan since: Date?, timeout: Duration = .seconds(60)) async throws
 		-> GuestSetupInfo {
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			if let setup = try await vm.info().setup, let at = setup.lastReportAt,
-				since.map({ at > $0 }) ?? true {
-				return setup
+		return try await LabStep.run(
+			"\(vm.name): waiting ≤\(LabStep.format(timeout)) for a setup report"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				if let setup = try await vm.info().setup, let at = setup.lastReportAt,
+					since.map({ at > $0 }) ?? true {
+					return setup
+				}
+				if ContinuousClock.now >= deadline {
+					let last = try await vm.info().setup?.lastReportAt
+					throw LabError.stateTimeout(
+						vm: vm.name,
+						wanted: "a report newer than \(since.map { "\($0)" } ?? "none")",
+						last: "\(last.map { "\($0)" } ?? "none")")
+				}
+				try await Task.sleep(for: .milliseconds(500))
 			}
-			if ContinuousClock.now >= deadline {
-				throw LabError.stateTimeout(
-					vm: vm.name, wanted: "a report newer than \(since.map { "\($0)" } ?? "none")",
-					last: "\(try await vm.info().setup?.lastReportAt.map { "\($0)" } ?? "none")")
-			}
-			try await Task.sleep(for: .milliseconds(500))
 		}
 	}
 
@@ -112,14 +118,18 @@ extension THGuest {
 	func waitForInfo(
 		_ what: String, timeout: Duration = .seconds(60), _ condition: (VMInfo) -> Bool
 	) async throws -> VMInfo {
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			let info = try await vm.info()
-			if condition(info) { return info }
-			if ContinuousClock.now >= deadline {
-				throw LabError.stateTimeout(vm: vm.name, wanted: what, last: "not yet")
+		return try await LabStep.run(
+			"\(vm.name): waiting ≤\(LabStep.format(timeout)) for \(what)"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				let info = try await vm.info()
+				if condition(info) { return info }
+				if ContinuousClock.now >= deadline {
+					throw LabError.stateTimeout(vm: vm.name, wanted: what, last: "not yet")
+				}
+				try await Task.sleep(for: .milliseconds(500))
 			}
-			try await Task.sleep(for: .milliseconds(500))
 		}
 	}
 
@@ -133,33 +143,39 @@ extension THGuest {
 	/// long enough for the vmhost's 2 s poll to ingest it.
 	func waitForReportFile(newerThan since: Date?, timeout: Duration = .seconds(360))
 		async throws {
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			if let now = reportFileDate(), since.map({ now > $0 }) ?? true { break }
-			if ContinuousClock.now >= deadline {
-				throw LabError.stateTimeout(
-					vm: vm.name, wanted: "report.env written again",
-					last: "\(String(describing: since))")
+		try await LabStep.run("\(vm.name): waiting ≤\(LabStep.format(timeout)) for report.env") {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				if let now = reportFileDate(), since.map({ now > $0 }) ?? true { break }
+				if ContinuousClock.now >= deadline {
+					throw LabError.stateTimeout(
+						vm: vm.name, wanted: "report.env written again",
+						last: "\(String(describing: since))")
+				}
+				try await Task.sleep(for: .milliseconds(500))
 			}
-			try await Task.sleep(for: .milliseconds(500))
+			try await Task.sleep(for: .seconds(5))
 		}
-		try await Task.sleep(for: .seconds(5))
 	}
 
 	/// Approves the guest's reverse key once its report offered one (as the inspector's
 	/// button does: there is nothing to approve before).
 	func approveReverse(timeout: Duration = .seconds(60)) async throws {
-		let deadline = ContinuousClock.now + timeout
-		while try await vm.info().ssh?.reverseState != .pending {
-			if ContinuousClock.now >= deadline {
-				throw LabError.stateTimeout(
-					vm: vm.name, wanted: "a reverse key to approve",
-					last: "\(try await vm.info().ssh?.reverseState.rawValue ?? "none")")
+		try await LabStep.run(
+			"\(vm.name): waiting ≤\(LabStep.format(timeout)) for a reverse key to approve"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			while try await vm.info().ssh?.reverseState != .pending {
+				if ContinuousClock.now >= deadline {
+					throw LabError.stateTimeout(
+						vm: vm.name, wanted: "a reverse key to approve",
+						last: "\(try await vm.info().ssh?.reverseState.rawValue ?? "none")")
+				}
+				try await Task.sleep(for: .milliseconds(500))
 			}
-			try await Task.sleep(for: .milliseconds(500))
+			_ = try await agent.api.setSSH(
+				vm: vm.name, integrationEnabled: nil, reverseApproved: true, alias: nil)
 		}
-		_ = try await agent.api.setSSH(
-			vm: vm.name, integrationEnabled: nil, reverseApproved: true, alias: nil)
 	}
 }
 

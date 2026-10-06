@@ -27,7 +27,8 @@ enum LabLog {
 		return size?.uint64Value ?? 0
 	}
 
-	/// Every complete line (ending in a newline) after `mark` that decodes.
+	/// Every complete line (ending in a newline) after `mark` that decodes, but LabStep's
+	/// narrations: they quote the patterns their waits look for.
 	static func entries(after mark: UInt64 = 0, path: String = Lab.logPath) -> [Entry] {
 		guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
 		defer { try? handle.close() }
@@ -37,7 +38,7 @@ enum LabLog {
 		let decoder = JSONDecoder()
 		return data[data.startIndex...end].split(separator: UInt8(ascii: "\n")).compactMap {
 			try? decoder.decode(Entry.self, from: Data($0))
-		}
+		}.filter { !$0.eventMessage.contains(LabStep.marker) }
 	}
 
 	static func count(_ pattern: String, after: UInt64 = 0, path: String = Lab.logPath) -> Int {
@@ -53,17 +54,22 @@ enum LabLog {
 		_ pattern: String, after: UInt64 = 0, process: String? = nil,
 		timeout: Duration = .seconds(20), path: String = Lab.logPath
 	) async throws -> Entry {
-		let regex = try NSRegularExpression(pattern: pattern)
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			let hit = entries(after: after, path: path).first { entry in
-				let range = NSRange(entry.eventMessage.startIndex..., in: entry.eventMessage)
-				return regex.firstMatch(in: entry.eventMessage, range: range) != nil
-					&& (process == nil || entry.process == process)
+		let from = process.map { " from \($0)" } ?? ""
+		return try await LabStep.run(
+			"log: waiting ≤\(LabStep.format(timeout)) for /\(pattern)/\(from)"
+		) {
+			let regex = try NSRegularExpression(pattern: pattern)
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				let hit = entries(after: after, path: path).first { entry in
+					let range = NSRange(entry.eventMessage.startIndex..., in: entry.eventMessage)
+					return regex.firstMatch(in: entry.eventMessage, range: range) != nil
+						&& (process == nil || entry.process == process)
+				}
+				if let hit { return hit }
+				if ContinuousClock.now >= deadline { throw LabError.logTimeout(pattern: pattern) }
+				try await Task.sleep(for: .milliseconds(200))
 			}
-			if let hit { return hit }
-			if ContinuousClock.now >= deadline { throw LabError.logTimeout(pattern: pattern) }
-			try await Task.sleep(for: .milliseconds(200))
 		}
 	}
 }

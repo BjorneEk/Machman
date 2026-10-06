@@ -15,11 +15,13 @@ enum TFWait {
 		_ what: String, timeout: Duration, every: Duration = .milliseconds(200),
 		_ check: () async throws -> Bool
 	) async throws {
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			if try await check() { return }
-			if ContinuousClock.now >= deadline { throw TFError.timeout(what) }
-			try await Task.sleep(for: every)
+		try await LabStep.run("waiting ≤\(LabStep.format(timeout)) for \(what)") {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				if try await check() { return }
+				if ContinuousClock.now >= deadline { throw TFError.timeout(what) }
+				try await Task.sleep(for: every)
+			}
 		}
 	}
 
@@ -29,18 +31,22 @@ enum TFWait {
 		_ api: MachmanControlling, _ name: String, _ what: String, timeout: Duration,
 		every: Duration = .milliseconds(200), _ match: (VMInfo) -> Bool
 	) async throws -> VMInfo {
-		let deadline = ContinuousClock.now + timeout
-		var last = "not listed"
-		while true {
-			if let info = try await api.listVMs().first(where: { $0.name == name }) {
-				if match(info) { return info }
-				let stalled = info.unresponsive.map(String.init) ?? "nil"
-				last = "\(info.state.rawValue), unresponsive \(stalled)"
+		return try await LabStep.run(
+			"waiting ≤\(LabStep.format(timeout)) for \(name) to be \(what)"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			var last = "not listed"
+			while true {
+				if let info = try await api.listVMs().first(where: { $0.name == name }) {
+					if match(info) { return info }
+					let stalled = info.unresponsive.map(String.init) ?? "nil"
+					last = "\(info.state.rawValue), unresponsive \(stalled)"
+				}
+				if ContinuousClock.now >= deadline {
+					throw TFError.timeout("\(name) to be \(what) (last \(last))")
+				}
+				try await Task.sleep(for: every)
 			}
-			if ContinuousClock.now >= deadline {
-				throw TFError.timeout("\(name) to be \(what) (last \(last))")
-			}
-			try await Task.sleep(for: every)
 		}
 	}
 

@@ -90,19 +90,23 @@ final class THVM: @unchecked Sendable {
 	}
 
 	func waitForState(_ wanted: VMState, timeout: Duration) async throws {
-		let deadline = ContinuousClock.now + timeout
-		var last = "unknown"
-		while true {
-			let state = try await info().state
-			last = state.rawValue
-			if state == wanted { return }
-			if state == .error {
-				throw LabError.stateTimeout(vm: name, wanted: wanted.rawValue, last: "error")
+		try await LabStep.run(
+			"\(name): waiting ≤\(LabStep.format(timeout)) for \(wanted.rawValue)"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			var last = "unknown"
+			while true {
+				let state = try await info().state
+				last = state.rawValue
+				if state == wanted { return }
+				if state == .error {
+					throw LabError.stateTimeout(vm: name, wanted: wanted.rawValue, last: "error")
+				}
+				if ContinuousClock.now >= deadline {
+					throw LabError.stateTimeout(vm: name, wanted: wanted.rawValue, last: last)
+				}
+				try await Task.sleep(for: .milliseconds(250))
 			}
-			if ContinuousClock.now >= deadline {
-				throw LabError.stateTimeout(vm: name, wanted: wanted.rawValue, last: last)
-			}
-			try await Task.sleep(for: .milliseconds(250))
 		}
 	}
 

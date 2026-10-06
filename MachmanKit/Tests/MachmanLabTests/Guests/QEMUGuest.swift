@@ -70,25 +70,27 @@ struct QEMUGuest: Sendable {
 	/// Reboots over ssh, waits for ssh to drop and come back, and puts the default route
 	/// back on the lab gateway.
 	func reboot() async throws {
-		_ = try await ssh(
-			"\(guest.os == "freebsd" ? "doas " : "")sh -c "
-				+ "'nohup sh -c \"sleep 1; reboot\" >/dev/null 2>&1 </dev/null &'")
-		let down = ContinuousClock.now + .seconds(60)
-		while (try? await ssh("true", timeout: 15))?.status == 0 {
-			if ContinuousClock.now >= down {
-				throw LabError.stateTimeout(vm: name, wanted: "rebooting", last: "up")
+		try await LabStep.run("\(name): rebooting over ssh") {
+			_ = try await ssh(
+				"\(guest.os == "freebsd" ? "doas " : "")sh -c "
+					+ "'nohup sh -c \"sleep 1; reboot\" >/dev/null 2>&1 </dev/null &'")
+			let down = ContinuousClock.now + .seconds(60)
+			while (try? await ssh("true", timeout: 15))?.status == 0 {
+				if ContinuousClock.now >= down {
+					throw LabError.stateTimeout(vm: name, wanted: "rebooting", last: "up")
+				}
+				try await Task.sleep(for: .seconds(2))
 			}
-			try await Task.sleep(for: .seconds(2))
-		}
-		let up = ContinuousClock.now + .seconds(180)
-		while (try? await ssh("true", timeout: 15))?.status != 0 {
-			if ContinuousClock.now >= up {
-				throw LabError.stateTimeout(vm: name, wanted: "ssh", last: "down")
+			let up = ContinuousClock.now + .seconds(180)
+			while (try? await ssh("true", timeout: 15))?.status != 0 {
+				if ContinuousClock.now >= up {
+					throw LabError.stateTimeout(vm: name, wanted: "ssh", last: "down")
+				}
+				try await Task.sleep(for: .seconds(2))
 			}
-			try await Task.sleep(for: .seconds(2))
+			let route = try await LabScripts.check(LabScripts.guest(os: guest.os), ["lab-route"])
+			try await sshCheck(LabScripts.lastLine(route))
 		}
-		let route = try await LabScripts.check(LabScripts.guest(os: guest.os), ["lab-route"])
-		try await sshCheck(LabScripts.lastLine(route))
 	}
 
 	/// Powers the guest off (QMP, then signals) and drops its disk clone.

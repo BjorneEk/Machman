@@ -36,11 +36,16 @@ enum LabScripts {
 		_ script: String, _ arguments: [String], timeout: TimeInterval = 600,
 		environment extra: [String: String] = [:]
 	) async throws -> Subprocess.Result {
-		var env = environment
-		for (key, value) in extra { env[key] = value }
-		let shell = script == guestRegress ? "/bin/sh" : "/bin/bash"
-		return try await Subprocess.run(
-			shell, [script] + arguments, environment: env, timeout: timeout)
+		let named = script.replacingOccurrences(of: repo + "/", with: "")
+		return try await LabStep.run(
+			"running \(named) \(arguments.joined(separator: " ").prefix(80))"
+		) {
+			var env = environment
+			for (key, value) in extra { env[key] = value }
+			let shell = script == guestRegress ? "/bin/sh" : "/bin/bash"
+			return try await Subprocess.run(
+				shell, [script] + arguments, environment: env, timeout: timeout)
+		}
 	}
 
 	/// run, but a non-zero exit throws with the script's output; returns stdout+stderr.

@@ -46,16 +46,20 @@ final class LabConsole: @unchecked Sendable {
 		let dir = Lab.runDir.isEmpty ? TestEnvironment.scratch : Lab.transcriptsDir + "/"
 		try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		let transcriptPath = dir + name + ".log"
-		let deadline = ContinuousClock.now + timeout
-		while true {
-			let fd = await offPool { connectOnce(path) }
-			if fd >= 0 {
-				return LabConsole(path: path, fd: fd, transcriptPath: transcriptPath)
+		return try await LabStep.run(
+			"\(name): waiting ≤\(LabStep.format(timeout)) for its console socket"
+		) {
+			let deadline = ContinuousClock.now + timeout
+			while true {
+				let fd = await offPool { connectOnce(path) }
+				if fd >= 0 {
+					return LabConsole(path: path, fd: fd, transcriptPath: transcriptPath)
+				}
+				if ContinuousClock.now >= deadline {
+					throw LabError.consoleUnavailable("nothing serves \(path)")
+				}
+				try await Task.sleep(for: .milliseconds(250))
 			}
-			if ContinuousClock.now >= deadline {
-				throw LabError.consoleUnavailable("nothing serves \(path)")
-			}
-			try await Task.sleep(for: .milliseconds(250))
 		}
 	}
 
@@ -133,6 +137,17 @@ final class LabConsole: @unchecked Sendable {
 		return String((text + clean(String(decoding: pending, as: UTF8.self))).suffix(2000))
 	}
 
+	/// The transcript's name ("01-r1-hvc2"): what narrations call this console.
+	var name: String {
+		((transcriptPath as NSString).lastPathComponent as NSString).deletingPathExtension
+	}
+
+	/// The last non-empty line of what arrived and nobody matched yet.
+	var lastLine: String? {
+		tail.split(whereSeparator: \.isNewline).last { !$0.allSatisfy(\.isWhitespace) }
+			.map(String.init)
+	}
+
 	private func clean(_ raw: String) -> String {
 		var result = raw.replacingOccurrences(of: "\r", with: "")
 		let range = NSRange(result.startIndex..., in: result)
@@ -153,10 +168,21 @@ final class LabConsole: @unchecked Sendable {
 	private func consume(rest: String) { lock.withLock { text = rest } }
 
 	/// Waits for `pattern` (anchorsMatchLines) and returns group 0 and the captures, with ""
-	/// for a group that took no part. Output before the match is consumed with it.
+	/// for a group that took no part. Output before the match is consumed with it. A wait
+	/// that runs long is narrated in the lab log as `step` (else as the pattern).
 	@discardableResult
-	func expect(_ pattern: String, timeout: Duration = .seconds(30)) async throws -> [String] {
+	func expect(
+		_ pattern: String, timeout: Duration = .seconds(30), step: String? = nil
+	) async throws -> [String] {
 		let regex = try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+		let what = step ?? "waiting ≤\(LabStep.format(timeout)) for /\(pattern)/"
+		return try await LabStep.run("\(name): \(what)", seen: { [weak self] in self?.lastLine }) {
+			try await poll(regex, timeout: timeout)
+		}
+	}
+
+	private func poll(_ regex: NSRegularExpression, timeout: Duration) async throws -> [String] {
+		let pattern = regex.pattern
 		let deadline = ContinuousClock.now + timeout
 		while true {
 			let (snapshot, isClosed) = drain()
@@ -187,7 +213,9 @@ final class LabConsole: @unchecked Sendable {
 		seq += 1
 		let n = seq
 		try send("\(command); echo 'LAB''\(n)X' $?")
-		let groups = try await expect("\\A(?s:(.*?))LAB\(n)X (\\d+)\\n", timeout: timeout)
+		let groups = try await expect(
+			"\\A(?s:(.*?))LAB\(n)X (\\d+)\\n", timeout: timeout,
+			step: "running `\(command.prefix(80))` (≤\(LabStep.format(timeout)))")
 		var lines = groups[1].split(separator: "\n", omittingEmptySubsequences: false)
 			.map(String.init)
 		if let echoed = lines.lastIndex(where: { $0.contains("\(n)X' $?") }) {
