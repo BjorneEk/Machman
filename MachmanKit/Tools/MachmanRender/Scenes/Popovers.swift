@@ -124,6 +124,12 @@ enum PopoverScenes {
 		RenderScene("popover.vm-picker", "VMPickerPopover, every row state") { ctx in
 			AnyView(VMPickerPopover(viewModel: ctx.viewModel))
 		},
+		// H49 (C10): “i” typed, ↓ pressed twice: Sequoia is the row Return opens.
+		RenderScene(
+			"popover.vm-picker.highlight", "VMPickerPopover, “i” typed and Sequoia highlighted"
+		) { ctx in
+			AnyView(VMPickerPopover(viewModel: ctx.viewModel, query: "i", highlight: "Sequoia"))
+		},
 		RenderScene("popover.vm-picker.templates", "VMPickerPopover's New VM templates") { ctx in
 			AnyView(VMPickerPopover(viewModel: ctx.viewModel, templates: true))
 		},

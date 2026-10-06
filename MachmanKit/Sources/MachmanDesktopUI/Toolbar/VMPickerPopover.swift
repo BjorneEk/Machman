@@ -17,16 +17,24 @@ import MachmanDesktopCore
 struct VMPickerPopover: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@Environment(\.dismiss) private var dismiss
-	@State private var query = ""
+	@State private var query: String
 	@State private var page: Page
+	// Return and ↑/↓ in the search field (H49, C10).
+	@State private var keys: VMPickerKeys
 
 	private enum Page { case list, templates, macSource }
 
 	// `templates` opens straight on the New VM template chooser, `macSource` on the macOS
-	// template's install-source page (render scenes).
-	init(viewModel: VMListViewModel, templates: Bool = false, macSource: Bool = false) {
+	// template's install-source page; `query` and `highlight` open the list filtered, with a
+	// row highlighted as the arrow keys leave it (render scenes).
+	init(
+		viewModel: VMListViewModel, templates: Bool = false, macSource: Bool = false,
+		query: String = "", highlight: String? = nil
+	) {
 		self.viewModel = viewModel
 		_page = State(initialValue: macSource ? .macSource : templates ? .templates : .list)
+		_query = State(initialValue: query)
+		_keys = State(initialValue: VMPickerKeys(highlighted: highlight))
 	}
 
 	private var filtered: [VMInfo] {
@@ -76,6 +84,14 @@ struct VMPickerPopover: View {
 		withAnimation(.snappy(duration: 0.18)) { page = next }
 	}
 
+	private var matches: [String] { filtered.map(\.name) }
+
+	private func open(_ name: String?) {
+		guard let name else { return }
+		viewModel.select(name: name)
+		dismiss()
+	}
+
 	private var pickerList: some View {
 		VStack(spacing: 0) {
 			HStack(spacing: 5) {
@@ -84,24 +100,44 @@ struct VMPickerPopover: View {
 					.foregroundStyle(.secondary)
 				TextField("Find a VM", text: $query)
 					.textFieldStyle(.plain)
+					.onSubmit { open(keys.pick(in: matches)) }
+					.onKeyPress(.downArrow) {
+						keys.move(1, in: matches)
+						return .handled
+					}
+					.onKeyPress(.upArrow) {
+						keys.move(-1, in: matches)
+						return .handled
+					}
+					.onChange(of: query) { keys.queryChanged(query, matches: matches) }
 			}
 			.padding(8)
 			Divider()
-			ScrollView {
-				VStack(spacing: 1) {
-					ForEach(filtered) { vm in
-						VMPickerRow(viewModel: viewModel, vm: vm) { dismiss() }
+			ScrollViewReader { scroller in
+				ScrollView {
+					VStack(spacing: 1) {
+						ForEach(filtered) { vm in
+							VMPickerRow(
+								viewModel: viewModel, vm: vm,
+								highlighted: keys.highlighted == vm.name
+							) { dismiss() }
+							.id(vm.name)
+						}
+						if filtered.isEmpty {
+							Text(viewModel.vms.isEmpty
+								? "No VMs yet" : "No VMs match “\(query)”")
+								.font(.callout)
+								.foregroundStyle(.secondary)
+								.padding(12)
+						}
 					}
-					if filtered.isEmpty {
-						Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VMs match “\(query)”")
-							.font(.callout)
-							.foregroundStyle(.secondary)
-							.padding(12)
-					}
+					.padding(4)
 				}
-				.padding(4)
+				.frame(maxHeight: 300)
+				.onChange(of: keys.highlighted) { _, name in
+					if let name { scroller.scrollTo(name) }
+				}
 			}
-			.frame(maxHeight: 300)
 			Divider()
 			Button {
 				show(.templates)
@@ -121,6 +157,8 @@ struct VMPickerPopover: View {
 private struct VMPickerRow: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
+	// The row Return opens, moved by ↑/↓ (H49).
+	let highlighted: Bool
 	let dismiss: () -> Void
 	@State private var hovering = false
 
@@ -169,8 +207,9 @@ private struct VMPickerRow: View {
 		}
 		.padding(.horizontal, 8)
 		.padding(.vertical, 5)
-		.background(RoundedRectangle(cornerRadius: 6)
-			.fill(Color.primary.opacity(hovering ? MachmanColors.hoverOverlay : 0)))
+		.background(RoundedRectangle(cornerRadius: 6).fill(highlighted
+			? MachmanColors.selection.opacity(0.14)
+			: Color.primary.opacity(hovering ? MachmanColors.hoverOverlay : 0)))
 		.onHover { hovering = $0 }
 	}
 
