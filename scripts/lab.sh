@@ -394,21 +394,32 @@ lab_stop_follower() {
 	FOLLOWPID=""
 }
 
-# lab_run_shards: a parallel run's test phase. plan.py shares the suites the filter keeps out
-# longest first; one worker per shard runs them a suite at a time; the exclusive ones then run
-# alone on the first shard. Sets teststatus; records the suites' times for the next plan.
-lab_run_shards() {
-	local plan="$root/report/plan" k r history="$MACHMAN_LAB_CACHE/suite-times.json"
+# lab_plan: a parallel run's plan (report/plan/): the lab's tests listed in the first shard's
+# sandbox (the test guard wants one), the suites the filter keeps shared out longest first by
+# plan.py, the exclusive ones apart; jobs drops to the number of shared suites (1: serial).
+lab_plan() {
+	local plan="$root/report/plan" shared
 	mkdir -p "$plan"
-	if ! sandbox_awake swift test list --skip-build --disable-xctest --package-path "$pkg" \
-		> "$plan/list.txt" 2> "$plan/list.err"; then
-		echo "lab.sh: swift test list failed:"
-		tail -n 20 "$plan/list.err"
-		teststatus=1
+	if ! MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$root/data" CFFIXED_USER_HOME="$root/home" \
+		MACHMAN_LAB_RUN="$root" swift test list --skip-build --disable-xctest \
+		--package-path "$pkg" > "$plan/list.txt" 2> "$plan/list.err"; then
+		echo "lab: one shard (swift test list failed: $(tail -n 1 "$plan/list.err"))"
+		jobs=1
 		return 0
 	fi
 	python3 "$repo/scripts/lab/plan.py" --list "$plan/list.txt" ${filter:+--filter "$filter"} \
-		--history "$history" --exclusive "$repo/scripts/lab/exclusive-suites.txt" --out "$plan"
+		--history "$MACHMAN_LAB_CACHE/suite-times.json" \
+		--exclusive "$repo/scripts/lab/exclusive-suites.txt" --out "$plan"
+	shared="$(wc -l < "$plan/queue" | tr -d ' ')"
+	((shared < jobs)) && jobs=$((shared > 1 ? shared : 1))
+	return 0
+}
+
+# lab_run_shards: a parallel run's test phase, on lab_plan's plan: one worker per shard runs
+# the shared suites a suite at a time; the exclusive ones then run alone on the first shard.
+# Sets teststatus; records the suites' times for the next plan.
+lab_run_shards() {
+	local plan="$root/report/plan" k r history="$MACHMAN_LAB_CACHE/suite-times.json"
 	echo "lab: $(wc -l < "$plan/queue" | tr -d ' ') suites shared by $jobs shards," \
 		"$(wc -l < "$plan/serial" | tr -d ' ') alone after them"
 	: > "$root/report/suite-runs.tsv"
@@ -522,6 +533,8 @@ lab_run() {
 	fi
 	mkdir -p "$root"/{pids,logs,transcripts,scopes,report}
 	echo '{}' > "$root/answers.json"
+	# A parallel run plans first: never more shards than suites to share out.
+	((jobs > 1)) && lab_plan
 	# A parallel run's other shards: their own sandboxes, made before the snapshot names them.
 	local k tokenargs=(--token "$token") shardroot
 	for ((k = 1; k < jobs; k++)); do
