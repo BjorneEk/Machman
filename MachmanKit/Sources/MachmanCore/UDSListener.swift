@@ -313,6 +313,27 @@ struct BoundSocket {
 		throw UDSError.alreadyRunning(path)
 	}
 
+	// What a sweep of a socket file found (review F13).
+	enum Leftover: Equatable {
+		case removed   // dead, and gone now
+		case live      // something serves it: it stays
+		case absent
+	}
+
+	// Removes the socket file at `path` if it is dead — never a live one — in turn with any
+	// starter of the path (review F13): between a probe and its unlink a vmhost could clear
+	// the leftover and publish its live socket there, which the unlink then removed.
+	static func removeIfDead(_ path: String) -> Leftover {
+		let found = try? whileStarting(path) { () -> Leftover in
+			guard FileManager.default.fileExists(atPath: path) else { return .absent }
+			guard !UDSListener.isLive(path: path) else { return .live }
+			SocketStartHooks.leftoverProbed(path)
+			unlink(path)
+			return .removed
+		}
+		return found ?? .absent
+	}
+
 	// A dead leftover at `path` goes; a live socket there is another process serving it.
 	private static func clearLeftover(at path: String) throws {
 		guard FileManager.default.fileExists(atPath: path) else { return }

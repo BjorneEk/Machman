@@ -134,7 +134,7 @@ struct SocketPublishTests {
 				second.finished.leave()
 			}
 			// Before the fix the second starter is done well within this; now it waits.
-			_ = second.finished.wait(timeout: .now() + .seconds(2))
+			_ = second.finished.wait(timeout: .now() + .seconds(1))
 		}
 		defer { SocketStartHooks.setLeftoverProbed(path, nil) }
 		let first = await offPool {
@@ -146,5 +146,45 @@ struct SocketPublishTests {
 		#expect(serving.count == 1, "\(serving.count) starters serve one path")
 		#expect(UDSListener.isLive(path: path))
 		serving.forEach { $0.shutdown() }
+	}
+
+	// Review F13 (wave r3w3): the agent's own sweep probed a dead vm-*.sock and unlinked it
+	// outside the starters' turn, so a vmhost that cleared the leftover and published its
+	// live socket in between lost its socket file — running, unreachable. The sweep takes
+	// the turn now. The hook stops it between its probe and its unlink and starts a vmhost's
+	// listener on the path there (it can't publish now: it waits its turn).
+	@Test("E48: the agent's sweep never removes a socket a vmhost published after its probe")
+	func theSweepNeverRemovesASocketPublishedAfterItsProbe() async throws {
+		let dir = TestEnvironment.socketPath("mm-sweep", suffix: "")
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let path = dir + "/vm-race0000.sock"
+		plantDeadSocket(path)
+		let queue = DispatchQueue(label: "mm-sweep-accept")
+		let starter = SecondStarter()
+		SocketStartHooks.setLeftoverProbed(path) {
+			let first = starter.lock.withLock { () -> Bool in
+				defer { starter.started = true }
+				return !starter.started
+			}
+			guard first else { return }
+			starter.finished.enter()
+			Thread.detachNewThread {
+				let listener = try? UDSListener(path: path, queue: queue, onAccept: { close($0) })
+				starter.lock.withLock { starter.listener = listener }
+				starter.finished.leave()
+			}
+			// Before the fix the vmhost has published well within this; now it waits.
+			_ = starter.finished.wait(timeout: .now() + .seconds(1))
+		}
+		defer { SocketStartHooks.setLeftoverProbed(path, nil) }
+		await offPool { RoutingMachman.pruneDeadHostSockets(in: dir) }
+		await offPool { starter.finished.wait() }
+		let listener = starter.lock.withLock { starter.listener }
+		#expect(starter.lock.withLock { starter.started })
+		#expect(listener != nil)
+		#expect(FileManager.default.fileExists(atPath: path), "the sweep removed a live socket")
+		#expect(UDSListener.isLive(path: path))
+		listener?.shutdown()
 	}
 }

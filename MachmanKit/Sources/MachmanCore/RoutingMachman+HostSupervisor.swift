@@ -678,10 +678,9 @@ extension RoutingMachman {
 			try? FileManager.default.removeItem(atPath: shadowRoot)
 		}
 		registry.reload(name: name)
-		// Never a live socket: a new run may already serve the path (E8).
-		if !UDSListener.isLive(path: host.identity.socketPath) {
-			unlink(host.identity.socketPath)
-		}
+		// Never a live socket: a new run may already serve the path (E8), or publish there
+		// right now — the removal waits its turn (review F13).
+		_ = BoundSocket.removeIfDead(host.identity.socketPath)
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
 		registry.events.emit(.listChanged)
 	}

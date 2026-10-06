@@ -333,12 +333,12 @@ extension RoutingMachman {
 		do {
 			host = try await connectAndAdopt(name: name, socketPath: socketPath)
 		} catch {
-			guard !UDSListener.isLive(path: socketPath) else {
-				// NEVER unlink a live socket (single-writer rule) — whoever owns it may
-				// recover; spawning over it would fork the VM's identity.
+			// NEVER unlink a live socket (single-writer rule) — whoever owns it may recover;
+			// spawning over it would fork the VM's identity. A dead one goes, in turn with a
+			// vmhost starting on the path (review F13).
+			guard BoundSocket.removeIfDead(socketPath) != .live else {
 				throw notResponding(name)
 			}
-			unlink(socketPath)
 			return false
 		}
 		guard host.identity.name == name else { throw heldSocket(name, by: host.identity.name) }

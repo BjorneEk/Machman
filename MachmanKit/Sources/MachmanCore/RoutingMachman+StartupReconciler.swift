@@ -37,12 +37,11 @@ extension RoutingMachman {
 				// Without its socket it turned invisible and unstoppable, and the next start
 				// spawned a second VZ against the same disks (E21).
 				let socketPath = hostSocketPath(for: name)
-				guard !UDSListener.isLive(path: socketPath) else {
+				guard BoundSocket.removeIfDead(socketPath) != .live else {
 					MachmanLogger.log(.passiveWarning,
 						"kept \(name)'s live vmhost socket (\(error)) — adopting it on next use")
 					continue
 				}
-				unlink(socketPath)
 			case nil:
 				break
 			}
@@ -187,15 +186,25 @@ extension RoutingMachman {
 	}
 
 	func pruneDeadHostSockets(dir: String) {
+		Self.pruneDeadHostSockets(in: dir)
+	}
+
+	// The sweep itself, on no actor. A vm-*.sock goes in turn with a vmhost starting on its
+	// path (review F13); a tty-*.sock's name carries its run's id, so no starter shares it.
+	nonisolated static func pruneDeadHostSockets(in dir: String) {
 		guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
 			return
 		}
-		let vmhostPrefixes = ["vm-", "tty-"]
-		for entry in entries
-			where entry.hasSuffix(".sock") && vmhostPrefixes.contains(where: entry.hasPrefix) {
+		for entry in entries where entry.hasSuffix(".sock") {
 			let path = dir + "/" + entry
-			guard !UDSListener.isLive(path: path) else { continue }
-			unlink(path)
+			if entry.hasPrefix("vm-") {
+				guard BoundSocket.removeIfDead(path) == .removed else { continue }
+			} else if entry.hasPrefix("tty-") {
+				guard !UDSListener.isLive(path: path) else { continue }
+				unlink(path)
+			} else {
+				continue
+			}
 			MachmanLogger.log(.log, "removed stale vmhost socket \(entry)")
 		}
 	}
