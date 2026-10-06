@@ -255,6 +255,7 @@ class Follower:
         self.planned = planned
         self.announced = False
         self.plan = {}
+        self.suites = {}             # suite id -> display name
         self.started = {}            # test id -> (index, start epoch)
         self.skipped = {}            # reason -> count
         self.issues = {}             # test id -> [(known, where)]
@@ -419,7 +420,7 @@ class Follower:
             took = span(now - start)
             room = self.screen.dimensions()[0] - 1 - len("▶ %s " % self.of(index)) - len(took) - 2
             return ([("1", "▶ %s %s" % (self.of(index), fit(
-                about(self.display(lane.current)), max(10, room))))], ("2", took))
+                self.name(lane.current), max(10, room))))], ("2", took))
         if len(self.lanes) > 1:
             return ([("2", "· idle")], None)
         if self.started:
@@ -431,6 +432,16 @@ class Follower:
     def display(self, test_id):
         return self.plan.get(test_id, test_id)
 
+    def name(self, test_id):
+        """What a test does — and, when another planned test does the same in another suite
+        (one row run per guest OS), which suite this one is: "… (Debian read-only rows)"."""
+        own = about(self.display(test_id))
+        if not any(t != test_id and about(n) == own for t, n in self.plan.items()):
+            return own
+        suite = self.suites.get(test_id.rsplit("/", 2)[0], "")
+        label = suite.rpartition(" — ")[2]
+        return "%s (%s)" % (own, label) if label else own
+
     def of(self, index):
         """"5/184": the index among the planned tests not skipped so far."""
         return "%d/%d" % (index, max(self.planned or 0, len(self.plan))
@@ -441,6 +452,8 @@ class Follower:
         if record.get("kind") == "test":
             if payload.get("kind") == "function":
                 self.plan[payload["id"]] = payload.get("displayName") or payload.get("name", "")
+            elif payload.get("kind") == "suite":
+                self.suites[payload["id"]] = payload.get("displayName") or payload.get("name", "")
             return
         kind = payload.get("kind")
         when = payload.get("instant", {}).get("since1970", time.time())
@@ -458,7 +471,7 @@ class Follower:
             self.started[test_id] = (index, when)
             self.current = test_id
             self.window = Window()
-            out.append((when, 0, "▶ %s %s" % (self.of(index), about(self.display(test_id))),
+            out.append((when, 0, "▶ %s %s" % (self.of(index), self.name(test_id)),
                         "start"))
         elif kind == "testStarted":
             out.append((when, 1, "· %s" % first, "detail"))
@@ -467,6 +480,10 @@ class Follower:
             known = bool(issue.get("isKnown"))
             where = issue.get("sourceLocation", {})
             at = "%s:%s" % (os.path.basename(where.get("fileID", "?")), where.get("line", "?"))
+            # A parameterized test's issue names the argument it failed with: "[debian]".
+            case = (payload.get("_testCase") or {}).get("displayName")
+            if case:
+                at += " [%s]" % case
             symbol = messages[0].get("symbol") if messages else ""
             glyph = "~" if known else ("!" if symbol == "warning" else "✘")
             text = CARD.sub("", " ".join(m["text"] for m in messages if m.get("text")))
@@ -482,11 +499,11 @@ class Follower:
             match = SKIPPED.match(first)
             reason = match.group(1) if match and match.group(1) else ""
             self.skipped[reason] = self.skipped.get(reason, 0) + 1
-            self.results.append((test_id, about(self.display(test_id)), "skipped", 0.0))
+            self.results.append((test_id, self.name(test_id), "skipped", 0.0))
             # A skip with a reason says something (-v); one for a tier not in this run doesn't.
             out.append((when, 1 if reason else 2, "– skipped: %s%s" % (
-                about(self.display(test_id)), (" — " + reason) if reason else ""), "result",
-                {"parts": ("– skipped:", about(self.display(test_id)), ""),
+                self.name(test_id), (" — " + reason) if reason else ""), "result",
+                {"parts": ("– skipped:", self.name(test_id), ""),
                  "children": [("", reason.strip('"'), [])] if reason else []}))
         elif kind == "testSkipped":
             match = SKIPPED.match(first.replace("Suite", "Test", 1))
@@ -500,12 +517,12 @@ class Follower:
             known = any(k for k, _ in issues)
             status = "failed" if failed else ("known issue" if known else "passed")
             note = " · known issue" if known and not failed else ""
-            self.results.append((test_id, about(self.display(test_id)), status, seconds))
+            self.results.append((test_id, self.name(test_id), status, seconds))
             glyph = "✘" if failed else "✔"
             out.append((when, 0, "%s %s %s · %s%s" % (
-                glyph, self.of(index), about(self.display(test_id)), span(seconds), note),
+                glyph, self.of(index), self.name(test_id), span(seconds), note),
                 "result", {"parts": ("%s %s" % (glyph, self.of(index)),
-                                     about(self.display(test_id)), " · %s" % span(seconds)),
+                                     self.name(test_id), " · %s" % span(seconds)),
                            "note": note, "children": self.children(test_id)}))
             if self.current == test_id:
                 self.current = None
@@ -580,7 +597,7 @@ class Follower:
                 continue
             index, start = self.started[lane.current]
             parts = ["… %s %s · running %s" % (
-                self.of(index), about(self.display(lane.current)), span(now - start))]
+                self.of(index), self.name(lane.current), span(now - start))]
             if lane.step is not None and lane.step[0] >= start:
                 parts.append("step " + lane.step[1])
             if lane.console is not None:
@@ -640,8 +657,8 @@ class Follower:
             running, lane.current = lane.current, None
             if running is not None:
                 # The test process died in it: its issues never got a result line to follow.
-                out.append((now, 0, "✘ %s · did not finish" % about(self.display(running)),
-                            "result", {"parts": ("✘", about(self.display(running)),
+                out.append((now, 0, "✘ %s · did not finish" % self.name(running),
+                            "result", {"parts": ("✘", self.name(running),
                                                  " · did not finish"),
                                        "children": self.children(running)}))
             unfinished += [os.path.basename(p)[:-6] for p, ended in sorted(lane.ended.items())
@@ -1082,6 +1099,48 @@ def self_check():
         check("a suite whose process never finished is named, the test it ran did not finish",
               "lab: ShortTests ended without its summary" in text
               and "✘ the short one · did not finish" in text and status == 2)
+
+    # One row two suites run (one per guest OS), and a parameterized test failing with one
+    # of its arguments: each line says which.
+    with tempfile.TemporaryDirectory() as root:
+        t0 = time.time() - 60
+        deb, alp = "Mod.DebRows/s1()/Rows.swift:10:3", "Mod.AlpRows/s1()/Rows.swift:20:3"
+        g9 = "Mod.Mounts/mounts(kind:)/Mounts.swift:30:3"
+        boot = {"isKnown": False, "sourceLocation": {"fileID": "Mod/Mounts.swift", "line": 83}}
+
+        def record(kind, test_id, display):
+            return {"kind": "test", "version": 0, "payload": {
+                "kind": kind, "id": test_id, "name": test_id, "displayName": display}}
+
+        write(root + "/report/events.jsonl", [
+            record("suite", "Mod.DebRows", "L3 Guest Setup — Debian read-only rows"),
+            record("function", deb, "S1: install.sh --help exits 0"),
+            record("suite", "Mod.AlpRows", "L3 Guest Setup — Alpine read-only rows"),
+            record("function", alp, "S1: install.sh --help exits 0"),
+            record("suite", "Mod.Mounts", "L3 Guest Setup — automounts"),
+            record("function", g9, "G9: automounts mount at boot"),
+            event("runStarted", t0, messages=[("default", "Test run started.")]),
+            event("testStarted", t0 + 1, deb), event("testEnded", t0 + 2, deb, [("pass", "ok")]),
+            event("testStarted", t0 + 3, alp), event("testEnded", t0 + 4, alp, [("pass", "ok")]),
+            event("testStarted", t0 + 5, g9),
+            event("issueRecorded", t0 + 6, g9, [("fail", "Expectation failed: booted")],
+                  issue=boot, _testCase={"displayName": "debian", "id": "case"}),
+            event("testEnded", t0 + 7, g9, [("fail", "failed")]),
+            event("runEnded", t0 + 8, messages=[
+                ("fail", "Test run with 3 tests in 3 suites failed after 8 seconds.")]),
+        ])
+        open(root + "/stop-now", "w").close()
+        buf = io.StringIO()
+        follow(root, 0, root + "/stop-now", interval=0.05, out=buf, tty=False)
+        text = buf.getvalue()
+        check("a row two suites run reads which suite it is",
+              "✔ 1/3 install.sh --help exits 0 (Debian read-only rows)" in text
+              and "✔ 2/3 install.sh --help exits 0 (Alpine read-only rows)" in text)
+        check("a name no other test has stays bare",
+              "✘ 3/3 automounts mount at boot · " in text and "(automounts)" not in text)
+        check("a parameterized test's issue and its failed line name the argument",
+              "Mounts.swift:83 [debian]: Expectation failed: booted" in text
+              and "automounts mount at boot (Mounts.swift:83 [debian])" in text)
 
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
