@@ -237,7 +237,42 @@ struct BoundSocket {
 
 	// Binds, listens and restricts the file to its owner; the caller cleared any dead leftover
 	// at `path` first. A failure leaves neither a descriptor nor a file behind.
+	//
+	// The path appears only once the socket listens (E48). Bound at the path itself, it read
+	// dead to a concurrent starter's probe until listen(), and that starter unlinked it and
+	// bound its own: both "served", one unreachable. So it listens under a staging name beside
+	// the path and is renamed onto it, never over a file already there (the rename keeps the
+	// inode unlinkIfOurs checks). A staging name too long for sun_path binds at the path.
 	static func listen(at path: String) throws -> BoundSocket {
+		_ = try UDSListener.makeAddr(path)
+		let staging = (path as NSString).deletingLastPathComponent + "/.m"
+			+ UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
+		guard (try? UDSListener.makeAddr(staging)) != nil else { return try bindListening(path) }
+		let bound = try bindListening(staging)
+		do {
+			try publish(staging, at: path)
+		} catch {
+			unlink(staging)
+			close(bound.fd)
+			throw error
+		}
+		return bound
+	}
+
+	// Renames the listening socket at `staging` onto `path` unless a file is there: a live one
+	// is another process serving the path; a dead leftover goes, once.
+	private static func publish(_ staging: String, at path: String) throws {
+		for attempt in 1...2 {
+			if renamex_np(staging, path, UInt32(RENAME_EXCL)) == 0 { return }
+			let err = errno
+			guard err == EEXIST else { throw UDSError.systemError("rename", err) }
+			guard attempt == 1, !UDSListener.isLive(path: path) else { break }
+			unlink(path)
+		}
+		throw UDSError.alreadyRunning(path)
+	}
+
+	private static func bindListening(_ path: String) throws -> BoundSocket {
 		var addr = try UDSListener.makeAddr(path)
 		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard fd >= 0 else { throw UDSError.systemError("socket", errno) }
