@@ -214,7 +214,9 @@ final class LabConsole: @unchecked Sendable {
 	) async throws -> (status: Int32, output: String) {
 		seq += 1
 		let n = seq
-		try send("\(command); echo 'LAB''\(n)X' $?")
+		// After a backgrounded command, "&" already ends it: "&;" is a shell syntax error.
+		let ends = command.trimmingCharacters(in: .whitespaces).hasSuffix("&") ? " " : "; "
+		try send("\(command)\(ends)echo 'LAB''\(n)X' $?")
 		let groups = try await expect(
 			"\\A(?s:(.*?))LAB\(n)X (\\d+)\\n", timeout: timeout,
 			step: "running `\(command.prefix(80))` (≤\(LabStep.format(timeout)))")

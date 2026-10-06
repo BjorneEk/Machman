@@ -63,6 +63,18 @@ struct LabHarnessTests {
 		#expect(second.output == "")
 	}
 
+	@Test("Q18: run sends a backgrounded command without a stray semicolon after its &")
+	func consoleRunBackgrounded() async throws {
+		let server = try FakeConsoleServer(greeting: "# ") { command in
+			command == "sleep 9 &" ? ("", 0) : ("sh: syntax error: \(command)", 2)
+		}
+		defer { server.stop() }
+		let console = try await LabConsole.connect(server.path, transcript: "tc2-background")
+		defer { console.close() }
+		let run = try await console.run("sleep 9 &", timeout: .seconds(20))
+		#expect(run.status == 0, "\(run.output)")
+	}
+
 	@Test("Q18: expect names the pattern and the console's last output when it times out")
 	func consoleExpectTimeout() async throws {
 		let server = try FakeConsoleServer(

@@ -80,7 +80,7 @@ final class FakeConsoleServer: @unchecked Sendable {
 
 	private func answer(_ line: String) {
 		write(line + "\r\n")
-		let pattern = "^(.*); echo 'LAB''(\\d+)X' \\$\\?$"
+		let pattern = "^(.*?)(?:; |(?<=&) )echo 'LAB''(\\d+)X' \\$\\?$"
 		guard let regex = try? NSRegularExpression(pattern: pattern),
 			let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line))
 		else { return }
