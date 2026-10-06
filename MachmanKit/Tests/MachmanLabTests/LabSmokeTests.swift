@@ -38,6 +38,10 @@ struct LabSmokeTests {
 				let answer = try await console.run("echo lab-$((40+2))")
 				#expect(answer.status == 0)
 				#expect(answer.output == "lab-42")
+				// hvc0 is the shell's controlling terminal, so ^C reaches a foreground job
+				// (/dev/tty opens only with one).
+				let ctty = try await console.run("(: </dev/tty) 2>/dev/null && tty")
+				#expect(ctty.status == 0 && ctty.output == "/dev/hvc0", "\(ctty)")
 				let host = try await vm.hostPID()
 				#expect(host > 0)
 				let socket = try await vm.consoleSocketPath(0)

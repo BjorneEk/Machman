@@ -32,6 +32,10 @@ echo "LAB-READY $ver"
 case " $(cat /proc/cmdline) " in
 *" lab.noshell "*) exec sleep 2147483647 ;;
 esac
-# A controlling tty, so ^C reaches the foreground job.
-command -v cttyhack >/dev/null 2>&1 && exec setsid cttyhack /bin/sh
+# A controlling tty, so ^C reaches the foreground job: /dev/console never becomes one, so the
+# shell opens hvc0 itself and, as a new session's leader, takes it (busybox setsid -c; this
+# initramfs has no cttyhack).
+if [ -c /dev/hvc0 ]; then
+	exec setsid -c /bin/sh </dev/hvc0 >/dev/hvc0 2>&1
+fi
 exec /bin/sh

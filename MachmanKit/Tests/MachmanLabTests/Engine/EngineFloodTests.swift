@@ -22,14 +22,6 @@ import MachmanTestSupport
 @Suite("Engine — floods", .serialized, .enabled(if: Lab.runs(.l2)))
 @MainActor
 struct EngineFloodTests {
-	/// Draft card (r3-tf): while `yes` floods a Linux guest's console, no input reaches the
-	/// guest's shell: ^C, and any command after it, through the tab or a second connection to
-	/// the same console socket, stays unanswered until the VM stops (3 of 3 runs, 1 and 2
-	/// vCPUs). Over ssh the same ^C stops it at once. Where input stalls (the vmhost's serial
-	/// bridge, VZ's virtio console or the guest's hvc driver) is not yet known.
-	static let consoleInputUnderFloodCard = Comment(rawValue: "A console flooded with output "
-		+ "takes no input: ^C never stops `yes` there")
-
 	/// `yes` into `c` for 10 s: the main actor's largest gap and the footprint's growth from
 	/// 3 s to 10 s, then ^C.
 	static func flood(_ c: SerialTerminalController) async throws
@@ -85,6 +77,9 @@ struct EngineFloodTests {
 				let (gap, growth) = try await Self.flood(c)
 				#expect(gap < .seconds(1))
 				#expect(growth < 64 << 20)
+				// The ^C reaches `yes` because the lab's Alpine shell owns hvc0 as its
+				// controlling terminal (lab-init); without one the guest echoed ^C and stopped
+				// nothing, which read as a console that takes no input.
 				let took = await Self.stopped(c, budget: .seconds(30))
 				var direct: String?
 				if took == nil {
@@ -95,13 +90,11 @@ struct EngineFloodTests {
 					direct = (try? await console.run("echo DIRECT-OK", timeout: .seconds(10)))?
 						.output
 				}
-				withKnownIssue(Self.consoleInputUnderFloodCard) {
-					#expect(took != nil, """
-						no command answered within 30 s of the ^C; a direct console then \
-						\(direct == nil ? "got no answer either" : "answered")
-						""")
-					#expect((took ?? .seconds(99)) < .seconds(10))
-				}
+				#expect(took != nil, """
+					no command answered within 30 s of the ^C; a direct console then \
+					\(direct == nil ? "got no answer either" : "answered")
+					""")
+				#expect((took ?? .seconds(99)) < .seconds(10))
 				sessions.drop(.terminal(ref), vm: vm.name)
 			}
 		}
