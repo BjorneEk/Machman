@@ -155,9 +155,8 @@ struct SerialInspector: View {
 				Text("Continuous").tag(SerialLogMode.continuous)
 			}
 			Picker("Max size", selection: sizeBinding) {
-				Text("Unlimited").tag(UInt64(0))
-				ForEach(logCaps, id: \.self) { cap in
-					Text(Self.logCapLabel(cap)).tag(cap)
+				ForEach(SerialLogCaps.items(current: port?.logging.maxBytes), id: \.bytes) { item in
+					Text(item.label).tag(item.bytes)
 				}
 			}
 			.disabled(port?.logging.mode == .disabled)
@@ -165,23 +164,6 @@ struct SerialInspector: View {
 				PathRow(label: "Log file", path: logPath) { Finder.reveal(logPath) }
 			}
 		}
-	}
-
-	private static let logCapPresets: [UInt64] = [1 << 20, 10 << 20, 100 << 20]
-
-	// The presets plus a cap they don't list (a script may set any up to 1 GB), in size
-	// order, so the picker never reads blank. Picking a preset replaces it.
-	private var logCaps: [UInt64] {
-		guard let cap = port?.logging.maxBytes, cap != 0, !Self.logCapPresets.contains(cap)
-		else { return Self.logCapPresets }
-		return (Self.logCapPresets + [cap]).sorted()
-	}
-
-	// Rounded like every size; exact bytes where rounding would make it read as a preset.
-	private static func logCapLabel(_ cap: UInt64) -> String {
-		let shown = ByteSize.display(cap)
-		let preset = logCapPresets.contains { $0 != cap && ByteSize.display($0) == shown }
-		return preset ? ByteSize.format(cap) : shown
 	}
 
 	private var modeBinding: Binding<SerialLogMode> {

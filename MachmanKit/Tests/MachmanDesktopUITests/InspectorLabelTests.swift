@@ -162,6 +162,20 @@ struct InspectorLabelTests {
 
 	static let copyKey = "Copy this Mac\u{2019}s public key"
 
+	// The menu itself reaches no tree until it opens; the picker draws SerialLogCaps' items.
+	@Test("W3-27: the Max size menu lists Unlimited, 1, 10, 16 and 100 MB around a 16 MB cap")
+	func theMaxSizeMenuKeepsAnUnlistedCap() async throws {
+		let h = await UIHarness.make([Samples.kernelBoot()])
+		let cap = try #require(h.vm("Kernel Lab").uartPorts?.first?.logging.maxBytes)
+		let items = SerialLogCaps.items(current: cap)
+		#expect(items.map(\.label) == ["Unlimited", "1 MB", "10 MB", "16 MB", "100 MB"])
+		#expect(items.first { $0.bytes == cap }?.label == "16 MB")
+		// Picking 10 MB leaves only the presets.
+		#expect(SerialLogCaps.items(current: 10 << 20).map(\.label)
+			== ["Unlimited", "1 MB", "10 MB", "100 MB"])
+		#expect(SerialLogCaps.items(current: nil).count == 4)
+	}
+
 	@Test("W4-7: the disk, mount and kernel trash buttons say what they remove")
 	func trashButtonsSayWhatTheyRemove() async throws {
 		var ownedISO = Samples.linux("Fedora")
