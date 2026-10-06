@@ -71,9 +71,7 @@ struct VMPickerPopover: View {
 				} fromFile: {
 					let viewModel = viewModel
 					dismiss()
-					AddFlows.chooseRestoreImage { path in
-						Task { await viewModel.createMacVM(source: .ipsw(path)) }
-					}
+					AddFlows.newMacFromFile(viewModel: viewModel)
 				}
 			}
 		}
