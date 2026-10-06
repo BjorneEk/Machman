@@ -94,6 +94,20 @@ def vm_of(pid):
     return match.group(1) if match else None
 
 
+def gap(skipped, where=""):
+    """The line that stands for `skipped` lines left out."""
+    return "⋯ %d more line%s%s ⋯" % (skipped, "" if skipped == 1 else "s", where)
+
+
+def elide(lines, height, where=""):
+    """At most `height` lines: all of them when they fit, else the first two, a line saying
+    how many are left out, and the newest below it."""
+    if len(lines) <= height:
+        return list(lines)
+    tail = height - 3
+    return list(lines[:2]) + [gap(len(lines) - 2 - tail, where)] + list(lines[-tail:])
+
+
 def fit(text, width):
     text = CONTROLS.sub("", text.expandtabs(4))
     return text if len(text) <= width else text[:max(1, width - 1)] + "…"
@@ -123,6 +137,26 @@ class Tail:
             parts.append(self.rest)
             self.rest = b""
         return parts
+
+
+class Window:
+    """A running test's output for the block: its first two lines, the newest, and how many
+    it has had."""
+
+    def __init__(self):
+        self.head, self.tail, self.count = [], collections.deque(maxlen=64), 0
+
+    def add(self, line):
+        if len(self.head) < 2:
+            self.head.append(line)
+        self.tail.append(line)
+        self.count += 1
+
+    def lines(self, height):
+        if self.count <= height:
+            return list(self.tail)[-self.count:] if self.count else []
+        newest = list(self.tail)[-(height - 3):]
+        return self.head + [gap(self.count - 2 - len(newest))] + newest
 
 
 class Screen:
@@ -180,7 +214,7 @@ class Follower:
         self.current = None
         self.step = None             # (epoch, text) of the latest narration
         self.console = None          # (title, last line)
-        self.window = collections.deque(maxlen=200)
+        self.window = Window()
         self.pids = {}
         self.summary = None
         self.run_started = None
@@ -214,8 +248,10 @@ class Follower:
                     self.current is None or epoch >= self.started[self.current][1]):
                 # (A line older than the running test is the last one's teardown, late.)
                 parts = text.strip().split("\n")
-                self.window.append("%s %s" % (clock(epoch), parts[0].rstrip()))
-                self.window.extend(" " * 9 + p.strip() for p in parts[1:] if p.strip())
+                self.window.add("%s %s" % (clock(epoch), parts[0].rstrip()))
+                for part in parts[1:]:
+                    if part.strip():
+                        self.window.add(" " * 9 + part.strip())
         self.log.flush()
         if self.screen is None:
             if above:
@@ -249,17 +285,18 @@ class Follower:
         return rows
 
     def children(self, test_id):
-        """A test's issues as child lines: a failure's message (6 lines at most), a known
-        issue's first line."""
+        """A test's issues as child lines: a failure's message (8 lines at most: its first
+        two, how many are left out, its last five), a known issue's first line."""
         out = []
         for glyph, at, text in self.details.get(test_id, []):
             lines = [l.strip() for l in text.split("\n") if l.strip()] or [""]
-            out.append("%s %s: %s" % (glyph, at, lines[0]))
             if glyph == "~":
+                out.append("%s %s: %s" % (glyph, at, lines[0]))
                 continue
-            out.extend("  " + l for l in lines[1:6])
-            if len(lines) > 6:
-                out.append("  … %d more lines in report/progress.log" % (len(lines) - 6))
+            lines[0] = "%s %s: %s" % (glyph, at, lines[0])
+            shown = elide(lines, 8, " in report/progress.log")
+            out.append(shown[0])
+            out.extend("  " + l for l in shown[1:])
         return out
 
     def block(self, now):
@@ -284,7 +321,7 @@ class Follower:
                     and not self.step[1].startswith(("✓", "✘")):
                 body.append("  " + self.step[1])
         elif self.current is not None:
-            body.extend("  " + l for l in list(self.window)[-height:])
+            body.extend("  " + l for l in self.window.lines(height))
         body += [""] * (height - len(body))
         return [("1", header)] + [("2", b) for b in body]
 
@@ -316,7 +353,7 @@ class Follower:
             index = len(self.started) + 1
             self.started[test_id] = (index, when)
             self.current = test_id
-            self.window.clear()
+            self.window = Window()
             out.append((when, 0, "▶ %s %s" % (self.of(index), about(self.display(test_id))),
                         "start"))
         elif kind == "testStarted":
@@ -366,7 +403,7 @@ class Follower:
                            "children": self.children(test_id)}))
             if self.current == test_id:
                 self.current = None
-                self.window.clear()
+                self.window = Window()
         elif kind == "testEnded":
             out.append((when, 1, "· %s" % first, "detail"))
         elif kind == "runEnded":
@@ -739,10 +776,13 @@ def self_check():
         follower.screen.colour = False
         shown = Terminal().feed(screen.getvalue())
         live = shown[next(i for i, l in enumerate(shown) if l.startswith("▶")):]
-        check("a running test's block: its header with elapsed time, then its last lines",
+        check("a running test's block: its header with elapsed time, then its output",
               live[0].startswith("▶ 1/1 the guest answers on its console · 2")
               and live[1].startswith("  " + clock(now)[:5])
               and live[-1].endswith(" [lab-debian hvc0] boot line 29") and len(live) == 11)
+        check("output past the window: its first two lines, how many are left out, the newest",
+              live[1].endswith("boot line 0") and live[2].endswith("boot line 1")
+              and live[3] == "  ⋯ 21 more lines ⋯" and live[4].endswith("boot line 23"))
         check("a line from before the test started stays out of its block",
               not any("teardown" in l for l in live))
         check("block lines are cut to the terminal's width", all(len(l) <= 79 for l in live))
@@ -797,11 +837,15 @@ def self_check():
         check("a long result line is cut to the width and keeps its duration",
               len(shown[result]) <= 79 and "…" in shown[result]
               and shown[result].endswith(" · 10 s"))
-        check("a failure's issue follows as child lines, 6 at most, the rest in progress.log",
+        check("a failure's issue follows as child lines: its first two, a count, its last five",
               shown[result + 1] == " " * 11 + "✘ File.swift:71: Expectation failed: a == b"
               and shown[result + 2] == " " * 11 + "  detail 1"
-              and shown[result + 6] == " " * 11 + "  detail 5"
-              and "3 more lines in report/progress.log" in shown[result + 7])
+              and shown[result + 3] == " " * 11 + "  ⋯ 2 more lines in report/progress.log ⋯"
+              and shown[result + 4] == " " * 11 + "  detail 4"
+              and shown[result + 8] == " " * 11 + "  detail 8")
+        check("a window that fits shows all its lines, padded",
+              elide(["a", "b", "c"], 10) == ["a", "b", "c"]
+              and Window().lines(10) == [])
         quiet = Follower(root, 0, io.StringIO(), io.StringIO(), tty=True, size=(80, 30))
         quiet.tick()
         check("level 0's block is the header and one step line", quiet.screen.drawn == 2)
