@@ -271,11 +271,14 @@ public final class VMListViewModel: ObservableObject {
 			renamesInFlight[old] = nil
 			migrateClientState(from: old, to: new)
 		}
+		// State moved to a name no list has shown yet stays: this list may have been fetched,
+		// or a row of it patched, before the move.
+		let kept = names.union(pendingMigrations.values)
 		// Terminals + canvas layouts follow the list: drop controllers of gone VMs, forget
 		// their layouts, and close tabs whose port vanished (tearing down the controller and
 		// deselecting the port's row, as every close does).
-		terminals.reconcile(vms: list)
-		for vmName in Array(canvases.canvases.keys) where !names.contains(vmName) {
+		terminals.reconcile(keeping: kept)
+		for vmName in Array(canvases.canvases.keys) where !kept.contains(vmName) {
 			canvases.removeVM(vmName)
 		}
 		for vm in list {
@@ -300,7 +303,7 @@ public final class VMListViewModel: ObservableObject {
 		if let name = selectedName {
 			if let new = pendingMigrations[name], names.contains(new) {
 				select(name: new)
-			} else if !names.contains(name) {
+			} else if !kept.contains(name) {
 				select(name: list.first?.name)
 			}
 		} else if let first = list.first {
@@ -325,12 +328,13 @@ public final class VMListViewModel: ObservableObject {
 			// OperationsStore owns operations (the progress cards) on its own stream.
 			break
 		case .sshChanged(let vm):
-			// Discovery answers arrive with no listChanged — refresh the rows ourselves.
+			// Discovery answers arrive with no listChanged — refresh the rows ourselves,
+			// joining the store's next fetch (P8).
 			if rediscovering[vm] != nil { rediscoveryAnswered.insert(vm) }
-			Task { [weak self] in await self?.store.reload() }
+			store.requestReload()
 		case .setupChanged:
 			// Guest-setup reports land with no listChanged — same treatment.
-			Task { [weak self] in await self?.store.reload() }
+			store.requestReload()
 		case .unknown:
 			break
 		}
@@ -518,11 +522,13 @@ public final class VMListViewModel: ObservableObject {
 		}
 		// A window whose VM's state moved to a name this list shows swaps to it (T3): the
 		// migration re-keyed the live controller, which the successor window adopts.
+		// A window already under a moved-in name the list doesn't show yet stays open.
 		let names = Set(list.map(\.name))
+		let movedIn = Set(pendingMigrations.values)
 		for torn in registry.open where next[torn] == nil {
 			if let new = pendingMigrations[torn.vm], names.contains(new) {
 				next[torn] = .reopen(as: TornTab(vm: new, tab: torn.tab))
-			} else if torn.isStale(in: list) {
+			} else if !movedIn.contains(torn.vm), torn.isStale(in: list) {
 				next[torn] = .close
 			}
 		}

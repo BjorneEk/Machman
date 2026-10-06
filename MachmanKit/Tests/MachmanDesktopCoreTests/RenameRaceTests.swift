@@ -62,6 +62,26 @@ struct RenameRaceTests {
 		#expect(h.viewModel.selectedName == "Debian 2")
 	}
 
+	// The other order: the reply moves the state while the list is still on its way, and a
+	// row patched in between republishes the list without the new name.
+	@Test("T16: a list or row update that predates the rename keeps the moved state")
+	func anOlderListKeepsTheMovedState() async throws {
+		let (h, live) = try await debianWithConsole()
+		let gate = ReplyGate()
+		h.stub.pause = { method in
+			if method == "listVMs" { await gate.wait() }   // every list is held back
+		}
+		let renaming = Task { await h.viewModel.rename(from: "Debian", to: "Debian 2") }
+		#expect(await eventually { h.terminals.controller(vm: "Debian 2", ref: console) === live })
+		h.stub.emit(.stateChanged(vm: "Alpine", state: .running))
+		#expect(await eventually { h.store.vms.first { $0.name == "Alpine" }?.state == .running })
+		#expect(keptItsState(h, live))
+		gate.open()
+		#expect(await renaming.value)
+		#expect(keptItsState(h, live))
+		#expect(h.viewModel.selectedName == "Debian 2")
+	}
+
 	@Test("T16: a rename never orders its torn windows to close")
 	func aRenameNeverClosesItsTornWindows() async throws {
 		let (h, live) = try await debianWithConsole()

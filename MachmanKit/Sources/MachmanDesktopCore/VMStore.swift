@@ -8,7 +8,10 @@
 //  re-attaches it to each new RemoteMachman, so list state survives daemon reconnects.
 //  Consumers needing to react AFTER a refresh lands sink $vms (it emits the incoming value).
 //  A list that fails to load is never silent: listProblem says so (the view model shows it)
-//  and the store retries with a backoff until a list lands (P13).
+//  and the store retries with a backoff until a list lands (P13). One fetch is in flight at
+//  a time (P8): what is asked meanwhile — events, actions' refreshes — is answered by the
+//  fetch after it, so a burst costs two fetches, not one each, and an older reply can never
+//  land over a newer list.
 //
 
 import Foundation
@@ -25,13 +28,19 @@ public final class VMStore: ObservableObject {
 	private var eventTask: Task<Void, Never>?
 	private var retryTask: Task<Void, Never>?
 	private var backoff: RetryBackoff
+	// The fetch in flight (its id outlives a detach), the requests made so far, and how many
+	// of them the last landed fetch answers: one started after a request answers it.
+	private var fetch: Task<Void, Never>?
+	private var fetchID = 0
+	private(set) var asked = 0
+	private var answered = 0
 
 	public init(retryDelays: [Duration] = RetryBackoff.standardDelays) {
 		backoff = RetryBackoff(delays: retryDelays)
 	}
 
 	// Wire the store to a (re)connection: subscribe first, then load, so no change between
-	// the two is missed. The pump is serial — a reload finishes before the next event.
+	// the two is missed. The pump never waits on a fetch: events met meanwhile join the next.
 	public func attach(api: MachmanControlling) {
 		detach()
 		self.api = api
@@ -42,7 +51,7 @@ public final class VMStore: ObservableObject {
 			await self?.reload()
 			for await event in stream {
 				guard let self else { return }
-				await self.handle(event: event)
+				self.handle(event: event)
 			}
 		}
 	}
@@ -52,23 +61,56 @@ public final class VMStore: ObservableObject {
 		eventTask = nil
 		retryTask?.cancel()
 		retryTask = nil
+		fetch?.cancel()
+		fetch = nil
+		fetchID += 1
 		api = nil
 	}
 
+	// Returns once a list fetched after this call landed (or failed to load).
 	public func reload() async {
-		guard let api else { return }
+		asked += 1
+		let mine = asked
+		while answered < mine, api != nil {
+			startFetch()
+			await fetch?.value
+		}
+	}
+
+	// An event's reload: it joins the fetch after the one in flight, or starts one now.
+	public func requestReload() {
+		asked += 1
+		startFetch()
+	}
+
+	private func startFetch() {
+		guard fetch == nil, let api else { return }
+		fetchID += 1
+		let id = fetchID
+		let covers = asked
+		fetch = Task { [weak self] in
+			await self?.fetchList(from: api, answering: covers)
+			guard let self, self.fetchID == id else { return }
+			self.fetch = nil
+			if self.answered < self.asked { self.startFetch() }
+		}
+	}
+
+	private func fetchList(from api: MachmanControlling, answering covers: Int) async {
 		let list: [VMInfo]
 		do {
 			list = try await api.listVMs()
 		} catch {
-			// A reload outlived by its connection reports nothing; the next one owns that.
+			// A fetch outlived by its connection reports nothing; the next one owns that.
 			guard self.api === api, !(error is CancellationError) else { return }
+			answered = max(answered, covers)   // answered with the problem; the retry goes on
 			MachmanLogger.log(.passiveWarning, "couldn't refresh the VM list: \(error)")
 			listProblem = String(describing: error)
 			scheduleRetry()
 			return
 		}
 		guard self.api === api else { return }
+		answered = max(answered, covers)
 		vms = list
 		listProblem = nil
 		if capabilities == nil, let caps = try? await api.hostCapabilities(),
@@ -107,14 +149,16 @@ public final class VMStore: ObservableObject {
 		}
 	}
 
-	private func handle(event: VMEvent) async {
+	private func handle(event: VMEvent) {
 		switch event {
 		case .stateChanged(let name, let state):
 			if let index = vms.firstIndex(where: { $0.name == name }) {
 				vms[index].state = state
 			}
+			// The list in flight may predate this change: the fetch after it reads it again.
+			if fetch != nil { asked += 1 }
 		case .listChanged:
-			await reload()
+			requestReload()
 		default:
 			break
 		}

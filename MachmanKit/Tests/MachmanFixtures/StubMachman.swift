@@ -27,8 +27,9 @@ public final class StubMachman: MachmanControlling {
 	// removed, or after a minute. Honored by vm(named:), operations(), preview, safeSave,
 	// importDisk, stop and cancelOperation.
 	public var stalled: Set<String> = []
-	// Called with a method's base name where a test may hold its reply back: renameVM after
-	// the rename landed and listChanged went out (the reply comes late). nil: nothing held.
+	// Called with a method's base name where a test may hold its reply back: listVMs after it
+	// read the list (the reply is the list as it was), renameVM after the rename landed and
+	// listChanged went out (the reply comes late). nil: nothing held.
 	public var pause: (@MainActor (String) async -> Void)?
 
 	public init() {}
@@ -84,7 +85,9 @@ public final class StubMachman: MachmanControlling {
 	}
 	public func listVMs() async throws -> [VMInfo] {
 		try gate()
-		return Array(vms.values).sorted { $0.name < $1.name }
+		let list = Array(vms.values).sorted { $0.name < $1.name }
+		await pause?("listVMs")
+		return list
 	}
 	public func vm(named name: String) async throws -> VMInfo {
 		try gate()

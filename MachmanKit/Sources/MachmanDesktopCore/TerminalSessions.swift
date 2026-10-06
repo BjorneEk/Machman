@@ -264,7 +264,11 @@ public final class TerminalSessions: ObservableObject {
 	// Drop every controller (and session name) of VMs that no longer exist. Per-port
 	// pruning is the canvas reconcile's job — it reports removed refs into drop.
 	public func reconcile(vms: [VMInfo]) {
-		let names = Set(vms.map(\.name))
+		reconcile(keeping: Set(vms.map(\.name)))
+	}
+
+	// The same, by name: `names` are the VMs whose controllers stay.
+	public func reconcile(keeping names: Set<String>) {
 		for vm in Array(live.keys) where !names.contains(vm) {
 			live[vm]?.values.forEach { $0.disconnect() }
 			live[vm] = nil
