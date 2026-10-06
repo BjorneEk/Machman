@@ -48,4 +48,34 @@ struct KernelSettingsCommitTests {
 		try await Task.sleep(for: .milliseconds(100))
 		#expect(h.stub.kernelSettingsSent.count == 3)
 	}
+
+	// Review F8 (wave r3w3): a served copy lags each write by its reply, the agent's
+	// listChanged and the next fetch, so writes built on it undid each other inside that
+	// window. Here no list lands until all three are asked: the pick, the editor's commit and
+	// the tree menu's initramfs pick, all from one render.
+	@Test("P41: a kernel write in flight is never undone by the next one")
+	func aWriteInFlightIsNeverUndone() async throws {
+		let h = await DesktopHarness.make([Samples.kernelBoot()])
+		let stale = h.viewModel.vms[0]
+		let lts = try #require(stale.boot.ownedKernels?.first { $0.tag == "6.6-lts" }).path
+		let line = "console=hvc0 root=/dev/vda2 quiet"
+		let gate = ReplyGate()
+		h.stub.pause = { method in
+			if method == "listVMs" { await gate.wait() }
+		}
+		h.viewModel.setActiveKernelFile(stale, role: .kernel, path: lts)
+		h.viewModel.setKernelCommandLine("Kernel Lab", line)
+		h.viewModel.setActiveKernelFile(stale, role: .initramfs, path: nil)
+		#expect(await eventually { !h.stub.kernelSettingsSent.isEmpty })
+		gate.open()
+		#expect(await eventually { h.stub.kernelSettingsSent.count == 3 })
+		let sent = h.stub.kernelSettingsSent.map(\.settings)
+		#expect(sent.count == 3)
+		guard sent.count == 3 else { return }
+		#expect(sent[1].kernelPath == lts, "the commit undid the pick")
+		#expect(sent[1].commandLine == line)
+		let last = KernelSettings(kernelPath: lts, initrdPath: nil, commandLine: line)
+		#expect(sent[2] == last, "the initramfs pick undid the pick or the commit")
+		#expect(await eventually { h.viewModel.vms[0].boot.kernel == last })
+	}
 }

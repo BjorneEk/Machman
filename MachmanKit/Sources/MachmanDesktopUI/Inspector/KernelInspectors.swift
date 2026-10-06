@@ -51,7 +51,7 @@ struct KernelParentInspector: View {
 			}
 			Section("Command line") {
 				// The commit names only the VM: it lands up to 600 ms after this render, and the
-				// rest of the settings are whatever is served by then (P41).
+				// rest is what is served once that VM's earlier kernel writes are listed (P41).
 				CmdlineEditor(
 					initial: vm.boot.kernel?.commandLine ?? "",
 					commit: { [name = vm.name] in viewModel.setKernelCommandLine(name, $0) })

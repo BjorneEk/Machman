@@ -188,6 +188,8 @@ public final class VMListViewModel: ObservableObject {
 	// State moved to a name (a rename, a safe save) that no list has shown yet: the refresh
 	// that shows it swaps the torn windows and the selection over.
 	var pendingMigrations: [String: String] = [:]
+	// Each VM's last kernel-settings write: the next one waits for it (+KernelSettings.swift).
+	var kernelWrites: [String: Task<Void, Never>] = [:]
 
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?

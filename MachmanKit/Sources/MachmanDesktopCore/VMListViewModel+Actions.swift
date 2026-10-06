@@ -709,20 +709,6 @@ extension VMListViewModel {
 		return switched != nil
 	}
 
-	// Select/deselect an active kernel or initramfs file by rewiring the kernel-boot draft
-	// (the settings survive as a draft even while the mode is EFI — never toggles the mode).
-	public func setActiveKernelFile(_ vm: VMInfo, role: KernelRole, path: String?) {
-		// The served settings, not the caller's copy: a pick must not undo another (P41).
-		var settings = (vms.first { $0.name == vm.name } ?? vm).boot.kernel
-			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
-		switch role {
-		case .kernel: settings.kernelPath = path ?? ""
-		case .initramfs: settings.initrdPath = path
-		case .unknown: return   // decode fallback only — the tree never builds it
-		}
-		updateKernelSettings(vm.name, settings)
-	}
-
 	public func setKernelOverride(
 		_ name: String, path: String, commandLine: String? = nil, overrideEnabled: Bool? = nil
 	) {
@@ -731,10 +717,6 @@ extension VMListViewModel {
 				vm: name, path: path, commandLine: commandLine,
 				overrideEnabled: overrideEnabled)
 		}
-	}
-
-	public func updateKernelSettings(_ name: String, _ settings: KernelSettings) {
-		perform("Saving kernel settings") { try await $0.updateKernelSettings(vm: name, settings) }
 	}
 
 	// MARK: - SSH and guest setup (1.0.5)
