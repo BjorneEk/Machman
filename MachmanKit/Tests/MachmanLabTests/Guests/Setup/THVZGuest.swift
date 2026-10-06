@@ -230,7 +230,7 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 			try? driver.send("exit")
 			try? await Task.sleep(for: .seconds(1))
 		}
-		TH.log("\(vm.name): the driver did not come back; booting again")
+		LabRetry.note("\(vm.name): the console driver did not come back; booting again")
 		try? await restartFromHost()
 	}
 
@@ -254,7 +254,7 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 		}
 		driver.close()
 		if try await vm.info().state.isRunning {
-			TH.log("\(vm.name): no login after the reboot; booting again")
+			LabRetry.note("\(vm.name): no login after an in-place reboot; booting again")
 			try await vm.stop(.force)
 		} else {
 			try await vm.guestStopped()

@@ -105,6 +105,7 @@ the login up: `@Test("G6: Alpine's getty lines sit between the markers and HUP b
 - A test that shows an open bug FAILS until the fix lands; the check carries a comment
   "Fails until the open bug <card id> (<what>) is fixed", which the fix removes. A
   `withKnownIssue` is only for an issue someone actively deferred, and names that decision.
+  A retry the harness rides over is recorded as a warning (`LabRetry.note`), never only logged.
 - A fix commit names its test in a `Test: <name>` trailer.
 - A manual row in `docs/local/manual-tests.md` carries **"Manual because: <reason>"** (or
   "Deferred: <tier>" for a tier not built yet). "Only a manual test can show this" is a claim to

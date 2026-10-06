@@ -201,9 +201,8 @@ final class LabVM: @unchecked Sendable {
 				try await console.login(user: user, timeout: attempt == 1 ? timeout : .seconds(60))
 				return console
 			} catch let error as LabError where attempt < tries {
-				MachmanLogger.log(
-					.passiveWarning,
-					"lab: \(name) console \(index): login try \(attempt) failed, reconnecting: "
+				LabRetry.note(
+					"\(name) console \(index): login try \(attempt) failed, reconnecting: "
 						+ "\(error)")
 				console.close()
 				attempt += 1
@@ -227,9 +226,8 @@ final class LabVM: @unchecked Sendable {
 					index, user: user, label: boot == 1 ? label : "\(label)-boot\(boot)",
 					tries: 1)
 			} catch let error as LabError where boot < boots {
-				MachmanLogger.log(
-					.passiveWarning,
-					"lab: \(name) console \(index): no login on boot \(boot) of \(boots), booting"
+				LabRetry.note(
+					"\(name) console \(index): no login on boot \(boot) of \(boots), booting"
 						+ " again: \(error)")
 				try await api.stop(vm: name, mode: .force)
 				try await waitForState(.stopped, timeout: .seconds(60))
@@ -283,17 +281,9 @@ final class LabVM: @unchecked Sendable {
 		try await attachClones(of: [boot] + extra)
 	}
 
-	// `body`, retried for a few seconds while the agent still settles a stop (invalidState).
+	// `body`, retried for a while as the agent settles a stop (LabRetry: noted on the test).
 	private func settled<T>(_ body: () async throws -> T) async throws -> T {
-		let deadline = ContinuousClock.now + .seconds(30)
-		while true {
-			do {
-				return try await body()
-			} catch let error as MachmanError
-				where error.code == .invalidState && ContinuousClock.now < deadline {
-				try await Task.sleep(for: .milliseconds(250))
-			}
-		}
+		try await LabRetry.settled("a change to \(name)", seconds: 30, body)
 	}
 
 	fileprivate func attachClones(of paths: [String]) async throws {

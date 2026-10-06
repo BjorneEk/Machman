@@ -77,14 +77,7 @@ enum TFVM {
 	/// vmhost's exit meets its closing connection, or a VM the agent still counts as hosted.
 	@discardableResult
 	static func settled<T>(_ body: () async throws -> T) async throws -> T {
-		let deadline = ContinuousClock.now + .seconds(15)
-		while true {
-			do {
-				return try await body()
-			} catch where ContinuousClock.now < deadline {
-				try await Task.sleep(for: .milliseconds(250))
-			}
-		}
+		try await LabRetry.settled("a call", retry: { _ in true }, body)
 	}
 
 	/// Rewrites a stopped VM's config through a JSON round trip: unknown keys stay, the file

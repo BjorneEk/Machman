@@ -118,7 +118,8 @@ struct THScriptRunTests {
 			// Approved, the guest's `ssh mac` reaches "the Mac" — the lab sshd behind the
 			// redirect, its key pinned.
 			guard let labMac = g.mac else {
-				TH.log("S4: no lab sshd (the doctor refused a bridge listener): ssh mac skipped")
+				LabRetry.note("no lab sshd (the doctor refused a bridge listener): the ssh mac "
+					+ "half is untested")
 				return
 			}
 			try await g.approveReverse()

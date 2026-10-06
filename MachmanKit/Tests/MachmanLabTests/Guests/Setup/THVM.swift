@@ -160,9 +160,7 @@ final class THVM: @unchecked Sendable {
 					timeout: attempt == 1 ? timeout : .seconds(60))
 				return console
 			} catch let error as LabError where attempt < tries {
-				MachmanLogger.log(
-					.passiveWarning,
-					"lab: \(name) console \(index): login try \(attempt) failed: \(error)")
+				LabRetry.note("\(name) console \(index): login try \(attempt) failed: \(error)")
 				console.close()
 				attempt += 1
 				try await Task.sleep(for: .seconds(1))
@@ -181,9 +179,8 @@ final class THVM: @unchecked Sendable {
 			do {
 				return try await loggedInConsole(index, user: user, label: label)
 			} catch let error as LabError where boot < boots {
-				MachmanLogger.log(
-					.passiveWarning,
-					"lab: \(name) console \(index): no login on boot \(boot) of \(boots), "
+				LabRetry.note(
+					"\(name) console \(index): no login on boot \(boot) of \(boots), "
 						+ "booting again: \(error)")
 				try await stop(.force)
 				boot += 1
@@ -210,17 +207,9 @@ final class THVM: @unchecked Sendable {
 		LabProcesses.removePid(kind: "vmhost", name: pidName)
 	}
 
-	// `body`, retried for a while as the agent settles a stop (invalidState).
+	// `body`, retried for a while as the agent settles a stop (LabRetry: noted on the test).
 	private func settled<T>(_ body: () async throws -> T) async throws -> T {
-		let deadline = ContinuousClock.now + .seconds(30)
-		while true {
-			do {
-				return try await body()
-			} catch let error as MachmanError
-				where error.code == .invalidState && ContinuousClock.now < deadline {
-				try await Task.sleep(for: .milliseconds(250))
-			}
-		}
+		try await LabRetry.settled("a change to \(name)", seconds: 30, body)
 	}
 }
 
