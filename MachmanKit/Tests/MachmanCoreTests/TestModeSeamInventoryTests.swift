@@ -61,6 +61,8 @@ struct TestModeSeamInventoryTests {
 			"no general pasteboard read under test mode (PasteboardSeamTests)",
 		"MachmanDesktop/DaemonConnection.swift":
 			"its Debug-only daemon handling (pre-dates the lab)",
+		"MachmanKit/Sources/MachmanCore/VMHostBootstrap.swift":
+			"the prohibited policy and the vmhost's lab control (VMHostTestModeTests, Q23)",
 	]
 
 	@Test("Q18: test-mode seams live only in the inventoried files (TB13)")

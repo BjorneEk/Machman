@@ -12,7 +12,9 @@
 //    menu <action> <vm name>               → ok | disabled | error no VM named <vm> | …
 //    anything else                         → error <why>
 //
-//  The VM name is the rest of the line, spaces kept. Served only under test mode.
+//  The VM name is the rest of the line, spaces kept. Served only under test mode. A
+//  test-suite vmhost serves `ping` and `quit` on its own socket beside the agent's
+//  (LabControlPath.vmhost): its log out, restart and shut down rows need no Apple Event.
 //
 
 import Foundation
@@ -22,6 +24,15 @@ public enum LabQuitReason: String, CaseIterable, Sendable {
 	case logOut
 	case restart
 	case shutDown
+}
+
+// Where a test-suite vmhost serves its control: beside its agent's control socket (inside the
+// run's sandbox), named for its VM as its own socket is, so a lab test finds it by the VM.
+public enum LabControlPath {
+	public static func vmhost(agentControl: String, vm: String) -> String {
+		(agentControl as NSString).deletingLastPathComponent
+			+ "/vm-\(MachmanPaths.shortHash(vm)).ctl"
+	}
 }
 
 // The agent menu's items, by the lab's names.

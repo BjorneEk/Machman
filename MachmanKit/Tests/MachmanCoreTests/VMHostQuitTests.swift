@@ -35,6 +35,21 @@ struct VMHostQuitTests {
 		#expect(VMHostQuitReason.current() == .userQuit)
 	}
 
+	// Q23: the lab quits a test-suite vmhost on its control socket, for a chosen reason that
+	// is stored before the quit and read in place of the (absent) quit event's, once.
+	@Test("Q23: a lab quit's reason stands in for the quit event's, once")
+	func aLabQuitsReasonStandsInOnce() {
+		let host = TestVMHost()
+		host.delegate.labQuitReason = .logOut
+		#expect(host.delegate.takeQuitReason(event: { .userQuit }) == .logOut)
+		#expect(host.delegate.takeQuitReason(event: { .shutDown }) == .shutDown)
+		#expect(host.delegate.takeQuitReason() == .userQuit)   // no quit event here
+		host.delegate.labQuitReason = .restart
+		#expect(host.delegate.terminateReply(for: host.delegate.takeQuitReason())
+			== .terminateCancel)
+		#expect(host.prompts == [.quitWhileRunning("alpha", reason: .restart)])
+	}
+
 	@Test(arguments: [
 		(VMHostQuitReason.logOut, "then log out again."),
 		(.restart, "then restart again."),

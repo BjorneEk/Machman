@@ -121,4 +121,28 @@ struct VMHostTestModeTests {
 		#expect(failures.isEmpty)
 		#expect(presenter.window(for: "dev") == nil)
 	}
+
+	// Q23: a test-suite vmhost kept .accessory, so activation stayed possible, and the lab
+	// could quit it only by an Apple Event (an Automation prompt). It runs prohibited now and
+	// takes quits on a control socket beside its agent's; outside test mode neither changes.
+	@Test("Q23: a test-suite vmhost runs prohibited and serves lab control beside its agent's")
+	func aTestSuiteVMHostRunsProhibitedWithLabControl() throws {
+		let token = String(TestEnvironment.suiteID.dropFirst(MachmanTestMode.suitePrefix.count))
+		let control = ["MACHMAN_LAB_AGENT_CONTROL": "/tmp/mml.\(token)/scopes/01/agent.ctl"]
+		let lab = try #require(LabEnvironment(
+			suiteID: TestEnvironment.suiteID, environment: control, debugBuild: true))
+		#expect(VMHostBootstrap.activationPolicy(lab: lab) == .prohibited)
+		#expect(VMHostBootstrap.labControlPath(vm: "dev copy", lab: lab)
+			== "/tmp/mml.\(token)/scopes/01/vm-\(MachmanPaths.shortHash("dev copy")).ctl")
+		let noControl = try #require(LabEnvironment(
+			suiteID: TestEnvironment.suiteID, environment: [:], debugBuild: true))
+		#expect(VMHostBootstrap.labControlPath(vm: "dev", lab: noControl) == nil)
+		#expect(VMHostBootstrap.activationPolicy(lab: nil) == .accessory)
+		#expect(VMHostBootstrap.labControlPath(vm: "dev", lab: nil) == nil)
+		for suite in ["com.gustaffranzen.Machman.dev", "com.gustaffranzen.Machman"] {
+			let notLab = LabEnvironment(suiteID: suite, environment: control, debugBuild: true)
+			#expect(VMHostBootstrap.activationPolicy(lab: notLab) == .accessory)
+			#expect(VMHostBootstrap.labControlPath(vm: "dev", lab: notLab) == nil)
+		}
+	}
 }

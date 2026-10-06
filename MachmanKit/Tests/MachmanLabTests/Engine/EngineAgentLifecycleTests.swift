@@ -5,9 +5,11 @@
 //  L2 — the agent's own life: its sockets' keep-alive (E10), a start cut off by the agent's
 //  death (E12), and its quit decisions for a log out, a restart and the user's quit with VMs
 //  running (V7). Quits come through the lab control socket with their reason; nothing logs
-//  out the real session. The VM's own log-out alert is the vmhost's (Deferred: seam, r3-3c).
+//  out the real session. The VM's own log-out alert is its vmhost's, quit the same way on the
+//  vmhost's own control socket (Q23).
 //
 
+import AppKit
 import Darwin
 import Foundation
 import Testing
@@ -134,6 +136,49 @@ struct EngineAgentLifecycleTests {
 				let again = LabLog.mark()
 				#expect(try await TFAgents.quit(agent, reason: "logOut"))
 				#expect(LabLog.count("test prompt ", after: again) == 0)
+			}
+		}
+	}
+
+	@Test(
+		"""
+		W4-17: a vmhost asked to log out, restart or shut down under its running VM cancels \
+		and asks
+		""")
+	func vmhostCancelsASessionEnd() async throws {
+		try await Lab.withAgent { agent in
+			try await agent.withVM(LabVMSpec(name: "vm-at-logout", boot: .alpine())) { vm in
+				let host = try await vm.hostPID()
+				#expect(NSRunningApplication(processIdentifier: host)?.activationPolicy
+					== .prohibited)
+				// Unlisted, the answer is Keep Running: the VM and its vmhost stay.
+				for reason in ["logOut", "restart", "shutDown"] {
+					let mark = LabLog.mark()
+					#expect(try await !TFHosts.quit(
+						agent, vm: vm.name, host: host, reason: reason, timeout: .seconds(3)))
+					let asked = try await LabLog.waitFor(
+						SeamProbe.promptLine("vmhost.sessionEndWhileRunning", "Keep Running"),
+						after: mark, process: "MachmanVMHost")
+					#expect(asked.processID == Int(host))
+					#expect(try await vm.info().state == .running)
+				}
+				// The user's own quit asks the other question; unlisted, it takes Cancel.
+				var mark = LabLog.mark()
+				#expect(try await !TFHosts.quit(
+					agent, vm: vm.name, host: host, reason: "userQuit", timeout: .seconds(3)))
+				_ = try await LabLog.waitFor(
+					SeamProbe.promptLine("vmhost.quitWhileRunning", "Cancel"), after: mark,
+					process: "MachmanVMHost")
+				// Force Stop VM: the VM stops, and its vmhost exits after it.
+				try agent.setAnswers(["vmhost.sessionEndWhileRunning": "Force Stop VM"])
+				mark = LabLog.mark()
+				#expect(try await TFHosts.quit(
+					agent, vm: vm.name, host: host, reason: "logOut", timeout: .seconds(30)))
+				_ = try await LabLog.waitFor(
+					SeamProbe.promptLine("vmhost.sessionEndWhileRunning", "Force Stop VM"),
+					after: mark, process: "MachmanVMHost")
+				try await vm.waitForState(.stopped, timeout: .seconds(30))
+				TFVM.forget(agent, vm.name)
 			}
 		}
 	}

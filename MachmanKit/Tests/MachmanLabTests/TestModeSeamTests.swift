@@ -177,7 +177,7 @@ struct TestModeSeamTests {
 				try await Task.sleep(for: .seconds(2))
 				#expect(SeamProbe.windows(of: windowed).filter(\.onscreen).isEmpty)
 				let app = NSRunningApplication(processIdentifier: windowed)
-				#expect(app?.activationPolicy != .regular)
+				#expect(app?.activationPolicy == .prohibited)   // Q23
 				#expect(app?.isActive == false)
 				#expect(try SeamProbe.breaches(naming: [agent.pid, windowed]) == [])
 			}

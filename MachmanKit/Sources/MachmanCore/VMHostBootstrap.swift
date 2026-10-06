@@ -43,11 +43,12 @@ public enum VMHostBootstrap {
 		autostart: Bool = false, library: String? = nil
 	) -> Never {
 		machmanVMDir = dataDir
+		let lab = LabEnvironment.current
 
 		// The first NSApp access, so the shared application IS the subclass: its sendEvent
 		// is the only place the reserved chords can beat VZ's own key monitor.
 		let app = VMHostApplication.shared
-		app.setActivationPolicy(.accessory)
+		app.setActivationPolicy(activationPolicy(lab: lab))
 
 		// library is passed only for safe runs (dataDir = the shadow run root then); it is
 		// the promotion destination for vm.safeSave, whose absence makes safeSave refuse.
@@ -83,6 +84,7 @@ public enum VMHostBootstrap {
 			presenter: registry.presenter, server: server)
 		Self.appDelegate = delegate   // app.delegate is unowned — something must own it
 		app.delegate = delegate
+		serveLabControl(vm: vmName, lab: lab, delegate: delegate)
 		app.mainMenu = buildMainMenu(
 			vmName: vmName, delegate: delegate, presenter: registry.presenter)
 
@@ -120,8 +122,7 @@ public enum VMHostBootstrap {
 					guard lifecycle.stopExitDue(running: run != nil && run !== stoppedRun) else {
 						continue
 					}
-					server.stop()
-					exit(0)
+					exitHost(0, server: server)
 				}
 			}
 		}
@@ -136,8 +137,7 @@ public enum VMHostBootstrap {
 				if lifecycle.idleExitDue(
 					startInFlight: currentRun() != nil,
 					operationsRunning: api.operationCenter.hasRunning) {
-					server.stop()
-					exit(0)
+					exitHost(0, server: server)
 				}
 			}
 		}
@@ -152,8 +152,7 @@ public enum VMHostBootstrap {
 					// A stale plist racing a config edit — never run a safe-mode VM unsafely.
 					MachmanLogger.log(.passiveError,
 						"autostart of \(vmName) refused: safe runs cannot autostart")
-					server.stop()
-					exit(70)
+					exitHost(70, server: server)
 				}
 				// This host sees one VM, so the router's guards never ran (E38, C8): a VM
 				// sharing a writable disk file or the MAC may already run.
@@ -163,8 +162,7 @@ public enum VMHostBootstrap {
 					isLive: { UDSListener.isLive(path: $0) }) {
 					MachmanLogger.log(.passiveError,
 						"autostart of \(vmName) refused: \(conflict.message)")
-					server.stop()
-					exit(70)
+					exitHost(70, server: server)
 				}
 				do {
 					try await api.start(
@@ -175,18 +173,69 @@ public enum VMHostBootstrap {
 				} catch {
 					// Exit now rather than sitting out the idle backstop with a dead start.
 					MachmanLogger.log(.passiveError, "autostart of \(vmName) failed: \(error)")
-					server.stop()
-					exit(70)
+					exitHost(70, server: server)
 				}
 			}
 		}
 
 		app.run()
-		exit(0)
+		exitHost(0, server: server)
 	}
 
 	@MainActor
 	private static var appDelegate: VMHostAppDelegate?
+	// Test mode only: the lab's control socket for this vmhost (Q23).
+	@MainActor
+	private static var labControl: LabControlServer?
+
+	// Every exit stops what this process serves, the lab's control socket included.
+	@MainActor
+	private static func exitHost(_ code: Int32, server: MachmanServer) -> Never {
+		labControl?.stop()
+		server.stop()
+		exit(code)
+	}
+
+	// Under a test suite a vmhost can never become active or show a Dock icon (Q23); everywhere
+	// else it is an accessory until its VM window opens.
+	nonisolated static func activationPolicy(
+		lab: LabEnvironment?
+	) -> NSApplication.ActivationPolicy {
+		lab == nil ? .accessory : .prohibited
+	}
+
+	// Test mode only: where this vmhost serves the lab's control — beside its agent's.
+	nonisolated static func labControlPath(vm: String, lab: LabEnvironment?) -> String? {
+		lab?.agentControlPath.map { LabControlPath.vmhost(agentControl: $0, vm: vm) }
+	}
+
+	// Test mode only: a lab test quits this vmhost for a chosen reason — the log out, restart
+	// and shut down rows — without an Apple Event, which could raise an Automation prompt.
+	// The quit comes after its reply is written.
+	@MainActor
+	private static func serveLabControl(
+		vm: String, lab: LabEnvironment?, delegate: VMHostAppDelegate
+	) {
+		guard let path = labControlPath(vm: vm, lab: lab) else { return }
+		do {
+			labControl = try LabControlServer(path: path, handler: { command in
+				switch command {
+				case .ping:
+					return "ok"
+				case .quit(let reason):
+					delegate.labQuitReason = VMHostQuitReason(lab: reason)
+					return "ok"
+				case .menu:
+					return "error a vmhost has no menu"
+				}
+			}, afterReply: { command in
+				guard case .quit = command else { return }
+				MainRunLoopCallout.post { NSApp.terminate(nil) }
+			})
+		} catch {
+			MachmanLogger.log(.log, "test mode: no lab control (\(error))")
+		}
+	}
 
 	// Icon-less on purpose, and no Edit/Window menus — the keyboard belongs to the guest.
 	// The bundle's display name is "Machman VM" (Dock, ⌘-Tab, Screen Recording). The bold
@@ -289,6 +338,9 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	private let vmName: () -> String
 	private let presenter: WindowPresenter
 	private let server: MachmanServer
+	// Test mode only: the reason a lab `quit` asked for, read once in place of the quit
+	// event's (Q23).
+	var labQuitReason: VMHostQuitReason?
 
 	init(vmName: @escaping () -> String, presenter: WindowPresenter, server: MachmanServer) {
 		self.vmName = vmName
@@ -301,7 +353,13 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-		terminateReply(for: .current())
+		terminateReply(for: takeQuitReason())
+	}
+
+	// A lab quit's reason stands in for the quit event's (`event`, for tests), once.
+	func takeQuitReason(event: (() -> VMHostQuitReason)? = nil) -> VMHostQuitReason {
+		defer { labQuitReason = nil }
+		return labQuitReason ?? event?() ?? .current()
 	}
 
 	// The quit decision, apart from AppKit's call so tests can answer the prompt.
