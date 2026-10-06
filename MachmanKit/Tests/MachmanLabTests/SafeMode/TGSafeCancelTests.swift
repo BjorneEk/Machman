@@ -108,6 +108,7 @@ struct TGSafeCancelTests {
 				#expect(try await SeamProbe.control(agent, "menu startSafe stopped-prep") == "ok")
 				try await events.waitForMidCopy(vm: "stopped-prep", after: index)
 				let menu = try await agent.control("menu shutDown stopped-prep")
+				// Fails until the open bug V14 is fixed.
 				#expect(menu == "ok")
 				if menu != "ok" { try await agent.api.stop(vm: "stopped-prep", mode: .soft) }
 				try await Self.waitForCanceledBuild(events, vm: "stopped-prep", after: index)

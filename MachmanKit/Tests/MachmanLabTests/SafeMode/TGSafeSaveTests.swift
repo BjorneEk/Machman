@@ -186,6 +186,7 @@ struct TGSafeSaveTests {
 	static func expectDiskRefusal(_ vm: TGVM, _ sentence: String) async throws {
 		let plain = try await vm.startError(StartOptions(openWindow: false))
 		#expect(plain != nil)
+		// Fails until the open bug E55 (the MAC guard runs before the disk guard) is fixed.
 		#expect(plain?.code == .invalidState)
 		#expect(plain?.message == sentence)
 		let forced = try await vm.startError(StartOptions(openWindow: false, force: true))

@@ -138,13 +138,16 @@ enum THReadOnlyRows {
 			// and S50 (plan lines are never folded to 80 columns) are fixed.
 			for glyph in THGlyphs.unicode {
 				let found = lines.filter { $0.contains(glyph) }
+				// Fails until the open bugs S49 and S48 are fixed.
 				#expect(found.isEmpty, "a UTF-8 glyph '\(glyph)' on a LANG=C console: \(found)")
 			}
 			let wide = lines.filter { $0.count > 80 }
+			// Fails until the open bug S50 (plan lines are never folded) is fixed.
 			#expect(wide.isEmpty, "lines over 80 columns: \(wide)")
 			let nonASCII = lines.filter { line in
 				line.unicodeScalars.contains { $0.value >= 0x80 }
 			}
+			// Fails until the open bug S48 (prose keeps its em dashes) is fixed.
 			#expect(nonASCII.isEmpty,
 				"\(nonASCII.count) lines with non-ASCII text: \(nonASCII.prefix(5))")
 		}

@@ -77,6 +77,7 @@ struct EngineReadinessL3Tests {
 			let (vm, console) = try await Self.reportedDebian(
 				agent, "sshd-stopped", prepare: "systemctl disable --now ssh.service ssh.socket")
 			defer { console.close() }
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			let index = try await desktop.toasts.waitFor(
 				"sshd-stopped: SSH not answering", timeout: .seconds(90))
 			#expect(desktop.toasts.entries[index].message.hasSuffix(":22 after 3 minutes"))

@@ -100,6 +100,7 @@ struct THHostSSHTests {
 	@Test("A1b: ssh dev logs into the Debian guest")
 	func aliasLogsIn() async throws {
 		try await TH.withGuest(.debian) { g in
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			_ = try await THHostSSH.ready(g)
 			_ = try await g.agent.api.setSSH(
 				vm: g.vm.name, integrationEnabled: true, reverseApproved: nil, alias: "dev")
@@ -116,6 +117,7 @@ struct THHostSSHTests {
 	@Test("W1-1b: ssh dev-copy.machman logs into the Debian guest")
 	func defaultAliasLogsIn() async throws {
 		try await TH.withGuest(.debian, THHostSSH.named("dev copy")) { g in
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			_ = try await THHostSSH.ready(g)
 			_ = try await g.agent.api.setSSH(
 				vm: g.vm.name, integrationEnabled: true, reverseApproved: nil, alias: nil)
@@ -128,12 +130,14 @@ struct THHostSSHTests {
 	@Test("R3W2-11: a session connects after Guest Setup is removed and the VM renamed")
 	func sessionAfterRename() async throws {
 		try await TH.withGuest(.debian, THHostSSH.named("deb c23")) { g in
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			_ = try await THHostSSH.ready(g)
 			try await g.check("sync")
 			try await g.vm.stop(.force)
 			_ = try await g.agent.api.removeDevice(vm: g.vm.name, kind: .guestSetup)
 			try await g.vm.rename(to: "deb c23 renamed")
 			try await g.vm.start()
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			let info = try await THHostSSH.readyAgain(g)
 			let argv = try #require(SSHCommand.arguments(for: info))
 			#expect(argv.contains("StrictHostKeyChecking=yes"), "\(argv)")
@@ -145,11 +149,13 @@ struct THHostSSHTests {
 	@Test("R3W2-16: a session connects to a VM renamed 50% off")
 	func sessionToPercentName() async throws {
 		try await TH.withGuest(.debian) { g in
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			_ = try await THHostSSH.ready(g)
 			try await g.check("sync")
 			try await g.vm.stop(.force)
 			try await g.vm.rename(to: "50% off")
 			try await g.vm.start()
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			let info = try await THHostSSH.readyAgain(g)
 			let argv = try #require(SSHCommand.arguments(for: info))
 			let ssh = try await THHostSSH.run(g.agent, argv)
@@ -160,6 +166,7 @@ struct THHostSSHTests {
 	@Test("R3W2-13: the SSH inspector's command for Bob's Ubuntu runs as copied")
 	func pastedLineRuns() async throws {
 		try await TH.withGuest(.debian, THHostSSH.named("Bob's Ubuntu")) { g in
+			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			let info = try await THHostSSH.ready(g)
 			_ = try await g.agent.api.setSSH(
 				vm: g.vm.name, integrationEnabled: false, reverseApproved: nil, alias: nil)

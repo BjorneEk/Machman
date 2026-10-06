@@ -69,6 +69,7 @@ struct EngineFrozenHostTests {
 						SeamProbe.promptLine("agent.endProcess", "Cancel \\(not listed\\)"),
 						after: mark, process: "MachmanAgent", timeout: .seconds(20))
 				} catch {
+					// Fails until the open bug E53 is fixed.
 					Issue.record(Comment(rawValue:
 						"Force Stop on the frozen VM never asked to end its process: \(error)"))
 				}

@@ -149,16 +149,22 @@ struct EngineSSHSessionTests {
 			try #require(seen.contains("TF-42"), "the session's shell never answered: \(seen)")
 			// The pty is ssh's controlling terminal (what a hang-up and /dev/tty need).
 			let tty = try await TFProcess.controllingTTY(child.pid)
+			// Fails until the open bug P42 (ssh has no controlling terminal) is fixed.
 			#expect(tty.hasPrefix("ttys"), "ssh's controlling terminal is \(tty)")
 			// What the kernel does for an app that exits: its pty master closes, no signal.
 			close(master)
 			closed = true
-			try await Self.until(
-				"the ssh client and its session to end", key: target.keyPath,
-				timeout: .seconds(10)
-			) {
-				let servers = try await TFSSH.sshdSessions()
-				return !LabProcesses.isAlive(child.pid) && servers.isEmpty
+			do {
+				try await Self.until(
+					"the ssh client and its session to end", key: target.keyPath,
+					timeout: .seconds(10)
+				) {
+					let servers = try await TFSSH.sshdSessions()
+					return !LabProcesses.isAlive(child.pid) && servers.isEmpty
+				}
+			} catch {
+				// Fails until the open bug P42 (ssh outlives its pty's owner) is fixed.
+				Issue.record(Comment(rawValue: "\(error)"))
 			}
 		}
 	}
@@ -194,12 +200,15 @@ struct EngineSSHSessionTests {
 			let s = try await Self.open(sshd, authorized: false, waitForShell: false)
 			// Recorded, not thrown, so the session is dropped below.
 			do {
+				// Fails until the open bug P42 (no password prompt without a tty) is fixed.
 				try await TFTerminals.waitFor(s.controller, "[Pp]assword:", timeout: .seconds(20))
 			} catch {
 				let described = await TFSSH.describe(key: s.target.keyPath)
+				// Fails until the open bug P42 (no password prompt without a tty) is fixed.
 				Issue.record(Comment(rawValue: "ssh's password prompt never came; the session's "
 					+ "bytes:\n" + Self.rawTranscript(s.controller) + "\n" + described))
 			}
+			// Fails until the open bug P42 (ssh gives up without a tty) is fixed.
 			#expect(s.controller.connected)
 			s.sessions.drop(.ssh(s.ref), vm: TFSSHTarget.vmName)
 			try await TFWait.until("the ssh client to end", timeout: .seconds(5)) {
