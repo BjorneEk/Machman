@@ -40,8 +40,9 @@ extension VMListViewModel {
 	}
 
 	// `change` applied to what is served once this VM's earlier writes are listed (`fallback`
-	// stands in for a VM the list doesn't hold). A change that changes nothing sends nothing;
-	// a refused one says so like any request and the next write goes on.
+	// stands in for a VM the list doesn't hold). A VM gone from the list by then (deleted, or
+	// renamed, while the editor's commit waited) gets nothing, and neither does a change that
+	// changes nothing; a refused one says so like any request and the next write goes on.
 	private func writeKernelSettings(
 		_ name: String, fallback: VMInfo? = nil,
 		_ change: @escaping @MainActor (inout KernelSettings) -> Void
@@ -49,8 +50,10 @@ extension VMListViewModel {
 		let previous = kernelWrites[name]
 		kernelWrites[name] = Task { [weak self] in
 			await previous?.value
-			guard let self else { return }
-			let served = (vms.first { $0.name == name } ?? fallback)?.boot.kernel
+			guard let self, let vm = vms.first(where: { $0.name == name }) ?? fallback
+			else { return }
+			// Empty only for a VM with no kernel settings yet.
+			let served = vm.boot.kernel
 				?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 			var settings = served
 			change(&settings)

@@ -78,4 +78,20 @@ struct KernelSettingsCommitTests {
 		#expect(sent[2] == last, "the initramfs pick undid the pick or the commit")
 		#expect(await eventually { h.viewModel.vms[0].boot.kernel == last })
 	}
+
+	// Review F15 (wave r3w3): the command line commits on disappear, after its VM may have
+	// left the list (deleted inside the debounce, or renamed with the new list first). A write
+	// for a VM the list doesn't hold sent a whole replacement built on empty settings and
+	// alerted; it sends nothing.
+	@Test("P41: a commit for a VM that left the list sends nothing")
+	func aCommitForAVMThatLeftSendsNothing() async throws {
+		let h = await DesktopHarness.make([Samples.kernelBoot(), Samples.linux("Alpine")])
+		h.stub.vms["Kernel Lab"] = nil
+		h.stub.emit(.listChanged)
+		#expect(await eventually { !h.viewModel.vms.contains { $0.name == "Kernel Lab" } })
+		h.viewModel.setKernelCommandLine("Kernel Lab", "console=hvc0 quiet")
+		try await Task.sleep(for: .milliseconds(300))
+		#expect(!h.stub.calls.contains("updateKernelSettings"), "\(h.stub.calls)")
+		#expect(h.viewModel.presentedError == nil, "\(h.viewModel.presentedError?.title ?? "")")
+	}
 }
