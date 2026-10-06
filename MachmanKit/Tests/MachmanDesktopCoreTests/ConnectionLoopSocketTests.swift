@@ -6,8 +6,8 @@
 //  RemoteMachman — against the fake agent's socket, for what ConnectionLoopTests' fakes
 //  can't show: a real hello timeout classified as not answering (P1, W2-27a), a missing
 //  socket as "It isn't running." and one launch, an api mismatch stopping at once, a
-//  too-old agent's version reaching the status (E32, W4-21a; the replace prompt itself is
-//  in the app target), and a start cut off by a real EOF carried to the next attach (P12,
+//  too-old agent's version reaching the status (E32, W4-21a; the replace prompt is
+//  DaemonVersionCheckTests'), and a start cut off by a real EOF carried to the next attach (P12,
 //  W2-28a). The b halves of those rows (a real agent, SIGSTOP, the alert) are the lab's.
 //  The launch is a test closure (never NSWorkspace); every session uses the fake's path.
 //

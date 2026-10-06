@@ -4,8 +4,8 @@
 //
 //  Owns the desktop app's link to MachmanAgent: the glue between the bounded connect loop
 //  (ConnectionLoop, MachmanDesktopCore — attempts, agent launch, stop conditions, stale
-//  sessions) and the app: launching the agent, attaching the app-scoped stores, and a fresh
-//  view model per connection.
+//  sessions) and the app: launching the agent, attaching the app-scoped stores, a fresh
+//  view model per connection, and the alerts the version check (DaemonVersionCheck) asks.
 //
 
 import Foundation
@@ -42,9 +42,7 @@ final class DaemonConnection: ObservableObject {
 	// serves), so it is a flag beside the status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
 	private var api: RemoteMachman?
-	// The too-old alert is up: a reconnect while it shows is checked once it closes, never
-	// with a second alert on top of it.
-	private var versionPromptShowing = false
+	private var versionCheck: DaemonVersionCheck!
 	private var loop: ConnectionLoop<RemoteMachman>!
 	// App-scoped like the previews it pauses: one watcher for the app's lifetime, never one
 	// per connection or per mounted pane (P3).
@@ -69,6 +67,23 @@ final class DaemonConnection: ObservableObject {
 		focus = FocusMonitor.application { [previews] focused in
 			previews.setFocused(focused)
 		}
+		// Its alerts come from a run-loop callout: a modal inside a main-actor Task would hold
+		// every other main-actor job (the stores' reloads, the replies the view model awaits)
+		// until it closes (E32).
+		versionCheck = DaemonVersionCheck(
+			floor: Self.oldestCompatibleDaemonVersion,
+			appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+				?? "0",
+			canReplace: { Self.embedsCurrentAgent },
+			attached: { [weak self] in self?.api },
+			ask: { prompt in
+				await MainRunLoopCallout.run {
+					Self.runAlert(prompt) == .alertFirstButtonReturn
+				}
+			},
+			tell: { prompt in
+				_ = await MainRunLoopCallout.run { Self.runAlert(prompt) }
+			})
 		loop = ConnectionLoop(
 			connect: { onDrop in
 				try await RemoteMachman(
@@ -146,7 +161,7 @@ final class DaemonConnection: ObservableObject {
 		// Deferred a turn: its alert runs modal, never inside the loop's callback.
 		Task { @MainActor [weak self, weak api] in
 			guard let api else { return }
-			await self?.checkDaemonVersion(of: api)
+			await self?.versionCheck.check(api)
 		}
 	}
 
@@ -183,62 +198,15 @@ final class DaemonConnection: ObservableObject {
 	// older vmhost (E22) — whose floor is the daemon's own version.
 	static let oldestCompatibleDaemonVersion = "1.0.12"
 
-	// The silent-skew detector: the desktop connects to whatever daemon serves, so IT is the
-	// process that can tell "this daemon is older than what I ship". Below the floor → offer
-	// a user-confirmed replacement (retire, then the reconnect path launches the embedded,
-	// current-version daemon and re-adopts vmhosts).
-	private func checkDaemonVersion(of session: RemoteMachman) async {
-		guard !versionPromptShowing else { return }
-		let running = session.hello.daemonVersion
-		guard MachmanVersion.isOlder(running, than: Self.oldestCompatibleDaemonVersion) else {
-			let mine = Bundle.main
-				.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-			if MachmanVersion.isOlder(mine, than: running) {
-				// Reverse skew is tolerated by the additive-wire policy — log only.
-				MachmanLogger.log(.log, "daemon \(running) is newer than this app (\(mine))")
-			}
-			return
-		}
-		let embedded = Bundle.main.bundleURL
+	// The embedded agent, the one Replace starts in an older one's place (the id check
+	// guards against a half-built bundle).
+	private static var embeddedAgent: URL {
+		Bundle.main.bundleURL
 			.appendingPathComponent("Contents/Library/LoginItems/MachmanAgent.app")
-		let canReplace = Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID
-		let prompt = DaemonVersionPrompt.tooOld(
-			running: running, floor: Self.oldestCompatibleDaemonVersion, canReplace: canReplace)
-		// From a run-loop callout: a modal inside this main-actor Task would hold every other
-		// main-actor job (the stores' reloads, the replies the view model awaits) until it
-		// closes (E32).
-		versionPromptShowing = true
-		let replace = await MainRunLoopCallout.run {
-			Self.runAlert(prompt) == .alertFirstButtonReturn
-		}
-		versionPromptShowing = false
-		// The answer is about the agent the alert named. While it showed, that one may have
-		// gone and another attached (quit from its menu, the loop launched the current one):
-		// never retire that one on a stale Replace — check whatever is attached now instead.
-		guard api === session else {
-			if let current = api { await checkDaemonVersion(of: current) }
-			return
-		}
-		// Nothing newer to launch: the alert explained instead of offering a dead end.
-		guard canReplace else { return }
-		guard replace else {
-			MachmanLogger.log(.passiveWarning,
-				"daemon \(running) is below the floor "
-					+ "\(Self.oldestCompatibleDaemonVersion); newer features may fail")
-			return
-		}
-		Task {
-			// Retire drops the connection; the reconnect path launches the embedded daemon. An
-			// agent running work of its own refuses, and the alert says what (E45).
-			do {
-				try await session.retire()
-			} catch let error as MachmanError where error.code == .invalidState {
-				let prompt = DaemonVersionPrompt.replaceRefused(reason: error.message)
-				_ = await MainRunLoopCallout.run { Self.runAlert(prompt) }
-			} catch {
-				// A dropped connection: the reconnect path takes it from here.
-			}
-		}
+	}
+
+	private static var embedsCurrentAgent: Bool {
+		Bundle(url: embeddedAgent)?.bundleIdentifier == daemonBundleID
 	}
 
 	private static func runAlert(_ prompt: DaemonVersionPrompt) -> NSApplication.ModalResponse {
@@ -268,11 +236,9 @@ final class DaemonConnection: ObservableObject {
 	// layout: the embedded daemon always comes from the same products dir as the desktop,
 	// sanitizer variants included.)
 	func launchDaemon() {
-		let embedded = Bundle.main.bundleURL
-			.appendingPathComponent("Contents/Library/LoginItems/MachmanAgent.app")
-		if Bundle(url: embedded)?.bundleIdentifier == Self.daemonBundleID {
+		if Self.embedsCurrentAgent {
 			NSWorkspace.shared.openApplication(
-				at: embedded, configuration: NSWorkspace.OpenConfiguration())
+				at: Self.embeddedAgent, configuration: NSWorkspace.OpenConfiguration())
 			return
 		}
 		if let url = NSWorkspace.shared.urlForApplication(
