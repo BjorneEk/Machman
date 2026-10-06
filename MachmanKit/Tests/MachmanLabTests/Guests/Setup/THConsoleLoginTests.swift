@@ -123,13 +123,15 @@ struct THConsoleLoginTests {
 
 	@Test(
 		"G7: a ttyV login comes up under VZ on the vzfreebsd image",
-		.enabled(if: VZFreeBSD.sourceImageExists, Comment(rawValue: VZFreeBSD.skipReason)))
+		.enabled(if: VZFreeBSD.imageExists, Comment(rawValue: VZFreeBSD.skipReason)))
 	func vzfreebsdTtysLine() async throws {
 		try await THVZFreeBSD.withGuest { g, payload in
 			let ports = try await g.check("ls /dev/ttyV* | sed 's|/dev/||'")
 				.split(separator: "\n").map(String.init)
 			let second = try #require(ports.count >= 2 ? ports[1] : nil, "\(ports)")
-			let run = try await g.sh("sh \(payload)/GuestSetup/install.sh -y --consoles \(second)")
+			// The image has no user but root (as the BSD guide's guests): name it.
+			let run = try await g.sh(
+				"sh \(payload)/GuestSetup/install.sh -y --user root --consoles \(second)")
 			#expect(run.status == 0, "\(run.output)")
 			let console = try await g.vm.console(1, label: "ttyV")
 			defer { console.close() }
