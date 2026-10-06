@@ -14,6 +14,8 @@ import MachmanTestSupport
 final class LabConsole: @unchecked Sendable {
 	let path: String
 	let transcriptPath: String
+	/// What narrations call this console ("lab-debian hvc0"); the transcript's name if unset.
+	let title: String
 
 	private let fd: Int32
 	private let lock = NSLock()
@@ -27,18 +29,21 @@ final class LabConsole: @unchecked Sendable {
 	private static let escapes = try! NSRegularExpression(
 		pattern: "\u{1B}\\[[0-9;?]*[ -/]*[@-~]|\u{1B}\\][^\u{07}]*\u{07}|\u{1B}[()][0-9A-Za-z]")
 
-	private init(path: String, fd: Int32, transcriptPath: String) {
+	private init(path: String, fd: Int32, transcriptPath: String, title: String) {
 		self.path = path
 		self.fd = fd
 		self.transcriptPath = transcriptPath
+		self.title = title
 		FileManager.default.createFile(atPath: transcriptPath, contents: nil)
 		transcript = FileHandle(forWritingAtPath: transcriptPath)
 		Thread.detachNewThread { [self] in readLoop() }
 	}
 
-	/// Connects to `path`, retrying every 250 ms until `timeout`.
+	/// Connects to `path`, retrying every 250 ms until `timeout`. `title` names the console in
+	/// narrations ("<vm> <console>"; the transcript's name when nil).
 	static func connect(
-		_ path: String, transcript name: String, timeout: Duration = .seconds(30)
+		_ path: String, transcript name: String, title: String? = nil,
+		timeout: Duration = .seconds(30)
 	) async throws -> LabConsole {
 		guard path.utf8.count <= 103 else {
 			throw LabError.consoleUnavailable("console socket path too long: \(path)")
@@ -46,14 +51,16 @@ final class LabConsole: @unchecked Sendable {
 		let dir = Lab.runDir.isEmpty ? TestEnvironment.scratch : Lab.transcriptsDir + "/"
 		try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 		let transcriptPath = dir + name + ".log"
+		let title = title ?? name
 		return try await LabStep.run(
-			"\(name): waiting ≤\(LabStep.format(timeout)) for its console socket"
+			"\(title): waiting ≤\(LabStep.format(timeout)) for its console socket"
 		) {
 			let deadline = ContinuousClock.now + timeout
 			while true {
 				let fd = await offPool { connectOnce(path) }
 				if fd >= 0 {
-					return LabConsole(path: path, fd: fd, transcriptPath: transcriptPath)
+					return LabConsole(
+						path: path, fd: fd, transcriptPath: transcriptPath, title: title)
 				}
 				if ContinuousClock.now >= deadline {
 					throw LabError.consoleUnavailable("nothing serves \(path)")
@@ -137,11 +144,6 @@ final class LabConsole: @unchecked Sendable {
 		return String((text + clean(String(decoding: pending, as: UTF8.self))).suffix(2000))
 	}
 
-	/// The transcript's name ("01-r1-hvc2"): what narrations call this console.
-	var name: String {
-		((transcriptPath as NSString).lastPathComponent as NSString).deletingPathExtension
-	}
-
 	/// The last non-empty line of what arrived and nobody matched yet.
 	var lastLine: String? {
 		tail.split(whereSeparator: \.isNewline).last { !$0.allSatisfy(\.isWhitespace) }
@@ -176,7 +178,7 @@ final class LabConsole: @unchecked Sendable {
 	) async throws -> [String] {
 		let regex = try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
 		let what = step ?? "waiting ≤\(LabStep.format(timeout)) for /\(pattern)/"
-		return try await LabStep.run("\(name): \(what)", seen: { [weak self] in self?.lastLine }) {
+		return try await LabStep.run("\(title): \(what)", seen: { [weak self] in self?.lastLine }) {
 			try await poll(regex, timeout: timeout)
 		}
 	}
@@ -230,13 +232,18 @@ final class LabConsole: @unchecked Sendable {
 		user: String = "root", password: String? = nil, timeout: Duration = .seconds(180)
 	) async throws {
 		try send("")
-		try await expect("login: *$", timeout: timeout)
+		try await expect(
+			"login: *$", timeout: timeout,
+			step: "waiting ≤\(LabStep.format(timeout)) for a login prompt")
 		try send(user)
 		if let password {
-			try await expect("[Pp]assword: *$", timeout: .seconds(30))
+			try await expect(
+				"[Pp]assword: *$", timeout: .seconds(30),
+				step: "waiting ≤30 s for a password prompt")
 			try send(password)
 		}
-		try await expect("[#$] *$", timeout: .seconds(60))
+		try await expect(
+			"[#$] *$", timeout: .seconds(60), step: "waiting ≤1m00s for a shell prompt")
 		let probe = try await run("true")
 		guard probe.status == 0 else {
 			throw LabError.commandFailed(

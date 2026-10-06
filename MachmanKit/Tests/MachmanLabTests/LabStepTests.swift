@@ -23,12 +23,12 @@ struct LabStepTests {
 			try await Task.sleep(for: .milliseconds(1200))
 		}
 		let lines = try await narrations(of: tag, after: mark, through: "✓")
-		#expect(lines.first?.contains("lab: step Q18 ▸ \(tag) — ") == true)
+		#expect(lines.first?.contains("lab: step ▸ \(tag) — ") == true)
 		#expect(lines.contains {
-			$0.contains("lab: step Q18 … \(tag) — ")
+			$0.contains("lab: step … \(tag) — ")
 				&& $0.contains("· seen: the console's last line")
 		})
-		#expect(lines.last?.contains("lab: step Q18 ✓ \(tag) — 1 s") == true)
+		#expect(lines.last?.contains("lab: step ✓ \(tag) — 1 s") == true)
 	}
 
 	@Test("Q18: a lab wait that ends within its quiet time logs nothing")
@@ -39,7 +39,7 @@ struct LabStepTests {
 		try await Task.sleep(for: .seconds(3))
 		MachmanLogger.log(.log, "lab: sentinel \(tag)")
 		_ = try await LabLog.waitFor("lab: sentinel \(tag)", after: mark)
-		#expect(Self.messages(after: mark).filter { $0.contains(LabStep.marker + "Q18") }
+		#expect(Self.messages(after: mark).filter { $0.contains(LabStep.marker) }
 			.allSatisfy { !$0.contains(tag) })
 	}
 

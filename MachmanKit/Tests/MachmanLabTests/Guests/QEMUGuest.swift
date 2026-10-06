@@ -64,7 +64,8 @@ struct QEMUGuest: Sendable {
 	func console(_ index: Int? = nil) async throws -> LabConsole {
 		let socket = index.map(consoleSocket) ?? serialSocket
 		let label = index.map { "hvc\($0)" } ?? "serial"
-		return try await LabConsole.connect(socket, transcript: "qemu-\(name)-\(label)")
+		return try await LabConsole.connect(
+			socket, transcript: "qemu-\(name)-\(label)", title: "\(name) \(label)")
 	}
 
 	/// Reboots over ssh, waits for ssh to drop and come back, and puts the default route

@@ -135,7 +135,8 @@ final class THVM: @unchecked Sendable {
 	/// Console port `index`, its transcript named after the VM and `label`.
 	func console(_ index: Int, label: String) async throws -> LabConsole {
 		try await LabConsole.connect(
-			try await consoleSocketPath(index), transcript: transcriptName(label))
+			try await consoleSocketPath(index), transcript: transcriptName(label),
+			title: "\(name) \(label)")
 	}
 
 	private func transcriptName(_ label: String) -> String {

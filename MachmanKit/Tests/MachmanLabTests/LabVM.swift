@@ -181,7 +181,8 @@ final class LabVM: @unchecked Sendable {
 
 	func console(_ index: Int = 0) async throws -> LabConsole {
 		try await LabConsole.connect(
-			try await consoleSocketPath(index), transcript: "\(pidName)-hvc\(index)")
+			try await consoleSocketPath(index), transcript: "\(pidName)-hvc\(index)",
+			title: "\(name) hvc\(index)")
 	}
 
 	/// A console on port `index` with `user` logged in. A login that stalls (the typed name
@@ -194,7 +195,8 @@ final class LabVM: @unchecked Sendable {
 		while true {
 			let suffix = attempt == 1 ? "" : "-try\(attempt)"
 			let console = try await LabConsole.connect(
-				try await consoleSocketPath(index), transcript: "\(pidName)-\(label)\(suffix)")
+				try await consoleSocketPath(index), transcript: "\(pidName)-\(label)\(suffix)",
+				title: "\(name) \(label)")
 			do {
 				try await console.login(user: user, timeout: attempt == 1 ? timeout : .seconds(60))
 				return console

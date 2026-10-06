@@ -11,7 +11,6 @@
 
 import Foundation
 import MachmanAPI
-import Testing
 
 enum LabStep {
 	/// What every narration line carries after MachmanLogger's "[log] ".
@@ -46,17 +45,6 @@ enum LabStep {
 		return value
 	}
 
-	/// The running test's id ("R2" of "R2: …"), else its function name.
-	static var testLabel: String {
-		guard let test = Test.current else { return "-" }
-		let name = test.displayName ?? test.name
-		if let colon = name.firstIndex(of: ":") {
-			let id = name[..<colon]
-			if !id.isEmpty, id.count <= 16, !id.contains(" ") { return String(id) }
-		}
-		return test.name
-	}
-
 	/// "45 s", "2m05s".
 	static func format(_ elapsed: Duration) -> String {
 		let seconds = Int(elapsed.components.seconds)
@@ -67,7 +55,6 @@ enum LabStep {
 	/// One narrated wait. Its lines are logged under a lock that `end` also takes, so no start
 	/// or heartbeat line follows the end line.
 	private final class Narration: @unchecked Sendable {
-		private let label = LabStep.testLabel
 		private let what: String
 		private let started = ContinuousClock.now
 		private let lock = NSLock()
@@ -94,7 +81,7 @@ enum LabStep {
 				guard begun else { return }
 				let outcome = error.map { "✘ \(what) — \(elapsed): \($0)" }
 					?? "✓ \(what) — \(elapsed)"
-				MachmanLogger.log(.log, LabStep.marker + "\(label) \(outcome)")
+				MachmanLogger.log(.log, LabStep.marker + outcome)
 			}
 		}
 
@@ -105,7 +92,7 @@ enum LabStep {
 			lock.withLock {
 				guard !finished else { return }
 				begun = true
-				var line = LabStep.marker + "\(label) \(glyph) \(what) — \(elapsed)"
+				var line = LabStep.marker + "\(glyph) \(what) — \(elapsed)"
 				if let latest, !latest.isEmpty { line += " · seen: \(latest.prefix(160))" }
 				MachmanLogger.log(.log, line)
 			}

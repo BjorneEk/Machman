@@ -239,7 +239,7 @@ final class TGVM: @unchecked Sendable {
 	func console(_ index: Int = 0) async throws -> LabConsole {
 		try await LabConsole.connect(
 			try await consoleSocketPath(index),
-			transcript: "\(pidName)-hvc\(index)-\(TG.nonce())")
+			transcript: "\(pidName)-hvc\(index)-\(TG.nonce())", title: "\(name) hvc\(index)")
 	}
 
 	/// The booted guest's shell on hvc0.
