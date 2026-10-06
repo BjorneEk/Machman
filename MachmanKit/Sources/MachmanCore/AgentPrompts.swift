@@ -99,16 +99,7 @@ public struct AgentPrompt: Equatable, Sendable {
 		reason: VMHostQuitReason, holders: [SessionHolder]
 	) -> AgentPrompt {
 		let one = holders.count == 1
-		let canceled: String
-		let again: String
-		switch reason {
-		case .logOut, .userQuit:
-			(canceled, again) = ("Log out was canceled", "log out again")
-		case .restart:
-			(canceled, again) = ("Restart was canceled", "restart again")
-		case .shutDown:
-			(canceled, again) = ("Shut down was canceled", "shut down your Mac again")
-		}
+		let (canceled, again) = reason.canceled
 		return AgentPrompt(
 			id: "agent.sessionEndHeld",
 			message: one

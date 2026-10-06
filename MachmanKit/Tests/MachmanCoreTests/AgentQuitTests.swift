@@ -86,14 +86,14 @@ struct AgentQuitDecisionTests {
 		let one = AgentPrompt.sessionEndHeld(reason: .logOut, holders: [starting])
 		#expect(one.message == "beta is still starting")
 		#expect(one.info
-			== "Log out was canceled: wait for it or stop it in Machman, then log out again.")
+			== "Logout was canceled: wait for it or stop it in Machman, then log out again.")
 		#expect(one.buttons == ["OK"])
 		let both = AgentPrompt.sessionEndHeld(reason: .restart, holders: [starting, starting])
 		#expect(both.message == "2 VMs are busy")
 		#expect(both.info
 			== "Restart was canceled: wait for them or stop them in Machman, then restart again.")
 		let off = AgentPrompt.sessionEndHeld(reason: .shutDown, holders: [starting])
-		#expect(off.info == "Shut down was canceled: wait for it or stop it in Machman, then "
+		#expect(off.info == "Shutdown was canceled: wait for it or stop it in Machman, then "
 			+ "shut down your Mac again.")
 		for prompt in [one, both, off] {
 			#expect(prompt.info.matches(of: sentenceEnd).count == 1)
@@ -101,14 +101,20 @@ struct AgentQuitDecisionTests {
 		}
 	}
 
-	// The VM's own prompt is what explains a canceled log out now: US spelling (A-all-2).
-	@Test func theVMsPromptSaysCanceled() {
+	// The VM's own prompt is what explains a canceled log out now: US spelling (A-all-2), and
+	// the canceled thing as a noun (W6), as the agent's alert says it too.
+	@Test("W6: a canceled log out or shut down reads Logout and Shutdown was canceled")
+	func theVMsPromptSaysCanceled() {
 		#expect(HostPrompt.quitWhileRunning("alpha", reason: .logOut).info
-			== "Log out was canceled: shut the VM down, then log out again.")
+			== "Logout was canceled: shut the VM down, then log out again.")
 		#expect(HostPrompt.quitWhileRunning("alpha", reason: .restart).info
 			== "Restart was canceled: shut the VM down, then restart again.")
 		#expect(HostPrompt.quitWhileRunning("alpha", reason: .shutDown).info
-			== "Shut down was canceled: shut the VM down, then shut down your Mac again.")
+			== "Shutdown was canceled: shut the VM down, then shut down your Mac again.")
+		#expect(AgentPrompt.sessionEndHeld(
+			reason: .shutDown, holders: [SessionHolder(
+				vm: "beta", activity: "is still starting", promptsItself: false)]
+		).info.hasPrefix("Shutdown was canceled: "))
 	}
 }
 

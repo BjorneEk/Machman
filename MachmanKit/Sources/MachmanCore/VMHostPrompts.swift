@@ -67,9 +67,7 @@ struct HostPrompt: Equatable {
 	// (decision 6), so that prompt says what to do instead, and "Shut Down VM" can't be read
 	// as shutting down the Mac.
 	static func quitWhileRunning(_ name: String, reason: VMHostQuitReason) -> HostPrompt {
-		let retry: String
-		switch reason {
-		case .userQuit:
+		guard reason != .userQuit else {
 			return HostPrompt(
 				id: "vmhost.quitWhileRunning",
 				message: "\(name) is running",
@@ -79,17 +77,12 @@ struct HostPrompt: Equatable {
 					Button(choice: .forceStop, title: "Force Stop"),
 					Button(choice: .cancel, title: "Cancel"),
 				])
-		case .logOut:
-			retry = "Log out was canceled: shut the VM down, then log out again."
-		case .restart:
-			retry = "Restart was canceled: shut the VM down, then restart again."
-		case .shutDown:
-			retry = "Shut down was canceled: shut the VM down, then shut down your Mac again."
 		}
+		let (canceled, again) = reason.canceled
 		return HostPrompt(
 			id: "vmhost.sessionEndWhileRunning",
 			message: "\(name) is still running",
-			info: retry,
+			info: "\(canceled): shut the VM down, then \(again).",
 			buttons: [
 				Button(choice: .shutDown, title: "Shut Down VM"),
 				Button(choice: .forceStop, title: "Force Stop VM"),
@@ -151,6 +144,16 @@ public enum VMHostQuitReason: Equatable, Sendable {
 			self = .shutDown
 		default:
 			self = .userQuit
+		}
+	}
+
+	// How an alert says this session end was canceled, and what to do again: the canceled
+	// thing as a noun, as macOS writes it (W6). The user's own quit reads as a log out.
+	var canceled: (sentence: String, again: String) {
+		switch self {
+		case .logOut, .userQuit: return ("Logout was canceled", "log out again")
+		case .restart: return ("Restart was canceled", "restart again")
+		case .shutDown: return ("Shutdown was canceled", "shut down your Mac again")
 		}
 	}
 
