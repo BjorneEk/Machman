@@ -81,7 +81,10 @@ public enum VMHostBootstrap {
 		// VM mid-run, and quit/stop must act on the live name, not the launch capture.
 		let delegate = VMHostAppDelegate(
 			vmName: { [weak registry] in registry?.restrictedName ?? vmName },
-			presenter: registry.presenter, server: server)
+			presenter: registry.presenter, server: server,
+			operations: {
+				api.operationCenter.list().filter { $0.state == OperationInfo.State.running }
+			})
 		Self.appDelegate = delegate   // app.delegate is unowned — something must own it
 		app.delegate = delegate
 		serveLabControl(vm: vmName, lab: lab, delegate: delegate)
@@ -330,7 +333,9 @@ final class VMHostLifecycle {
 // the two stop modes and Cancel, always answers .terminateCancel, and lets the existing
 // stopped→exit(0) watcher stay the single teardown path. A log out, restart or shut down
 // of the Mac is cancelled the same way (decision 6: never stop a guest on its own
-// initiative), but visibly: the prompt comes to the front and says what to do.
+// initiative), but visibly: the prompt comes to the front and says what to do. So is one
+// that meets an import still finishing after the VM stopped (E46): the stop's exit waits
+// for it (E34), bounded, and so does the session.
 @MainActor
 final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	// A provider, not a value: safeSave promotion renames the VM mid-run, and every action
@@ -338,14 +343,20 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	private let vmName: () -> String
 	private let presenter: WindowPresenter
 	private let server: MachmanServer
+	// The operations this vmhost still runs (an import into its VM), first started first.
+	private let operations: () -> [OperationInfo]
 	// Test mode only: the reason a lab `quit` asked for, read once in place of the quit
 	// event's (Q23).
 	var labQuitReason: VMHostQuitReason?
 
-	init(vmName: @escaping () -> String, presenter: WindowPresenter, server: MachmanServer) {
+	init(
+		vmName: @escaping () -> String, presenter: WindowPresenter, server: MachmanServer,
+		operations: @escaping () -> [OperationInfo]
+	) {
 		self.vmName = vmName
 		self.presenter = presenter
 		self.server = server
+		self.operations = operations
 	}
 
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -366,8 +377,7 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 	func terminateReply(for reason: VMHostQuitReason) -> NSApplication.TerminateReply {
 		let name = vmName()
 		guard presenter.isRunning?(name) ?? false else {
-			server.stop()
-			return .terminateNow
+			return replyWhileStopped(name, reason: reason)
 		}
 		switch presenter.present(.quitWhileRunning(name, reason: reason)) {
 		case .shutDown:
@@ -376,6 +386,24 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 			Task { await presenter.requestForceStop(name) }
 		case .closeWindow, .keepWaiting, .cancel:
 			break
+		}
+		return .terminateCancel
+	}
+
+	// With the VM stopped, only an operation still running holds a log out, restart or shut
+	// down (E46); the alert comes after this reply, as the agent's does (V10): the session
+	// waits on the reply, never on the alert.
+	private func replyWhileStopped(
+		_ name: String, reason: VMHostQuitReason
+	) -> NSApplication.TerminateReply {
+		guard reason != .userQuit, let work = operations().first else {
+			server.stop()
+			return .terminateNow
+		}
+		let activity = HostPrompt.activity(of: work)
+		MachmanLogger.log(.log, "\(reason) canceled: \(name) \(activity)")
+		Task { [presenter] in
+			_ = await presenter.ask(.sessionEndDuringWork(name, activity: activity, reason: reason))
 		}
 		return .terminateCancel
 	}

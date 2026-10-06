@@ -3,9 +3,10 @@
 //  MachmanTests
 //
 //  A vmhost's delegate and presenter with the AppKit edges replaced: prompts are recorded
-//  and answered by `answer`, stops are recorded and fail as `refusals` says, and the
-//  shutdown follow-up's grace passes at once (or when a GraceGate opens). The delegate's
-//  server is never started — MachmanServer.init does not bind — so nothing listens.
+//  and answered by `answer`, stops are recorded and fail as `refusals` says, the operations
+//  the host still runs are `operations`, and the shutdown follow-up's grace passes at once
+//  (or when a GraceGate opens). The delegate's server is never started — MachmanServer.init
+//  does not bind — so nothing listens.
 //
 
 import Foundation
@@ -23,6 +24,15 @@ final class TestVMHost {
 	var refusals: [StopMode: MachmanError] = [:]
 	private(set) var prompts: [HostPrompt] = []
 	private(set) var stops: [StopMode] = []
+	var operations: [OperationInfo] {
+		get { work.operations }
+		set { work.operations = newValue }
+	}
+	private let work = Work()
+
+	private final class Work {
+		var operations: [OperationInfo] = []
+	}
 
 	init(
 		running: Bool = true, presenter: WindowPresenter? = nil,
@@ -37,7 +47,8 @@ final class TestVMHost {
 			server: MachmanServer(
 				api: StubMachman(),
 				socketPath: TestEnvironment.scratch + "vmhost-\(UUID().uuidString).sock",
-				daemonVersion: "test"))
+				daemonVersion: "test"),
+			operations: { [work] in work.operations })
 		presenter.isRunning = { [unowned self] _ in self.running }
 		presenter.stopHandler = { [unowned self] _, mode in
 			self.stops.append(mode)

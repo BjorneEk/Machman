@@ -39,6 +39,8 @@ struct VMHostTestModeTests {
 			(.notShutDownYet("dev"), "vmhost.notShutDownYet", nil),
 			(.shutDownRefused("dev"), "vmhost.shutDownRefused", 0),
 			(.forceStopFailed("dev", reason: "It broke"), "vmhost.forceStopFailed", 0),
+			(.sessionEndDuringWork("dev", activity: "is importing a disk", reason: .logOut),
+				"vmhost.sessionEndDuringWork", 0),
 		]
 		for (prompt, id, cancel) in prompts {
 			#expect(prompt.id == id, "\(prompt.message): \(prompt.buttons.map(\.title))")
@@ -48,7 +50,7 @@ struct VMHostTestModeTests {
 			#expect(prompt.labPrompt.message == prompt.message)
 		}
 		// One id per factory (a log out, restart and shut down ask one question).
-		#expect(Set(prompts.map(\.1)).count == 6)
+		#expect(Set(prompts.map(\.1)).count == 7)
 	}
 
 	// Q22: the id was read off a prompt's buttons and titles, so rewording one moved every

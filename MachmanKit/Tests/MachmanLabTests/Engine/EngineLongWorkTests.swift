@@ -3,7 +3,7 @@
 //  MachmanLabTests
 //
 //  L2 — what the agent refuses, keeps and asks while a long copy into or out of a VM's
-//  folder runs (E33/D20, E34, E45, E47). The library is on an HFS+ disk image (no
+//  folder runs (E33/D20, E34, E45, E46, E47). The library is on an HFS+ disk image (no
 //  clonefile: every copy is a real byte copy), the source a non-sparse file on APFS, so the
 //  work lasts long enough to be met; every assertion that needs it in flight checks it still
 //  runs afterwards and calls the race inconclusive otherwise (raise MACHMAN_TF_COPY_GIB).
@@ -149,6 +149,46 @@ struct EngineLongWorkTests {
 			try console.send("poweroff -f")
 			try await vm.waitForState(.stopped, timeout: .seconds(30))
 			#expect(LabProcesses.isAlive(host))
+			try await Self.stillRunning(api, op)
+			let info = try await importing.value
+			#expect(info.disks.contains { $0.path?.hasSuffix("big.raw") == true })
+			#expect(await LabProcesses.waitForExit(host, timeout: .seconds(30)))
+			TFVM.forget(agent, "dev")
+		}
+	}
+
+	// E46: a vmhost finishing an import after its guest shut down (E34's drain) answered a
+	// log out with terminateNow, and the import died with it.
+	@Test(
+		"""
+		E46: a log out during a vmhost's import after its guest shut down is held by its own \
+		alert
+		""")
+	func logOutDuringDrainHeld() async throws {
+		try await Self.onHFS("import-logout") { agent, _ in
+			let api = agent.api
+			let vm = try await LabVM.create(LabVMSpec(name: "dev", boot: .alpine()), on: agent)
+			try await vm.start()
+			let host = try await vm.hostPID()
+			let console = try await vm.console(0)
+			defer { console.close() }
+			try await console.expect("LAB-READY", timeout: .seconds(60))
+			let source = agent.scope.imagesDir + "/big.raw"
+			try await TFFiles.filled(source, bytes: Self.gib << 30)
+			let importing = Task { try await api.importDisk(vm: "dev", path: source) }
+			let op = try await Self.running(api, "dev")
+			try console.send("poweroff -f")
+			try await vm.waitForState(.stopped, timeout: .seconds(30))
+			let mark = LabLog.mark()
+			#expect(try await !TFHosts.quit(
+				agent, vm: "dev", host: host, reason: "logOut", timeout: .seconds(2)))
+			_ = try await LabLog.waitFor(
+				"logOut canceled: dev is importing a disk", after: mark, process: "MachmanVMHost")
+			let held = try await LabLog.waitFor(
+				SeamProbe.promptLine("vmhost.sessionEndDuringWork", "OK"), after: mark,
+				process: "MachmanVMHost")
+			#expect(held.eventMessage.contains("dev is importing a disk"))
+			#expect(held.processID == Int(host))
 			try await Self.stillRunning(api, op)
 			let info = try await importing.value
 			#expect(info.disks.contains { $0.path?.hasSuffix("big.raw") == true })

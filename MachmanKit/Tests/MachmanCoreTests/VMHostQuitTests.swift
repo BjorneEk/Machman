@@ -86,6 +86,35 @@ struct VMHostQuitTests {
 		#expect(host.prompts.isEmpty)
 	}
 
+	static let importing = OperationInfo(
+		id: "op-1", kind: OperationInfo.Kind.importDisk, vm: "alpha", label: "Importing big.raw",
+		startedAt: Date(), cancellable: true)
+
+	// E46: a vmhost still finishing an import into its stopped VM (E34's drain) answered a
+	// log out with terminateNow, and the import died with it. It cancels now, and its alert
+	// says why after the reply.
+	@Test(
+		"E46: a log out while the vmhost finishes an import is canceled, and it says why",
+		arguments: [VMHostQuitReason.logOut, .restart, .shutDown])
+	func aSessionEndWaitsForAnImport(reason: VMHostQuitReason) async {
+		let host = TestVMHost(running: false)
+		host.operations = [Self.importing]
+		#expect(host.delegate.terminateReply(for: reason) == .terminateCancel)
+		#expect(host.prompts.isEmpty)   // the alert comes after the reply
+		#expect(await eventually { !host.prompts.isEmpty })
+		let prompt = host.prompts.first
+		#expect(prompt == .sessionEndDuringWork(
+			"alpha", activity: "is importing a disk", reason: reason))
+		#expect(prompt?.message == "alpha is importing a disk")
+		let (canceled, again) = reason.canceled
+		#expect(prompt?.info == "\(canceled): wait for it to finish, then \(again).")
+		#expect(prompt.map { $0.buttons.map(\.title) } == ["OK"])
+		#expect(host.stops.isEmpty)
+		// Once the import is done, the next log out goes through.
+		host.operations = []
+		#expect(host.delegate.terminateReply(for: reason) == .terminateNow)
+	}
+
 	// Decision 16: a prompt's info is one sentence. "Debian 12.4" keeps a name's dots honest.
 	@Test func everyPromptIsOneSentence() throws {
 		let name = "Debian 12.4"
@@ -95,6 +124,8 @@ struct VMHostQuitTests {
 		]
 		for reason in [VMHostQuitReason.userQuit, .logOut, .restart, .shutDown] {
 			prompts.append(.quitWhileRunning(name, reason: reason))
+			prompts.append(.sessionEndDuringWork(
+				name, activity: "is importing a disk", reason: reason))
 		}
 		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
 		for prompt in prompts {

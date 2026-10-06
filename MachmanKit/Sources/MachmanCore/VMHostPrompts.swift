@@ -11,6 +11,7 @@
 
 import Foundation
 import AppKit
+import MachmanAPI
 
 // What a prompt's button means.
 enum HostChoice: Equatable {
@@ -88,6 +89,31 @@ struct HostPrompt: Equatable {
 				Button(choice: .forceStop, title: "Force Stop VM"),
 				Button(choice: .cancel, title: "Keep Running"),
 			])
+	}
+
+	// A log out, restart or shut down met an operation the vmhost still finishes after its VM
+	// stopped (E46): it was canceled, and waits for the operation, not for the user.
+	static func sessionEndDuringWork(
+		_ name: String, activity: String, reason: VMHostQuitReason
+	) -> HostPrompt {
+		let (canceled, again) = reason.canceled
+		return HostPrompt(
+			id: "vmhost.sessionEndDuringWork",
+			message: "\(name) \(activity)",
+			info: "\(canceled): wait for it to finish, then \(again).",
+			buttons: [Button(choice: .cancel, title: "OK")])
+	}
+
+	// What a vmhost's running operation has its VM doing, after its name: the words the
+	// agent's own claims use.
+	static func activity(of operation: OperationInfo) -> String {
+		switch operation.kind {
+		case OperationInfo.Kind.importDisk: return VMClaims.Kind.importingDisk.activity
+		case OperationInfo.Kind.promoteDisk: return VMClaims.Kind.promotingDisk.activity
+		case OperationInfo.Kind.kernelImport: return VMClaims.Kind.importingKernel.activity
+		case OperationInfo.Kind.safeSave: return "is being saved as a new VM"
+		default: return "is still busy"
+		}
 	}
 
 	// A shutdown request the guest hasn't acted on within the grace period.
