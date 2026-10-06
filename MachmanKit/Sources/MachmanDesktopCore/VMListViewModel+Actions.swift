@@ -113,14 +113,6 @@ extension VMListViewModel {
 
 	// MARK: - VM
 
-	public func toggleRun(_ vm: VMInfo) {
-		if vm.state.isRunning {
-			stopVM(vm.name)
-		} else {
-			startPolicyDriven(vm)
-		}
-	}
-
 	public func isStartPending(_ name: String) -> Bool {
 		pendingStarts.contains(name)
 	}
@@ -166,8 +158,9 @@ extension VMListViewModel {
 
 	// Every Stop path ends here. A Force Stop can't reach a VM whose vmhost doesn't answer:
 	// one listed as not responding, or one whose stop ran out the daemon's bound (timeout),
-	// is asked about once more — ending its process is its own call (C9).
-	public func stopVM(_ name: String, mode: StopMode = .force) {
+	// is asked about once more — ending its process is its own call (C9). The mode is always
+	// named: a default would make a bare stopVM(name) cut a guest's power (Q8).
+	public func stopVM(_ name: String, mode: StopMode) {
 		if mode == .force, vms.first(where: { $0.name == name })?.isUnresponsive == true {
 			pendingEndProcess = PendingEndProcess(vm: name)
 			return
