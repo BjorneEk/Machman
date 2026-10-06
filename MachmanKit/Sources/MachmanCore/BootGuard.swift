@@ -133,7 +133,7 @@ enum BootGuard {
 	// C8's login half: the vmhost about to boot its VM at login, which sees only that VM,
 	// looks for a library VM sharing a writable disk file or the MAC whose vmhost answers
 	// on its socket — running, or about to. What that one attached can't be told from here,
-	// so each of its entries counts.
+	// so each of its entries counts. claimLoginBoot asks it after the login locks.
 	static func runningSharerConflict(
 		vm name: String, library: String, runtimeDir: String, isLive: (String) -> Bool
 	) -> MachmanError? {
@@ -150,6 +150,105 @@ enum BootGuard {
 			}
 		return refusal(Candidate(name: name, mac: mine.macAddress, disks: mine.writableDiskFiles),
 			among: others)
+	}
+
+	// MARK: - Login boots (E54)
+
+	// What a login boot holds for its run: an exclusive flock on a lock file in the runtime dir
+	// per writable disk file and per MAC it boots with. Closed with the process, or by
+	// release().
+	final class LoginLocks {
+		private var descriptors: [Int32]
+
+		fileprivate init(_ descriptors: [Int32]) {
+			self.descriptors = descriptors
+		}
+
+		func release() {
+			descriptors.forEach { close($0) }
+			descriptors = []
+		}
+	}
+
+	// What two login boots must not share, by its lock's key.
+	enum LoginResource: Equatable {
+		case disk(String)
+		case mac(String)
+
+		var key: String {
+			switch self {
+			case .disk(let file): return "disk:" + file
+			case .mac(let mac): return "mac:" + mac.lowercased()
+			}
+		}
+	}
+
+	// C8's login half, decided before the vmhost binds its socket (E54). Login vmhosts that
+	// each bound first saw one another's fresh socket and all refused, so the one lock per
+	// shared resource decides: a sharer holding one boots, or runs, at this login. Then the
+	// live-socket check, for a sharer the agent started (it takes no lock). The locks on
+	// success, to hold for the run; else why not.
+	static func claimLoginBoot(
+		vm name: String, library: String, runtimeDir: String, isLive: (String) -> Bool
+	) -> Result<LoginLocks, MachmanError> {
+		guard let mine = peekConfig(name: name, library: library) else {
+			return .success(LoginLocks([]))   // its start says why
+		}
+		_ = ensureDirectory(runtimeDir)
+		var resources = mine.writableDiskFiles.sorted().map(LoginResource.disk)
+		if let mac = mine.macAddress { resources.append(.mac(mac)) }
+		var held: [Int32] = []
+		for resource in resources {
+			let path = runtimeDir + "/login-" + MachmanPaths.shortHash(resource.key) + ".lock"
+			let fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+			guard fd >= 0 else {
+				let reason = String(cString: strerror(errno))
+				MachmanLogger.log(.passiveWarning,
+					"\(name) boots without the login lock \(path): \(reason)")
+				continue
+			}
+			if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+				held.append(fd)
+				continue
+			}
+			close(fd)
+			held.forEach { close($0) }
+			return .failure(lockedRefusal(mine, resource, library: library))
+		}
+		if let conflict = runningSharerConflict(
+			vm: name, library: library, runtimeDir: runtimeDir, isLive: isLive) {
+			held.forEach { close($0) }
+			return .failure(conflict)
+		}
+		return .success(LoginLocks(held))
+	}
+
+	// A lock doesn't say who holds it: the refusal names the library's VM sharing the
+	// resource (one that starts at login first), as running — it runs, or is about to.
+	private static func lockedRefusal(
+		_ mine: VMConfig, _ resource: LoginResource, library: String
+	) -> MachmanError {
+		let sharers = libraryConfigs(library).filter { other in
+			guard other.name != mine.name else { return false }
+			switch resource {
+			case .disk(let file): return other.everyWritableDiskFile.contains(file)
+			case .mac: return other.macAddress?.lowercased() == mine.macAddress?.lowercased()
+			}
+		}
+		let holder = (sharers.first { $0.startPolicy.autostart } ?? sharers.first)?.name
+			?? "another VM"
+		let candidate: Candidate
+		let other: Other
+		switch resource {
+		case .disk(let file):
+			candidate = Candidate(name: mine.name, disks: [file])
+			other = Other(name: holder, role: .running, mac: nil, attached: [file])
+		case .mac:
+			candidate = Candidate(name: mine.name, mac: mine.macAddress)
+			other = Other(name: holder, role: .running, mac: mine.macAddress)
+		}
+		return refusal(candidate, among: [other]) ?? MachmanError(
+			code: .invalidState, message: "\(holder) holds what \(mine.name) boots with")
 	}
 
 	private static func refusal(_ candidate: Candidate, among others: [Other]) -> MachmanError? {

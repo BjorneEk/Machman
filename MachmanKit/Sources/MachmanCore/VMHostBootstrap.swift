@@ -62,9 +62,17 @@ public enum VMHostBootstrap {
 		(app as? VMHostApplication)?.keyInterceptor = { [weak presenter = registry.presenter] in
 			presenter?.interceptKey($0) ?? false
 		}
-		guard registry.vm(named: vmName) != nil else {
+		guard let vm = registry.vm(named: vmName) else {
 			MachmanLogger.log(.passiveError, "no VM named '\(vmName)' in \(dataDir)")
 			exit(64)
+		}
+		// launchd (RunAtLoad) launched us to boot our own VM. Policy is read from the CONFIG
+		// here, not baked into the plist, so plists never rot on toggle edits.
+		let policy = vm.config.startPolicy
+		if autostart {
+			admitLoginBoot(
+				vm: vmName, policy: policy, library: dataDir,
+				runtimeDir: (socketPath as NSString).deletingLastPathComponent)
 		}
 		let api = LocalMachman(registry: registry)
 		let server = MachmanServer(
@@ -146,27 +154,9 @@ public enum VMHostBootstrap {
 		}
 
 		if autostart {
-			// launchd (RunAtLoad) launched us; boot our own VM. Policy is read from the
-			// CONFIG here, not baked into the plist, so plists never rot on toggle edits.
-			// Woven after the watcher tasks above so no state change goes unseen.
+			// The login boot, admitted above. Woven after the watcher tasks above so no state
+			// change goes unseen.
 			Task { @MainActor in
-				let policy = registry.vm(named: vmName)?.config.startPolicy ?? StartPolicy()
-				guard !policy.safe else {
-					// A stale plist racing a config edit — never run a safe-mode VM unsafely.
-					MachmanLogger.log(.passiveError,
-						"autostart of \(vmName) refused: safe runs cannot autostart")
-					exitHost(70, server: server)
-				}
-				// This host sees one VM, so the router's guards never ran (E38, C8): a VM
-				// sharing a writable disk file or the MAC may already run.
-				if let conflict = BootGuard.runningSharerConflict(
-					vm: vmName, library: dataDir,
-					runtimeDir: (socketPath as NSString).deletingLastPathComponent,
-					isLive: { UDSListener.isLive(path: $0) }) {
-					MachmanLogger.log(.passiveError,
-						"autostart of \(vmName) refused: \(conflict.message)")
-					exitHost(70, server: server)
-				}
 				do {
 					try await api.start(
 						vm: vmName, options: StartOptions(openWindow: policy.windowed))
@@ -187,6 +177,34 @@ public enum VMHostBootstrap {
 
 	@MainActor
 	private static var appDelegate: VMHostAppDelegate?
+	// A login boot's locks (E54), held for the run: they go with the process.
+	@MainActor
+	private static var loginLocks: BootGuard.LoginLocks?
+
+	// A login boot is decided before this host binds its socket, so a sharer that will refuse
+	// never shows a live one to a sharer that would boot (E54). This host sees one VM, so the
+	// router's guards never ran (E38, C8): the login locks decide among login boots, and a
+	// sharer the agent started answers on its socket. Refused, it exits with the reason.
+	@MainActor
+	private static func admitLoginBoot(
+		vm: String, policy: StartPolicy, library: String, runtimeDir: String
+	) {
+		guard !policy.safe else {
+			// A stale plist racing a config edit — never run a safe-mode VM unsafely.
+			MachmanLogger.log(.passiveError,
+				"autostart of \(vm) refused: safe runs cannot autostart")
+			exit(70)
+		}
+		switch BootGuard.claimLoginBoot(
+			vm: vm, library: library, runtimeDir: runtimeDir,
+			isLive: { UDSListener.isLive(path: $0) }) {
+		case .success(let locks):
+			loginLocks = locks
+		case .failure(let refusal):
+			MachmanLogger.log(.passiveError, "autostart of \(vm) refused: \(refusal.message)")
+			exit(70)
+		}
+	}
 	// Test mode only: the lab's control socket for this vmhost (Q23).
 	@MainActor
 	private static var labControl: LabControlServer?

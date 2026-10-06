@@ -17,7 +17,6 @@ import MachmanClient
 struct TGAutostartSafeTests {
 	static let atLogin = StartPolicy(windowed: false, autostart: true)
 
-	/// Card E54, the login race (r3-tg, E/RISK, routed to r3-3c).
 	static func escaped(_ text: String) -> String { NSRegularExpression.escapedPattern(for: text) }
 
 	@Test("12: an unsafe autostart beside a dead safe run is adopted unshielded and the dir swept")
@@ -129,10 +128,9 @@ struct TGAutostartSafeTests {
 					}
 				}
 				#expect(LabLog.count("autostart of sharer-[ab] refused: ", after: mark) >= 1)
-				// Both on the shared writable image would corrupt it: never.
+				// Both on the shared writable image would corrupt it: never. Neither, at this
+				// login (E54): never either — the login locks decide before either binds.
 				#expect(running <= 1, "both sharers booted on the shared writable image")
-				// Fails (on the runs where the race fires) until the open bug E54 (each binds its
-				// socket before it checks for the other's, so both can refuse) is fixed.
 				#expect(running >= 1, "both sharers refused to start at login")
 				for vm in [first, second] {
 					if let host = vm.filedHostPid() { try? await TG.killHost(host) }

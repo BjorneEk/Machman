@@ -100,4 +100,87 @@ struct AutostartGuardTests {
 			#expect(BootGuard.autostartConflict(turningOn: "alpha", library: machmanVMDir) == nil)
 		}
 	}
+
+	// E54: two login vmhosts launched together each bound their socket before looking for
+	// the other's, saw it and both refused. A login boot is decided by a lock per writable
+	// disk file and per MAC now, taken before the vmhost binds: exactly one boots, and holds
+	// its locks for the run.
+	@Test("E54: of two login sharers deciding together, exactly one may boot")
+	@MainActor func ofTwoLoginSharersExactlyOneMayBoot() throws {
+		let runtime = TestEnvironment.socketPath("mm-login", suffix: "")
+		try VMTestDir.withRedirectedDir {
+			try makePair(alphaAutostart: true)
+			let file = (image as NSString).lastPathComponent
+			let first = try BootGuard.claimLoginBoot(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }).get()
+			let second = BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime, isLive: { _ in false })
+			guard case .failure(let refusal) = second else {
+				Issue.record("both login sharers may boot on one writable image")
+				return
+			}
+			#expect(refusal.message
+				== "alpha is running with \(file) attached \u{2014} stop alpha before starting kept")
+			first.release()
+			let afterwards = try BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }).get()
+			afterwards.release()
+		}
+	}
+
+	@Test("E54: login sharers of one MAC take turns too")
+	@MainActor func loginSharersOfOneMACTakeTurns() throws {
+		let runtime = TestEnvironment.socketPath("mm-login", suffix: "")
+		let mac = "aa:bb:cc:44:00:02"
+		try VMTestDir.withRedirectedDir {
+			try makePair(
+				alphaAutostart: true, mac: mac,
+				disk: VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/a.iso"))))
+			let first = try BootGuard.claimLoginBoot(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }).get()
+			defer { first.release() }
+			let second = BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime, isLive: { _ in false })
+			guard case .failure(let refusal) = second else {
+				Issue.record("both login sharers of one MAC may boot")
+				return
+			}
+			#expect(refusal.message == "kept and the running VM \u{201C}alpha\u{201D} share MAC "
+				+ "address \(mac), so one of them would lose networking")
+		}
+	}
+
+	// What shares nothing boots side by side; a sharer the agent started (its socket answers,
+	// it takes no lock) still stops a login boot.
+	@Test("E54: login VMs that share nothing both boot, and a running sharer still refuses one")
+	@MainActor func loginVMsThatShareNothingBothBoot() throws {
+		let runtime = TestEnvironment.socketPath("mm-login", suffix: "")
+		try VMTestDir.withRedirectedDir {
+			try makePair(
+				alphaAutostart: true, disk: VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/a.iso"))))
+			let first = try BootGuard.claimLoginBoot(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }).get()
+			let second = try BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }).get()
+			first.release()
+			second.release()
+		}
+		try VMTestDir.withRedirectedDir {
+			try makePair(keptAutostart: false)
+			let keptSocket = MachmanPaths.vmSocketPath(vm: "kept", runtimeDir: runtime)
+			let claim = BootGuard.claimLoginBoot(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { $0 == keptSocket })
+			guard case .failure(let refusal) = claim else {
+				Issue.record("a login boot beside a running sharer")
+				return
+			}
+			#expect(refusal.message.hasPrefix("kept may still have "))
+		}
+	}
 }

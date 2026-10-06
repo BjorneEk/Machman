@@ -73,7 +73,8 @@ enum TGLaunchd {
 			let text = line.trimmingCharacters(in: .whitespaces)
 			if text.hasPrefix("pid = ") { state.pid = pid_t(text.dropFirst(6)) }
 			if text.hasPrefix("last exit code = ") {
-				state.lastExit = Int32(text.dropFirst(17).split(separator: " ").first ?? "")
+				// "70: EX_SOFTWARE": launchctl names a sysexits code after it.
+				state.lastExit = Int32(text.dropFirst(17).prefix { $0 == "-" || $0.isNumber })
 			}
 		}
 		return state
