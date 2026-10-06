@@ -27,6 +27,9 @@ public final class StubMachman: MachmanControlling {
 	// removed, or after a minute. Honored by vm(named:), operations(), preview, safeSave,
 	// importDisk, stop and cancelOperation.
 	public var stalled: Set<String> = []
+	// Called with a method's base name where a test may hold its reply back: renameVM after
+	// the rename landed and listChanged went out (the reply comes late). nil: nothing held.
+	public var pause: (@MainActor (String) async -> Void)?
 
 	public init() {}
 
@@ -110,6 +113,7 @@ public final class StubMachman: MachmanControlling {
 		vms[name] = nil
 		vms[newName] = vm
 		emit(.listChanged)
+		await pause?("renameVM")
 	}
 	// vm.copy requests with what they asked to carry, in order.
 	public private(set) var copies: [(vm: String, diskIDs: [String]?, mountIDs: [String]?)] = []

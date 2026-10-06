@@ -233,41 +233,33 @@ extension VMListViewModel {
 		await rename(from: oldName, to: newName, refused: nil)
 	}
 
-	// `refused` takes a refusal to the field that asked, instead of an alert (PR8).
+	// `refused` takes a refusal to the field that asked, instead of an alert (PR8). The
+	// state moves on the reply, unless the list that shows the rename landed first and
+	// moved it already (T16).
 	func rename(
 		from oldName: String, to newName: String, refused: (@MainActor (String) -> Void)?
 	) async -> Bool {
+		renamesInFlight[oldName] = newName
 		let renamed: Void? = await attempt(
 			"Renaming \u{201C}\(oldName)\u{201D}", refused: refused
 		) { try await $0.renameVM(named: oldName, to: newName) }
+		let unmoved = renamesInFlight.removeValue(forKey: oldName) != nil
 		guard renamed != nil else { return false }
-		// Migrate open terminal tabs BEFORE reload()'s reconcile sees the new name (else the
-		// old-keyed session would look like a vanished VM and its terminals get closed).
-		migrateClientState(from: oldName, to: newName)
+		if unmoved { migrateClientState(from: oldName, to: newName) }
 		await reload()
 		select(name: newName)
-		reopenTornWindows(from: oldName, to: newName)
 		return true
 	}
 
 	// A VM's client-side state follows it to a new name: live terminals and ssh sessions,
-	// the canvas layout and the last preview frame.
-	private func migrateClientState(from old: String, to new: String) {
+	// the canvas layout and the last preview frame. Its torn windows can't re-key their
+	// birth payload: the refresh that shows the new name orders them to reopen under it
+	// (reconcileTornTabs, T3), and the selection follows there too.
+	func migrateClientState(from old: String, to new: String) {
 		terminals.renameVM(from: old, to: new)
 		canvases.renameVM(from: old, to: new)
 		previews.renameVM(from: old, to: new)
-	}
-
-	// Torn windows cannot re-key their birth payload — swap them (T3): each old-named
-	// window is ordered to reopen as the new name, adopting the live controller the
-	// migration re-keyed. Posted AFTER the reload: a rename's reconcile just marked these
-	// payloads close (old name gone from the fresh list), and this overwrite lands in the
-	// same main-actor job, before any window can act on it.
-	private func reopenTornWindows(from old: String, to new: String) {
-		let registry = tornTabs
-		for torn in registry.open where torn.vm == old {
-			registry.orders[torn] = .reopen(as: TornTab(vm: new, tab: torn.tab))
-		}
+		pendingMigrations[old] = new
 	}
 
 	// The one rename flow (tree rename-in-place + the VM inspector's name field): trimmed,
@@ -381,7 +373,6 @@ extension VMListViewModel {
 			model.safeSaveRequest = nil        // item binding dismisses the sheet
 		} refreshed: { model, saved in
 			model.select(name: saved.name)
-			model.reopenTornWindows(from: name, to: saved.name)
 		}
 	}
 

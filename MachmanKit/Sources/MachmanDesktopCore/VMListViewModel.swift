@@ -185,6 +185,16 @@ public final class VMListViewModel: ObservableObject {
 	// How long a re-run waits before saying the daemon keeps looking (tests shorten it).
 	var rediscoveryWait: Duration = .seconds(30)
 
+	// MARK: Renames (VMListViewModel+Actions.swift)
+
+	// Renames sent whose client state hasn't moved yet, old name → new. The daemon announces
+	// a rename before it replies, so the list without the old name can land first: whichever
+	// of the two arrives first moves the state (T16).
+	var renamesInFlight: [String: String] = [:]
+	// State moved to a name (a rename, a safe save) that no list has shown yet: the refresh
+	// that shows it swaps the torn windows and the selection over.
+	var pendingMigrations: [String: String] = [:]
+
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
 	private var operationsForwarder: AnyCancellable?
@@ -254,11 +264,17 @@ public final class VMListViewModel: ObservableObject {
 	}
 
 	private func listRefreshed(_ list: [VMInfo]) {
+		let names = Set(list.map(\.name))
+		// A rename this list already shows moves its VM's state first, before the reconcile
+		// below would take the old name for a VM gone (T16).
+		for (old, new) in renamesInFlight where names.contains(new) && !names.contains(old) {
+			renamesInFlight[old] = nil
+			migrateClientState(from: old, to: new)
+		}
 		// Terminals + canvas layouts follow the list: drop controllers of gone VMs, forget
 		// their layouts, and close tabs whose port vanished (tearing down the controller and
 		// deselecting the port's row, as every close does).
 		terminals.reconcile(vms: list)
-		let names = Set(list.map(\.name))
 		for vmName in Array(canvases.canvases.keys) where !names.contains(vmName) {
 			canvases.removeVM(vmName)
 		}
@@ -280,15 +296,17 @@ public final class VMListViewModel: ObservableObject {
 		announce(list)
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
-		// falls over to the first. (Renames pass through here with the old name still
-		// selected; the transient first-VM pick is corrected a beat later by rename().)
+		// falls over to the first. A selection whose state moved to a new name follows it.
 		if let name = selectedName {
-			if !list.contains(where: { $0.name == name }) {
+			if let new = pendingMigrations[name], names.contains(new) {
+				select(name: new)
+			} else if !names.contains(name) {
 				select(name: list.first?.name)
 			}
 		} else if let first = list.first {
 			select(name: first.name)
 		}
+		pendingMigrations = pendingMigrations.filter { !names.contains($0.value) }
 	}
 
 	private func handle(event: VMEvent) {
@@ -498,8 +516,15 @@ public final class VMListViewModel: ObservableObject {
 		for (torn, order) in registry.orders where registry.open.contains(torn) {
 			next[torn] = order
 		}
-		for torn in registry.open where next[torn] == nil && torn.isStale(in: list) {
-			next[torn] = .close
+		// A window whose VM's state moved to a name this list shows swaps to it (T3): the
+		// migration re-keyed the live controller, which the successor window adopts.
+		let names = Set(list.map(\.name))
+		for torn in registry.open where next[torn] == nil {
+			if let new = pendingMigrations[torn.vm], names.contains(new) {
+				next[torn] = .reopen(as: TornTab(vm: new, tab: torn.tab))
+			} else if torn.isStale(in: list) {
+				next[torn] = .close
+			}
 		}
 		if registry.orders != next { registry.orders = next }
 	}
