@@ -158,8 +158,9 @@ struct EngineLongWorkTests {
 	}
 
 	/// "dev" running with an import into it, then its guest powered off: its vmhost
-	/// finishes the import before it exits (E34). Returns the vmhost's pid, the operation and
-	/// the import's call.
+	/// finishes the import before it exits (E34). Twice the copy size, so the power-off
+	/// falls well inside the import; inconclusive when the import still finished first.
+	/// Returns the vmhost's pid, the operation and the import's call.
 	static func drainingImport(_ agent: LabAgent) async throws
 		-> (host: pid_t, op: OperationInfo, importing: Task<VMInfo, Error>) {
 		let api = agent.api
@@ -170,11 +171,12 @@ struct EngineLongWorkTests {
 		defer { console.close() }
 		try await console.expect("LAB-READY", timeout: .seconds(60))
 		let source = agent.scope.imagesDir + "/big.raw"
-		try await TFFiles.filled(source, bytes: Self.gib << 30)
+		try await TFFiles.filled(source, bytes: 2 * Self.gib << 30)
 		let importing = Task { try await api.importDisk(vm: "dev", path: source) }
 		let op = try await Self.running(api, "dev")
 		try console.send("poweroff -f")
 		try await vm.waitForState(.stopped, timeout: .seconds(30))
+		try await Self.stillRunning(api, op)
 		return (host, op, importing)
 	}
 
@@ -187,10 +189,9 @@ struct EngineLongWorkTests {
 		""")
 	func logOutDuringDrainHeld() async throws {
 		try await Self.onHFS("import-logout") { agent, _ in
-			let (host, op, importing) = try await Self.drainingImport(agent)
+			let (host, _, importing) = try await Self.drainingImport(agent)
 			let mark = LabLog.mark()
-			#expect(try await !TFHosts.quit(
-				agent, vm: "dev", host: host, reason: "logOut", timeout: .seconds(2)))
+			#expect(try await TFHosts.control(agent, vm: "dev", "quit logOut") == "ok")
 			_ = try await LabLog.waitFor(
 				"logOut canceled: dev is importing a disk", after: mark, process: "MachmanVMHost")
 			let held = try await LabLog.waitFor(
@@ -198,7 +199,7 @@ struct EngineLongWorkTests {
 				process: "MachmanVMHost")
 			#expect(held.eventMessage.contains("dev is importing a disk"))
 			#expect(held.processID == Int(host))
-			try await Self.stillRunning(agent.api, op)
+			// The import outlived the log out: its vmhost answered it to the end.
 			let info = try await importing.value
 			#expect(info.disks.contains { $0.path?.hasSuffix("big.raw") == true })
 			#expect(await LabProcesses.waitForExit(host, timeout: .seconds(30)))
@@ -210,15 +211,15 @@ struct EngineLongWorkTests {
 	@Test("E46: quitting a vmhost during its import after the guest shut down asks first")
 	func quitDuringDrainAsks() async throws {
 		try await Self.onHFS("import-quit") { agent, _ in
-			let (host, op, importing) = try await Self.drainingImport(agent)
+			let (host, _, importing) = try await Self.drainingImport(agent)
 			let mark = LabLog.mark()
-			#expect(try await !TFHosts.quit(
-				agent, vm: "dev", host: host, reason: "userQuit", timeout: .seconds(2)))
+			#expect(try await TFHosts.control(agent, vm: "dev", "quit userQuit") == "ok")
 			let asked = try await LabLog.waitFor(
 				SeamProbe.promptLine("vmhost.quitDuringWork", "Cancel"), after: mark,
 				process: "MachmanVMHost")
 			#expect(asked.eventMessage.contains("dev is importing a disk — quit anyway?"))
-			try await Self.stillRunning(agent.api, op)
+			#expect(asked.processID == Int(host))
+			// Cancel kept it: the import outlived the quit.
 			let info = try await importing.value
 			#expect(info.disks.contains { $0.path?.hasSuffix("big.raw") == true })
 			#expect(await LabProcesses.waitForExit(host, timeout: .seconds(30)))
