@@ -31,6 +31,7 @@ scripts/lab.sh --guests | --full         # L3 guests | everything (L2 + L3)
 scripts/lab.sh --filter <TypeName>       # one suite (Swift Testing ids, never display names)
 scripts/lab.sh --launchd                 # adds the launchd tier (off by default)
 scripts/lab.sh … -v | -vv                # live progress + the lab log | + the guest consoles
+scripts/lab.sh … --plain                 # timestamped lines on a terminal too
 scripts/lab.sh --doctor | --self-check   # tools, fixtures, seams | the lab's own audits proven
 ```
 
@@ -40,11 +41,15 @@ Mac awake for the run (`caffeinate -i -s`), as `lab.sh` does: a maintenance slee
 as dozens of timeouts.
 
 `lab.sh` prints its progress live, read from Swift Testing's event stream (`swift test` holds
-its own output back while it writes to a file): each test's start, end, duration and issues,
-and after a quiet minute a stall line naming the running test, the step its harness is in and
-the last console line. Harness waits that run past 5 s narrate themselves in the lab log
-(`LabStep`); `-v` shows that log, `-vv` the guest consoles too. Every run keeps
-`report/progress.log` (the `-vv` stream) and `report/test-times.tsv`.
+its own output back while it writes to a file), and names each test by what it does (the
+`<id>: ` its name starts with is left out). On a terminal the running test sits at the bottom
+with its elapsed time and the step its harness is in; `-v` (the lab log) and `-vv` (the guest
+consoles too) turn that into a window of its latest output that scrolls in place; when the
+test ends the block collapses into its result line. Piped, redirected or with `--plain`, every
+line is printed with its time, and a quiet minute gets a stall line naming the running test,
+its step and the last console line. Harness waits that run past 5 s narrate themselves
+(`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and
+`report/test-times.tsv`. Lab VMs are named for their role in the test, never after a row.
 
 `lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
 a sandbox (`/tmp/mml.<4-char token>`, suite `com.gustaffranzen.Machman.test-<token>`, a fake
