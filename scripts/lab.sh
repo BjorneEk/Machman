@@ -142,6 +142,7 @@ lab_finish() {
 	local status=$?
 	set +e
 	lab_stop_helpers
+	[[ -t 1 ]] && printf '\033[?25h'  # the cursor, should the progress block's own exit miss it
 	if [[ -n "${root:-}" && -d "${root:-}" ]]; then
 		# shellcheck disable=SC2046
 		sandbox_lab_teardown "$root" $( { lab_pidfile_pids "$root"

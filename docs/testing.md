@@ -42,13 +42,14 @@ as dozens of timeouts.
 
 `lab.sh` prints its progress live, read from Swift Testing's event stream (`swift test` holds
 its own output back while it writes to a file), and names each test by what it does (the
-`<id>: ` its name starts with is left out). On a terminal the running test sits at the bottom
-with its elapsed time and the step its harness is in; `-v` (the lab log) and `-vv` (the guest
-consoles too) turn that into a window of its latest output that scrolls in place; when the
-test ends the block collapses into its result line. Piped, redirected or with `--plain`, every
-line is printed with its time, and a quiet minute gets a stall line naming the running test,
-its step and the last console line. Harness waits that run past 5 s narrate themselves
-(`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and
+`<id>: ` its name starts with is left out). On a terminal the running test sits in a block of
+fixed height at the bottom (cursor hidden) with its elapsed time and the step its harness is
+in; `-v` (the lab log) and `-vv` (the guest consoles too) fill it with a window of its latest
+output that scrolls in place. Only a test's end moves the screen: its result line, cut to the
+terminal's width, with its issues or skip reason as indented child lines. Piped, redirected or
+with `--plain`, every line is printed with its time, and a quiet minute gets a stall line
+naming the running test, its step and the last console line. Harness waits that run past 5 s
+narrate themselves (`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and
 `report/test-times.tsv`. Lab VMs are named for their role in the test, never after a row.
 
 `lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
