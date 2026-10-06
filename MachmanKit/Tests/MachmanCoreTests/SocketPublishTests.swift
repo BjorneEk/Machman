@@ -187,4 +187,34 @@ struct SocketPublishTests {
 		#expect(UDSListener.isLive(path: path))
 		listener?.shutdown()
 	}
+
+	// Review F14 (wave r3w3): the turn was waited for without a bound, so a starter stopped
+	// while holding it (a breakpoint, SIGSTOP) hung every other starter of its path — on the
+	// main actor, a whole agent. A starter waits a few seconds, then goes on without it.
+	@Test("E48: a starter goes on without its turn when another holds it past the bound")
+	func aStarterGoesOnWithoutAStuckTurn() async throws {
+		let dir = TestEnvironment.socketPath("mm-turn", suffix: "")
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let path = dir + "/t.sock"
+		let held = open(dir + "/.t.sock.lock", O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+		#expect(flock(held, LOCK_EX) == 0)   // a starter stuck in its turn
+		let starter = SecondStarter()
+		starter.finished.enter()
+		Thread.detachNewThread {
+			let listener = try? UDSListener(
+				path: path, queue: DispatchQueue(label: "mm-turn-accept"), onAccept: { close($0) })
+			starter.lock.withLock { starter.listener = listener }
+			starter.finished.leave()
+		}
+		// The bound is a few seconds; far past it, the start counts as hung.
+		let returned = await offPool { starter.finished.wait(timeout: .now() + .seconds(20)) }
+		#expect(returned == .success, "the start waited on the held turn without a bound")
+		close(held)
+		await offPool { starter.finished.wait() }
+		let listener = starter.lock.withLock { starter.listener }
+		#expect(listener != nil)
+		#expect(UDSListener.isLive(path: path))
+		listener?.shutdown()
+	}
 }

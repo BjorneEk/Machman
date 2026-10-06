@@ -347,7 +347,9 @@ struct BoundSocket {
 	// first then removed — two "serving", one unreachable. The probe, the unlink and the
 	// publish run under an exclusive flock on a sibling ".<name>.lock", held only while
 	// starting and never removed (a removed lock file would let a waiter and a newcomer both
-	// hold one). Without a lock file the start goes on unserialized, as before.
+	// hold one). Without a lock file the start goes on unserialized, as before — and so it
+	// does past `turnWait` (review F14): a starter stopped while holding its turn (a
+	// breakpoint, SIGSTOP) must not hang every other one, the agent's main actor among them.
 	static func whileStarting<T>(_ path: String, _ body: () throws -> T) throws -> T {
 		let lockPath = (path as NSString).deletingLastPathComponent + "/."
 			+ (path as NSString).lastPathComponent + ".lock"
@@ -358,9 +360,25 @@ struct BoundSocket {
 			return try body()
 		}
 		defer { close(fd) }   // closing releases the lock
-		while flock(fd, LOCK_EX) != 0, errno == EINTR {}
+		// Polled, from half a millisecond up to 50: a turn is mostly held for well under one.
+		var waited: useconds_t = 0
+		var pause: useconds_t = 500
+		while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+			guard Duration.microseconds(waited) < turnWait else {
+				MachmanLogger.log(.passiveWarning,
+					"starting \(path) without its lock: another start held it for "
+						+ "\(turnWait.components.seconds) s")
+				return try body()
+			}
+			usleep(pause)
+			waited += pause
+			pause = min(pause * 2, 50_000)
+		}
 		return try body()
 	}
+
+	// A start holds its turn for a few system calls; one held this long is stuck.
+	static let turnWait: Duration = .seconds(3)
 
 	private static func bindListening(_ path: String) throws -> BoundSocket {
 		var addr = try UDSListener.makeAddr(path)
