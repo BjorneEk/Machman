@@ -49,8 +49,10 @@ struct EngineConfigEditTests {
 				} catch let error as MachmanError {
 					#expect(error.message.hasPrefix(BootInfo.newerModeReason))
 				}
-				// No vmhost was launched for it (no Dock icon could flash).
+				// No vmhost was launched for it (no Dock icon could flash): the log, read up to
+				// now, names none.
 				try await Task.sleep(for: .seconds(1))
+				try await LabLog.caughtUp()
 				#expect(LabLog.count("test mode: vmhost for newer-boot-mode", after: mark) == 0)
 				let socket = MachmanPaths.vmSocketPath(vm: "newer-boot-mode")
 				#expect(!FileManager.default.fileExists(atPath: socket))

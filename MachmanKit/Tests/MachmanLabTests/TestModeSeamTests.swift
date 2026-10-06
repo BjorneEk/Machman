@@ -40,7 +40,7 @@ struct TestModeSeamTests {
 			#expect(app?.activationPolicy == .prohibited)
 			#expect(app?.isActive == false)
 			#expect(NSWorkspace.shared.frontmostApplication?.processIdentifier != agent.pid)
-			#expect(SeamProbe.breaches(naming: [agent.pid]) == [])
+			#expect(try SeamProbe.breaches(naming: [agent.pid]) == [])
 		}
 	}
 
@@ -179,7 +179,7 @@ struct TestModeSeamTests {
 				let app = NSRunningApplication(processIdentifier: windowed)
 				#expect(app?.activationPolicy != .regular)
 				#expect(app?.isActive == false)
-				#expect(SeamProbe.breaches(naming: [agent.pid, windowed]) == [])
+				#expect(try SeamProbe.breaches(naming: [agent.pid, windowed]) == [])
 			}
 		}
 	}
@@ -316,10 +316,14 @@ enum SeamProbe {
 		}
 	}
 
-	/// The audit's breach lines so far (report/watch/watch.jsonl) that name one of `pids`.
-	static func breaches(naming pids: Set<pid_t>) -> [String] {
-		let path = Lab.runDir + "/report/watch/watch.jsonl"
-		let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+	/// The audit's breach lines so far (Lab.watchPath) that name one of `pids`; throws when
+	/// there is no audit file, so "no breaches" can't pass on an audit that never ran.
+	static func breaches(naming pids: Set<pid_t>) throws -> [String] {
+		let path = Lab.watchPath
+		guard FileManager.default.fileExists(atPath: path) else {
+			throw LabError.specInvalid("no audit file at \(path)")
+		}
+		let text = try String(contentsOfFile: path, encoding: .utf8)
 		return text.split(separator: "\n").compactMap { line in
 			guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8))
 				as? [String: Any], object["level"] as? String == "breach",

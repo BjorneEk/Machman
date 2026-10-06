@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import MachmanAPI
 
 enum LabLog {
 	struct Entry: Decodable, Sendable {
@@ -47,6 +48,16 @@ enum LabLog {
 			let range = NSRange($0.eventMessage.startIndex..., in: $0.eventMessage)
 			return regex.firstMatch(in: $0.eventMessage, range: range) != nil
 		}.count
+	}
+
+	/// Returns once a line logged now has come back through the lab log: a check that a line
+	/// is absent then can't pass on a log that is stale or unreadable.
+	static func caughtUp(timeout: Duration = .seconds(20)) async throws {
+		let mark = mark()
+		let line = "lab: caught up \(UUID().uuidString)"
+		MachmanLogger.log(.log, line)
+		_ = try await waitFor(NSRegularExpression.escapedPattern(for: line), after: mark,
+			timeout: timeout)
 	}
 
 	/// Waits for a line whose message matches `pattern` (optionally from one process).

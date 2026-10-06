@@ -46,6 +46,10 @@ enum Lab {
 	static var productsDir: String { environment["MACHMAN_LAB_PRODUCTS"] ?? "" }
 	static var repoRoot: String { environment["MACHMAN_LAB_REPO"] ?? "" }
 	static var logPath: String { environment["MACHMAN_LAB_LOG"] ?? "" }
+	/// The run's host audit (one for every shard of a parallel run).
+	static var watchPath: String {
+		environment["MACHMAN_LAB_WATCH"] ?? runDir + "/report/watch/watch.jsonl"
+	}
 
 	static var pidsDir: String { runDir + "/pids" }
 	static var transcriptsDir: String { runDir + "/transcripts" }

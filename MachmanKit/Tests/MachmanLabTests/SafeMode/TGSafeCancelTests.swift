@@ -100,22 +100,21 @@ struct TGSafeCancelTests {
 				// The desktop: Start Safe, then Stop while it prepares.
 				try await Self.desktopStopsPreparation(vm: vm, agent: agent, events: events)
 				#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
-				// The agent menu: Start Safe, then Shut Down while it prepares. The menu
-				// lists the VM stopped until its vmhost starts, so its Shut Down is off then;
-				// the desktop's Stop (the wire's) stops it instead.
+				// The agent menu: Start Safe, then Shut Down while it prepares: its Shut Down must
+				// be on. Fails until the open bug V14 (the menu lists a preparing VM as stopped)
+				// is fixed; the wire's Stop then stops it, so the alert checks still run.
 				let mark = LabLog.mark()
 				let index = events.mark()
 				#expect(try await SeamProbe.control(agent, "menu startSafe stopped-prep") == "ok")
 				try await events.waitForMidCopy(vm: "stopped-prep", after: index)
 				let menu = try await agent.control("menu shutDown stopped-prep")
-				withKnownIssue(Self.agentMenuCard) {
-					#expect(menu == "ok")
-				}
+				#expect(menu == "ok")
 				if menu != "ok" { try await agent.api.stop(vm: "stopped-prep", mode: .soft) }
 				try await Self.waitForCanceledBuild(events, vm: "stopped-prep", after: index)
 				try await vm.waitForState(.stopped, timeout: .seconds(30))
 				// The menu's start failed as canceled by now; an alert for it would be logged.
 				try await Task.sleep(for: .seconds(2))
+				try await LabLog.caughtUp()
 				#expect(LabLog.count("test prompt agent\\.actionFailed", after: mark) == 0)
 				#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
 			}
