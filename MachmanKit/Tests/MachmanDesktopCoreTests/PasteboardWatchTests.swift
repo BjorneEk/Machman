@@ -101,4 +101,22 @@ struct PasteboardWatchTests {
 		#expect(watch.snapshot.canPaste(into: .mounts))
 		#expect(board.reads == 2)
 	}
+
+	// Each of the four sections judged the files on its own, so every copied file was
+	// statted four times on the main thread at every read.
+	@Test("P11: a pasteboard read stats each file once")
+	func aReadStatsEachFileOnce() {
+		let files = [
+			URL(fileURLWithPath: "/Users/demo/src/", isDirectory: true),
+			URL(fileURLWithPath: "/Users/demo/disk.raw"),
+			URL(fileURLWithPath: "/Users/demo/vmlinuz"),
+		]
+		var stats = 0
+		let snapshot = PasteboardSnapshot(entities: [], fileURLs: files, isDirectory: {
+			stats += 1
+			return $0.hasDirectoryPath
+		})
+		#expect(stats == files.count)
+		#expect(snapshot.canPaste(into: .mounts) && snapshot.canPaste(into: .disks))
+	}
 }

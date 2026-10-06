@@ -16,7 +16,7 @@ import Foundation
 import MachmanAPI
 
 // One read of the pasteboard: Machman's copied entities and plain file URLs, with each
-// tree section's verdict computed once (the drop rules; directories checked once per read).
+// tree section's verdict computed once (the drop rules; each file statted once per read).
 public struct PasteboardSnapshot {
 	public let entities: [EntityClipboard]
 	public let fileURLs: [URL]
@@ -34,9 +34,10 @@ public struct PasteboardSnapshot {
 		self.fileURLs = fileURLs
 		var fits: [TreeDragPreview.Section: Bool] = [:]
 		if !fileURLs.isEmpty {
+			let known = TreeDropValidator.classified(fileURLs, isDirectory: isDirectory)
 			for section in Self.sections {
 				fits[section] = !TreeDropValidator.fitting(
-					section: section, urls: fileURLs, isDirectory: isDirectory).isEmpty
+					section: section, urls: fileURLs, isDirectory: known).isEmpty
 			}
 		}
 		self.fits = fits

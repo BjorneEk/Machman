@@ -47,16 +47,16 @@ public struct TreeDragPreview: Equatable {
 		return false
 	}
 
+	// Each dragged item is statted once, however many rules ask about it (P11).
 	public static func resolve(
 		section: Section, urls: [URL],
 		isDirectory: (URL) -> Bool = TreeDropValidator.isDirectory
 	) -> TreeDragPreview {
-		TreeDragPreview(
+		let known = TreeDropValidator.classified(urls, isDirectory: isDirectory)
+		return TreeDragPreview(
 			section: section, urls: urls,
-			adds: TreeDropValidator.fitting(
-				section: section, urls: urls, isDirectory: isDirectory),
-			verdict: TreeDropValidator.verdict(
-				section: section, urls: urls, isDirectory: isDirectory))
+			adds: TreeDropValidator.fitting(section: section, urls: urls, isDirectory: known),
+			verdict: TreeDropValidator.verdict(section: section, urls: urls, isDirectory: known))
 	}
 }
 
@@ -72,6 +72,18 @@ public enum TreeDropValidator {
 		var isDir: ObjCBool = false
 		FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
 		return isDir.boolValue
+	}
+
+	// `urls` statted once each, as a lookup the rules can ask as often as they like: on a
+	// network volume every stat can stall (P11).
+	static func classified(
+		_ urls: [URL], isDirectory: (URL) -> Bool
+	) -> (URL) -> Bool {
+		var known: [URL: Bool] = [:]
+		for url in urls where known[url] == nil {
+			known[url] = isDirectory(url)
+		}
+		return { known[$0] ?? false }
 	}
 
 	// The dragged items the section takes, in drag order.

@@ -74,4 +74,19 @@ struct TreeDropTests {
 		#expect(preview.adds == [image])
 		#expect(preview.verdict == .valid("Add disk.raw as a disk — 1 skipped"))
 	}
+
+	// The fit, the verdict and the first item's reason each asked the file system again, so
+	// a drag of items on a network volume stalled for every stat twice or three times.
+	@Test("P11: a drop preview stats each dragged item once")
+	func aDropPreviewStatsEachItemOnce() {
+		let urls = [Self.folder("src"), Self.file("a.raw"), Self.file("b.qcow2")]
+		for section in PasteboardSnapshot.sections {
+			var stats = 0
+			_ = TreeDragPreview.resolve(section: section, urls: urls, isDirectory: {
+				stats += 1
+				return $0.hasDirectoryPath
+			})
+			#expect(stats == urls.count, "\(section)")
+		}
+	}
 }
