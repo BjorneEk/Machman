@@ -28,3 +28,21 @@ public struct StartPolicy: Codable, Sendable, Equatable {
 		self.autostart = try c.decodeIfPresent(Bool.self, forKey: .autostart) ?? false
 	}
 }
+
+// Safe mode and Start at login rule each other out (H52): an autostarted safe run has nowhere
+// to put its discardable state in v1. The daemon refuses the pair with this sentence, and a
+// client dims each switch while the other is on, saying the same. A policy with both on (a
+// hand-edited config) refuses neither, so either can still be switched off.
+extension StartPolicy {
+	public static let safeAutostartRefusal = "A safe run can\u{2019}t start automatically"
+
+	// Why Safe mode can't be switched on now, or nil.
+	public var safeRefusal: String? {
+		autostart && !safe ? Self.safeAutostartRefusal : nil
+	}
+
+	// Why Start at login can't be switched on now, or nil.
+	public var autostartRefusal: String? {
+		safe && !autostart ? Self.safeAutostartRefusal : nil
+	}
+}

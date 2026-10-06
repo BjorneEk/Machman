@@ -137,6 +137,10 @@ enum InspectorScenes {
 		inspector(
 			"vm.outdated-host", "VMInspector, run by an older vmhost",
 			vms: Samples.libraryWithOutdatedHost, node: nil),
+		// H52: Start at login on, so Safe mode dims with the daemon's reason.
+		inspector(
+			"vm.autostart", "VMInspector, Start at login on (Safe mode dims)",
+			vms: { [Samples.linuxAutostart()] }, select: "Alpine", node: nil),
 		inspector(
 			"disk.outdated-host", "DiskInspector, run by an older vmhost",
 			vms: Samples.libraryWithOutdatedHost, node: .disk("storage:system")),

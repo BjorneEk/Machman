@@ -65,13 +65,11 @@ struct InspectorGatingTests {
 		#expect(try control(safe, labelled: "Safe mode").value == "1")
 		let safeToggle = try control(autostart, labelled: "Safe mode")
 		let loginToggle = try control(safe, labelled: "Start at login")
-		// The daemon refuses the pair (“A safe run can’t start automatically”); the toggles
-		// used to dim each other with that reason and no longer do. Fails until the open bug
-		// H52 (Default start offers Safe mode while Start at login is on) is fixed.
+		// The daemon refuses the pair; each toggle dims under the other with its reason (H52).
 		#expect(!safeToggle.isEnabled, "Safe mode stays on offer under Start at login")
-		#expect(safeToggle.help?.isEmpty == false)
+		#expect(safeToggle.help == StartPolicy.safeAutostartRefusal)
 		#expect(!loginToggle.isEnabled, "Start at login stays on offer under Safe mode")
-		#expect(loginToggle.help?.isEmpty == false)
+		#expect(loginToggle.help == StartPolicy.safeAutostartRefusal)
 	}
 
 	@Test("RunDefaults narrow width: the Default start toggles fit at the 250 pt floor")

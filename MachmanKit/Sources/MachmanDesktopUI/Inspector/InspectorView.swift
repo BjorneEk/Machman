@@ -245,10 +245,15 @@ struct VMInspector: View {
 							.accessibilityLabel(Self.noDisplayHelp)
 					}
 				}
+				// Each dims while the other is on, with the daemon's own reason (H52).
 				Toggle("Safe mode", isOn: policyBinding(\.safe))
+					.disabled(policy.safeRefusal != nil)
+					.help(policy.safeRefusal ?? "")
 				// A per-VM launchd job starts the VM at login (LaunchAgentManager), with no
 				// daemon involved.
 				Toggle("Start at login", isOn: policyBinding(\.autostart))
+					.disabled(policy.autostartRefusal != nil)
+					.help(policy.autostartRefusal ?? "")
 			}
 
 			runtimeSection
@@ -419,13 +424,15 @@ struct VMInspector: View {
 			})
 	}
 
+	private var policy: StartPolicy { vm.startPolicy ?? StartPolicy() }
+
 	private func policyBinding(_ key: WritableKeyPath<StartPolicy, Bool>) -> Binding<Bool> {
 		Binding(
-			get: { (vm.startPolicy ?? StartPolicy())[keyPath: key] },
+			get: { policy[keyPath: key] },
 			set: { value in
-				var policy = vm.startPolicy ?? StartPolicy()
-				policy[keyPath: key] = value
-				viewModel.setStartPolicy(vm.name, policy: policy)
+				var updated = policy
+				updated[keyPath: key] = value
+				viewModel.setStartPolicy(vm.name, policy: updated)
 			})
 	}
 }

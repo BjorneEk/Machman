@@ -726,8 +726,7 @@ public final class LocalMachman: MachmanControlling {
 		// The single choke point (the vmhost serves this same class): an autostarted safe
 		// run has nowhere to put its discardable state in v1.
 		guard !(policy.autostart && policy.safe) else {
-			throw MachmanError(
-				code: .invalidArgument, message: "A safe run can’t start automatically")
+			throw MachmanError(code: .invalidArgument, message: StartPolicy.safeAutostartRefusal)
 		}
 		let vm = try lookup(name)
 		try vm.config.setStartPolicy(policy)
