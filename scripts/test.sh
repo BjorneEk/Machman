@@ -5,7 +5,8 @@
 #   scripts/test.sh [swift test args]     e.g. --filter WireFixtureTests
 #   scripts/test.sh --self-check          prove the sandbox guard refuses unsandboxed runs
 #
-# MachmanLabTests never runs here: it needs scripts/lab.sh.
+# MachmanLabTests never runs here: it needs scripts/lab.sh. MachmanDesktopUITests runs in a
+# swift test pass of its own, after the rest (one sandbox, one exit status).
 # Never launches an app or touches a live daemon. Every run gets its own suite id
 # (com.gustaffranzen.Machman.test-<token>), a scratch data dir and a fake home under
 # /tmp/mmt.<token>, all removed on exit — so a run can neither resolve the .dev / Release
@@ -74,9 +75,30 @@ if [[ "$mode" == selfcheck ]]; then
 fi
 
 status=0
-env MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$root/data" CFFIXED_USER_HOME="$root/home" \
-	swift test --skip-build --disable-xctest --package-path "$pkg" \
-	--skip 'MachmanLabTests\.' "$@" || status=$?
+# run_pass [swift test args]: one swift test process in this run's sandbox; the first failing
+# pass's status is the run's.
+run_pass() {
+	local rc=0
+	env MACHMAN_SUITE_ID="$suite" MACHMAN_DATA_DIR="$root/data" CFFIXED_USER_HOME="$root/home" \
+		swift test --skip-build --disable-xctest --package-path "$pkg" \
+		--skip 'MachmanLabTests\.' "$@" || rc=$?
+	((status)) || status=$rc
+}
+
+# MachmanDesktopUITests hosts its views on the main actor, one at a time, for most of a minute:
+# in the same process it starved the main-actor waits of the timing-sensitive suites. A run
+# with --filter stays one pass (a second --filter would widen it: filters OR together).
+ui='MachmanDesktopUITests\.'
+filtered=0
+for arg in "$@"; do
+	if [[ "$arg" == --filter || "$arg" == --filter=* ]]; then filtered=1; fi
+done
+if ((filtered)); then
+	run_pass "$@"
+else
+	run_pass --skip "$ui" "$@"
+	run_pass --filter "$ui" "$@"
+fi
 
 # Anything a test wrote where the real ~/.ssh or ~/Library/LaunchAgents would be landed in the
 # fake home instead: surface it (SwiftPM's own .swiftpm and Library/Caches there are expected).
