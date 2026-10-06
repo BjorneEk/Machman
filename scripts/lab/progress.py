@@ -52,8 +52,9 @@ PROCESSES = {"MachmanAgent": "agent", "MachmanVMHost": "vmhost",
 # test's issue (a line when plain; on a terminal a child line under the test's result);
 # "start" is a test's start (a line when plain, the block's header on a terminal); "detail"
 # and "step" (a narrated wait) are output (lines when plain, the block's window on a
-# terminal); "stall" is plain only. Extras, for the terminal: "parts" (prefix, name, suffix:
-# the name is what gets cut to fit), "children" (indented lines under it), "test".
+# terminal); "stall" is plain only. Extras, for the terminal: "parts" (mark, name, suffix:
+# the name is what gets cut to fit), "note" (a yellow suffix), "children" (items hung under
+# the line: glyph, text, more lines), "test".
 
 
 def clock(epoch):
@@ -176,8 +177,20 @@ class Screen:
     def paint(self, code, text):
         return "\x1b[%sm%s\x1b[0m" % (code, text) if self.colour and code else text
 
+    def render(self, row, width):
+        """A row of (colour code, text) segments, cut to `width` with an ellipsis."""
+        out, used = [], 0
+        for code, text in row:
+            text = CONTROLS.sub("", text.expandtabs(4))
+            if used + len(text) > width:
+                out.append(self.paint(code, text[:max(0, width - used - 1)] + "…"))
+                break
+            out.append(self.paint(code, text))
+            used += len(text)
+        return "".join(out)
+
     def update(self, above, block):
-        """`above` and `block` are (colour code, text) rows, each cut to the width."""
+        """`above` and `block` are rows of (colour code, text) segments."""
         if not above and block == self.last:
             return
         width = self.dimensions()[0] - 1
@@ -187,7 +200,7 @@ class Screen:
             self.hidden = True
         if self.drawn:
             parts.append("\r\x1b[%dA\x1b[J" % self.drawn)
-        parts.extend(self.paint(code, fit(text, width)) + "\n" for code, text in above + block)
+        parts.extend(self.render(row, width) + "\n" for row in above + block)
         if not block and self.hidden:
             parts.append("\x1b[?25h")
             self.hidden = False
@@ -208,7 +221,7 @@ class Follower:
         self.started = {}            # test id -> (index, start epoch)
         self.skipped = {}            # reason -> count
         self.issues = {}             # test id -> [(known, where)]
-        self.details = {}            # test id -> [(glyph, where, text)]
+        self.details = {}            # test id -> [(glyph, where, text, known issue's title)]
         self.done = False
         self.results = []            # (id, about, status, seconds)
         self.current = None
@@ -263,7 +276,7 @@ class Follower:
 
     @staticmethod
     def colour(text):
-        return {"✔": "32", "✘": "31", "~": "33", "!": "33", "–": "2"}.get(text.lstrip()[:1])
+        return {"✔": "32", "✘": "1;31", "~": "33", "!": "33", "–": "2"}.get(text.lstrip()[:1])
 
     def squeeze(self, prefix, parts, reserved=0):
         """prefix + parts' prefix, name and suffix, the name cut so the line fits the width."""
@@ -272,31 +285,52 @@ class Follower:
         return prefix + head + fit(name, max(10, room)) + tail
 
     def rows(self, epoch, text, extras):
-        """A result's rows on the terminal: its line, then its child lines."""
+        """A result's rows on the terminal: its line (only the mark and index coloured, the
+        time and duration dim, a note yellow), then its children hung under it."""
+        stamp = ("2", clock(epoch) + " ")
         lines = [l.rstrip() for l in text.split("\n")]
-        first = "%s %s" % (clock(epoch), lines[0].strip())
         if "parts" in extras:
-            first = self.squeeze(clock(epoch) + " ", extras["parts"])
-        children = extras.get("children")
-        if children is None:
-            children = [l.strip() for l in lines[1:] if l.strip()]
-        rows = [(self.colour(first[9:]), first)]
-        rows.extend((self.colour(c), " " * 11 + c) for c in children)
+            mark, name, tail = extras["parts"]
+            note = extras.get("note", "")
+            room = self.screen.dimensions()[0] - 1 - len(stamp[1] + mark + " " + tail + note)
+            name = fit(name, max(10, room))
+            if mark.startswith("–"):
+                first = [stamp, ("2", "%s %s%s" % (mark, name, tail))]
+            else:
+                first = [stamp, (self.colour(mark), mark), (None, " " + name), ("2", tail)]
+                if note:
+                    first.append(("33", note))
+        else:
+            first = [stamp, (self.colour(lines[0]), lines[0].strip())]
+        rows = [first]
+        items = extras.get("children")
+        if items is None:
+            rows.extend([(None, " " * 9 + l.strip())] for l in lines[1:] if l.strip())
+            return rows
+        for i, (glyph, line, more) in enumerate(items):
+            last = i == len(items) - 1
+            lead = [(None, " " * 9), ("2", "└─ " if last else "├─ ")]
+            if glyph:
+                rows.append(lead + [(self.colour(glyph), glyph), (None, " " + line)])
+            else:
+                rows.append(lead + [("2", line)])
+            for l in more:
+                rows.append([(None, " " * 9), ("2", ("   " if last else "│  ") + "  "),
+                             ("2" if l.startswith("⋯") else None, l)])
         return rows
 
     def children(self, test_id):
-        """A test's issues as child lines: a failure's message (8 lines at most: its first
-        two, how many are left out, its last five), a known issue's first line."""
+        """A test's issues as items to hang under its result: a failure's message (8 lines at
+        most: its first two, how many are left out, its last five), a known issue's title."""
         out = []
-        for glyph, at, text in self.details.get(test_id, []):
+        for glyph, at, text, title in self.details.get(test_id, []):
             lines = [l.strip() for l in text.split("\n") if l.strip()] or [""]
             if glyph == "~":
-                out.append("%s %s: %s" % (glyph, at, lines[0]))
+                out.append((glyph, "known issue: %s" % (title or lines[0]), []))
                 continue
-            lines[0] = "%s %s: %s" % (glyph, at, lines[0])
+            lines[0] = "%s: %s" % (at, lines[0])
             shown = elide(lines, 8, " in report/progress.log")
-            out.append(shown[0])
-            out.extend("  " + l for l in shown[1:])
+            out.append((glyph, shown[0], shown[1:]))
         return out
 
     def block(self, now):
@@ -323,7 +357,7 @@ class Follower:
         elif self.current is not None:
             body.extend("  " + l for l in self.window.lines(height))
         body += [""] * (height - len(body))
-        return [("1", header)] + [("2", b) for b in body]
+        return [[("1", header)]] + [[("2", b)] for b in body]
 
     # --- the event stream -------------------------------------------------------------------
 
@@ -366,9 +400,12 @@ class Follower:
             symbol = messages[0].get("symbol") if messages else ""
             glyph = "~" if known else ("!" if symbol == "warning" else "✘")
             text = CARD.sub("", " ".join(m["text"] for m in messages if m.get("text")))
+            title = CARD.sub("", next((m.get("text", "") for m in messages[1:]
+                                      if m.get("symbol") == "details"), ""))
             if test_id is not None:
-                self.issues.setdefault(test_id, []).append((known, at))
-                self.details.setdefault(test_id, []).append((glyph, at, text[:2000]))
+                if glyph != "!":  # a warning never fails its test
+                    self.issues.setdefault(test_id, []).append((known, at))
+                self.details.setdefault(test_id, []).append((glyph, at, text[:2000], title))
             out.append((when, 0, "  %s %s: %s" % (glyph, at, text[:2000]), "issue",
                         {"test": test_id}))
         elif kind == "testSkipped" and test_id in self.plan:
@@ -379,8 +416,8 @@ class Follower:
             # A skip with a reason says something (-v); one for a tier not in this run doesn't.
             out.append((when, 1 if reason else 2, "– skipped: %s%s" % (
                 about(self.display(test_id)), (" — " + reason) if reason else ""), "result",
-                {"parts": ("– skipped: ", about(self.display(test_id)), ""),
-                 "children": [reason] if reason else []}))
+                {"parts": ("– skipped:", about(self.display(test_id)), ""),
+                 "children": [("", reason, [])] if reason else []}))
         elif kind == "testSkipped":
             match = SKIPPED.match(first.replace("Suite", "Test", 1))
             out.append((when, 1 if match and match.group(1) else 2, "– %s" % first, "result"))
@@ -397,10 +434,9 @@ class Follower:
             glyph = "✘" if failed else "✔"
             out.append((when, 0, "%s %s %s · %s%s" % (
                 glyph, self.of(index), about(self.display(test_id)), span(seconds), note),
-                "result", {"parts": ("%s %s " % (glyph, self.of(index)),
-                                     about(self.display(test_id)),
-                                     " · %s%s" % (span(seconds), note)),
-                           "children": self.children(test_id)}))
+                "result", {"parts": ("%s %s" % (glyph, self.of(index)),
+                                     about(self.display(test_id)), " · %s" % span(seconds)),
+                           "note": note, "children": self.children(test_id)}))
             if self.current == test_id:
                 self.current = None
                 self.window = Window()
@@ -513,7 +549,7 @@ class Follower:
         if running is not None:
             # The test process died in it: its issues never got a result line to follow.
             out.append((now, 0, "✘ %s · did not finish" % about(self.display(running)),
-                        "result", {"parts": ("✘ ", about(self.display(running)),
+                        "result", {"parts": ("✘", about(self.display(running)),
                                              " · did not finish"),
                                    "children": self.children(running)}))
         if self.summary is None:
@@ -837,12 +873,34 @@ def self_check():
         check("a long result line is cut to the width and keeps its duration",
               len(shown[result]) <= 79 and "…" in shown[result]
               and shown[result].endswith(" · 10 s"))
-        check("a failure's issue follows as child lines: its first two, a count, its last five",
-              shown[result + 1] == " " * 11 + "✘ File.swift:71: Expectation failed: a == b"
-              and shown[result + 2] == " " * 11 + "  detail 1"
-              and shown[result + 3] == " " * 11 + "  ⋯ 2 more lines in report/progress.log ⋯"
-              and shown[result + 4] == " " * 11 + "  detail 4"
-              and shown[result + 8] == " " * 11 + "  detail 8")
+        check("a failure's issue hangs under its result: first two lines, a count, last five",
+              shown[result + 1] == " " * 9 + "└─ ✘ File.swift:71: Expectation failed: a == b"
+              and shown[result + 2] == " " * 14 + "detail 1"
+              and shown[result + 3] == " " * 14 + "⋯ 2 more lines in report/progress.log ⋯"
+              and shown[result + 4] == " " * 14 + "detail 4"
+              and shown[result + 8] == " " * 14 + "detail 8")
+        known = {"isKnown": True, "sourceLocation": {"fileID": "Mod/File.swift", "line": 81}}
+        write(root + "/report/events.jsonl", [
+            event("issueRecorded", now - 25, r8, [("passWithKnownIssue", "Expectation failed: x"),
+                                                  ("details", "E9: the override never boots")],
+                  issue=known),
+            event("issueRecorded", now - 24, r8, [("warning", "a warning")],
+                  issue={"isKnown": False, "sourceLocation": {"fileID": "F.swift", "line": 3}}),
+            event("testEnded", now - 20, r8, [("pass", "passed")])])
+        follower.tick()
+        shown = Terminal().feed(screen.getvalue())
+        result = next(i for i, l in enumerate(shown) if " ✔ 2/2 " in l)
+        check("a known issue hangs under its result by its title, the last child with └─",
+              shown[result].endswith("a quiet test · 10 s · known issue")
+              and shown[result + 1] == " " * 9 + "├─ ~ known issue: the override never boots"
+              and shown[result + 2] == " " * 9 + "└─ ! F.swift:3: a warning")
+        follower.screen.colour = True
+        row = follower.rows(now, "", {"parts": ("✔ 2/2", "a quiet test", " · 10 s"),
+                                      "note": " · known issue"})
+        drawn = follower.screen.render(row[0], 79)
+        check("only the mark and index are coloured; the time and duration dim, the note yellow",
+              "\x1b[32m✔ 2/2\x1b[0m a quiet test\x1b[2m · 10 s\x1b[0m" in drawn
+              and "\x1b[33m · known issue\x1b[0m" in drawn and drawn.startswith("\x1b[2m"))
         check("a window that fits shows all its lines, padded",
               elide(["a", "b", "c"], 10) == ["a", "b", "c"]
               and Window().lines(10) == [])

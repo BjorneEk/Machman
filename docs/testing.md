@@ -46,8 +46,9 @@ its own output back while it writes to a file), and names each test by what it d
 fixed height at the bottom (cursor hidden) with its elapsed time and the step its harness is
 in; `-v` (the lab log) and `-vv` (the guest consoles too) fill it with a window of its output:
 its first two lines, how many lines have gone by since, and the newest. Only a test's end
-moves the screen: its result line, cut to the terminal's width, with its issues (laid out the
-same way) or skip reason as indented child lines. Piped, redirected or
+moves the screen: its result line, cut to the terminal's width (only its mark and number in
+colour), with its issues (laid out the same way; a known issue by its title) or skip reason
+hung under it (`├─`, `└─`). Piped, redirected or
 with `--plain`, every line is printed with its time, and a quiet minute gets a stall line
 naming the running test, its step and the last console line. Harness waits that run past 5 s
 narrate themselves (`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and
