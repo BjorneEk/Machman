@@ -7,8 +7,8 @@
 //  install-phase snapshots. The app hands it the daemon connection (RemoteMachman); tests
 //  and the render tool hand it StubMachman. This file keeps the state and its wiring, the
 //  alerts and the selection; the jobs live in extensions by responsibility: +Actions (what
-//  the user asks of the daemon), +Toasts, +ListAnnouncer, and the forms', tree's and tabs'
-//  files.
+//  the user asks of the daemon), +Toasts (over its ToastCenter), +ListAnnouncer, and the
+//  forms', tree's and tabs' files.
 //
 
 import Foundation
@@ -162,15 +162,9 @@ public final class VMListViewModel: ObservableObject {
 
 	// MARK: Toasts (VMListViewModel+Toasts.swift)
 
-	// Bottom-right transient toasts (engine warnings/errors, confirmations). Lifetime is
-	// the user's setting; transfers show as progress cards from OperationsStore instead.
-	@Published public internal(set) var toasts: [MachmanToast] = []
-	// Toasts the pointer rests on stay until it leaves, then live a fresh lifetime (F6), so a
-	// long warning can be read; each timed toast's expiry is tracked to restart it.
-	var heldToasts: Set<UUID> = []
-	var toastExpiries: [UUID: Task<Void, Never>] = [:]
-	// Tests shorten a toast's life without touching the user's setting.
-	var toastLifetimeOverride: Duration?
+	// Bottom-right transient toasts (engine warnings/errors, confirmations), observed by the
+	// overlay alone (Q10); transfers show as progress cards from OperationsStore instead.
+	public let toastCenter = ToastCenter()
 
 	// MARK: List announcer (VMListViewModel+ListAnnouncer.swift)
 

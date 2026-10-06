@@ -92,7 +92,7 @@ final class THDesktop {
 			api: api, store: store, operations: operations, terminals: terminals,
 			previews: previews, canvases: canvases, tornTabs: tornTabs)
 		let log = toasts
-		watch = viewModel.$toasts.sink { log.record($0) }
+		watch = viewModel.toastCenter.$toasts.sink { log.record($0) }
 	}
 
 	/// The stack on a connection of its own to `agent`, its files under the scope's scratch.

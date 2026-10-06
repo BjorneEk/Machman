@@ -17,13 +17,21 @@ import MachmanDesktopCore
 struct NotificationOverlay: View {
 	@ObservedObject var viewModel: VMListViewModel
 	@ObservedObject var operations: OperationsStore
+	// The toast stack publishes on its own, so a toast re-renders only this corner (Q10).
+	@ObservedObject private var toasts: ToastCenter
+
+	init(viewModel: VMListViewModel, operations: OperationsStore) {
+		self.viewModel = viewModel
+		self.operations = operations
+		self.toasts = viewModel.toastCenter
+	}
 
 	var body: some View {
 		ToastStack(
-			toasts: viewModel.statusToasts + viewModel.toasts,
+			toasts: viewModel.statusToasts + toasts.toasts,
 			progress: cards,
 			dismissProgress: viewModel.closeProgressCard,
-			hoverToast: viewModel.holdToast)
+			hoverToast: toasts.hold)
 	}
 
 	private var cards: [ProgressCardModel] {

@@ -141,7 +141,7 @@ final class TFToastLog {
 
 	init(_ viewModel: VMListViewModel) {
 		record(viewModel.toasts)
-		sink = viewModel.$toasts.sink { [weak self] toasts in
+		sink = viewModel.toastCenter.$toasts.sink { [weak self] toasts in
 			MainActor.assumeIsolated { self?.record(toasts) }
 		}
 	}

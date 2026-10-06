@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Combine
 import MachmanAPI
 import MachmanUI
 import MachmanFixtures
@@ -82,5 +83,30 @@ struct ToastTests {
 		])
 		h.viewModel.announceSetAsideSettings([profiles, h.canvases])   // as after a reconnect
 		#expect(h.viewModel.toasts.count == 1)
+	}
+
+	// The toast stack lived on the view model, so each toast — its push, the pointer's hold,
+	// its expiry — re-rendered every view observing it: the whole window and its menus.
+	@Test("Q10: a toast publishes on the toast center and leaves the view model quiet")
+	func aToastLeavesTheViewModelQuiet() async throws {
+		let h = await DesktopHarness.make()
+		h.viewModel.toastLifetimeOverride = .milliseconds(100)
+		var publishes = 0
+		var stackPublishes = 0
+		let watch = h.viewModel.objectWillChange.sink { publishes += 1 }
+		let stack = h.viewModel.toastCenter.objectWillChange.sink { stackPublishes += 1 }
+		h.viewModel.pushToast(symbol: MachmanSymbols.start, message: "Debian started")
+		let id = try #require(h.viewModel.toasts.first?.id)
+		h.viewModel.holdToast(id, true)
+		h.viewModel.holdToast(id, false)
+		h.viewModel.pushToast(
+			symbol: MachmanSymbols.network, message: "Looking", key: "slot", spinner: true,
+			sticky: true)
+		h.viewModel.dismissToast(key: "slot")
+		#expect(await eventually { h.viewModel.toasts.isEmpty })   // the expiry, too
+		watch.cancel()
+		stack.cancel()
+		#expect(publishes == 0)
+		#expect(stackPublishes >= 4)
 	}
 }
