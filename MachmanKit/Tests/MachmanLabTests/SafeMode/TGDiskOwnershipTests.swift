@@ -18,9 +18,6 @@ struct TGDiskOwnershipTests {
 		+ "(qemu-img convert -O raw)"
 
 	/// Card D29, a qcow2 attached by reference (r3-tg, D/RISK).
-	static let qcowByReferenceCard = Comment(rawValue: "D29: A disk added by reference skips the "
-		+ "format sniff: a qcow2 attaches as raw bytes")
-
 	/// A file whose first bytes are qcow2's magic ("QFI\u{FB}"), 64 KiB in all.
 	static func writeQcow(_ path: String) throws {
 		var bytes = Data([0x51, 0x46, 0x49, 0xFB, 0x00, 0x00, 0x00, 0x03])
@@ -95,10 +92,11 @@ struct TGDiskOwnershipTests {
 				refusal = error
 			}
 			let attached = try await vm.info().disks.contains { $0.path == qcow }
-			withKnownIssue(Self.qcowByReferenceCard) {
-				#expect(refusal?.message == Self.qcowRefusal)
-				#expect(!attached)
-			}
+			// Fails until the open bug D29 (a disk added by reference skips the format sniff)
+			// is fixed.
+			#expect(refusal?.code == .invalidArgument)
+			#expect(refusal?.message == Self.qcowRefusal)
+			#expect(!attached)
 		}
 	}
 

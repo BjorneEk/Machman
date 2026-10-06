@@ -179,20 +179,15 @@ struct TGSafeSaveTests {
 		#expect(seen.components(separatedBy: "LAB-READY").count - 1 == 1)
 	}
 
-	/// Card E55, the guard order a plain start meets (r3-tg, E/UX).
-	static let startAnywayCard = Comment(rawValue: "E55: A plain Start offers Start Anyway where "
-		+ "the disk-sharing guard refuses every start")
-
 	/// The original can't start while the saved VM runs on its disk, force or not. A plain
-	/// start meets the MAC guard first (the run still uses the original's MAC) and is
-	/// offered Start Anyway, which the disk guard then refuses.
+	/// start must meet the disk guard too; it meets the MAC guard first (the run still uses
+	/// the original's MAC) and is offered Start Anyway, which the disk guard then refuses, so
+	/// the plain start's checks fail until the open bug E55 (guard order) is fixed.
 	static func expectDiskRefusal(_ vm: TGVM, _ sentence: String) async throws {
 		let plain = try await vm.startError(StartOptions(openWindow: false))
 		#expect(plain != nil)
-		withKnownIssue(startAnywayCard) {
-			#expect(plain?.code == .invalidState)
-			#expect(plain?.message == sentence)
-		}
+		#expect(plain?.code == .invalidState)
+		#expect(plain?.message == sentence)
 		let forced = try await vm.startError(StartOptions(openWindow: false, force: true))
 		#expect(forced?.code == .invalidState)
 		#expect(forced?.message == sentence)

@@ -18,10 +18,6 @@ struct TGAutostartSafeTests {
 	static let atLogin = StartPolicy(windowed: false, autostart: true)
 
 	/// Card E54, the login race (r3-tg, E/RISK, routed to r3-3c).
-	static let loginRaceCard = Comment(rawValue: "E54: Two login VMs sharing a writable image "
-		+ "can both refuse to start at login: each binds its socket before it checks for the "
-		+ "other's")
-
 	static func escaped(_ text: String) -> String { NSRegularExpression.escapedPattern(for: text) }
 
 	@Test("12: an unsafe autostart beside a dead safe run is adopted unshielded and the dir swept")
@@ -101,9 +97,10 @@ struct TGAutostartSafeTests {
 					Self.refusal, after: mark, process: "MachmanVMHost", timeout: .seconds(30))
 				let label = TGLaunchd.label(second.name)
 				#expect(await TG.until(timeout: .seconds(20)) {
-					(try? await TGLaunchd.state(label))?.pid == nil
+					// A launchctl query that fails is no exit.
+					do { return try await TGLaunchd.state(label).pid == nil } catch { return false }
 				})
-				if let exit = try await TGLaunchd.state(label).lastExit { #expect(exit == 70) }
+				#expect(try await TGLaunchd.state(label).lastExit == 70)
 				#expect(await !TG.isSocketLive(second.socketPath))
 				try await agent.relaunch()
 				#expect(await TG.until { (try? await first.info())?.state == .running })
@@ -131,10 +128,12 @@ struct TGAutostartSafeTests {
 						running += 1
 					}
 				}
-				#expect(LabLog.count("autostart of tg-g[ab] refused: ", after: mark) >= 1)
-				withKnownIssue(Self.loginRaceCard, isIntermittent: true) {
-					#expect(running == 1)
-				}
+				#expect(LabLog.count("autostart of sharer-[ab] refused: ", after: mark) >= 1)
+				// Both on the shared writable image would corrupt it: never.
+				#expect(running <= 1, "both sharers booted on the shared writable image")
+				// Fails (on the runs where the race fires) until the open bug E54 (each binds its
+				// socket before it checks for the other's, so both can refuse) is fixed.
+				#expect(running >= 1, "both sharers refused to start at login")
 				for vm in [first, second] {
 					if let host = vm.filedHostPid() { try? await TG.killHost(host) }
 				}

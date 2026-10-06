@@ -87,10 +87,9 @@ struct FakeDaemonTests {
 		#expect(await eventually { dropped.isSet })
 		let stream = await remote.events()
 		let first = await FirstEvent.of(stream, within: .seconds(2))
-		withKnownIssue(Comment(rawValue: "E49: An event stream opened on a dropped connection "
-			+ "never ends: RPCConnection registers it after teardown already ran")) {
-			#expect(first == .ended)
-		}
+		// Fails until the open bug E49 (RPCConnection registers a stream after teardown) is
+		// fixed.
+		#expect(first == .ended)
 	}
 
 	@Test("Q18: each connection takes the next script, and a stopped listener reads as not running")

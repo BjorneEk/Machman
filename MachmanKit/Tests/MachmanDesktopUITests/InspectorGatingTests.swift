@@ -22,9 +22,6 @@ import MachmanTestSupport
 // L1: desktop views hosted offscreen, read through in-process accessibility.
 @MainActor
 struct InspectorGatingTests {
-	static let card = "H52: Default start offers Safe mode while Start at login is on (and the "
-		+ "reverse), then the daemon refuses the pair with an error alert"
-
 	// The inspector for `vm` with `node` selected in the tree.
 	private func inspector(
 		_ h: UIHarness, _ vm: String, _ node: SidebarNode?, width: CGFloat = 320
@@ -69,13 +66,12 @@ struct InspectorGatingTests {
 		let safeToggle = try control(autostart, labelled: "Safe mode")
 		let loginToggle = try control(safe, labelled: "Start at login")
 		// The daemon refuses the pair (“A safe run can’t start automatically”); the toggles
-		// used to dim each other with that reason and no longer do.
-		withKnownIssue(Comment(rawValue: Self.card)) {
-			#expect(!safeToggle.isEnabled, "Safe mode stays on offer under Start at login")
-			#expect(safeToggle.help?.isEmpty == false)
-			#expect(!loginToggle.isEnabled, "Start at login stays on offer under Safe mode")
-			#expect(loginToggle.help?.isEmpty == false)
-		}
+		// used to dim each other with that reason and no longer do. Fails until the open bug
+		// H52 (Default start offers Safe mode while Start at login is on) is fixed.
+		#expect(!safeToggle.isEnabled, "Safe mode stays on offer under Start at login")
+		#expect(safeToggle.help?.isEmpty == false)
+		#expect(!loginToggle.isEnabled, "Start at login stays on offer under Safe mode")
+		#expect(loginToggle.help?.isEmpty == false)
 	}
 
 	@Test("RunDefaults narrow width: the Default start toggles fit at the 250 pt floor")

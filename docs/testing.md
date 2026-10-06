@@ -101,8 +101,10 @@ the login up: `@Test("G6: Alpine's getty lines sit between the markers and HUP b
 ## Naming and the manual-row rule
 
 - `@Test("<card or row id>: <sentence>")`, e.g. `"E20: a stalled vmhost reads Not responding"`;
-  infrastructure tests use the test system's card id. A product defect a test shows before it
-  is fixed is a `withKnownIssue("<card title>")`; the fix turns it green.
+  infrastructure tests use the test system's card id.
+- A test that shows an open bug FAILS until the fix lands; the check carries a comment
+  "Fails until the open bug <card id> (<what>) is fixed", which the fix removes. A
+  `withKnownIssue` is only for an issue someone actively deferred, and names that decision.
 - A fix commit names its test in a `Test: <name>` trailer.
 - A manual row in `docs/local/manual-tests.md` carries **"Manual because: <reason>"** (or
   "Deferred: <tier>" for a tier not built yet). "Only a manual test can show this" is a claim to

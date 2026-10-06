@@ -58,11 +58,9 @@ struct THConsoleLoginTests {
 			let now = try await g.sh("systemctl is-enabled \(unit)").output
 			#expect(hvc0?.login != nil, "\(setup.consoles ?? [])")
 			// systemd 257 says enabled-runtime for the generator's unit (exit 0), which the
-			// script reads as an enabled login.
-			withKnownIssue(THCards.generatedGettyReadsActive) {
-				#expect(hvc0?.login == GuestConsoleLogin.activeAuto,
-					"\(setup.consoles ?? []); before: \(before); is-enabled now: \(now)")
-			}
+			// script reads as an enabled login: fails until the open bug S52 is fixed.
+			#expect(hvc0?.login == GuestConsoleLogin.activeAuto,
+				"\(setup.consoles ?? []); before: \(before); is-enabled now: \(now)")
 		}
 	}
 
@@ -191,10 +189,11 @@ struct THConsoleLoginTests {
 				let unit = "serial-getty@hvc2.service"
 				let state = try await THConsoleSession.run(
 					hvc1, "systemctl is-enabled \(unit); systemctl is-active \(unit)")
-				withKnownIssue(THCards.uninstallStopsForeignGetty) {
-					#expect(state.output == "enabled\nactive", "\(state.output)")
-				}
-				// Back to the lab's driver on hvc2 for the rest of the row.
+				// Fails until the open bug S51 (--uninstall disables every serial getty, even
+				// ones Machman never set up) is fixed.
+				#expect(state.output == "enabled\nactive", "\(state.output)")
+				// Back to the lab's driver on hvc2 for the rest of the row (needed only while
+				// S51 is open; the fix drops it).
 				_ = try await THConsoleSession.run(hvc1, "systemctl enable --now \(unit)")
 				try await vz.reconnectDriver()
 			}

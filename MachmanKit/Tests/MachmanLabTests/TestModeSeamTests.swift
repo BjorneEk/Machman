@@ -63,9 +63,9 @@ struct TestModeSeamTests {
 				// replacing the vmhost's environment; LaunchServices merges it onto the agent's.
 				let agentEnv = try await SeamProbe.environment(of: agent.pid)
 				try #require(agentEnv[SeamProbe.agentOnly] == "1")
-				withKnownIssue(SeamProbe.mergedEnvironmentCard) {
-					#expect(env[SeamProbe.agentOnly] == nil)
-				}
+				// Fails until the open bug E51 (a vmhost inherits its agent's environment) is
+				// fixed.
+				#expect(env[SeamProbe.agentOnly] == nil)
 				let inherits = try await LabLog.waitFor(
 					"test mode: vmhost for seam-suite inherits ", after: mark,
 					process: "MachmanAgent")
@@ -297,9 +297,6 @@ enum SeamProbe {
 	static let agentOnly = "MACHMAN_SEAM_AGENT_ONLY"
 
 	/// Card E51, what the agent-only variable shows (wave r3t, r3-tb).
-	static let mergedEnvironmentCard = Comment(rawValue: "E51: A vmhost inherits its agent's "
-		+ "whole environment: OpenConfiguration.environment merges onto the launcher's "
-		+ "environment, it doesn't replace it")
 
 	struct Window: Equatable {
 		let number: Int

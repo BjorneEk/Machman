@@ -22,10 +22,6 @@ struct EngineFrozenHostTests {
 	/// Force Stop answers "not responding — try again in a moment" (invalidState) instead of
 	/// asking to end the process; nothing tells the menu (or the desktop) the VM is not
 	/// responding, so End Process is never offered.
-	static let unadoptedForceStopCard = Comment(rawValue: "E53: After an agent restart, the "
-		+ "agent menu's Force Stop on a frozen VM says 'try again in a moment' and never offers "
-		+ "End Process")
-
 	/// A running VM whose vmhost is frozen, the agent quit leaving it and started again: the
 	/// new agent meets a vmhost that never answers. Returns the vmhost's pid (still stopped).
 	static func frozenAcrossRestart(_ agent: LabAgent, _ vm: LabVM) async throws -> pid_t {
@@ -65,11 +61,16 @@ struct EngineFrozenHostTests {
 				mark = LabLog.mark()
 				#expect(
 					try await SeamProbe.control(agent, "menu forceStop frozen-readopted") == "ok")
-				// What the Force Stop then does: C9 says ask to end the process.
-				await withKnownIssue(Self.unadoptedForceStopCard) {
+				// What the Force Stop then does: C9 says ask to end the process. Fails until the
+				// open bug E53 (after an agent restart it never offers End Process) is fixed;
+				// recorded, not thrown, so the frozen vmhost is resumed below.
+				do {
 					_ = try await LabLog.waitFor(
 						SeamProbe.promptLine("agent.endProcess", "Cancel \\(not listed\\)"),
 						after: mark, process: "MachmanAgent", timeout: .seconds(20))
+				} catch {
+					Issue.record(Comment(rawValue:
+						"Force Stop on the frozen VM never asked to end its process: \(error)"))
 				}
 				#expect(try await vm.info().name == "frozen-readopted")
 				#expect(LabProcesses.isAlive(host))

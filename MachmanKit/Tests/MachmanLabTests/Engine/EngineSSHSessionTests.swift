@@ -27,9 +27,9 @@ struct EngineSSHSessionTests {
 	/// (a probe: `ps -o tty=` shows "??" for the spawned ssh; forkpty's TIOCSCTTY does). So
 	/// ssh can't open /dev/tty for a password prompt, and a hung-up pty (the app quitting or
 	/// crashing) sends it no SIGHUP: the session and its ssh stay.
-	static let noControllingTTYCard = Comment(rawValue: "P42: An ssh session tab's ssh has no "
-		+ "controlling terminal: ssh never shows a password prompt, and ssh outlives an app that "
-		+ "quits or crashes")
+	// The open bug P42 (an ssh session tab's ssh has no controlling terminal: no password
+	// prompt, and ssh outlives an app that quits or crashes) fails three checks below until
+	// it is fixed.
 
 	struct Session {
 		let sessions: TerminalSessions
@@ -149,20 +149,16 @@ struct EngineSSHSessionTests {
 			try #require(seen.contains("TF-42"), "the session's shell never answered: \(seen)")
 			// The pty is ssh's controlling terminal (what a hang-up and /dev/tty need).
 			let tty = try await TFProcess.controllingTTY(child.pid)
-			withKnownIssue(Self.noControllingTTYCard) {
-				#expect(tty.hasPrefix("ttys"), "ssh's controlling terminal is \(tty)")
-			}
+			#expect(tty.hasPrefix("ttys"), "ssh's controlling terminal is \(tty)")
 			// What the kernel does for an app that exits: its pty master closes, no signal.
 			close(master)
 			closed = true
-			await withKnownIssue(Self.noControllingTTYCard) {
-				try await Self.until(
-					"the ssh client and its session to end", key: target.keyPath,
-					timeout: .seconds(10)
-				) {
-					let servers = try await TFSSH.sshdSessions()
-					return !LabProcesses.isAlive(child.pid) && servers.isEmpty
-				}
+			try await Self.until(
+				"the ssh client and its session to end", key: target.keyPath,
+				timeout: .seconds(10)
+			) {
+				let servers = try await TFSSH.sshdSessions()
+				return !LabProcesses.isAlive(child.pid) && servers.isEmpty
 			}
 		}
 	}
@@ -196,17 +192,15 @@ struct EngineSSHSessionTests {
 	func passwordPromptOnPTY() async throws {
 		try await LabSSHD.with(password: true) { sshd in
 			let s = try await Self.open(sshd, authorized: false, waitForShell: false)
-			await withKnownIssue(Self.noControllingTTYCard) {
-				do {
-					try await TFTerminals.waitFor(
-						s.controller, "[Pp]assword:", timeout: .seconds(20))
-				} catch {
-					throw TFError.timeout("ssh's password prompt; the session's bytes:\n"
-						+ Self.rawTranscript(s.controller) + "\n"
-						+ (await TFSSH.describe(key: s.target.keyPath)))
-				}
-				#expect(s.controller.connected)
+			// Recorded, not thrown, so the session is dropped below.
+			do {
+				try await TFTerminals.waitFor(s.controller, "[Pp]assword:", timeout: .seconds(20))
+			} catch {
+				let described = await TFSSH.describe(key: s.target.keyPath)
+				Issue.record(Comment(rawValue: "ssh's password prompt never came; the session's "
+					+ "bytes:\n" + Self.rawTranscript(s.controller) + "\n" + described))
 			}
+			#expect(s.controller.connected)
 			s.sessions.drop(.ssh(s.ref), vm: TFSSHTarget.vmName)
 			try await TFWait.until("the ssh client to end", timeout: .seconds(5)) {
 				try await TFSSH.clientPIDs(key: s.target.keyPath).isEmpty

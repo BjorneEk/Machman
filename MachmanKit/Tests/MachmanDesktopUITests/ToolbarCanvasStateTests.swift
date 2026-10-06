@@ -23,8 +23,6 @@ import MachmanTestSupport
 @MainActor
 struct ToolbarCanvasStateTests {
 	static let safeHelp = "Safe mode \u{2014} changes are discarded on stop"
-	static let mountCard = "H53: The mount inspector's 'Attach in safe runs' toggle is inverted: "
-		+ "it reads on for a mount a safe run leaves out, and has no tooltip"
 
 	private func toolbar(_ h: UIHarness, _ name: String) async throws -> AXSnapshot {
 		try await h.snapshot(StartStopGroup(viewModel: h.viewModel, vm: h.vm(name)))
@@ -100,9 +98,10 @@ struct ToolbarCanvasStateTests {
 		let mount = try await inspector(h, "Alpine", .mount(Samples.srcMountID))
 		let attach = try #require(mount.control(labelled: "Attach in safe runs"),
 			"\(mount.dump())")
-		withKnownIssue(Comment(rawValue: Self.mountCard)) {
-			#expect(attach.help?.isEmpty == false, "Attach in safe runs has no tooltip")
-		}
+		// Fails until the open bug H53 (the toggle is inverted and has no tooltip) is fixed:
+		// the src mount is safe, so a safe run leaves it out and the toggle must read off.
+		#expect(attach.value == "0", "Attach in safe runs reads on for a mount safe runs omit")
+		#expect(attach.help?.isEmpty == false, "Attach in safe runs has no tooltip")
 	}
 
 	// MARK: - Toolbar states

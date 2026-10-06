@@ -107,15 +107,20 @@ struct THSpikeTests {
 			}
 			#expect(asked, "the run asked about vfs.generic.usermount:\n\(run.output)")
 			// NetBSD raises securelevel to 1 at boot, which refuses raising the knob at run
-			// time; /etc/sysctl.conf is applied before that, at the next boot.
+			// time; /etc/sysctl.conf is applied before that, at the next boot. So the knob is
+			// live at once only below securelevel 1; above it, the run must say it takes effect
+			// at the next boot. Both, and the value after the reboot, fail until the open bug
+			// S54 (the step fails at securelevel 1 and keeps nothing) is fixed.
 			let level = Int(try await g.check("sysctl -n kern.securelevel")) ?? 0
-			try await withKnownIssue(THCards.netbsdUsermount, isIntermittent: level < 1) {
+			if level < 1 {
 				#expect(try await g.check("sysctl -n vfs.generic.usermount") == "1",
 					"securelevel \(level):\n\(run.output)")
-				try await g.reboot()
-				#expect(try await g.check("sysctl -n vfs.generic.usermount") == "1",
-					"after a reboot")
+			} else {
+				#expect(TH.unwrapped(run.output).lowercased().contains("next boot"),
+					"securelevel \(level), no next-boot note:\n\(run.output)")
 			}
+			try await g.reboot()
+			#expect(try await g.check("sysctl -n vfs.generic.usermount") == "1", "after a reboot")
 		}
 	}
 
@@ -137,10 +142,11 @@ struct THSpikeTests {
 			let run = try await g.install("-y --console --ssh --user lab")
 			#expect(run.status == 0 || run.status == 4, "\(run.output)")
 			// The address it tells the Mac to ssh to: NetBSD's ifconfig prints a prefix length.
-			let from = run.output.split(separator: "\n").first { $0.hasPrefix("From your Mac:") }
-			withKnownIssue(THCards.netbsdAddressPrefix) {
-				#expect(from.map { !$0.contains("/") } == true, "\(from ?? "")")
-			}
+			let from = try #require(
+				run.output.split(separator: "\n").first { $0.hasPrefix("From your Mac:") },
+				"no 'From your Mac:' line (exit \(run.status)):\n\(run.output)")
+			// Fails until the open bug S53 (the address keeps its prefix length) is fixed.
+			#expect(!from.contains("/"), "\(from)")
 			try await g.reboot()
 			let console = try await LabConsole.connect(
 				g.consoleSocket(0), transcript: "qemu-\(g.name)-hvc0-after")

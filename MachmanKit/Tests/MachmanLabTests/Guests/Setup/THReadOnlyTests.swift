@@ -96,9 +96,9 @@ enum THReadOnlyRows {
 		let choices = THPrompt.numbered(list)
 		#expect(choices.contains { $0.text.hasPrefix("lab ") }, "\(list)")
 		#expect(choices.contains { $0.text.hasPrefix("root ") }, "\(list)")
-		withKnownIssue(THCards.numberedQuestion) {
-			#expect(list.contains("Which user should Machman set up SSH for?"), "\(list)")
-		}
+		// Fails until the open bug S47 (TERM=dumb prints the first item, not the question) is
+		// fixed.
+		#expect(list.contains("Which user should Machman set up SSH for?"), "\(list)")
 		#expect(THPlan(run.before(.proceed) ?? "")["user"] == "lab -> /home/lab", "\(run.output)")
 
 		let bogus = try await g.install("-n --user th-nosuchuser")
@@ -133,34 +133,20 @@ enum THReadOnlyRows {
 			let text = String(decoding: bytes, as: UTF8.self)
 			let lines = THConsoleSession.clean(text).split(separator: "\n").map(String.init)
 			#expect(THGlyphs.colours(in: text).isEmpty, "SGR colours on a vt100 console")
-			// The plan's consoles line is the known exception for the glyph and the width.
-			let (consoles, rest) = (
-				lines.filter { $0.hasPrefix("  consoles ") },
-				lines.filter { !$0.hasPrefix("  consoles ") })
+			// Every line, the plan's consoles line included. Fails until the open bugs S48
+			// (prose keeps its em dashes), S49 (the consoles line joins with a hard-coded '·')
+			// and S50 (plan lines are never folded to 80 columns) are fixed.
 			for glyph in THGlyphs.unicode {
-				let found = rest.filter { $0.contains(glyph) }
+				let found = lines.filter { $0.contains(glyph) }
 				#expect(found.isEmpty, "a UTF-8 glyph '\(glyph)' on a LANG=C console: \(found)")
 			}
-			#expect(rest.filter { $0.count > 80 }.isEmpty, "lines over 80 columns: \(rest)")
-			if consoles.contains(where: { $0.contains("·") }) {
-				withKnownIssue(THCards.consolesDot) {
-					#expect(Bool(false), "\(consoles)")
-				}
+			let wide = lines.filter { $0.count > 80 }
+			#expect(wide.isEmpty, "lines over 80 columns: \(wide)")
+			let nonASCII = lines.filter { line in
+				line.unicodeScalars.contains { $0.value >= 0x80 }
 			}
-			if consoles.contains(where: { $0.count > 80 }) {
-				withKnownIssue(THCards.planWidth) {
-					#expect(Bool(false), "\(consoles)")
-				}
-			}
-			// Prose keeps its em dashes whatever the locale.
-			let prose = lines.filter { line in
-				line.unicodeScalars.contains { $0.value >= 0x80 && $0 != "·" }
-			}
-			if !prose.isEmpty {
-				withKnownIssue(THCards.nonASCIIProse) {
-					#expect(Bool(false), "\(prose.count) lines with non-ASCII prose")
-				}
-			}
+			#expect(nonASCII.isEmpty,
+				"\(nonASCII.count) lines with non-ASCII text: \(nonASCII.prefix(5))")
 		}
 	}
 
@@ -370,27 +356,6 @@ enum THFingerprint {
 }
 
 /// The filed product cards a known-issue test names ("<id>: <title>", exactly as filed).
-enum THCards {
-	static let nonASCIIProse = Comment(rawValue: "S48: The guest installer keeps UTF-8 em dashes "
-		+ "in its prose after it switches its glyphs to ASCII")
-	static let numberedQuestion: Comment =
-		"S47: A numbered choice on TERM=dumb prints its first item instead of its question"
-	static let consolesDot: Comment =
-		"S49: The plan's consoles line joins devices with a hard-coded U+00B7 instead of $G_SEP"
-	static let planWidth: Comment =
-		"S50: Plan lines are never folded, so long plan values run past 80 columns on a console"
-	static let generatedGettyReadsActive = Comment(rawValue: "S52: hvc0's getty-generator login "
-		+ "reads 'active', not 'active (automatic)': systemctl is-enabled exits 0 with "
-		+ "enabled-runtime")
-	static let bsdRootHome = Comment(rawValue: "C29: The BSD guide's approved share mount points "
-		+ "sshfs at /home/root/.ssh/config for a root guest user, so the copied mount fails")
-	static let netbsdAddressPrefix: Comment =
-		"S53: The installer reports a NetBSD guest's address with its prefix length (10.0.2.15/24)"
-	static let netbsdUsermount = Comment(rawValue: "S54: On NetBSD the user-mount step fails at "
-		+ "securelevel 1 and keeps nothing for the next boot")
-	static let uninstallStopsForeignGetty = Comment(rawValue: "S51: --uninstall disables and "
-		+ "stops every enabled serial-getty unit, including logins Machman never set up")
-}
 
 // L3 — the installer on the prepared Debian guest under VZ.
 @Suite(
