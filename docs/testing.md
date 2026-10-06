@@ -32,6 +32,7 @@ scripts/lab.sh --filter <TypeName>       # one suite (Swift Testing ids, never d
 scripts/lab.sh --launchd                 # adds the launchd tier (off by default)
 scripts/lab.sh … -v | -vv                # live progress + the lab log | + the guest consoles
 scripts/lab.sh … --plain                 # timestamped lines on a terminal too
+scripts/lab.sh … --jobs N                # at most N shards side by side (default: from the Mac)
 scripts/lab.sh --doctor | --self-check   # tools, fixtures, seams | the lab's own audits proven
 ```
 
@@ -53,6 +54,13 @@ with `--plain`, every line is printed with its time, and a quiet minute gets a s
 naming the running test, its step and the last console line. Harness waits that run past 5 s
 narrate themselves (`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and
 `report/test-times.tsv`. Lab VMs are named for their role in the test, never after a row.
+
+A run with L2 or L3 tests runs in parallel shards (`--jobs N`; by default a core each with two
+left over and 5 GB of memory each past the first 8 GB, at most 8): each shard is a sandbox of
+its own (suite token, agent, lab sshd, log), the suites are shared out longest first by the
+times of earlier runs (`<cache>/suite-times.json`), and the suites in
+`scripts/lab/exclusive-suites.txt` (machine-wide state, timing) run alone after them. One audit
+watches every shard; on a terminal each shard has its own window in the block.
 
 `lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
 a sandbox (`/tmp/mml.<4-char token>`, suite `com.gustaffranzen.Machman.test-<token>`, a fake

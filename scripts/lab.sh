@@ -4,7 +4,7 @@
 # .test-<token> suite, driven over their socket by MachmanKit's MachmanLabTests target.
 #
 #   scripts/lab.sh [--quick|--full|--guests|--harness] [--launchd] [--filter REGEX] [--keep]
-#                  [--out DIR] [--no-build] [-v|-vv] [--plain]
+#                  [--out DIR] [--no-build] [-v|-vv] [--plain] [--jobs N]
 #   scripts/lab.sh --self-check | --doctor | --help
 #
 #   --quick     tiers harness,smoke (the lab agent and the Alpine fixture, no L3 guests)
@@ -24,6 +24,10 @@
 #               the running test and its latest output sit in a block that collapses into the
 #               test's result; piped or redirected, every line is printed with its time
 #   --plain     timestamped lines on a terminal too
+#   --jobs N    at most N shards side by side, each its own sandbox, suite, agent and log; the
+#               suites are shared out longest first (times kept in <cache>/suite-times.json),
+#               those in scripts/lab/exclusive-suites.txt run alone after them. Default: 1
+#               without L2/L3 tests, else from this Mac's cores and memory (at most 8)
 #   --self-check  prove the lab's own machinery: script self-checks, then the harness tests
 #                 with every audit armed
 #   --doctor    check tools, cache, fixtures and seams; runs nothing, writes nothing
@@ -61,6 +65,7 @@ out=""
 build=1
 verbose=0
 plain=()
+jobs=""
 products=""
 root=""
 token=""
@@ -83,6 +88,7 @@ while (($#)); do
 	-v | --verbose) verbose=$((verbose < 2 ? verbose + 1 : 2)) ;;
 	-vv) verbose=2 ;;
 	--plain) plain=(--plain) ;;
+	--jobs | -j) jobs="${2:?--jobs needs a number}"; shift ;;
 	*) echo "lab.sh: unknown argument $1 (see --help)" >&2; exit 64 ;;
 	esac
 	shift
@@ -117,16 +123,128 @@ lab_pidfile_pids() {
 WATCHPID=""
 LOGPID=""
 FOLLOWPID=""
+# A parallel run's shards past the first (the first is root/token/suite): their sandboxes,
+# tokens, suites and log streams, and the workers running their tests.
+SHARD_ROOTS=()
+SHARD_TOKENS=()
+SHARD_SUITES=()
+SHARD_LOGPIDS=()
+WORKERPIDS=()
+
+# lab_kill_tree <pid>...: TERM each pid's descendants, then the pid.
+lab_kill_tree() {
+	local p c
+	for p in "$@"; do
+		for c in $(pgrep -P "$p" 2>/dev/null); do lab_kill_tree "$c"; done
+		kill -TERM "$p" 2>/dev/null
+	done
+	return 0
+}
 
 lab_stop_helpers() {
 	local p
+	lab_kill_tree ${WORKERPIDS[@]+"${WORKERPIDS[@]}"}
+	WORKERPIDS=()
 	[[ -n "$WATCHPID" && -n "$root" ]] && touch "$root/report/watch/stop" 2>/dev/null
-	for p in $WATCHPID $LOGPID $FOLLOWPID; do
+	for p in $WATCHPID $LOGPID $FOLLOWPID ${SHARD_LOGPIDS[@]+"${SHARD_LOGPIDS[@]}"}; do
 		kill -TERM "$p" 2>/dev/null
 	done
 	WATCHPID=""
 	LOGPID=""
 	FOLLOWPID=""
+	SHARD_LOGPIDS=()
+}
+
+# lab_jobs_auto <tiers>: the shards a run gets unless --jobs says: 1 without L2/L3 tests; else a
+# core each with two left over, and 5 GB of memory each past the first 8 GB (two lab guests of
+# at most 2 GB, plus the shard's agent, vmhosts and swift test), at most 8.
+lab_jobs_auto() {
+	case "$1" in *l2* | *l3*) ;; *) echo 1; return 0 ;; esac
+	local cores mem n
+	cores="$(sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+	mem=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+	n=$((cores - 2))
+	(( (mem - 8) / 5 < n )) && n=$(( (mem - 8) / 5 ))
+	((n > 8)) && n=8
+	((n < 1)) && n=1
+	echo "$n"
+}
+
+# lab_shard_env <root> <suite>: what differs per shard, as <root>/shard.env (a worker sources
+# it): the suite and its sandbox paths, the lab sshd host key, the run's one audit file.
+lab_shard_env() {
+	local r="$1" s="$2" key=""
+	if [[ -x "$repo/scripts/lab/sshd/sshd.sh" ]]; then
+		"$repo/scripts/lab/sshd/sshd.sh" keygen "$r" >/dev/null || true
+		key="$("$repo/scripts/lab/sshd/sshd.sh" hostkey "$r")" || true
+	fi
+	{
+		printf 'export MACHMAN_SUITE_ID=%q MACHMAN_DATA_DIR=%q CFFIXED_USER_HOME=%q\n' \
+			"$s" "$r/data" "$r/home"
+		printf 'export MACHMAN_LAB_RUN=%q MACHMAN_LAB_LOG=%q\n' "$r" "$r/logs/unified.ndjson"
+		printf 'export MACHMAN_LAB_ANSWERS=%q MACHMAN_LAB_AGENT_CONTROL=%q\n' \
+			"$r/answers.json" "$r/agent.ctl"
+		printf 'export MACHMAN_LAB_SSHD_HOSTKEY=%q MACHMAN_LAB_WATCH=%q\n' \
+			"$key" "$root/report/watch/watch.jsonl"
+	} > "$r/shard.env"
+}
+
+# lab_log_stream <root> <suite> <token>: the suite's unified log, as ndjson, into
+# <root>/logs/unified.ndjson once its probe line comes back; LAB_LOGPID is the stream's pid.
+lab_log_stream() {
+	local r="$1" s="$2" t="$3" waited=0
+	: > "$r/logs/unified.ndjson"
+	log stream --style ndjson --level default --predicate "subsystem == \"$s\"" \
+		> "$r/logs/unified.ndjson" 2> "$r/logs/logstream.err" &
+	LAB_LOGPID=$!
+	# The stream takes a moment to attach: repeat the probe line until it comes back.
+	until grep -qF "lab: log stream attached $t" "$r/logs/unified.ndjson" 2>/dev/null; do
+		((waited % 2 == 0)) &&
+			"$hw" logprobe --suite "$s" --text "lab: log stream attached $t"
+		sleep 0.5
+		waited=$((waited + 1))
+		if ((waited > 40)); then
+			echo "lab.sh: log stream did not deliver the probe line (is this user an admin?)" >&2
+			exit 69
+		fi
+	done
+}
+
+# lab_queue_pop <queue>: the queue's first line, removed from it (a mkdir lock between
+# workers); fails when the queue is empty.
+lab_queue_pop() {
+	local q="$1" line
+	until mkdir "$q.lock" 2>/dev/null; do sleep 0.05; done
+	line="$(head -n 1 "$q")"
+	if [[ -n "$line" ]]; then tail -n +2 "$q" > "$q.next" && mv "$q.next" "$q"; fi
+	rmdir "$q.lock"
+	[[ -n "$line" ]] && printf '%s\n' "$line"
+}
+
+# lab_worker <shard> <queue>: the shard's tests, one suite per swift test process, from <queue>
+# until it is empty; each suite's shard, exit status and seconds go to report/suite-runs.tsv.
+# --ignore-lock: SwiftPM locks .build for every swift test, building or not, which would run
+# the shards one at a time; nothing builds while they run (--skip-build).
+lab_worker() {
+	set +e
+	local k="$1" q="$2" r line s f st t0
+	r="$root"
+	((k > 0)) && r="${SHARD_ROOTS[$((k - 1))]}"
+	while line="$(lab_queue_pop "$q")"; do
+		s="${line%%$'\t'*}"
+		f="${line#*$'\t'}"
+		t0=$SECONDS
+		(
+			. "$r/shard.env"
+			sandbox_awake swift test --skip-build --ignore-lock --disable-xctest --no-parallel \
+				--package-path "$pkg" --filter "$f" \
+				--event-stream-output-path "$r/report/events/$s.jsonl" --event-stream-version 0
+		) >> "$r/report/swift-test.log" 2>&1
+		st=$?
+		printf '%s\t%s\t%s\t%s\n' "$s" "$k" "$st" "$((SECONDS - t0))" \
+			>> "$root/report/suite-runs.tsv"
+	done
+	return 0
 }
 
 # lab_progress_ok: swift test writes Swift Testing's event stream and python3 is a real one
@@ -143,17 +261,20 @@ lab_finish() {
 	set +e
 	lab_stop_helpers
 	[[ -t 1 ]] && printf '\033[?25h'  # the cursor, should the progress block's own exit miss it
-	if [[ -n "${root:-}" && -d "${root:-}" ]]; then
+	local r
+	for r in "${root:-}" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}; do
+		[[ -n "$r" && -d "$r" ]] || continue
+		local t="${r##*.}"
 		# shellcheck disable=SC2046
-		sandbox_lab_teardown "$root" $( { lab_pidfile_pids "$root"
-			sandbox_token_pids "${token:-}"; } | sort -u)
+		sandbox_lab_teardown "$r" $( { lab_pidfile_pids "$r"; sandbox_token_pids "$t"; } |
+			sort -u)
 		if ((${keep:-0})); then
-			touch "$root/.keep"
-			echo "lab: kept $root"
+			touch "$r/.keep"
+			echo "lab: kept $r"
 		else
-			sandbox_cleanup "$root"
+			sandbox_cleanup "$r"
 		fi
-	fi
+	done
 	sandbox_release_slot
 	exit "$status"
 }
@@ -257,12 +378,85 @@ lab_count_audits() {
 	done
 }
 
+# lab_stop_follower: lets progress.py drain and print its summary (20 s at most), then stops
+# it; LAB_FOLLOWSTATUS is its exit status (2: a test process never summarized).
+lab_stop_follower() {
+	LAB_FOLLOWSTATUS=0
+	[[ -n "$FOLLOWPID" ]] || return 0
+	touch "$root/report/progress.stop"
+	local waited=0
+	while kill -0 "$FOLLOWPID" 2>/dev/null && ((waited < 20)); do
+		sleep 0.5
+		waited=$((waited + 1))
+	done
+	kill -TERM "$FOLLOWPID" 2>/dev/null || true
+	wait "$FOLLOWPID" 2>/dev/null || LAB_FOLLOWSTATUS=$?
+	FOLLOWPID=""
+}
+
+# lab_run_shards: a parallel run's test phase. plan.py shares the suites the filter keeps out
+# longest first; one worker per shard runs them a suite at a time; the exclusive ones then run
+# alone on the first shard. Sets teststatus; records the suites' times for the next plan.
+lab_run_shards() {
+	local plan="$root/report/plan" k r history="$MACHMAN_LAB_CACHE/suite-times.json"
+	mkdir -p "$plan"
+	if ! sandbox_awake swift test list --skip-build --disable-xctest --package-path "$pkg" \
+		> "$plan/list.txt" 2> "$plan/list.err"; then
+		echo "lab.sh: swift test list failed:"
+		tail -n 20 "$plan/list.err"
+		teststatus=1
+		return 0
+	fi
+	python3 "$repo/scripts/lab/plan.py" --list "$plan/list.txt" ${filter:+--filter "$filter"} \
+		--history "$history" --exclusive "$repo/scripts/lab/exclusive-suites.txt" --out "$plan"
+	echo "lab: $(wc -l < "$plan/queue" | tr -d ' ') suites shared by $jobs shards," \
+		"$(wc -l < "$plan/serial" | tr -d ' ') alone after them"
+	: > "$root/report/suite-runs.tsv"
+	local follow=(--run "$root" --planned "$(cat "$plan/planned")" --level "$verbose")
+	for r in "$root" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}; do mkdir -p "$r/report/events"; done
+	for r in ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}; do follow+=(--shard "$r"); done
+	python3 "$repo/scripts/lab/progress.py" "${follow[@]}" ${plain[@]+"${plain[@]}"} \
+		--stop "$root/report/progress.stop" &
+	FOLLOWPID=$!
+	WORKERPIDS=()
+	for ((k = 0; k < jobs; k++)); do
+		lab_worker "$k" "$plan/queue" &
+		WORKERPIDS+=($!)
+	done
+	for k in "${WORKERPIDS[@]}"; do wait "$k" || true; done
+	WORKERPIDS=()
+	(lab_worker 0 "$plan/serial")
+	ts="$(awk -F '\t' '$3 != 0 { bad++ } END { print bad + 0 }' "$root/report/suite-runs.tsv")"
+	((ts != 0)) && teststatus=1
+	ts="$ts of $(wc -l < "$root/report/suite-runs.tsv" | tr -d ' ') suites failed"
+	lab_stop_follower
+	# A suite whose process died (not exit 0 or 1): where its words are.
+	awk -F '\t' '$3 > 1 { print $1, $2, $3 }' "$root/report/suite-runs.tsv" |
+		while read -r s k st; do
+			r="$root"
+			((k > 0)) && r="${SHARD_ROOTS[$((k - 1))]}"
+			echo "lab: $s's swift test exited $st — see $r/report/swift-test.log"
+		done
+	python3 "$repo/scripts/lab/plan.py" --record "$root/report/suite-runs.tsv" \
+		--history "$history" || true
+}
+
 # lab_run <tiers> <seams-needed 0|1>: build, arm the audits, run the tests, sweep, report.
 # In --self-check the products and the slot are skipped (tiers = harness).
 lab_run() {
 	local tiers="$1" seams=0 xcb filt hw ts breaches=0 warns=0 report inject=()
 	local teststatus="${3:-0}" watchstatus=0 need_slot=0 selfcheck="${2:-0}"
 	sandbox_refuse_main_checkout "$repo" || exit 64
+	if [[ -n "$jobs" && ! "$jobs" =~ ^[1-9][0-9]?$ ]]; then
+		echo "lab.sh: --jobs takes a number from 1 to 99, not '$jobs'" >&2
+		exit 64
+	fi
+	((selfcheck)) && jobs=1
+	[[ -z "$jobs" ]] && jobs="$(lab_jobs_auto "$tiers")"
+	if ((jobs > 1)) && ! lab_progress_ok; then
+		echo "lab: one shard (a parallel run needs python3 and swift test's event stream)"
+		jobs=1
+	fi
 	if [[ -n "$out" ]]; then
 		[[ "$out" == /* ]] || { echo "lab.sh: --out must be an absolute path" >&2; exit 64; }
 		if [[ "$out" == "$repo"/* ]] && ! git -C "$repo" check-ignore -q "$out"; then
@@ -328,40 +522,50 @@ lab_run() {
 	fi
 	mkdir -p "$root"/{pids,logs,transcripts,scopes,report}
 	echo '{}' > "$root/answers.json"
-	lab_worktree_status "$repo" "$root/report/git-before.txt"
-	env -u CFFIXED_USER_HOME -u MACHMAN_DATA_DIR -u MACHMAN_SUITE_ID \
-		"$hw" snapshot --token "$token" --out "$root/report/snapshot-before.json"
-	lab_export "$tiers" "$seams"
-	echo "lab: sandbox $root (suite $suite) tiers $tiers"
-	# r3-td's lab sshd: its host key, which the agent pins under test mode.
-	if [[ -x "$repo/scripts/lab/sshd/sshd.sh" ]]; then
-		"$repo/scripts/lab/sshd/sshd.sh" keygen "$root" >/dev/null || true
-		MACHMAN_LAB_SSHD_HOSTKEY="$("$repo/scripts/lab/sshd/sshd.sh" hostkey "$root")" || true
-		export MACHMAN_LAB_SSHD_HOSTKEY
-	fi
-	# The unified log of the suite, as ndjson (a launched agent's stdio isn't captured).
-	: > "$MACHMAN_LAB_LOG"
-	log stream --style ndjson --level default --predicate "subsystem == \"$suite\"" \
-		> "$MACHMAN_LAB_LOG" 2> "$root/logs/logstream.err" &
-	LOGPID=$!
-	# The stream takes a moment to attach: repeat the probe line until it comes back.
-	local waited=0
-	until grep -qF "lab: log stream attached $token" "$MACHMAN_LAB_LOG" 2>/dev/null; do
-		((waited % 2 == 0)) &&
-			"$hw" logprobe --suite "$suite" --text "lab: log stream attached $token"
-		sleep 0.5
-		waited=$((waited + 1))
-		if ((waited > 40)); then
-			echo "lab.sh: log stream did not deliver the probe line (is this user an admin?)" >&2
+	# A parallel run's other shards: their own sandboxes, made before the snapshot names them.
+	local k tokenargs=(--token "$token") shardroot
+	for ((k = 1; k < jobs; k++)); do
+		sandbox_create mml 4
+		shardroot="$SANDBOX_ROOT"
+		if ! sandbox_path_budget "$SANDBOX_SUITE"; then
+			echo "lab.sh: the console socket paths of $SANDBOX_SUITE would exceed sun_path" >&2
 			exit 69
 		fi
+		SHARD_ROOTS+=("$shardroot")
+		SHARD_TOKENS+=("$SANDBOX_TOKEN")
+		SHARD_SUITES+=("$SANDBOX_SUITE")
+		tokenargs+=(--token "$SANDBOX_TOKEN")
+		mkdir -p "$shardroot"/{pids,logs,transcripts,scopes,report}
+		echo '{}' > "$shardroot/answers.json"
 	done
+	lab_worktree_status "$repo" "$root/report/git-before.txt"
+	env -u CFFIXED_USER_HOME -u MACHMAN_DATA_DIR -u MACHMAN_SUITE_ID \
+		"$hw" snapshot "${tokenargs[@]}" --out "$root/report/snapshot-before.json"
+	lab_export "$tiers" "$seams"
+	echo "lab: sandbox $root (suite $suite) tiers $tiers"
+	((jobs > 1)) && echo "lab: $jobs shards: $root ${SHARD_ROOTS[*]}"
+	# Per shard: r3-td's lab sshd host key (which the agent pins under test mode), the paths,
+	# and the suite's unified log as ndjson (a launched agent's stdio isn't captured).
+	lab_shard_env "$root" "$suite"
+	# shellcheck source=/dev/null
+	. "$root/shard.env"
+	lab_log_stream "$root" "$suite" "$token"
+	LOGPID=$LAB_LOGPID
+	for ((k = 0; k < ${#SHARD_ROOTS[@]}; k++)); do
+		lab_shard_env "${SHARD_ROOTS[$k]}" "${SHARD_SUITES[$k]}"
+		lab_log_stream "${SHARD_ROOTS[$k]}" "${SHARD_SUITES[$k]}" "${SHARD_TOKENS[$k]}"
+		SHARD_LOGPIDS+=("$LAB_LOGPID")
+	done
+	local waited=0
 	# lab.sh --self-check's armed pass provokes one breach (harness tier only).
 	if [[ -n "${MACHMAN_LAB_SELFCHECK_INJECT:-}" && "$tiers" == harness ]]; then
 		inject=(--inject "$MACHMAN_LAB_SELFCHECK_INJECT" --inject-after 2)
 	fi
-	"$hw" watch --token "$token" --run "$root" --out "$root/report/watch" \
-		${inject[@]+"${inject[@]}"} &
+	local watchargs=(--token "$token" --run "$root")
+	for ((k = 0; k < ${#SHARD_ROOTS[@]}; k++)); do
+		watchargs+=(--token "${SHARD_TOKENS[$k]}" --run "${SHARD_ROOTS[$k]}")
+	done
+	"$hw" watch "${watchargs[@]}" --out "$root/report/watch" ${inject[@]+"${inject[@]}"} &
 	WATCHPID=$!
 	waited=0
 	until [[ -f "$root/report/watch/started" ]]; do
@@ -380,47 +584,50 @@ lab_run() {
 	# swift test holds its output back while it writes to a pipe or file, so the terminal shows
 	# progress.py's lines, read live from the event stream, the lab log and the consoles.
 	rm -f "$root/report/test-status" "$root/report/progress.stop"
-	local events=() followstatus=0
-	if lab_progress_ok; then
-		events=(--event-stream-output-path "$root/report/events.jsonl" --event-stream-version 0)
-		: > "$root/report/events.jsonl"
-		python3 "$repo/scripts/lab/progress.py" --run "$root" --level "$verbose" \
-			${plain[@]+"${plain[@]}"} --stop "$root/report/progress.stop" &
-		FOLLOWPID=$!
+	local events=()
+	if ((jobs > 1)); then
+		lab_run_shards
 	else
-		echo "lab: no live progress (python3 or swift test's event stream missing)"
+		if lab_progress_ok; then
+			events=(--event-stream-output-path "$root/report/events.jsonl"
+				--event-stream-version 0)
+			: > "$root/report/events.jsonl"
+			python3 "$repo/scripts/lab/progress.py" --run "$root" --level "$verbose" \
+				${plain[@]+"${plain[@]}"} --stop "$root/report/progress.stop" &
+			FOLLOWPID=$!
+		else
+			echo "lab: no live progress (python3 or swift test's event stream missing)"
+		fi
+		{
+			set +e
+			sandbox_awake swift test --skip-build --disable-xctest --no-parallel \
+				--package-path "$pkg" --filter "$filt" ${events[@]+"${events[@]}"} 2>&1
+			echo $? > "$root/report/test-status"
+		} > "$root/report/swift-test.log" &
+		wait $!
+		ts="$(cat "$root/report/test-status" 2>/dev/null || echo 1)"
+		((ts != 0)) && teststatus=1
+		lab_stop_follower
+		# No follower, or a test process that never summarized (a crash): swift test's words.
+		if ((${#events[@]} == 0)); then
+			cat "$root/report/swift-test.log"
+		elif ((LAB_FOLLOWSTATUS != 0)); then
+			echo "lab: the last of swift test's output ($root/report/swift-test.log):"
+			tail -n 40 "$root/report/swift-test.log"
+		fi
 	fi
-	{
-		set +e
-		sandbox_awake swift test --skip-build --disable-xctest --no-parallel \
-			--package-path "$pkg" --filter "$filt" ${events[@]+"${events[@]}"} 2>&1
-		echo $? > "$root/report/test-status"
-	} > "$root/report/swift-test.log" &
-	wait $!
-	ts="$(cat "$root/report/test-status" 2>/dev/null || echo 1)"
-	((ts != 0)) && teststatus=1
-	if [[ -n "$FOLLOWPID" ]]; then
-		touch "$root/report/progress.stop"
-		waited=0
-		while kill -0 "$FOLLOWPID" 2>/dev/null && ((waited < 20)); do
-			sleep 0.5
-			waited=$((waited + 1))
-		done
-		kill -TERM "$FOLLOWPID" 2>/dev/null || true
-		wait "$FOLLOWPID" 2>/dev/null || followstatus=$?
-		FOLLOWPID=""
-	fi
-	# No follower, or a test process that never summarized (a crash): swift test's own words.
-	if ((${#events[@]} == 0)); then
-		cat "$root/report/swift-test.log"
-	elif ((followstatus != 0)); then
-		echo "lab: the last of swift test's output ($root/report/swift-test.log):"
-		tail -n 40 "$root/report/swift-test.log"
-	fi
-	# Sweep (the audits still watching), then stop the audits and compare.
+	# Sweep every shard (the audits still watching), then stop the audits and compare.
+	local keep_pids=(-e "$WATCHPID" -e "$LOGPID")
+	for k in ${SHARD_LOGPIDS[@]+"${SHARD_LOGPIDS[@]}"}; do keep_pids+=(-e "$k"); done
 	# shellcheck disable=SC2046
 	sandbox_lab_teardown "$root" $( { lab_pidfile_pids "$root"; sandbox_token_pids "$token"; } |
-		sort -u | grep -vxF -e "$WATCHPID" -e "$LOGPID")
+		sort -u | grep -vxF "${keep_pids[@]}")
+	for ((k = 0; k < ${#SHARD_ROOTS[@]}; k++)); do
+		# shellcheck disable=SC2046
+		sandbox_lab_teardown "${SHARD_ROOTS[$k]}" $( {
+			lab_pidfile_pids "${SHARD_ROOTS[$k]}"; sandbox_token_pids "${SHARD_TOKENS[$k]}"; } |
+			sort -u | grep -vxF "${keep_pids[@]}")
+	done
 	touch "$root/report/watch/stop"
 	waited=0
 	while kill -0 "$WATCHPID" 2>/dev/null && ((waited < 30)); do
@@ -430,14 +637,17 @@ lab_run() {
 	if kill -0 "$WATCHPID" 2>/dev/null; then kill -TERM "$WATCHPID" 2>/dev/null || true; fi
 	wait "$WATCHPID" 2>/dev/null || watchstatus=$?
 	WATCHPID=""
-	kill "$LOGPID" 2>/dev/null || true
-	wait "$LOGPID" 2>/dev/null || true
+	for k in "$LOGPID" ${SHARD_LOGPIDS[@]+"${SHARD_LOGPIDS[@]}"}; do
+		kill "$k" 2>/dev/null || true
+		wait "$k" 2>/dev/null || true
+	done
 	LOGPID=""
+	SHARD_LOGPIDS=()
 	env -u CFFIXED_USER_HOME -u MACHMAN_DATA_DIR -u MACHMAN_SUITE_ID \
-		"$hw" snapshot --token "$token" --out "$root/report/snapshot-after.json"
+		"$hw" snapshot "${tokenargs[@]}" --out "$root/report/snapshot-after.json"
 	"$hw" diff --before "$root/report/snapshot-before.json" \
 		--after "$root/report/snapshot-after.json" \
-		--non-lab "$root/report/watch/non-lab-machman.txt" --token "$token" \
+		--non-lab "$root/report/watch/non-lab-machman.txt" "${tokenargs[@]}" \
 		--out "$root/report/snapshot-summary.txt" || true
 	lab_worktree_status "$repo" "$root/report/git-after.txt"
 	lab_worktree_audit "$root/report/git-before.txt" "$root/report/git-after.txt" \
@@ -448,7 +658,8 @@ lab_run() {
 	warns=$LAB_WARNS
 	echo "lab: audits: $breaches breaches, $warns warnings"
 	if ((teststatus)); then
-		echo "lab: tests FAILED (swift test exit $ts)"
+		if ((jobs > 1)); then echo "lab: tests FAILED ($ts)"
+		else echo "lab: tests FAILED (swift test exit $ts)"; fi
 	else
 		echo "lab: tests passed"
 	fi
@@ -456,6 +667,10 @@ lab_run() {
 		local dest="$out/lab-$(date +%Y%m%d-%H%M%S)-$token"
 		mkdir -p "$dest"
 		cp -R "$report" "$root/logs" "$root/transcripts" "$dest/"
+		for ((k = 0; k < ${#SHARD_ROOTS[@]}; k++)); do
+			mkdir -p "$dest/shard-$((k + 2))"
+			cp -R "${SHARD_ROOTS[$k]}"/{report,logs,transcripts} "$dest/shard-$((k + 2))/"
+		done
 		echo "lab: report copied to $dest"
 	fi
 	((breaches)) && exit 3
@@ -614,6 +829,7 @@ selfcheck)
 	"$repo/scripts/lab/guests/alpine/build.sh" --self-check || scriptfail=1
 	"$repo/scripts/lab/audit/selfcheck.sh" || scriptfail=1
 	python3 "$repo/scripts/lab/progress.py" --self-check || scriptfail=1
+	python3 "$repo/scripts/lab/plan.py" --self-check || scriptfail=1
 	lab_selfcheck_audits || scriptfail=1
 	((scriptfail)) && echo "lab: a script self-check FAILED"
 	lab_run harness 1 "$scriptfail"

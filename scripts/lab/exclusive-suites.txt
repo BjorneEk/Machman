@@ -1,0 +1,9 @@
+# Lab suites a parallel run (lab.sh --jobs N > 1) runs alone, after the others: each one reads
+# or changes state the whole Mac shares, or measures time a busy Mac would skew.
+EngineDiscoveryTests      # the Mac's bridge address while any VM runs; the shared DHCP leases
+EngineReadinessTests      # SSH readiness from the shared DHCP leases, timed
+EngineReadinessL3Tests    # the same, on a prepared guest
+EngineStallTests          # "not responding within 10 s"
+EngineFloodTests          # main-actor responsiveness and memory under a flood
+TGAutostartTests          # launchd jobs in the user's own gui domain
+TGAutostartSafeTests      # launchd jobs in the user's own gui domain
