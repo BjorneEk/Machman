@@ -329,7 +329,7 @@ lab_run() {
 	echo "lab: sandbox $root (suite $suite) tiers $tiers"
 	# r3-td's lab sshd: its host key, which the agent pins under test mode.
 	if [[ -x "$repo/scripts/lab/sshd/sshd.sh" ]]; then
-		"$repo/scripts/lab/sshd/sshd.sh" keygen "$root" || true
+		"$repo/scripts/lab/sshd/sshd.sh" keygen "$root" >/dev/null || true
 		MACHMAN_LAB_SSHD_HOSTKEY="$("$repo/scripts/lab/sshd/sshd.sh" hostkey "$root")" || true
 		export MACHMAN_LAB_SSHD_HOSTKEY
 	fi
