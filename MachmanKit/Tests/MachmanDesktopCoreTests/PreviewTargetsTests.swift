@@ -99,4 +99,49 @@ struct PreviewTargetsTests {
 		#expect(previews.pollingNames == ["Debian"])
 		previews.detach()
 	}
+
+	// MARK: - Frames of VMs that left (P40)
+
+	// Debian runs and is shown: its first poll lands a frame.
+	private func debianWithAFrame(_ h: DesktopHarness) async -> PreviewService {
+		h.stub.previewPayload = Samples.previewPNG()
+		let previews = previews(h)
+		previews.setVisible(["Debian"])
+		#expect(await eventually { previews.images.images["Debian"] != nil })
+		previews.setVisible([])
+		return previews
+	}
+
+	// A deleted VM's last frame stayed under its name for the app's lifetime, and the next VM
+	// of that name (the macOS template's default name makes it likely) showed it.
+	@Test("P40: a VM recreated under a deleted VM's name shows no old frame")
+	func aReusedNameShowsNoOldFrame() async throws {
+		let h = await DesktopHarness.make()
+		let previews = await debianWithAFrame(h)
+		try await h.stub.deleteVM(named: "Debian")
+		#expect(await eventually { !h.store.vms.contains { $0.name == "Debian" } })
+		h.stub.vms["Debian"] = Samples.linux("Debian")
+		h.stub.emit(.listChanged)
+		#expect(await eventually { h.store.vms.contains { $0.name == "Debian" } })
+		#expect(await eventually { previews.images.images["Debian"] == nil })
+		previews.detach()
+	}
+
+	// The rename's reply moves the frame before the list that carries the new name lands; a
+	// list in between (any VM's state change) must not prune it.
+	@Test("P40: a renamed VM keeps its frame while the list catches up")
+	func aRenamedVMKeepsItsFrame() async throws {
+		let h = await DesktopHarness.make()
+		let previews = await debianWithAFrame(h)
+		previews.renameVM(from: "Debian", to: "Debian 2")
+		h.stub.emit(.stateChanged(vm: "Alpine", state: .running))
+		#expect(await eventually { h.store.vms.first { $0.name == "Alpine" }?.state == .running })
+		try await Task.sleep(for: .milliseconds(50))   // the prune runs a turn after the list
+		#expect(previews.images.images["Debian 2"] != nil)
+		try await h.stub.renameVM(named: "Debian", to: "Debian 2")
+		#expect(await eventually { h.store.vms.contains { $0.name == "Debian 2" } })
+		try await Task.sleep(for: .milliseconds(50))
+		#expect(previews.images.images["Debian 2"] != nil)
+		previews.detach()
+	}
 }

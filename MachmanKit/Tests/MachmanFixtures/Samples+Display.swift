@@ -7,6 +7,8 @@
 //
 
 import Foundation
+import CoreGraphics
+import ImageIO
 import MachmanAPI
 
 extension Samples {
@@ -39,5 +41,24 @@ extension Samples {
 			return graphics
 		}
 		return vm
+	}
+}
+
+extension Samples {
+	// A preview frame the desktop can decode: a flat grey PNG of width × height (the stub's
+	// default preview payload is three bytes that never decode).
+	public static func previewPNG(width: Int = 64, height: Int = 40) -> Data {
+		let context = CGContext(
+			data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+			space: CGColorSpaceCreateDeviceRGB(),
+			bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+		context.setFillColor(CGColor(gray: 0.4, alpha: 1))
+		context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+		let data = NSMutableData()
+		let destination = CGImageDestinationCreateWithData(
+			data as CFMutableData, "public.png" as CFString, 1, nil)!
+		CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+		CGImageDestinationFinalize(destination)
+		return data as Data
 	}
 }

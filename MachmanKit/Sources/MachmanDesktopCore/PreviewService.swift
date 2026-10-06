@@ -9,7 +9,8 @@
 //  its windows key — DaemonConnection's FocusMonitor says so), restarts a VM's loop on its
 //  stateChanged (keyed off the event's state so a not-yet-patched row can't stall it), starts
 //  a shown VM's loop when a list reload shows it running, and keeps the last frame across
-//  reconnects — DaemonConnection re-attaches it per connection.
+//  reconnects — DaemonConnection re-attaches it per connection. A VM that leaves the list
+//  takes its frame along (P40), so a new VM under its name never shows the old screen.
 //
 
 import AppKit
@@ -33,6 +34,9 @@ public final class PreviewService: ObservableObject {
 	private var listSink: AnyCancellable?
 	private var focused = true
 	private let interval: Double = 4
+	// Names a rename moved a frame to, kept until a list shows them: the rename's reply can
+	// land before the list that carries the new name.
+	private var renamedIn: Set<String> = []
 
 	// `tornTabs`: the registry whose open Configuration windows also get frames; nil polls
 	// the selection only.
@@ -46,6 +50,7 @@ public final class PreviewService: ObservableObject {
 		// late, a list fetched after a reconnect, a selection the list itself made. $vms
 		// emits on willSet and the selection may follow the same list, so look a turn later.
 		listSink = store.$vms.receive(on: DispatchQueue.main).sink { [weak self] _ in
+			self?.pruneFrames()
 			self?.startMissedLoops()
 		}
 	}
@@ -109,6 +114,17 @@ public final class PreviewService: ObservableObject {
 	public func renameVM(from old: String, to new: String) {
 		if let image = images.images.removeValue(forKey: old) {
 			images.images[new] = image
+			renamedIn.insert(new)
+		}
+	}
+
+	// Frames of VMs the list no longer holds go, and with them the NSImages they kept alive.
+	private func pruneFrames() {
+		let names = Set(store.vms.map(\.name))
+		renamedIn.subtract(names)
+		let gone = images.images.keys.filter { !names.contains($0) && !renamedIn.contains($0) }
+		for name in gone {
+			images.images[name] = nil
 		}
 	}
 
