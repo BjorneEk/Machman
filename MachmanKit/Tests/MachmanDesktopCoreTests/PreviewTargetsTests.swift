@@ -144,4 +144,49 @@ struct PreviewTargetsTests {
 		#expect(previews.images.images["Debian 2"] != nil)
 		previews.detach()
 	}
+
+	// MARK: - Decoding (Q5)
+
+	// Every frame was decoded on the main actor, once per poll per shown VM.
+	@Test("Q5: preview frames decode off the main thread")
+	func framesDecodeOffTheMainThread() async {
+		let h = await DesktopHarness.make()
+		h.stub.previewPayload = Samples.previewPNG()
+		let log = DecodeLog()
+		let previews = PreviewService(store: h.store, decode: { data in
+			log.record(onMain: pthread_main_np() != 0)
+			return await PreviewService.decodeFrame(data)
+		})
+		previews.attach(api: h.stub)
+		previews.setVisible(["Debian"])
+		#expect(await eventually { previews.images.images["Debian"] != nil })
+		#expect(log.calls > 0)
+		#expect(log.onMain == 0)
+		previews.detach()
+	}
+
+	@Test("Q5: a decoded frame keeps its pixel size")
+	func aDecodedFrameKeepsItsSize() async throws {
+		let frame = try #require(await PreviewService.decodeFrame(
+			Samples.previewPNG(width: 64, height: 40)))
+		#expect(frame.width == 64 && frame.height == 40)
+		#expect(await PreviewService.decodeFrame(Data([0xFF, 0xD8, 0xFF])) == nil)
+	}
+}
+
+// Where the decoder ran, from whichever thread it runs on.
+private final class DecodeLog: @unchecked Sendable {
+	private let lock = NSLock()
+	private var all = 0
+	private var main = 0
+
+	var calls: Int { lock.withLock { all } }
+	var onMain: Int { lock.withLock { main } }
+
+	func record(onMain: Bool) {
+		lock.withLock {
+			all += 1
+			if onMain { main += 1 }
+		}
+	}
 }
