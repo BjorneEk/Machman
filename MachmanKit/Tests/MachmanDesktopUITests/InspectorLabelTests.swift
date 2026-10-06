@@ -91,7 +91,8 @@ struct InspectorLabelTests {
 
 	@Test("W6: a reported console names the guest OS, and SSH and safe saves read right")
 	func reportedConsoleNamesTheGuestOS() async throws {
-		let h = await UIHarness.make([Samples.linuxConsolesReported(), Samples.linuxSafeRun("Kali")])
+		let h = await UIHarness.make(
+			[Samples.linuxConsolesReported(), Samples.linuxSafeRun("Kali")])
 		#expect(h.vm("Debian").setup?.guestOS == "debian")
 		let tree = try await inspector(
 			h, "Debian", .serial(SerialPortRef(kind: .console, index: 0)))

@@ -126,7 +126,8 @@ struct TerminalSettingsView: View {
 					) {
 						ForEach(0..<16, id: \.self) { i in
 							ColorPicker(
-								"ANSI color \(i)", selection: ansiBinding(i), supportsOpacity: false)
+								"ANSI color \(i)", selection: ansiBinding(i),
+								supportsOpacity: false)
 								.labelsHidden()
 								.help("ANSI color \(i)")
 						}
