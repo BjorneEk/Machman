@@ -2,7 +2,7 @@
 //  VZFreeBSDTests.swift
 //  MachmanLabTests
 //
-//  L3 — the vzfreebsd image under VZ, when its tree has built one (skipped with
+//  L3 — the vzfreebsd image under VZ, when the lab cache holds a copy (skipped with
 //  import.sh's sentence otherwise): EFI boot, a root login on its virtio console (ttyV0.0),
 //  vtnet0 on the NAT network, a clean power-off. Console only (T12).
 //
@@ -14,9 +14,9 @@ import Testing
 struct VZFreeBSDTests {
 	@Test(
 		"Q18: the vzfreebsd image boots under VZ and logs in on ttyV0.0",
-		.enabled(if: VZFreeBSD.sourceImageExists, Comment(rawValue: VZFreeBSD.skipReason)))
+		.enabled(if: VZFreeBSD.imageExists, Comment(rawValue: VZFreeBSD.skipReason)))
 	func vzfreebsdBoots() async throws {
-		let image = try await VZFreeBSD.importedPath()
+		let image = VZFreeBSD.imagePath
 		LabScripts.log("vzfreebsd import record:\n\(await VZFreeBSD.record())")
 		try await Lab.withAgent { agent in
 			let spec = LabVMSpec(

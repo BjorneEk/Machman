@@ -61,7 +61,7 @@ enum THPayloadImage {
 	}
 }
 
-/// The vzfreebsd image under VZ (runs only when its image is built): a carrier VM serves the
+/// The vzfreebsd image under VZ (runs only when the lab cache holds it): a carrier VM serves the
 /// payload, which reaches the guest as a disk image, since FreeBSD has no virtiofs driver.
 enum THVZFreeBSD {
 	final class Guest: @unchecked Sendable {
@@ -100,7 +100,7 @@ enum THVZFreeBSD {
 			do {
 				try await carrier.start()
 				let payload = try await THPayloadImage.make(from: carrier)
-				let image = try await VZFreeBSD.importedPath()
+				let image = VZFreeBSD.imagePath
 				let guestVM = try await THVM.create(
 					LabVMSpec(
 						name: "th-vzfb", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
