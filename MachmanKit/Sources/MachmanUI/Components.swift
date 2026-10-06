@@ -319,6 +319,29 @@ public struct AddTile: View {
 	}
 }
 
+// MARK: - Served draft ------------------------------------------------------------------------
+
+extension View {
+	// A field's draft of a value the daemon (or another store) serves — the inspectors' one
+	// pattern (Q2). The draft starts as the served value, or `seed` (a render's unsent draft);
+	// it follows the served value whenever that changes, unless the draft `holds` an edit not
+	// sent yet or already `means` the new value; and an edit away from the served value clears
+	// `refusal`, the reason the last commit was refused.
+	public func servedDraft(
+		_ draft: Binding<String>, of served: String, seed: String? = nil,
+		refusal: Binding<String?>? = nil, holds: Bool = false,
+		means: @escaping (String, String) -> Bool = { $0 == $1 }
+	) -> some View {
+		onAppear { draft.wrappedValue = seed ?? served }
+			.onChange(of: served) {
+				if !holds && !means(draft.wrappedValue, served) { draft.wrappedValue = served }
+			}
+			.onChange(of: draft.wrappedValue) {
+				if draft.wrappedValue != served { refusal?.wrappedValue = nil }
+			}
+	}
+}
+
 // MARK: - Rename field ------------------------------------------------------------------------
 
 // In-place rename editor: commits on Return, cancels on Esc or when focus moves elsewhere

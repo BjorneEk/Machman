@@ -71,8 +71,9 @@ struct SSHSessionInspector: View {
 				}
 			}
 		}
-		.onAppear { draftName = sessions.sshSessionName(vm: vm.name, ref: ref) }
-		.id(ref)   // a different session re-seeds the name draft via onAppear
+		// A rename in the tree or a tab reaches the field too (Q2).
+		.servedDraft($draftName, of: sessions.sshSessionName(vm: vm.name, ref: ref))
+		.id(ref)   // a different session re-seeds the name draft on appear
 	}
 
 	private func reconnect() {

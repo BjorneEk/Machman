@@ -113,11 +113,7 @@ struct DiskInspector: View {
 				FieldProblem(problem)
 			}
 		}
-		.onAppear { draftName = initialNameDraft ?? current }
-		.onChange(of: disk.name) { draftName = disk.name ?? "" }
-		.onChange(of: draftName) {
-			if draftName != current { renameRefusal = nil }
-		}
+		.servedDraft($draftName, of: current, seed: initialNameDraft, refusal: $renameRefusal)
 	}
 
 	private func commitRename(_ disk: DiskInfo) {
@@ -310,11 +306,7 @@ struct MountInspector: View {
 				FieldProblem(problem)
 			}
 		}
-		.onAppear { draftTag = initialTagDraft ?? mount.tag }
-		.onChange(of: mount.tag) { draftTag = mount.tag }
-		.onChange(of: draftTag) {
-			if draftTag != mount.tag { tagRefusal = nil }
-		}
+		.servedDraft($draftTag, of: mount.tag, seed: initialTagDraft, refusal: $tagRefusal)
 	}
 
 	private func commitTag(_ mount: MountInfo) {

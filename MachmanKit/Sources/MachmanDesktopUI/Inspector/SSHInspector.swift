@@ -109,8 +109,7 @@ struct NetworkSSHSection: View {
 					.foregroundStyle(.tertiary)
 			}
 		}
-		.onAppear { aliasDraft = initialAliasDraft ?? alias }
-		.onChange(of: alias) { aliasDraft = alias }
+		.servedDraft($aliasDraft, of: alias, seed: initialAliasDraft)
 	}
 
 	private var integrationToggle: some View {

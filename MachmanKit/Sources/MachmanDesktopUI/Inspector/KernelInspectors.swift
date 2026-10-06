@@ -205,11 +205,7 @@ private struct KernelFileInfoSection: View {
 				FieldProblem(problem)
 			}
 		}
-		.onAppear { draftTag = initialTagDraft ?? entry.label }
-		.onChange(of: entry.label) { draftTag = entry.label }
-		.onChange(of: draftTag) {
-			if draftTag != entry.label { tagRefusal = nil }
-		}
+		.servedDraft($draftTag, of: entry.label, seed: initialTagDraft, refusal: $tagRefusal)
 	}
 
 	private func commitTag() {

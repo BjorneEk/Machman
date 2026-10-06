@@ -98,4 +98,29 @@ struct InspectorIdentityTests {
 			return frame.maxX <= button.minX && abs(frame.midY - button.midY) < 12
 		}?.frame
 	}
+
+	// Q2: every inspector field over a served value follows it when it changes elsewhere;
+	// the session's Name was the copy without the resync.
+	@Test("Q2: the session inspector's Name follows a rename made in the tree")
+	func theSessionNameFollowsARename() async throws {
+		let h = await UIHarness.make(select: "Debian")
+		let ref = SSHSessionRef(title: "Session 1")
+		h.terminals.renameSSHSession(vm: "Debian", ref: ref, to: "Build")
+		let (before, after) = try await OffscreenHost.withHost(
+			SSHSessionInspector(
+				viewModel: h.viewModel, sessions: h.terminals, profiles: h.profiles,
+				vm: h.vm("Debian"), ref: ref),
+			width: 320, height: 600
+		) { hosted in
+			let before = hosted.snapshot()
+			h.terminals.renameSSHSession(vm: "Debian", ref: ref, to: "Deploy")
+			await hosted.settle()
+			return (before, hosted.snapshot())
+		}
+		let field: (AXSnapshot) -> String? = {
+			$0.all.first { $0.role == "AXTextField" }?.value
+		}
+		#expect(field(before) == "Build", "\(before.dump())")
+		#expect(field(after) == "Deploy", "the Name field kept the old name: \(after.dump())")
+	}
 }

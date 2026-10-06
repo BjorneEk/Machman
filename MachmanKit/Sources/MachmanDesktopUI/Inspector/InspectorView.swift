@@ -354,11 +354,7 @@ struct VMInspector: View {
 				FieldProblem(problem)
 			}
 		}
-		.onAppear { draftName = initialNameDraft ?? vm.name }
-		.onChange(of: vm.name) { draftName = vm.name }
-		.onChange(of: draftName) {
-			if draftName != vm.name { renameRefusal = nil }
-		}
+		.servedDraft($draftName, of: vm.name, seed: initialNameDraft, refusal: $renameRefusal)
 	}
 
 	private var memoryRow: some View {
