@@ -120,8 +120,8 @@ struct AutostartGuardTests {
 				Issue.record("both login sharers may boot on one writable image")
 				return
 			}
-			#expect(refusal.message
-				== "alpha is running with \(file) attached \u{2014} stop alpha before starting kept")
+			#expect(refusal.message == "alpha is running with \(file) attached \u{2014} "
+				+ "stop alpha before starting kept")
 			first.release()
 			let afterwards = try BootGuard.claimLoginBoot(
 				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
