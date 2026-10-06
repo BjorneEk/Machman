@@ -72,19 +72,18 @@ final class UDSListener {
 		self.queue = queue
 		_ = try Self.makeAddr(path)   // the sun_path ceiling, before touching any file
 
-		// A leftover socket file: connect-probe it. A live daemon accepts (refuse to start);
-		// a dead one refuses (stale file — remove and take over). Force quits and power losses
-		// skip shutdown(), so a stale file is the normal case, not an exceptional one.
-		if FileManager.default.fileExists(atPath: path) {
-			if Self.isLive(path: path) {
-				let holder = Self.holderPID(path: path).map { "pid \($0)" } ?? "an unknown process"
-				MachmanLogger.log(.passiveWarning, "\(path) is already served by \(holder)")
-				throw UDSError.alreadyRunning(path)
-			}
-			unlink(path)
+		// A leftover socket file is connect-probed as the socket is published: a live daemon
+		// accepts (refuse to start); a dead one refuses (stale file — remove and take over).
+		// Force quits and power losses skip shutdown(), so a stale file is the normal case, not
+		// an exceptional one. Starters of one path take turns at it (review F1).
+		let bound: BoundSocket
+		do {
+			bound = try BoundSocket.whileStarting(path) { try BoundSocket.listen(at: path) }
+		} catch UDSError.alreadyRunning(let served) {
+			let holder = Self.holderPID(path: served).map { "pid \($0)" } ?? "an unknown process"
+			MachmanLogger.log(.passiveWarning, "\(served) is already served by \(holder)")
+			throw UDSError.alreadyRunning(served)
 		}
-
-		let bound = try BoundSocket.listen(at: path)
 		let fd = bound.fd
 		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 		self.bound = bound
@@ -140,8 +139,13 @@ final class UDSListener {
 		_ = try Self.makeAddr(newPath)   // the sun_path ceiling, as at bind
 		try queue.sync {
 			guard newPath != path else { return }
-			guard !Self.isLive(path: newPath) else { throw UDSError.alreadyRunning(newPath) }
-			guard rename(path, newPath) == 0 else { throw UDSError.systemError("rename", errno) }
+			// In turn with any starter of newPath (review F1): a dead leftover there goes.
+			try BoundSocket.whileStarting(newPath) {
+				guard !Self.isLive(path: newPath) else { throw UDSError.alreadyRunning(newPath) }
+				guard rename(path, newPath) == 0 else {
+					throw UDSError.systemError("rename", errno)
+				}
+			}
 			path = newPath
 			reportedMissing = false
 		}
@@ -245,6 +249,21 @@ final class UDSListener {
 	}
 }
 
+// Tests only: what runs between a starter's probe of a dead leftover at a path and its unlink
+// (review F1), by path. Empty in production.
+enum SocketStartHooks {
+	private static let lock = NSLock()
+	nonisolated(unsafe) private static var leftoverHooks: [String: () -> Void] = [:]
+
+	static func setLeftoverProbed(_ path: String, _ hook: (() -> Void)?) {
+		lock.withLock { leftoverHooks[path] = hook }
+	}
+
+	static func leftoverProbed(_ path: String) {
+		lock.withLock { leftoverHooks[path] }?()
+	}
+}
+
 // A listening socket bound at a path, and the identity of the file it bound (E44). The control
 // sockets (UDSListener) and the serial bridges share it, so both listen with the full backlog
 // and only ever remove their own file.
@@ -253,8 +272,9 @@ struct BoundSocket {
 	private let device: dev_t
 	private let inode: ino_t
 
-	// Binds, listens and restricts the file to its owner; the caller cleared any dead leftover
-	// at `path` first. A failure leaves neither a descriptor nor a file behind.
+	// Binds, listens and restricts the file to its owner; a dead leftover at `path` goes, a live
+	// socket there is another process serving it. A failure leaves neither a descriptor nor a
+	// file behind. A caller another starter of the path may race wraps it in whileStarting.
 	//
 	// The path appears only once the socket listens (E48). Bound at the path itself, it read
 	// dead to a concurrent starter's probe until listen(), and that starter unlinked it and
@@ -265,7 +285,10 @@ struct BoundSocket {
 		_ = try UDSListener.makeAddr(path)
 		let staging = (path as NSString).deletingLastPathComponent + "/.m"
 			+ UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
-		guard (try? UDSListener.makeAddr(staging)) != nil else { return try bindListening(path) }
+		guard (try? UDSListener.makeAddr(staging)) != nil else {
+			try clearLeftover(at: path)
+			return try bindListening(path)
+		}
 		let bound = try bindListening(staging)
 		do {
 			try publish(staging, at: path)
@@ -284,10 +307,38 @@ struct BoundSocket {
 			if renamex_np(staging, path, UInt32(RENAME_EXCL)) == 0 { return }
 			let err = errno
 			guard err == EEXIST else { throw UDSError.systemError("rename", err) }
-			guard attempt == 1, !UDSListener.isLive(path: path) else { break }
-			unlink(path)
+			guard attempt == 1 else { break }
+			try clearLeftover(at: path)
 		}
 		throw UDSError.alreadyRunning(path)
+	}
+
+	// A dead leftover at `path` goes; a live socket there is another process serving it.
+	private static func clearLeftover(at path: String) throws {
+		guard FileManager.default.fileExists(atPath: path) else { return }
+		guard !UDSListener.isLive(path: path) else { throw UDSError.alreadyRunning(path) }
+		SocketStartHooks.leftoverProbed(path)
+		unlink(path)
+	}
+
+	// Starters of one path take turns (review F1): between a starter's probe of a dead
+	// leftover and its unlink, another could unlink it and publish a live socket, which the
+	// first then removed — two "serving", one unreachable. The probe, the unlink and the
+	// publish run under an exclusive flock on a sibling ".<name>.lock", held only while
+	// starting and never removed (a removed lock file would let a waiter and a newcomer both
+	// hold one). Without a lock file the start goes on unserialized, as before.
+	static func whileStarting<T>(_ path: String, _ body: () throws -> T) throws -> T {
+		let lockPath = (path as NSString).deletingLastPathComponent + "/."
+			+ (path as NSString).lastPathComponent + ".lock"
+		let fd = open(lockPath, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+		guard fd >= 0 else {
+			MachmanLogger.log(.passiveWarning,
+				"starting \(path) without its lock: \(String(cString: strerror(errno)))")
+			return try body()
+		}
+		defer { close(fd) }   // closing releases the lock
+		while flock(fd, LOCK_EX) != 0, errno == EINTR {}
+		return try body()
 	}
 
 	private static func bindListening(_ path: String) throws -> BoundSocket {

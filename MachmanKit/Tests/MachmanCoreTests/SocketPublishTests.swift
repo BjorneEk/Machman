@@ -84,4 +84,67 @@ struct SocketPublishTests {
 		#expect(!FileManager.default.fileExists(atPath: path))
 		#expect(!UDSListener.isLive(path: path))
 	}
+
+	// A dead leftover at `path`, as SIGKILL leaves one: bound, never listening, closed.
+	private func plantDeadSocket(_ path: String) {
+		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+		var addr = sockaddr_un()
+		addr.sun_family = sa_family_t(AF_UNIX)
+		withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: Array(path.utf8)) }
+		_ = withUnsafePointer(to: &addr) { p in
+			p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+			}
+		}
+		close(fd)
+	}
+
+	private final class SecondStarter: @unchecked Sendable {
+		let lock = NSLock()
+		let finished = DispatchGroup()
+		var listener: UDSListener?
+		var started = false
+	}
+
+	// Review F1 (wave r3w3): a starter probed a dead leftover, and another starter unlinked it
+	// and published its own live socket before the first unlinked — the first then removed
+	// that live file and published too: two "serving", one unreachable. Starters of one path
+	// take turns now. The hook stops the first starter between its probe and its unlink and
+	// runs a second starter to the end there (it can't, now: it waits its turn).
+	@Test("E48: a starter never unlinks a socket another one published after its probe")
+	func aStarterNeverUnlinksASocketPublishedAfterItsProbe() async throws {
+		let dir = TestEnvironment.socketPath("mm-left", suffix: "")
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let path = dir + "/s.sock"
+		plantDeadSocket(path)
+		#expect(FileManager.default.fileExists(atPath: path) && !UDSListener.isLive(path: path))
+		let queue = DispatchQueue(label: "mm-left-accept")
+		let second = SecondStarter()
+		SocketStartHooks.setLeftoverProbed(path) {
+			let first = second.lock.withLock { () -> Bool in
+				defer { second.started = true }
+				return !second.started
+			}
+			guard first else { return }
+			second.finished.enter()
+			Thread.detachNewThread {
+				let listener = try? UDSListener(path: path, queue: queue, onAccept: { close($0) })
+				second.lock.withLock { second.listener = listener }
+				second.finished.leave()
+			}
+			// Before the fix the second starter is done well within this; now it waits.
+			_ = second.finished.wait(timeout: .now() + .seconds(2))
+		}
+		defer { SocketStartHooks.setLeftoverProbed(path, nil) }
+		let first = await offPool {
+			try? UDSListener(path: path, queue: queue, onAccept: { close($0) })
+		}
+		await offPool { second.finished.wait() }
+		let serving = [first, second.lock.withLock { second.listener }].compactMap { $0 }
+		#expect(second.lock.withLock { second.started })
+		#expect(serving.count == 1, "\(serving.count) starters serve one path")
+		#expect(UDSListener.isLive(path: path))
+		serving.forEach { $0.shutdown() }
+	}
 }
