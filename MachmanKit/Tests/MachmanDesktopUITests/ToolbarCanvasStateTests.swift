@@ -138,6 +138,17 @@ struct ToolbarCanvasStateTests {
 		#expect(!start.isEnabled)
 	}
 
+	@Test("H47: a pending start shows Starting… on the canvas, not Start")
+	func aPendingStartShowsStarting() async throws {
+		let h = await UIHarness.make([Samples.linux("Alpine")])
+		// The click's synchronous half: the state event is seconds out.
+		h.viewModel.pendingStarts.insert("Alpine")
+		let canvas = try await preview(h, "Alpine")
+		#expect(canvas.find(text: "Starting\u{2026}") != nil, "\(canvas.dump())")
+		#expect(canvas.find(label: "Start Alpine") == nil)
+		#expect(canvas.find(text: "VM is stopped") == nil)
+	}
+
 	@Test("W3-36: a Mac that is installing dims the canvas Start button")
 	func anInstallingMacCantStart() async throws {
 		let h = await UIHarness.make([Samples.macOS("Sequoia")])

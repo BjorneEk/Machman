@@ -73,20 +73,12 @@ struct VMPreviewTabView: View {
 							.fittingDisplayBlock()
 					}
 				}
-			case .starting:
-				VStack(spacing: 10) {
-					ProgressView().controlSize(.regular).tint(.white)
-					Text(vm.state.progressLabel ?? vm.stateLabel)
-						.font(.callout).foregroundStyle(.gray)
-						.fittingDisplayBlock()
-				}
-			case .stopping:
-				VStack(spacing: 10) {
-					ProgressView().controlSize(.regular).tint(.white)
-					Text(vm.state.progressLabel ?? vm.stateLabel)
-						.font(.callout).foregroundStyle(.gray)
-						.fittingDisplayBlock()
-				}
+			case .starting, .stopping:
+				transition(vm.state.progressLabel ?? vm.stateLabel)
+			// A start already sent: the state event is seconds out, and the toolbar already
+			// says Starting… (H47), so the block does too instead of offering Start again.
+			case .stopped where startPending, .error where startPending:
+				transition(VMState.starting.progressLabel ?? VMState.starting.displayLabel)
 			case .stopped, .error, .unknown:
 				VStack(spacing: 12) {
 					Button {
@@ -130,6 +122,18 @@ struct VMPreviewTabView: View {
 			}
 		}
 		.shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+	}
+
+	private var startPending: Bool { viewModel.isStartPending(vm.name) }
+
+	// A transition's spinner and its progress word.
+	private func transition(_ label: String) -> some View {
+		VStack(spacing: 10) {
+			ProgressView().controlSize(.regular).tint(.white)
+			Text(label)
+				.font(.callout).foregroundStyle(.gray)
+				.fittingDisplayBlock()
+		}
 	}
 
 	// Under the start button: a settled state as a sentence (the caption below has its word).

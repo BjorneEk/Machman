@@ -429,6 +429,14 @@ enum WindowScenes {
 		) { ctx in
 			AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
 		},
+		// H47: a start sent and not yet seen in the VM's state reads Starting…, not Start.
+		RenderScene(
+			"canvas.preview.start-pending", "VMPreviewTabView, a start sent but not yet seen",
+			widths: [320, 640], height: 420, vms: { [Samples.linux("Alpine")] }
+		) { ctx in
+			ctx.viewModel.pendingStarts.insert("Alpine")
+			return AnyView(VMPreviewTabView(vm: ctx.vm, viewModel: ctx.viewModel))
+		},
 		RenderScene(
 			"canvas.preview.error", "VMPreviewTabView, a VM that stopped with an error",
 			widths: [320, 640], height: 420, vms: { [Samples.linux("Fedora", state: .error)] }
