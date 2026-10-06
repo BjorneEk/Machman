@@ -104,6 +104,22 @@ struct WindowFloorTests {
 		#expect(!plainBar.all.contains { $0.help == Self.safeHelp }, "\(plainBar.dump())")
 	}
 
+	@Test("W4-27: a torn window's toolbar reads Show or Hide Inspector")
+	func theTornInspectorToggleReadsItsName() async throws {
+		let h = await UIHarness.make(select: "Debian")
+		for (shown, name) in [(true, "Hide Inspector"), (false, "Show Inspector")] {
+			let tree = try await OffscreenHost.withHost(
+				TornTabWindowView(
+					connection: h.connection, profiles: h.profiles,
+					payload: TornTab(vm: "Debian", tab: .config), inspectorShown: shown),
+				width: 800, height: 520, chrome: .window
+			) { $0.snapshot() }
+			let bar = try #require(toolbar(tree), "\(tree.dump())")
+			let toggle = try #require(bar.find(label: name), "\(bar.dump())")
+			#expect(toggle.role == "AXButton")
+		}
+	}
+
 	@Test("W4-27: the main toolbar's inspector toggle reads Show or Hide Inspector")
 	func theInspectorToggleReadsItsName() async throws {
 		let h = await UIHarness.make(select: "Debian")

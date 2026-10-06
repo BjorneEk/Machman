@@ -63,6 +63,9 @@ final class UIHarness {
 		return vm
 	}
 
+	// What a torn window takes in place of the app's connection, over this harness's stores.
+	var connection: UIConnection { UIConnection(self) }
+
 	// `view`'s accessibility tree, hosted offscreen (OffscreenHost.withHost).
 	func snapshot(
 		_ view: some View, width: CGFloat? = nil, height: CGFloat? = nil,
@@ -71,5 +74,22 @@ final class UIHarness {
 		try await OffscreenHost.withHost(view, width: width, height: height, chrome: chrome) {
 			$0.snapshot()
 		}
+	}
+}
+
+// The harness as a torn window's connection (TornTabConnection): its view model, terminal
+// sessions, list and own torn-window registry, never the app's shared one.
+@MainActor
+final class UIConnection: TornTabConnection {
+	let viewModel: VMListViewModel?
+	let terminals: TerminalSessions
+	let vmStore: VMStore
+	let tornTabs: TornTabRegistry
+
+	init(_ harness: UIHarness) {
+		viewModel = harness.viewModel
+		terminals = harness.terminals
+		vmStore = harness.store
+		tornTabs = harness.tornTabs
 	}
 }

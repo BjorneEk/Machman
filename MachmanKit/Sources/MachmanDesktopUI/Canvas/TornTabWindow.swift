@@ -14,20 +14,26 @@ import MachmanAPI
 import MachmanDesktopCore
 
 // What a torn window needs from the app's connection: the current view model (nil while
-// reconnecting), the app-scoped terminal sessions and VM list. The app's DaemonConnection
-// conforms.
+// reconnecting), the app-scoped terminal sessions and VM list, and the torn-window registry.
+// The app's DaemonConnection conforms and keeps the app's one registry; renders and tests
+// bring their own, so no two of them share it (Q21).
 @MainActor
 public protocol TornTabConnection: ObservableObject {
 	var viewModel: VMListViewModel? { get }
 	var terminals: TerminalSessions { get }
 	var vmStore: VMStore { get }
+	var tornTabs: TornTabRegistry { get }
+}
+
+extension TornTabConnection {
+	public var tornTabs: TornTabRegistry { .shared }
 }
 
 public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	@ObservedObject var connection: Connection
 	@ObservedObject var profiles: TerminalProfileStore
 	let payload: TornTab
-	@ObservedObject private var tornTabs = TornTabRegistry.shared
+	@ObservedObject private var tornTabs: TornTabRegistry
 	// Observed for the title: an ssh session's rename lives here, and neither the
 	// connection nor the view model forwards its changes (T13). App-scoped, so it outlives
 	// reconnects.
@@ -36,14 +42,20 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	@ObservedObject private var store: VMStore
 	@Environment(\.dismiss) private var dismiss
 	@Environment(\.openWindow) private var openWindow
-	@State private var showInspector = false
+	@State private var showInspector: Bool
 
-	public init(connection: Connection, profiles: TerminalProfileStore, payload: TornTab) {
+	// `inspectorShown` opens the window with its inspector showing (render scenes and tests).
+	public init(
+		connection: Connection, profiles: TerminalProfileStore, payload: TornTab,
+		inspectorShown: Bool = false
+	) {
 		self.connection = connection
 		self.profiles = profiles
 		self.payload = payload
 		_terminals = ObservedObject(wrappedValue: connection.terminals)
 		_store = ObservedObject(wrappedValue: connection.vmStore)
+		_tornTabs = ObservedObject(wrappedValue: connection.tornTabs)
+		_showInspector = State(initialValue: inspectorShown)
 	}
 
 	public var body: some View {
@@ -90,12 +102,12 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			// Deferred: the registry is @Published; inserting mid-view-update warns. A tear-off
 			// registered it already (T11); this covers a window the system restored.
 			DispatchQueue.main.async {
-				TornTabRegistry.shared.open.insert(payload)
+				tornTabs.open.insert(payload)
 				// A restored window can appear AFTER the last list refresh — reconcile
 				// now so a payload whose VM/port is already gone gets its order at once,
 				// and resolve it here in case onChange's baseline already included it.
 				connection.viewModel?.reconcileTornTabs()
-				resolve(TornTabRegistry.shared.orders[payload])
+				resolve(tornTabs.orders[payload])
 			}
 		}
 		.onChange(of: tornTabs.orders[payload]) { _, order in
@@ -107,11 +119,11 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		// view model's one close path, which works without a view model mid-reconnect).
 		// Deferred like the insert: both stores are @Published, and onDisappear runs
 		// mid-view-update.
-		.onDisappear { [payload, terminals = connection.terminals,
+		.onDisappear { [payload, tornTabs, terminals = connection.terminals,
 			viewModel = connection.viewModel] in
 			DispatchQueue.main.async {
 				VMListViewModel.tornWindowClosed(
-					payload, registry: .shared, terminals: terminals, viewModel: viewModel)
+					payload, registry: tornTabs, terminals: terminals, viewModel: viewModel)
 			}
 		}
 	}
