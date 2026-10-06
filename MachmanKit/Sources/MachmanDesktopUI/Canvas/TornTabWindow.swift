@@ -63,6 +63,9 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			if let viewModel = connection.viewModel,
 				let vm = store.vms.first(where: { $0.name == payload.vm }) {
 				content(viewModel: viewModel, vm: vm)
+					// A refusal from this window's inspector shows here, not in the main window
+					// (H40).
+					.modifier(WindowErrorAlert(viewModel: viewModel, window: .torn(payload)))
 			} else if connection.viewModel == nil {
 				// Mid-reconnect: keep the window (and its controller) alive.
 				ProgressView("Reconnecting…")

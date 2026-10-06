@@ -113,15 +113,8 @@ public struct VMNavigationView: View {
 		// through column open/close animations (the capsule strip's clear ScrollView at the
 		// top edge otherwise re-triggers the scroll-edge effect).
 		.toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-		.alert(
-			viewModel.presentedError?.title ?? "Error",
-			isPresented: $viewModel.isErrorPresented,
-			presenting: viewModel.presentedError
-		) { _ in
-			// Empty: SwiftUI supplies the default OK button.
-		} message: { error in
-			Text(error.message)
-		}
+		// Failures show in the window key when they arrive (H40): this one or a torn one.
+		.modifier(WindowErrorAlert(viewModel: viewModel, window: .main))
 		.alert(
 			"MAC address conflict",
 			isPresented: $viewModel.isForceStartPresented,
