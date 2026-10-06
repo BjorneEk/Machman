@@ -364,9 +364,7 @@ struct VMInspector: View {
 	private var memoryRow: some View {
 		LabeledContent {
 			TextField("", text: $memText, prompt: Text("8 GB"))
-				.textFieldStyle(.plain)
-				.multilineTextAlignment(.trailing)
-				.frame(width: 90)
+				.inspectorNumberField(width: 90)
 				.onChange(of: memText) {
 					// Permissive while typing; interpretation happens on submit.
 					let filtered = String(memText

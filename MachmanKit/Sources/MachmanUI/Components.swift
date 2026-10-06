@@ -247,6 +247,21 @@ public struct PathRow: View {
 	}
 }
 
+// MARK: - Number field ------------------------------------------------------------------------
+
+extension View {
+	// The one look of a number typed into an inspector (H46): bordered, the value trailing, a
+	// fixed width. A value the user types has to look typed-in. Its label stays hidden: in a
+	// grouped Form a bordered field keeps a line for its title above the box, which dropped
+	// the value ~4 pt below the row's label.
+	public func inspectorNumberField(width: CGFloat) -> some View {
+		textFieldStyle(.roundedBorder)
+			.labelsHidden()
+			.multilineTextAlignment(.trailing)
+			.frame(width: width)
+	}
+}
+
 // MARK: - Add tile ----------------------------------------------------------------------------
 
 // Icon-first tile for the "+" add popover. `badge` overlays a small plus for glyphs that

@@ -114,6 +114,25 @@ struct InspectorLabelTests {
 		#expect(setup.range(of: #"over ssh\b"#, options: .regularExpression) == nil)
 	}
 
+	@Test("H46: inspector number fields share one bordered style on their label's line")
+	func numberFieldsLookTypedIn() async throws {
+		let h = await UIHarness.make([Samples.linux("Alpine")])
+		let tree = try await inspector(h, "Alpine", nil)
+		let field = try #require(
+			tree.all.first { $0.role == "AXTextField" && $0.value == "4 GB" }, "\(tree.dump())")
+		let label = try #require(tree.find(role: "AXStaticText", text: "Memory"))
+		let fieldMid = try #require(field.frame?.midY)
+		let labelMid = try #require(label.frame?.midY)
+		#expect(abs(fieldMid - labelMid) <= 1, "Memory \(labelMid) vs its field \(fieldMid)")
+		// Memory, Grow to, Width, Height and PPI: one style, so no plain field is left.
+		let plain = RepoFiles.files(
+			under: ["MachmanKit/Sources/MachmanDesktopUI/Inspector"], extension: "swift")
+			.filter { (try? String(contentsOf: $0, encoding: .utf8))?
+				.contains(".textFieldStyle(.plain)") == true }
+			.map(RepoFiles.relativePath)
+		#expect(plain.isEmpty, "plain number fields in \(plain)")
+	}
+
 	@Test("W4-7: the disk, mount and kernel trash buttons say what they remove")
 	func trashButtonsSayWhatTheyRemove() async throws {
 		var ownedISO = Samples.linux("Fedora")

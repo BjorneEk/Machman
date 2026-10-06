@@ -366,6 +366,10 @@ enum InspectorScenes {
 			"device.graphics.2560x1600", "GraphicsInspector, 2560 × 1600 (a width it shares)",
 			vms: { [Samples.linuxDisplay(width: 2560, height: 1600)] },
 			node: .device(.graphics)),
+		// H46: a macOS guest's Pixels per inch, the third bordered number field here.
+		inspector(
+			"device.graphics.macos", "GraphicsInspector, a macOS guest (Pixels per inch)",
+			select: "Sequoia", node: .device(.graphics)),
 		inspector(
 			"device.graphics.newer-capture",
 			"GraphicsInspector, a capture mode from a newer Machman",

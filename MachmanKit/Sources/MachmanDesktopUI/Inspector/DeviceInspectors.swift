@@ -195,25 +195,19 @@ struct GraphicsInspector: View {
 				if currentResolution == .custom {
 					LabeledContent("Width") {
 						TextField("", value: $customWidth, format: .number)
-							.textFieldStyle(.plain)
-							.multilineTextAlignment(.trailing)
-							.frame(width: 70)
+							.inspectorNumberField(width: 70)
 							.onSubmit { commitCustom() }
 					}
 					LabeledContent("Height") {
 						TextField("", value: $customHeight, format: .number)
-							.textFieldStyle(.plain)
-							.multilineTextAlignment(.trailing)
-							.frame(width: 70)
+							.inspectorNumberField(width: 70)
 							.onSubmit { commitCustom() }
 					}
 				}
 				if vm.boot.mode == .macOS {
 					LabeledContent("Pixels per inch") {
-						TextField("80", value: ppiBinding, format: .number)
-							.textFieldStyle(.plain)
-							.multilineTextAlignment(.trailing)
-							.frame(width: 70)
+						TextField("", value: ppiBinding, format: .number, prompt: Text("80"))
+							.inspectorNumberField(width: 70)
 					}
 				}
 				Text("Auto follows the host screen at each start, and changes apply at the "

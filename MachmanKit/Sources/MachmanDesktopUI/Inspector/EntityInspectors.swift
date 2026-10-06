@@ -154,9 +154,7 @@ struct DiskInspector: View {
 			LabeledContent("Grow to") {
 				HStack(spacing: 6) {
 					TextField("", text: $growText, prompt: Text("New size"))
-						.textFieldStyle(.roundedBorder)
-						.multilineTextAlignment(.trailing)
-						.frame(width: 80)
+						.inspectorNumberField(width: 80)
 						.onSubmit(grow)
 					Button("Grow", action: grow)
 						.disabled(!typed || problem != nil)
