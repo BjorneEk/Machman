@@ -160,6 +160,8 @@ public enum VMHostBootstrap {
 				do {
 					try await api.start(
 						vm: vmName, options: StartOptions(openWindow: policy.windowed))
+					// A sharer waiting for these locks refuses now (review F2).
+					loginLocks?.markBooted()
 					// Belt: never idle-exit a VM we just started (the watcher order above
 					// is the suspenders).
 					lifecycle.hadRunning = true
@@ -183,8 +185,9 @@ public enum VMHostBootstrap {
 
 	// A login boot is decided before this host binds its socket, so a sharer that will refuse
 	// never shows a live one to a sharer that would boot (E54). This host sees one VM, so the
-	// router's guards never ran (E38, C8): the login locks decide among login boots, and a
-	// sharer the agent started answers on its socket. Refused, it exits with the reason.
+	// router's guards never ran (E38, C8): the login locks decide among login boots — a lock
+	// a sharer holds is waited for while that sharer decides (review F2) — and a sharer the
+	// agent started answers on its socket. Refused, it exits with the reason.
 	@MainActor
 	private static func admitLoginBoot(
 		vm: String, policy: StartPolicy, library: String, runtimeDir: String

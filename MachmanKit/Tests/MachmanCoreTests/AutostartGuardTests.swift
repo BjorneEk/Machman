@@ -16,6 +16,8 @@ import MachmanTestSupport
 
 struct AutostartGuardTests {
 	private let image = "/images/shared-\(UUID().uuidString).img"
+	// A login boot that answers at once when a sharer holds a lock.
+	static let noWait = BootGuard.LoginWait(polls: 0, pause: {})
 
 	// alpha (Start at login off) and kept, written to the redirected library.
 	@MainActor
@@ -113,9 +115,10 @@ struct AutostartGuardTests {
 			let file = (image as NSString).lastPathComponent
 			let first = try BootGuard.claimLoginBoot(
 				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
-				isLive: { _ in false }).get()
+				isLive: { _ in false }, wait: Self.noWait).get()
 			let second = BootGuard.claimLoginBoot(
-				vm: "kept", library: machmanVMDir, runtimeDir: runtime, isLive: { _ in false })
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime, isLive: { _ in false },
+				wait: Self.noWait)
 			guard case .failure(let refusal) = second else {
 				Issue.record("both login sharers may boot on one writable image")
 				return
@@ -125,7 +128,7 @@ struct AutostartGuardTests {
 			first.release()
 			let afterwards = try BootGuard.claimLoginBoot(
 				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
-				isLive: { _ in false }).get()
+				isLive: { _ in false }, wait: Self.noWait).get()
 			afterwards.release()
 		}
 	}
@@ -140,10 +143,11 @@ struct AutostartGuardTests {
 				disk: VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/a.iso"))))
 			let first = try BootGuard.claimLoginBoot(
 				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
-				isLive: { _ in false }).get()
+				isLive: { _ in false }, wait: Self.noWait).get()
 			defer { first.release() }
 			let second = BootGuard.claimLoginBoot(
-				vm: "kept", library: machmanVMDir, runtimeDir: runtime, isLive: { _ in false })
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime, isLive: { _ in false },
+				wait: Self.noWait)
 			guard case .failure(let refusal) = second else {
 				Issue.record("both login sharers of one MAC may boot")
 				return
@@ -163,10 +167,10 @@ struct AutostartGuardTests {
 				alphaAutostart: true, disk: VMDisk(kind: .iso(URL(fileURLWithPath: "/isos/a.iso"))))
 			let first = try BootGuard.claimLoginBoot(
 				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
-				isLive: { _ in false }).get()
+				isLive: { _ in false }, wait: Self.noWait).get()
 			let second = try BootGuard.claimLoginBoot(
 				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
-				isLive: { _ in false }).get()
+				isLive: { _ in false }, wait: Self.noWait).get()
 			first.release()
 			second.release()
 		}
@@ -175,12 +179,75 @@ struct AutostartGuardTests {
 			let keptSocket = MachmanPaths.vmSocketPath(vm: "kept", runtimeDir: runtime)
 			let claim = BootGuard.claimLoginBoot(
 				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
-				isLive: { $0 == keptSocket })
+				isLive: { $0 == keptSocket }, wait: Self.noWait)
 			guard case .failure(let refusal) = claim else {
 				Issue.record("a login boot beside a running sharer")
 				return
 			}
 			#expect(refusal.message.hasPrefix("kept may still have "))
+		}
+	}
+
+	// Review F2 (wave r3w3): a lost login lock refused at once, so a winner that then failed
+	// its start (or refused on another resource) left neither VM booting. A login boot waits
+	// for the lock, bounded: a holder that gives up frees it and the waiter boots…
+	@Test("E54: a login boot waits for a sharer's lock and boots once the sharer gives up")
+	@MainActor func aLoginBootWaitsForASharerThatGivesUp() throws {
+		let runtime = TestEnvironment.socketPath("mm-login", suffix: "")
+		try VMTestDir.withRedirectedDir {
+			try makePair(alphaAutostart: true)
+			let first = try BootGuard.claimLoginBoot(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }, wait: Self.noWait).get()
+			var pauses = 0
+			let wait = BootGuard.LoginWait(polls: 10) {
+				pauses += 1
+				first.release()   // alpha's start failed: its vmhost exits
+			}
+			let second = try BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }, wait: wait).get()
+			#expect(pauses == 1)
+			second.release()
+		}
+	}
+
+	// …and a holder that booted keeps it: the waiter refuses with today's sentence, at once
+	// (the holder marked its lock) or at the bound (it still hadn't decided).
+	@Test("E54: a login boot refuses beside a sharer that booted, or still decides at the bound")
+	@MainActor func aLoginBootRefusesBesideABootedSharer() throws {
+		let runtime = TestEnvironment.socketPath("mm-login", suffix: "")
+		try VMTestDir.withRedirectedDir {
+			try makePair(alphaAutostart: true)
+			let file = (image as NSString).lastPathComponent
+			let sentence = "alpha is running with \(file) attached \u{2014} "
+				+ "stop alpha before starting kept"
+			let first = try BootGuard.claimLoginBoot(
+				vm: "alpha", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }, wait: Self.noWait).get()
+			defer { first.release() }
+			var pauses = 0
+			let wait = BootGuard.LoginWait(polls: 3) { pauses += 1 }
+			let undecided = BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }, wait: wait)
+			guard case .failure(let atTheBound) = undecided else {
+				Issue.record("kept took a lock alpha holds")
+				return
+			}
+			#expect(pauses == 3)
+			#expect(atTheBound.message == sentence)
+			first.markBooted()
+			pauses = 0
+			let booted = BootGuard.claimLoginBoot(
+				vm: "kept", library: machmanVMDir, runtimeDir: runtime,
+				isLive: { _ in false }, wait: wait)
+			guard case .failure(let atOnce) = booted else {
+				Issue.record("kept took a lock alpha holds")
+				return
+			}
+			#expect(pauses == 0)
+			#expect(atOnce.message == sentence)
 		}
 	}
 }

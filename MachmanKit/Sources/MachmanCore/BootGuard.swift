@@ -168,6 +168,27 @@ enum BootGuard {
 			descriptors.forEach { close($0) }
 			descriptors = []
 		}
+
+		// The boot went through: a sharer waiting for these locks stops waiting (review F2).
+		// The mark names this process, so one left behind by a holder that's gone counts
+		// for nothing.
+		func markBooted() {
+			let mark = Array("booted \(getpid())\n".utf8)
+			for fd in descriptors {
+				_ = ftruncate(fd, 0)
+				_ = pwrite(fd, mark, mark.count, 0)
+			}
+		}
+	}
+
+	// How long a login boot waits for a lock a sharer holds (review F2): `polls` pauses. A
+	// holder still deciding boots or gives up within it — a start that has done neither in
+	// two minutes counts as booting.
+	struct LoginWait {
+		var polls: Int
+		var pause: () -> Void
+
+		static let standard = LoginWait(polls: 480) { usleep(250_000) }
 	}
 
 	// What two login boots must not share, by its lock's key.
@@ -185,11 +206,14 @@ enum BootGuard {
 
 	// C8's login half, decided before the vmhost binds its socket (E54). Login vmhosts that
 	// each bound first saw one another's fresh socket and all refused, so the one lock per
-	// shared resource decides: a sharer holding one boots, or runs, at this login. Then the
-	// live-socket check, for a sharer the agent started (it takes no lock). The locks on
-	// success, to hold for the run; else why not.
+	// shared resource decides: a sharer holding one boots, or runs, at this login. A lock a
+	// sharer holds is waited for while that sharer still decides (`wait`): one that gives up
+	// frees it. The locks are taken in one order (disks by path, then the MAC), so no two
+	// waiters wait on each other. Then the live-socket check, for a sharer the agent started
+	// (it takes no lock). The locks on success, to hold for the run; else why not.
 	static func claimLoginBoot(
-		vm name: String, library: String, runtimeDir: String, isLive: (String) -> Bool
+		vm name: String, library: String, runtimeDir: String, isLive: (String) -> Bool,
+		wait: LoginWait = .standard
 	) -> Result<LoginLocks, MachmanError> {
 		guard let mine = peekConfig(name: name, library: library) else {
 			return .success(LoginLocks([]))   // its start says why
@@ -207,7 +231,8 @@ enum BootGuard {
 					"\(name) boots without the login lock \(path): \(reason)")
 				continue
 			}
-			if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+			if takeLock(fd, wait: wait) {
+				_ = ftruncate(fd, 0)   // an earlier holder's mark goes
 				held.append(fd)
 				continue
 			}
@@ -221,6 +246,29 @@ enum BootGuard {
 			return .failure(conflict)
 		}
 		return .success(LoginLocks(held))
+	}
+
+	// The lock on `fd`, waited for while its holder still decides: false once the holder marked
+	// it booted, or when the wait ran out.
+	private static func takeLock(_ fd: Int32, wait: LoginWait) -> Bool {
+		var polls = 0
+		while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+			guard polls < wait.polls, !holderBooted(fd) else { return false }
+			wait.pause()
+			polls += 1
+		}
+		return true
+	}
+
+	// The holder's mark ("booted <pid>"), from a holder that still runs.
+	private static func holderBooted(_ fd: Int32) -> Bool {
+		var bytes = [UInt8](repeating: 0, count: 64)
+		let count = pread(fd, &bytes, bytes.count, 0)
+		guard count > 0 else { return false }
+		let mark = String(decoding: bytes[0..<count], as: UTF8.self)
+		guard mark.hasPrefix("booted "),
+			let pid = pid_t(mark.dropFirst(7).prefix { $0.isNumber }) else { return false }
+		return kill(pid, 0) == 0 || errno == EPERM
 	}
 
 	// A lock doesn't say who holds it: the refusal names the library's VM sharing the
