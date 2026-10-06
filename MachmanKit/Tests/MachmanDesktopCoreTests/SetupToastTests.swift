@@ -89,4 +89,30 @@ struct SetupToastTests {
 		try? await Task.sleep(for: .milliseconds(300))
 		#expect(!h.viewModel.toasts.contains { $0.message.contains("SSH set up") })
 	}
+
+	// W6 follow-up (review F10, wave r3w3): the SSH-only toast of a v2 guest (no setup half)
+	// named the guest by its raw os-release id ("(debian)"); it names the OS, and leaves out
+	// an id Machman doesn't know rather than show it.
+	@Test("W6: a v2 guest's SSH setup toast names its OS, never the raw id")
+	func theSSHSetupToastNamesTheOS() async {
+		var v2 = Samples.linux("Debian", state: .running)
+		v2.setup = nil
+		var mystery = Samples.linux("Kali", state: .running)
+		mystery.setup = nil
+		let h = await DesktopHarness.make([v2, mystery])
+		for (name, os) in [("Debian", "debian"), ("Kali", "mystery-linux")] {
+			var vm = h.stub.vms[name]!
+			vm.ssh?.lastReportAt = Samples.epoch.addingTimeInterval(3_600)
+			vm.ssh?.guestUser = "root"
+			vm.ssh?.guestOS = os
+			h.stub.vms[name] = vm
+			h.stub.emit(.sshChanged(vm: name))
+		}
+		_ = await eventually {
+			h.viewModel.toasts.filter { $0.message.contains("SSH set up") }.count == 2
+		}
+		let toasts = h.viewModel.toasts.map(\.message).filter { $0.contains("SSH set up") }
+		#expect(toasts.sorted() == ["Debian: SSH set up for root (Debian)",
+			"Kali: SSH set up for root"], "\(toasts)")
+	}
 }

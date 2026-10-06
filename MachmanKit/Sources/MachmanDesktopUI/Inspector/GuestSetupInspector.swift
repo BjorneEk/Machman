@@ -79,11 +79,16 @@ struct GuestSetupInspector: View {
 				}
 			}
 			if let setup, installed {
-				if let os = setup.guestOS {
-					let version = setup.guestOSVersion.map { " \($0)" } ?? ""
-					let initSystem = setup.guestInit.map { ", \($0)" } ?? ""
+				// The OS by name, never its raw id (W6): one Machman doesn't know keeps only
+				// its version and init system.
+				let guest = [
+					[GuestOSName.known(setup.guestOS), setup.guestOSVersion]
+						.compactMap { $0 }.joined(separator: " "),
+					setup.guestInit ?? "",
+				].filter { !$0.isEmpty }.joined(separator: ", ")
+				if setup.guestOS != nil, !guest.isEmpty {
 					LabeledContent("Guest") {
-						Text("\(os)\(version)\(initSystem)")
+						Text(guest)
 							.font(.system(.callout, design: .monospaced))
 					}
 				}

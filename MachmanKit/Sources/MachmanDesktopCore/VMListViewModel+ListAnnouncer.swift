@@ -169,7 +169,8 @@ extension VMListViewModel {
 			} else if vm.setup?.lastReportAt == nil, let stamp = now.lastReportAt,
 				previous.lastReportAt != stamp {
 				let user = vm.ssh?.guestUser ?? "the guest"
-				let os = vm.ssh?.guestOS.map { " (\($0))" } ?? ""
+				// The OS by name, never its raw id (W6); one Machman doesn't know is left out.
+				let os = GuestOSName.known(vm.ssh?.guestOS).map { " (\($0))" } ?? ""
 				if let status = vm.ssh?.lastRunStatus, status != GuestRunStatus.ok {
 					let note = vm.ssh?.lastRunNote.map { " — \($0)" } ?? ""
 					pushProblem(

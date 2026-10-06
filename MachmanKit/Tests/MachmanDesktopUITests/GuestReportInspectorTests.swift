@@ -68,7 +68,7 @@ struct GuestReportInspectorTests {
 
 		let partial = try await setup(Samples.partialSetupRun())
 		#expect(reads(partial, "Installed, with gaps"), "\(partial.dump())")
-		#expect(reads(partial, "debian 13, systemd"))
+		#expect(reads(partial, "Debian 13, systemd"))   // the OS by name, not its id (W6)
 		#expect(reads(partial, "v3"))
 		#expect(reads(partial, "Errors (1)"))
 		#expect(!reads(partial, "No report yet \u{2014} run the installer in the guest."))

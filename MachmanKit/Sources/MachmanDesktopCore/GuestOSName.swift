@@ -22,8 +22,14 @@ public enum GuestOSName {
 
 	// "Debian" for "debian"; openSUSE's ids all read "openSUSE"; nil or unknown reads "Guest".
 	public static func display(_ id: String?) -> String {
-		guard let id = id?.lowercased(), !id.isEmpty else { return "Guest" }
+		known(id) ?? "Guest"
+	}
+
+	// The OS's name, or nil for an id Machman doesn't know (or none): text that would only
+	// repeat "Guest" leaves it out instead.
+	public static func known(_ id: String?) -> String? {
+		guard let id = id?.lowercased(), !id.isEmpty else { return nil }
 		if id == "opensuse" || id.hasPrefix("opensuse-") { return "openSUSE" }
-		return names[id] ?? "Guest"
+		return names[id]
 	}
 }
