@@ -272,14 +272,14 @@ class Follower:
                 above.extend(self.rows(epoch, text, extras))
             elif role in ("detail", "step") and level <= self.level and (
                     self.current is None or min(epoch, extras.get("born") or epoch)
-                    >= self.started[self.current][1] - 1):
+                    >= self.started[self.current][1]):
                 # (A line older than the running test, or from a console opened before it,
                 # is the last test's, late.)
                 parts = text.strip().split("\n")
                 self.window.add(clock(epoch), parts[0].rstrip())
                 for part in parts[1:]:
                     if part.strip():
-                        self.window.add("", "  " + part.strip())
+                        self.window.add("", " " * 9 + part.strip())
         self.log.flush()
         if self.screen is None:
             if above:
@@ -293,40 +293,37 @@ class Follower:
     def colour(text):
         return {"✔": "32", "✘": "1;31", "~": "33", "!": "33", "–": "2"}.get(text.lstrip()[:1])
 
-    def squeeze(self, prefix, parts, reserved=0):
-        """prefix + parts' prefix, name and suffix, the name cut so the line fits the width."""
-        head, name, tail = parts
-        room = self.screen.dimensions()[0] - 1 - reserved - len(prefix + head + tail)
-        return prefix + head + fit(name, max(10, room)) + tail
-
     def rows(self, epoch, text, extras):
-        """A result's rows on the terminal: its line (only the mark and index coloured, the
-        duration dim, a note yellow, its time dim at the right edge), then its children hung
+        """A result's rows on the terminal: its line (its time dim, only the mark and index
+        coloured, a note yellow, its duration dim at the right edge), then its children hung
         under it, dim but for their glyph and what they start with."""
-        stamp = ("2", clock(epoch))
+        stamp = ("2", clock(epoch) + " ")
         lines = [l.rstrip() for l in text.split("\n")]
+        right = None
         if "parts" in extras:
             mark, name, tail = extras["parts"]
             note = extras.get("note", "")
-            room = self.screen.dimensions()[0] - 1 - len(stamp[1]) - 2 \
-                - len(mark + " " + tail + note)
+            took = tail.strip(" ·")
+            right = ("2", took) if took else None
+            room = self.screen.dimensions()[0] - 1 - len(stamp[1] + mark + " " + note) \
+                - (len(took) + 2 if took else 0)
             name = fit(name, max(10, room))
             if mark.startswith("–"):
-                left = [("2", "%s %s%s" % (mark, name, tail))]
+                left = [stamp, ("2", "%s %s" % (mark, name))]
             else:
-                left = [(self.colour(mark), mark), (None, " " + name), ("2", tail)]
+                left = [stamp, (self.colour(mark), mark), (None, " " + name)]
                 if note:
                     left.append(("33", note))
         else:
-            left = [(self.colour(lines[0]), lines[0].strip())]
-        rows = [(left, stamp)]
+            left = [stamp, (self.colour(lines[0]), lines[0].strip())]
+        rows = [(left, right)]
         items = extras.get("children")
         if items is None:
-            rows.extend(([(None, "  " + l.strip())], None) for l in lines[1:] if l.strip())
+            rows.extend(([(None, " " * 9 + l.strip())], None) for l in lines[1:] if l.strip())
             return rows
         for i, (glyph, line, more) in enumerate(items):
             last = i == len(items) - 1
-            lead = [(None, "  "), ("2", "└─ " if last else "├─ ")]
+            lead = [(None, " " * 9), ("2", "└─ " if last else "├─ ")]
             if glyph:
                 lead += [(self.colour(glyph), glyph), (None, " ")]
             head, sep, rest = line.partition(": ")
@@ -336,7 +333,8 @@ class Follower:
                 lead.append(("2", line))
             rows.append((lead, None))
             for l in more:
-                rows.append(([(None, "  "), ("2", ("   " if last else "│  ") + "  " + l)], None))
+                rows.append(([(None, " " * 9), ("2", ("   " if last else "│  ") + "  " + l)],
+                             None))
         return rows
 
     def children(self, test_id):
@@ -362,12 +360,14 @@ class Follower:
         height = 1 if self.level == 0 else min(10, max(3, self.screen.dimensions()[1] // 3))
         if self.current is not None:
             index, start = self.started[self.current]
-            header = self.squeeze("", ("▶ %s " % self.of(index), about(
-                self.display(self.current)), " · %s" % span(now - start)))
+            took = span(now - start)
+            room = self.screen.dimensions()[0] - 1 - len("▶ %s " % self.of(index)) - len(took) - 2
+            header = ([("1", "▶ %s %s" % (self.of(index), fit(
+                about(self.display(self.current)), max(10, room))))], ("2", took))
         elif self.started:
-            header = "▶ between tests"
+            header = ([("1", "▶ between tests")], None)
         else:
-            header = "▶ starting the test run"
+            header = ([("1", "▶ starting the test run")], None)
         body = []
         if self.level == 0:
             if self.current is not None and self.step is not None \
@@ -375,10 +375,10 @@ class Follower:
                     and not self.step[1].startswith(("✓", "✘")):
                 body.append(([("2", "  " + self.step[1])], None))
         elif self.current is not None:
-            body.extend(([("2", "  " + text)], ("2", stamp) if stamp else None)
+            body.extend(([("2", "  " + (stamp + " " if stamp else "") + text)], None)
                         for stamp, text in self.window.lines(height))
         body += [([("2", "")], None)] * (height - len(body))
-        return [([("1", header)], None)] + body
+        return [header] + body
 
     # --- the event stream -------------------------------------------------------------------
 
@@ -833,10 +833,11 @@ def self_check():
         follower.screen.colour = False
         shown = Terminal().feed(screen.getvalue())
         live = shown[next(i for i, l in enumerate(shown) if l.startswith("▶")):]
-        timed = re.compile(r"^  \[lab-debian hvc0\] boot line (\d+) +\d\d:\d\d:\d\d$")
-        check("a running test's block: its header, then its output, times at the right edge",
-              live[0].startswith("▶ 1/1 the guest answers on its console · 2")
-              and timed.match(live[1]) and len(live[1]) == 79
+        timed = re.compile(r"^  \d\d:\d\d:\d\d \[lab-debian hvc0\] boot line (\d+)$")
+        check("a running test's block: its header with its elapsed time at the right edge, then "
+              "its output",
+              re.match(r"▶ 1/1 the guest answers on its console +2\d s$", live[0])
+              and len(live[0]) == 79 and timed.match(live[1])
               and timed.match(live[-1]).group(1) == "29" and len(live) == 11)
         check("output past the window: its first two lines, how many are left out, the newest",
               timed.match(live[1]).group(1) == "0" and timed.match(live[2]).group(1) == "1"
@@ -864,7 +865,8 @@ def self_check():
         shown = Terminal().feed(screen.getvalue())
         check("when the test ends its block collapses into its result line",
               not any("boot line" in l for l in shown)
-              and any("✔ 1/1 the guest answers on its console · 19 s" in l for l in shown))
+              and any(re.match(r"\d\d:\d\d:\d\d ✔ 1/1 the guest answers on its console +19 s$",
+                               l) for l in shown))
         check("the output it showed stays in progress.log", "boot line 29" in log.getvalue())
         check("the cursor is hidden while the block is up and shown again after it",
               screen.getvalue().find("\x1b[?25l") < screen.getvalue().rfind("\x1b[?25h")
@@ -903,16 +905,16 @@ def self_check():
         check("the block keeps its height while tests run, between them and with little output",
               heights == [11, 11, 11])
         shown = Terminal().feed(screen.getvalue())
-        result = next(i for i, l in enumerate(shown) if l.startswith("✘ 1/2 "))
-        check("a long result line is cut to the width, keeps its duration, its time at the edge",
+        result = next(i for i, l in enumerate(shown) if l[9:].startswith("✘ 1/2 "))
+        check("a long result line is cut to the width, its duration at the right edge",
               len(shown[result]) == 79 and "…" in shown[result]
-              and re.search(r" · 10 s +\d\d:\d\d:\d\d$", shown[result]))
+              and re.match(r"\d\d:\d\d:\d\d ✘ 1/2 a test .*… +10 s$", shown[result]))
         check("a failure's issue hangs under its result: first two lines, a count, last five",
-              shown[result + 1] == "  └─ ✘ File.swift:71: Expectation failed: a == b"
-              and shown[result + 2] == " " * 7 + "detail 1"
-              and shown[result + 3] == " " * 7 + "⋯ 2 more lines in report/progress.log ⋯"
-              and shown[result + 4] == " " * 7 + "detail 4"
-              and shown[result + 8] == " " * 7 + "detail 8")
+              shown[result + 1] == " " * 9 + "└─ ✘ File.swift:71: Expectation failed: a == b"
+              and shown[result + 2] == " " * 14 + "detail 1"
+              and shown[result + 3] == " " * 14 + "⋯ 2 more lines in report/progress.log ⋯"
+              and shown[result + 4] == " " * 14 + "detail 4"
+              and shown[result + 8] == " " * 14 + "detail 8")
         known = {"isKnown": True, "sourceLocation": {"fileID": "Mod/File.swift", "line": 81}}
         write(root + "/report/events.jsonl", [
             event("issueRecorded", now - 25, r8, [("passWithKnownIssue", "Expectation failed: x"),
@@ -923,24 +925,25 @@ def self_check():
             event("testEnded", now - 20, r8, [("pass", "passed")])])
         follower.tick()
         shown = Terminal().feed(screen.getvalue())
-        result = next(i for i, l in enumerate(shown) if l.startswith("✔ 2/2 "))
+        result = next(i for i, l in enumerate(shown) if l[9:].startswith("✔ 2/2 "))
         check("a known issue hangs under its result by its title, the last child with └─",
-              re.match(r"✔ 2/2 a quiet test · 10 s · known issue +\d\d:", shown[result])
-              and shown[result + 1] == "  ├─ ~ known issue: the override never boots"
-              and shown[result + 2] == "  └─ ! F.swift:3: a warning")
+              re.match(r"\d\d:\d\d:\d\d ✔ 2/2 a quiet test · known issue +10 s$",
+                       shown[result])
+              and shown[result + 1] == " " * 9 + "├─ ~ known issue: the override never boots"
+              and shown[result + 2] == " " * 9 + "└─ ! F.swift:3: a warning")
         follower.screen.colour = True
         row = follower.rows(now, "", {"parts": ("✔ 2/2", "a quiet test", " · 10 s"),
                                       "note": " · known issue",
                                       "children": [("~", "known issue: it never boots", [])]})
         drawn = follower.screen.render(row[0], 79)
         child = follower.screen.render(row[1], 79)
-        check("only the mark and index are coloured; the duration dim, the note yellow",
-              drawn.startswith("\x1b[32m✔ 2/2\x1b[0m a quiet test\x1b[2m · 10 s\x1b[0m")
-              and "\x1b[33m · known issue\x1b[0m" in drawn
-              and drawn.endswith("\x1b[2m%s\x1b[0m" % clock(now)))
+        check("only the mark and index are coloured; the time and duration dim, the note yellow",
+              drawn.startswith("\x1b[2m%s \x1b[0m\x1b[32m✔ 2/2\x1b[0m a quiet test"
+                               "\x1b[33m · known issue\x1b[0m" % clock(now))
+              and drawn.endswith("\x1b[2m10 s\x1b[0m"))
         check("a note is dim but for its glyph and what it starts with",
-              child == "  \x1b[2m└─ \x1b[0m\x1b[33m~\x1b[0m \x1b[33mknown issue:\x1b[0m"
-              "\x1b[2m it never boots\x1b[0m")
+              child == " " * 9 + "\x1b[2m└─ \x1b[0m\x1b[33m~\x1b[0m \x1b[33mknown issue:"
+              "\x1b[0m\x1b[2m it never boots\x1b[0m")
         check("a window that fits shows all its lines, padded",
               elide(["a", "b", "c"], 10) == ["a", "b", "c"]
               and Window().lines(10) == [])
