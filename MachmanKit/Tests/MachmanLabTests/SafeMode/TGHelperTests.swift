@@ -10,7 +10,7 @@ import Foundation
 import Testing
 import MachmanTestSupport
 
-@Suite("TG helpers", .enabled(if: Lab.runs(.harness)))
+@Suite("Safe-mode test helpers", .enabled(if: Lab.runs(.harness)))
 struct TGHelperTests {
 	private func scratch() throws -> String {
 		let dir = TestEnvironment.scratch + "tg-" + UUID().uuidString
@@ -18,7 +18,7 @@ struct TGHelperTests {
 		return dir
 	}
 
-	@Test("Q18: TG config edits keep every key they don't change")
+	@Test("Q18: config edits in the safe-mode helpers keep every key they don't change")
 	func configEditKeepsKeys() throws {
 		let path = try scratch() + "/config"
 		let original: [String: Any] = [
@@ -44,7 +44,7 @@ struct TGHelperTests {
 		#expect(Set(edited.keys) == Set(original.keys))
 	}
 
-	@Test("Q18: TG guest commands address the given sector and device")
+	@Test("Q18: the safe-mode helpers' guest commands address the given sector and device")
 	func guestCommands() {
 		let write = TGGuest.writeMarkerCommand("TG1-abc234", device: "/dev/vdb", sector: 16)
 		#expect(write == "printf '%s' 'TG1-abc234' | dd of=/dev/vdb bs=512 seek=16 "
@@ -59,7 +59,7 @@ struct TGHelperTests {
 		#expect(TGDisk(name: "data", mib: 64).sectors == 131_072)
 	}
 
-	@Test("Q18: TG run-dir listing sees only run-* entries")
+	@Test("Q18: the safe-mode helpers' run-dir listing sees only run-* entries")
 	func runRootListing() throws {
 		let dir = try scratch()
 		for name in ["run-B", "run-A", "keep", ".run-hidden", "xrun-C"] {
@@ -69,13 +69,13 @@ struct TGHelperTests {
 		#expect(TG.runRoots(in: dir) == [dir + "/run-A", dir + "/run-B"])
 		#expect(TG.runRoots(in: dir + "/missing").isEmpty)
 		let marker = dir + "/run-A/machman-shadow.json"
-		try Data(#"{"vm":"tg-r1","createdAt":781234567,"pid":4242}"#.utf8)
+		try Data(#"{"vm":"run-listing","createdAt":781234567,"pid":4242}"#.utf8)
 			.write(to: URL(fileURLWithPath: marker))
-		#expect(TG.marker(dir + "/run-A") == TG.Marker(vm: "tg-r1", pid: 4242))
+		#expect(TG.marker(dir + "/run-A") == TG.Marker(vm: "run-listing", pid: 4242))
 		#expect(TG.marker(dir + "/run-B") == nil)
 	}
 
-	@Test("Q18: TG launchd helpers refuse a label or plist outside this run's suite")
+	@Test("Q18: the launchd helpers refuse a label or plist outside this run's suite")
 	func launchdGuard() throws {
 		let suite = "com.gustaffranzen.Machman.test-Ab12"
 		let run = "/tmp/mml.Ab12"

@@ -24,7 +24,7 @@ struct EngineGuestSetupTests {
 		""")
 	func upgradeSweepsTheShare() async throws {
 		try await Lab.withAgent { agent in
-			let spec = LabVMSpec(name: "g2", boot: .alpine(), devices: [.guestSetup])
+			let spec = LabVMSpec(name: "upgraded", boot: .alpine(), devices: [.guestSetup])
 			try await agent.withVM(spec, start: false) { vm in
 				let share = TFVM.dir(agent, vm.name) + "/share"
 				// What an older Machman left in the share: three superseded payload dirs.
@@ -51,13 +51,13 @@ struct EngineGuestSetupTests {
 			let desktop = try await TFDesktop.make(agent: agent)
 			let events = await TFEvents(api: agent.api)
 			defer { events.stop() }
-			let spec = LabVMSpec(name: "g13", boot: .alpine(), devices: [.guestSetup])
+			let spec = LabVMSpec(name: "live-report", boot: .alpine(), devices: [.guestSetup])
 			try await agent.withVM(spec) { vm in
 				let console = try await vm.console(0)
 				defer { console.close() }
 				try await console.expect("LAB-READY", timeout: .seconds(60))
 				try await TFGuest.mountShare(console)
-				try await desktop.waitForEntry("g13", "running", timeout: .seconds(10)) {
+				try await desktop.waitForEntry("live-report", "running", timeout: .seconds(10)) {
 					$0.state == .running
 				}
 				let report = TFReport([
@@ -66,13 +66,13 @@ struct EngineGuestSetupTests {
 				])
 				try await TFGuest.writeReport(console, report.render())
 				let seen = try await desktop.waitForEntry(
-					"g13", "reported", timeout: .seconds(15)
+					"live-report", "reported", timeout: .seconds(15)
 				) {
 					$0.ssh?.guestUser == "root" && $0.setup?.lastRunStatus == "ok"
 				}
 				#expect(seen.setup?.guestOS == "alpine")
 				try await events.waitFor("setupChanged", timeout: .seconds(5)) {
-					$0 == .setupChanged(vm: "g13")
+					$0 == .setupChanged(vm: "live-report")
 				}
 			}
 			await desktop.close()

@@ -50,7 +50,7 @@ final class THVZGuest: THGuest, @unchecked Sendable {
 		}
 		let small = kind == .alpine
 		return LabVMSpec(
-			name: options.name ?? "th-\(kind.stem)", boot: .efiImagePath(image),
+			name: options.name ?? "guest-\(kind.stem)", boot: .efiImagePath(image),
 			cpus: small ? 1 : 2, memoryGiB: small ? 1 : 2, consolePorts: options.consoles,
 			network: options.network, devices: devices, mounts: mounts)
 	}

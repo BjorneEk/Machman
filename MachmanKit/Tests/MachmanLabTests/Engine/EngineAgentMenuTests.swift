@@ -34,22 +34,22 @@ struct EngineAgentMenuTests {
 	func macConflictStartAnyway() async throws {
 		let options = LabAgent.Options(answers: ["agent.macConflict": "Start Anyway"])
 		try await Lab.withAgent(options) { agent in
-			let spec = LabVMSpec(name: "p23", boot: .alpine(), network: true)
+			let spec = LabVMSpec(name: "mac-owner", boot: .alpine(), network: true)
 			try await agent.withVM(spec, start: false) { vm in
 				let twin = try await agent.api.copyVM(
-					vm: vm.name, newName: "p23-twin", diskIDs: nil, mountIDs: nil,
+					vm: vm.name, newName: "mac-twin", diskIDs: nil, mountIDs: nil,
 					regenerateMAC: false)
 				#expect(twin.macAddress == (try await vm.info().macAddress))
 				try await vm.start()
 				let mark = LabLog.mark()
-				#expect(try await SeamProbe.control(agent, "menu start p23-twin") == "ok")
+				#expect(try await SeamProbe.control(agent, "menu start mac-twin") == "ok")
 				_ = try await LabLog.waitFor(
 					SeamProbe.promptLine("agent.macConflict", "Start Anyway$"), after: mark,
 					process: "MachmanAgent", timeout: .seconds(30))
-				try await TFWait.state(agent.api, "p23-twin", .running, timeout: .seconds(30))
-				_ = try await TFVM.recordHost(agent, "p23-twin")
-				await TFVM.forceStop(agent, "p23-twin")
-				try await agent.api.deleteVM(named: "p23-twin")
+				try await TFWait.state(agent.api, "mac-twin", .running, timeout: .seconds(30))
+				_ = try await TFVM.recordHost(agent, "mac-twin")
+				await TFVM.forceStop(agent, "mac-twin")
+				try await agent.api.deleteVM(named: "mac-twin")
 			}
 		}
 	}
@@ -57,20 +57,21 @@ struct EngineAgentMenuTests {
 	@Test("W3-47: a failed agent start logs an alert naming the VM and the reason")
 	func failedStartAlerts() async throws {
 		try await Lab.withAgent { agent in
-			try await Self.brokenVM(agent, "p23-broken")
+			try await Self.brokenVM(agent, "broken-start")
 			let mark = LabLog.mark()
-			#expect(try await SeamProbe.control(agent, "menu start p23-broken") == "ok")
+			#expect(try await SeamProbe.control(agent, "menu start broken-start") == "ok")
 			let prompt = try await LabLog.waitFor(
 				SeamProbe.promptLine("agent.actionFailed", "OK"), after: mark,
 				process: "MachmanAgent", timeout: .seconds(60))
-			#expect(prompt.eventMessage.contains("Couldn’t start “p23-broken”"))
+			#expect(prompt.eventMessage.contains("Couldn’t start “broken-start”"))
 			let reason = try await LabLog.waitFor(
-				"Couldn’t start “p23-broken”: ", after: mark, process: "MachmanAgent")
-			let said = reason.eventMessage.components(separatedBy: "Couldn’t start “p23-broken”: ")
+				"Couldn’t start “broken-start”: ", after: mark, process: "MachmanAgent")
+			let said = reason.eventMessage.components(
+				separatedBy: "Couldn’t start “broken-start”: ")
 			#expect(said.count == 2 && !said[1].isEmpty)
 			#expect(!reason.eventMessage.contains("MachmanError("))
-			#expect(try await agent.api.vm(named: "p23-broken").state != .running)
-			try await agent.api.deleteVM(named: "p23-broken")
+			#expect(try await agent.api.vm(named: "broken-start").state != .running)
+			try await agent.api.deleteVM(named: "broken-start")
 		}
 	}
 
@@ -81,11 +82,13 @@ struct EngineAgentMenuTests {
 		let options = LabAgent.Options(
 			answers: ["agent.actionFailed": ["button": "OK", "holdSeconds": hold]])
 		try await Lab.withAgent(options) { agent in
-			try await Self.brokenVM(agent, "p23-held")
-			try await agent.withVM(LabVMSpec(name: "p23-d", boot: .alpine()), start: false) { vm in
+			try await Self.brokenVM(agent, "failed-start")
+			try await agent.withVM(
+				LabVMSpec(name: "served-meanwhile", boot: .alpine()), start: false
+			) { vm in
 				let desktop = try await TFDesktop.make(agent: agent)
 				let mark = LabLog.mark()
-				#expect(try await SeamProbe.control(agent, "menu start p23-held") == "ok")
+				#expect(try await SeamProbe.control(agent, "menu start failed-start") == "ok")
 				_ = try await LabLog.waitFor(
 					SeamProbe.promptLine("agent.actionFailed", "OK \\(held \(hold) s\\)"),
 					after: mark, process: "MachmanAgent", timeout: .seconds(60))
@@ -106,7 +109,7 @@ struct EngineAgentMenuTests {
 				#expect(ContinuousClock.now - t0 < .seconds(hold - 2))
 				#expect(desktop.viewModel.presentedError == nil)
 				await desktop.close()
-				try await agent.api.deleteVM(named: "p23-held")
+				try await agent.api.deleteVM(named: "failed-start")
 			}
 		}
 	}

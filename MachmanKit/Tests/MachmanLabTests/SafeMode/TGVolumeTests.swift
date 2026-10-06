@@ -38,7 +38,7 @@ struct TGVolumeTests {
 			let big = try await volume.bigImage()
 			try await TG.withAgent { agent in
 				let vm = try await TGVM.alpine(
-					"tg-r21", externals: [TGExternal(path: big)], policy: Self.safeHeadless,
+					"cross-volume", externals: [TGExternal(path: big)], policy: Self.safeHeadless,
 					on: agent)
 				let events = await TGEvents.record(agent.api)
 				defer { events.stop() }
@@ -88,15 +88,17 @@ struct TGVolumeTests {
 					atPath: TG.vmsDir(scope), withDestinationPath: library)
 			}
 			try await TG.withAgent(prepare: prepare) { agent in
-				let vm = try await TGVM.alpine("tg-w239", policy: Self.safeHeadless, on: agent)
-				#expect(FileManager.default.fileExists(atPath: library + "/tg-w239/config"))
+				let vm = try await TGVM.alpine(
+					"other-volume", policy: Self.safeHeadless, on: agent)
+				#expect(FileManager.default.fileExists(atPath: library + "/other-volume/config"))
 				try await vm.start(try await vm.info().startOptions(.plain))
 				let guest = try await vm.guest()
 				defer { guest.console.close() }
 				let run = "run-" + TG.nonce()
 				try await guest.set("TGWHO", run)
 				let refused = await #expect(throws: MachmanError.self) {
-					_ = try await agent.api.safeSave(vm: "tg-w239", to: "tg-w239-kept")
+					_ = try await agent.api.safeSave(
+						vm: "other-volume", to: "other-volume-kept")
 				}
 				#expect(refused?.code == .invalidState)
 				#expect(refused?.message
@@ -106,8 +108,9 @@ struct TGVolumeTests {
 				#expect(info.state == .running)
 				#expect(info.safeRun == true)
 				#expect(try await guest.value(of: "TGWHO") == run)
-				#expect(try await agent.api.listVMs().allSatisfy { $0.name != "tg-w239-kept" })
-				#expect(!FileManager.default.fileExists(atPath: library + "/tg-w239-kept"))
+				#expect(
+					try await agent.api.listVMs().allSatisfy { $0.name != "other-volume-kept" })
+				#expect(!FileManager.default.fileExists(atPath: library + "/other-volume-kept"))
 				guest.console.close()
 				try await vm.forceStop()
 				#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)

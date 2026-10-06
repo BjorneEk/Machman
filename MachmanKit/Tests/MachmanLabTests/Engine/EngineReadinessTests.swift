@@ -51,15 +51,15 @@ struct EngineReadinessL3Tests {
 	func connectingThenReady() async throws {
 		try await Lab.withAgent { agent in
 			let desktop = try await TFDesktop.make(agent: agent)
-			let (vm, console) = try await Self.reportedDebian(agent, "r1")
+			let (vm, console) = try await Self.reportedDebian(agent, "ssh-ready")
 			defer { console.close() }
-			try await desktop.toasts.waitFor("r1: SSH connecting…", timeout: .seconds(120))
-			try await desktop.toasts.waitFor("r1: SSH ready", timeout: .seconds(120))
+			try await desktop.toasts.waitFor("ssh-ready: SSH connecting…", timeout: .seconds(120))
+			try await desktop.toasts.waitFor("ssh-ready: SSH ready", timeout: .seconds(120))
 			#expect(try await vm.info().ssh?.reachability == .ready)
 			let connecting = desktop.toasts.entries.firstIndex {
-				$0.message == "r1: SSH connecting…"
+				$0.message == "ssh-ready: SSH connecting…"
 			}
-			let ready = desktop.toasts.entries.firstIndex { $0.message == "r1: SSH ready" }
+			let ready = desktop.toasts.entries.firstIndex { $0.message == "ssh-ready: SSH ready" }
 			#expect(connecting != nil && ready != nil && connecting! < ready!)
 			await desktop.close()
 		}
@@ -75,15 +75,15 @@ struct EngineReadinessL3Tests {
 		try await Lab.withAgent(options) { agent in
 			let desktop = try await TFDesktop.make(agent: agent)
 			let (vm, console) = try await Self.reportedDebian(
-				agent, "r2", prepare: "systemctl disable --now ssh.service ssh.socket")
+				agent, "sshd-stopped", prepare: "systemctl disable --now ssh.service ssh.socket")
 			defer { console.close() }
 			let index = try await desktop.toasts.waitFor(
-				"r2: SSH not answering", timeout: .seconds(90))
+				"sshd-stopped: SSH not answering", timeout: .seconds(90))
 			#expect(desktop.toasts.entries[index].message.hasSuffix(":22 after 3 minutes"))
 			#expect(try await vm.info().ssh?.reachability == .unreachable)
 			_ = try await console.run("systemctl start ssh")
-			desktop.viewModel.refreshSSH("r2")
-			try await desktop.toasts.waitFor("r2: SSH ready", timeout: .seconds(60))
+			desktop.viewModel.refreshSSH("sshd-stopped")
+			try await desktop.toasts.waitFor("sshd-stopped: SSH ready", timeout: .seconds(60))
 			await desktop.close()
 		}
 	}
@@ -103,7 +103,7 @@ struct EngineReadinessTests {
 	func checkConnectionAnswers() async throws {
 		try await Lab.withAgent { agent in
 			let desktop = try await TFDesktop.make(agent: agent)
-			try await agent.withVM(Self.spec("f4-ssh")) { vm in
+			try await agent.withVM(Self.spec("check-connection")) { vm in
 				let console = try await vm.console(0)
 				defer { console.close() }
 				try await console.expect("LAB-READY", timeout: .seconds(60))
@@ -119,12 +119,15 @@ struct EngineReadinessTests {
 				let before = desktop.toasts.entries.count
 				desktop.viewModel.refreshSSH(vm.name)
 				try await desktop.toasts.waitFor(
-					"Looking for f4-ssh’s address…", timeout: .seconds(5))
-				let answers = ["f4-ssh is still at \(address)", "f4-ssh answered — \(address)"]
+					"Looking for check-connection’s address…", timeout: .seconds(5))
+				let answers = [
+					"check-connection is still at \(address)",
+					"check-connection answered — \(address)",
+				]
 				try await TFWait.until("the answer and SSH ready", timeout: .seconds(60)) {
 					let after = desktop.toasts.entries.dropFirst(before).map(\.message)
 					return after.contains { answers.contains($0) }
-						&& after.contains("f4-ssh: SSH ready")
+						&& after.contains("check-connection: SSH ready")
 				}
 			}
 			await desktop.close()
@@ -136,7 +139,7 @@ struct EngineReadinessTests {
 		try await Lab.withAgent { agent in
 			let events = await TFEvents(api: agent.api)
 			defer { events.stop() }
-			try await agent.withVM(Self.spec("e42")) { vm in
+			try await agent.withVM(Self.spec("safe-ssh")) { vm in
 				let first = try await vm.console(0)
 				try await first.expect("LAB-READY", timeout: .seconds(60))
 				try await TFGuest.mountShare(first)
@@ -156,15 +159,15 @@ struct EngineReadinessTests {
 				try await TFWait.vm(agent.api, vm.name, "waiting", timeout: .seconds(90)) {
 					$0.ssh?.reachability == .waiting
 				}
-				_ = try await agent.api.safeSave(vm: vm.name, to: "e42-kept")
+				_ = try await agent.api.safeSave(vm: vm.name, to: "safe-ssh-kept")
 				try await TFGuest.listen22(console)
-				try await events.waitFor("sshChanged for e42-kept", timeout: .seconds(60)) {
-					$0 == .sshChanged(vm: "e42-kept")
+				try await events.waitFor("sshChanged for safe-ssh-kept", timeout: .seconds(60)) {
+					$0 == .sshChanged(vm: "safe-ssh-kept")
 				}
-				try await desktop.waitForEntry("e42-kept", "ready", timeout: .seconds(60)) {
+				try await desktop.waitForEntry("safe-ssh-kept", "ready", timeout: .seconds(60)) {
 					$0.ssh?.reachability == .ready
 				}
-				await TFVM.forceStop(agent, "e42-kept")
+				await TFVM.forceStop(agent, "safe-ssh-kept")
 				await desktop.close()
 			}
 		}

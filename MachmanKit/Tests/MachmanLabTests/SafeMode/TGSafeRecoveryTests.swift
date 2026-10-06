@@ -23,7 +23,7 @@ struct TGSafeRecoveryTests {
 	func quitAndRelaunchReattaches() async throws {
 		try await TG.withAgent { agent in
 			let vm = try await TGVM.alpine(
-				"tg-r9", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
+				"safe-readopted", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
 				on: agent)
 			let before = try await vm.info()
 			try await vm.start(before.startOptions(.plain))
@@ -39,7 +39,7 @@ struct TGSafeRecoveryTests {
 			try await agent.relaunch()
 			let name = (root as NSString).lastPathComponent
 			_ = try await LabLog.waitFor(
-				"re-attached safe run " + Self.escaped(name) + " to tg-r9", after: mark,
+				"re-attached safe run " + Self.escaped(name) + " to safe-readopted", after: mark,
 				process: "MachmanAgent")
 			#expect(await TG.until { (try? await vm.info())?.safeRun == true })
 			#expect(try await vm.info().state == .running)
@@ -58,7 +58,7 @@ struct TGSafeRecoveryTests {
 		try await TG.withAgent { agent in
 			let data = TGDisk(name: "data", mib: 64)
 			let vm = try await TGVM.alpine(
-				"tg-r10", disks: [data], policy: Self.safeHeadless, on: agent)
+				"safe-host-killed", disks: [data], policy: Self.safeHeadless, on: agent)
 			let real = vm.dir + "/data.raw"
 			let before = try await TG.sha256(real)
 			try await vm.start(try await vm.info().startOptions(.plain))
@@ -82,7 +82,7 @@ struct TGSafeRecoveryTests {
 	func relaunchSweepsDeadRun() async throws {
 		try await TG.withAgent { agent in
 			let vm = try await TGVM.alpine(
-				"tg-r11", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
+				"safe-swept", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
 				on: agent)
 			try await vm.start(try await vm.info().startOptions(.plain))
 			let roots = TG.runRoots(agent.scope)
@@ -100,7 +100,7 @@ struct TGSafeRecoveryTests {
 				"swept dead safe run " + Self.escaped(name), after: mark, process: "MachmanAgent")
 			#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
 			let listed = try await agent.api.listVMs()
-			#expect(listed.first { $0.name == "tg-r11" }?.state == .stopped)
+			#expect(listed.first { $0.name == "safe-swept" }?.state == .stopped)
 			#expect(listed.allSatisfy { $0.safeRun != true })
 		}
 	}
@@ -108,8 +108,8 @@ struct TGSafeRecoveryTests {
 	@Test("W2-38: after an agent restart the saved run answers on the saved VM's socket")
 	func savedRunSocketSurvivesRestart() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-o38", policy: Self.safeHeadless, on: agent)
-			let kept = TGVM("tg-o38-kept", on: agent)
+			let vm = try await TGVM.alpine("saved-restart", policy: Self.safeHeadless, on: agent)
+			let kept = TGVM("saved-restart-kept", on: agent)
 			try await vm.start(try await vm.info().startOptions(.plain))
 			let host = try await vm.hostPID()
 			let run = "run-" + TG.nonce()
@@ -118,7 +118,7 @@ struct TGSafeRecoveryTests {
 				defer { guest.console.close() }
 				try await guest.set("TGWHO", run)
 			}
-			_ = try await agent.api.safeSave(vm: "tg-o38", to: "tg-o38-kept")
+			_ = try await agent.api.safeSave(vm: "saved-restart", to: "saved-restart-kept")
 			try vm.handOverPid(to: kept)
 			try await TG.quitLeavingVMsRunning(agent)
 			#expect(LabProcesses.isAlive(host))

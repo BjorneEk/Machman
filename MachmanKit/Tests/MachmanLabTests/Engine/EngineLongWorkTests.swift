@@ -92,7 +92,7 @@ struct EngineLongWorkTests {
 
 	@Test("R3W2-32: start, rename, delete and duplicate are refused while a disk imports")
 	func refusedDuringImport() async throws {
-		try await Self.onHFS("e33") { agent, _ in
+		try await Self.onHFS("import-busy") { agent, _ in
 			let api = agent.api
 			_ = try await LabVM.create(LabVMSpec(name: "dev", boot: .alpine()), on: agent)
 			let source = agent.scope.imagesDir + "/big.raw"
@@ -134,7 +134,7 @@ struct EngineLongWorkTests {
 		exits
 		""")
 	func importOutlivesShutdown() async throws {
-		try await Self.onHFS("e34") { agent, _ in
+		try await Self.onHFS("import-outlives") { agent, _ in
 			let api = agent.api
 			let vm = try await LabVM.create(LabVMSpec(name: "dev", boot: .alpine()), on: agent)
 			try await vm.start()
@@ -159,7 +159,7 @@ struct EngineLongWorkTests {
 
 	@Test("R3W2-31: quitting the agent during a copy asks, and Cancel keeps both VMs")
 	func quitDuringCopyAsks() async throws {
-		try await Self.onHFS("e47q", answers: ["agent.quitDuringWork": "Cancel"]) { agent, _ in
+		try await Self.onHFS("copy-quit", answers: ["agent.quitDuringWork": "Cancel"]) { agent, _ in
 			let api = agent.api
 			_ = try await Self.devWithDisk(agent)
 			let copying = Task {
@@ -185,7 +185,7 @@ struct EngineLongWorkTests {
 
 	@Test("R3W2-31: a log out during a copy is canceled with the agent's own alert")
 	func logOutDuringCopyHeld() async throws {
-		try await Self.onHFS("e47l") { agent, _ in
+		try await Self.onHFS("copy-logout") { agent, _ in
 			let api = agent.api
 			_ = try await Self.devWithDisk(agent)
 			let copying = Task {
@@ -214,7 +214,7 @@ struct EngineLongWorkTests {
 		let answers: [String: Any] = [
 			"agent.replaceOlder": "Replace", "agent.replaceRefused": "OK",
 		]
-		try await Self.onHFS("e45a", answers: answers) { agent, _ in
+		try await Self.onHFS("copy-agent-replace", answers: answers) { agent, _ in
 			let api = agent.api
 			_ = try await Self.devWithDisk(agent)
 			let copying = Task {
@@ -256,7 +256,7 @@ struct EngineLongWorkTests {
 
 	@Test("R3W2-30: a desktop Replace during a copy is refused with the copy as the reason")
 	func desktopReplaceRefused() async throws {
-		try await Self.onHFS("e45d") { agent, _ in
+		try await Self.onHFS("copy-desk-replace") { agent, _ in
 			let api = agent.api
 			_ = try await Self.devWithDisk(agent)
 			let copying = Task {

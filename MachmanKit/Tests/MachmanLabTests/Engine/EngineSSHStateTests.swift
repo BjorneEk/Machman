@@ -169,20 +169,21 @@ struct EngineSSHStateTests {
 		""")
 	func secondAgentStepsAside() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(Self.spec("v9"), start: false) { vm in
-				let key = try await Self.hostKey(agent, "v9-host")
+			try await agent.withVM(Self.spec("second-agent"), start: false) { vm in
+				let key = try await Self.hostKey(agent, "second-agent-host")
 				try await Self.seedStopped(
-					agent, "v9", .standard(ip: Self.claimedIP, hostKey: key))
+					agent, "second-agent", .standard(ip: Self.claimedIP, hostKey: key))
 				try await TFVM.settled {
 					_ = try await agent.api.setSSH(
-						vm: "v9", integrationEnabled: true, reverseApproved: nil, alias: nil)
+						vm: "second-agent", integrationEnabled: true, reverseApproved: nil,
+						alias: nil)
 				}
 				let config = agent.scope.homeDir + "/.ssh/machman/config"
 				try await TFWait.until("the managed config", timeout: .seconds(10)) {
-					Self.managedConfig(agent).contains("Host \"v9.machman\"")
+					Self.managedConfig(agent).contains("Host \"second-agent.machman\"")
 				}
 				// Serving a running VM, its ~/.ssh entry settled.
-				try await TFVM.start(agent, "v9")
+				try await TFVM.start(agent, "second-agent")
 				try await Task.sleep(for: .seconds(3))
 				let before = try FileManager.default.attributesOfItem(atPath: config)[
 					.modificationDate] as? Date
@@ -219,17 +220,19 @@ struct EngineSSHStateTests {
 				withDestinationPath: "../ro/authorized_keys")
 			chmod(ro, 0o555)
 			defer { chmod(ro, 0o755) }
-			try await agent.withVM(Self.spec("c21"), start: false) { _ in
+			try await agent.withVM(Self.spec("unwritable-keys"), start: false) { _ in
 				let reverse = try await TFReport.keyPair(
-					in: agent.scope.dir + "/keys", name: "c21-rev")
+					in: agent.scope.dir + "/keys", name: "unwritable-rev")
 				let console = try await Self.seed(
-					agent, "c21", .standard(reverse: reverse.publicLine))
+					agent, "unwritable-keys", .standard(reverse: reverse.publicLine))
 				defer { console.close() }
-				try await TFWait.vm(agent.api, "c21", "pending", timeout: .seconds(10)) {
+				try await TFWait.vm(
+					agent.api, "unwritable-keys", "pending", timeout: .seconds(10)
+				) {
 					$0.ssh?.reverseState == .pending
 				}
 				let desktop = try await TFDesktop.make(agent: agent)
-				desktop.viewModel.setSSHReverseApproved("c21", approved: true)
+				desktop.viewModel.setSSHReverseApproved("unwritable-keys", approved: true)
 				try await TFWait.until("the approval alert", timeout: .seconds(10)) {
 					desktop.viewModel.presentedError != nil
 				}
@@ -238,7 +241,8 @@ struct EngineSSHStateTests {
 				#expect(alert.message.contains(ro + "/authorized_keys")
 					|| alert.message.contains(home + "/.ssh/authorized_keys"))
 				#expect(alert.message.contains("can’t be written"))
-				#expect(try await agent.api.vm(named: "c21").ssh?.reverseState == .pending)
+				#expect(
+					try await agent.api.vm(named: "unwritable-keys").ssh?.reverseState == .pending)
 				await desktop.close()
 			}
 		}
@@ -253,12 +257,12 @@ struct EngineSSHStateTests {
 			try "# lab\n".write(toFile: keys, atomically: true, encoding: .utf8)
 			let events = await TFEvents(api: agent.api)
 			defer { events.stop() }
-			try await agent.withVM(Self.spec("c21-p"), start: false) { _ in
-				try await agent.withVM(Self.spec("c21-q"), start: false) { _ in
+			try await agent.withVM(Self.spec("revoked"), start: false) { _ in
+				try await agent.withVM(Self.spec("deleted"), start: false) { _ in
 					var consoles: [String: LabConsole] = [:]
 					var reports: [String: TFReport] = [:]
 					defer { consoles.values.forEach { $0.close() } }
-					for vm in ["c21-p", "c21-q"] {
+					for vm in ["revoked", "deleted"] {
 						let reverse = try await TFReport.keyPair(
 							in: agent.scope.dir + "/keys", name: "\(vm)-rev")
 						reports[vm] = .standard(reverse: reverse.publicLine)
@@ -268,34 +272,34 @@ struct EngineSSHStateTests {
 					defer { chmod(keys, 0o600) }
 					let once = "Couldn’t read ~/.ssh/authorized_keys to remove the guest’s key"
 					for round in 1...2 {
-						for vm in ["c21-p", "c21-q"] {
+						for vm in ["revoked", "deleted"] {
 							var report = reports[vm]!
 							report.pairs.append((key: "NOTE", value: "round \(round)"))
 							try await TFGuest.writeReport(consoles[vm]!, report.render())
 						}
 						try await Task.sleep(for: .seconds(5))
 					}
-					for vm in ["c21-p", "c21-q"] {
+					for vm in ["revoked", "deleted"] {
 						let warned = events.logs(vm: vm, level: .warning).filter { $0 == once }
 						#expect(warned.count == 1)
 					}
-					let markerP = try Self.marker(agent, "c21-p")
+					let markerP = try Self.marker(agent, "revoked")
 					_ = try await agent.api.setSSH(
-						vm: "c21-p", integrationEnabled: nil, reverseApproved: false, alias: nil)
+						vm: "revoked", integrationEnabled: nil, reverseApproved: false, alias: nil)
 					let revoke = "Couldn’t read ~/.ssh/authorized_keys — delete the line ending in "
-					try await events.waitFor("c21-p's revoke warning", timeout: .seconds(10)) {
+					try await events.waitFor("revoked's revoke warning", timeout: .seconds(10)) {
 						$0 == .log(
-							vm: "c21-p", level: .warning,
-							message: revoke + "machman:\(markerP):c21-p")
+							vm: "revoked", level: .warning,
+							message: revoke + "machman:\(markerP):revoked")
 					}
-					let markerQ = try Self.marker(agent, "c21-q")
-					consoles["c21-q"]?.close()
-					await TFVM.forceStop(agent, "c21-q")
-					try await TFVM.settled { try await agent.api.deleteVM(named: "c21-q") }
-					try await events.waitFor("c21-q's delete warning", timeout: .seconds(10)) {
+					let markerQ = try Self.marker(agent, "deleted")
+					consoles["deleted"]?.close()
+					await TFVM.forceStop(agent, "deleted")
+					try await TFVM.settled { try await agent.api.deleteVM(named: "deleted") }
+					try await events.waitFor("deleted's delete warning", timeout: .seconds(10)) {
 						$0 == .log(
-							vm: "c21-q", level: .warning,
-							message: revoke + "machman:\(markerQ):c21-q")
+							vm: "deleted", level: .warning,
+							message: revoke + "machman:\(markerQ):deleted")
 					}
 				}
 			}

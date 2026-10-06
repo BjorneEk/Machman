@@ -64,7 +64,9 @@ struct EngineConnectionTests {
 	@Test("W2-28: an agent killed mid-start yields one connection-lost alert naming the start")
 	func killedMidStartAlertsOnce() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "p12", boot: .alpine()), start: false) { _ in
+			try await agent.withVM(
+				LabVMSpec(name: "killed-mid-start", boot: .alpine()), start: false
+			) { _ in
 				var relaunch: Task<Void, Error>?
 				let connection = TFConnection(agent: agent) {
 					// The app's "launch the agent": this scope's agent, once per drop.
@@ -77,12 +79,12 @@ struct EngineConnectionTests {
 					if case .connected = $0 { return true }
 					return false
 				}
-				let socket = MachmanPaths.vmSocketPath(vm: "p12")
+				let socket = MachmanPaths.vmSocketPath(vm: "killed-mid-start")
 				var caught: TFConnection.Attach?
 				for attempt in 1...3 {
 					let before = connection.attaches.count
 					let desktop = try #require(connection.attaches.last).desktop
-					desktop.viewModel.startVM("p12", headless: true)
+					desktop.viewModel.startVM("killed-mid-start", headless: true)
 					// The kill lands while the start is in flight: as the vmhost's socket
 					// appears, or 300 ms in.
 					let sent = ContinuousClock.now
@@ -97,15 +99,17 @@ struct EngineConnectionTests {
 					try await relaunch?.value
 					relaunch = nil
 					let next = connection.attaches[before]
-					if next.interrupted.contains(where: { $0.method == .start && $0.vm == "p12" }) {
+					if next.interrupted.contains(
+						where: { $0.method == .start && $0.vm == "killed-mid-start" }
+					) {
 						caught = next
 						break
 					}
 					// The start answered before the kill: stop the VM and try again.
 					MachmanLogger.log(
-						.passiveWarning, "lab: W2-28 attempt \(attempt): the start finished first")
-					_ = try? await TFVM.recordHost(agent, "p12")
-					await TFVM.forceStop(agent, "p12")
+						.passiveWarning, "lab: attempt \(attempt): the start finished first")
+					_ = try? await TFVM.recordHost(agent, "killed-mid-start")
+					await TFVM.forceStop(agent, "killed-mid-start")
 				}
 				guard let caught else {
 					throw TFError.inconclusive(
@@ -116,13 +120,15 @@ struct EngineConnectionTests {
 					view.presentedError != nil
 				}
 				#expect(view.presentedError?.title == VMListViewModel.connectionLostTitle)
-				#expect(view.presentedError?.message == "Check whether starting p12 finished.")
+				#expect(
+					view.presentedError?.message
+						== "Check whether starting killed-mid-start finished.")
 				view.isErrorPresented = false
 				try await Task.sleep(for: .seconds(1))
 				#expect(view.presentedError == nil)   // exactly one
 				// The vmhost the killed agent spawned is the new agent's now (or gone).
-				_ = try? await TFVM.recordHost(agent, "p12")
-				await TFVM.forceStop(agent, "p12")
+				_ = try? await TFVM.recordHost(agent, "killed-mid-start")
+				await TFVM.forceStop(agent, "killed-mid-start")
 				await connection.close()
 			}
 		}

@@ -27,7 +27,9 @@ struct EngineConfigEditTests {
 		""")
 	func newerBootModeKept() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "d26", boot: .alpine()), start: false) { vm in
+			try await agent.withVM(
+				LabVMSpec(name: "newer-boot-mode", boot: .alpine()), start: false
+			) { vm in
 				let dir = TFVM.dir(agent, vm.name)
 				let future: [String: Any] = ["futureMode": ["_0": ["x": 1]]]
 				try await TFAgents.restartForEdit(agent) {
@@ -52,8 +54,8 @@ struct EngineConfigEditTests {
 				}
 				// No vmhost was launched for it (no Dock icon could flash).
 				try await Task.sleep(for: .seconds(1))
-				#expect(LabLog.count("test mode: vmhost for d26", after: mark) == 0)
-				let socket = MachmanPaths.vmSocketPath(vm: "d26")
+				#expect(LabLog.count("test mode: vmhost for newer-boot-mode", after: mark) == 0)
+				let socket = MachmanPaths.vmSocketPath(vm: "newer-boot-mode")
 				#expect(!FileManager.default.fileExists(atPath: socket))
 				try await agent.api.setHardware(
 					vm: vm.name, cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
@@ -76,7 +78,7 @@ struct EngineConfigEditTests {
 					toFile: shares + "/\(dir)/marker", atomically: true, encoding: .utf8)
 			}
 			let spec = LabVMSpec(
-				name: "d25", boot: .alpine(),
+				name: "shared-tag", boot: .alpine(),
 				mounts: [
 					.init(path: shares + "/a", tag: "x"), .init(path: shares + "/b", tag: "y"),
 				])
@@ -86,7 +88,9 @@ struct EngineConfigEditTests {
 					try TFVM.editConfig(dir: dir) { config in
 						guard var mounts = config["mountPoints"] as? [[String: Any]],
 							mounts.count == 2
-						else { throw TFError.precondition("d25's config has no two mountPoints") }
+						else {
+							throw TFError.precondition("shared-tag's config has no two mountPoints")
+						}
 						mounts[1]["tag"] = "x"
 						config["mountPoints"] = mounts
 					}
@@ -100,14 +104,15 @@ struct EngineConfigEditTests {
 				try await console.expect("LAB-READY", timeout: .seconds(60))
 				let sentence = "Two mounts share the tag “x”, so only the first is shared."
 				try await events.waitFor("the doubled-tag warning", timeout: .seconds(10)) {
-					$0 == .log(vm: "d25", level: .warning, message: sentence)
+					$0 == .log(vm: "shared-tag", level: .warning, message: sentence)
 				}
 				try await TFGuest.mountShare(console)
 				let seen = try await console.run("cat /mnt/s/x/marker")
 				#expect(seen.status == 0)
 				#expect(seen.output == "A")
 				#expect(try await console.run("ls /mnt/s/y 2>/dev/null").output == "")
-				let warned = events.logs(vm: "d25", level: .warning).filter { $0 == sentence }
+				let warned = events.logs(vm: "shared-tag", level: .warning)
+					.filter { $0 == sentence }
 				#expect(warned.count == 1)
 			}
 		}
@@ -116,7 +121,9 @@ struct EngineConfigEditTests {
 	@Test("R3W2-1: a re-tagged active kernel boots with its command-line override")
 	func retaggedKernelBoots() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "d21", boot: .alpine()), start: false) { vm in
+			try await agent.withVM(
+				LabVMSpec(name: "retagged-kernel", boot: .alpine()), start: false
+			) { vm in
 				let api = agent.api
 				let current = try await vm.info().boot.kernel
 				let kernelSource = try #require(current?.kernelPath)

@@ -45,7 +45,7 @@ struct TGAutostartTests {
 	@Test("Autostart matrix: turning Start at login on writes the plist and launches nothing")
 	func plistWrittenNothingLaunched() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-am1", on: agent)
+			let vm = try await TGVM.alpine("login-plist", on: agent)
 			let path = TGLaunchd.plistPath(agent.scope, vm.name)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
 			let job = try TGLaunchd.readPlist(path)
@@ -79,7 +79,7 @@ struct TGAutostartTests {
 	@Test("Autostart matrix: a job boots with no agent, is adopted once and isn't respawned")
 	func jobBootsAdoptedNotRespawned() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-am2", on: agent)
+			let vm = try await TGVM.alpine("login-boot", on: agent)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
 			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
 			let label = TGLaunchd.label(vm.name)
@@ -114,7 +114,7 @@ struct TGAutostartTests {
 	@Test("Autostart matrix: a start before adoption probe-adopts the job's vmhost")
 	func startBeforeAdoptionProbeAdopts() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-am3", on: agent)
+			let vm = try await TGVM.alpine("login-adopt", on: agent)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
 			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
 			let label = TGLaunchd.label(vm.name)
@@ -136,7 +136,7 @@ struct TGAutostartTests {
 	@Test("Autostart matrix: off while running keeps the VM; off while stopped boots the job out")
 	func switchOffRunningAndStopped() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-am4", on: agent)
+			let vm = try await TGVM.alpine("login-off", on: agent)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
 			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
 			let label = TGLaunchd.label(vm.name)
@@ -176,18 +176,18 @@ struct TGAutostartTests {
 	@Test("Autostart matrix: rename moves the plist and delete removes it")
 	func renameMovesDeleteRemoves() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-am5", on: agent)
+			let vm = try await TGVM.alpine("login-rename", on: agent)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
-			let old = TGLaunchd.plistPath(agent.scope, "tg-am5")
+			let old = TGLaunchd.plistPath(agent.scope, "login-rename")
 			#expect(FileManager.default.fileExists(atPath: old))
-			try await agent.api.renameVM(named: "tg-am5", to: "tg-am5b")
-			let new = TGLaunchd.plistPath(agent.scope, "tg-am5b")
+			try await agent.api.renameVM(named: "login-rename", to: "login-renamed")
+			let new = TGLaunchd.plistPath(agent.scope, "login-renamed")
 			#expect(!FileManager.default.fileExists(atPath: old))
 			let job = try TGLaunchd.readPlist(new)
-			#expect(job.label == TGLaunchd.label("tg-am5b"))
-			#expect(job.arguments.contains("tg-am5b"))
-			#expect(!job.arguments.contains("tg-am5"))
-			try await agent.api.deleteVM(named: "tg-am5b")
+			#expect(job.label == TGLaunchd.label("login-renamed"))
+			#expect(job.arguments.contains("login-renamed"))
+			#expect(!job.arguments.contains("login-rename"))
+			try await agent.api.deleteVM(named: "login-renamed")
 			#expect(!FileManager.default.fileExists(atPath: new))
 		}
 	}

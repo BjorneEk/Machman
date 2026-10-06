@@ -46,24 +46,25 @@ struct TGSafeCancelTests {
 			let big = try await volume.bigImage()
 			try await TG.withAgent { agent in
 				let vm = try await TGVM.alpine(
-					"tg-c24", externals: [TGExternal(path: big)], policy: Self.safeHeadless,
+					"canceled-prep", externals: [TGExternal(path: big)], policy: Self.safeHeadless,
 					on: agent)
 				let events = await TGEvents.record(agent.api)
 				defer { events.stop() }
 				let mark = events.mark()
 				let options = try await vm.info().startOptions(.plain)
 				let api = agent.api
-				let start = Task { try await api.start(vm: "tg-c24", options: options) }
-				let progress = try await events.waitForMidCopy(vm: "tg-c24", after: mark)
+				let start = Task { try await api.start(vm: "canceled-prep", options: options) }
+				let progress = try await events.waitForMidCopy(vm: "canceled-prep", after: mark)
 				#expect(progress.copied < progress.total)
 				switch how {
 				case .cardClose:
-					let op = try #require(Self.shadowBuild(events, vm: "tg-c24", after: mark))
+					let op = try #require(
+						Self.shadowBuild(events, vm: "canceled-prep", after: mark))
 					try await api.cancelOperation(id: op.id)
 				case .stop:
-					try await api.stop(vm: "tg-c24", mode: .soft)
+					try await api.stop(vm: "canceled-prep", mode: .soft)
 				case .forceStop:
-					try await api.stop(vm: "tg-c24", mode: .force)
+					try await api.stop(vm: "canceled-prep", mode: .force)
 				}
 				let outcome = await start.result
 				guard case .failure(let error) = outcome else {
@@ -79,7 +80,7 @@ struct TGSafeCancelTests {
 					return op.kind == OperationInfo.Kind.shadowBuild && op.isFinished
 				}
 				let last = events.operations(
-					kind: OperationInfo.Kind.shadowBuild, vm: "tg-c24", after: mark).last
+					kind: OperationInfo.Kind.shadowBuild, vm: "canceled-prep", after: mark).last
 				#expect(last?.state == OperationInfo.State.cancelled)
 				try await vm.waitForState(.stopped, timeout: .seconds(10))
 				#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
@@ -95,7 +96,7 @@ struct TGSafeCancelTests {
 			let big = try await volume.bigImage()
 			try await TG.withAgent { agent in
 				let vm = try await TGVM.alpine(
-					"tg-c48", externals: [TGExternal(path: big)], policy: Self.safeHeadless,
+					"stopped-prep", externals: [TGExternal(path: big)], policy: Self.safeHeadless,
 					on: agent)
 				let events = await TGEvents.record(agent.api)
 				defer { events.stop() }
@@ -107,14 +108,14 @@ struct TGSafeCancelTests {
 				// the desktop's Stop (the wire's) stops it instead.
 				let mark = LabLog.mark()
 				let index = events.mark()
-				#expect(try await SeamProbe.control(agent, "menu startSafe tg-c48") == "ok")
-				try await events.waitForMidCopy(vm: "tg-c48", after: index)
-				let menu = try await agent.control("menu shutDown tg-c48")
+				#expect(try await SeamProbe.control(agent, "menu startSafe stopped-prep") == "ok")
+				try await events.waitForMidCopy(vm: "stopped-prep", after: index)
+				let menu = try await agent.control("menu shutDown stopped-prep")
 				withKnownIssue(Self.agentMenuCard) {
 					#expect(menu == "ok")
 				}
-				if menu != "ok" { try await agent.api.stop(vm: "tg-c48", mode: .soft) }
-				try await Self.waitForCanceledBuild(events, vm: "tg-c48", after: index)
+				if menu != "ok" { try await agent.api.stop(vm: "stopped-prep", mode: .soft) }
+				try await Self.waitForCanceledBuild(events, vm: "stopped-prep", after: index)
 				try await vm.waitForState(.stopped, timeout: .seconds(30))
 				// The menu's start failed as canceled by now; an alert for it would be logged.
 				try await Task.sleep(for: .seconds(2))

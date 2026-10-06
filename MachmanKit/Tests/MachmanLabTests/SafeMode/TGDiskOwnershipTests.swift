@@ -35,7 +35,7 @@ struct TGDiskOwnershipTests {
 	@Test("17a: a raw image imports as an owned copy or attaches as a promotable reference")
 	func rawImportAndReference() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.blank("tg-d17", on: agent)
+			let vm = try await TGVM.blank("raw-import", on: agent)
 			let source = agent.scope.imagesDir + "/src.img"
 			try await TG.writeFile(source, size: 4 << 20, fill: 0x5A)
 			let sum = try await TG.sha256(source)
@@ -66,7 +66,7 @@ struct TGDiskOwnershipTests {
 	@Test("17a: a qcow2 import is refused with the convert sentence")
 	func qcowImportRefused() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.blank("tg-d17q", on: agent)
+			let vm = try await TGVM.blank("qcow2-import", on: agent)
 			let qcow = agent.scope.imagesDir + "/disk.qcow2"
 			try Self.writeQcow(qcow)
 			let files = Self.listing(vm.dir)
@@ -85,7 +85,7 @@ struct TGDiskOwnershipTests {
 	@Test("17a: a qcow2 added by reference is refused with the convert sentence")
 	func qcowReferenceRefused() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.blank("tg-d17r", on: agent)
+			let vm = try await TGVM.blank("qcow2-reference", on: agent)
 			let qcow = agent.scope.imagesDir + "/ref.qcow2"
 			try Self.writeQcow(qcow)
 			var refusal: MachmanError?
@@ -105,7 +105,7 @@ struct TGDiskOwnershipTests {
 	@Test("20a: an unaligned .txt is refused and an aligned .raw imports as an owned disk")
 	func textRefusedRawImported() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.blank("tg-d20", on: agent)
+			let vm = try await TGVM.blank("unaligned", on: agent)
 			let notes = agent.scope.imagesDir + "/notes.txt"
 			try Data("lab notes\n".utf8).write(to: URL(fileURLWithPath: notes))
 			let files = Self.listing(vm.dir)
@@ -130,7 +130,7 @@ struct TGDiskOwnershipTests {
 	@Test("18: an imported ISO lands in the VM folder, and Duplicate points the copy at its own")
 	func isoImportFollowsDuplicate() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.blank("tg-d18", on: agent)
+			let vm = try await TGVM.blank("iso-import", on: agent)
 			let source = agent.scope.imagesDir + "/tg.iso"
 			var iso = Data(repeating: 0x20, count: 64 << 10)
 			iso.replaceSubrange(0x8001..<0x8006, with: Data("CD001".utf8))
@@ -143,8 +143,8 @@ struct TGDiskOwnershipTests {
 			#expect(FileManager.default.fileExists(atPath: owned))
 			// Duplicate: the copy's ISO entry points into the copy's own folder.
 			let copy = try await agent.api.copyVM(
-				vm: vm.name, newName: "tg-d18-dup", diskIDs: nil, regenerateMAC: true)
-			let copied = TG.vmDir(agent.scope, "tg-d18-dup") + "/tg.iso"
+				vm: vm.name, newName: "iso-copy", diskIDs: nil, regenerateMAC: true)
+			let copied = TG.vmDir(agent.scope, "iso-copy") + "/tg.iso"
 			let copyEntry = try #require(copy.disks.first { $0.type == .iso })
 			#expect(copyEntry.path == copied)
 			#expect(FileManager.default.fileExists(atPath: copied))
@@ -159,7 +159,7 @@ struct TGDiskOwnershipTests {
 	@Test("19: promoting an external image keeps its row and safe flag and leaves the source")
 	func promoteKeepsRowAndFlag() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.blank("tg-d19", on: agent)
+			let vm = try await TGVM.blank("promoted", on: agent)
 			let external = agent.scope.imagesDir + "/ext.img"
 			try await TG.writeFile(external, size: 2 << 20, fill: 0x3C)
 			let sum = try await TG.sha256(external)

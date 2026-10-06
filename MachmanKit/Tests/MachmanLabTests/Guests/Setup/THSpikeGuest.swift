@@ -66,7 +66,7 @@ final class THSpikeGuest: THGuest, @unchecked Sendable {
 			await mac.stop()
 			throw error
 		}
-		let name = "th-\(kind.stem)"
+		let name = "guest-\(kind.stem)"
 		do {
 			try await carrier.start()
 			let payload = try await THPayloadImage.make(from: carrier)

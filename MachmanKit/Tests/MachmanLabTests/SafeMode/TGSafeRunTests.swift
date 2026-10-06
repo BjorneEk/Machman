@@ -21,7 +21,7 @@ struct TGSafeRunTests {
 		try await TG.withAgent { agent in
 			let data = TGDisk(name: "data", mib: 64)
 			let vm = try await TGVM.alpine(
-				"tg-r1", disks: [data], policy: Self.safeHeadless, on: agent)
+				"safe-writes", disks: [data], policy: Self.safeHeadless, on: agent)
 			let before = try await vm.info()
 			let options = before.startOptions(.plain)
 			#expect(options.safe && !options.openWindow)
@@ -30,7 +30,7 @@ struct TGSafeRunTests {
 			let roots = TG.runRoots(agent.scope)
 			try #require(roots.count == 1)
 			let host = try await vm.hostPID()
-			#expect(TG.marker(roots[0]) == TG.Marker(vm: "tg-r1", pid: host))
+			#expect(TG.marker(roots[0]) == TG.Marker(vm: "safe-writes", pid: host))
 			#expect(try await vm.info().safeRun == true)
 			let marker = "TG1-" + TG.nonce()
 			do {
@@ -75,7 +75,7 @@ struct TGSafeRunTests {
 		try await TG.withAgent { agent in
 			let data = TGDisk(name: "data", mib: 64, safe: false)
 			let vm = try await TGVM.alpine(
-				"tg-r3", disks: [data], policy: Self.safeHeadless, on: agent)
+				"unsafe-disk", disks: [data], policy: Self.safeHeadless, on: agent)
 			#expect(try await vm.disk(named: "data").safe == false)
 			try await vm.start(try await vm.info().startOptions(.plain))
 			#expect(try await vm.info().safeRun == true)
@@ -115,7 +115,7 @@ struct TGSafeRunTests {
 					.write(to: URL(fileURLWithPath: shares + "/\(name)/hello.txt"))
 			}
 			let vm = try await TGVM.alpine(
-				"tg-r4",
+				"safe-mounts",
 				mounts: [
 					TGMount(path: shares + "/a", tag: "tga"),
 					TGMount(path: shares + "/b", tag: "tgb", safe: false),
@@ -148,27 +148,27 @@ struct TGSafeRunTests {
 	func runDefaultsRefusedShieldReverts() async throws {
 		try await TG.withAgent { agent in
 			let vm = try await TGVM.alpine(
-				"tg-r13", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
+				"safe-defaults", disks: [TGDisk(name: "data", mib: 64)], policy: Self.safeHeadless,
 				on: agent)
 			let id = try await vm.disk(named: "data").id
 			try await vm.start(try await vm.info().startOptions(.plain))
 			#expect(try await vm.info().safeRun == true)
 			let refusal = await #expect(throws: MachmanError.self) {
 				try await vm.api.setStartPolicy(
-					vm: "tg-r13", policy: StartPolicy(windowed: true, safe: true))
+					vm: "safe-defaults", policy: StartPolicy(windowed: true, safe: true))
 			}
 			#expect(refusal?.code == .invalidState)
 			#expect(refusal?.message
-				== "Run defaults can\u{2019}t change during a safe run \u{2014} stop tg-r13 "
+				== "Run defaults can\u{2019}t change during a safe run \u{2014} stop safe-defaults "
 					+ "or save it first")
 			// The shield flip goes to the run's own (discardable) config.
-			try await vm.api.setSafety(vm: "tg-r13", disks: [id: false], mounts: nil)
+			try await vm.api.setSafety(vm: "safe-defaults", disks: [id: false], mounts: nil)
 			#expect(try await vm.disk(named: "data").safe == false)
 			#expect(try await vm.info().startPolicy == Self.safeHeadless)
 			try await vm.forceStop()
 			#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
 			#expect(try await vm.disk(named: "data").safe == true)
-			let disks = try TG.config(agent.scope, "tg-r13")["disks"] as? [[String: Any]]
+			let disks = try TG.config(agent.scope, "safe-defaults")["disks"] as? [[String: Any]]
 			#expect(disks?.count == 1)
 			#expect(disks?.first?["safe"] as? Bool == true)
 		}
@@ -182,7 +182,7 @@ struct TGSafeRunTests {
 			try await TG.writeFile(image, size: mib << 20)
 			let before = try await TG.sha256(image)
 			let vm = try await TGVM.alpine(
-				"tg-r5", externals: [TGExternal(path: image)], policy: Self.safeHeadless,
+				"safe-external", externals: [TGExternal(path: image)], policy: Self.safeHeadless,
 				on: agent)
 			let entry = try await vm.disk(path: image)
 			#expect(entry.safe)
@@ -191,7 +191,7 @@ struct TGSafeRunTests {
 			// The run root holds an owned clone of the image, not the image.
 			let roots = TG.runRoots(agent.scope)
 			try #require(roots.count == 1)
-			let shadow = roots[0] + "/tg-r5"
+			let shadow = roots[0] + "/safe-external"
 			let raws = ((try? FileManager.default.contentsOfDirectory(atPath: shadow)) ?? [])
 				.filter { $0.hasSuffix(".raw") }
 			let sizes = raws.compactMap {

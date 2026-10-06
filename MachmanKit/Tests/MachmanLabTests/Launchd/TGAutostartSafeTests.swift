@@ -28,7 +28,7 @@ struct TGAutostartSafeTests {
 	func unsafeAutostartBesideDeadSafeRun() async throws {
 		try await TG.withAgent { agent in
 			let vm = try await TGVM.alpine(
-				"tg-r12", disks: [TGDisk(name: "data", mib: 64)], on: agent)
+				"dead-safe-run", disks: [TGDisk(name: "data", mib: 64)], on: agent)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.atLogin)
 			try await vm.start(StartOptions(openWindow: false, safe: true))
 			#expect(try await vm.info().safeRun == true)
@@ -62,16 +62,16 @@ struct TGAutostartSafeTests {
 		}
 	}
 
-	/// tg-ga and tg-gb, each with the same writable image; tg-ga starts at login by the
-	/// API, tg-gb by a hand edit the API refuses; the relaunched agent writes tg-gb's plist
-	/// (its startup heal), then retires.
+	/// sharer-a and sharer-b, each with the same writable image; sharer-a starts at login by
+	/// the API, sharer-b by a hand edit the API refuses; the relaunched agent writes sharer-b's
+	/// plist (its startup heal), then retires.
 	static func twoLoginSharers(_ agent: LabAgent) async throws -> (TGVM, TGVM) {
-		let shared = agent.scope.imagesDir + "/tg-shared.img"
+		let shared = agent.scope.imagesDir + "/shared-image.img"
 		try await TG.writeFile(shared, size: 32 << 20)
 		let first = try await TGVM.alpine(
-			"tg-ga", externals: [TGExternal(path: shared, safe: false)], on: agent)
+			"sharer-a", externals: [TGExternal(path: shared, safe: false)], on: agent)
 		let second = try await TGVM.alpine(
-			"tg-gb", externals: [TGExternal(path: shared, safe: false)], on: agent)
+			"sharer-b", externals: [TGExternal(path: shared, safe: false)], on: agent)
 		try await agent.api.setStartPolicy(vm: first.name, policy: Self.atLogin)
 		try TG.editConfig(agent.scope, second.name) { TG.setPolicy("autostart", true, in: &$0) }
 		try await agent.api.retire()
@@ -84,8 +84,8 @@ struct TGAutostartSafeTests {
 		return (first, second)
 	}
 
-	static let refusal = "autostart of tg-gb refused: tg-ga (is running with|may still have) "
-		+ "tg-shared\\.img attached"
+	static let refusal = "autostart of sharer-b refused: sharer-a (is running with|may still have) "
+		+ "shared-image\\.img attached"
 
 	@Test("R3W2-26: of two forced login VMs sharing an image, the second refuses and logs why")
 	func secondLoginSharerRefuses() async throws {

@@ -65,18 +65,19 @@ struct EngineSkewTests {
 
 	@Test("16a: a current agent replaces an older one and re-adopts its running VM")
 	func currentReplacesOlder() async throws {
-		try await Self.takeover(vms: ["x7"]) { agent, api, newPid, _, _ in
+		try await Self.takeover(vms: ["readopted"]) { agent, api, newPid, _, _ in
 			#expect(api.hello.daemonVersion == TFBuilds.current)
 			#expect(api.peerPID == newPid)
 			let host = try #require(
-				LabProcesses.pids(kind: "vmhost", namePrefix: "\(agent.scope.id)-x7").first)
-			let info = try await TFWait.vm(api, "x7", "re-adopted", timeout: .seconds(30)) {
+				LabProcesses.pids(kind: "vmhost", namePrefix: "\(agent.scope.id)-readopted").first)
+			let info = try await TFWait.vm(api, "readopted", "re-adopted", timeout: .seconds(30)) {
 				$0.state == .running && !$0.isUnresponsive
 			}
 			#expect(info.state == .running)
-			#expect(try await TFVM.peer("x7") == host)
+			#expect(try await TFVM.peer("readopted") == host)
 			let path = try #require(info.consolePorts?.first?.socketPath)
-			let console = try await LabConsole.connect(path, transcript: "\(agent.scope.id)-x7")
+			let console = try await LabConsole.connect(
+				path, transcript: "\(agent.scope.id)-readopted")
 			defer { console.close() }
 			try await console.expect("LAB-READY", timeout: .seconds(20))
 		}
@@ -84,7 +85,7 @@ struct EngineSkewTests {
 
 	@Test("W4-20: the replace prompt names both versions and Replace keeps the VM running")
 	func replacePromptNamesVersions() async throws {
-		try await Self.takeover(vms: ["x7-prompt"]) { _, api, newPid, older, mark in
+		try await Self.takeover(vms: ["replace-prompt"]) { _, api, newPid, older, mark in
 			let current = TFBuilds.current
 			let prompt = try await LabLog.waitFor(
 				SeamProbe.promptLine("agent.replaceOlder", "Replace$"), after: mark,
@@ -95,15 +96,15 @@ struct EngineSkewTests {
 				"replacing daemon " + NSRegularExpression.escapedPattern(
 					for: "\(older) with \(current)"), after: mark, process: "MachmanAgent")
 			#expect(replacing.processID == Int(newPid))
-			#expect(try await api.vm(named: "x7-prompt").state == .running)
+			#expect(try await api.vm(named: "replace-prompt").state == .running)
 		}
 	}
 
 	@Test("W3-15: an older vmhost's VM refuses settings until it restarts")
 	func olderHostRefusesSettings() async throws {
-		try await Self.takeover(vms: ["e22-a", "e22-b"]) { agent, api, _, _, _ in
+		try await Self.takeover(vms: ["older-host", "older-sibling"]) { agent, api, _, _, _ in
 			let sentence = "Restart this VM to finish updating"
-			for name in ["e22-a", "e22-b"] {
+			for name in ["older-host", "older-sibling"] {
 				let info = try await TFWait.vm(api, name, "outdated", timeout: .seconds(30)) {
 					$0.outdatedHost == true
 				}
@@ -111,40 +112,42 @@ struct EngineSkewTests {
 			}
 			do {
 				try await api.setHardware(
-					vm: "e22-a", cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
+					vm: "older-host", cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
 				Issue.record("an outdated vmhost took a setting change")
 			} catch let error as MachmanError {
-				#expect(error.message == "Restart e22-a to finish updating")
+				#expect(error.message == "Restart older-host to finish updating")
 			}
 			let oldHost = LabProcesses.pids(
-				kind: "vmhost", namePrefix: TFVM.pidName(scope: agent.scope, vm: "e22-a")).first
-			try await api.stop(vm: "e22-a", mode: .force)
-			try await TFWait.state(api, "e22-a", .stopped, timeout: .seconds(30))
+				kind: "vmhost", namePrefix: TFVM.pidName(scope: agent.scope, vm: "older-host")
+			).first
+			try await api.stop(vm: "older-host", mode: .force)
+			try await TFWait.state(api, "older-host", .stopped, timeout: .seconds(30))
 			if let oldHost { _ = await LabProcesses.waitForExit(oldHost, timeout: .seconds(30)) }
-			try await api.start(vm: "e22-a", options: StartOptions(openWindow: false))
-			try await TFWait.state(api, "e22-a", .running, timeout: .seconds(60))
+			try await api.start(vm: "older-host", options: StartOptions(openWindow: false))
+			try await TFWait.state(api, "older-host", .running, timeout: .seconds(60))
 			let host = try await RemoteMachman(
-				socketPath: MachmanPaths.vmSocketPath(vm: "e22-a"), clientName: "machman-lab-tf")
+				socketPath: MachmanPaths.vmSocketPath(vm: "older-host"),
+				clientName: "machman-lab-tf")
 			#expect(host.hello.daemonVersion == "\(TFBuilds.current)-vmhost")
 			if let pid = host.peerPID {
 				try LabProcesses.writePid(
-					pid, kind: "vmhost", name: TFVM.pidName(scope: agent.scope, vm: "e22-a"))
+					pid, kind: "vmhost", name: TFVM.pidName(scope: agent.scope, vm: "older-host"))
 			}
 			await host.disconnect()
-			let restarted = try await api.vm(named: "e22-a")
+			let restarted = try await api.vm(named: "older-host")
 			#expect(restarted.outdatedHost == nil)
 			#expect(restarted.restartToUpdate == nil)
-			#expect(try await api.vm(named: "e22-b").restartToUpdate == sentence)
+			#expect(try await api.vm(named: "older-sibling").restartToUpdate == sentence)
 			try await api.setHardware(
-				vm: "e22-a", cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
-			#expect(try await api.vm(named: "e22-a").cpuCount == 2)
+				vm: "older-host", cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
+			#expect(try await api.vm(named: "older-host").cpuCount == 2)
 		}
 	}
 
 	@Test("W3-14: a vmhost started from its autostart job reports this build's version in hello")
 	func autostartHostReportsVersion() async throws {
 		try await Lab.withAgent { agent in
-			let spec = LabVMSpec(name: "e22-auto", boot: .alpine())
+			let spec = LabVMSpec(name: "autostarted", boot: .alpine())
 			try await agent.withVM(spec, start: false) { vm in
 				try await agent.api.setStartPolicy(
 					vm: vm.name, policy: StartPolicy(windowed: false, autostart: true))
@@ -222,8 +225,8 @@ struct EngineSkewTests {
 				+ "newer — replacing it keeps your VMs running.")
 			#expect(prompt.buttons == ["Replace", "Not Now"])
 			let desktop = try #require(connection.attaches.last).desktop
-			_ = try await agent.withVM(LabVMSpec(name: "e32", boot: .alpine())) { _ in
-				try await desktop.waitForEntry("e32", "running", timeout: .seconds(15)) {
+			_ = try await agent.withVM(LabVMSpec(name: "listed", boot: .alpine())) { _ in
+				try await desktop.waitForEntry("listed", "running", timeout: .seconds(15)) {
 					$0.state == .running
 				}
 			}

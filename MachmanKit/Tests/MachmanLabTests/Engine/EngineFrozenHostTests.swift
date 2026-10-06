@@ -46,32 +46,37 @@ struct EngineFrozenHostTests {
 	@Test("R3W2-7: after an agent restart a frozen vmhost's VM offers stops but no starts")
 	func frozenOffersStopsNoStarts() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "v11", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "frozen-readopted", boot: .alpine())) { vm in
 				let host = try await Self.frozenAcrossRestart(agent, vm)
 				defer { TFProcess.resume(host) }
 				for action in ["start", "startHeadless", "startSafe"] {
-					#expect(try await agent.control("menu \(action) v11") == "disabled")
+					#expect(
+						try await agent.control("menu \(action) frozen-readopted") == "disabled")
 				}
 				var mark = LabLog.mark()
-				#expect(try await SeamProbe.control(agent, "menu shutDown v11") == "ok")
+				#expect(
+					try await SeamProbe.control(agent, "menu shutDown frozen-readopted") == "ok")
 				_ = try await LabLog.waitFor(
 					SeamProbe.promptLine("agent.actionFailed", "OK"), after: mark,
 					process: "MachmanAgent", timeout: .seconds(30))
 				let failed = try await LabLog.waitFor(
-					"Couldn’t shut down “v11”: ", after: mark, process: "MachmanAgent")
+					"Couldn’t shut down “frozen-readopted”: ", after: mark, process: "MachmanAgent")
 				#expect(failed.eventMessage.contains("not responding"))
 				mark = LabLog.mark()
-				#expect(try await SeamProbe.control(agent, "menu forceStop v11") == "ok")
+				#expect(
+					try await SeamProbe.control(agent, "menu forceStop frozen-readopted") == "ok")
 				// What the Force Stop then does: C9 says ask to end the process.
 				await withKnownIssue(Self.unadoptedForceStopCard) {
 					_ = try await LabLog.waitFor(
 						SeamProbe.promptLine("agent.endProcess", "Cancel \\(not listed\\)"),
 						after: mark, process: "MachmanAgent", timeout: .seconds(20))
 				}
-				#expect(try await vm.info().name == "v11")
+				#expect(try await vm.info().name == "frozen-readopted")
 				#expect(LabProcesses.isAlive(host))
 				TFProcess.resume(host)
-				try await TFWait.vm(agent.api, "v11", "running again", timeout: .seconds(30)) {
+				try await TFWait.vm(
+					agent.api, "frozen-readopted", "running again", timeout: .seconds(30)
+				) {
 					$0.state == .running && !$0.isUnresponsive
 				}
 			}
@@ -82,10 +87,12 @@ struct EngineFrozenHostTests {
 	@MainActor
 	func frozenStopFirstActionsWait() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "p37", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "frozen-stop-first", boot: .alpine())) { vm in
 				let host = try await Self.frozenAcrossRestart(agent, vm)
 				defer { TFProcess.resume(host) }
-				let info = try await TFWait.vm(agent.api, "p37", "unknown", timeout: .seconds(30)) {
+				let info = try await TFWait.vm(
+					agent.api, "frozen-stop-first", "unknown", timeout: .seconds(30)
+				) {
 					$0.state == .unknown
 				}
 				for action in [StoppedOnly.regenerateMAC, .installMacOS, .renameVM] {
@@ -93,7 +100,7 @@ struct EngineFrozenHostTests {
 				}
 				let desktop = try await TFDesktop.make(agent: agent)
 				let listed = try await desktop.waitForEntry(
-					"p37", "unknown", timeout: .seconds(10)
+					"frozen-stop-first", "unknown", timeout: .seconds(10)
 				) {
 					$0.state == .unknown
 				}
@@ -101,7 +108,9 @@ struct EngineFrozenHostTests {
 				#expect(listed.refusal(.deleteVM) == VMInfo.unreachedHelp)
 				await desktop.close()
 				TFProcess.resume(host)
-				try await TFWait.vm(agent.api, "p37", "running again", timeout: .seconds(30)) {
+				try await TFWait.vm(
+					agent.api, "frozen-stop-first", "running again", timeout: .seconds(30)
+				) {
 					$0.state == .running && !$0.isUnresponsive
 				}
 			}
@@ -112,7 +121,7 @@ struct EngineFrozenHostTests {
 	func agentForceStopEndsFrozen() async throws {
 		let options = LabAgent.Options(answers: ["agent.endProcess": "End Process"])
 		try await Lab.withAgent(options) { agent in
-			try await agent.withVM(LabVMSpec(name: "e36-menu", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "frozen-menu", boot: .alpine())) { vm in
 				let host = try await vm.hostPID()
 				try #require(TFProcess.stop(host))
 				defer { TFProcess.resume(host) }
@@ -120,7 +129,7 @@ struct EngineFrozenHostTests {
 					$0.isUnresponsive
 				}
 				let mark = LabLog.mark()
-				#expect(try await SeamProbe.control(agent, "menu forceStop e36-menu") == "ok")
+				#expect(try await SeamProbe.control(agent, "menu forceStop frozen-menu") == "ok")
 				_ = try await LabLog.waitFor(
 					SeamProbe.promptLine("agent.endProcess", "End Process$"), after: mark,
 					process: "MachmanAgent", timeout: .seconds(40))
@@ -142,7 +151,7 @@ struct EngineFrozenHostTests {
 			"agent.vmsStillRunning": "Force Stop All & Quit", "agent.endProcessOnQuit": answer,
 		])
 		try await Lab.withAgent(options) { agent in
-			try await agent.withVM(LabVMSpec(name: "e36-quit", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "frozen-quit", boot: .alpine())) { vm in
 				let host = try await vm.hostPID()
 				try #require(TFProcess.stop(host))
 				defer { TFProcess.resume(host) }

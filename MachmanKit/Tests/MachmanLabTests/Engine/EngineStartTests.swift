@@ -24,13 +24,16 @@ struct EngineStartTests {
 		""")
 	func settingDuringStart() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "e19", boot: .alpine()), start: false) { vm in
-				let socket = MachmanPaths.vmSocketPath(vm: "e19")
+			try await agent.withVM(
+				LabVMSpec(name: "mid-start", boot: .alpine()), start: false
+			) { vm in
+				let socket = MachmanPaths.vmSocketPath(vm: "mid-start")
 				var refusal: MachmanError?
 				for attempt in 1...3 {
 					let api = agent.api
 					let start = Task {
-						try await api.start(vm: "e19", options: StartOptions(openWindow: false))
+						try await api.start(
+							vm: "mid-start", options: StartOptions(openWindow: false))
 					}
 					// The start is under way once its vmhost serves; the change goes then.
 					let sent = ContinuousClock.now
@@ -40,30 +43,33 @@ struct EngineStartTests {
 					}
 					do {
 						try await api.setHardware(
-							vm: "e19", cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
+							vm: "mid-start", cpuCount: 2, memoryBytes: nil,
+							nestedVirtualization: nil)
 					} catch let error as MachmanError {
 						refusal = error
 					}
 					try await start.value
 					try await vm.waitForState(.running, timeout: .seconds(60))
-					_ = try await TFVM.recordHost(agent, "e19")
+					_ = try await TFVM.recordHost(agent, "mid-start")
 					if refusal != nil { break }
 					// The start finished first: undo the change and race again.
 					MachmanLogger.log(.passiveWarning,
-						"lab: W1-20 attempt \(attempt): the start finished before the change")
-					await TFVM.forceStop(agent, "e19")
+						"lab: attempt \(attempt): the start finished before the change")
+					await TFVM.forceStop(agent, "mid-start")
 					try await TFVM.settled {
 						try await api.setHardware(
-							vm: "e19", cpuCount: 1, memoryBytes: nil, nestedVirtualization: nil)
+							vm: "mid-start", cpuCount: 1, memoryBytes: nil,
+							nestedVirtualization: nil)
 					}
 				}
 				let error = try #require(refusal, "three setting changes landed outside the start")
 				#expect(error.code == .invalidState)
-				#expect(error.message == "e19 is starting — try again once it is running")
+				#expect(error.message == "mid-start is starting — try again once it is running")
 				try await agent.api.setHardware(
-					vm: "e19", cpuCount: 2, memoryBytes: nil, nestedVirtualization: nil)
+					vm: "mid-start", cpuCount: 2, memoryBytes: nil,
+					nestedVirtualization: nil)
 				#expect(try await vm.info().cpuCount == 2)
-				await TFVM.forceStop(agent, "e19")
+				await TFVM.forceStop(agent, "mid-start")
 				try await vm.start()
 				#expect(try await vm.info().cpuCount == 2)
 			}
@@ -75,7 +81,7 @@ struct EngineStartTests {
 		.enabled(if: TFGate.uartGated, TFGate.uartReason))
 	func uartDroppedOnce() async throws {
 		try await Lab.withAgent { agent in
-			let spec = LabVMSpec(name: "e9-uart", boot: .alpine())
+			let spec = LabVMSpec(name: "uart-port", boot: .alpine())
 			try await agent.withVM(spec, start: false) { vm in
 				try await agent.api.addUartPort(vm: vm.name)
 				let events = await TFEvents(api: agent.api)
@@ -103,18 +109,18 @@ struct EngineStartTests {
 			let desktop = try await TFDesktop.make(agent: agent)
 			let events = await TFEvents(api: agent.api)
 			defer { events.stop() }
-			let spec = LabVMSpec(name: "e9-head", boot: .alpine())
+			let spec = LabVMSpec(name: "display-less", boot: .alpine())
 			try await agent.withVM(spec, start: false) { vm in
 				try await TFVM.start(agent, vm.name, options: StartOptions(openWindow: true))
 				let sentence = "It has no display, so it started headless."
 				try await events.waitFor("the headless warning", timeout: .seconds(10)) {
-					$0 == .log(vm: "e9-head", level: .warning, message: sentence)
+					$0 == .log(vm: "display-less", level: .warning, message: sentence)
 				}
-				try await desktop.toasts.waitFor("e9-head: \(sentence)", timeout: .seconds(10))
+				try await desktop.toasts.waitFor("display-less: \(sentence)", timeout: .seconds(10))
 				try await Task.sleep(for: .seconds(2))
 				#expect(events.logs(vm: vm.name, level: .warning).filter { $0 == sentence }.count
 					== 1)
-				#expect(desktop.toasts.count(equal: "e9-head: \(sentence)") == 1)
+				#expect(desktop.toasts.count(equal: "display-less: \(sentence)") == 1)
 				#expect(try await vm.info().windowOpen == false)
 			}
 			await desktop.close()
@@ -125,15 +131,15 @@ struct EngineStartTests {
 	func headlessStartAnnouncedOnce() async throws {
 		try await Lab.withAgent { agent in
 			let desktop = try await TFDesktop.make(agent: agent)
-			let spec = LabVMSpec(name: "e9-once", boot: .alpine())
+			let spec = LabVMSpec(name: "headless-once", boot: .alpine())
 			try await agent.withVM(spec, start: false) { vm in
 				try await desktop.waitForList()
 				desktop.viewModel.startVM(vm.name, headless: true)
 				try await vm.waitForState(.running, timeout: .seconds(60))
 				_ = try await TFVM.recordHost(agent, vm.name)
-				try await desktop.toasts.waitFor("e9-once started", timeout: .seconds(10))
+				try await desktop.toasts.waitFor("headless-once started", timeout: .seconds(10))
 				try await Task.sleep(for: .seconds(3))
-				#expect(desktop.toasts.count(equal: "e9-once started") == 1)
+				#expect(desktop.toasts.count(equal: "headless-once started") == 1)
 			}
 			await desktop.close()
 		}
@@ -142,7 +148,7 @@ struct EngineStartTests {
 	@Test("W4-16: a Linux VM with the Mac trackpad warns once, naming the VM once")
 	func trackpadOnLinuxWarnsOnce() async throws {
 		try await Lab.withAgent { agent in
-			let name = "w3-pad"
+			let name = "trackpad"
 			try await agent.withVM(LabVMSpec(name: name, boot: .alpine()), start: false) { _ in
 				// A Linux VM with the trackpad on: no edit allows it any more, so the config
 				// is written by hand as an older Machman (or a macOS-boot switch) left it.

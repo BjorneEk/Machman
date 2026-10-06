@@ -31,7 +31,9 @@ struct EngineDiskTests {
 	@Test("W4-14: a qcow2 import fails with the convert sentence, never a MachmanError dump")
 	func qcowImportSaysSentence() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "e28", boot: .alpine()), start: false) { vm in
+			try await agent.withVM(
+				LabVMSpec(name: "qcow2-import", boot: .alpine()), start: false
+			) { vm in
 				let path = try Self.qcow(agent)
 				do {
 					_ = try await agent.api.importDisk(vm: vm.name, path: path)
@@ -65,7 +67,9 @@ struct EngineDiskTests {
 	@Test("W4-29: the failed import's operation keeps the sentence and no progress")
 	func failedImportOperation() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "f9", boot: .alpine()), start: false) { vm in
+			try await agent.withVM(
+				LabVMSpec(name: "failed-import", boot: .alpine()), start: false
+			) { vm in
 				let desktop = try await TFDesktop.make(agent: agent)
 				let path = try Self.qcow(agent)
 				_ = try? await agent.api.importDisk(vm: vm.name, path: path)
@@ -90,7 +94,9 @@ struct EngineDiskTests {
 	@Test("R3W2-46: an owned ISO that can't be deleted leaves the list with one warning")
 	func undeletableOwnedISO() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "d22", boot: .alpine()), start: false) { vm in
+			try await agent.withVM(
+				LabVMSpec(name: "owned-iso", boot: .alpine()), start: false
+			) { vm in
 				let isos = TFVM.dir(agent, vm.name) + "/isos"
 				try FileManager.default.createDirectory(
 					atPath: isos, withIntermediateDirectories: true)
@@ -108,10 +114,10 @@ struct EngineDiskTests {
 				let sentence =
 					"“x.iso” couldn’t be deleted from the VM’s folder — remove it by hand."
 				try await events.waitFor("the orphan warning", timeout: .seconds(10)) {
-					$0 == .log(vm: "d22", level: .warning, message: sentence)
+					$0 == .log(vm: "owned-iso", level: .warning, message: sentence)
 				}
 				try await Task.sleep(for: .seconds(1))
-				let warned = events.logs(vm: "d22", level: .warning).filter { $0 == sentence }
+				let warned = events.logs(vm: "owned-iso", level: .warning).filter { $0 == sentence }
 				#expect(warned.count == 1)
 				#expect(FileManager.default.fileExists(atPath: iso))
 			}

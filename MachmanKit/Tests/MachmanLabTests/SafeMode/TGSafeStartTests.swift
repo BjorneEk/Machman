@@ -36,8 +36,9 @@ struct TGSafeStartTests {
 		try await TG.withAgent { agent in
 			// A display, so a windowed start has something to (not) open and says so.
 			_ = try await LabVM.create(
-				LabVMSpec(name: "tg-w212", boot: .alpine(), devices: [.graphics]), on: agent)
-			let vm = TGVM("tg-w212", on: agent)
+				LabVMSpec(name: "safe-headless", boot: .alpine(), devices: [.graphics]),
+				on: agent)
+			let vm = TGVM("safe-headless", on: agent)
 			try await agent.api.setStartPolicy(vm: vm.name, policy: Self.safeHeadless)
 			// The instrument: a windowed start logs the vmhost's no-window line.
 			var mark = LabLog.mark()
@@ -90,7 +91,7 @@ struct TGSafeStartTests {
 	@Test("14b: a login vmhost for a hand-edited autostart and safe VM exits 70 without booting")
 	func loginHostRefusesSafeAutostart() async throws {
 		try await TG.withAgent { agent in
-			let vm = try await TGVM.alpine("tg-r14", on: agent)
+			let vm = try await TGVM.alpine("login-edited", on: agent)
 			let plist = TGLaunchd.plistPath(agent.scope, vm.name)
 			defer { try? FileManager.default.removeItem(atPath: plist) }
 			// The wire refuses the pair.
@@ -116,7 +117,7 @@ struct TGSafeStartTests {
 			let result = try await TGLaunchd.spawnLikeLaunchd(job)
 			#expect(result.status == 70)
 			_ = try await LabLog.waitFor(
-				"autostart of tg-r14 refused: safe runs cannot autostart", after: mark,
+				"autostart of login-edited refused: safe runs cannot autostart", after: mark,
 				process: "MachmanVMHost")
 			#expect(await !TG.isSocketLive(vm.socketPath))
 			#expect(TG.runRoots(agent.scope).isEmpty)

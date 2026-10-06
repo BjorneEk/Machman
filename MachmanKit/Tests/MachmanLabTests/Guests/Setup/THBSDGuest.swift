@@ -73,7 +73,7 @@ final class THBSDGuest: THGuest, @unchecked Sendable {
 			carrier = vm
 			try await vm.start()
 			let qemu = try await QEMUGuest.boot(
-				labGuest, name: "th-\(kind.stem)", labSSHD: mac.sshd,
+				labGuest, name: "guest-\(kind.stem)", labSSHD: mac.sshd,
 				consoles: options.bsdConsoles)
 			booted = qemu
 			let driver = try await qemu.console()

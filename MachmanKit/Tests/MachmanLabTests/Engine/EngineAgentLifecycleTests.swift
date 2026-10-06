@@ -68,13 +68,16 @@ struct EngineAgentLifecycleTests {
 		""")
 	func startAfterKilledAgent() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "e12", boot: .alpine()), start: false) { vm in
+			try await agent.withVM(
+				LabVMSpec(name: "start-after-crash", boot: .alpine()), start: false
+			) { vm in
 				let socket = MachmanPaths.vmSocketPath(vm: vm.name)
 				var proven = false
 				for attempt in 1...3 {
 					let api = agent.api
 					let start = Task {
-						try? await api.start(vm: "e12", options: StartOptions(openWindow: false))
+						try? await api.start(
+							vm: "start-after-crash", options: StartOptions(openWindow: false))
 					}
 					let sent = ContinuousClock.now
 					while !FileManager.default.fileExists(atPath: socket),
@@ -88,16 +91,17 @@ struct EngineAgentLifecycleTests {
 					// The kill came after the start went through: nothing to prove this time.
 					if try await vm.info().state == .running {
 						MachmanLogger.log(.passiveWarning,
-							"lab: W1-22 attempt \(attempt): the VM was running before the kill")
-						_ = try? await TFVM.recordHost(agent, "e12")
-						await TFVM.forceStop(agent, "e12")
+							"lab: attempt \(attempt): the VM was running before the kill")
+						_ = try? await TFVM.recordHost(agent, "start-after-crash")
+						await TFVM.forceStop(agent, "start-after-crash")
 						continue
 					}
 					let began = ContinuousClock.now
-					try await agent.api.start(vm: "e12", options: StartOptions(openWindow: false))
+					try await agent.api.start(
+						vm: "start-after-crash", options: StartOptions(openWindow: false))
 					try await vm.waitForState(.running, timeout: .seconds(20))
 					#expect(ContinuousClock.now - began < .seconds(20))
-					_ = try await TFVM.recordHost(agent, "e12")
+					_ = try await TFVM.recordHost(agent, "start-after-crash")
 					#expect(LabLog.count("already running", after: mark) == 0)
 					proven = true
 					break
@@ -116,12 +120,12 @@ struct EngineAgentLifecycleTests {
 		""")
 	func logOutWithVMRunning() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "v7-logout", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "running-at-logout", boot: .alpine())) { vm in
 				let mark = LabLog.mark()
 				let exited = try await TFAgents.quit(agent, reason: "logOut", timeout: .seconds(3))
 				#expect(!exited)
 				let canceled = try await LabLog.waitFor(
-					"logOut canceled: v7-logout still running", after: mark,
+					"logOut canceled: running-at-logout still running", after: mark,
 					process: "MachmanAgent")
 				#expect(canceled.processID == Int(agent.pid))
 				#expect(LabLog.count("test prompt agent\\.", after: mark) == 0)
@@ -159,7 +163,7 @@ struct EngineAgentLifecycleTests {
 	func stillRunningAnswers(_ choice: QuitChoice) async throws {
 		let options = LabAgent.Options(answers: ["agent.vmsStillRunning": choice.rawValue])
 		try await Lab.withAgent(options) { agent in
-			try await agent.withVM(LabVMSpec(name: "v7-quit", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "running-at-quit", boot: .alpine())) { vm in
 				let host = try await vm.hostPID()
 				let mark = LabLog.mark()
 				let pattern = NSRegularExpression.escapedPattern(for: choice.rawValue)

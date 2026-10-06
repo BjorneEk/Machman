@@ -32,7 +32,7 @@ struct EngineConsoleTests {
 	@Test("W1-23: changing Max size keeps a reset-on-boot log's contents")
 	func maxSizeKeepsLog() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "e25", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "log-resize", boot: .alpine())) { vm in
 				let console = try await vm.console(0)
 				defer { console.close() }
 				try await console.expect("LAB-READY", timeout: .seconds(60))
@@ -60,7 +60,7 @@ struct EngineConsoleTests {
 	@Test("W1-24: a paste into a console nobody reads drops with one log line while output flows")
 	func unreadPasteDrops() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "e18", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "unread-console", boot: .alpine())) { vm in
 				let console = try await vm.console(0)
 				defer { console.close() }
 				try await console.expect("LAB-READY", timeout: .seconds(60))
@@ -102,12 +102,12 @@ struct EngineConsoleTests {
 		let sessions = TFTerminals.sessions()
 		try await Lab.withAgent { agent in
 			let desktop = try await TFDesktop.make(agent: agent, terminals: sessions)
-			try await agent.withVM(LabVMSpec(name: "p39", boot: .alpine())) { vm in
+			try await agent.withVM(LabVMSpec(name: "stopped-console", boot: .alpine())) { vm in
 				let socket = try await vm.consoleSocketPath(0)
 				var canvas = desktop.canvases.canvas(for: vm.name)
 				canvas.open(.terminal(Self.console0))
 				desktop.canvases.setCanvas(canvas, for: vm.name)
-				let profile = TFTerminals.profile(dir: agent.scope.dir + "/desktop/p39")
+				let profile = TFTerminals.profile(dir: agent.scope.dir + "/desktop/stopped-console")
 				sessions.ensureController(
 					vm: vm.name, ref: Self.console0, socketPath: socket, profile: profile)
 				let c = try await TFTerminals.serial(sessions, vm: vm.name, ref: Self.console0)
@@ -118,7 +118,9 @@ struct EngineConsoleTests {
 				try await TFWait.until("the tab to disconnect", timeout: .seconds(10)) {
 					!c.connected
 				}
-				try await desktop.waitForEntry("p39", "stopped", timeout: .seconds(10)) {
+				try await desktop.waitForEntry(
+					"stopped-console", "stopped", timeout: .seconds(10)
+				) {
 					$0.state == .stopped
 				}
 				let kept = try #require(sessions.serialTerminal(vm: vm.name, ref: Self.console0))
@@ -140,8 +142,8 @@ struct EngineConsoleTests {
 		let quiet = HostQuiet.baseline()
 		let sessions = TFTerminals.sessions()
 		try await Lab.withAgent { agent in
-			try await agent.withVM(LabVMSpec(name: "t25", boot: .alpine())) { vm in
-				let profile = TFTerminals.profile(dir: agent.scope.dir + "/desktop/t25")
+			try await agent.withVM(LabVMSpec(name: "killed-host", boot: .alpine())) { vm in
+				let profile = TFTerminals.profile(dir: agent.scope.dir + "/desktop/killed-host")
 				sessions.ensureController(
 					vm: vm.name, ref: Self.console0, socketPath: try await vm.consoleSocketPath(0),
 					profile: profile)

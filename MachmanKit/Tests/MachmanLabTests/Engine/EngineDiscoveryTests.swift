@@ -76,7 +76,7 @@ struct EngineDiscoveryTests {
 	func noSSHToastWithoutSSH() async throws {
 		try await Lab.withAgent { agent in
 			let desktop = try await TFDesktop.make(agent: agent)
-			try await agent.withVM(Self.spec("r4")) { vm in
+			try await agent.withVM(Self.spec("never-ssh")) { vm in
 				let (console, _) = try await Self.leased(agent, vm)
 				defer { console.close() }
 				try await Task.sleep(for: .seconds(30))
@@ -92,17 +92,20 @@ struct EngineDiscoveryTests {
 	func rediscoverySaysStillAt() async throws {
 		try await Lab.withAgent { agent in
 			let desktop = try await TFDesktop.make(agent: agent)
-			try await agent.withVM(Self.spec("f4")) { vm in
+			try await agent.withVM(Self.spec("rediscovered")) { vm in
 				let (console, address) = try await Self.leased(agent, vm)
 				defer { console.close() }
-				try await desktop.waitForEntry("f4", "addressed", timeout: .seconds(10)) {
+				try await desktop.waitForEntry("rediscovered", "addressed", timeout: .seconds(10)) {
 					$0.ssh?.address != nil
 				}
 				desktop.viewModel.rediscoveryWait = .seconds(60)
 				let before = desktop.toasts.entries.count
-				desktop.viewModel.refreshSSH("f4")
-				try await desktop.toasts.waitFor("Looking for f4’s address…", timeout: .seconds(5))
-				let answers = ["f4 is still at \(address)", "f4 answered — \(address)"]
+				desktop.viewModel.refreshSSH("rediscovered")
+				try await desktop.toasts.waitFor(
+					"Looking for rediscovered’s address…", timeout: .seconds(5))
+				let answers = [
+					"rediscovered is still at \(address)", "rediscovered answered — \(address)",
+				]
 				try await TFWait.until("the rediscovery's answer", timeout: .seconds(30)) {
 					desktop.toasts.entries.dropFirst(before).contains {
 						answers.contains($0.message)
@@ -113,7 +116,7 @@ struct EngineDiscoveryTests {
 				#expect(after.filter { answers.contains($0) }.count == 1)
 				#expect(!after.contains { $0.hasPrefix("No address for") })
 				let looking = desktop.toasts.entries.first {
-					$0.message == "Looking for f4’s address…"
+					$0.message == "Looking for rediscovered’s address…"
 				}
 				#expect(looking?.spinner == true)
 			}
@@ -124,11 +127,11 @@ struct EngineDiscoveryTests {
 	@Test("R3W2-12: the Mac's bridge address is served while a NAT VM runs, and not after")
 	func bridgeAddressServedWhileRunning() async throws {
 		try await Lab.withAgent { agent in
-			try await agent.withVM(Self.spec("c25")) { vm in
+			try await agent.withVM(Self.spec("nat-bridge")) { vm in
 				let (console, address) = try await Self.leased(agent, vm)
 				let expected = try #require(Self.macAddress(seenFrom: address))
 				let served = try await TFWait.vm(
-					agent.api, "c25", "served the bridge", timeout: .seconds(20)
+					agent.api, "nat-bridge", "served the bridge", timeout: .seconds(20)
 				) { $0.ssh?.hostAddressForGuest != nil }
 				#expect(served.ssh?.hostAddressForGuest == expected)
 				console.close()
@@ -137,7 +140,7 @@ struct EngineDiscoveryTests {
 				#expect(await LabProcesses.waitForExit(host, timeout: .seconds(30)))
 				// No run, no overlay: the entry carries neither address once its vmhost went.
 				let stopped = try await TFWait.vm(
-					agent.api, "c25", "without a live overlay", timeout: .seconds(10)
+					agent.api, "nat-bridge", "without a live overlay", timeout: .seconds(10)
 				) { $0.ssh?.address == nil }
 				#expect(stopped.ssh?.hostAddressForGuest == nil)
 			}

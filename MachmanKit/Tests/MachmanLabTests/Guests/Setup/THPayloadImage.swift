@@ -93,7 +93,7 @@ enum THVZFreeBSD {
 		try await Lab.withAgent { agent in
 			let carrier = try await THVM.create(
 				LabVMSpec(
-					name: "vzfb carrier", boot: .alpine(), consolePorts: 2,
+					name: "payload carrier", boot: .alpine(), consolePorts: 2,
 					devices: [.guestSetup]),
 				on: agent)
 			var vm: THVM?
@@ -103,7 +103,7 @@ enum THVZFreeBSD {
 				let image = VZFreeBSD.imagePath
 				let guestVM = try await THVM.create(
 					LabVMSpec(
-						name: "th-vzfb", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
+						name: "vzfreebsd", boot: .efiImagePath(image), cpus: 2, memoryGiB: 2,
 						consolePorts: 2, extraDisks: [payload]),
 					on: agent)
 				vm = guestVM

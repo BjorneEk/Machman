@@ -66,12 +66,12 @@ struct EngineFloodTests {
 		try await Lab.withAgent { agent in
 			// Two vCPUs, as a person's VM has: one leaves the guest's tty input to the vCPU
 			// `yes` keeps busy.
-			let spec = LabVMSpec(name: "p29", boot: .alpine(), cpus: 2)
+			let spec = LabVMSpec(name: "console-flood", boot: .alpine(), cpus: 2)
 			try await agent.withVM(spec) { vm in
 				let ref = SerialPortRef(kind: .console, index: 0)
 				sessions.ensureController(
 					vm: vm.name, ref: ref, socketPath: try await vm.consoleSocketPath(0),
-					profile: TFTerminals.profile(dir: agent.scope.dir + "/desktop/p29"))
+					profile: TFTerminals.profile(dir: agent.scope.dir + "/desktop/console-flood"))
 				let c = try await TFTerminals.serial(sessions, vm: vm.name, ref: ref)
 				try await TFTerminals.waitFor(c, "LAB-READY", timeout: .seconds(60))
 				let (gap, growth) = try await Self.flood(c)
