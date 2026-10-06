@@ -102,8 +102,8 @@ the login up: `@Test("G6: Alpine's getty lines sit between the markers and HUP b
   `MachmanTestMode`, and one reader of the lab's variables, `LabEnvironment`. Every product file
   that asks them is listed in `TestModeSeamInventoryTests` with a test proving the seam inert
   for the `.dev` and Release suites.
-- Never from the main checkout; one lab run machine-wide; at most 2 guests at once, ≤ 2 vCPU,
-  ≤ 2 GB each. Opt-ins: `MACHMAN_LAB_LOCAL_NETWORK=1` (guest TCP), `MACHMAN_LAB_VOLUMES=0`
+- Never from the main checkout; one lab run machine-wide (its shards side by side); at most 2
+  guests per shard, ≤ 2 vCPU, ≤ 2 GB each. Opt-ins: `MACHMAN_LAB_LOCAL_NETWORK=1` (guest TCP), `MACHMAN_LAB_VOLUMES=0`
   (skip the disk-image volumes), `--launchd`.
 
 ## Naming and the manual-row rule
