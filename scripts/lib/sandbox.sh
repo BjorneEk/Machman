@@ -222,9 +222,24 @@ sandbox_review_fix_dir() {
 }
 
 # sandbox_lab_cache: the fixture cache (several GB): this worktree's git-ignored
-# scripts/lab/cache, unless MACHMAN_LAB_CACHE says otherwise.
+# scripts/lab/cache, unless MACHMAN_LAB_CACHE says otherwise. A fix wave's lane worktree
+# (claude-lane-*) shares the branch worktree's cache instead: the prepared guests, the
+# hand-copied vzfreebsd image and the suite times a parallel run plans by live there.
 sandbox_lab_cache() {
-	echo "${MACHMAN_LAB_CACHE:-${SANDBOX_LIB_REPO}/scripts/lab/cache}"
+	if [[ -n "${MACHMAN_LAB_CACHE:-}" ]]; then
+		echo "$MACHMAN_LAB_CACHE"
+		return 0
+	fi
+	local rf main
+	if [[ "${SANDBOX_LIB_REPO##*/}" == claude-lane-* ]]; then
+		rf="$(sandbox_review_fix_dir "$SANDBOX_LIB_REPO")"
+		main="${rf%/docs/local/review-fix}"
+		if [[ -n "$rf" && -d "$main/scripts/lab/cache" ]]; then
+			echo "$main/scripts/lab/cache"
+			return 0
+		fi
+	fi
+	echo "$SANDBOX_LIB_REPO/scripts/lab/cache"
 }
 
 # sandbox_slot_dir <repo>: where the machine-wide lab slot lives.
