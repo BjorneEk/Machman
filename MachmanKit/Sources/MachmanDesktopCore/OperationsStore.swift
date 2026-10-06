@@ -10,7 +10,9 @@
 //  whether a terminal event or a resync brought them — and a pruned one never comes back
 //  on a later resync, though the daemon keeps listing it for a while (P24). Each finished
 //  operation also lands in the activity list once (PR5), which this store owns so it
-//  outlives reconnects like the store itself.
+//  outlives reconnects like the store itself. Install phases are the session's: each attach
+//  starts them over (the next agent may run no install the last one reported), and a VM that
+//  leaves the list takes its phase along (F11).
 //
 
 import Foundation
@@ -28,8 +30,10 @@ public final class OperationsStore: ObservableObject {
 	private let linger: Duration
 	// Finished operations already pruned here; host.operations may still list them.
 	private var forgotten: Set<String> = []
-	// macOS VMs whose install phase is being fetched (dedupes re-triggered primes).
+	// macOS VMs whose install phase is being fetched (dedupes re-triggered primes), and the
+	// names the last list held: a prime that lands for a VM gone meanwhile is dropped.
 	private var phasePrimesInFlight: Set<String> = []
+	private var listed: Set<String> = []
 	// The activity list, and the finished operations already in it (event or resync).
 	public let activity: ActivityLog
 	private var recorded: Set<String> = []
@@ -49,6 +53,10 @@ public final class OperationsStore: ObservableObject {
 		detach()
 		self.api = api
 		backoff.reset()
+		// What the last agent reported may be gone with it: an install it ran is cut short
+		// (the list says interrupted), and nothing else would ever replace its last phase.
+		// primeInstallPhases refills the live ones from the first list.
+		installPhases = [:]
 		eventTask = Task { [weak self] in
 			let stream = await api.events()
 			await self?.resync()
@@ -79,7 +87,12 @@ public final class OperationsStore: ObservableObject {
 	// Prime phases for VMs the daemon reports mid-install: only a live install session
 	// serves real progress; every other macInstallState derives its phase client-side
 	// (VMListViewModel.installPhase(for:)) without a fetch — so no per-VM N+1 on reload.
+	// Names that left the list lose their phase: a new VM under that name starts clean.
 	public func primeInstallPhases(for vms: [VMInfo]) {
+		listed = Set(vms.map(\.name))
+		for name in installPhases.keys where !listed.contains(name) {
+			installPhases[name] = nil
+		}
 		guard let api else { return }
 		for vm in vms where vm.boot.macInstallState?.kind == .installing
 			&& installPhases[vm.name] == nil && !phasePrimesInFlight.contains(vm.name) {
@@ -89,6 +102,7 @@ public final class OperationsStore: ObservableObject {
 				guard let self else { return }
 				// Never clobber a phase an event delivered while the fetch was in flight.
 				if let phase = try? await api.macInstallPhase(vm: name),
+					self.api === api, self.listed.contains(name),
 					self.installPhases[name] == nil {
 					self.installPhases[name] = phase
 				}
