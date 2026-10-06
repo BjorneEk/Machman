@@ -179,8 +179,8 @@ struct TGSafeSaveTests {
 		#expect(seen.components(separatedBy: "LAB-READY").count - 1 == 1)
 	}
 
-	/// The draft card for the guard order a plain start meets (r3-tg, E/QUALITY).
-	static let startAnywayCard = Comment(rawValue: "A plain Start offers Start Anyway where "
+	/// Card E55, the guard order a plain start meets (r3-tg, E/UX).
+	static let startAnywayCard = Comment(rawValue: "E55: A plain Start offers Start Anyway where "
 		+ "the disk-sharing guard refuses every start")
 
 	/// The original can't start while the saved VM runs on its disk, force or not. A plain

@@ -369,26 +369,27 @@ enum THFingerprint {
 	}
 }
 
-/// Draft product cards a known-issue test names (the orchestrator files them).
+/// The filed product cards a known-issue test names ("<id>: <title>", exactly as filed).
 enum THCards {
-	static let nonASCIIProse: Comment =
-		"The guest installer prints em dashes on a LANG=C vt100 console"
+	static let nonASCIIProse = Comment(rawValue: "S48: The guest installer keeps UTF-8 em dashes "
+		+ "in its prose after it switches its glyphs to ASCII")
 	static let numberedQuestion: Comment =
-		"A numbered choice on TERM=dumb prints its first item instead of its question"
+		"S47: A numbered choice on TERM=dumb prints its first item instead of its question"
 	static let consolesDot: Comment =
-		"The plan's consoles line joins devices with a UTF-8 dot on a LANG=C console"
+		"S49: The plan's consoles line joins devices with a hard-coded U+00B7 instead of $G_SEP"
 	static let planWidth: Comment =
-		"The installer's plan lines run past 80 columns on a console"
-	static let generatedGettyReadsActive: Comment =
-		"hvc0's generator login reads active, not active (automatic), on systemd 257"
-	static let bsdRootHome: Comment =
-		"The BSD guide's approved share mount reads /home/root/.ssh/config for a root guest user"
+		"S50: Plan lines are never folded, so long plan values run past 80 columns on a console"
+	static let generatedGettyReadsActive = Comment(rawValue: "S52: hvc0's getty-generator login "
+		+ "reads 'active', not 'active (automatic)': systemctl is-enabled exits 0 with "
+		+ "enabled-runtime")
+	static let bsdRootHome = Comment(rawValue: "C29: The BSD guide's approved share mount points "
+		+ "sshfs at /home/root/.ssh/config for a root guest user, so the copied mount fails")
 	static let netbsdAddressPrefix: Comment =
-		"The installer reports a NetBSD guest's address with its prefix length (10.0.2.15/24)"
-	static let netbsdUsermount: Comment =
-		"On NetBSD the user-mount step fails at securelevel 1 and keeps nothing for the next boot"
-	static let uninstallStopsForeignGetty: Comment =
-		"--uninstall stops and disables serial-getty logins Machman never enabled"
+		"S53: The installer reports a NetBSD guest's address with its prefix length (10.0.2.15/24)"
+	static let netbsdUsermount = Comment(rawValue: "S54: On NetBSD the user-mount step fails at "
+		+ "securelevel 1 and keeps nothing for the next boot")
+	static let uninstallStopsForeignGetty = Comment(rawValue: "S51: --uninstall disables and "
+		+ "stops every enabled serial-getty unit, including logins Machman never set up")
 }
 
 // L3 — the installer on the prepared Debian guest under VZ.

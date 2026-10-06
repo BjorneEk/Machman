@@ -17,9 +17,10 @@ import MachmanClient
 struct TGAutostartSafeTests {
 	static let atLogin = StartPolicy(windowed: false, autostart: true)
 
-	/// The draft card for the login race (r3-tg, E/RISK, routed to r3-3c).
-	static let loginRaceCard = Comment(
-		rawValue: "Two login VMs sharing a writable image can both refuse to start at login")
+	/// Card E54, the login race (r3-tg, E/RISK, routed to r3-3c).
+	static let loginRaceCard = Comment(rawValue: "E54: Two login VMs sharing a writable image "
+		+ "can both refuse to start at login: each binds its socket before it checks for the "
+		+ "other's")
 
 	static func escaped(_ text: String) -> String { NSRegularExpression.escapedPattern(for: text) }
 

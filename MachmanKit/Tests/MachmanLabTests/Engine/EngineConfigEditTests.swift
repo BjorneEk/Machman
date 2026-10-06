@@ -15,9 +15,9 @@ import MachmanClient
 
 @Suite("Engine — hand-edited configs", .serialized, .enabled(if: Lab.runs(.l2)))
 struct EngineConfigEditTests {
-	/// Draft card (r3-tf): vm.kernel.setOverride saves the override and VMInfo lists it, but
+	/// Card D28: vm.kernel.setOverride saves the override and VMInfo lists it, but
 	/// makeBootLoader boots KernelSettings.commandLine; nothing reads kernelOverrides at start.
-	static let overrideNeverBootsCard = Comment(rawValue: "A kernel’s command-line override "
+	static let overrideNeverBootsCard = Comment(rawValue: "D28: A kernel's command-line override "
 		+ "is saved and listed but never reaches the boot")
 
 	@Test(

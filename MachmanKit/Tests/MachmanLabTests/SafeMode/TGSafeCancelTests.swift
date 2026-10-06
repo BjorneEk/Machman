@@ -30,8 +30,8 @@ struct TGSafeCancelTests {
 	static let canceled = "The safe run was canceled"
 	static let tooLate = "the copy finished before the cancel landed (T20: add the shadow hold)"
 
-	/// The draft card for the agent menu during a safe run's preparation (r3-tg, V/BUG).
-	static let agentMenuCard = Comment(rawValue: "The agent menu lists a VM that prepares a "
+	/// Card V14, the agent menu during a safe run's preparation (r3-tg, V/BUG).
+	static let agentMenuCard = Comment(rawValue: "V14: The agent menu lists a VM preparing a "
 		+ "safe run as stopped: Shut Down and Force Stop stay off")
 
 	static func shadowBuild(_ events: TGEvents, vm: String, after mark: Int) -> OperationInfo? {

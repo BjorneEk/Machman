@@ -18,12 +18,13 @@ import MachmanUI
 
 @Suite("Engine — frozen vmhosts", .serialized, .enabled(if: Lab.runs(.l2)))
 struct EngineFrozenHostTests {
-	/// Draft card (r3-tf): after a restart the agent can't adopt the frozen vmhost, and its
+	/// Card E53: after a restart the agent can't adopt the frozen vmhost, and its
 	/// Force Stop answers "not responding — try again in a moment" (invalidState) instead of
 	/// asking to end the process; nothing tells the menu (or the desktop) the VM is not
 	/// responding, so End Process is never offered.
-	static let unadoptedForceStopCard = Comment(rawValue: "After an agent restart, Force Stop "
-		+ "on a frozen VM says “try again in a moment” and never offers End Process")
+	static let unadoptedForceStopCard = Comment(rawValue: "E53: After an agent restart, the "
+		+ "agent menu's Force Stop on a frozen VM says 'try again in a moment' and never offers "
+		+ "End Process")
 
 	/// A running VM whose vmhost is frozen, the agent quit leaving it and started again: the
 	/// new agent meets a vmhost that never answers. Returns the vmhost's pid (still stopped).

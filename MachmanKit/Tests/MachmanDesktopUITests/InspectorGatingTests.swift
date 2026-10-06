@@ -22,7 +22,8 @@ import MachmanTestSupport
 // L1: desktop views hosted offscreen, read through in-process accessibility.
 @MainActor
 struct InspectorGatingTests {
-	static let card = "Default start: Safe mode and Start at login no longer rule each other out"
+	static let card = "H52: Default start offers Safe mode while Start at login is on (and the "
+		+ "reverse), then the daemon refuses the pair with an error alert"
 
 	// The inspector for `vm` with `node` selected in the tree.
 	private func inspector(

@@ -23,7 +23,8 @@ import MachmanTestSupport
 @MainActor
 struct ToolbarCanvasStateTests {
 	static let safeHelp = "Safe mode \u{2014} changes are discarded on stop"
-	static let mountCard = "The mount's Attach in safe runs toggle has no tooltip"
+	static let mountCard = "H53: The mount inspector's 'Attach in safe runs' toggle is inverted: "
+		+ "it reads on for a mount a safe run leaves out, and has no tooltip"
 
 	private func toolbar(_ h: UIHarness, _ name: String) async throws -> AXSnapshot {
 		try await h.snapshot(StartStopGroup(viewModel: h.viewModel, vm: h.vm(name)))

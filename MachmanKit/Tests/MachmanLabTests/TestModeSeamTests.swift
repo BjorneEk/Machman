@@ -296,9 +296,10 @@ enum SeamProbe {
 	/// An agent-only variable: no MACHMAN_LAB_ prefix, so the agent never forwards it.
 	static let agentOnly = "MACHMAN_SEAM_AGENT_ONLY"
 
-	/// The draft card for what the agent-only variable shows (wave r3t, r3-tb).
-	static let mergedEnvironmentCard = Comment(rawValue: "A vmhost inherits its agent's whole "
-		+ "environment: OpenConfiguration.environment merges, it doesn't replace")
+	/// Card E51, what the agent-only variable shows (wave r3t, r3-tb).
+	static let mergedEnvironmentCard = Comment(rawValue: "E51: A vmhost inherits its agent's "
+		+ "whole environment: OpenConfiguration.environment merges onto the launcher's "
+		+ "environment, it doesn't replace it")
 
 	struct Window: Equatable {
 		let number: Int

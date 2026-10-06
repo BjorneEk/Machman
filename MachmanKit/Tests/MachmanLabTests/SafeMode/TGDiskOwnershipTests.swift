@@ -17,9 +17,9 @@ struct TGDiskOwnershipTests {
 	static let qcowRefusal = "Machman can\u{2019}t use qcow2 images \u{2014} convert to raw first "
 		+ "(qemu-img convert -O raw)"
 
-	/// The draft card for a qcow2 attached by reference (r3-tg, D/RISK).
-	static let qcowByReferenceCard = Comment(
-		rawValue: "A disk added by reference skips the format sniff: a qcow2 attaches as raw bytes")
+	/// Card D29, a qcow2 attached by reference (r3-tg, D/RISK).
+	static let qcowByReferenceCard = Comment(rawValue: "D29: A disk added by reference skips the "
+		+ "format sniff: a qcow2 attaches as raw bytes")
 
 	/// A file whose first bytes are qcow2's magic ("QFI\u{FB}"), 64 KiB in all.
 	static func writeQcow(_ path: String) throws {

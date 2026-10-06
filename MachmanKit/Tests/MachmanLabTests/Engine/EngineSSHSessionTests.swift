@@ -22,13 +22,14 @@ import MachmanTestSupport
 @Suite("Engine — ssh sessions", .serialized, .enabled(if: Lab.runs(.l2)))
 @MainActor
 struct EngineSSHSessionTests {
-	/// Draft card (r3-tf): PTYChild opens the pty's slave in a posix_spawn file action and
+	/// Card P42: PTYChild opens the pty's slave in a posix_spawn file action and
 	/// relies on that open to make it the child's controlling terminal; on macOS it doesn't
 	/// (a probe: `ps -o tty=` shows "??" for the spawned ssh; forkpty's TIOCSCTTY does). So
 	/// ssh can't open /dev/tty for a password prompt, and a hung-up pty (the app quitting or
 	/// crashing) sends it no SIGHUP: the session and its ssh stay.
-	static let noControllingTTYCard = Comment(rawValue: "An ssh session tab's ssh has no "
-		+ "controlling terminal: no password prompt, and it outlives the app")
+	static let noControllingTTYCard = Comment(rawValue: "P42: An ssh session tab's ssh has no "
+		+ "controlling terminal: ssh never shows a password prompt, and ssh outlives an app that "
+		+ "quits or crashes")
 
 	struct Session {
 		let sessions: TerminalSessions
