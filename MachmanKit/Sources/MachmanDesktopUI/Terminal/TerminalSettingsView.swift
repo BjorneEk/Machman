@@ -64,10 +64,10 @@ struct TerminalSettingsView: View {
 
 	private var header: some View {
 		HStack(spacing: 8) {
-			Picker("", selection: selectionBinding) {
+			Picker("Profile", selection: selectionBinding) {
 				ForEach(store.profiles) { p in Text(p.name).tag(p.id) }
 			}
-			.labelsHidden()
+			.labelsHidden()   // still the name VoiceOver reads (H48)
 			.frame(maxWidth: 180)
 			TextField("Name", text: binding(\.name))
 				.textFieldStyle(.roundedBorder)
@@ -125,7 +125,8 @@ struct TerminalSettingsView: View {
 						spacing: 6
 					) {
 						ForEach(0..<16, id: \.self) { i in
-							ColorPicker("", selection: ansiBinding(i), supportsOpacity: false)
+							ColorPicker(
+								"ANSI color \(i)", selection: ansiBinding(i), supportsOpacity: false)
 								.labelsHidden()
 								.help("ANSI color \(i)")
 						}

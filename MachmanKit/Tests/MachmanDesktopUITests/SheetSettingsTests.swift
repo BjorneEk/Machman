@@ -149,6 +149,30 @@ struct SheetSettingsTests {
 		#expect(!body.contains(".borderedProminent"), "a button styled as the default")
 	}
 
+	@Test("H48: Reset stands alone, tab sliders start derived, profile controls have names")
+	func appearanceResetAndLabels() async throws {
+		let h = await UIHarness.make()
+		// Density 0.8 with the tab sizes on Auto: tabs are 20 pt with 12 pt type.
+		let derived = MachmanMetrics(scale: 0.8, fontScale: 1.0)
+		#expect(derived.tabHeight == 20 && derived.tabFontSize == 12)
+		let look = try await h.snapshot(AppearanceSettingsView(density: 0.8), width: 760)
+		let height = try #require(look.control(labelled: "Tab height"), "\(look.dump())")
+		#expect(height.value.flatMap(Double.init) == 20, "\(height)")
+		let font = try #require(look.control(labelled: "Tab font size"))
+		#expect(font.value.flatMap(Double.init) == 12, "\(font)")
+		// Reset covers the whole tab, so it sits under the last section, not inside Density.
+		let reset = try #require(
+			look.find(role: "AXButton", text: "Reset Appearance to Defaults"), "\(look.dump())")
+		let follow = try #require(look.find(role: "AXButton", text: "Follow Density & Font Size"))
+		#expect((reset.frame?.minY ?? 0) > (follow.frame?.maxY ?? .infinity))
+
+		let terminal = try await h.snapshot(TerminalSettingsView(store: h.profiles))
+		#expect(terminal.find(label: "Profile")?.role == "AXPopUpButton", "\(terminal.dump())")
+		for index in 0..<16 {
+			#expect(terminal.find(label: "ANSI color \(index)") != nil, "ANSI color \(index)")
+		}
+	}
+
 	@Test("W4-10: Settings ▸ Terminal's profile buttons read their names")
 	func profileButtonsReadTheirNames() async throws {
 		let h = await UIHarness.make()

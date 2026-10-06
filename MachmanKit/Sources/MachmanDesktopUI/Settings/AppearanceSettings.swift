@@ -51,15 +51,18 @@ struct AppearanceSettingsView: View {
 	@AppStorage(ThemeKeys.accent) private var accentRaw = MachmanAccent.system.rawValue
 	@AppStorage(ThemeKeys.tabStyle) private var tabStyleRaw
 		= MachmanTabStyle.rectangular.rawValue
-	@AppStorage(ThemeKeys.density) private var density = 1.0
-	@AppStorage(ThemeKeys.fontScale) private var fontScale = 1.0
+	@AppStorage private var density: Double
+	@AppStorage private var fontScale: Double
 	@AppStorage(ThemeKeys.tabHeight) private var tabHeight = 0.0
 	@AppStorage(ThemeKeys.tabFontSize) private var tabFontSize = 0.0
 	@AppStorage private var glassRaw: String
 
-	// `glass` is what shows while the key is unset (render scenes; the app passes nothing).
-	init(glass: MachmanGlassLevel = .standard) {
+	// `glass`, `density` and `fontScale` are what shows while their keys are unset (render
+	// scenes and tests; the app passes nothing).
+	init(glass: MachmanGlassLevel = .standard, density: Double = 1.0, fontScale: Double = 1.0) {
 		_glassRaw = AppStorage(wrappedValue: glass.rawValue, ThemeKeys.glass)
+		_density = AppStorage(wrappedValue: density, ThemeKeys.density)
+		_fontScale = AppStorage(wrappedValue: fontScale, ThemeKeys.fontScale)
 	}
 
 	var body: some View {
@@ -106,21 +109,11 @@ struct AppearanceSettingsView: View {
 						.frame(width: 44, alignment: .trailing)
 				}
 				.help("Scales type and the inline icons beside it")
-				Button("Reset to Defaults") {
-					density = 1.0
-					fontScale = 1.0
-					schemeRaw = MachmanScheme.system.rawValue
-					accentRaw = MachmanAccent.system.rawValue
-					tabStyleRaw = MachmanTabStyle.rectangular.rawValue
-					glassRaw = MachmanGlassLevel.standard.rawValue
-					tabHeight = 0
-					tabFontSize = 0
-				}
 			}
 			Section("Tab bar") {
 				LabeledContent("Tab height") {
 					Slider(
-						value: explicitBinding($tabHeight, auto: 25),
+						value: explicitBinding($tabHeight, auto: Double(derived.tabHeight)),
 						in: MachmanMetrics.tabHeightRange, step: 1)
 					Text(tabHeight > 0 ? "\(Int(tabHeight)) pt" : "Auto")
 						.monospacedDigit()
@@ -128,7 +121,7 @@ struct AppearanceSettingsView: View {
 				}
 				LabeledContent("Tab font size") {
 					Slider(
-						value: explicitBinding($tabFontSize, auto: 11.5),
+						value: explicitBinding($tabFontSize, auto: Double(derived.tabFontSize)),
 						in: MachmanMetrics.tabFontRange, step: 0.5)
 					Text(tabFontSize > 0
 						? tabFontSize.formatted(.number.precision(.fractionLength(0...1)))
@@ -143,8 +136,26 @@ struct AppearanceSettingsView: View {
 				}
 				.help("Clears the explicit sizes so tabs follow the Density sliders again")
 			}
+			// Everything on this tab, so below all of it (H48).
+			Section {
+				Button("Reset Appearance to Defaults") {
+					density = 1.0
+					fontScale = 1.0
+					schemeRaw = MachmanScheme.system.rawValue
+					accentRaw = MachmanAccent.system.rawValue
+					tabStyleRaw = MachmanTabStyle.rectangular.rawValue
+					glassRaw = MachmanGlassLevel.standard.rawValue
+					tabHeight = 0
+					tabFontSize = 0
+				}
+			}
 		}
 		.formStyle(.grouped)
+	}
+
+	// The tab sizes the Density sliders give, which Auto shows until a drag makes one explicit.
+	private var derived: MachmanMetrics {
+		MachmanMetrics(scale: density, fontScale: fontScale)
 	}
 
 	// 0 means auto: the slider shows the derived default until the user drags it, which

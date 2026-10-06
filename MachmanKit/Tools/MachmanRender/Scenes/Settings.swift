@@ -31,6 +31,14 @@ enum SettingsScenes {
 		pane("appearance.extra-glass", "AppearanceSettingsView, Glass set to Extra glass") { _ in
 			AnyView(AppearanceSettingsView(glass: .extra))
 		},
+		// H48: at 80% density the Auto tab sliders sit at the 20 pt and 12 pt the theme
+		// derives, and Reset stands under the last section. Tall enough to show it.
+		RenderScene(
+			"settings.appearance.dense", "AppearanceSettingsView at 80% density, Reset below",
+			widths: [760], height: 760
+		) { _ in
+			AnyView(AppearanceSettingsView(density: 0.8))
+		},
 		pane("terminal", "TerminalSettingsView (profile editor, live preview)") { ctx in
 			AnyView(TerminalSettingsView(store: ctx.profiles))
 		},
