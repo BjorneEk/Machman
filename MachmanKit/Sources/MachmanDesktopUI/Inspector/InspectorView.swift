@@ -211,7 +211,10 @@ struct VMInspector: View {
 					Picker("Bootloader", selection: bootBinding) {
 						Text("EFI").tag(BootInfo.Mode.efi)
 						Text("Kernel Boot").tag(BootInfo.Mode.linuxKernel)
+						// Installing is stop-first (H41): the row waits while the VM runs, as
+						// the sheet's buttons and Install macOS… do.
 						Text("macOS…").tag(BootInfo.Mode.macOS)
+							.disabled(vm.refusal(.installMacOS) != nil)
 					}
 					.disabled(viewModel.isInstalling(vm) || bootPickerRefusal != nil)
 					.help(bootPickerRefusal ?? "")
@@ -459,7 +462,9 @@ struct MacSwitchSheet: View {
 				Button("Cancel", role: .cancel) { dismiss() }
 					.keyboardShortcut(.cancelAction)
 				Spacer()
+				// Stop-first, like the picker row that opens this sheet (H41).
 				Button("Install from IPSW…") { installFromFile() }
+					.stopFirst(vm, .installMacOS)
 				Button {
 					viewModel.startInstall(vm.name, source: .latest)
 					dismiss()
@@ -468,6 +473,7 @@ struct MacSwitchSheet: View {
 				}
 				.buttonStyle(.borderedProminent)
 				.keyboardShortcut(.defaultAction)
+				.stopFirst(vm, .installMacOS)
 			}
 		}
 		.padding(22)

@@ -90,6 +90,22 @@ struct InspectorGatingTests {
 
 	// MARK: - Running, not responding
 
+	// The Bootloader picker's macOS… row is dimmed too, but a popup's items are built only as
+	// its menu opens, which no hosted view does (manual row H41).
+	@Test("H41: a running EFI VM's macOS sheet waits for a stop")
+	func installingMacOSWaitsForAStop() async throws {
+		let h = await UIHarness.make()
+		let debian = h.vm("Debian")
+		#expect(debian.state == .running && debian.boot.mode == .efi)
+		let sheet = try await h.snapshot(MacSwitchSheet(viewModel: h.viewModel, vm: debian))
+		for title in ["Download Latest", "Install from IPSW\u{2026}"] {
+			let button = try #require(sheet.find(role: "AXButton", text: title), "\(sheet.dump())")
+			#expect(!button.isEnabled, "\(title)")
+			#expect(button.help == StoppedOnly.installMacOS.stopFirst, "\(title)")
+		}
+		#expect(sheet.find(role: "AXButton", text: "Cancel")?.isEnabled == true)
+	}
+
 	@Test("W2-18: a running VM's Name field is dimmed with the reason")
 	func aRunningVMsNameIsDimmed() async throws {
 		let h = await UIHarness.make()

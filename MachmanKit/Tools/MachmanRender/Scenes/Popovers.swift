@@ -223,7 +223,13 @@ enum PopoverScenes {
 			AnyView(RosettaHelpSheet(escalation: .root))
 		},
 		RenderScene("sheet.mac-switch", "MacSwitchSheet (switch a VM to macOS)") { ctx in
-			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
+			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm("Alpine")))
+		},
+		// H41: installing is stop-first, so a running VM's sheet waits with the reason.
+		RenderScene(
+			"sheet.mac-switch.running", "MacSwitchSheet for a running VM (both sources wait)"
+		) { ctx in
+			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm("Debian")))
 		},
 		RenderScene("toolbar.indicator", "VMIndicatorCluster per VM, and with none") { ctx in
 			perVM(ctx, includeNone: true) { vm in

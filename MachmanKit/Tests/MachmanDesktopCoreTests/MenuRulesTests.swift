@@ -66,4 +66,26 @@ struct MenuRulesTests {
 		#expect(!VMInfo.unreachedHelp.hasSuffix("."))
 		#expect(VMInfo.unreachedHelp.count <= 60)
 	}
+
+	// H41: a stop-first case with no surface gating on it (installMacOS was one) leaves the
+	// action live in the UI and refused by the daemon after the click. Each case is asked of
+	// some desktop view, command or menu model: `.stopFirst(vm, .case)` or `refusal(.case)`.
+	@Test("H41: every stop-first action has a UI that refuses it")
+	func everyStopFirstActionHasAUI() throws {
+		let files = RepoFiles.files(
+			under: [
+				"MachmanKit/Sources/MachmanDesktopUI", "MachmanKit/Sources/MachmanDesktopCore",
+				"MachmanDesktop",
+			], extension: "swift")
+		#expect(files.count > 20, "the scan found too few files")
+		let text = try files.map { try String(contentsOf: $0, encoding: .utf8) }
+			.joined(separator: "\n")
+		for action in StoppedOnly.allCases {
+			let name = String(describing: action)
+			let pattern = try NSRegularExpression(
+				pattern: #"(stopFirst\([^)]*,\s*|refusal\()\."# + name + #"\b"#)
+			let found = pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
+			#expect(found != nil, "no desktop surface gates on .\(name)")
+		}
+	}
 }
