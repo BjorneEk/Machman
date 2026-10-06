@@ -7,7 +7,8 @@
 //  process to the guest's address on the VM network, which macOS's Local Network privacy may
 //  prompt about: they run only with MACHMAN_LAB_LOCAL_NETWORK=1 (B-1: "nothing with
 //  prompts" — never set in wave r3t), and skip with that reason otherwise. Every ssh is
-//  sandboxed: no agent, no askpass, HOME the scope's, known_hosts in the run.
+//  sandboxed: TFSSH's host-quiet prefix first (-F /dev/null, no agent, no control socket, no
+//  host-key updates), no askpass, HOME the scope's, known_hosts in the run.
 //
 
 import Foundation
@@ -22,13 +23,15 @@ enum THHostSSH {
 
 	static let skip = "Deferred: local network (opt-in MACHMAN_LAB_LOCAL_NETWORK=1)"
 
-	/// The sandbox's options, after the product's own (ssh takes each option's first value,
-	/// so the product's win) and before the destination.
+	/// The test's own options, after the product's (ssh takes each option's first value, so
+	/// the product's win) and before the destination. TFSSH.hostQuietPrefix goes before the
+	/// product's argv: ssh reads ~/.ssh/config through getpwuid, whatever HOME says, so only
+	/// its -F /dev/null keeps the user's config (ControlMaster, Include, ProxyCommand) out; a
+	/// product -F after it still wins (ssh keeps the last -F).
 	static func sandbox(_ agent: LabAgent) throws -> [String] {
 		let known = try TH.hostDir(agent, "ssh") + "/known_hosts"
 		return [
-			"-o", "BatchMode=yes", "-o", "IdentityAgent=none", "-o",
-			"GlobalKnownHostsFile=/dev/null", "-o", "UserKnownHostsFile=\(known)", "-o",
+			"-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(known)", "-o",
 			"StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10",
 		]
 	}
@@ -37,23 +40,25 @@ enum THHostSSH {
 		["HOME": agent.scope.homeDir, "PATH": "/usr/bin:/bin"]
 	}
 
-	/// /usr/bin/ssh with `argv`, the sandbox options before its last word (the destination
-	/// or, with a command, the word before it).
+	/// /usr/bin/ssh with the host-quiet prefix, then `argv` with the sandbox options before its
+	/// last word (the destination or, with a command, the word before it).
 	static func run(_ agent: LabAgent, _ argv: [String], command: String = "true")
 		async throws -> Subprocess.Result {
 		var arguments = argv
 		let destination = arguments.removeLast()
-		arguments += try sandbox(agent) + [destination, command]
+		arguments = TFSSH.hostQuietPrefix + arguments + (try sandbox(agent))
+			+ [destination, command]
 		return try await Subprocess.run(
 			"/usr/bin/ssh", arguments, environment: environment(agent), timeout: 60)
 	}
 
 	/// A pasted line, unchanged, by zsh -f; its ssh is a PATH-first shim that adds the
-	/// sandbox options. stdin answers "echo TH-OK; exit".
+	/// host-quiet prefix and the sandbox options. stdin answers "echo TH-OK; exit".
 	static func runPasted(_ agent: LabAgent, _ line: String) async throws -> Subprocess.Result {
 		let dir = try TH.hostDir(agent, "shim")
-		let options = try sandbox(agent).map(ShellQuote.single).joined(separator: " ")
-		try "#!/bin/sh\nexec /usr/bin/ssh -F /dev/null \(options) \"$@\"\n"
+		let options = try (TFSSH.hostQuietPrefix + sandbox(agent)).map(ShellQuote.single)
+			.joined(separator: " ")
+		try "#!/bin/sh\nexec /usr/bin/ssh \(options) \"$@\"\n"
 			.write(toFile: dir + "/ssh", atomically: true, encoding: .utf8)
 		chmod(dir + "/ssh", 0o755)
 		let script = "printf 'echo TH-OK; exit\\n' | \(line)"
