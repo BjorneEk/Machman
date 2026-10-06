@@ -67,8 +67,9 @@ struct LabClassifier {
 	/// Machman app processes not read settled yet.
 	private var unread: [Int32: (start: UInt64?, path: String)] = [:]
 
-	init(token: String) {
-		needles = ["Machman.test-" + token, "/mml." + token]
+	/// Every token of the run: a parallel lab run has one per shard.
+	init(tokens: [String]) {
+		needles = tokens.flatMap { ["Machman.test-" + $0, "/mml." + $0] }
 	}
 
 	/// The lab pids of this tick; remembers what it learnt for the next ones.

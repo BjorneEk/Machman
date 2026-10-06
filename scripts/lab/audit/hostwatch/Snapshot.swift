@@ -34,7 +34,7 @@ private func isUnderDotMachman(_ path: String, home: String) -> Bool {
 	return standard == root || standard.hasPrefix(root + "/")
 }
 
-private func defaultRoots(home: String, token: String?) -> [SnapshotRoot] {
+private func defaultRoots(home: String, tokens: [String]) -> [SnapshotRoot] {
 	let support = home + "/Library/Application Support/"
 	let temp = userTempDir()
 	var roots = [
@@ -54,7 +54,7 @@ private func defaultRoots(home: String, token: String?) -> [SnapshotRoot] {
 			roots.append(SnapshotRoot(path: dir, metaOnly: false))
 		}
 	}
-	if let token {
+	for token in tokens {
 		roots.append(SnapshotRoot(path: support + "com.gustaffranzen.Machman.test-" + token,
 			metaOnly: false))
 	}
@@ -112,7 +112,7 @@ private func walk(_ root: SnapshotRoot, into entries: inout [String: [String: An
 	}
 }
 
-/// `snapshot --out FILE [--token T] [--root PATH]... [--meta-only PATH]... [--home DIR]`
+/// `snapshot --out FILE [--token T]... [--root PATH]... [--meta-only PATH]... [--home DIR]`
 /// --home: the default roots under DIR in place of this user's home (the self-check's fake
 /// home); ~/.machman stays refused either way.
 func runSnapshot(_ args: [String]) {
@@ -124,7 +124,7 @@ func runSnapshot(_ args: [String]) {
 	if explicit.contains(where: { isUnderDotMachman($0.path, home: home) })
 		|| isUnderDotMachman(rootsHome, home: home) { exit(64) }
 	var roots = explicit.isEmpty
-		? defaultRoots(home: rootsHome, token: value("--token", in: args)) : explicit
+		? defaultRoots(home: rootsHome, tokens: values("--token", in: args)) : explicit
 	roots.removeAll { isUnderDotMachman($0.path, home: home) }
 	var entries: [String: [String: Any]] = [:]
 	var described: [[String: Any]] = []
@@ -168,13 +168,13 @@ private func differences(_ before: [String: Any], _ after: [String: Any]) -> [St
 	return found
 }
 
-/// `diff --before F --after F --out FILE [--non-lab FILE] [--token T]`
+/// `diff --before F --after F --out FILE [--non-lab FILE] [--token T]...`
 func runDiff(_ args: [String]) {
 	guard let beforePath = value("--before", in: args), let afterPath = value("--after", in: args),
 		let out = value("--out", in: args),
 		let before = loadEntries(beforePath), let after = loadEntries(afterPath)
 	else { exit(64) }
-	let token = value("--token", in: args)
+	let tokens = values("--token", in: args)
 	let nonLab = value("--non-lab", in: args)
 		.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }?
 		.split(separator: "\n").map(String.init) ?? []
@@ -182,8 +182,9 @@ func runDiff(_ args: [String]) {
 	var lines: [String] = []
 	var breach = false
 	func report(_ what: String, _ path: String) {
-		let named = token.map { path.contains("Machman.test-" + $0) || path.contains("/mml." + $0) }
-			?? false
+		let named = tokens.contains {
+			path.contains("Machman.test-" + $0) || path.contains("/mml." + $0)
+		}
 		if !pids.isEmpty && !named {
 			lines.append("WARN snapshot \(what) (a non-lab Machman process ran: "
 				+ pids.joined(separator: ",") + ")")

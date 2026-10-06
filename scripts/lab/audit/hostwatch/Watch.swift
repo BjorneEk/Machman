@@ -103,8 +103,8 @@ func sampleWindows() -> [WindowInfo] {
 // MARK: - the watcher
 
 final class Watcher {
-	let token: String
-	let run: String
+	let tokens: [String]
+	let runs: [String]
 	let out: String
 	let interval: Double
 	var injections: [String]
@@ -124,22 +124,23 @@ final class Watcher {
 	var timer: Timer?
 	var signalSource: DispatchSourceSignal?
 
-	init(token: String, run: String, out: String, interval: Double, injections: [String],
+	init(tokens: [String], runs: [String], out: String, interval: Double, injections: [String],
 		injectAfter: Int) {
-		self.token = token
-		self.run = run
+		self.tokens = tokens
+		self.runs = runs
 		self.out = out
 		self.interval = interval
 		self.injections = injections
 		self.injectAfter = injectAfter
-		classifier = LabClassifier(token: token)
+		classifier = LabClassifier(tokens: tokens)
 	}
 
 	func takeSample() -> Sample {
 		var sample = Sample()
 		var sightings = sightProcesses(skipping: selfPid)
 		injectSightings(&sightings)
-		sample.labPids = classifier.classify(sightings, pidFiles: Set(pidFilePids(run: run)))
+		sample.labPids = classifier.classify(
+			sightings, pidFiles: Set(runs.flatMap { pidFilePids(run: $0) }))
 		sample.labPids.remove(selfPid)
 		sample.windows = sampleWindows()
 		for pid in sample.labPids {
@@ -174,7 +175,7 @@ final class Watcher {
 		guard ticks >= injectAfter else { return }
 		let first = ticks == injectAfter
 		let host = "/lab-injected/MachmanVMHost.app/Contents/MacOS/MachmanVMHost"
-		let lab = host + " --socket /x/com.gustaffranzen.Machman.test-\(token)/vm-1.sock"
+		let lab = host + " --socket /x/com.gustaffranzen.Machman.test-\(tokens[0])/vm-1.sock"
 		let dev = host + " --socket /x/com.gustaffranzen.Machman.dev/vm-1.sock"
 		for kind in injections {
 			switch kind {
@@ -355,15 +356,15 @@ final class Watcher {
 	}
 }
 
-/// `watch --token T --run R --out DIR [--interval 0.5] [--inject KIND]... [--inject-after 2]`
+/// `watch --token T... --run R... --out DIR [--interval 0.5] [--inject KIND]...
+/// [--inject-after 2]` (a token and a run dir per shard of a parallel run).
 func runWatch(_ args: [String]) {
-	guard let token = value("--token", in: args), let run = value("--run", in: args),
-		let out = value("--out", in: args)
-	else { exit(64) }
+	let tokens = values("--token", in: args), runs = values("--run", in: args)
+	guard !tokens.isEmpty, !runs.isEmpty, let out = value("--out", in: args) else { exit(64) }
 	try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
 	FileManager.default.createFile(atPath: out + "/watch.jsonl", contents: Data())
 	let watcher = Watcher(
-		token: token, run: run, out: out,
+		tokens: tokens, runs: runs, out: out,
 		interval: Double(value("--interval", in: args) ?? "0.5") ?? 0.5,
 		injections: values("--inject", in: args),
 		injectAfter: Int(value("--inject-after", in: args) ?? "2") ?? 2)
