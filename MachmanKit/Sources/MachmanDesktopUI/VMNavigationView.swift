@@ -15,6 +15,9 @@ public struct VMNavigationView: View {
 	let profiles: TerminalProfileStore
 	let daemonVersion: String?
 	@Binding private var selection: String?
+	// The inspector column's live width (it is resizable): the corner's toasts and cards move
+	// left by it while the inspector shows (H44).
+	@State private var inspectorWidth: CGFloat = 0
 
 	public init(
 		viewModel: VMListViewModel, selection: Binding<String?>,
@@ -95,6 +98,9 @@ public struct VMNavigationView: View {
 					NoSelectionInspector()
 				}
 			}
+			.onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+				inspectorWidth = $0
+			}
 			.inspectorColumnWidth(
 				min: MainWindowLayout.inspector.min, ideal: MainWindowLayout.inspector.ideal,
 				max: MainWindowLayout.inspector.max)
@@ -136,9 +142,13 @@ public struct VMNavigationView: View {
 			SafeSaveSheet(vm: vm, viewModel: viewModel)
 		}
 		// Bottom-right feedback corner: toasts + progress cards (replaces the old
-		// transfer-progress sheet — imports/promotes/copies emit operations now).
+		// transfer-progress sheet — imports/promotes/copies emit operations now). The window's
+		// corner, moved left past the inspector while it shows, so a card never covers its
+		// last rows (H44, C7).
 		.overlay {
 			NotificationOverlay(viewModel: viewModel, operations: viewModel.operationsStore)
+				// An offset, not padding: the corner must never weigh on the window's floor.
+				.offset(x: viewModel.showInfoPanel ? -inspectorWidth : 0)
 		}
 		// Destructive/choice confirmations (the HIG successors to the old NSAlerts),
 		// isolated in a modifier so this chain stays type-checkable.

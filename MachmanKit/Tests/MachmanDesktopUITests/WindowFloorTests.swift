@@ -91,6 +91,31 @@ struct WindowFloorTests {
 		#expect(about(closed.width, 656) && about(closed.height, 352), "\(closed)")
 	}
 
+	// H44 (C7: window, inset): the corner's toasts and progress cards sit at the window's
+	// bottom right, moved left past the inspector while it shows, so they never cover its
+	// last rows.
+	@Test("H44: toasts and progress cards stay off the inspector column")
+	func theCornerStaysOffTheInspector() async throws {
+		let h = await UIHarness.make(select: "Debian")
+		let message = "Added disk"
+		h.viewModel.pushToast(symbol: MachmanSymbols.diskStorage, message: message, sticky: true)
+		let copy = Samples.copyOperation()
+		h.stub.emit(.operationChanged(op: copy))
+		#expect(await eventually { !h.operations.operations.isEmpty })
+		h.viewModel.showInfoPanel = true
+		let open = try await roomy(h, "Debian")
+		let toast = try #require(open.find(text: message)?.frame, "\(open.dump())")
+		let card = try #require(open.find(text: copy.displayTitle)?.frame, "\(open.dump())")
+		let inspector = try #require(
+			open.find(role: "AXHeading", text: "Machine")?.frame, "\(open.dump())")
+		#expect(toast.maxX <= inspector.minX, "the toast \(toast) covers the inspector")
+		#expect(card.maxX <= inspector.minX, "the card \(card) covers the inspector")
+		h.viewModel.showInfoPanel = false
+		let closed = try await roomy(h, "Debian")
+		let alone = try #require(closed.find(text: message)?.frame)
+		#expect(alone.maxX >= 1280 - 40, "the toast \(alone) left the window's corner")
+	}
+
 	@Test("15: the toolbar's safe chip shows only while the VM runs safe")
 	func theSafeChipShowsOnlyInASafeRun() async throws {
 		let h = await UIHarness.make(

@@ -206,6 +206,18 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: true)
 		},
+		// H44 (C7): the corner's toast and copy card, moved left past the open inspector.
+		RenderScene(
+			"window.main.corner", "VMNavigationView, a toast and a copy card beside the inspector",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window,
+			panels: treeAndInspector
+		) { ctx in
+			ctx.stub.emit(.operationChanged(op: Samples.copyOperation()))
+			Offscreen.pump(until: { !ctx.operations.operations.isEmpty })
+			ctx.viewModel.pushToast(
+				symbol: MachmanSymbols.diskStorage, message: "Added disk", sticky: true)
+			return mainWindow(ctx, inspector: true)
+		},
 		RenderScene(
 			"window.main.never-answered", "VMNavigationView, Debian's vmhost never answered",
 			widths: RenderScene.windowWidths, height: 820, chrome: .window,
