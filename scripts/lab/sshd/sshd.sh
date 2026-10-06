@@ -16,8 +16,9 @@
 # Logins: the Mac user only, public key only (--password offers password auth, which can never
 # succeed: UsePAM no — for the password-prompt rows). AuthorizedKeysFile is the fake home's
 # .ssh/authorized_keys (where the product writes reverse grants) and <root>/sshd/authorized_keys.
-# Sessions (session.sh) run with HOME = the fake home, under sandbox-exec: writes only inside
-# the run root, /dev and the user's temp dir. --bind vmnet listens on the VZ NAT bridge
+# Sessions (session.sh) run with HOME = the fake home and TMPDIR in the run, under
+# sandbox-exec: writes only inside the run root and /dev, no read of ~/.machman or ~/.ssh, no
+# unix-socket connect outside the run. --bind vmnet listens on the VZ NAT bridge
 # address (Shared_Net_Address, default 192.168.64.1) once an interface holds it.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -36,6 +37,8 @@ usage() {
 }
 
 keyfile() { printf '%s/sshd/ssh_host_ed25519_key\n' "$1"; }
+# The account's home as getpwuid has it (ssh's ~), never $HOME.
+real_home() { eval echo "~$(id -un)"; }
 pidfile() { printf '%s/pids/sshd.pid\n' "$1"; }
 
 cmd_keygen() {
@@ -151,10 +154,10 @@ cmd_start() {
 	[ "$port" -gt 1024 ] && [ "$port" -lt 65536 ] || lab_die 64 "--port $port is not 1025-65535."
 	mkdir -p "$root/sshd" "$root/pids" "$home"
 	cmd_keygen "$root" >/dev/null
-	local d="$root/sshd" proot ptemp
+	local d="$root/sshd" proot phome
 	proot="$(cd "$root" && pwd -P)"
-	ptemp="$(cd "$(getconf DARWIN_USER_TEMP_DIR)" && pwd -P)"
-	sed -e "s|@RUN@|$proot|" -e "s|@TEMP@|$ptemp|" "$HERE/session.sb" > "$d/session.sb"
+	phome="$(cd "$(real_home)" && pwd -P)"
+	sed -e "s|@RUN@|$proot|g" -e "s|@HOME@|$phome|g" "$HERE/session.sb" > "$d/session.sb"
 	cp "$HERE/session.sh" "$d/session.sh"
 	chmod 755 "$d/session.sh"
 	touch "$d/authorized_keys"
@@ -238,7 +241,7 @@ self_check() {
 	mkdir -p "$root/client"
 	ssh-keygen -q -t ed25519 -N '' -C lab-client -f "$key" </dev/null
 	ssh-keygen -q -t ed25519 -N '' -C stranger -f "$bad_key" </dev/null
-	realssh="$(eval echo "~$(id -un)")/.ssh"
+	realssh="$(real_home)/.ssh"
 	listing() { [ -d "$realssh" ] && find "$realssh" -exec stat -f '%N %z %m' {} \; | sort; }
 	before="$(listing)"
 
@@ -281,7 +284,7 @@ self_check() {
 	# The probe: a session write outside the sandbox (the lab cache, the user cache dir).
 	local probe_dirs="" d f wrote=""
 	[ -d "$(lab_cache_dir)" ] && probe_dirs="$(lab_cache_dir)"
-	probe_dirs="$probe_dirs $(getconf DARWIN_USER_CACHE_DIR)"
+	probe_dirs="$probe_dirs $(getconf DARWIN_USER_CACHE_DIR) $(getconf DARWIN_USER_TEMP_DIR)"
 	for d in $probe_dirs; do
 		f="$d/.sshd-write-probe-${root##*.}"
 		lab_ssh "$root" "$key" "$user@$host" "$port" "echo x > '$f'" >/dev/null 2>&1
@@ -297,6 +300,53 @@ self_check() {
 		bad "a session wrote outside the sandbox:$wrote (inside: $([ -f "$home/inside" ] \
 			&& echo yes || echo no))"
 	fi
+	out="$(lab_ssh "$root" "$key" "$user@$host" "$port" 'echo "$TMPDIR"' 2>&1)"
+	case "$out" in
+	"$root/sshd/tmp"|"/private$root/sshd/tmp") ok "a session's TMPDIR is inside the run ($out)" ;;
+	*) bad "session TMPDIR: '$out'" ;;
+	esac
+	# Metadata only, and refused: a session can't even stat ~/.machman or ~/.ssh.
+	out="$(lab_ssh "$root" "$key" "$user@$host" "$port" \
+		"ls -d '$(real_home)/.machman' '$(real_home)/.ssh' 2>&1" 2>&1)"
+	if [ "$(printf '%s\n' "$out" | grep -c 'Operation not permitted')" = 2 ]; then
+		ok "a session can't read ~/.machman or ~/.ssh"
+	else
+		bad "~/.machman or ~/.ssh readable in a session: $out"
+	fi
+	# A unix socket outside the run (where the dev agent's live) refuses a connect; one inside
+	# the run takes it.
+	local outside py ctl
+	outside="$(mktemp -d /tmp/mml-sb.XXXXXX)"
+	py="$(lab_tool python3)"
+	for f in "$outside/s.sock" "$root/s.sock"; do
+		"$py" -c 'import socket, sys
+s = socket.socket(socket.AF_UNIX)
+s.bind(sys.argv[1])
+s.listen(1)
+s.settimeout(15)
+try:
+    c, _ = s.accept()
+    c.sendall(b"hi\n")
+    c.close()
+except OSError:
+    pass' "$f" &
+	done
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		[ -S "$outside/s.sock" ] && [ -S "$root/s.sock" ] && break
+		sleep 0.2
+	done
+	out="$(lab_ssh "$root" "$key" "$user@$host" "$port" \
+		"nc -U '$outside/s.sock' </dev/null 2>/dev/null; echo :; nc -U '$root/s.sock' </dev/null" \
+		2>&1)"
+	# The control: the outside listener was there, and takes this process's connect.
+	ctl="$(nc -U "$outside/s.sock" </dev/null 2>/dev/null)"
+	if [ "$(printf '%s' "$out" | tr '\n' ' ')" = ": hi" ] && [ "$ctl" = hi ]; then
+		ok "a session reaches unix sockets inside the run only"
+	else
+		bad "unix sockets from a session: '$out' (outside, from here: '$ctl')"
+	fi
+	wait
+	rm -rf "$outside" "$root/s.sock"
 	local pid kids
 	pid="$(sshd_pid "$root")"
 	"$HERE/sshd.sh" stop "$root"
