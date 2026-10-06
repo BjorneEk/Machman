@@ -108,4 +108,40 @@ struct ListReloadTests {
 		#expect(h.viewModel.toasts.filter { $0.message == "Debian stopped" }.count == 1)
 		#expect(!h.viewModel.toasts.contains { $0.message == "Debian started" })
 	}
+
+	// A VM the list didn't hold yet started while a fetch was out, and the fetch read it
+	// running. Its event patched no row, so nobody had seen "starting": laying it over the
+	// list showed the older state first and toasted "started" on the follow-up (review F12).
+	@Test("P8: a state change for a VM not yet listed leaves the landing list alone")
+	func anUnlistedPatchIsNotLaidOver() async throws {
+		let h = await DesktopHarness.make()
+		h.viewModel.toastLifetimeOverride = .seconds(60)
+		let gate = ReplyGate()
+		var calls = 0
+		h.stub.pause = { method in
+			guard method == "listVMs" else { return }
+			calls += 1
+			if calls == 1 { await gate.wait() }   // the fetch that read Newcomer running
+		}
+		var states: [VMState] = []
+		let watch = h.store.$vms.sink { list in
+			if let state = list.first(where: { $0.name == "Newcomer" })?.state {
+				states.append(state)
+			}
+		}
+		let before = fetches(h)
+		h.stub.vms["Newcomer"] = Samples.linux("Newcomer", state: .running)
+		h.stub.emit(.listChanged)
+		#expect(await eventually { gate.held == 1 })
+		let asked = h.store.asked
+		h.stub.emit(.stateChanged(vm: "Newcomer", state: .starting))
+		#expect(await eventually { h.store.asked == asked + 1 })   // the store heard it
+		gate.open()
+		#expect(await eventually { fetches(h) == before + 2 })   // the fetch and its follow-up
+		try await Task.sleep(for: .milliseconds(100))
+		watch.cancel()
+		#expect(states.first == .running, "\(states)")
+		#expect(!states.contains(.starting), "\(states)")
+		#expect(!h.viewModel.toasts.contains { $0.message == "Newcomer started" })
+	}
 }

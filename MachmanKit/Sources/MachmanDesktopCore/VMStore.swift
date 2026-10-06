@@ -163,14 +163,13 @@ public final class VMStore: ObservableObject {
 	private func handle(event: VMEvent) {
 		switch event {
 		case .stateChanged(let name, let state):
+			// The list in flight may predate this change: the fetch after it reads the state
+			// again, and a patched row's state is laid over the list in flight meanwhile. A
+			// VM no row holds yet was never seen in that state: its list stands (review F12).
+			if fetch != nil { asked += 1 }
 			if let index = vms.firstIndex(where: { $0.name == name }) {
 				vms[index].state = state
-			}
-			// The list in flight may predate this change: it lands with the patch laid over
-			// it, and the fetch after it reads the state again.
-			if fetch != nil {
-				asked += 1
-				patchedDuringFetch[name] = state
+				if fetch != nil { patchedDuringFetch[name] = state }
 			}
 		case .listChanged:
 			requestReload()
