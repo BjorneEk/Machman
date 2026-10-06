@@ -390,9 +390,15 @@ public final class StubMachman: MachmanControlling {
 		try gate()
 		_ = try get(name)
 	}
+	// vm.kernel.update requests, in order: a full replace of the VM's kernel settings (P41).
+	public private(set) var kernelSettingsSent: [(vm: String, settings: KernelSettings)] = []
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		try gate()
-		_ = try get(name)
+		var vm = try get(name)
+		kernelSettingsSent.append((name, settings))
+		vm.boot.kernel = settings
+		vms[name] = vm
+		emit(.listChanged)
 	}
 	public func promoteKernelFile(
 		vm name: String, role: KernelRole, sourcePath: String, tag: String

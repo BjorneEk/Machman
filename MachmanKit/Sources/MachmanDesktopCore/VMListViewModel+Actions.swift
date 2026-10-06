@@ -712,7 +712,8 @@ extension VMListViewModel {
 	// Select/deselect an active kernel or initramfs file by rewiring the kernel-boot draft
 	// (the settings survive as a draft even while the mode is EFI — never toggles the mode).
 	public func setActiveKernelFile(_ vm: VMInfo, role: KernelRole, path: String?) {
-		var settings = vm.boot.kernel
+		// The served settings, not the caller's copy: a pick must not undo another (P41).
+		var settings = (vms.first { $0.name == vm.name } ?? vm).boot.kernel
 			?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 		switch role {
 		case .kernel: settings.kernelPath = path ?? ""

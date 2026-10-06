@@ -123,4 +123,44 @@ struct InspectorIdentityTests {
 		#expect(field(before) == "Build", "\(before.dump())")
 		#expect(field(after) == "Deploy", "the Name field kept the old name: \(after.dump())")
 	}
+
+	// P41: the VM command line's editor shows a line set elsewhere (another window, the menu
+	// bar, a script) once nothing typed waits to be sent; it used to keep its first text.
+	@Test("P41: the command-line editor follows a command line changed elsewhere")
+	func theCommandLineFollowsAnOutsideChange() async throws {
+		let h = await UIHarness.make([Samples.kernelBoot()], select: "Kernel Lab")
+		h.viewModel.treeSelection = [.group("Kernel")]
+		let line = "console=hvc0 root=/dev/vda2 loglevel=7"
+		let (before, after) = try await OffscreenHost.withHost(
+			LiveInspector(viewModel: h.viewModel, harness: h), width: 320, height: 700
+		) { hosted in
+			let before = hosted.snapshot()
+			var settings = try #require(h.vm("Kernel Lab").boot.kernel)
+			settings.commandLine = line
+			h.viewModel.updateKernelSettings("Kernel Lab", settings)
+			_ = await eventually { h.vm("Kernel Lab").boot.kernel?.commandLine == line }
+			await hosted.settle()
+			return (before, hosted.snapshot())
+		}
+		let editor: (AXSnapshot) -> String? = {
+			$0.all.first { $0.role == "AXTextArea" }?.value
+		}
+		#expect(editor(before) == "console=hvc0 root=/dev/vda2", "\(before.dump())")
+		#expect(editor(after) == line, "the editor kept the old line: \(after.dump())")
+	}
+}
+
+// The selected VM's inspector as the window shows it: rebuilt from the served VM whenever the
+// list changes, so a test sees what a change made elsewhere does to an open inspector.
+private struct LiveInspector: View {
+	@ObservedObject var viewModel: VMListViewModel
+	let harness: UIHarness
+
+	var body: some View {
+		if let vm = viewModel.selected {
+			InspectorView(
+				viewModel: viewModel, sessions: harness.terminals, profiles: harness.profiles,
+				vm: vm)
+		}
+	}
 }

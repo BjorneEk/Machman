@@ -50,14 +50,11 @@ struct KernelParentInspector: View {
 				}
 			}
 			Section("Command line") {
+				// The commit names only the VM: it lands up to 600 ms after this render, and the
+				// rest of the settings are whatever is served by then (P41).
 				CmdlineEditor(
 					initial: vm.boot.kernel?.commandLine ?? "",
-					commit: { joined in
-						var settings = vm.boot.kernel
-							?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
-						settings.commandLine = joined
-						viewModel.updateKernelSettings(vm.name, settings)
-					})
+					commit: { [name = vm.name] in viewModel.setKernelCommandLine(name, $0) })
 				Text("Passed to the kernel at boot unless the active kernel has its own "
 					+ "override.")
 					.font(.caption)
@@ -265,7 +262,9 @@ private struct KernelFileActionsSection: View {
 // MARK: - Command-line editor -----------------------------------------------------------------
 
 // Multi-line editor for a single-line value: newlines join to spaces on the wire, so
-// options can be organized one per line. Edits commit debounced (and on disappear).
+// options can be organized one per line. Edits commit debounced (and on disappear). A line
+// changed elsewhere replaces the text while no edit waits to be sent; our own commit's echo
+// already means the text, so it keeps your line breaks (P41).
 struct CmdlineEditor: View {
 	let initial: String
 	let commit: (String) -> Void
@@ -289,27 +288,35 @@ struct CmdlineEditor: View {
 					.lineLimit(2)
 			}
 		}
-		.onAppear {
-			if !loaded {
-				text = initial
-				loaded = true
-			}
-		}
+		// Seeded once: a later appear keeps what is in the editor.
+		.servedDraft(
+			$text, of: initial, seed: loaded ? text : nil, holds: commitTask != nil,
+			means: { Self.joined($0) == $1 })
+		.onAppear { loaded = true }
 		.onChange(of: text) {
 			commitTask?.cancel()
+			// The served line (seeded, followed, or typed back): nothing to send.
+			guard joinedText != initial else {
+				commitTask = nil
+				return
+			}
 			commitTask = Task {
 				try? await Task.sleep(for: .milliseconds(600))
 				guard !Task.isCancelled else { return }
+				commitTask = nil
 				commitIfChanged()
 			}
 		}
 		.onDisappear {
 			commitTask?.cancel()
+			commitTask = nil
 			commitIfChanged()
 		}
 	}
 
-	private var joinedText: String {
+	private var joinedText: String { Self.joined(text) }
+
+	private static func joined(_ text: String) -> String {
 		text.split(whereSeparator: \.isNewline).joined(separator: " ")
 	}
 
