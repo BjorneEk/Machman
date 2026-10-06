@@ -49,7 +49,7 @@ struct EngineAgentMenuTests {
 				try await TFWait.state(agent.api, "mac-twin", .running, timeout: .seconds(30))
 				_ = try await TFVM.recordHost(agent, "mac-twin")
 				await TFVM.forceStop(agent, "mac-twin")
-				try await agent.api.deleteVM(named: "mac-twin")
+				try await TFVM.settled { try await agent.api.deleteVM(named: "mac-twin") }
 			}
 		}
 	}
