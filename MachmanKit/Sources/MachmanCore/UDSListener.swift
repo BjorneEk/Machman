@@ -53,6 +53,10 @@ final class UDSListener {
 	// while the keep-alive timer touches the current path.
 	private var path: String
 	private var reportedMissing = false
+	// Left by the source's cancel handler, which removes the file and closes the descriptor.
+	private let cancelled = DispatchGroup()
+	// Confined to `queue`: false only for simulateKillForTesting, which leaves the file behind.
+	private var unlinksOnCancel = true
 
 	// How often a served socket's timestamps are refreshed against the temp cleaner (see the
 	// timer below) — the control sockets here and the serial data-plane sockets alike.
@@ -113,6 +117,18 @@ final class UDSListener {
 				"\(path) was removed — new clients cannot reach this process until it restarts")
 		}
 		keepAliveTimer.resume()
+
+		// GCD closes a source's descriptor in its cancel handler, once nothing watches it any
+		// more (E48): closed right after cancel(), its number could be reused under a source
+		// still armed on it. The file goes first, and only while it is ours (E44).
+		cancelled.enter()
+		source.setCancelHandler { [weak self, bound, cancelled] in
+			if let self, self.unlinksOnCancel {
+				bound.unlinkIfOurs(self.path)
+			}
+			close(fd)
+			cancelled.leave()
+		}
 	}
 
 	// Serves the same bound socket at a new path (a vmhost whose VM was saved as a new VM,
@@ -135,28 +151,30 @@ final class UDSListener {
 	// closed listener's file reads dead, and a successor probing in that gap (the agent's
 	// takeover polls every 200 ms) unlinks it and binds its own — which an unlink after the
 	// close then removed, leaving the new daemon serving a socket nobody could reach. Closing
-	// never unlinks: the CURRENT path goes.
+	// never unlinks: the CURRENT path goes. Returns once the source's cancel handler did both;
+	// never called on `queue`.
 	func shutdown() {
 		keepAliveTimer.cancel()
 		source.cancel()
-		queue.sync { bound.unlinkIfOurs(path) }
-		close(fd)
+		cancelled.wait()
 	}
 
 	// For tests that stand in for a forked child holding a copy of the listener.
 	var descriptorForTesting: Int32 { fd }
 
 	// For tests that need to simulate a kill: drop the socket but keep the file, exactly
-	// what SIGKILL leaves behind. The source is cancelled first — a bare close() would free
-	// the fd NUMBER under a still-armed source, which then watches whatever unrelated
-	// socket a parallel test binds to that number (a real in-suite flake). A process another
-	// test spawns holds a copy of every descriptor from fork until exec (FD_CLOEXEC does not
-	// shorten that), so the closed socket can go on accepting for a moment and a probe right
-	// after would read it live: this returns once a probe finds it dead, or after awaitDeath.
+	// what SIGKILL leaves behind. The descriptor closes in the source's cancel handler — a
+	// bare close() would free the fd NUMBER under a still-armed source, which then watches
+	// whatever unrelated socket a parallel test binds to that number (a real in-suite flake).
+	// A process another test spawns holds a copy of every descriptor from fork until exec
+	// (FD_CLOEXEC does not shorten that), so the closed socket can go on accepting for a
+	// moment and a probe right after would read it live: this returns once a probe finds it
+	// dead, or after awaitDeath.
 	func simulateKillForTesting(awaitDeath: Duration = .seconds(5)) {
 		keepAliveTimer.cancel()
+		queue.sync { unlinksOnCancel = false }
 		source.cancel()
-		close(fd)
+		cancelled.wait()
 		let served = queue.sync { path }
 		let clock = ContinuousClock()
 		let deadline = clock.now.advanced(by: awaitDeath)

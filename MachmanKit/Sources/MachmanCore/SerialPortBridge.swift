@@ -120,13 +120,8 @@ final class SerialPortBridge {
 			self.clients.removeAll()
 			try? self.log?.close()
 			self.log = nil
-			// Only a socket this bridge bound: the path may be another run's (E27), or a
-			// successor's by now — so only the file it bound, and before closing (E44).
-			if let listener = self.listener {
-				listener.unlinkIfOurs(self.socketPath)
-				close(listener.fd)
-				self.listener = nil
-			}
+			// The accept source's cancel handler removes the socket and closes it (E48).
+			self.listener = nil
 		}
 	}
 
@@ -358,12 +353,20 @@ final class SerialPortBridge {
 	}
 
 	private func installAccept() {
-		guard let listenerFD = listener?.fd else { return }
+		guard let listener else { return }
+		let listenerFD = listener.fd
 		let source = DispatchSource.makeReadSource(fileDescriptor: listenerFD, queue: queue)
 		source.setEventHandler { [weak self] in
 			guard let self = self, !self.stopped else { return }
 			let fd = accept(listenerFD, nil, nil)
 			if fd >= 0 { self.addClient(fd) }
+		}
+		// The descriptor closes once nothing watches it (GCD's rule, E48), its file first and
+		// only the one this bridge bound: the path may be another run's (E27), or a
+		// successor's by now (E44).
+		source.setCancelHandler { [socketPath] in
+			listener.unlinkIfOurs(socketPath)
+			close(listenerFD)
 		}
 		acceptSource = source
 		source.resume()
