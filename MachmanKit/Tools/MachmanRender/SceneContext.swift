@@ -62,14 +62,16 @@ final class SceneContext {
 }
 
 // A scene's stand-in for the app's connection (TornTabConnection): the context's view model
-// (never nil: a scene is never mid-reconnect) and its terminal sessions.
+// (never nil: a scene is never mid-reconnect), its terminal sessions and its list.
 @MainActor
 final class SceneConnection: TornTabConnection {
 	let viewModel: VMListViewModel?
 	let terminals: TerminalSessions
+	let vmStore: VMStore
 
 	init(_ context: SceneContext) {
 		viewModel = context.viewModel
 		terminals = context.terminals
+		vmStore = context.store
 	}
 }

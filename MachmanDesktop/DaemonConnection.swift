@@ -49,7 +49,6 @@ final class DaemonConnection: ObservableObject {
 	// App-scoped like the previews it pauses: one watcher for the app's lifetime, never one
 	// per connection or per mounted pane (P3).
 	private var focus: FocusMonitor?
-	private var viewModelForwarder: AnyCancellable?
 	private let loginItem = SMAppService.loginItem(identifier: DaemonConnection.daemonBundleID)
 
 	// XCTestConfigurationFilePath is set for the whole TEST_HOST process, so this also covers
@@ -155,12 +154,9 @@ final class DaemonConnection: ObservableObject {
 		viewModel.announceInterrupted(interrupted)
 		self.api = api
 		self.viewModel = viewModel
+		// The menus follow it through MenuModel and torn windows read the list from the
+		// store: this object publishes only its own changes, never the view model's (P9).
 		menu.follow(viewModel)
-		// The menu bar commands observe this object; forward list changes so Run/Stop/View
-		// menus stay live.
-		viewModelForwarder = viewModel.objectWillChange.sink { [weak self] in
-			self?.objectWillChange.send()
-		}
 		// Deferred a turn: its alert runs modal, never inside the loop's callback.
 		Task { @MainActor [weak self, weak api] in
 			guard let api else { return }
@@ -231,7 +227,6 @@ final class DaemonConnection: ObservableObject {
 		api = nil
 		viewModel = nil
 		menu.follow(nil)
-		viewModelForwarder = nil
 	}
 
 	// The embedded copy is guaranteed by the build — launch by explicit URL, gated by an id

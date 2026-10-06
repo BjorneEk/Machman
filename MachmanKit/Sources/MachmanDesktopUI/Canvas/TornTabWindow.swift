@@ -14,11 +14,13 @@ import MachmanAPI
 import MachmanDesktopCore
 
 // What a torn window needs from the app's connection: the current view model (nil while
-// reconnecting) and the app-scoped terminal sessions. The app's DaemonConnection conforms.
+// reconnecting), the app-scoped terminal sessions and VM list. The app's DaemonConnection
+// conforms.
 @MainActor
 public protocol TornTabConnection: ObservableObject {
 	var viewModel: VMListViewModel? { get }
 	var terminals: TerminalSessions { get }
+	var vmStore: VMStore { get }
 }
 
 public struct TornTabWindowView<Connection: TornTabConnection>: View {
@@ -30,6 +32,8 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	// connection nor the view model forwards its changes (T13). App-scoped, so it outlives
 	// reconnects.
 	@ObservedObject private var terminals: TerminalSessions
+	// Its VM comes from the list itself: the connection publishes only its own changes (P9).
+	@ObservedObject private var store: VMStore
 	@Environment(\.dismiss) private var dismiss
 	@Environment(\.openWindow) private var openWindow
 	@State private var showInspector = false
@@ -39,12 +43,13 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		self.profiles = profiles
 		self.payload = payload
 		_terminals = ObservedObject(wrappedValue: connection.terminals)
+		_store = ObservedObject(wrappedValue: connection.vmStore)
 	}
 
 	public var body: some View {
 		Group {
 			if let viewModel = connection.viewModel,
-				let vm = viewModel.vms.first(where: { $0.name == payload.vm }) {
+				let vm = store.vms.first(where: { $0.name == payload.vm }) {
 				content(viewModel: viewModel, vm: vm)
 			} else if connection.viewModel == nil {
 				// Mid-reconnect: keep the window (and its controller) alive.
@@ -56,7 +61,8 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.navigationTitle(payload.windowTitle(vms: connection.viewModel?.vms, terminals: terminals))
+		.navigationTitle(payload.windowTitle(
+			vms: connection.viewModel.map { _ in store.vms }, terminals: terminals))
 		// The tab's own inspector rides along: the serial inspector for terminals, the VM
 		// inspector for the config/preview tab. A question it asks shows in this window.
 		.inspector(isPresented: $showInspector) {
@@ -150,7 +156,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 	@ViewBuilder
 	private var inspector: some View {
 		if let viewModel = connection.viewModel,
-			let vm = viewModel.vms.first(where: { $0.name == payload.vm }) {
+			let vm = store.vms.first(where: { $0.name == payload.vm }) {
 			Group {
 				switch payload.tab {
 				case .config:

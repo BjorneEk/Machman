@@ -18,7 +18,9 @@ import MachmanDesktopCore
 import MachmanDesktopUI
 
 struct MachmanCommands: Commands {
-	@ObservedObject var connection: DaemonConnection
+	// Read when an item runs; what the menus show comes from `menu`, which publishes only
+	// when that changes (P9).
+	let connection: DaemonConnection
 	@ObservedObject var menu: MenuModel
 	@ObservedObject var textEditing: TextEditingMonitor
 	@Binding var selection: String?
