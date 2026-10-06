@@ -38,6 +38,8 @@ final class DaemonConnection: ObservableObject {
 	// Per-VM canvas layouts (panes/tabs/fractions), persisted to disk by the store itself.
 	let canvases = CanvasStateStore()
 	let previews: PreviewService
+	// What the menu bar's commands show, following each connection's view model.
+	let menu = MenuModel()
 	// Approval is orthogonal to socket state (it can be pending while a manually-run daemon
 	// serves), so it is a flag beside the status, not a fourth case.
 	@Published private(set) var loginItemNeedsApproval = false
@@ -153,6 +155,7 @@ final class DaemonConnection: ObservableObject {
 		viewModel.announceInterrupted(interrupted)
 		self.api = api
 		self.viewModel = viewModel
+		menu.follow(viewModel)
 		// The menu bar commands observe this object; forward list changes so Run/Stop/View
 		// menus stay live.
 		viewModelForwarder = viewModel.objectWillChange.sink { [weak self] in
@@ -227,6 +230,7 @@ final class DaemonConnection: ObservableObject {
 		previews.detach()
 		api = nil
 		viewModel = nil
+		menu.follow(nil)
 		viewModelForwarder = nil
 	}
 

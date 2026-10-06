@@ -72,7 +72,8 @@ struct MachmanDesktopApp: App {
 		// Every menu command, aimed at the key window (MachmanCommands.swift).
 		.commands {
 			MachmanCommands(
-				connection: connection, textEditing: textEditing, selection: $selection)
+				connection: connection, menu: connection.menu, textEditing: textEditing,
+				selection: $selection)
 		}
 		// Torn-off canvas tabs: one window per (vm, tab) value; Codable payload restores
 		// them across relaunches. The terminal reparents from the app-scoped sessions.
