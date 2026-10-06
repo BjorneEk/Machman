@@ -227,6 +227,23 @@ struct EngineLongWorkTests {
 		}
 	}
 
+	// Review F3 (wave r3w3): a vmhost whose quit went through at once stopped its RPC socket
+	// only, and left its lab control socket behind.
+	@Test("Q23: a vmhost that quits at once leaves no control socket behind")
+	func quitAnywayLeavesNoControlSocket() async throws {
+		let answers = ["vmhost.quitDuringWork": "Quit Anyway"]
+		try await Self.onHFS("import-quit-anyway", answers: answers) { agent, _ in
+			let (host, _, importing) = try await Self.drainingImport(agent)
+			let control = TFHosts.controlPath(agent, vm: "dev")
+			#expect(FileManager.default.fileExists(atPath: control))
+			#expect(try await TFHosts.quit(
+				agent, vm: "dev", host: host, reason: "userQuit", timeout: .seconds(15)))
+			#expect(!FileManager.default.fileExists(atPath: control))
+			_ = try? await importing.value   // the import ended with its vmhost
+			TFVM.forget(agent, "dev")
+		}
+	}
+
 	@Test("R3W2-31: quitting the agent during a copy asks, and Cancel keeps both VMs")
 	func quitDuringCopyAsks() async throws {
 		try await Self.onHFS("copy-quit", answers: ["agent.quitDuringWork": "Cancel"]) { agent, _ in

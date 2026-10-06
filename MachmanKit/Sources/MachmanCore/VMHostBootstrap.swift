@@ -215,9 +215,17 @@ public enum VMHostBootstrap {
 	// Every exit stops what this process serves, the lab's control socket included.
 	@MainActor
 	private static func exitHost(_ code: Int32, server: MachmanServer) -> Never {
-		labControl?.stop()
-		server.stop()
+		stopServing(server)
 		exit(code)
+	}
+
+	// What this process serves: its VM's socket and, under a test suite, the lab's control —
+	// stopped by every exit, a quit that goes through at once too (review F3).
+	@MainActor
+	static func stopServing(_ server: MachmanServer) {
+		labControl?.stop()
+		labControl = nil
+		server.stop()
 	}
 
 	// Under a test suite a vmhost can never become active or show a Dock icon (Q23); everywhere
@@ -419,14 +427,14 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 		_ name: String, reason: VMHostQuitReason
 	) -> NSApplication.TerminateReply {
 		guard let work = operations().first else {
-			server.stop()
+			VMHostBootstrap.stopServing(server)
 			return .terminateNow
 		}
 		let activity = HostPrompt.activity(of: work)
 		guard reason != .userQuit else {
 			guard presenter.present(.quitDuringWork(name, activity: activity)) == .quitAnyway
 			else { return .terminateCancel }
-			server.stop()
+			VMHostBootstrap.stopServing(server)
 			return .terminateNow
 		}
 		MachmanLogger.log(.log, "\(reason) canceled: \(name) \(activity)")
