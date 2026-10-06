@@ -223,13 +223,37 @@ class Screen:
         self.drawn, self.last = len(block), block
 
 
-class Follower:
-    def __init__(self, root, level, out, log, stall=60.0, tty=False, size=None):
-        self.root, self.level, self.out, self.log, self.stall = root, level, out, log, stall
-        self.screen = Screen(out, "NO_COLOR" not in os.environ, size) if tty else None
-        self.events = Tail(os.path.join(root, "report", "events.jsonl"))
+class Lane:
+    """One shard of a run (a serial run is one): its sandbox's event streams (one per swift
+    test process), lab log and consoles, and the test it runs now with that test's output."""
+
+    def __init__(self, index, root):
+        self.index, self.root = index, root
+        self.streams, self.ended = {}, {}
         self.unified = Tail(os.path.join(root, "logs", "unified.ndjson"))
         self.consoles = {}
+        self.current = None
+        self.step = None             # (epoch, text) of the latest narration
+        self.console = None          # (title, last line)
+        self.window = Window()
+
+    def event_files(self):
+        single = os.path.join(self.root, "report", "events.jsonl")
+        files = [single] if os.path.exists(single) else []
+        return files + sorted(glob.glob(os.path.join(self.root, "report", "events", "*.jsonl")))
+
+
+class Follower:
+    def __init__(self, roots, level, out, log, stall=60.0, tty=False, size=None,
+                 planned=None):
+        roots = [roots] if isinstance(roots, str) else list(roots)
+        self.root, self.level, self.out, self.log, self.stall = roots[0], level, out, log, stall
+        self.screen = Screen(out, "NO_COLOR" not in os.environ, size) if tty else None
+        self.lanes = [Lane(i, r) for i, r in enumerate(roots)]
+        self.lane = self.lanes[0]    # the lane whose inputs are being read
+        self.parallel = planned is not None
+        self.planned = planned
+        self.announced = False
         self.plan = {}
         self.started = {}            # test id -> (index, start epoch)
         self.skipped = {}            # reason -> count
@@ -237,14 +261,19 @@ class Follower:
         self.details = {}            # test id -> [(glyph, where, text, known issue's title)]
         self.done = False
         self.results = []            # (id, about, status, seconds)
-        self.current = None
-        self.step = None             # (epoch, text) of the latest narration
-        self.console = None          # (title, last line)
-        self.window = Window()
         self.pids = {}
         self.summary = None
         self.run_started = None
         self.printed = time.time()
+
+    # The test the lane being read runs, its step, its last console line and its window.
+    current = property(lambda self: self.lane.current,
+                       lambda self, v: setattr(self.lane, "current", v))
+    step = property(lambda self: self.lane.step, lambda self, v: setattr(self.lane, "step", v))
+    console = property(lambda self: self.lane.console,
+                       lambda self, v: setattr(self.lane, "console", v))
+    window = property(lambda self: self.lane.window,
+                      lambda self, v: setattr(self.lane, "window", v))
 
     # --- output -----------------------------------------------------------------------------
 
@@ -261,7 +290,12 @@ class Follower:
         for record in sorted(records, key=lambda r: r[0]):
             epoch, level, text, role = record[:4]
             extras = record[4] if len(record) > 4 else {}
-            line = self.line(epoch, text)
+            lane = self.lanes[extras.get("lane", 0)]
+            if self.parallel and role in ("detail", "step"):
+                # The shard a line comes from, where lines of several interleave.
+                line = self.line(epoch, "  %d│%s" % (lane.index + 1, text.strip()))
+            else:
+                line = self.line(epoch, text)
             self.log.write(line + "\n")
             if self.screen is None:
                 if level <= self.level:
@@ -271,15 +305,15 @@ class Follower:
             elif role in ("result", "issue") and level <= self.level:
                 above.extend(self.rows(epoch, text, extras))
             elif role in ("detail", "step") and level <= self.level and (
-                    self.current is None or min(epoch, extras.get("born") or epoch)
-                    >= self.started[self.current][1]):
+                    lane.current is None or min(epoch, extras.get("born") or epoch)
+                    >= self.started[lane.current][1]):
                 # (A line older than the running test, or from a console opened before it,
                 # is the last test's, late.)
                 parts = text.strip().split("\n")
-                self.window.add(clock(epoch), parts[0].rstrip())
+                lane.window.add(clock(epoch), parts[0].rstrip())
                 for part in parts[1:]:
                     if part.strip():
-                        self.window.add("", " " * 9 + part.strip())
+                        lane.window.add("", " " * 9 + part.strip())
         self.log.flush()
         if self.screen is None:
             if above:
@@ -352,33 +386,45 @@ class Follower:
         return out
 
     def block(self, now):
-        """The live block, the same height from the first test to the last: the running
-        test's header, then its step (level 0) or a window of its latest output (levels 1
-        and 2), padded with blank lines."""
+        """The live block, the same height from the first test to the last: per shard, its
+        running test's header, then its step (level 0) or a window of its latest output
+        (levels 1 and 2), padded with blank lines; an idle shard's block stays, empty."""
         if self.done:
             return []
-        height = 1 if self.level == 0 else min(10, max(3, self.screen.dimensions()[1] // 3))
-        if self.current is not None:
-            index, start = self.started[self.current]
+        rows_on_screen, lanes = self.screen.dimensions()[1], len(self.lanes)
+        if self.level == 0:
+            height = 1
+        elif lanes == 1:
+            height = min(10, max(3, rows_on_screen // 3))
+        else:
+            height = max(2, min(10, rows_on_screen // 2 // lanes - 1))
+        rows = []
+        for lane in self.lanes:
+            rows.append(self.header(lane, now))
+            body = []
+            if self.level == 0:
+                if lane.current is not None and lane.step is not None \
+                        and lane.step[0] >= self.started[lane.current][1] \
+                        and not lane.step[1].startswith(("✓", "✘")):
+                    body.append(([("2", "  " + lane.step[1])], None))
+            elif lane.current is not None:
+                body.extend(([("2", "  " + (stamp + " " if stamp else "") + text)], None)
+                            for stamp, text in lane.window.lines(height))
+            rows.extend(body + [([("2", "")], None)] * (height - len(body)))
+        return rows
+
+    def header(self, lane, now):
+        if lane.current is not None:
+            index, start = self.started[lane.current]
             took = span(now - start)
             room = self.screen.dimensions()[0] - 1 - len("▶ %s " % self.of(index)) - len(took) - 2
-            header = ([("1", "▶ %s %s" % (self.of(index), fit(
-                about(self.display(self.current)), max(10, room))))], ("2", took))
-        elif self.started:
-            header = ([("1", "▶ between tests")], None)
-        else:
-            header = ([("1", "▶ starting the test run")], None)
-        body = []
-        if self.level == 0:
-            if self.current is not None and self.step is not None \
-                    and self.step[0] >= self.started[self.current][1] \
-                    and not self.step[1].startswith(("✓", "✘")):
-                body.append(([("2", "  " + self.step[1])], None))
-        elif self.current is not None:
-            body.extend(([("2", "  " + (stamp + " " if stamp else "") + text)], None)
-                        for stamp, text in self.window.lines(height))
-        body += [([("2", "")], None)] * (height - len(body))
-        return [header] + body
+            return ([("1", "▶ %s %s" % (self.of(index), fit(
+                about(self.display(lane.current)), max(10, room))))], ("2", took))
+        if len(self.lanes) > 1:
+            return ([("2", "· idle")], None)
+        if self.started:
+            return ([("1", "▶ between tests")], None)
+        return ([("1", "▶ starting the test run")], None)
 
     # --- the event stream -------------------------------------------------------------------
 
@@ -387,9 +433,10 @@ class Follower:
 
     def of(self, index):
         """"5/184": the index among the planned tests not skipped so far."""
-        return "%d/%d" % (index, len(self.plan) - sum(self.skipped.values()))
+        return "%d/%d" % (index, max(self.planned or 0, len(self.plan))
+                          - sum(self.skipped.values()))
 
-    def on_record(self, record, out):
+    def on_record(self, record, out, stream=None):
         payload = record.get("payload", {})
         if record.get("kind") == "test":
             if payload.get("kind") == "function":
@@ -400,7 +447,9 @@ class Follower:
         test_id = payload.get("testID")
         messages = payload.get("messages", [])
         first = messages[0]["text"] if messages else ""
-        if kind == "runStarted":
+        if kind == "runStarted" and self.parallel:
+            self.run_started = self.run_started or when
+        elif kind == "runStarted":
             self.run_started = when
             out.append((when, 0, "lab: %d test%s planned" % (
                 len(self.plan), "" if len(self.plan) == 1 else "s"), "result"))
@@ -464,8 +513,12 @@ class Follower:
         elif kind == "testEnded":
             out.append((when, 1, "· %s" % first, "detail"))
         elif kind == "runEnded":
-            self.summary = first
-            out.append((when, 0, first, "result"))
+            self.lane.ended[stream] = True
+            if self.parallel:
+                out.append((when, 2, "· %s" % first, "detail"))
+            else:
+                self.summary = first
+                out.append((when, 0, first, "result"))
 
     # --- the lab log and the consoles -------------------------------------------------------
 
@@ -485,7 +538,8 @@ class Follower:
         return tag
 
     def load_pids(self):
-        for path in glob.glob(os.path.join(self.root, "pids", "*.pid")):
+        for path in [p for lane in self.lanes
+                     for p in glob.glob(os.path.join(lane.root, "pids", "*.pid"))]:
             kind, _, name = os.path.basename(path)[:-4].partition("-")
             try:
                 with open(path) as f:
@@ -519,35 +573,50 @@ class Follower:
         out.append((now, 2, "  [%s] %s" % (title, line), "detail", {"born": born}))
 
     def stalled(self, now, out):
-        if self.screen is not None or self.current is None or now - self.printed < self.stall:
+        if self.screen is not None or now - self.printed < self.stall:
             return
-        index, start = self.started[self.current]
-        parts = ["… %s %s · running %s" % (
-            self.of(index), about(self.display(self.current)), span(now - start))]
-        if self.step is not None and self.step[0] >= start:
-            parts.append("step " + self.step[1])
-        if self.console is not None:
-            parts.append("[%s] %s" % (self.console[0], self.console[1][:120]))
-        out.append((now, 0, " · ".join(parts), "stall"))
+        for lane in self.lanes:
+            if lane.current is None:
+                continue
+            index, start = self.started[lane.current]
+            parts = ["… %s %s · running %s" % (
+                self.of(index), about(self.display(lane.current)), span(now - start))]
+            if lane.step is not None and lane.step[0] >= start:
+                parts.append("step " + lane.step[1])
+            if lane.console is not None:
+                parts.append("[%s] %s" % (lane.console[0], lane.console[1][:120]))
+            out.append((now, 0, " · ".join(parts), "stall"))
 
     # --- the loop ---------------------------------------------------------------------------
 
     def tick(self):
         now, out = time.time(), []
-        for raw in self.events.lines(now):
-            try:
-                self.on_record(json.loads(raw), out)
-            except (ValueError, KeyError, TypeError, AttributeError):
-                continue
-        for raw in self.unified.lines(now):
-            try:
-                self.on_log(json.loads(raw), out)
-            except (ValueError, AttributeError):
-                continue
-        for path in sorted(glob.glob(os.path.join(self.root, "transcripts", "*.log"))):
-            tail = self.consoles.setdefault(path, Tail(path, partial=1.0))
-            for raw in tail.lines(now):
-                self.on_console(os.path.basename(path)[:-4], raw, now, out, tail.born)
+        if self.parallel and not self.announced:
+            self.announced = True
+            out.append((now, 0, "lab: %d test%s planned · %d shards" % (
+                self.planned, "" if self.planned == 1 else "s", len(self.lanes)), "result"))
+        for lane in self.lanes:
+            self.lane, read = lane, []
+            for path in lane.event_files():
+                lane.ended.setdefault(path, False)
+                tail = lane.streams.setdefault(path, Tail(path))
+                for raw in tail.lines(now):
+                    try:
+                        self.on_record(json.loads(raw), read, path)
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        continue
+            for raw in lane.unified.lines(now):
+                try:
+                    self.on_log(json.loads(raw), read)
+                except (ValueError, AttributeError):
+                    continue
+            for path in sorted(glob.glob(os.path.join(lane.root, "transcripts", "*.log"))):
+                tail = lane.consoles.setdefault(path, Tail(path, partial=1.0))
+                for raw in tail.lines(now):
+                    self.on_console(os.path.basename(path)[:-4], raw, now, read, tail.born)
+            out.extend(r[:4] + (dict(r[4] if len(r) > 4 else {}, lane=lane.index),)
+                       for r in read)
+        self.lane = self.lanes[0]
         self.stalled(now, out)
         self.emit(out, now)
 
@@ -561,19 +630,36 @@ class Follower:
 
     def finish(self):
         now, out = time.time(), []
-        for path, tail in sorted(self.consoles.items()):
-            if tail.rest:
-                self.on_console(os.path.basename(path)[:-4], tail.rest, now, out)
-                tail.rest = b""
-        running, self.current = self.current, None
+        unfinished = []
+        for lane in self.lanes:
+            self.lane = lane
+            for path, tail in sorted(lane.consoles.items()):
+                if tail.rest:
+                    self.on_console(os.path.basename(path)[:-4], tail.rest, now, out)
+                    tail.rest = b""
+            running, lane.current = lane.current, None
+            if running is not None:
+                # The test process died in it: its issues never got a result line to follow.
+                out.append((now, 0, "✘ %s · did not finish" % about(self.display(running)),
+                            "result", {"parts": ("✘", about(self.display(running)),
+                                                 " · did not finish"),
+                                       "children": self.children(running)}))
+            unfinished += [os.path.basename(p)[:-6] for p, ended in sorted(lane.ended.items())
+                           if not ended]
+        self.lane = self.lanes[0]
         self.done = True
-        if running is not None:
-            # The test process died in it: its issues never got a result line to follow.
-            out.append((now, 0, "✘ %s · did not finish" % about(self.display(running)),
-                        "result", {"parts": ("✘", about(self.display(running)),
-                                             " · did not finish"),
-                                   "children": self.children(running)}))
-        if self.summary is None:
+        if self.parallel:
+            # One line for the whole run, as a serial run's swift test prints it.
+            failed_any = any(r[2] == "failed" for r in self.results) or unfinished
+            ran = len(self.started) + sum(self.skipped.values())
+            suites = len({test.split("/", 1)[0] for test in self.started}
+                         | {r[0].split("/", 1)[0] for r in self.results})
+            out.append((now, 0, "Test run with %d test%s in %d suite%s %s after %.3f seconds." % (
+                ran, "" if ran == 1 else "s", suites, "" if suites == 1 else "s",
+                "failed" if failed_any else "passed", now - (self.run_started or now)), "result"))
+            for suite in unfinished:
+                out.append((now, 0, "lab: %s ended without its summary" % suite, "result"))
+        elif self.summary is None:
             out.append((now, 0, "lab: the test run ended without its summary", "result"))
         counts = {}
         for _, _, status, _ in self.results:
@@ -603,16 +689,19 @@ class Follower:
             f.write("seconds\tstatus\ttest\n")
             for _, name, status, seconds in sorted(self.results, key=lambda r: -r[3]):
                 f.write("%.1f\t%s\t%s\n" % (seconds, status, name))
+        if self.parallel:
+            return 2 if unfinished else 0
         return 0 if self.summary is not None else 2
 
 
-def follow(root, level, stop, stall=60.0, interval=0.5, out=None, tty=None, size=None):
+def follow(root, level, stop, stall=60.0, interval=0.5, out=None, tty=None, size=None,
+           shards=(), planned=None):
     out = out or sys.stdout
     if tty is None:
         tty = out.isatty() and os.environ.get("TERM", "dumb") != "dumb"
     os.makedirs(os.path.join(root, "report"), exist_ok=True)
     with open(os.path.join(root, "report", "progress.log"), "a", buffering=1) as log:
-        follower = Follower(root, level, out, log, stall, tty, size)
+        follower = Follower([root] + list(shards), level, out, log, stall, tty, size, planned)
         try:
             while True:
                 done = stop is not None and os.path.exists(stop)
@@ -952,13 +1041,55 @@ def self_check():
         check("level 0's block is the header and one step line", quiet.screen.drawn == 2)
         quiet.close()
 
+    # A parallel run: two shards, a stream per suite, one suite's process never finishing.
+    with tempfile.TemporaryDirectory() as base:
+        now = time.time()
+        a, b = base + "/mml.aaaa", base + "/mml.bbbb"
+        a1, b1 = "Mod.Suite/a1()/File.swift:10:3", "Mod.Suite/b1()/File.swift:20:3"
+        write(a + "/report/events/LongTests.jsonl", [
+            test("A1: the long one", "a1()"), event("runStarted", now - 40),
+            event("testStarted", now - 39, a1),
+            event("testEnded", now - 9, a1, [("pass", "ok")]),
+            event("runEnded", now - 8, messages=[("pass", "Test run with 1 test passed.")])])
+        for root, which in ((a, "LongTests"), (b, "ShortTests")):
+            write(root + "/logs/unified.ndjson", [
+                {"timestamp": stamp(now - 20), "processImagePath": "/x/MachmanAgent",
+                 "processID": 7, "eventMessage": "[log] serving for " + which}])
+        write(b + "/report/events/ShortTests.jsonl", [
+            test("B1: the short one", "b1()", 20), event("runStarted", now - 30),
+            event("testStarted", now - 29, b1)])
+        tick = Follower([a, b], 1, io.StringIO(), io.StringIO(), tty=True, size=(80, 30),
+                        planned=3)
+        tick.screen.colour = False
+        tick.tick()
+        shown = Terminal().feed(tick.out.getvalue())
+        check("a parallel run's block: one per shard, fixed height (header and 6 lines each)",
+              tick.screen.drawn == 14 and sum(1 for l in shown if l.startswith("▶ ")) == 1
+              and any(l.startswith("▶ 2/3 the short one") for l in shown)
+              and any(l.startswith("· idle") for l in shown))
+        open(base + "/stop", "w").close()
+        plain = io.StringIO()
+        status = follow(a, 1, base + "/stop", interval=0.05, out=plain, tty=False,
+                        shards=[b], planned=3)
+        text = plain.getvalue()
+        check("a parallel run announces the plan and its shards once",
+              text.count("lab: 3 tests planned · 2 shards") == 1)
+        check("a parallel run's log lines name their shard",
+              "1│agent" in text and "2│agent" in text)
+        check("a suite's own run summary is no result line", "Test run with 1 test" not in text)
+        check("one summary line for the whole run",
+              "Test run with 2 tests in 1 suite failed after" in text)
+        check("a suite whose process never finished is named, the test it ran did not finish",
+              "lab: ShortTests ended without its summary" in text
+              and "✘ the short one · did not finish" in text and status == 2)
+
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
 
 
 def main(argv):
     args = {"--level": "0", "--stall": "60"}
-    plain = False
+    plain, shards = False, []
     i = 0
     while i < len(argv):
         if argv[i] == "--self-check":
@@ -967,7 +1098,12 @@ def main(argv):
             plain = True
             i += 1
             continue
-        if argv[i] in ("--run", "--level", "--stop", "--stall") and i + 1 < len(argv):
+        if argv[i] == "--shard" and i + 1 < len(argv):
+            shards.append(argv[i + 1])
+            i += 2
+            continue
+        if argv[i] in ("--run", "--level", "--stop", "--stall", "--planned") \
+                and i + 1 < len(argv):
             args[argv[i]] = argv[i + 1]
             i += 2
             continue
@@ -978,8 +1114,10 @@ def main(argv):
         return 64
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
+        planned = int(args["--planned"]) if "--planned" in args else None
         return follow(args["--run"], int(args["--level"]), args.get("--stop"),
-                      stall=float(args["--stall"]), tty=False if plain else None)
+                      stall=float(args["--stall"]), tty=False if plain else None,
+                      shards=shards, planned=planned)
     except KeyboardInterrupt:
         return 130
 
