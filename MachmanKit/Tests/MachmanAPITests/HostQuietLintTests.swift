@@ -43,11 +43,13 @@ struct HostQuietLintTests {
 			"// NSApp.activate() in a comment",
 			"let words = \"NSApp.activate() in a string\"",
 			"let open = \"/usr/bin/open\"",
+			"let watch = PasteboardWatch.general",
+			"let source = PasteboardWatch.generalSource(testMode: true)",
 		].joined(separator: "\n")
 		let hits = HostQuietLint.scan(path: "Sample.swift", text: sample, inTests: true)
-		#expect(hits.map(\.line) == [1, 2, 6], "\(hits)")
+		#expect(hits.map(\.line) == [1, 2, 6, 7], "\(hits)")
 		#expect(HostQuietLint.scan(path: "Sample.swift", text: sample, inTests: false)
-			.map(\.line) == [2, 6])
+			.map(\.line) == [2, 6, 7])
 	}
 }
 
@@ -61,7 +63,7 @@ enum HostQuietLint {
 		#"\bCGWindowListCreateImage\b"#, #"\bSCShareableContent\b"#, #"\bSCStream\b"#,
 		#"\bSCScreenshotManager\b"#,
 		#"\bAVCaptureDevice\b"#, #"\bAVAudioEngine\b"#, #"\bAVAudioRecorder\b"#,
-		#"NSPasteboard\.general"#,
+		#"NSPasteboard\.general"#, #"PasteboardWatch\.general\b"#,
 		#"NSApp\.activate"#, #"NSApplication\.shared\.activate"#,
 		#"NSRunningApplication.*\.activate"#,
 		#"setActivationPolicy\(\.(regular|accessory)\)"#,

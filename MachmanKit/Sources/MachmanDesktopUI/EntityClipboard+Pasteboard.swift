@@ -4,10 +4,12 @@
 //
 //  EntityClipboard on the general pasteboard: the JSON payload rides a custom pasteboard
 //  type, with the plain path as a string for interop. Also the app's PasteboardWatch over
-//  the general pasteboard, which every Paste item's enablement reads (H25).
+//  the general pasteboard, which every Paste item's enablement reads (H25) — under test mode
+//  a watch that reads nothing.
 //
 
 import AppKit
+import MachmanAPI
 import MachmanDesktopCore
 
 extension EntityClipboard {
@@ -50,18 +52,42 @@ extension EntityClipboard {
 }
 
 extension PasteboardWatch {
+	// What the app's watch reads: the general pasteboard, or nothing under test mode (a Debug
+	// build under a .test-<token> suite: scripts/test.sh, the lab), where views hosted in a test
+	// run must never read the user's pasteboard. The .dev and Release suites always read it.
+	enum GeneralSource: Equatable {
+		case generalPasteboard, nothing
+	}
+
+	nonisolated static func generalSource(testMode: Bool) -> GeneralSource {
+		testMode ? .nothing : .generalPasteboard
+	}
+
+	nonisolated static let generalSourceInThisProcess =
+		generalSource(testMode: MachmanTestMode.isActive)
+
 	// The general pasteboard, re-read when Machman becomes active, a window becomes key or a
 	// menu opens (a context menu included) — each only when the pasteboard changed. No
 	// timer: a change another app makes while Machman stays in front shows at the next menu.
 	@MainActor
-	public static let general = PasteboardWatch(
-		triggers: [
-			NSApplication.didBecomeActiveNotification, NSWindow.didBecomeKeyNotification,
-			NSMenu.didBeginTrackingNotification,
-		],
-		changeCount: { NSPasteboard.general.changeCount },
-		read: {
-			PasteboardSnapshot(
-				entities: EntityClipboard.read(), fileURLs: AddFlows.pasteboardFileURLs())
-		})
+	public static let general = watch(generalSourceInThisProcess)
+
+	@MainActor
+	static func watch(_ source: GeneralSource) -> PasteboardWatch {
+		switch source {
+		case .nothing:
+			return PasteboardWatch(triggers: [], changeCount: { 0 }, read: { .empty })
+		case .generalPasteboard:
+			return PasteboardWatch(
+				triggers: [
+					NSApplication.didBecomeActiveNotification, NSWindow.didBecomeKeyNotification,
+					NSMenu.didBeginTrackingNotification,
+				],
+				changeCount: { NSPasteboard.general.changeCount },
+				read: {
+					PasteboardSnapshot(
+						entities: EntityClipboard.read(), fileURLs: AddFlows.pasteboardFileURLs())
+				})
+		}
+	}
 }

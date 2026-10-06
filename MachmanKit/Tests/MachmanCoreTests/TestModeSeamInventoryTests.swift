@@ -57,6 +57,8 @@ struct TestModeSeamInventoryTests {
 			"the socket keep-alive knob (LabKnobTests)",
 		"MachmanKit/Sources/MachmanCore/RoutingMachman+SSHPresence.swift":
 			"the ssh readiness deadline knob (LabKnobTests)",
+		"MachmanKit/Sources/MachmanDesktopUI/EntityClipboard+Pasteboard.swift":
+			"no general pasteboard read under test mode (PasteboardSeamTests)",
 		"MachmanDesktop/DaemonConnection.swift":
 			"its Debug-only daemon handling (pre-dates the lab)",
 	]
