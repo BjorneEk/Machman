@@ -19,25 +19,15 @@ struct InspectorView: View {
 	let vm: VMInfo
 
 	var body: some View {
-		VStack(spacing: 0) {
-			// E22: settings stay locked while an older vmhost runs the VM; a session's own
-			// inspector (desktop-local) stays live, and so does what changes no setting inside
-			// the others (SettingsLock.swift).
-			if let reason = vm.restartToUpdate {
-				RestartToUpdateBanner(message: reason)
-				Divider()
+		// E22's banner and lock, shared with a torn window's inspector (InspectorChrome).
+		InspectorChrome(vm: vm, session: showsSession) {
+			if viewModel.treeSelection.count > 1 {
+				MultiSelectionInspector(viewModel: viewModel, vm: vm)
+			} else {
+				let node = viewModel.treeSelection.first
+				entityInspector(node).id(InspectorIdentity(vm: vm.name, node: node))
 			}
-			Group {
-				if viewModel.treeSelection.count > 1 {
-					MultiSelectionInspector(viewModel: viewModel, vm: vm)
-				} else {
-					let node = viewModel.treeSelection.first
-					entityInspector(node).id(InspectorIdentity(vm: vm.name, node: node))
-				}
-			}
-			.settingsLocked(vm.restartToUpdate != nil && !showsSession)
 		}
-		.formStyle(.grouped)
 	}
 
 	private var showsSession: Bool {

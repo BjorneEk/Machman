@@ -401,6 +401,24 @@ enum WindowScenes {
 				connection: ctx.connection, profiles: ctx.profiles,
 				payload: TornTab(vm: "Debian", tab: .config)))
 		},
+		// H40: a torn config window's inspector on a VM an older vmhost runs: the banner and
+		// the lock the main window's inspector shows.
+		RenderScene(
+			"window.torn.outdated-host",
+			"TornTabWindowView, Debian's config tab with its inspector, run by an older vmhost",
+			widths: [900], height: 640, chrome: .window, vms: Samples.libraryWithOutdatedHost,
+			panels: { ctx in
+				// The inspector column's glass, painted with the torn window's own inspector.
+				[AnyView(InspectorChrome(vm: ctx.vm("Debian"), session: false) {
+					VMInspector(
+						viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm("Debian"))
+				}.padding(.top, 52))]
+			}
+		) { ctx in
+			AnyView(TornTabWindowView(
+				connection: ctx.connection, profiles: ctx.profiles,
+				payload: TornTab(vm: "Debian", tab: .config), inspectorShown: true))
+		},
 		// T13: the title follows a rename made after the window tore off. No controller, so
 		// the adopt-only window shows its notice and never spawns ssh.
 		RenderScene(

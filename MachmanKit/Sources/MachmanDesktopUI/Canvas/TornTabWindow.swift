@@ -80,7 +80,9 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		.inspector(isPresented: $showInspector) {
 			inspector
 				.environment(\.tornTabWindow, payload)
-				.inspectorColumnWidth(min: 250, ideal: 300, max: 380)
+				.inspectorColumnWidth(
+					min: MainWindowLayout.inspector.min, ideal: MainWindowLayout.inspector.ideal,
+					max: MainWindowLayout.inspector.max)
 		}
 		// The menu commands act on the key window (P22): this torn tab's VM and terminal,
 		// and ⌥⌘0 toggles this window's inspector.
@@ -165,11 +167,17 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 		}
 	}
 
+	private var showsSession: Bool {
+		if case .ssh = payload.tab { return true }
+		return false
+	}
+
 	@ViewBuilder
 	private var inspector: some View {
 		if let viewModel = connection.viewModel,
 			let vm = store.vms.first(where: { $0.name == payload.vm }) {
-			Group {
+			// The main window's banner and lock (E22, H40); a session's inspector stays live.
+			InspectorChrome(vm: vm, session: showsSession) {
 				switch payload.tab {
 				case .config:
 					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
@@ -183,7 +191,6 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 						profiles: profiles, vm: vm, ref: ref)
 				}
 			}
-			.formStyle(.grouped)
 		} else {
 			NoSelectionInspector()
 		}

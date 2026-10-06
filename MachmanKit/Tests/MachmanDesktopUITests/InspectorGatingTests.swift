@@ -172,6 +172,36 @@ struct InspectorGatingTests {
 		#expect(!stepper.isEnabled)
 	}
 
+	@Test("H40: a torn configuration window's inspector shows the restart banner and locks")
+	func aTornInspectorLocksLikeTheMainOne() async throws {
+		let h = await UIHarness.make(Samples.libraryWithOutdatedHost())
+		let reason = try #require(h.vm("Debian").restartToUpdate)
+		let session = SSHSessionRef(title: "Session 1")
+		h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "Build")
+		func torn(_ tab: VMPaneTab) async throws -> AXSnapshot {
+			try await OffscreenHost.withHost(
+				TornTabWindowView(
+					connection: h.connection, profiles: h.profiles,
+					payload: TornTab(vm: "Debian", tab: tab), inspectorShown: true),
+				width: 900, height: 820, chrome: .window
+			) { $0.snapshot() }
+		}
+		let config = try await torn(.config)
+		#expect(config.all.contains { $0.text == reason }, "no banner: \(config.dump())")
+		let memory = try #require(config.all.first {
+			$0.role == "AXTextField" && $0.help?.hasSuffix("a bare number means GB") == true
+		}, "\(config.dump())")
+		#expect(!memory.isEnabled, "a torn window's Memory stays live on an outdated vmhost")
+		let stepper = try #require(config.all.first { $0.role == "AXIncrementor" })
+		#expect(!stepper.isEnabled)
+		// A session changes nothing on the VM: its torn inspector stays live (E22).
+		let ssh = try await torn(.ssh(session))
+		#expect(ssh.all.contains { $0.text == reason }, "\(ssh.dump())")
+		let name = try #require(
+			ssh.all.first { $0.role == "AXTextField" && $0.value == "Build" }, "\(ssh.dump())")
+		#expect(name.isEnabled)
+	}
+
 	@Test("W4-2: the mount Setup Guide opens on a VM run by an older vmhost")
 	func theMountGuideStaysLive() async throws {
 		let h = await UIHarness.make(Samples.libraryWithOutdatedHost())
