@@ -8,7 +8,6 @@
 //
 
 import SwiftUI
-import AppKit
 import MachmanUI
 import MachmanAPI
 import MachmanDesktopCore
@@ -440,20 +439,26 @@ struct VMInspector: View {
 	}
 }
 
-// The "cannot be undone" sheet for switching a VM to macOS boot.
+// The sheet that installs macOS: a switch from EFI or kernel boot that can't be undone, or
+// a retry on a VM already in macOS mode (a failed or cancelled install, an unfinished Mac's
+// copy). Irreversible and a multi-GB download, so Return presses nothing (H45, C21).
 struct MacSwitchSheet: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	@Environment(\.dismiss) private var dismiss
+
+	private var retry: Bool { vm.boot.mode == .macOS }
 
 	var body: some View {
 		VStack(spacing: 14) {
 			Image(systemName: MachmanSymbols.bootMacTab)
 				.font(.system(size: 34))
 				.foregroundStyle(.secondary)
-			Text("Switch to macOS?")
+			Text(retry ? "Install macOS?" : "Switch to macOS?")
 				.font(.title3.weight(.semibold))
-			Text("Once macOS is installed, this VM can’t switch back to EFI or kernel boot.")
+			Text(retry
+				? "Download the latest macOS, or install it from an IPSW file you have."
+				: "Once macOS is installed, this VM can’t switch back to EFI or kernel boot.")
 				.font(.callout)
 				.foregroundStyle(.secondary)
 				.multilineTextAlignment(.center)
@@ -471,8 +476,6 @@ struct MacSwitchSheet: View {
 				} label: {
 					Label("Download Latest", systemImage: MachmanSymbols.installDownload)
 				}
-				.buttonStyle(.borderedProminent)
-				.keyboardShortcut(.defaultAction)
 				.stopFirst(vm, .installMacOS)
 			}
 		}
@@ -480,19 +483,13 @@ struct MacSwitchSheet: View {
 		.frame(width: 440)
 	}
 
+	// The New Mac flow's picker (AddFlows.chooseRestoreImage); Cancel installs nothing.
 	private func installFromFile() {
-		let panel = NSOpenPanel()
-		panel.canChooseFiles = true
-		panel.canChooseDirectories = false
-		panel.allowsMultipleSelection = false
 		let viewModel = viewModel
 		let name = vm.name
 		dismiss()
-		panel.begin { response in
-			guard response == .OK, let url = panel.url else { return }
-			DispatchQueue.main.async {
-				viewModel.startInstall(name, source: .ipsw(url.path))
-			}
+		AddFlows.chooseRestoreImage { path in
+			viewModel.startInstall(name, source: .ipsw(path))
 		}
 	}
 }

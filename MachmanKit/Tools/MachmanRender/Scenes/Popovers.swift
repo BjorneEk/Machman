@@ -231,6 +231,13 @@ enum PopoverScenes {
 		) { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm("Debian")))
 		},
+		// H45: Install macOS… on a Mac whose install failed is a retry, not a switch.
+		RenderScene(
+			"sheet.mac-switch.retry", "MacSwitchSheet for a Mac whose install failed",
+			vms: { [Samples.macOSFailedInstall()] }
+		) { ctx in
+			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm))
+		},
 		RenderScene("toolbar.indicator", "VMIndicatorCluster per VM, and with none") { ctx in
 			perVM(ctx, includeNone: true) { vm in
 				AnyView(VMIndicatorCluster(viewModel: ctx.viewModel, vm: vm))

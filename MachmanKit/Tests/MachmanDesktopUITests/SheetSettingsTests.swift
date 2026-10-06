@@ -127,6 +127,28 @@ struct SheetSettingsTests {
 		}
 	}
 
+	@Test("H45: the macOS sheet has no default button and a retry reads Install macOS?")
+	func theMacOSSheetHasNoDefault() async throws {
+		let h = await UIHarness.make([Samples.linux("Alpine"), Samples.macOSFailedInstall()])
+		let first = try await h.snapshot(MacSwitchSheet(viewModel: h.viewModel, vm: h.vm("Alpine")))
+		#expect(first.find(text: "Switch to macOS?") != nil, "\(first.dump())")
+		let retry = try await h.snapshot(
+			MacSwitchSheet(viewModel: h.viewModel, vm: h.vm("Sequoia")))
+		#expect(retry.find(text: "Install macOS?") != nil, "\(retry.dump())")
+		#expect(!retry.all.contains { $0.text?.contains("switch back") == true },
+			"a retry is no switch: \(retry.dump())")
+		#expect(retry.find(role: "AXButton", text: "Download Latest")?.isEnabled == true)
+		// Irreversible and multi-GB, so Return presses nothing (C21). SwiftUI's buttons are
+		// no NSButtons here and expose no key equivalent, so the sheet's source says it.
+		let source = try RepoFiles.text("MachmanKit/Sources/MachmanDesktopUI/Inspector/"
+			+ "InspectorView.swift")
+		let sheet = try #require(source.range(of: "struct MacSwitchSheet")
+			.map { String(source[$0.lowerBound...]) })
+		let body = sheet.components(separatedBy: "\n}\n").first ?? sheet
+		#expect(!body.contains(".defaultAction"), "a default button in MacSwitchSheet")
+		#expect(!body.contains(".borderedProminent"), "a button styled as the default")
+	}
+
 	@Test("W4-10: Settings ▸ Terminal's profile buttons read their names")
 	func profileButtonsReadTheirNames() async throws {
 		let h = await UIHarness.make()

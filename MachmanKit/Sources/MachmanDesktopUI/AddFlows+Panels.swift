@@ -66,8 +66,8 @@ extension AddFlows {
 		}
 	}
 
-	// Pick a macOS restore image (IPSW) — unfiltered, like the Install macOS sheet's. Cancel
-	// calls nothing, so nothing is created.
+	// Pick a macOS restore image (IPSW), unfiltered: the New Mac flow's and the Install macOS
+	// sheet's one picker. Cancel calls nothing, so nothing is created or installed.
 	static func chooseRestoreImage(_ chosen: @escaping @MainActor (String) -> Void) {
 		let panel = NSOpenPanel()
 		panel.canChooseFiles = true
