@@ -41,8 +41,19 @@ public final class TornTabRegistry: ObservableObject {
 	// Whether the main window is up (its root view mounted; minimized still counts), and the
 	// torn windows that reopened it to dock their session: only those show the session's VM,
 	// so a dock never switches away from the VM the open main window is on (review F20).
-	public var mainWindowOpen = false
+	// Mounted roots are counted: the root remounts per view model, and SwiftUI need not
+	// unmount the old one before the new one appears (T27).
+	public var mainWindowOpen: Bool { mainWindowMounts > 0 }
+	private var mainWindowMounts = 0
 	public var reopenedMainForDock: Set<TornTab> = []
+
+	public func mainWindowAppeared() {
+		mainWindowMounts += 1
+	}
+
+	public func mainWindowDisappeared() {
+		mainWindowMounts = max(0, mainWindowMounts - 1)
+	}
 
 	// The app uses `shared`; tests make their own so parallel tests never share one.
 	public init() {}

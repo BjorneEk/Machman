@@ -157,10 +157,10 @@ public struct VMNavigationView: View {
 		// Whether the main window is up, for a torn session docking back (F20); up again, it
 		// ends the quit hold such a dock may have set (F16).
 		.onAppear {
-			viewModel.tornTabs.mainWindowOpen = true
+			viewModel.tornTabs.mainWindowAppeared()
 			viewModel.tornTabs.holdsQuitForDock = false
 		}
-		.onDisappear { viewModel.tornTabs.mainWindowOpen = false }
+		.onDisappear { viewModel.tornTabs.mainWindowDisappeared() }
 	}
 
 	@ToolbarContentBuilder
