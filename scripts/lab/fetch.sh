@@ -44,7 +44,9 @@ load_locks() {
 	if [[ -n "${LOCK_ONLY:-}" ]]; then
 		lock_files=("$LOCK_ONLY")
 	else
-		while IFS= read -r file; do lock_files+=("$file"); done < <(ls "$LOCKS_DIR"/*.lock 2>/dev/null | sort)
+		while IFS= read -r file; do
+			lock_files+=("$file")
+		done < <(ls "$LOCKS_DIR"/*.lock 2>/dev/null | sort)
 	fi
 	for file in ${lock_files[@]+"${lock_files[@]}"}; do
 		n=0
@@ -153,7 +155,10 @@ if i < 0:
 open(sys.argv[2], "wb").write(zlib.decompressobj(31).decompress(d[i:]))
 ' "$2" "$3"
 		fi
-		has_armd "$3" || { echo "fetch.sh: unwrapping the kernel failed (no ARMd at 56)" >&2; return 1; }
+		has_armd "$3" || {
+			echo "fetch.sh: unwrapping the kernel failed (no ARMd at 56)" >&2
+			return 1
+		}
 		;;
 	xz) xz -dc "$2" | sparse_write "$3" ;;
 	gz) gzip -dc "$2" | sparse_write "$3" ;;
@@ -234,9 +239,11 @@ seed_download() {  # seed_download <idx>: a pinned download another worktree hol
 	d="$CACHE/downloads/$n.download"
 	while IFS= read -r c; do
 		f="$c/downloads/$n.download"
-		[[ -f "$f" && "$(size_of "$f")" == "${L_SIZE[$1]}" && "$(sha_of "$f")" == "${L_SHA[$1]}" ]] ||
+		[[ -f "$f" && "$(size_of "$f")" == "${L_SIZE[$1]}" &&
+			"$(sha_of "$f")" == "${L_SHA[$1]}" ]] ||
 			continue
-		cp -c "$f" "$CACHE/tmp/$n.seed.$$" 2>/dev/null || cp "$f" "$CACHE/tmp/$n.seed.$$" || continue
+		cp -c "$f" "$CACHE/tmp/$n.seed.$$" 2>/dev/null || cp "$f" "$CACHE/tmp/$n.seed.$$" ||
+			continue
 		mv "$CACHE/tmp/$n.seed.$$" "$d"
 		chmod 0444 "$d"
 		return 0
@@ -284,7 +291,8 @@ ensure() {
 		rm -f "$out"
 		exit 1
 	fi
-	echo "${L_SHA[$i]} ${L_RECIPE[$i]:--} $(sha_of "$out") $(size_of "$out")" >"$CACHE/tmp/$n.stamp.$$"
+	echo "${L_SHA[$i]} ${L_RECIPE[$i]:--} $(sha_of "$out") $(size_of "$out")" \
+		>"$CACHE/tmp/$n.stamp.$$"
 	mv "$CACHE/tmp/$n.stamp.$$" "$CACHE/fixtures/$n.stamp"
 	mv "$out" "$CACHE/fixtures/$n"
 	chmod 0444 "$CACHE/fixtures/$n"
@@ -464,7 +472,8 @@ open(sys.argv[1], "wb").write(b"x" + b"\0" * (64 << 20))
 	gzip -c "$sc/src/big" >"$sc/src/big.gz"
 	for r in xz gz; do
 		sc_lock "big-$r" "$sc/src/big.$r" "$r"
-		if sc_run fetch "big-$r" >/dev/null 2>&1 && cmp -s "$sc/src/big" "$sc/cache/fixtures/big-$r" &&
+		if sc_run fetch "big-$r" >/dev/null 2>&1 &&
+			cmp -s "$sc/src/big" "$sc/cache/fixtures/big-$r" &&
 			(($(du -k "$sc/cache/fixtures/big-$r" | cut -f1) < 8192)); then
 			ok "recipe $r: one byte and 64 MiB of zeros convert to an equal, sparse file"
 		else

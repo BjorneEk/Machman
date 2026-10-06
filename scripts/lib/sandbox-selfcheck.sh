@@ -48,8 +48,9 @@ dead_pid() {
 
 # 1
 mk mmt
-if [[ "$(cat "$root/.owner")" == "$$" && "$suite" =~ ^com\.gustaffranzen\.Machman\.test-[A-Za-z0-9]{6}$ \
-	&& -d "$root/data" && -d "$root/home" ]]; then
+if [[ "$(cat "$root/.owner")" == "$$" &&
+	"$suite" =~ ^com\.gustaffranzen\.Machman\.test-[A-Za-z0-9]{6}$ &&
+	-d "$root/data" && -d "$root/home" ]]; then
 	ok "create: a sandbox has a token, a test suite id, data, home and an owner"
 else
 	fail "create: a sandbox has a token, a test suite id, data, home and an owner" \

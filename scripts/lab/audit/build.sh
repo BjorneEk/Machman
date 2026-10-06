@@ -9,7 +9,8 @@ here="$(cd "$(dirname "$0")" && pwd -P)"
 repo="$(cd "$here/../../.." && pwd -P)"
 CACHE="${MACHMAN_LAB_CACHE:-$repo/scripts/lab/cache}"
 
-key="$( { cat "$here"/hostwatch/*.swift; xcrun swiftc --version 2>&1; } | shasum -a 256 | cut -c1-12)"
+key="$( { cat "$here"/hostwatch/*.swift; xcrun swiftc --version 2>&1; } | shasum -a 256 |
+	cut -c1-12)"
 out="$CACHE/bin/hostwatch-$key"
 if [[ ! -x "$out" ]]; then
 	mkdir -p "$CACHE/bin"

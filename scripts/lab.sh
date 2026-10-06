@@ -3,8 +3,8 @@
 # The Machman lab: real Debug agent and vmhost processes of THIS worktree's build, under a
 # .test-<token> suite, driven over their socket by MachmanKit's MachmanLabTests target.
 #
-#   scripts/lab.sh [--quick|--full|--guests|--harness] [--launchd] [--filter REGEX] [--keep] [--out DIR]
-#                  [--no-build]
+#   scripts/lab.sh [--quick|--full|--guests|--harness] [--launchd] [--filter REGEX] [--keep]
+#                  [--out DIR] [--no-build]
 #   scripts/lab.sh --self-check | --doctor | --help
 #
 #   --quick     tiers harness,smoke (the lab agent and the Alpine fixture, no L3 guests)
@@ -427,7 +427,8 @@ lab_doctor() {
 	if id -Gn | tr ' ' '\n' | grep -qx admin; then ok "admin: this user can run log stream"
 	else miss "admin: log stream needs an admin user"; fi
 	if command -v python3 >/dev/null 2>&1 &&
-		! { [[ "$(command -v python3)" == /usr/bin/python3 ]] && ! xcode-select -p >/dev/null 2>&1; }
+		! { [[ "$(command -v python3)" == /usr/bin/python3 ]] &&
+			! xcode-select -p >/dev/null 2>&1; }
 	then ok "python3: $(command -v python3)"
 	else miss "python3: missing, or the Command Line Tools shim (it would pop the installer)"; fi
 	for tool in qemu-system-aarch64 qemu-img; do

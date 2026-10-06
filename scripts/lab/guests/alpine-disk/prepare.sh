@@ -1,9 +1,9 @@
 #!/bin/sh
 # Runs once, as root (doas over ssh), inside Alpine's generic cloud image while the lab
-# prepares it (scripts/lab/qemu/prepare.sh build alpine-disk; open network). Installs what the Guest Setup
-# rows use, grows the root file system into the disk, gives the lab's console driver a getty
-# on hvc2, empties root's password for console logins, switches cloud-init off, writes a
-# manifest and the marker the host waits for. Per-run boots never fetch anything.
+# prepares it (scripts/lab/qemu/prepare.sh build alpine-disk; open network). Installs what the
+# Guest Setup rows use, grows the root file system into the disk, gives the lab's console
+# driver a getty on hvc2, empties root's password for console logins, switches cloud-init off,
+# writes a manifest and the marker the host waits for. Per-run boots never fetch anything.
 set -eu
 D=/var/lib/machman-lab
 mkdir -p "$D"
@@ -30,7 +30,8 @@ rc-update add sshd default
 printf '#!/usr/sbin/nft -f\nflush ruleset\n' > /etc/nftables.nft
 rc-update add nftables boot
 # hvc2: the lab's console driver (never a console under test); root logs in without a password.
-grep -q '^hvc2:' /etc/inittab || echo 'hvc2::respawn:/sbin/getty -L 115200 hvc2 vt100' >> /etc/inittab
+grep -q '^hvc2:' /etc/inittab ||
+	echo 'hvc2::respawn:/sbin/getty -L 115200 hvc2 vt100' >> /etc/inittab
 for t in hvc0 hvc1 hvc2; do
 	grep -qx "$t" /etc/securetty 2>/dev/null || echo "$t" >> /etc/securetty
 done
