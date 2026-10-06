@@ -19,6 +19,7 @@ enum HostChoice: Equatable {
 	case shutDown
 	case forceStop
 	case keepWaiting
+	case quitAnyway
 	case cancel
 }
 
@@ -102,6 +103,19 @@ struct HostPrompt: Equatable {
 			message: "\(name) \(activity)",
 			info: "\(canceled): wait for it to finish, then \(again).",
 			buttons: [Button(choice: .cancel, title: "OK")])
+	}
+
+	// The user's own quit met such an operation (C24): quitting would end it, so it asks, and
+	// the default keeps it.
+	static func quitDuringWork(_ name: String, activity: String) -> HostPrompt {
+		HostPrompt(
+			id: "vmhost.quitDuringWork",
+			message: "\(name) \(activity) \u{2014} quit anyway?",
+			info: "Quitting now stops it.",
+			buttons: [
+				Button(choice: .cancel, title: "Cancel"),
+				Button(choice: .quitAnyway, title: "Quit Anyway"),
+			])
 	}
 
 	// What a vmhost's running operation has its VM doing, after its name: the words the

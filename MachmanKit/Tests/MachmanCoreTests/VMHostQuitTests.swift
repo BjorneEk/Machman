@@ -115,6 +115,22 @@ struct VMHostQuitTests {
 		#expect(host.delegate.terminateReply(for: reason) == .terminateNow)
 	}
 
+	// C24 (E46): the user's own quit of a vmhost still finishing an import ended it at once.
+	// It asks first now; the default keeps the import.
+	@Test("E46: quitting a vmhost that finishes an import asks first, and Cancel keeps it")
+	func aQuitDuringAnImportAsksFirst() {
+		let host = TestVMHost(running: false) { _ in .cancel }
+		host.operations = [Self.importing]
+		#expect(host.delegate.terminateReply(for: .userQuit) == .terminateCancel)
+		#expect(host.prompts == [.quitDuringWork("alpha", activity: "is importing a disk")])
+		let prompt = host.prompts.first
+		#expect(prompt?.message == "alpha is importing a disk \u{2014} quit anyway?")
+		#expect(prompt?.info == "Quitting now stops it.")
+		#expect(prompt.map { $0.buttons.map(\.title) } == ["Cancel", "Quit Anyway"])
+		host.answer = { _ in .quitAnyway }
+		#expect(host.delegate.terminateReply(for: .userQuit) == .terminateNow)
+	}
+
 	// Decision 16: a prompt's info is one sentence. "Debian 12.4" keeps a name's dots honest.
 	@Test func everyPromptIsOneSentence() throws {
 		let name = "Debian 12.4"
@@ -127,6 +143,7 @@ struct VMHostQuitTests {
 			prompts.append(.sessionEndDuringWork(
 				name, activity: "is importing a disk", reason: reason))
 		}
+		prompts.append(.quitDuringWork(name, activity: "is importing a disk"))
 		let sentenceEnd = try Regex(#"[.?!](\s|$)"#)
 		for prompt in prompts {
 			let info = prompt.info.replacingOccurrences(of: name, with: "the VM")

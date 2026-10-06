@@ -276,7 +276,7 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		case .forceStop:        // teardown closes the window
 			Task { await requestForceStop(name) }
 			return false
-		case .keepWaiting, .cancel:
+		case .keepWaiting, .quitAnyway, .cancel:
 			return false
 		}
 	}

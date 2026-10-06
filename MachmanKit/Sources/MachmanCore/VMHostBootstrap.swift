@@ -384,23 +384,30 @@ final class VMHostAppDelegate: NSObject, NSApplicationDelegate {
 			Task { await presenter.requestShutDown(name) }
 		case .forceStop:
 			Task { await presenter.requestForceStop(name) }
-		case .closeWindow, .keepWaiting, .cancel:
+		case .closeWindow, .keepWaiting, .quitAnyway, .cancel:
 			break
 		}
 		return .terminateCancel
 	}
 
-	// With the VM stopped, only an operation still running holds a log out, restart or shut
-	// down (E46); the alert comes after this reply, as the agent's does (V10): the session
-	// waits on the reply, never on the alert.
+	// With the VM stopped, only an operation still running holds a quit (E46). The user's own
+	// quit asks (C24); a log out, restart or shut down is canceled, and its alert comes after
+	// this reply, as the agent's does (V10): the session waits on the reply, never on the
+	// alert.
 	private func replyWhileStopped(
 		_ name: String, reason: VMHostQuitReason
 	) -> NSApplication.TerminateReply {
-		guard reason != .userQuit, let work = operations().first else {
+		guard let work = operations().first else {
 			server.stop()
 			return .terminateNow
 		}
 		let activity = HostPrompt.activity(of: work)
+		guard reason != .userQuit else {
+			guard presenter.present(.quitDuringWork(name, activity: activity)) == .quitAnyway
+			else { return .terminateCancel }
+			server.stop()
+			return .terminateNow
+		}
 		MachmanLogger.log(.log, "\(reason) canceled: \(name) \(activity)")
 		Task { [presenter] in
 			_ = await presenter.ask(.sessionEndDuringWork(name, activity: activity, reason: reason))
