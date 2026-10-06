@@ -98,10 +98,9 @@ struct ToolbarCanvasStateTests {
 		let mount = try await inspector(h, "Alpine", .mount(Samples.srcMountID))
 		let attach = try #require(mount.control(labelled: "Attach in safe runs"),
 			"\(mount.dump())")
-		// Fails until the open bug H53 (the toggle is inverted and has no tooltip) is fixed:
-		// the src mount is safe, so a safe run leaves it out and the toggle must read off.
+		// H53: the src mount is safe, so a safe run leaves it out and the toggle reads off.
 		#expect(attach.value == "0", "Attach in safe runs reads on for a mount safe runs omit")
-		#expect(attach.help?.isEmpty == false, "Attach in safe runs has no tooltip")
+		#expect(attach.help == "Safe runs share the real folder and keep their writes to it")
 	}
 
 	// MARK: - Toolbar states

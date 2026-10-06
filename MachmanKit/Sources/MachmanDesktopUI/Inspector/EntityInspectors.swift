@@ -238,9 +238,12 @@ struct MountInspector: View {
 								.foregroundStyle(.tertiary)
 						}
 					}
+					// MountInfo.safe means a safe run LEAVES the folder out (the default), so
+					// the toggle that says it attaches reads the flag inverted (H53).
 					Toggle("Attach in safe runs", isOn: Binding(
-						get: { mount.safe },
-						set: { viewModel.setMountSafety(vm.name, mountID: mountID, safe: $0) }))
+						get: { !mount.safe },
+						set: { viewModel.setMountSafety(vm.name, mountID: mountID, safe: !$0) }))
+						.help("Safe runs share the real folder and keep their writes to it")
 					Toggle("Enabled", isOn: Binding(
 						get: { mount.isEnabled },
 						set: { viewModel.setEnabled(vm.name, mounts: [mountID: $0]) }))
