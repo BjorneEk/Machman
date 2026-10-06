@@ -329,7 +329,7 @@ struct GuestSetupInspector: View {
 			DisclosureGroup("FreeBSD / OpenBSD") {
 				VStack(alignment: .leading, spacing: 6) {
 					Text(shareAutomounted
-						? "The share automounts over ssh — run the installer:"
+						? "The share automounts over SSH — run the installer:"
 						: "No virtiofs driver, so mount the share over sshfs first (see the "
 							+ "Setup Guide), then run:")
 						.font(.caption)

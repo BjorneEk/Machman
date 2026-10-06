@@ -216,7 +216,7 @@ struct SerialInspector: View {
 	private var guestDeviceSection: some View {
 		Section("Guest device") {
 			if let name = port?.guestName {
-				LabeledContent(vm.setup?.guestOS ?? "Reported") {
+				LabeledContent(GuestOSName.display(vm.setup?.guestOS)) {
 					Text("/dev/" + name)
 						.font(.system(.callout, design: .monospaced))
 				}

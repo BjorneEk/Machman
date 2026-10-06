@@ -89,6 +89,31 @@ struct InspectorLabelTests {
 		#expect(cap.text == "16 MB")
 	}
 
+	@Test("W6: a reported console names the guest OS, and SSH and safe saves read right")
+	func reportedConsoleNamesTheGuestOS() async throws {
+		let h = await UIHarness.make([Samples.linuxConsolesReported(), Samples.linuxSafeRun("Kali")])
+		#expect(h.vm("Debian").setup?.guestOS == "debian")
+		let tree = try await inspector(
+			h, "Debian", .serial(SerialPortRef(kind: .console, index: 0)))
+		#expect(tree.find(role: "AXStaticText", text: "Debian") != nil, "\(tree.dump())")
+		#expect(tree.find(role: "AXStaticText", text: "/dev/hvc0") != nil)
+		#expect(tree.find(text: "debian") == nil, "a raw os-release id as a label")
+		// Any id the table doesn't know reads Guest, never itself.
+		#expect(GuestOSName.display("opensuse-tumbleweed") == "openSUSE")
+		#expect(GuestOSName.display("mystery-linux") == "Guest")
+		#expect(GuestOSName.display(nil) == "Guest")
+
+		let save = try await h.snapshot(SafeSaveSheet(vm: h.vm("Kali"), viewModel: h.viewModel))
+		#expect(save.find(text: "The safe run carries on as the new VM, the disks it wrote "
+			+ "directly move into its folder, and the original uses them from there.") != nil,
+			"\(save.dump())")
+		// The BSD caption sits in a collapsed disclosure, which never reaches the tree.
+		let setup = try RepoFiles.text(
+			"MachmanKit/Sources/MachmanDesktopUI/Inspector/GuestSetupInspector.swift")
+		#expect(setup.contains("automounts over SSH"))
+		#expect(setup.range(of: #"over ssh\b"#, options: .regularExpression) == nil)
+	}
+
 	@Test("W4-7: the disk, mount and kernel trash buttons say what they remove")
 	func trashButtonsSayWhatTheyRemove() async throws {
 		var ownedISO = Samples.linux("Fedora")

@@ -3,9 +3,9 @@
 //  MachmanDesktopUI
 //
 //  One ephemeral SSH tab's content: the shared SwiftTerm surface driven by a PTY-spawned
-//  ssh (TerminalTabContent's lazy-creation shape). The session is one-shot — when the
-//  process ends the terminal stays readable under a "session ended" banner; a new session
-//  is a new tab.
+//  ssh (TerminalTabContent's lazy-creation shape). When the process ends the terminal stays
+//  readable under a "session ended" banner, whose Reconnect revives the session in the same
+//  tab, scrollback and all.
 //
 
 import SwiftUI

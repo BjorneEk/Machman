@@ -30,8 +30,8 @@ struct SafeSaveSheet: View {
 			Label("Save “\(vm.name)” as a New VM", systemImage: MachmanSymbols.safe)
 				.font(.headline)
 			// True with or without unshadowed disks: those move to the new VM (C5).
-			Text("The safe run carries on as the new VM, and the disks it wrote directly move "
-				+ "into it while the original keeps using them.")
+			Text("The safe run carries on as the new VM, the disks it wrote directly move into "
+				+ "its folder, and the original uses them from there.")
 				.font(.caption)
 				.foregroundColor(.secondary)
 				.fixedSize(horizontal: false, vertical: true)
