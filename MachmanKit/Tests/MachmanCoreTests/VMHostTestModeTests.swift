@@ -41,14 +41,33 @@ struct VMHostTestModeTests {
 			(.forceStopFailed("dev", reason: "It broke"), "vmhost.forceStopFailed", 0),
 		]
 		for (prompt, id, cancel) in prompts {
-			#expect(prompt.labID == id, "\(prompt.message): \(prompt.buttons.map(\.title))")
+			#expect(prompt.id == id, "\(prompt.message): \(prompt.buttons.map(\.title))")
+			#expect(prompt.labPrompt.id == id)
 			#expect(prompt.labPrompt.cancelIndex == cancel, "\(id)")
 			#expect(prompt.labPrompt.buttons == prompt.buttons.map(\.title))
 			#expect(prompt.labPrompt.message == prompt.message)
 		}
 		// One id per factory (a log out, restart and shut down ask one question).
 		#expect(Set(prompts.map(\.1)).count == 6)
-		#expect(!prompts.contains { $0.0.labID == "vmhost.unknown" })
+	}
+
+	// Q22: the id was read off a prompt's buttons and titles, so rewording one moved every
+	// lab answer keyed on it. Each factory stores its id now.
+	@Test("Q22: a vmhost prompt keeps its lab id whatever its wording")
+	func aVMHostPromptKeepsItsLabIDWhateverItsWording() {
+		let prompts: [HostPrompt] = [
+			.closeWhileRunning("dev"), .quitWhileRunning("dev", reason: .userQuit),
+			.quitWhileRunning("dev", reason: .logOut), .notShutDownYet("dev"),
+			.shutDownRefused("dev"), .forceStopFailed("dev", reason: "It broke"),
+		]
+		for prompt in prompts {
+			let reworded = HostPrompt(
+				id: prompt.id, message: "Reworded", info: "Reworded too.",
+				buttons: prompt.buttons.reversed().map {
+					HostPrompt.Button(choice: $0.choice, title: $0.title + " Now")
+				})
+			#expect(reworded.labPrompt.id == prompt.labPrompt.id, "\(prompt.id)")
+		}
 	}
 
 	@Test("Q18: a test-suite vmhost answers its prompts from the answers file (TB7)")

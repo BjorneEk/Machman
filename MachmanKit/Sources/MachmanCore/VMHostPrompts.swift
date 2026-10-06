@@ -27,6 +27,8 @@ struct HostPrompt: Equatable {
 		let title: String
 	}
 
+	// The lab answers a prompt by this id (HostPrompt+Lab), whatever its wording says.
+	let id: String
 	let message: String
 	let info: String
 	// The first is the default (Return).
@@ -48,6 +50,7 @@ struct HostPrompt: Equatable {
 	// The VM window's close button while its VM runs.
 	static func closeWhileRunning(_ name: String) -> HostPrompt {
 		HostPrompt(
+			id: "vmhost.closeWhileRunning",
 			message: "\(name) is running",
 			info: "Close the window and leave the VM running, "
 				+ "ask the guest to shut down, or stop it immediately?",
@@ -68,6 +71,7 @@ struct HostPrompt: Equatable {
 		switch reason {
 		case .userQuit:
 			return HostPrompt(
+				id: "vmhost.quitWhileRunning",
 				message: "\(name) is running",
 				info: "Quitting stops the VM: ask the guest to shut down, or stop it now.",
 				buttons: [
@@ -83,6 +87,7 @@ struct HostPrompt: Equatable {
 			retry = "Shut down was canceled: shut the VM down, then shut down your Mac again."
 		}
 		return HostPrompt(
+			id: "vmhost.sessionEndWhileRunning",
 			message: "\(name) is still running",
 			info: retry,
 			buttons: [
@@ -95,6 +100,7 @@ struct HostPrompt: Equatable {
 	// A shutdown request the guest hasn't acted on within the grace period.
 	static func notShutDownYet(_ name: String) -> HostPrompt {
 		HostPrompt(
+			id: "vmhost.notShutDownYet",
 			message: "\(name) hasn’t shut down yet",
 			info: "The guest hasn’t responded to the shutdown request.",
 			buttons: [
@@ -107,6 +113,7 @@ struct HostPrompt: Equatable {
 	// default: a force stop loses unsaved work in the guest.
 	static func shutDownRefused(_ name: String) -> HostPrompt {
 		HostPrompt(
+			id: "vmhost.shutDownRefused",
 			message: "\(name) can’t be asked to shut down",
 			info: "The guest can’t take a shutdown request right now — force stop it instead?",
 			buttons: [
@@ -118,6 +125,7 @@ struct HostPrompt: Equatable {
 	// reason: the engine's own sentence.
 	static func forceStopFailed(_ name: String, reason: String) -> HostPrompt {
 		HostPrompt(
+			id: "vmhost.forceStopFailed",
 			message: "\(name) couldn’t be stopped",
 			info: reason,
 			buttons: [Button(choice: .cancel, title: "OK")])
