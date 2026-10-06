@@ -27,9 +27,9 @@ struct ActivityButton: View {
 		Button {
 			shown.toggle()
 		} label: {
-			// Titled for the toolbar's » menu and VoiceOver; the bar shows the icon (H33).
+			// Titled for the toolbar's » menu (H33); VoiceOver hears the count too.
 			Label {
-				Text(tooltip)
+				Text("Activity")
 			} icon: {
 				Image(systemName: MachmanSymbols.activity)
 					.overlay(alignment: .topTrailing) {
@@ -42,6 +42,7 @@ struct ActivityButton: View {
 			.labelStyle(.iconOnly)
 		}
 		.help(tooltip)
+		.accessibilityLabel(tooltip)
 		.popover(isPresented: $shown, arrowEdge: .bottom) {
 			ActivityPopover(activity: activity)
 		}

@@ -24,14 +24,17 @@ struct WindowToggleItem: View {
 			get: { vm.state == .running ? vm.windowOpen : policy.windowed },
 			set: { _ in toggleWindow() })
 		) {
-			// Image-only in the bar; the title is what VoiceOver (H32) and the toolbar's
-			// » menu (H33) read.
-			Label(help, systemImage: MachmanSymbols.vmRunningWindowed)
+			// Image-only in the bar; the toolbar's » menu reads its title (H33), VoiceOver
+			// the whole sentence (H32).
+			Label(
+				VMListViewModel.windowToggleTitle(vm),
+				systemImage: MachmanSymbols.vmRunningWindowed)
 				.labelStyle(.iconOnly)
 		}
 		.toggleStyle(.button)
 		.disabled(vm.state != .running)
 		.help(help)
+		.accessibilityLabel(help)
 	}
 
 	private var policy: StartPolicy { vm.startPolicy ?? StartPolicy() }
@@ -60,25 +63,28 @@ struct StartStopGroup: View {
 				if viewModel.isStartPending(vm.name) {
 					transition(.starting)
 				} else {
-					// Titled, the group reads by its first action in the toolbar's » menu (H33).
-					ControlGroup(viewModel.startHelp(vm)) {
+					// Titled for the toolbar's » menu with the commands' names (H33); the
+					// tooltips and VoiceOver keep their sentences (H32).
+					ControlGroup("Start") {
 						Button {
 							viewModel.startPolicyDriven(vm)
 						} label: {
-							Self.icon(viewModel.startHelp(vm), MachmanSymbols.start)
+							Self.icon(VMListViewModel.startTitle(vm), MachmanSymbols.start)
 						}
 						.help(viewModel.startHelp(vm))
+						.accessibilityLabel(viewModel.startHelp(vm))
 						Button {
 							viewModel.startPolicyDriven(vm, .safe)
 						} label: {
 							Label {
-								Text(Self.startSafe)
+								Text("Start Safe")
 							} icon: {
 								SafeStartGlyph(size: 12)
 							}
 							.labelStyle(.iconOnly)
 						}
 						.help(Self.startSafe)
+						.accessibilityLabel(Self.startSafe)
 					}
 					.disabled(!viewModel.canStart(vm))
 				}
@@ -133,7 +139,6 @@ struct StartStopGroup: View {
 	}
 
 	private static let startSafe = "Start Safe — run on a discardable shadow"
-
 
 	// An image-only toolbar button's label: titled, so VoiceOver (H32) and the toolbar's »
 	// menu (H33) read its name; the bar shows the icon.

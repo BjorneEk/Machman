@@ -12,9 +12,14 @@ import MachmanAPI
 import MachmanUI
 
 extension VMListViewModel {
-	// The plain Start's name for the policy it follows; a Mac that is installing can't start.
+	// The plain Start's tooltip and VoiceOver label: its name, or why it can't start now (a
+	// Mac that is installing).
 	public func startHelp(_ vm: VMInfo) -> String {
-		if isInstalling(vm) { return "Wait for the macOS install to finish" }
+		isInstalling(vm) ? "Wait for the macOS install to finish" : Self.startTitle(vm)
+	}
+
+	// The plain Start's name for the policy it follows: its title in the toolbar's » menu.
+	public static func startTitle(_ vm: VMInfo) -> String {
 		let options = vm.startOptions()
 		switch (options.openWindow, options.safe) {
 		case (true, false): return "Start"
@@ -32,5 +37,10 @@ extension VMListViewModel {
 				? "The window opens when the VM starts" : "The VM starts without a window"
 		}
 		return vm.windowOpen ? "Close Window — the VM keeps running" : "Open Window"
+	}
+
+	// The window toggle's title in the toolbar's » menu: the command, never the sentence.
+	public static func windowToggleTitle(_ vm: VMInfo) -> String {
+		vm.state == .running && vm.windowOpen ? "Close Window" : "Open Window"
 	}
 }

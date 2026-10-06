@@ -118,17 +118,20 @@ struct WindowFloorTests {
 	}
 
 	// H33: an item that goes behind the toolbar's » shows in its menu by its title, so every
-	// item needs one, image-only or not. The overflow menu itself is AppKit's (manual row).
+	// item needs one, image-only or not, and it reads as a command in Title Case, not as the
+	// tooltip's sentence (review F9). The overflow menu itself is AppKit's (manual row).
 	@Test("H33: every main and torn toolbar item has a title for the overflow menu")
 	func everyToolbarItemHasATitle() async throws {
 		let h = await UIHarness.make([
-			Samples.linuxSafeRun("Debian"), Samples.linux("Alpine"),
+			Samples.linuxSafeRun("Debian"), Samples.linux("Alpine"), Samples.macOS("Sequoia"),
 			Samples.kernelBoot(state: .starting), Samples.stoppingLinux("Fedora"),
 		], select: "Debian")
+		h.stub.emit(.installPhaseChanged(vm: "Sequoia", phase: Samples.downloadingMacInstall()))
+		#expect(await eventually { h.viewModel.isInstalling(h.vm("Sequoia")) })
 		h.viewModel.showInfoPanel = true
 		// Each item's name in the » menu: its label, else its menu form's title (a spinner
-		// item has only that); a group's controls each need theirs too.
-		func items(_ view: some View) async throws -> [(id: String, label: String)] {
+		// item has only that), and a group's controls' labels.
+		func items(_ view: some View) async throws -> [(label: String, parts: [String])] {
 			try await OffscreenHost.withHost(view, width: 1280, height: 720, chrome: .window) {
 				// Spaces and the split view's separators are layout, not items to name.
 				($0.window.toolbar?.items ?? [])
@@ -136,28 +139,50 @@ struct WindowFloorTests {
 						let id = item.itemIdentifier.rawValue
 						return !id.hasPrefix("NSToolbar") && !id.contains("Separator")
 					}
-					.flatMap { item -> [(id: String, label: String)] in
+					.map { item in
 						let name = item.label.isEmpty
 							? item.menuFormRepresentation?.title ?? "" : item.label
 						let parts = (item as? NSToolbarItemGroup)?.subitems ?? []
-						return [(item.itemIdentifier.rawValue, name)]
-							+ parts.map { ("\(name) ▸ \($0.itemIdentifier.rawValue)", $0.label) }
+						return (name, parts.map(\.label))
 					}
 			}
 		}
-		// Running safe, stopped, starting and stopping: each state's start/stop controls.
-		var main: [(id: String, label: String)] = []
-		for vm in ["Debian", "Alpine", "Kernel Lab", "Fedora"] {
+		// Running safe, stopped, installing, starting and stopping: each state's controls.
+		var bars: [String: [(label: String, parts: [String])]] = [:]
+		for vm in ["Debian", "Alpine", "Sequoia", "Kernel Lab", "Fedora"] {
 			h.viewModel.select(name: vm)
-			main += try await items(window(h, vm))
+			bars[vm] = try await items(window(h, vm))
 		}
 		let torn = try await items(TornTabWindowView(
 			connection: h.connection, profiles: h.profiles,
 			payload: TornTab(vm: "Debian", tab: .config)))
-		#expect(main.count >= 20, "\(main)")
 		#expect(!torn.isEmpty, "\(torn)")
-		let blank = (main + torn).filter { $0.label.isEmpty }
-		#expect(blank.isEmpty, "untitled toolbar items: \(blank.map(\.id)) of \(main + torn)")
+		let all = bars.values.flatMap { $0 } + torn
+		let names = all.flatMap { [$0.label] + $0.parts }
+		#expect(names.count >= 30, "\(names)")
+		#expect(!names.contains(""), "untitled toolbar items in \(names)")
+		let sentences = names.filter { !Self.isTitle($0) }
+		#expect(sentences.isEmpty, "not Title Case: \(sentences)")
+
+		func group(_ vm: String, _ title: String) -> [String]? {
+			bars[vm]?.first { $0.label == title && !$0.parts.isEmpty }?.parts
+		}
+		#expect(group("Alpine", "Start") == ["Start", "Start Safe"], "\(bars["Alpine"] ?? [])")
+		#expect(group("Sequoia", "Start") == ["Start", "Start Safe"], "\(bars["Sequoia"] ?? [])")
+		#expect(group("Debian", "Shut Down") == ["Shut Down", "Force Stop"])
+		#expect(bars["Alpine"]?.contains { $0.label == "Open Window" } == true)
+		#expect(bars["Debian"]?.contains { $0.label == "Close Window" } == true)
+	}
+
+	// A toolbar title as wording rule 3 has it: every word capitalized but the small ones, no
+	// dash-joined explanation. A VM's own name (the indicator) passes.
+	private static func isTitle(_ text: String) -> Bool {
+		let small: Set<String> = ["a", "and", "or", "of", "to", "the", "in", "on", "for"]
+		guard !text.contains("\u{2014}") else { return false }
+		return text.split(separator: " ").enumerated().allSatisfy { index, word in
+			guard let first = word.first, first.isLetter else { return true }
+			return first.isUppercase || (index > 0 && small.contains(String(word)))
+		}
 	}
 
 	@Test("15: the toolbar's safe chip shows only while the VM runs safe")
