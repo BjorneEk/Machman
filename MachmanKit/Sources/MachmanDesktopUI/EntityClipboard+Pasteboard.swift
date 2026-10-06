@@ -84,8 +84,9 @@ extension PasteboardWatch {
 					NSMenu.didBeginTrackingNotification,
 				],
 				changeCount: { NSPasteboard.general.changeCount },
+				// Its files are judged off the main thread (P11).
 				read: {
-					PasteboardSnapshot(
+					.unjudged(
 						entities: EntityClipboard.read(), fileURLs: AddFlows.pasteboardFileURLs())
 				})
 		}

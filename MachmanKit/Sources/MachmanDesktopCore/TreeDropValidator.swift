@@ -14,14 +14,14 @@ import Foundation
 import MachmanAPI
 
 // What a drag currently targets and what we know about its payload.
-public struct TreeDragPreview: Equatable {
-	public enum Section: Hashable {
+public struct TreeDragPreview: Equatable, Sendable {
+	public enum Section: Hashable, Sendable {
 		case disks
 		case mounts
 		case kernel(KernelRole)
 	}
 
-	public enum Verdict: Equatable {
+	public enum Verdict: Equatable, Sendable {
 		case loading                 // providers still resolving
 		case valid(String)           // inline message ("Add vmlinuz to Kernel")
 		case invalid(String)         // inline reason ("…is not a supported disk format")
@@ -57,6 +57,17 @@ public struct TreeDragPreview: Equatable {
 			section: section, urls: urls,
 			adds: TreeDropValidator.fitting(section: section, urls: urls, isDirectory: known),
 			verdict: TreeDropValidator.verdict(section: section, urls: urls, isDirectory: known))
+	}
+
+	// The same judgment off the main thread, for a drag in progress: a stat on a network
+	// volume would stall the drag (P11).
+	public static func resolved(
+		section: Section, urls: [URL],
+		isDirectory: @escaping @Sendable (URL) -> Bool = { TreeDropValidator.isDirectory($0) }
+	) async -> TreeDragPreview {
+		await Task.detached(priority: .userInitiated) {
+			resolve(section: section, urls: urls, isDirectory: isDirectory)
+		}.value
 	}
 }
 

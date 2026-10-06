@@ -119,4 +119,51 @@ struct PasteboardWatchTests {
 		#expect(stats == files.count)
 		#expect(snapshot.canPaste(into: .mounts) && snapshot.canPaste(into: .disks))
 	}
+
+	// The stats ran on the main thread at every activation, key window and menu opening; a
+	// file on a network volume stalled the app. Paste Items still enables at once: it needs
+	// only to know there are files.
+	@Test("P11: the pasteboard watch judges files off the main thread")
+	func theWatchJudgesOffTheMainThread() async {
+		let board = FakePasteboard()
+		board.count = 1
+		board.files = [URL(fileURLWithPath: "/Users/demo/Downloads/disk.raw")]
+		let log = StatLog()
+		let watch = PasteboardWatch(
+			center: NotificationCenter(), triggers: [], changeCount: { board.count },
+			read: { .unjudged(entities: board.entities, fileURLs: board.files) },
+			isDirectory: { url in
+				log.record(onMain: pthread_main_np() != 0)
+				return url.hasDirectoryPath
+			})
+		#expect(watch.snapshot.canPasteAnything)
+		#expect(await eventually { watch.snapshot.canPaste(into: .disks) })
+		#expect(!watch.snapshot.canPaste(into: .mounts))
+		#expect(log.calls == 1)
+		#expect(log.onMain == 0)
+	}
+
+	// Renders and hosted views pass a watch that never reads the pasteboard.
+	@Test func anInertWatchReadsNothing() {
+		let watch = PasteboardWatch.inert()
+		watch.refresh()
+		#expect(!watch.snapshot.canPasteAnything)
+	}
+}
+
+// Where the file stats ran, from whichever thread they run on.
+final class StatLog: @unchecked Sendable {
+	private let lock = NSLock()
+	private var all = 0
+	private var main = 0
+
+	var calls: Int { lock.withLock { all } }
+	var onMain: Int { lock.withLock { main } }
+
+	func record(onMain: Bool) {
+		lock.withLock {
+			all += 1
+			if onMain { main += 1 }
+		}
+	}
 }

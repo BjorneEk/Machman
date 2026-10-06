@@ -37,7 +37,12 @@ struct GroupDropDelegate: DropDelegate {
 		Self.loadURLs(info) { urls in
 			// Still hovering this section? (The drag may have moved on meanwhile.)
 			guard preview?.section == section, !urls.isEmpty else { return }
-			preview = TreeDragPreview.resolve(section: section, urls: urls)
+			// Judged off the main thread: a stat on a network volume stalls the drag (P11).
+			Task { @MainActor in
+				let resolved = await TreeDragPreview.resolved(section: section, urls: urls)
+				guard preview?.section == section else { return }
+				preview = resolved
+			}
 		}
 	}
 
@@ -67,9 +72,11 @@ struct GroupDropDelegate: DropDelegate {
 		}
 		// The hover never finished resolving — resolve now and route what fits.
 		Self.loadURLs(info) { urls in
-			let adds = TreeDropValidator.fitting(section: section, urls: urls)
-			guard !adds.isEmpty else { return }
-			perform(adds)
+			Task { @MainActor in
+				let adds = await TreeDragPreview.resolved(section: section, urls: urls).adds
+				guard !adds.isEmpty else { return }
+				perform(adds)
+			}
 		}
 		return true
 	}

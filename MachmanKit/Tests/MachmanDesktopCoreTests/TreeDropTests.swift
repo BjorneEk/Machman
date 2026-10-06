@@ -89,4 +89,20 @@ struct TreeDropTests {
 			#expect(stats == urls.count, "\(section)")
 		}
 	}
+
+	// The hover's verdict was computed on the main thread as the drag entered a section.
+	@Test("P11: a drop preview is judged off the main thread")
+	@MainActor
+	func aDropPreviewIsJudgedOffTheMainThread() async {
+		let log = StatLog()
+		let a = Self.file("a.raw")
+		let preview = await TreeDragPreview.resolved(
+			section: .disks, urls: [Self.folder("src"), a], isDirectory: { url in
+				log.record(onMain: pthread_main_np() != 0)
+				return url.hasDirectoryPath
+			})
+		#expect(preview.adds == [a])
+		#expect(log.calls == 2)
+		#expect(log.onMain == 0)
+	}
 }
