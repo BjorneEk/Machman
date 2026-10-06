@@ -38,7 +38,8 @@ final class SerialPortBridge {
 	private var listener: BoundSocket?
 	private var acceptSource: DispatchSourceRead?
 	// The socket's timestamps, refreshed like the control sockets' (E30): the temp cleaner
-	// reaps entries untouched for three days, and a console socket then can't be attached.
+	// reaps entries untouched for three days, and a console socket then can't be attached. A
+	// lab run's interval knob applies here too (Q23).
 	private let keepAlive: DispatchTimeInterval
 	private var keepAliveTimer: DispatchSourceTimer?
 	private var reportedMissing = false
@@ -63,7 +64,7 @@ final class SerialPortBridge {
 	init(
 		kind: SerialPortKind, index: Int, socketPath: String, logURL: URL,
 		logConfig: SerialLogConfig, toGuest: FileHandle, fromGuest: FileHandle,
-		keepAlive: DispatchTimeInterval = UDSListener.defaultKeepAlive
+		keepAlive: DispatchTimeInterval = MachmanServer.keepAlive()
 	) {
 		self.kind = kind
 		self.index = index

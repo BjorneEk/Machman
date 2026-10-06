@@ -63,6 +63,23 @@ struct EngineAgentLifecycleTests {
 		}
 	}
 
+	// Q23: the console sockets kept the hour-long default under a lab run, so W1-19 covered
+	// only the agent's and the vmhost's control sockets.
+	@Test("Q23: a VM's console sockets refresh their timestamps on the lab interval")
+	func consoleSocketsKeptAlive() async throws {
+		let options = LabAgent.Options(environment: ["MACHMAN_LAB_KEEPALIVE_SECONDS": "2"])
+		try await Lab.withAgent(options) { agent in
+			try await agent.withVM(LabVMSpec(name: "console-keepalive", boot: .alpine())) { vm in
+				for index in 0..<2 {
+					let socket = try await vm.consoleSocketPath(index)
+					let t0 = try #require(Self.mtime(socket))
+					let first = try await Self.touched(socket, after: t0 + 1, within: .seconds(8))
+					_ = try await Self.touched(socket, after: first + 1, within: .seconds(6))
+				}
+			}
+		}
+	}
+
 	@Test(
 		"""
 		W1-22: after the agent dies within a start's first second, the next agent starts \
