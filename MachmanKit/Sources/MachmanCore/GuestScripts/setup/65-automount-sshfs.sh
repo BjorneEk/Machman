@@ -171,7 +171,8 @@ sshfsauto_entry() {
 	_se_path="$(printf '%s\n' "$MOUNTS_SSHFS" \
 		| awk -F "$_se_tab" -v n="$1" '$1 == n { print $2; exit }')"
 	[ -z "$_se_path" ] && return 0
-	R_MOUNT_WHAT="$HOST_USER@$GATEWAY:$_se_path"
+	# A host folder reached through a link mounts like the share's (S46): with a trailing slash.
+	R_MOUNT_WHAT="$HOST_USER@$GATEWAY:${_se_path%/}/"
 	R_MOUNT_WHERE="$MOUNTPOINT/$1"
 	return 0
 }

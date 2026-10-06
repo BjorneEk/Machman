@@ -114,6 +114,28 @@ struct THAutomountTests {
 		}
 	}
 
+	// S46: a host folder reached through a link mounted "Not a directory": sshfs checks its
+	// root with an SFTP LSTAT, which the Mac's sftp-server answers for the link itself. The
+	// mount's source ends in "/" now, as the share's does (S45).
+	@Test("S46: an sshfs host folder reached through a symlink mounts")
+	func symlinkedFolderMounts() async throws {
+		try await TH.withGuest(.debian, THAutomount.options) { g in
+			try THAutomount.seed(g)
+			_ = try #require(g.mac, "no lab sshd: the guest→Mac half needs one")
+			// The VM's folder becomes a link to where its files are.
+			let dir = try TH.hostDir(g.agent, THAutomount.tag)
+			try FileManager.default.moveItem(atPath: dir, toPath: dir + "-real")
+			try FileManager.default.createSymbolicLink(
+				atPath: dir, withDestinationPath: dir + "-real")
+			let run = try await g.install(
+				"-y --two-way --automount-sshfs", user: "lab", escalation: .sudo)
+			#expect(run.status == 0, "\(run.output)")
+			try await THAutomount.approve(g)
+			let listed = try await THAutomount.list(g)
+			#expect(listed.output.contains(THAutomount.probe), "\(listed.output)")
+		}
+	}
+
 	@Test(
 		"W2-9: after a DHCP reboot the sshfs automount feature reads configured",
 		arguments: [THGuestKind.debian, .alpine])

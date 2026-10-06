@@ -41,7 +41,7 @@ if grep -q '^FEATURE_ssh=configured reg' "$REPORT"; then
 
 # Space-bearing host paths survive into the boot script and the report — the share
 # always lives under "Application Support", so a first-space split breaks every guest.
-if grep -qF ":/Users/g/My Docs' '/mnt/machman/mounts/docs'" "$BOOT" 2>/dev/null \
+if grep -qF ":/Users/g/My Docs/' '/mnt/machman/mounts/docs'" "$BOOT" 2>/dev/null \
 	&& grep -qF "sshfs docs /mnt/machman/mounts/docs" "$REPORT"; then
 	R SSHFS_SPACE pass
 else

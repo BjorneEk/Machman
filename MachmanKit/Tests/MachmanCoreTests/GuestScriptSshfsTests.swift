@@ -128,6 +128,34 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// S46: S45's mechanism holds for any sshfs mount whose host folder is reached through a
+	// link — sshfs's root LSTAT finds the link, not the folder — so every user mount gets the
+	// one trailing slash the share's link has.
+	@Test("S46: every sshfs host folder mounts through one trailing slash")
+	func everyHostFolderMountsThroughOneTrailingSlash() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				GATEWAY=192.168.64.1
+				MOUNTPOINT=/mnt/machman/mounts
+				tab="$(printf '\\t')"
+				MOUNTS_SSHFS="projects${tab}/Users/g/Projects link
+				done${tab}/Users/g/Done/
+				root${tab}/"
+				for name in projects done root; do
+					sshfsauto_entry "$name"
+					printf '%s|%s\\n' "$R_MOUNT_WHAT" "$R_MOUNT_WHERE"
+				done
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				gustaf@192.168.64.1:/Users/g/Projects link/|/mnt/machman/mounts/projects
+				gustaf@192.168.64.1:/Users/g/Done/|/mnt/machman/mounts/done
+				gustaf@192.168.64.1:/|/mnt/machman/mounts/root
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - NetBSD user mounts (S38)
 
 	// S38: NetBSD lets users mount only with vfs.generic.usermount=1 — checked, never
