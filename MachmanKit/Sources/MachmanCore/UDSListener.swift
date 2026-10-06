@@ -413,12 +413,15 @@ final class UDSConnection {
 	}
 
 	// Serialized on the connection queue; whole-message writes. A write that fails — the
-	// peer left, or made no room for sendTimeout — ends the connection.
-	func send(_ data: Data) {
+	// peer left, or made no room for sendTimeout — ends the connection. `completion` runs on
+	// the connection's queue once the line is written (true) or dropped (false): a reply an
+	// exit follows waits for it, never for a guessed delay (Q23).
+	func send(_ data: Data, completion: ((Bool) -> Void)? = nil) {
 		let size = data.count + 1
 		lock.lock()
 		guard !overCap else {
 			lock.unlock()
+			if let completion { queue.async { completion(false) } }
 			return
 		}
 		guard queuedBytes + size <= maxQueuedBytes else {
@@ -428,14 +431,21 @@ final class UDSConnection {
 			MachmanLogger.log(.passiveWarning,
 				"dropping a client that stopped reading (\(queued) bytes queued)")
 			abort()
+			if let completion { queue.async { completion(false) } }
 			return
 		}
 		queuedBytes += size
 		lock.unlock()
 		queue.async { [weak self] in
-			guard let self = self else { return }
+			guard let self = self else {
+				completion?(false)
+				return
+			}
 			defer { self.lock.withLock { self.queuedBytes -= size } }
-			guard !self.closed else { return }
+			guard !self.closed else {
+				completion?(false)
+				return
+			}
 			var payload = data
 			payload.append(0x0A)
 			let ok = payload.withUnsafeBytes { raw -> Bool in
@@ -462,6 +472,7 @@ final class UDSConnection {
 			if !ok {
 				self.shutdownLocked()
 			}
+			completion?(ok)
 		}
 	}
 

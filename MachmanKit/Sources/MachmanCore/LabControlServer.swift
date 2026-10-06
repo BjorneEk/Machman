@@ -5,7 +5,8 @@
 //  Serves the lab's control protocol (LabCommand) on a UNIX socket: one line in, one line
 //  out, answered in order per connection. Only a test-suite agent starts one, and only at
 //  the path MACHMAN_LAB_AGENT_CONTROL names inside its run's sandbox (LabEnvironment); the
-//  socket is its owner's only (BoundSocket), like the daemon's own.
+//  socket is its owner's only (BoundSocket), like the daemon's own. What a command sets off
+//  after its reply (a quit ends the process) waits until that reply is written.
 //
 
 import Foundation
@@ -14,6 +15,7 @@ import MachmanAPI
 @MainActor
 public final class LabControlServer {
 	private let handler: @MainActor (LabCommand) async -> String
+	private let afterReply: (@MainActor (LabCommand) -> Void)?
 	private let acceptQueue = DispatchQueue(label: "machman.lab.control.accept")
 	private var listener: UDSListener?
 	// Keyed by a per-accept counter, never by descriptor (MachmanServer's E13 lesson).
@@ -23,9 +25,14 @@ public final class LabControlServer {
 	private var tails: [Int: Task<Void, Never>] = [:]
 	private var nextID = 0
 
-	// Throws UDSError.alreadyRunning when another process serves `path`.
-	public init(path: String, handler: @escaping @MainActor (LabCommand) async -> String) throws {
+	// Throws UDSError.alreadyRunning when another process serves `path`. `afterReply` runs on
+	// the main actor once a command's reply is written, or couldn't be.
+	public init(
+		path: String, handler: @escaping @MainActor (LabCommand) async -> String,
+		afterReply: (@MainActor (LabCommand) -> Void)? = nil
+	) throws {
 		self.handler = handler
+		self.afterReply = afterReply
 		listener = try UDSListener(path: path, queue: acceptQueue) { [weak self] fd in
 			Task { @MainActor [weak self] in
 				guard let self else {
@@ -62,7 +69,15 @@ public final class LabControlServer {
 				self.tails[id] = Task { @MainActor [weak self] in
 					await previous?.value
 					guard let self else { return }
-					connection.send(Data(await self.reply(to: text).utf8))
+					let parsed = LabCommand.parse(text)
+					let reply = await self.reply(to: parsed)
+					guard case .success(let command) = parsed, let after = self.afterReply else {
+						connection.send(Data(reply.utf8))
+						return
+					}
+					connection.send(Data(reply.utf8)) { _ in
+						Task { @MainActor in after(command) }
+					}
 				}
 			}
 		}
@@ -75,8 +90,8 @@ public final class LabControlServer {
 		connection.start()
 	}
 
-	private func reply(to line: String) async -> String {
-		switch LabCommand.parse(line) {
+	private func reply(to parsed: Result<LabCommand, LabCommandError>) async -> String {
+		switch parsed {
 		case .success(let command): return await handler(command)
 		case .failure(let error): return "error \(error.reason)"
 		}
