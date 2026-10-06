@@ -178,12 +178,16 @@ mkdir -p "$prefs"
 "$hw" snapshot --root "$prefs" --out "$root/p1.json"
 echo changed >"$plist"
 "$hw" snapshot --root "$prefs" --out "$root/p2.json"
+# Only the injected sightings (negative pids) count: a real Machman process of another lab run
+# or the user's .dev agent may be running beside this self-check.
+injected() { grep '^-' "$1" > "$1.injected"; echo "$1.injected"; }
 watch classify --inject lab-exit --inject lab-exec --inject exec-only --inject-after 2
 classify="$root/w-classify"
+nonlab5="$(injected "$classify/non-lab-machman.txt")"
 "$hw" diff --before "$root/p1.json" --after "$root/p2.json" --out "$root/d5.txt" \
-	--non-lab "$classify/non-lab-machman.txt" --token "$token"
+	--non-lab "$nonlab5" --token "$token"
 status5=$?
-if [[ $WATCH_STATUS == 0 && ! -s "$classify/non-lab-machman.txt" &&
+if [[ $WATCH_STATUS == 0 && ! -s "$nonlab5" &&
 	"$(grep -c '^-[34] ' "$classify/lab-processes.txt")" == 2 &&
 	"$(grep -c 'NOTE classify' <<<"$summary")" == 1 &&
 	"$summary" == *"NOTE classify pid -6 "* && $status5 == 3 &&
@@ -191,19 +195,20 @@ if [[ $WATCH_STATUS == 0 && ! -s "$classify/non-lab-machman.txt" &&
 	ok "audit classify: an exiting or exec'ing lab vmhost leaves a Machman change a breach"
 else
 	fail "audit classify: an exiting or exec'ing lab vmhost leaves a Machman change a breach" \
-		"$WATCH_STATUS/$status5: non-lab [$(cat "$classify/non-lab-machman.txt")] lab [$(
+		"$WATCH_STATUS/$status5: non-lab [$(cat "$nonlab5")] lab [$(
 			grep '^-' "$classify/lab-processes.txt")] $(cat "$root/d5.txt")"
 fi
 watch devhost --inject non-lab --inject-after 2
+nonlab6="$(injected "$root/w-devhost/non-lab-machman.txt")"
 "$hw" diff --before "$root/p1.json" --after "$root/p2.json" --out "$root/d6.txt" \
-	--non-lab "$root/w-devhost/non-lab-machman.txt" --token "$token"
+	--non-lab "$nonlab6" --token "$token"
 status6=$?
-if [[ "$(cat "$root/w-devhost/non-lab-machman.txt")" == "-5 "*MachmanVMHost && $status6 == 0 &&
+if [[ "$(cat "$nonlab6")" == "-5 "*MachmanVMHost && $status6 == 0 &&
 	"$(cat "$root/d6.txt")" == "WARN snapshot added "*"(a non-lab Machman process ran: -5)" ]]; then
 	ok "audit classify: a .dev vmhost read whole is a non-lab Machman process"
 else
 	fail "audit classify: a .dev vmhost read whole is a non-lab Machman process" \
-		"$status6: non-lab [$(cat "$root/w-devhost/non-lab-machman.txt")] $(cat "$root/d6.txt")"
+		"$status6: non-lab [$(cat "$nonlab6")] $(cat "$root/d6.txt")"
 fi
 
 # 8c: a real stand-in vmhost (a copy of this helper at a Machman app path, the run's socket dir
