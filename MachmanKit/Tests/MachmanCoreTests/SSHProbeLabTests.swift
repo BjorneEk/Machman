@@ -37,6 +37,7 @@ struct SSHProbeLabTests {
 		#expect(!quiet.allowsLocalNetwork)
 		#expect(!SSHDiscovery.probeAllowed(host: "192.168.64.5", lab: quiet))
 		#expect(!SSHDiscovery.probeAllowed(host: "10.0.2.15", lab: quiet))
+		#expect(!SSHDiscovery.probeAllowed(host: Self.testNet, lab: quiet))
 		#expect(SSHDiscovery.probeAllowed(host: "127.0.0.1", lab: quiet))
 		#expect(SSHDiscovery.probeAllowed(host: "::1", lab: quiet))
 		let open = try #require(Self.lab(["MACHMAN_LAB_LOCAL_NETWORK": "1"]))
@@ -44,12 +45,16 @@ struct SSHProbeLabTests {
 		#expect(SSHDiscovery.probeAllowed(host: "192.168.64.5", lab: open))
 	}
 
+	// TEST-NET-1 (RFC 5737): refused like any guest address, and on no local subnet, so a
+	// regressed seam makes this test time out and fail, never open a Local Network connect.
+	static let testNet = "192.0.2.1"
+
 	@Test("Q18: a refused probe reads as closed without connecting")
 	func aRefusedProbeReadsAsClosed() async {
 		// Only meaningful inside a test-mode process (scripts/test.sh's suite is one).
 		guard let current = LabEnvironment.current, !current.allowsLocalNetwork else { return }
 		let start = Date()
-		#expect(await SSHDiscovery.probeTCP(host: "192.168.64.254", timeout: 5) == false)
+		#expect(await SSHDiscovery.probeTCP(host: Self.testNet, timeout: 5) == false)
 		#expect(Date().timeIntervalSince(start) < 1)
 	}
 }
