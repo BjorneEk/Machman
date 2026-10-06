@@ -4,7 +4,7 @@
 # .test-<token> suite, driven over their socket by MachmanKit's MachmanLabTests target.
 #
 #   scripts/lab.sh [--quick|--full|--guests|--harness] [--launchd] [--filter REGEX] [--keep]
-#                  [--out DIR] [--no-build]
+#                  [--out DIR] [--no-build] [-v|-vv]
 #   scripts/lab.sh --self-check | --doctor | --help
 #
 #   --quick     tiers harness,smoke (the lab agent and the Alpine fixture, no L3 guests)
@@ -18,6 +18,9 @@
 #   --keep      keep the sandbox for a day (after the run: lab: kept <root>)
 #   --out DIR   copy report, logs and transcripts to DIR (absolute; git-ignored if in the repo)
 #   --no-build  skip the xcodebuild and swift build steps
+#   -v, -vv     live progress (scripts/lab/progress.py), always timestamped: each test's start,
+#               end, duration and issues, skips, and a stall line after a quiet minute; -v adds
+#               the lab log (agent, vmhost, harness steps), -vv the guest consoles too
 #   --self-check  prove the lab's own machinery: script self-checks, then the harness tests
 #                 with every audit armed
 #   --doctor    check tools, cache, fixtures and seams; runs nothing, writes nothing
@@ -32,7 +35,7 @@
 #
 # Run dir /tmp/mml.<4-char token>: data/ home/ pids/ logs/ transcripts/ scopes/<NN>/ report/
 # (watch/summary.txt, watch/lab-processes.txt, watch/non-lab-machman.txt, snapshot-summary.txt,
-# worktree.txt, swift-test.log).
+# worktree.txt, swift-test.log, events.jsonl, progress.log (the -vv stream), test-times.tsv).
 #
 # One lab run machine-wide: the slot <review-fix>/locks/lab.1 (or <cache>/locks/lab.1).
 #
@@ -53,6 +56,7 @@ filter=""
 keep=0
 out=""
 build=1
+verbose=0
 products=""
 root=""
 token=""
@@ -72,6 +76,8 @@ while (($#)); do
 	--out) out="${2:?--out needs a directory}"; shift ;;
 	--keep) keep=1 ;;
 	--no-build) build=0 ;;
+	-v | --verbose) verbose=$((verbose < 2 ? verbose + 1 : 2)) ;;
+	-vv) verbose=2 ;;
 	*) echo "lab.sh: unknown argument $1 (see --help)" >&2; exit 64 ;;
 	esac
 	shift
@@ -105,15 +111,26 @@ lab_pidfile_pids() {
 
 WATCHPID=""
 LOGPID=""
+FOLLOWPID=""
 
 lab_stop_helpers() {
 	local p
 	[[ -n "$WATCHPID" && -n "$root" ]] && touch "$root/report/watch/stop" 2>/dev/null
-	for p in $WATCHPID $LOGPID; do
+	for p in $WATCHPID $LOGPID $FOLLOWPID; do
 		kill -TERM "$p" 2>/dev/null
 	done
 	WATCHPID=""
 	LOGPID=""
+	FOLLOWPID=""
+}
+
+# lab_progress_ok: swift test writes Swift Testing's event stream and python3 is a real one
+# (not the Command Line Tools shim): the live progress follower can run.
+lab_progress_ok() {
+	command -v python3 >/dev/null 2>&1 || return 1
+	[[ "$(command -v python3)" == /usr/bin/python3 ]] && ! xcode-select -p >/dev/null 2>&1 &&
+		return 1
+	swift test --help-hidden 2>/dev/null | grep -F -- --event-stream-output-path >/dev/null
 }
 
 lab_finish() {
@@ -354,16 +371,46 @@ lab_run() {
 	[[ -n "$filter" ]] && filt="MachmanLabTests\\..*($filter)"
 	# In the background and waited for, so an interrupt reaches the trap at once. The Mac stays
 	# awake for it (sandbox_awake): a console wait timed out across a maintenance sleep.
-	rm -f "$root/report/test-status"
+	# swift test holds its output back while it writes to a pipe or file, so the terminal shows
+	# progress.py's lines, read live from the event stream, the lab log and the consoles.
+	rm -f "$root/report/test-status" "$root/report/progress.stop"
+	local events=() followstatus=0
+	if lab_progress_ok; then
+		events=(--event-stream-output-path "$root/report/events.jsonl" --event-stream-version 0)
+		: > "$root/report/events.jsonl"
+		python3 "$repo/scripts/lab/progress.py" --run "$root" --level "$verbose" \
+			--stop "$root/report/progress.stop" &
+		FOLLOWPID=$!
+	else
+		echo "lab: no live progress (python3 or swift test's event stream missing)"
+	fi
 	{
 		set +e
 		sandbox_awake swift test --skip-build --disable-xctest --no-parallel \
-			--package-path "$pkg" --filter "$filt" 2>&1
+			--package-path "$pkg" --filter "$filt" ${events[@]+"${events[@]}"} 2>&1
 		echo $? > "$root/report/test-status"
-	} | tee "$root/report/swift-test.log" &
+	} > "$root/report/swift-test.log" &
 	wait $!
 	ts="$(cat "$root/report/test-status" 2>/dev/null || echo 1)"
 	((ts != 0)) && teststatus=1
+	if [[ -n "$FOLLOWPID" ]]; then
+		touch "$root/report/progress.stop"
+		waited=0
+		while kill -0 "$FOLLOWPID" 2>/dev/null && ((waited < 20)); do
+			sleep 0.5
+			waited=$((waited + 1))
+		done
+		kill -TERM "$FOLLOWPID" 2>/dev/null || true
+		wait "$FOLLOWPID" 2>/dev/null || followstatus=$?
+		FOLLOWPID=""
+	fi
+	# No follower, or a test process that never summarized (a crash): swift test's own words.
+	if ((${#events[@]} == 0)); then
+		cat "$root/report/swift-test.log"
+	elif ((followstatus != 0)); then
+		echo "lab: the last of swift test's output ($root/report/swift-test.log):"
+		tail -n 40 "$root/report/swift-test.log"
+	fi
 	# Sweep (the audits still watching), then stop the audits and compare.
 	# shellcheck disable=SC2046
 	sandbox_lab_teardown "$root" $( { lab_pidfile_pids "$root"; sandbox_token_pids "$token"; } |
@@ -560,6 +607,7 @@ selfcheck)
 	"$repo/scripts/lab/fetch.sh" --self-check || scriptfail=1
 	"$repo/scripts/lab/guests/alpine/build.sh" --self-check || scriptfail=1
 	"$repo/scripts/lab/audit/selfcheck.sh" || scriptfail=1
+	python3 "$repo/scripts/lab/progress.py" --self-check || scriptfail=1
 	lab_selfcheck_audits || scriptfail=1
 	((scriptfail)) && echo "lab: a script self-check FAILED"
 	lab_run harness 1 "$scriptfail"
