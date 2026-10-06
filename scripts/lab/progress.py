@@ -121,6 +121,10 @@ class Tail:
     def __init__(self, path, partial=None):
         self.path, self.partial = path, partial
         self.pos, self.rest, self.grew = 0, b"", 0.0
+        try:
+            self.born = os.stat(path).st_birthtime
+        except (OSError, AttributeError):
+            self.born = None
 
     def lines(self, now):
         try:
@@ -147,17 +151,19 @@ class Window:
     def __init__(self):
         self.head, self.tail, self.count = [], collections.deque(maxlen=64), 0
 
-    def add(self, line):
+    def add(self, stamp, text):
+        """A line of output and its time ("" for a message's further lines)."""
         if len(self.head) < 2:
-            self.head.append(line)
-        self.tail.append(line)
+            self.head.append((stamp, text))
+        self.tail.append((stamp, text))
         self.count += 1
 
     def lines(self, height):
+        """(time, text) pairs, at most `height`."""
         if self.count <= height:
             return list(self.tail)[-self.count:] if self.count else []
         newest = list(self.tail)[-(height - 3):]
-        return self.head + [gap(self.count - 2 - len(newest))] + newest
+        return self.head + [("", gap(self.count - 2 - len(newest)))] + newest
 
 
 class Screen:
@@ -178,19 +184,26 @@ class Screen:
         return "\x1b[%sm%s\x1b[0m" % (code, text) if self.colour and code else text
 
     def render(self, row, width):
-        """A row of (colour code, text) segments, cut to `width` with an ellipsis."""
+        """A row: (colour code, text) segments cut to `width` with an ellipsis, and an
+        optional (code, text) right-aligned at the edge: ([segments], right or None)."""
+        segments, right = row
+        room = width - (len(right[1]) + 2 if right else 0)
         out, used = [], 0
-        for code, text in row:
+        for code, text in segments:
             text = CONTROLS.sub("", text.expandtabs(4))
-            if used + len(text) > width:
-                out.append(self.paint(code, text[:max(0, width - used - 1)] + "…"))
+            if used + len(text) > room:
+                text = text[:max(0, room - used - 1)] + "…"
+                out.append(self.paint(code, text))
+                used += len(text)
                 break
             out.append(self.paint(code, text))
             used += len(text)
+        if right:
+            out.append(" " * (width - used - len(right[1])) + self.paint(*right))
         return "".join(out)
 
     def update(self, above, block):
-        """`above` and `block` are rows of (colour code, text) segments."""
+        """`above` and `block` are rows (see render)."""
         if not above and block == self.last:
             return
         width = self.dimensions()[0] - 1
@@ -258,13 +271,15 @@ class Follower:
             elif role in ("result", "issue") and level <= self.level:
                 above.extend(self.rows(epoch, text, extras))
             elif role in ("detail", "step") and level <= self.level and (
-                    self.current is None or epoch >= self.started[self.current][1]):
-                # (A line older than the running test is the last one's teardown, late.)
+                    self.current is None or min(epoch, extras.get("born") or epoch)
+                    >= self.started[self.current][1] - 1):
+                # (A line older than the running test, or from a console opened before it,
+                # is the last test's, late.)
                 parts = text.strip().split("\n")
-                self.window.add("%s %s" % (clock(epoch), parts[0].rstrip()))
+                self.window.add(clock(epoch), parts[0].rstrip())
                 for part in parts[1:]:
                     if part.strip():
-                        self.window.add(" " * 9 + part.strip())
+                        self.window.add("", "  " + part.strip())
         self.log.flush()
         if self.screen is None:
             if above:
@@ -286,37 +301,42 @@ class Follower:
 
     def rows(self, epoch, text, extras):
         """A result's rows on the terminal: its line (only the mark and index coloured, the
-        time and duration dim, a note yellow), then its children hung under it."""
-        stamp = ("2", clock(epoch) + " ")
+        duration dim, a note yellow, its time dim at the right edge), then its children hung
+        under it, dim but for their glyph and what they start with."""
+        stamp = ("2", clock(epoch))
         lines = [l.rstrip() for l in text.split("\n")]
         if "parts" in extras:
             mark, name, tail = extras["parts"]
             note = extras.get("note", "")
-            room = self.screen.dimensions()[0] - 1 - len(stamp[1] + mark + " " + tail + note)
+            room = self.screen.dimensions()[0] - 1 - len(stamp[1]) - 2 \
+                - len(mark + " " + tail + note)
             name = fit(name, max(10, room))
             if mark.startswith("–"):
-                first = [stamp, ("2", "%s %s%s" % (mark, name, tail))]
+                left = [("2", "%s %s%s" % (mark, name, tail))]
             else:
-                first = [stamp, (self.colour(mark), mark), (None, " " + name), ("2", tail)]
+                left = [(self.colour(mark), mark), (None, " " + name), ("2", tail)]
                 if note:
-                    first.append(("33", note))
+                    left.append(("33", note))
         else:
-            first = [stamp, (self.colour(lines[0]), lines[0].strip())]
-        rows = [first]
+            left = [(self.colour(lines[0]), lines[0].strip())]
+        rows = [(left, stamp)]
         items = extras.get("children")
         if items is None:
-            rows.extend([(None, " " * 9 + l.strip())] for l in lines[1:] if l.strip())
+            rows.extend(([(None, "  " + l.strip())], None) for l in lines[1:] if l.strip())
             return rows
         for i, (glyph, line, more) in enumerate(items):
             last = i == len(items) - 1
-            lead = [(None, " " * 9), ("2", "└─ " if last else "├─ ")]
+            lead = [(None, "  "), ("2", "└─ " if last else "├─ ")]
             if glyph:
-                rows.append(lead + [(self.colour(glyph), glyph), (None, " " + line)])
+                lead += [(self.colour(glyph), glyph), (None, " ")]
+            head, sep, rest = line.partition(": ")
+            if sep:
+                lead += [("33" if glyph == "~" else "1", head + ":"), ("2", " " + rest)]
             else:
-                rows.append(lead + [("2", line)])
+                lead.append(("2", line))
+            rows.append((lead, None))
             for l in more:
-                rows.append([(None, " " * 9), ("2", ("   " if last else "│  ") + "  "),
-                             ("2" if l.startswith("⋯") else None, l)])
+                rows.append(([(None, "  "), ("2", ("   " if last else "│  ") + "  " + l)], None))
         return rows
 
     def children(self, test_id):
@@ -353,11 +373,12 @@ class Follower:
             if self.current is not None and self.step is not None \
                     and self.step[0] >= self.started[self.current][1] \
                     and not self.step[1].startswith(("✓", "✘")):
-                body.append("  " + self.step[1])
+                body.append(([("2", "  " + self.step[1])], None))
         elif self.current is not None:
-            body.extend("  " + l for l in self.window.lines(height))
-        body += [""] * (height - len(body))
-        return [[("1", header)]] + [[("2", b)] for b in body]
+            body.extend(([("2", "  " + text)], ("2", stamp) if stamp else None)
+                        for stamp, text in self.window.lines(height))
+        body += [([("2", "")], None)] * (height - len(body))
+        return [([("1", header)], None)] + body
 
     # --- the event stream -------------------------------------------------------------------
 
@@ -417,7 +438,7 @@ class Follower:
             out.append((when, 1 if reason else 2, "– skipped: %s%s" % (
                 about(self.display(test_id)), (" — " + reason) if reason else ""), "result",
                 {"parts": ("– skipped:", about(self.display(test_id)), ""),
-                 "children": [("", reason, [])] if reason else []}))
+                 "children": [("", reason.strip('"'), [])] if reason else []}))
         elif kind == "testSkipped":
             match = SKIPPED.match(first.replace("Suite", "Test", 1))
             out.append((when, 1 if match and match.group(1) else 2, "– %s" % first, "result"))
@@ -489,13 +510,13 @@ class Follower:
         text = re.sub(r"^\[([a-z-]+)\] ", r"\1: ", text)
         out.append((when, 1, "  %-14s %s" % (self.who(entry), text[:2000]), "detail"))
 
-    def on_console(self, name, raw, now, out):
+    def on_console(self, name, raw, now, out, born=None):
         line = ESCAPES.sub(b"", raw).replace(b"\r", b"").decode("utf-8", "replace").rstrip()
         if not line.strip():
             return
         title = console_title(name)
         self.console = (title, line.strip())
-        out.append((now, 2, "  [%s] %s" % (title, line), "detail"))
+        out.append((now, 2, "  [%s] %s" % (title, line), "detail", {"born": born}))
 
     def stalled(self, now, out):
         if self.screen is not None or self.current is None or now - self.printed < self.stall:
@@ -526,7 +547,7 @@ class Follower:
         for path in sorted(glob.glob(os.path.join(self.root, "transcripts", "*.log"))):
             tail = self.consoles.setdefault(path, Tail(path, partial=1.0))
             for raw in tail.lines(now):
-                self.on_console(os.path.basename(path)[:-4], raw, now, out)
+                self.on_console(os.path.basename(path)[:-4], raw, now, out, tail.born)
         self.stalled(now, out)
         self.emit(out, now)
 
@@ -812,15 +833,28 @@ def self_check():
         follower.screen.colour = False
         shown = Terminal().feed(screen.getvalue())
         live = shown[next(i for i, l in enumerate(shown) if l.startswith("▶")):]
-        check("a running test's block: its header with elapsed time, then its output",
+        timed = re.compile(r"^  \[lab-debian hvc0\] boot line (\d+) +\d\d:\d\d:\d\d$")
+        check("a running test's block: its header, then its output, times at the right edge",
               live[0].startswith("▶ 1/1 the guest answers on its console · 2")
-              and live[1].startswith("  " + clock(now)[:5])
-              and live[-1].endswith(" [lab-debian hvc0] boot line 29") and len(live) == 11)
+              and timed.match(live[1]) and len(live[1]) == 79
+              and timed.match(live[-1]).group(1) == "29" and len(live) == 11)
         check("output past the window: its first two lines, how many are left out, the newest",
-              live[1].endswith("boot line 0") and live[2].endswith("boot line 1")
-              and live[3] == "  ⋯ 21 more lines ⋯" and live[4].endswith("boot line 23"))
+              timed.match(live[1]).group(1) == "0" and timed.match(live[2]).group(1) == "1"
+              and live[3] == "  ⋯ 21 more lines ⋯" and timed.match(live[4]).group(1) == "23")
         check("a line from before the test started stays out of its block",
               not any("teardown" in l for l in live))
+        stale = Follower(root, 2, io.StringIO(), io.StringIO(), tty=True, size=(80, 30))
+        stale.tick()
+        # As if the test began 2 s after its console opened, and the line came after that.
+        born = os.stat(root + "/transcripts/01-lab-debian-hvc0.log").st_birthtime
+        time.sleep(max(0.0, born + 2.2 - time.time()))
+        stale.started[r1] = (1, born + 2)
+        stale.window = Window()
+        with open(root + "/transcripts/01-lab-debian-hvc0.log", "a") as f:
+            f.write("a late line\n")
+        stale.tick()
+        check("a console opened before the running test began stays out of its window",
+              stale.window.count == 0)
         check("block lines are cut to the terminal's width", all(len(l) <= 79 for l in live))
         write(root + "/report/events.jsonl", [
             event("testEnded", now - 1, r1, [("pass", "passed")]),
@@ -869,16 +903,16 @@ def self_check():
         check("the block keeps its height while tests run, between them and with little output",
               heights == [11, 11, 11])
         shown = Terminal().feed(screen.getvalue())
-        result = next(i for i, l in enumerate(shown) if " ✘ 1/2 " in l)
-        check("a long result line is cut to the width and keeps its duration",
-              len(shown[result]) <= 79 and "…" in shown[result]
-              and shown[result].endswith(" · 10 s"))
+        result = next(i for i, l in enumerate(shown) if l.startswith("✘ 1/2 "))
+        check("a long result line is cut to the width, keeps its duration, its time at the edge",
+              len(shown[result]) == 79 and "…" in shown[result]
+              and re.search(r" · 10 s +\d\d:\d\d:\d\d$", shown[result]))
         check("a failure's issue hangs under its result: first two lines, a count, last five",
-              shown[result + 1] == " " * 9 + "└─ ✘ File.swift:71: Expectation failed: a == b"
-              and shown[result + 2] == " " * 14 + "detail 1"
-              and shown[result + 3] == " " * 14 + "⋯ 2 more lines in report/progress.log ⋯"
-              and shown[result + 4] == " " * 14 + "detail 4"
-              and shown[result + 8] == " " * 14 + "detail 8")
+              shown[result + 1] == "  └─ ✘ File.swift:71: Expectation failed: a == b"
+              and shown[result + 2] == " " * 7 + "detail 1"
+              and shown[result + 3] == " " * 7 + "⋯ 2 more lines in report/progress.log ⋯"
+              and shown[result + 4] == " " * 7 + "detail 4"
+              and shown[result + 8] == " " * 7 + "detail 8")
         known = {"isKnown": True, "sourceLocation": {"fileID": "Mod/File.swift", "line": 81}}
         write(root + "/report/events.jsonl", [
             event("issueRecorded", now - 25, r8, [("passWithKnownIssue", "Expectation failed: x"),
@@ -889,18 +923,24 @@ def self_check():
             event("testEnded", now - 20, r8, [("pass", "passed")])])
         follower.tick()
         shown = Terminal().feed(screen.getvalue())
-        result = next(i for i, l in enumerate(shown) if " ✔ 2/2 " in l)
+        result = next(i for i, l in enumerate(shown) if l.startswith("✔ 2/2 "))
         check("a known issue hangs under its result by its title, the last child with └─",
-              shown[result].endswith("a quiet test · 10 s · known issue")
-              and shown[result + 1] == " " * 9 + "├─ ~ known issue: the override never boots"
-              and shown[result + 2] == " " * 9 + "└─ ! F.swift:3: a warning")
+              re.match(r"✔ 2/2 a quiet test · 10 s · known issue +\d\d:", shown[result])
+              and shown[result + 1] == "  ├─ ~ known issue: the override never boots"
+              and shown[result + 2] == "  └─ ! F.swift:3: a warning")
         follower.screen.colour = True
         row = follower.rows(now, "", {"parts": ("✔ 2/2", "a quiet test", " · 10 s"),
-                                      "note": " · known issue"})
+                                      "note": " · known issue",
+                                      "children": [("~", "known issue: it never boots", [])]})
         drawn = follower.screen.render(row[0], 79)
-        check("only the mark and index are coloured; the time and duration dim, the note yellow",
-              "\x1b[32m✔ 2/2\x1b[0m a quiet test\x1b[2m · 10 s\x1b[0m" in drawn
-              and "\x1b[33m · known issue\x1b[0m" in drawn and drawn.startswith("\x1b[2m"))
+        child = follower.screen.render(row[1], 79)
+        check("only the mark and index are coloured; the duration dim, the note yellow",
+              drawn.startswith("\x1b[32m✔ 2/2\x1b[0m a quiet test\x1b[2m · 10 s\x1b[0m")
+              and "\x1b[33m · known issue\x1b[0m" in drawn
+              and drawn.endswith("\x1b[2m%s\x1b[0m" % clock(now)))
+        check("a note is dim but for its glyph and what it starts with",
+              child == "  \x1b[2m└─ \x1b[0m\x1b[33m~\x1b[0m \x1b[33mknown issue:\x1b[0m"
+              "\x1b[2m it never boots\x1b[0m")
         check("a window that fits shows all its lines, padded",
               elide(["a", "b", "c"], 10) == ["a", "b", "c"]
               and Window().lines(10) == [])
