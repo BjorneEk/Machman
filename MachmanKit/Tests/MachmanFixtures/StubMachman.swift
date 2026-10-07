@@ -386,9 +386,23 @@ public final class StubMachman: MachmanControlling {
 		try gate()
 		_ = try get(name)
 	}
+	// The engine's effect (VMConfig.setKernelBoot, Q29): on boots the persisted draft,
+	// creating an empty one; off goes back to EFI and keeps the draft. StubParityTests holds
+	// the two together.
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
 		try gate()
-		_ = try get(name)
+		var vm = try get(name)
+		// Installed macOS is locked, and a newer Machman's mode is never left (validateTransition).
+		if vm.boot.mode == .unknown
+			|| (vm.boot.mode == .macOS && vm.boot.macInstallState?.kind == .installed) {
+			throw MachmanError(code: .invalidState, message: "\(name) can’t switch boot mode")
+		}
+		if enabled, vm.boot.kernel == nil {
+			vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		}
+		vm.boot.mode = enabled ? .linuxKernel : .efi
+		vms[name] = vm
+		emit(.listChanged)
 	}
 	// vm.kernel.update requests, in order: a full replace of the VM's kernel settings (P41).
 	public private(set) var kernelSettingsSent: [(vm: String, settings: KernelSettings)] = []
@@ -422,10 +436,17 @@ public final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return vm
 	}
+	// Like the engine (VMConfig.clearKernelReference, Q29): a field that pointed at the deleted
+	// file is cleared, the draft itself stays.
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
 		try gate()
 		var vm = try get(name)
 		vm.boot.ownedKernels?.removeAll { $0.path == path }
+		if var kernel = vm.boot.kernel {
+			if kernel.kernelPath == path { kernel.kernelPath = "" }
+			if kernel.initrdPath == path { kernel.initrdPath = nil }
+			vm.boot.kernel = kernel
+		}
 		vms[name] = vm
 		emit(.listChanged)
 		return vm
