@@ -297,6 +297,50 @@ struct GuestScriptSshfsTests {
 
 	// S43: "ready" came right after the step that failed it; now only a mount point that
 	// exists, with the fuse driver loaded, is ready.
+	// S65 (review 4): root mounts each sshfs entry at boot as the Mac user with allow_other;
+	// without default_permissions FUSE checks no mode in the guest, so every guest account
+	// writes the share — Guest Setup's install.sh, which an admin then runs with sudo — and
+	// every host folder, with the Mac user's rights. The read-only payload virtiofs gives is
+	// gone on exactly the guests (the BSDs) that take the sshfs path.
+	@Test("S65: boot-time sshfs mounts let the guest kernel check each file's mode")
+	func bootMountsCheckModesInTheGuest() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				HOME_DIR="$D/home"
+				U="$(id -un)"
+				sshfsauto_options
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			let options = r.out.trimmingCharacters(in: .newlines).split(separator: ",")
+				.map(String.init)
+			#expect(options.contains("allow_other"), "\(shell): \(r.out)")
+			// Fails until the open bug S65 (sshfs mounts let every guest account write as the
+			// Mac user) is fixed.
+			#expect(options.contains("default_permissions"), "\(shell): \(r.out)")
+		}
+	}
+
+	// S66 (review 4): the uninstall rmdir'd the mount root whether this run created it or
+	// found it, so a setup run with --mountpoint /mnt (normally empty) cost the guest /mnt.
+	@Test("S66: the uninstall keeps a mount root that was there before setup")
+	func uninstallKeepsAMountRootItFound() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=1000
+				mount() { :; }
+				mkdir "$D/mnt"
+				ST_MOUNTPOINT="$D/mnt"
+				ST_AUTOMOUNT_SSHFS=""
+				uninstall_unmount_and_prune >/dev/null 2>&1
+				if [ -d "$D/mnt" ]; then echo kept; else echo removed; fi
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			// Fails until the open bug S66 (the uninstall removes a mount root it didn't
+			// create) is fixed.
+			#expect(r.out == "kept\n", "\(shell): \(r.out)")
+		}
+	}
+
 	@Test func theMountPointIsReadyOnlyWhenItIs() async throws {
 		for shell in GuestScriptHarness.shells {
 			let r = try await GuestScriptHarness.run("""
