@@ -384,6 +384,11 @@ struct BoundSocket {
 		var addr = try UDSListener.makeAddr(path)
 		let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard fd >= 0 else { throw UDSError.systemError("socket", errno) }
+		// Every connection accepted here inherits SO_NOSIGPIPE from the listening socket (E60).
+		// Set on the accepted socket alone it fails (EINVAL) once the client already left, and
+		// a later write to that client then raised SIGPIPE in the whole process.
+		var on: Int32 = 1
+		_ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
 		let didBind = withUnsafePointer(to: &addr) {
 			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
 				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
