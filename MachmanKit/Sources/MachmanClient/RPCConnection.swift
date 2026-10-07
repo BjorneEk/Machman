@@ -137,10 +137,12 @@ public actor RPCConnection {
 	}
 
 	// The designated init. readerHook is a test seam: it runs on the reader thread after
-	// each chunk the reader processed, so a test can park the reader between reads.
+	// each chunk the reader processed, so a test can park the reader between reads. So is
+	// onConnected: it gets the connected socket before the reader starts, while nothing can
+	// have closed it yet — a host that hangs up at once has it torn down right after.
 	init(
 		socketPath: String, sendTimeout: Duration, readerHook: (@Sendable () -> Void)?,
-		onDisconnect: @escaping @Sendable () -> Void
+		onConnected: ((Int32) -> Void)? = nil, onDisconnect: @escaping @Sendable () -> Void
 	) throws {
 		self.onDisconnect = onDisconnect
 
@@ -167,6 +169,7 @@ public actor RPCConnection {
 			close(fd)
 			throw ConnectionError.connectFailed(socketPath, err)
 		}
+		onConnected?(fd)
 		self.socket = SocketLifetime(fd: fd)
 		var pid: pid_t = 0
 		var len = socklen_t(MemoryLayout<pid_t>.size)

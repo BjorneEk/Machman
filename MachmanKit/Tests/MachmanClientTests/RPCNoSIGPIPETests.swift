@@ -16,6 +16,11 @@ import MachmanTestSupport
 import MachmanAPI
 @testable import MachmanClient
 
+// What a connection's socket said as it connected; set before the init returns.
+private final class Flag: @unchecked Sendable {
+	var value = false
+}
+
 struct RPCNoSIGPIPETests {
 	private static func noSIGPIPE(_ fd: Int32) -> Bool {
 		var on: Int32 = 0
@@ -36,9 +41,15 @@ struct RPCNoSIGPIPETests {
 		let host = try HangUpHost()
 		defer { host.close() }
 		for _ in 0..<20 {
-			let connection = try RPCConnection(socketPath: host.socketPath)
+			// Read as it connects, before its reader starts: the hang-up tears the connection
+			// down at once, and a descriptor number read after that is closed, or another's.
+			let refused = Flag()
+			let connection = try RPCConnection(
+				socketPath: host.socketPath, sendTimeout: RPCConnection.defaultSendTimeout,
+				readerHook: nil, onConnected: { refused.value = Self.noSIGPIPE($0) },
+				onDisconnect: {})
 			// Checked before the write: without it the write below would kill the runner.
-			try #require(Self.noSIGPIPE(connection.fdForTesting))
+			try #require(refused.value)
 			do {
 				_ = try await connection.call(
 					.hello, RPCEmpty?.none, expecting: RPCEmpty.self, deadline: .seconds(5))
