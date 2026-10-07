@@ -66,9 +66,28 @@ struct GuestSetupCommandTests {
 			#expect(!root.contains("sudo") && !root.contains("doas"))
 		}
 		#expect(GuestEscalation.doas.apply(shareMount(approved: true))
-			== "doas mkdir -p /mnt/machman/share && doas sshfs -F /home/demo/.ssh/config "
+			== "doas mkdir -p /mnt/machman/share && doas sshfs -F ~demo/.ssh/config "
 				+ "mac:'/Users/demo/VMs/Debian/share/' /mnt/machman/share "
 				+ "-o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3")
+	}
+
+	// C29: the approved mount named its config /home/<user>/.ssh/config, but root's home on
+	// the BSDs is /root (and no home need be under /home), so sshfs could not read it and
+	// step 5 of the guide failed. The guest's own shell finds the home: ~<user>.
+	@Test("C29: the approved BSD mount reads root's config from root's home")
+	func theApprovedMountFindsTheUsersHome() async throws {
+		let line = GuestEscalation.doas.apply(GuestSetupCommands.bsdShareMount(
+			approvedGuestUser: "root", hostUser: "demo", hostAddress: "192.168.64.1",
+			sharePath: "/Users/demo/VMs/FreeBSD/share"))
+		#expect(line.contains("doas sshfs -F ~root/.ssh/config mac:"), "\(line)")
+		// As sh reads the pasted line: ~root is root's home (this Mac's, here), never /home.
+		let sh = try await Subprocess.run("/bin/sh", ["-c", Self.standIns + line])
+		#expect(sh.status == 0)
+		let words = sh.output.split(separator: "\n").map(String.init)
+		// The account database's word (the test sandbox moves only this process's home).
+		let home = try #require(getpwnam("root").map { String(cString: $0.pointee.pw_dir) })
+		#expect(words.contains(home + "/.ssh/config"), "\(words)")
+		#expect(!words.contains { $0.hasPrefix("/home/") }, "\(words)")
 	}
 
 	@Test func theFuseFallbackRunsAsRootToo() {

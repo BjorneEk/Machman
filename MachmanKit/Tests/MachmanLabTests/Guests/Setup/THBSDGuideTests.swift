@@ -158,8 +158,6 @@ struct THBSDGuideTests {
 				approvedGuestUser: "root", hostUser: try await g.hostUser,
 				hostAddress: QEMUGuest.gateway, sharePath: try await g.sharePath))
 			let result = try await g.sh(mount)
-			// Fails until the open bug C29 (the mount points sshfs at /home/root for a root
-			// guest user) is fixed.
 			#expect(result.status == 0, "\(mount):\n\(result.output)")
 		}
 	}

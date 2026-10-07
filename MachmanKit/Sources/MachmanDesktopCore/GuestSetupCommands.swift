@@ -135,12 +135,12 @@ public enum GuestSetupCommands {
 	public static let bsdFuseLoad = GuestCommand("kldstat -q -m fusefs").or("kldload fusefs")
 
 	// Mounts Machman's setup folder over sshfs at the share's guest path. With the guest's
-	// key approved it goes through the user's 'mac' alias — root reads ~root/.ssh/config, so
-	// -F brings the user's in (key and pinned host key, no password); otherwise it asks for
-	// the Mac account's password once. The host path is quoted (it can carry the VM's name)
-	// and ends in "/": it is normally the library's rename-stable link to the share, and a
-	// trailing slash makes every lookup of the mount's root resolve through the link — a
-	// lookup of the bare link path would find a link, not a directory.
+	// key approved it goes through the user's 'mac' alias — the escalated sshfs reads root's
+	// own config, so -F brings the user's in (key and pinned host key, no password);
+	// otherwise it asks for the Mac account's password once. The host path is quoted (it can
+	// carry the VM's name) and ends in "/": it is normally the library's rename-stable link
+	// to the share, and a trailing slash makes every lookup of the mount's root resolve
+	// through the link — a lookup of the bare link path would find a link, not a directory.
 	public static func bsdShareMount(
 		approvedGuestUser: String?, hostUser: String, hostAddress: String, sharePath: String
 	) -> GuestCommand {
@@ -152,6 +152,14 @@ public enum GuestSetupCommands {
 			return mkdir.and("sshfs \(hostUser)@\(hostAddress):\(path) \(mountPoint) \(options)")
 		}
 		return mkdir.and(
-			"sshfs -F /home/\(user)/.ssh/config mac:\(path) \(mountPoint) \(options)")
+			"sshfs -F \(sshConfig(of: user)) mac:\(path) \(mountPoint) \(options)")
+	}
+
+	// The user's ssh config where the guest's own shell finds their home: root's is /root on
+	// the BSDs, and no home need be under /home (C29). A name the report's rule refuses is
+	// never put after a tilde, where it would be shell text: it stays quoted under /home.
+	private static func sshConfig(of user: String) -> String {
+		GuestValueRule.isUserName(user)
+			? "~\(user)/.ssh/config" : ShellQuote.single("/home/\(user)/.ssh/config")
 	}
 }
