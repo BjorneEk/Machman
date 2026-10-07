@@ -68,11 +68,10 @@ private final class HeldAsk {
 	}
 }
 
-// An answer the test moves, taught by the guest's reports (`taught`) or not; how often asked.
+// An answer the test moves; how often it was asked.
 @MainActor
 private final class MovingAnswer {
 	var address = "192.168.64.20"
-	var taught: SSHDiscovery.Hints? = SSHDiscovery.Hints(clientID: "ff,1:2:3")
 	private(set) var asks = 0
 
 	var probes: SSHDiscovery.Probes {
@@ -83,7 +82,7 @@ private final class MovingAnswer {
 
 	private func answer() -> SSHDiscovery.Answer? {
 		asks += 1
-		return SSHDiscovery.Answer(address: address, source: "dhcp", hints: taught)
+		return SSHDiscovery.Answer(address: address, source: "dhcp")
 	}
 }
 
@@ -98,6 +97,36 @@ private final class Taught {
 	func ask() -> SSHDiscovery.Hints {
 		asks += 1
 		return hints
+	}
+}
+
+// "alpha"'s config where a probe reads it, saved as its vmhost saves what a report taught.
+// VMTestDir only mints it (the redirect is sync-only); the library is the test's own.
+@MainActor
+private final class TaughtConfig {
+	let library = TestEnvironment.scratch + "library-\(UUID().uuidString)"
+	private let config: VMConfig
+
+	init() throws {
+		config = try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			return try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2)
+		}
+	}
+
+	func save(clientID: String, address: String) throws {
+		var ssh = SSHConfig()
+		ssh.dhcpClientID = clientID
+		ssh.lastAddress = address
+		config.ssh = ssh
+		let folder = library + "/alpha"
+		try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+		try JSONEncoder().encode(config)
+			.write(to: URL(fileURLWithPath: folder + "/config"), options: .atomic)
+	}
+
+	func remove() {
+		try? FileManager.default.removeItem(atPath: library)
 	}
 }
 
@@ -207,9 +236,9 @@ struct SSHAddressDeadlineTests {
 		await tearDown(rig)
 	}
 
-	// Review F5: an answer resting on what a report taught (here a client id) is asked again
-	// when the next report arrives, and a lookup that now lands elsewhere starts discovery
-	// over. One from the MAC's lease or ARP isn't asked again.
+	// Review F5: an answer is asked again when the next report arrives (since F12 every
+	// answer, not only one resting on what a report taught), and a lookup that now lands
+	// elsewhere starts discovery over. One that lands where it was leaves readiness alone.
 	@Test("E56: a report that moves a hint-sourced answer starts discovery over")
 	func aReportMovesAHintSourcedAnswer() async throws {
 		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
@@ -217,23 +246,19 @@ struct SSHAddressDeadlineTests {
 		rig.routing.startSSHDiscovery(rig.host, probes: stand.probes, pace: Self.pace)
 		#expect(await eventually { rig.host.sshReach == .ready })
 		stand.address = "192.168.64.21"
-		stand.taught = SSHDiscovery.Hints(clientID: "ff,4:5:6")
 		rig.routing.sshReportArrived(rig.host, probes: stand.probes)
 		#expect(await eventually {
 			rig.host.sshAnswer?.address == "192.168.64.21" && rig.host.sshReach == .ready
 		})
 
-		// The MAC's lease answered: a report doesn't ask again.
-		stand.taught = nil
-		rig.routing.startSSHDiscovery(rig.host, probes: stand.probes, pace: Self.pace)
-		#expect(await eventually {
-			rig.host.sshReach == .ready && rig.host.sshAnswer?.hints == nil
-		})
+		// The lookup lands where it was: no restart, so readiness doesn't blink.
+		let since = rig.host.sshReadySince
 		let asked = stand.asks
-		stand.address = "192.168.64.22"
 		rig.routing.sshReportArrived(rig.host, probes: stand.probes)
-		#expect(stand.asks == asked)
-		#expect(rig.host.sshAnswer?.address == "192.168.64.21")
+		#expect(await eventually { stand.asks == asked + 1 })
+		#expect(!(await eventually(timeout: .milliseconds(500)) {
+			rig.host.sshReadySince != since
+		}), "the report restarted discovery")
 		await tearDown(rig)
 	}
 
@@ -278,6 +303,87 @@ struct SSHAddressDeadlineTests {
 		#expect(await eventually { rig.host.sshAnswer?.address == "192.168.64.33" })
 		sourceServer.stop()
 		await source.client.disconnect()
+		await tearDown(rig)
+	}
+
+	// A copy's leases after the reboot that renewed its client id: the source's under the id
+	// both shared before, the copy's under its own.
+	private static let copyLeases = """
+		{
+			ip_address=192.168.64.17
+			hw_address=ff,1:2:3
+			identifier=ff,1:2:3
+			lease=0x66aa0001
+		}
+		{
+			ip_address=192.168.64.21
+			hw_address=ff,4:5:6
+			identifier=ff,4:5:6
+			lease=0x66aa0002
+		}
+		"""
+
+	// Discovery as discoverLive runs it, over the copy's leases (while they are live), an ARP
+	// table and the hints its config on disk holds.
+	private func copyProbes(_ config: TaughtConfig, arp: String) -> SSHDiscovery.Probes {
+		let library = config.library
+		let leases = Self.copyLeases
+		return SSHDiscovery.Probes(
+			address: { lookup in
+				SSHDiscovery.discover(
+					mac: lookup.mac, leasesText: leases, arpText: arp,
+					hints: SSHDiscovery.hints(vm: lookup.vm, library: library), interfaces: [],
+					now: Date(timeIntervalSince1970: TimeInterval(0x66aa0000)),
+					taken: lookup.taken)
+			},
+			sshd: { _ in true })
+	}
+
+	// Review F8's flow end to end, through the config on disk: the copy's config still holds
+	// its source's client id, so the first pass lands on the source's lease; the copy's boot
+	// report teaches its own id, which moves it to its own lease.
+	@Test("E56: a copy's boot report moves it off its source's lease")
+	func aCopysBootReportMovesItOffItsSourcesLease() async throws {
+		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
+		let config = try TaughtConfig()
+		try config.save(clientID: "ff,1:2:3", address: "192.168.64.17")
+		let probes = copyProbes(config, arp: "")
+		rig.routing.startSSHDiscovery(rig.host, probes: probes, pace: Self.pace)
+		#expect(await eventually {
+			rig.host.sshAnswer?.address == "192.168.64.17" && rig.host.sshReach == .ready
+		})
+		try config.save(clientID: "ff,4:5:6", address: "192.168.64.21")
+		rig.routing.sshReportArrived(rig.host, probes: probes)
+		#expect(await eventually {
+			rig.host.sshAnswer == SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp")
+				&& rig.host.sshReach == .ready
+		})
+		config.remove()
+		await tearDown(rig)
+	}
+
+	// Review F12: the Mac's ARP table still names the source's address under the copy's MAC
+	// (the copy held it last run), so the first pass answers from ARP; the copy's boot report
+	// teaches its own client id, under which the source's live lease shows the entry stale.
+	@Test("E56: a report moves an answer off a stale ARP entry")
+	func aReportMovesAnAnswerOffAStaleARPEntry() async throws {
+		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
+		let config = try TaughtConfig()
+		try config.save(clientID: "ff,1:2:3", address: "192.168.64.17")
+		let probes = copyProbes(
+			config, arp: "? (192.168.64.17) at aa:bb:cc:dd:ee:1 on bridge100 [ethernet]")
+		rig.routing.startSSHDiscovery(rig.host, probes: probes, pace: Self.pace)
+		#expect(await eventually {
+			rig.host.sshAnswer == SSHDiscovery.Answer(address: "192.168.64.17", source: "arp")
+				&& rig.host.sshReach == .ready
+		})
+		try config.save(clientID: "ff,4:5:6", address: "192.168.64.21")
+		rig.routing.sshReportArrived(rig.host, probes: probes)
+		#expect(await eventually {
+			rig.host.sshAnswer == SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp")
+				&& rig.host.sshReach == .ready
+		})
+		config.remove()
 		await tearDown(rig)
 	}
 

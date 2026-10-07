@@ -164,7 +164,7 @@ struct SSHDiscoveryTests {
 		#expect(SSHDiscovery.discover(
 			mac: vmMAC, leasesText: clientIDLeases, arpText: "", hints: hints,
 			interfaces: net)
-			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp", hints: hints))
+			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
 		#expect(SSHDiscovery.discover(
 			mac: vmMAC, leasesText: clientIDLeases, arpText: "", interfaces: net) == nil)
 	}
@@ -185,9 +185,7 @@ struct SSHDiscoveryTests {
 		}
 		// A static address no lease names.
 		#expect(answer("192.168.64.40", at: beforeExpiry)
-			== SSHDiscovery.Answer(
-				address: "192.168.64.40", source: "report",
-				hints: SSHDiscovery.Hints(reported: "192.168.64.40")))
+			== SSHDiscovery.Answer(address: "192.168.64.40", source: "report"))
 		// Another client's live lease, then the same lease run out.
 		#expect(answer("192.168.64.30", at: beforeExpiry) == nil)
 		#expect(answer("192.168.64.30", at: afterExpiry)?.address == "192.168.64.30")
@@ -224,6 +222,59 @@ struct SSHDiscoveryTests {
 			mac: vmMAC, leasesText: table, arpText: "",
 			hints: SSHDiscovery.Hints(reported: "192.168.64.40"), interfaces: net,
 			taken: ["192.168.64.40"]) == nil)
+	}
+
+	// Review F12: the Mac keeps an ARP entry about 20 minutes. A copy that held its source's
+	// address in its last run (both leased under the source's client id) still finds that
+	// address under its own MAC after the reboot that gave it a client id and a lease of its
+	// own; the source's live lease shows the entry stale.
+	@Test("E56: a stale ARP entry under another client's live lease doesn't answer")
+	func aStaleARPEntryUnderAnotherLeaseDoesNotAnswer() throws {
+		let net = try vmnet()
+		let sourceID = "ff,1:2:3"
+		let copyID = "ff,4:5:6"
+		let table = """
+			{
+				ip_address=192.168.64.17
+				hw_address=\(sourceID)
+				identifier=\(sourceID)
+				lease=0x66aa0001
+			}
+			{
+				ip_address=192.168.64.21
+				hw_address=\(copyID)
+				identifier=\(copyID)
+				lease=0x66aa0002
+			}
+			{
+				ip_address=192.168.64.30
+				hw_address=1,3a:1:2:3:4:5
+				identifier=1,3a:1:2:3:4:5
+				lease=0x66aa0003
+			}
+			"""
+		let live = Date(timeIntervalSince1970: TimeInterval(0x66aa0000))
+		func answer(
+			arpAt ip: String, _ hints: SSHDiscovery.Hints, at now: Date = live
+		) -> SSHDiscovery.Answer? {
+			SSHDiscovery.discover(
+				mac: vmMAC, leasesText: table,
+				arpText: "? (\(ip)) at 5e:2c:7a:10:44:1 on bridge100 [ethernet]", hints: hints,
+				interfaces: net, now: now)
+		}
+		#expect(answer(arpAt: "192.168.64.17", SSHDiscovery.Hints(clientID: copyID))
+			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
+		// The client id the VM's reports taught holds the address: the entry is its own.
+		#expect(answer(arpAt: "192.168.64.17", SSHDiscovery.Hints(clientID: sourceID))
+			== SSHDiscovery.Answer(address: "192.168.64.17", source: "arp"))
+		// A VM that learned no client id can't tell another's lease from its own; another
+		// MAC's lease is another client's all the same.
+		#expect(answer(arpAt: "192.168.64.17", SSHDiscovery.Hints())?.address == "192.168.64.17")
+		#expect(answer(arpAt: "192.168.64.30", SSHDiscovery.Hints()) == nil)
+		// A lease run out holds nothing.
+		let runOut = Date(timeIntervalSince1970: TimeInterval(0x66ab0000))
+		#expect(answer(arpAt: "192.168.64.17", SSHDiscovery.Hints(clientID: copyID), at: runOut)
+			== SSHDiscovery.Answer(address: "192.168.64.17", source: "arp"))
 	}
 
 	@Test("E56: the MAC's lease and the ARP table still answer first")

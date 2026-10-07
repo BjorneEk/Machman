@@ -121,16 +121,16 @@ extension RoutingMachman {
 
 	// The config's owner ingested a guest report (its sshChanged). Discovery starts over when it
 	// has no address yet, or never watched readiness (reach .unknown: the guest had not run
-	// the script when this run started) — a fresh report can mean sshd just appeared. And an
-	// answer that rests on what an earlier report taught (a client id, a reported address)
-	// is asked again: when the lookup now lands elsewhere — a stale report's lesson replaced
-	// by this run's — discovery starts over from it (review F5).
+	// the script when this run started) — a fresh report can mean sshd just appeared. Any
+	// other answer is asked again, since a report can teach what moves it: a client id or an
+	// address that replaces a stale report's (review F5), or a client id that shows an ARP
+	// entry stale (review F12). When the lookup now lands elsewhere, discovery starts over.
 	func sshReportArrived(_ host: HostedVM, probes: SSHDiscovery.Probes = .live) {
 		guard let answer = host.sshAnswer, host.sshReach != .unknown else {
 			startSSHDiscovery(host, probes: probes)
 			return
 		}
-		guard answer.hints != nil, let mac = host.identity.macInUse else { return }
+		guard let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
 		let lookup = SSHDiscovery.Lookup(
 			mac: mac, vm: host.identity.name, library: machmanVMDir,

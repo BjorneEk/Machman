@@ -21,16 +21,6 @@ enum SSHDiscovery {
 	struct Answer: Equatable, Sendable {
 		var address: String
 		var source: String   // "dhcp" | "arp" | "report" — SSHInfo.addressSource vocabulary
-		// What the guest's reports taught that this answer rests on (a client id's lease or a
-		// reported address); nil for the MAC's lease and ARP. A later report that teaches
-		// something else can move it (review F5).
-		var hints: Hints?
-
-		init(address: String, source: String, hints: Hints? = nil) {
-			self.address = address
-			self.source = source
-			self.hints = hints
-		}
 	}
 
 	// What the VM's config owner learned from the guest's reports (E56): the DHCP client id
@@ -109,6 +99,12 @@ enum SSHDiscovery {
 			guard let best else { return lease }
 			return lease.expiry >= best.expiry ? lease : best
 		}
+	}
+
+	// The lease an address is held under now: its newest, while that one is live.
+	private static func liveLease(on ip: String, in leases: [Lease], at now: Date) -> Lease? {
+		let seconds = UInt64(max(0, now.timeIntervalSince1970))
+		return newest(leases) { $0.ip == ip }.flatMap { $0.expiry > seconds ? $0 : nil }
 	}
 
 	static func leaseIP(for mac: String, inLeasesText text: String) -> String? {
@@ -315,7 +311,10 @@ enum SSHDiscovery {
 	// MARK: - Orchestration
 
 	// The MAC's lease first (authoritative while fresh), ARP as fallback (needs recent guest
-	// traffic). A guest whose DHCP client sends a client id has no lease under its MAC
+	// traffic) — unless another client holds a live lease on that address: the Mac keeps an
+	// ARP entry about 20 minutes, so a copy that held its source's address in its last run
+	// still finds it under its own MAC after the reboot that gave it a lease of its own
+	// (review F12). A guest whose DHCP client sends a client id has no lease under its MAC
 	// (E56): next the lease kept under the client id the VM's config learned, then the
 	// address the guest reported — taken only on a subnet this Mac is on, and never while
 	// another client holds a live lease on it (a static address, or one whose id was not
@@ -335,23 +334,33 @@ enum SSHDiscovery {
 		if let ip = leaseIP(for: mac, in: table) {
 			return Answer(address: ip, source: "dhcp")
 		}
-		if let arpText, let ip = arpIP(for: mac, inARPOutput: arpText) {
+		if let arpText, let ip = arpIP(for: mac, inARPOutput: arpText),
+			!heldByAnother(ip, mac: mac, clientID: hints.clientID, in: table, at: now) {
 			return Answer(address: ip, source: "arp")
 		}
 		if let id = hints.clientID, let ip = leaseIP(forClientID: id, in: table),
 			!taken.contains(ip) {
-			return Answer(address: ip, source: "dhcp", hints: hints)
+			return Answer(address: ip, source: "dhcp")
 		}
+		// A lease of this VM's would have answered above: a live one on the reported address
+		// is a client nothing ties to this VM.
 		if let reported = hints.reported, !taken.contains(reported),
-			hostAddress(seenFrom: reported, interfaces: interfaces()) != nil {
-			// A lease of this VM's would have answered above: a live one on the address is
-			// a client nothing ties to this VM.
-			let seconds = UInt64(max(0, now.timeIntervalSince1970))
-			if !table.contains(where: { $0.ip == reported && $0.expiry > seconds }) {
-				return Answer(address: reported, source: "report", hints: hints)
-			}
+			hostAddress(seenFrom: reported, interfaces: interfaces()) != nil,
+			liveLease(on: reported, in: table, at: now) == nil {
+			return Answer(address: reported, source: "report")
 		}
 		return nil
+	}
+
+	// Whether a live lease on `ip` names a client other than this VM: another MAC, or a client
+	// id other than the one its reports taught. A VM that learned none (its guest never ran
+	// Guest Setup) can't tell its own client-id lease from another's: only another MAC counts.
+	private static func heldByAnother(
+		_ ip: String, mac: String, clientID: String?, in table: [Lease], at now: Date
+	) -> Bool {
+		guard let lease = liveLease(on: ip, in: table, at: now) else { return false }
+		if lease.isHardware { return lease.hardware != normalizedMAC(mac) }
+		return clientID.map { lease.identifier != normalizedClientID($0) } ?? false
 	}
 
 	// The live variant — reads /var/db/dhcpd_leases and the VM's config, and runs arp. Call
