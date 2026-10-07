@@ -124,7 +124,9 @@ extension RoutingMachman {
 	// the script when this run started) — a fresh report can mean sshd just appeared. Any
 	// other answer is asked again, since a report can teach what moves it: a client id or an
 	// address that replaces a stale report's (review F5), or a client id that shows an ARP
-	// entry stale (review F12). When the lookup now lands elsewhere, discovery starts over.
+	// entry stale (review F12). When the lookup now lands elsewhere, discovery starts over; a
+	// lookup that finds nothing leaves the answer be (an ARP entry ages out after about 20
+	// idle minutes while the guest stays where it was — review F19).
 	func sshReportArrived(_ host: HostedVM, probes: SSHDiscovery.Probes = .live) {
 		guard let answer = host.sshAnswer, host.sshReach != .unknown else {
 			startSSHDiscovery(host, probes: probes)
@@ -138,7 +140,7 @@ extension RoutingMachman {
 		Task { [weak self] in
 			let now = await probes.address(lookup)
 			guard let self, let host = self.host(withID: id), host.sshAnswer == answer,
-				now?.address != answer.address else { return }
+				let now, now.address != answer.address else { return }
 			self.startSSHDiscovery(host, probes: probes)
 		}
 	}

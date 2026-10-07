@@ -68,10 +68,10 @@ private final class HeldAsk {
 	}
 }
 
-// An answer the test moves; how often it was asked.
+// An answer the test moves, or none; how often it was asked.
 @MainActor
 private final class MovingAnswer {
-	var address = "192.168.64.20"
+	var address: String? = "192.168.64.20"
 	private(set) var asks = 0
 
 	var probes: SSHDiscovery.Probes {
@@ -82,7 +82,7 @@ private final class MovingAnswer {
 
 	private func answer() -> SSHDiscovery.Answer? {
 		asks += 1
-		return SSHDiscovery.Answer(address: address, source: "dhcp")
+		return address.map { SSHDiscovery.Answer(address: $0, source: "dhcp") }
 	}
 }
 
@@ -238,7 +238,8 @@ struct SSHAddressDeadlineTests {
 
 	// Review F5: an answer is asked again when the next report arrives (since F12 every
 	// answer, not only one resting on what a report taught), and a lookup that now lands
-	// elsewhere starts discovery over. One that lands where it was leaves readiness alone.
+	// elsewhere starts discovery over. One that lands where it was, or finds nothing (an ARP
+	// entry aged out under a guest no lease or report names), leaves readiness alone (F19).
 	@Test("E56: a report that moves a hint-sourced answer starts discovery over")
 	func aReportMovesAHintSourcedAnswer() async throws {
 		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
@@ -259,6 +260,15 @@ struct SSHAddressDeadlineTests {
 		#expect(!(await eventually(timeout: .milliseconds(500)) {
 			rig.host.sshReadySince != since
 		}), "the report restarted discovery")
+
+		// The lookup finds nothing now: the VM is still where it was.
+		stand.address = nil
+		rig.routing.sshReportArrived(rig.host, probes: stand.probes)
+		#expect(await eventually { stand.asks >= asked + 2 })
+		#expect(!(await eventually(timeout: .milliseconds(500)) {
+			rig.host.sshReadySince != since
+		}), "a lookup that found nothing restarted discovery")
+		#expect(rig.host.sshAnswer?.address == "192.168.64.21")
 		await tearDown(rig)
 	}
 
