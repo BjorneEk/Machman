@@ -2,10 +2,11 @@
 //  VMHostEnvironmentTests.swift
 //  MachmanCoreTests
 //
-//  TB3: the environment a spawned vmhost gets. OpenConfiguration.environment replaces the
-//  child's whole environment, so a test-suite vmhost that inherited nothing resolved the .dev
-//  suite: its tty sockets in the .dev runtime dir, its log under the .dev subsystem, and test
-//  mode off (windows, audio, real alerts). Outside test mode the dictionary is today's.
+//  TB3: the environment a spawned vmhost gets. A test-suite vmhost that got no lab variables
+//  resolved the .dev suite: its tty sockets in the .dev runtime dir, its log under the .dev
+//  subsystem, and test mode off (windows, audio, real alerts). E51: OpenConfiguration.
+//  environment merges onto the agent's own environment, so everything else the agent inherited
+//  is blanked explicitly. The TB3 rows pass no inherited environment; E51's row passes one.
 //
 
 import Testing
@@ -25,13 +26,15 @@ struct VMHostEnvironmentTests {
 
 	@Test("Q18: outside test mode a vmhost gets only MACHMAN_VERSION (TB3)")
 	func outsideTestModeAVMHostGetsOnlyTheVersion() {
-		#expect(RoutingMachman.vmhostEnvironment(daemonVersion: "1.0.12", lab: nil)
+		#expect(RoutingMachman.vmhostEnvironment(
+			daemonVersion: "1.0.12", lab: nil, inherited: [:])
 			== ["MACHMAN_VERSION": "1.0.12"])
 		for suite in ["com.gustaffranzen.Machman.dev", "com.gustaffranzen.Machman"] {
 			let lab = LabEnvironment(
 				suiteID: suite, environment: Self.labVariables, debugBuild: true)
 			#expect(lab == nil)
-			#expect(RoutingMachman.vmhostEnvironment(daemonVersion: "1.0.12", lab: lab)
+			#expect(RoutingMachman.vmhostEnvironment(
+				daemonVersion: "1.0.12", lab: lab, inherited: [:])
 				== ["MACHMAN_VERSION": "1.0.12"])
 		}
 	}
@@ -43,7 +46,8 @@ struct VMHostEnvironmentTests {
 		let suite = "com.gustaffranzen.Machman.test-abc1"
 		let lab = try #require(LabEnvironment(
 			suiteID: suite, environment: environment, debugBuild: true))
-		#expect(RoutingMachman.vmhostEnvironment(daemonVersion: "1.0.12", lab: lab) == [
+		#expect(RoutingMachman.vmhostEnvironment(
+			daemonVersion: "1.0.12", lab: lab, inherited: [:]) == [
 			"MACHMAN_VERSION": "1.0.12",
 			"MACHMAN_SUITE_ID": suite,
 			"MACHMAN_DATA_DIR": "/tmp/mml.abc1/data",
@@ -52,6 +56,36 @@ struct VMHostEnvironmentTests {
 			"MACHMAN_LAB_DEVICES": "hid",
 			"MACHMAN_LAB_VERSION": "stray",
 		])
+	}
+
+	// E51: spawnHost counted on the environment replacing the vmhost's, but Launch Services
+	// merges it onto the agent's: Xcode's DYLD_* paths, a script's MACHMAN_DATA_DIR and every
+	// shell variable reached each vmhost. Each inherited key outside the session's own is
+	// overridden with an empty value now (a merge can't unset one).
+	@Test("E51: a vmhost blanks what its agent inherited outside the session's own keys")
+	func aVMHostBlanksWhatItsAgentInherited() throws {
+		let inherited = [
+			"HOME": "/Users/u", "PATH": "/usr/bin:/bin", "TMPDIR": "/var/folders/x/T/",
+			"XPC_SERVICE_NAME": "application.agent", "SSH_AUTH_SOCK": "/private/tmp/agent",
+			"DYLD_LIBRARY_PATH": "/Applications/Xcode.app/lib", "MACHMAN_DATA_DIR": "/elsewhere",
+			"MACHMAN_SUITE_ID": "com.gustaffranzen.Machman.dev", "TERM": "xterm",
+			"MACHMAN_VERSION": "0.9",
+		]
+		#expect(RoutingMachman.vmhostEnvironment(
+			daemonVersion: "1.0.12", lab: nil, inherited: inherited) == [
+			"MACHMAN_VERSION": "1.0.12",
+			"DYLD_LIBRARY_PATH": "", "MACHMAN_DATA_DIR": "", "MACHMAN_SUITE_ID": "", "TERM": "",
+		])
+		// Under a test suite the lab's own values win over the blanks.
+		let suite = "com.gustaffranzen.Machman.test-abc1"
+		let lab = try #require(LabEnvironment(
+			suiteID: suite, environment: Self.labVariables, debugBuild: true))
+		let environment = RoutingMachman.vmhostEnvironment(
+			daemonVersion: "1.0.12", lab: lab, inherited: inherited)
+		#expect(environment["MACHMAN_SUITE_ID"] == suite)
+		#expect(environment["MACHMAN_DATA_DIR"] == "/tmp/mml.abc1/data")
+		#expect(environment["DYLD_LIBRARY_PATH"] == "")
+		#expect(environment["PATH"] == nil)   // kept as the agent has it
 	}
 
 	// E50: both background launches kept OpenConfiguration's defaults, so each VM start

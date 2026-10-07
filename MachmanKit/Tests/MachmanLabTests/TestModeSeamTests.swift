@@ -59,13 +59,12 @@ struct TestModeSeamTests {
 				#expect(env["MACHMAN_DATA_DIR"] == agent.scope.dataDir)
 				#expect(env["MACHMAN_LAB_ANSWERS"] == agent.scope.answersPath)
 				#expect(env["MACHMAN_VERSION"] == agent.bundleVersion)
-				// spawnHost passes MACHMAN_VERSION and the forwarded set, and counts on that
-				// replacing the vmhost's environment; LaunchServices merges it onto the agent's.
+				// Launch Services merges spawnHost's environment onto the agent's, and a merge
+				// can't unset a key: what the agent has and never forwards reaches the vmhost
+				// empty (E51).
 				let agentEnv = try await SeamProbe.environment(of: agent.pid)
 				try #require(agentEnv[SeamProbe.agentOnly] == "1")
-				// Fails until the open bug E51 (a vmhost inherits its agent's environment) is
-				// fixed.
-				#expect(env[SeamProbe.agentOnly] == nil)
+				#expect((env[SeamProbe.agentOnly] ?? "").isEmpty)
 				let inherits = try await LabLog.waitFor(
 					"test mode: vmhost for seam-suite inherits ", after: mark,
 					process: "MachmanAgent")
@@ -295,8 +294,6 @@ struct TestModeSeamTests {
 enum SeamProbe {
 	/// An agent-only variable: no MACHMAN_LAB_ prefix, so the agent never forwards it.
 	static let agentOnly = "MACHMAN_SEAM_AGENT_ONLY"
-
-	/// Card E51, what the agent-only variable shows (wave r3t, r3-tb).
 
 	struct Window: Equatable {
 		let number: Int

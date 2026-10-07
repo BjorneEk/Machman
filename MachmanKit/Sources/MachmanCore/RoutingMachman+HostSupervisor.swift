@@ -429,10 +429,9 @@ extension RoutingMachman {
 				code: .internalError,
 				message: "Machman VM is missing from this copy of Machman — reinstall Machman")
 		}
-		// OpenConfiguration.environment REPLACES the child's environment (no inheritance),
-		// which scrubs any MACHMAN_DATA_DIR override for free. The bundle id identifies the
-		// suite and the bundle version the vmhost's build (E22); MACHMAN_VERSION is only the
-		// fallback for an unversioned build. Outside test mode that is all it gets.
+		// The bundle id identifies the suite and the bundle version the vmhost's build (E22);
+		// MACHMAN_VERSION is only the fallback for an unversioned build. The environment is
+		// explicit (vmhostEnvironment): Launch Services merges it onto this agent's own.
 		let lab = LabEnvironment.current
 		let configuration = Self.vmhostLaunchConfiguration(
 			arguments: [
@@ -502,15 +501,35 @@ extension RoutingMachman {
 		return configuration
 	}
 
-	// A vmhost's whole environment. Under a test suite it also inherits the suite, the fake
-	// home, the data dir and the lab's variables: without them it would resolve the .dev
-	// suite (its sockets, its log subsystem) and run with test mode off. A lab key never
-	// replaces MACHMAN_VERSION.
+	// The keys a vmhost keeps of what its agent inherited: the ones launchd gives every
+	// process of the user's session (what a launchd-started vmhost sees, autostart), the home
+	// and the locale.
+	nonisolated static let vmhostKeptKeys: Set<String> = [
+		"HOME", "CFFIXED_USER_HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL", "LANG",
+		"SSH_AUTH_SOCK", "COMMAND_MODE", "XPC_FLAGS", "XPC_SERVICE_NAME",
+		"__CF_USER_TEXT_ENCODING", "__CFBundleIdentifier",
+	]
+
+	// A vmhost's whole environment (E51). OpenConfiguration.environment MERGES onto the
+	// launcher's own environment — it does not replace it — so whatever started the agent
+	// would reach every vmhost: Xcode's DYLD_* and sanitizer variables, a script's
+	// MACHMAN_DATA_DIR or MACHMAN_SUITE_ID. A merge can't unset a key, so every inherited key
+	// outside the kept ones is overridden with an empty value; one that acts by being present
+	// at all (DYLD_PRINT_*, MallocStackLogging) stays present, empty. Under a test suite the
+	// vmhost also gets the suite, the fake home, the data dir and the lab's variables: without
+	// them it would resolve the .dev suite (its sockets, its log subsystem) and run with test
+	// mode off. A lab key never replaces MACHMAN_VERSION.
 	nonisolated static func vmhostEnvironment(
-		daemonVersion: String, lab: LabEnvironment?
+		daemonVersion: String, lab: LabEnvironment?,
+		inherited: [String: String] = ProcessInfo.processInfo.environment
 	) -> [String: String] {
-		(lab?.forwardedVariables ?? [:])
-			.merging(["MACHMAN_VERSION": daemonVersion]) { _, version in version }
+		var environment: [String: String] = [:]
+		for key in inherited.keys where !vmhostKeptKeys.contains(key) {
+			environment[key] = ""
+		}
+		environment.merge(lab?.forwardedVariables ?? [:]) { _, forwarded in forwarded }
+		environment["MACHMAN_VERSION"] = daemonVersion
+		return environment
 	}
 
 	func connectHost(identity: HostIdentity) async throws -> RemoteMachman {
