@@ -42,8 +42,8 @@ static void become_session_on(int slave, int report, const char *path, char *con
 	const posix_spawnattr_t *attributes) {
 	int error = 0;
 	// The slave is close-on-exec (so no other spawn of the app inherits it), and an exec
-	// in place drops such a descriptor before its own dup2s run (measured: EBADF). The
-	// exec still closes the slave's own number: no file action keeps it.
+	// in place refuses such a descriptor as a dup2 source (measured: EBADF). The exec
+	// still closes the slave's own number: no file action keeps it.
 	if (setsid() < 0 || ioctl(slave, TIOCSCTTY, 0) < 0 || fcntl(slave, F_SETFD, 0) < 0) {
 		error = errno;
 	} else {
@@ -54,50 +54,92 @@ static void become_session_on(int slave, int report, const char *path, char *con
 	_exit(127);
 }
 
-pid_t machman_pty_spawn(const char *path, char *const argv[], char *const envp[], int slave) {
-	posix_spawn_file_actions_t actions;
-	posix_spawnattr_t attributes;
-	posix_spawn_file_actions_init(&actions);
-	posix_spawnattr_init(&attributes);
-	for (int fd = 0; fd <= 2; fd++) {
-		posix_spawn_file_actions_adddup2(&actions, slave, fd);
+// The exec in place: the slave on 0, 1 and 2, every other descriptor closed, every signal
+// at its default and none blocked. 0, or the errno of the first call that failed — a
+// spawn missing any of these must not run.
+static int describe_exec(int slave, posix_spawn_file_actions_t *actions,
+	posix_spawnattr_t *attributes) {
+	int error = 0;
+	for (int fd = 0; fd <= 2 && error == 0; fd++) {
+		error = posix_spawn_file_actions_adddup2(actions, slave, fd);
 	}
 	sigset_t all, none;
 	sigfillset(&all);
 	sigemptyset(&none);
-	posix_spawnattr_setsigdefault(&attributes, &all);
-	posix_spawnattr_setsigmask(&attributes, &none);
-	posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETEXEC | POSIX_SPAWN_CLOEXEC_DEFAULT
-		| POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK);
+	if (error == 0) {
+		error = posix_spawnattr_setsigdefault(attributes, &all);
+	}
+	if (error == 0) {
+		error = posix_spawnattr_setsigmask(attributes, &none);
+	}
+	if (error == 0) {
+		error = posix_spawnattr_setflags(attributes, POSIX_SPAWN_SETEXEC
+			| POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK);
+	}
+	return error;
+}
 
-	pid_t pid = -1;
-	int error = 0;
+// Forks the child and waits for its exec: its pid, or -1 with *error set (the child reaped).
+static pid_t start_child(int slave, const char *path, char *const argv[], char *const envp[],
+	const posix_spawn_file_actions_t *actions, const posix_spawnattr_t *attributes,
+	int *error) {
 	int report[2];
 	if (pipe(report) != 0) {
-		error = errno;
-	} else {
-		(void)fcntl(report[0], F_SETFD, FD_CLOEXEC);
-		(void)fcntl(report[1], F_SETFD, FD_CLOEXEC);
-		pid = fork();
-		if (pid == 0) {
-			become_session_on(slave, report[1], path, argv, envp, &actions, &attributes);
-		}
-		error = errno;
-		close(report[1]);
-		if (pid > 0) {
-			// Nothing to read: the program runs. An errno: the child gave up and exits.
-			int failed = 0;
-			ssize_t got;
-			do {
-				got = read(report[0], &failed, sizeof failed);
-			} while (got < 0 && errno == EINTR);
-			if (got > 0) {
-				while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-				error = failed;
-				pid = -1;
+		*error = errno;
+		return -1;
+	}
+	(void)fcntl(report[0], F_SETFD, FD_CLOEXEC);
+	(void)fcntl(report[1], F_SETFD, FD_CLOEXEC);
+	pid_t pid = fork();
+	if (pid == 0) {
+		become_session_on(slave, report[1], path, argv, envp, actions, attributes);
+	}
+	if (pid < 0) {
+		*error = errno;
+	}
+	close(report[1]);
+	if (pid > 0) {
+		// Nothing to read: the program runs. An errno: the child gave up and exits. A pipe
+		// that can't be read leaves the child's fate unknown, so it is ended: the caller
+		// gets no process it can't track.
+		int failed = 0;
+		ssize_t got;
+		do {
+			got = read(report[0], &failed, sizeof failed);
+		} while (got < 0 && errno == EINTR);
+		if (got != 0) {
+			if (got < 0) {
+				*error = errno;
+				(void)kill(pid, SIGKILL);
+			} else {
+				*error = failed;
 			}
+			while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+			pid = -1;
 		}
-		close(report[0]);
+	}
+	close(report[0]);
+	return pid;
+}
+
+pid_t machman_pty_spawn(const char *path, char *const argv[], char *const envp[], int slave) {
+	posix_spawn_file_actions_t actions;
+	posix_spawnattr_t attributes;
+	int error = posix_spawn_file_actions_init(&actions);
+	if (error != 0) {
+		errno = error;
+		return -1;
+	}
+	error = posix_spawnattr_init(&attributes);
+	if (error != 0) {
+		posix_spawn_file_actions_destroy(&actions);
+		errno = error;
+		return -1;
+	}
+	pid_t pid = -1;
+	error = describe_exec(slave, &actions, &attributes);
+	if (error == 0) {
+		pid = start_child(slave, path, argv, envp, &actions, &attributes, &error);
 	}
 	posix_spawn_file_actions_destroy(&actions);
 	posix_spawnattr_destroy(&attributes);
