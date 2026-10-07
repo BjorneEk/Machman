@@ -50,7 +50,9 @@ extension RoutingMachman {
 	//
 	//   1. the address — 5 s cadence while DHCP settles (2 min), then once a minute for
 	//      as long as the VM stays hosted and unresolved. The address is a fact of the
-	//      running VM whether or not anything listens on it, so nothing gates it.
+	//      running VM whether or not anything listens on it, so nothing gates it. Bounded
+	//      like phase 2 for a VM with SSH set up (E57): once the settle window is spent it
+	//      reads unreachable with the reason, and an address found later moves it on.
 	//   2. reachability — does the guest's sshd actually answer? Only for VMs whose guest
 	//      has run the setup script (without a reported user there is nothing to connect
 	//      as, and "waiting for SSH" would be noise on every other VM).
@@ -60,7 +62,9 @@ extension RoutingMachman {
 	// clients to refetch a stopped VM while the saved one's row stayed "waiting" (E42).
 	// `probes` is where it looks: the live tables, what the guest's reports taught the VM's
 	// config (E56) and port 22, or a test's stand-ins.
-	func startSSHDiscovery(_ host: HostedVM, probes: SSHDiscovery.Probes = .live) {
+	func startSSHDiscovery(
+		_ host: HostedVM, probes: SSHDiscovery.Probes = .live, pace: DiscoveryPace = .live
+	) {
 		host.sshDiscoveryTask?.cancel()
 		guard let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
@@ -75,23 +79,38 @@ extension RoutingMachman {
 			}
 			var attempt = 0
 			var address: String?
+			var gaveUp = false
 			while !Task.isCancelled, address == nil {
 				guard let name = self?.host(withID: id)?.identity.name else { return }
 				let answer = await probes.address(
 					SSHDiscovery.Lookup(mac: mac, vm: name, library: machmanVMDir))
 				guard let self, let host = self.host(withID: id) else { return }
 				if let answer {
+					if gaveUp {
+						// An address after all: back to waiting, for phase 2 to answer.
+						host.sshReach = .waiting
+						host.sshReachDetail = nil
+					}
 					if host.sshAnswer != answer {
 						host.sshAnswer = answer
 						self.announceSSH(of: host)
 						// The alias's HostName just became known/changed.
 						self.scheduleSSHHostConfigWrite()
+					} else if gaveUp {
+						self.announceSSH(of: host)
 					}
 					address = answer.address
 					break
 				}
 				attempt += 1
-				try? await Task.sleep(for: attempt < 24 ? .seconds(5) : .seconds(60))
+				if wantsSSH, !gaveUp, attempt >= pace.fastTries {
+					gaveUp = true
+					host.sshReach = .unreachable
+					host.sshReachDetail =
+						"no address for \(mac) in the DHCP leases or the ARP table"
+					self.announceSSH(of: host)
+				}
+				try? await Task.sleep(for: attempt < pace.fastTries ? pace.fast : pace.slow)
 			}
 			guard wantsSSH, let address else { return }
 			await self?.probeSSHReadiness(id: id, address: address, probes: probes)
@@ -108,6 +127,16 @@ extension RoutingMachman {
 		guard let host = host(withID: id) else { return false }
 		let answer = try? await host.client.vm(named: host.identity.name)
 		return (answer ?? self.host(withID: id)?.lastAnswer)?.ssh?.guestUser != nil
+	}
+
+	// Phase 1's pace: `fastTries` asks `fast` apart while DHCP settles — the window after
+	// which a VM with SSH set up reads unreachable — then one every `slow`.
+	struct DiscoveryPace: Sendable {
+		var fast: Duration
+		var fastTries: Int
+		var slow: Duration
+
+		static let live = DiscoveryPace(fast: .seconds(5), fastTries: 24, slow: .seconds(60))
 	}
 
 	private func announceSSH(of host: HostedVM) {

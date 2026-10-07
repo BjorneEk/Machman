@@ -234,8 +234,10 @@ which carries no VM name) once a start has pointed it, the VM's own share before
 setup script's boot-time sshfs mount of the share goes through the same link. `address`/`addressSource`/`hostAddressForGuest`/`reachability*`/`readySince`
 are a daemon overlay (like `safeRun`), present only while the VM runs — `reachability`
 (1.0.6+) is this run's answer to "does the guest's sshd actually respond", never
-persisted. `hostAddressForGuest` is this Mac's own address on the interface whose
-subnet holds the guest's address, absent when none does (never a guessed `.1`). Treat
+persisted; `unreachable` means no answer on port 22, or (after the first two minutes) no
+address found for the VM's MAC, and `reachabilityDetail` says which. `hostAddressForGuest`
+is this Mac's own address on the interface whose subnet holds the guest's address, absent
+when none does (never a guessed `.1`). Treat
 unknown `reverseState`/`reachability` strings as a state you don't recognize.
 `setup` (1.0.7+) is `{installed?, guestOS?, guestOSFamily?, guestOSVersion?,
 guestInit?, lastReportAt?, scriptVersion?, currentScriptVersion?, lastRunStatus?,
