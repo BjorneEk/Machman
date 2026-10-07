@@ -29,11 +29,11 @@ enum THHostSSH {
 	/// getpwuid, whatever HOME says, so only its -F /dev/null keeps the user's config
 	/// (ControlMaster, Include, ProxyCommand) out; a product -F after it still wins (ssh keeps
 	/// the last -F). A config file loses to every command-line option, though: a run through
-	/// the managed config (`viaConfig`) leaves the known-hosts options to it — its pin file is
-	/// the scope's.
+	/// the managed config (`viaConfig`) leaves its pin file (the scope's) to it, and insists
+	/// on that pin: a config that fell back to accept-new would learn the key, and pass.
 	static func sandbox(_ agent: LabAgent, viaConfig: Bool = false) throws -> [String] {
 		let known = try TH.hostDir(agent, "ssh") + "/known_hosts"
-		let pins = viaConfig ? [] : [
+		let pins = viaConfig ? ["-o", "StrictHostKeyChecking=yes"] : [
 			"-o", "UserKnownHostsFile=\(known)", "-o", "StrictHostKeyChecking=accept-new",
 		]
 		return ["-o", "BatchMode=yes"] + pins + ["-o", "ConnectTimeout=10"]
