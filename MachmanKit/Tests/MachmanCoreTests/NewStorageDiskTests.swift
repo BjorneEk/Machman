@@ -11,6 +11,7 @@
 import Testing
 import Foundation
 import MachmanAPI
+import MachmanTestSupport
 @testable import MachmanCore
 
 @MainActor
@@ -118,6 +119,36 @@ struct NewStorageDiskTests {
 			try vm.ensureMacSystemDisk(minimumSize: mib)
 			#expect(vm.disks.map(\.id) == ["storage:disk-2"])
 			#expect(try Data(contentsOf: URL(fileURLWithPath: orphan)) == Data("orphan".utf8))
+		}
+	}
+
+	// D32 (review 4, high): Bootloader ▸ macOS… on a used EFI or kernel VM kept its storage
+	// disk as the install target (the reuse rule is for retrying a failed macOS install), and
+	// with only an image or ISO attached the new disk went after them — either way macOS
+	// restores over a disk the user already had. Refusing the switch would fix it too.
+	@Test("D32: preparing a macOS install from EFI never targets a disk the VM already had")
+	func macInstallNeverTargetsAnExistingDisk() throws {
+		try VMTestDir.withRedirectedDir {
+			let linux = try makeVM("linux")
+			try linux.addNewStorageDisk(name: "system", size: mib)
+			let image = TestEnvironment.scratch + "d32-\(UUID().uuidString).raw"
+			try Data(count: Int(mib)).write(to: URL(fileURLWithPath: image))
+			defer { try? FileManager.default.removeItem(atPath: image) }
+			let referencing = try makeVM("referencing")
+			try referencing.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: image))))
+			for vm in [linux, referencing] {
+				let before = vm.disks
+				do {
+					try vm.ensureMacSystemDisk(minimumSize: mib)
+				} catch {
+					continue   // a refused switch keeps the user's disks
+				}
+				let target = vm.disks.first
+				// Fails until the open bug D32 (a switch to macOS installs over the VM's own
+				// disk) is fixed.
+				#expect(target.map { !before.contains($0) } == true,
+					"\(vm.name) would install macOS onto \(String(describing: target?.id))")
+			}
 		}
 	}
 
