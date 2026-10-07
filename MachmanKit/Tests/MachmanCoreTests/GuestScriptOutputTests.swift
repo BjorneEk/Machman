@@ -143,4 +143,47 @@ struct GuestScriptOutputTests {
 				""", "\(shell): \(r.out)")
 		}
 	}
+
+	// Review F10 (S56): wrap_hanging indented a folded item by awk's length of its prefix,
+	// which is bytes in macOS's, mawk's and busybox's awk: under a UTF-8 locale "  1) ◉ " (7
+	// columns, 9 bytes) put the item's later lines two columns too far in. The caller now
+	// says how wide its prefix is, and with no fold a multi-line value's later lines are
+	// indented the same, not printed at column 0.
+	@Test("S56: a numbered menu's long item folds under its text when its mark is a glyph")
+	func numberedMenuItemsFoldUnderAGlyphMark() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				LANG=C.UTF-8
+				ui_detect
+				UI_COLS=40
+				INTERACTIVE=1
+				printf '\n' > "$D/answers"
+				exec 3< "$D/answers"
+				UI_IN=3
+				features="$(printf '%s\t%s\n%s' "Console logins" "hvc2 set up outside \
+				Machman - verify - 1 to set up" SSH)"
+				{
+					menu_multi 'Set up which?' "$features" 1
+					echo "<$R_MARKS>"
+				} | sed 's/ *$//'
+				have() { [ "$1" != fold ] && command -v "$1" >/dev/null 2>&1; }
+				plan_line "consoles" "$(printf 'hvc0 (automatic)\nhvc1 (install)')"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+
+				Set up which?
+
+				  1) ◉ Console logins hvc2 set up
+				       outside Machman - verify - 1
+				       to set up
+				  2) ○ SSH
+
+				Toggle numbers (space-separated), empty keeps the selection: <1>
+				  consoles         hvc0 (automatic)
+				                   hvc1 (install)
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }

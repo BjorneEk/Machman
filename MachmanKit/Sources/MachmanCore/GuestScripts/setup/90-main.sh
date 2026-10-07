@@ -23,7 +23,9 @@ feature_title() {
 # console's width under its own column (a multi-line value's lines too).
 plan_line() {
 	[ "$QUIET" -eq 1 ] && return 0
-	wrap_hanging "$(printf '  %-16s ' "$1")" "$2"
+	_pl_w=${#1}
+	[ "$_pl_w" -ge 16 ] || _pl_w=16
+	wrap_hanging "$(printf '  %-16s ' "$1")" "$((_pl_w + 3))" "$2"
 	return 0
 }
 

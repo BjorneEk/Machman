@@ -42,6 +42,7 @@ R_TEXT=""            # ascii_of result
 C_RESET=""; C_DIM=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""
 G_OK="[ok]"; G_RUN="[..]"; G_WARN="[!!]"; G_ERR="[xx]"
 G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"; G_SEP="-"
+G_MARK_W=3           # G_ON's and G_OFF's columns: the shells and awks count bytes
 ESC="$(printf '\033')"
 CR="$(printf '\r')"
 
@@ -113,11 +114,11 @@ ui_detect() {
 	fi
 	if [ "$UI_UNICODE" -eq 1 ]; then
 		G_OK="✓"; G_RUN="→"; G_WARN="!"; G_ERR="✗"; G_PTR="❯"; G_ON="◉"; G_OFF="○"
-		G_SEP="·"
+		G_SEP="·"; G_MARK_W=1
 		UI_ASCII=0
 	else
 		G_OK="[ok]"; G_RUN="[..]"; G_WARN="[!!]"; G_ERR="[xx]"
-		G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"; G_SEP="-"
+		G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"; G_SEP="-"; G_MARK_W=3
 		UI_ASCII=1
 	fi
 
@@ -179,21 +180,23 @@ wrap() {
 	fi
 }
 
-# wrap_hanging <prefix> <text> — <text> folded like wrap, after <prefix> on its first line
-# and indented under it on the rest (a plan value under its column, a menu item's text
-# under its number); a multi-line <text>'s lines too.
+# wrap_hanging <prefix> <its columns> <text> — <text> folded like wrap, after <prefix> on
+# its first line and indented under it on the rest (a plan value under its column, a menu
+# item's text under its number); a multi-line <text>'s lines too, folded or not. The caller
+# says how wide the prefix is: a glyph in it is more bytes than columns, and dash and most
+# awks count bytes.
 wrap_hanging() {
-	ascii_of "$2"
-	_wh_w=$((UI_COLS - 2 - ${#1}))
+	ascii_of "$3"
+	_wh_w=$((UI_COLS - 2 - $2))
 	[ "$_wh_w" -ge 20 ] || _wh_w=20
 	if have fold; then
-		printf '%s\n' "$R_TEXT" | fold -s -w "$_wh_w" | awk -v p="$1" '
-			{ sub(/ +$/, "") }
-			NR == 1 { print p $0; next }
-			{ printf "%" length(p) "s%s\n", "", $0 }'
+		printf '%s\n' "$R_TEXT" | fold -s -w "$_wh_w"
 	else
-		printf '%s%s\n' "$1" "$R_TEXT"
-	fi
+		printf '%s\n' "$R_TEXT"
+	fi | awk -v p="$1" -v n="$2" '
+		{ sub(/ +$/, "") }
+		NR == 1 { print p $0; next }
+		{ printf "%" n "s%s\n", "", $0 }'
 }
 
 say() {
@@ -381,7 +384,8 @@ ask_choice() {
 	_ac_i=1
 	for _ac_item in "$@"; do
 		# Items may be "title<TAB>note" pairs (the arrow menus' format): flatten here.
-		wrap_hanging "  $_ac_i) " "$(printf '%s' "$_ac_item" | tr '	' ' ')"
+		wrap_hanging "  $_ac_i) " "$((${#_ac_i} + 4))" \
+			"$(printf '%s' "$_ac_item" | tr '	' ' ')"
 		_ac_i=$((_ac_i + 1))
 	done
 	say ""
@@ -476,7 +480,7 @@ menu_draw() {
 	_md_hi="$1"; _md_marks="$2"; shift 2
 	# The mark's own columns ("◉ " is 2, "[x] " 4): a note stops at the console's edge.
 	_md_mw=0
-	[ "$_md_marks" != "-" ] && _md_mw=$((${#G_ON} + 1))
+	[ "$_md_marks" != "-" ] && _md_mw=$((G_MARK_W + 1))
 	_md_w=0
 	for _md_it in "$@"; do
 		ascii_of "$_md_it"
@@ -642,9 +646,10 @@ menu_multi() {
 		_mm_i=1
 		for _mm_it in "$@"; do
 			_mm_flat="$(printf '%s' "$_mm_it" | tr '	' ' ')"
+			_mm_cols=$((${#_mm_i} + G_MARK_W + 5))
 			case ",$_mm_marks," in
-			*",$_mm_i,"*) wrap_hanging "  $_mm_i) $G_ON " "$_mm_flat" ;;
-			*) wrap_hanging "  $_mm_i) $G_OFF " "$_mm_flat" ;;
+			*",$_mm_i,"*) wrap_hanging "  $_mm_i) $G_ON " "$_mm_cols" "$_mm_flat" ;;
+			*) wrap_hanging "  $_mm_i) $G_OFF " "$_mm_cols" "$_mm_flat" ;;
 			esac
 			_mm_i=$((_mm_i + 1))
 		done
