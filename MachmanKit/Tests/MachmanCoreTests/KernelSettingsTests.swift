@@ -88,6 +88,38 @@ struct KernelSettingsTests {
 		}
 	}
 
+	// D28: an enabled override on the active kernel file was saved and listed, but the boot read
+	// the VM command line: nothing at start looked at the overrides.
+	@Test("D28: the active kernel's enabled override is the command line its boot reads")
+	func theActiveKernelsOverrideIsTheBootsCommandLine() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "kline")
+			let cfg = try VMConfig(name: "kline", memorySize: 2048, cpuCount: 2)
+			let src = TestEnvironment.scratch + "kline-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let active = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: "a")
+			let other = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: cfg.kernelsDirPath(), tag: "b")
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(LinuxKernelBoot(
+				kernelPath: active, initialRamdiskPath: nil, commandLine: "console=hvc0"))
+			func bootLine(_ config: VMConfig) throws -> String? {
+				(try config.makeBootLoader() as? VZLinuxBootLoader)?.commandLine
+			}
+
+			// Another kernel file's override is not this boot's.
+			try cfg.setKernelOverride(forFileAt: other, commandLine: "other", enabled: true)
+			#expect(try bootLine(cfg) == "console=hvc0")
+			try cfg.setKernelOverride(forFileAt: active, commandLine: "quiet", enabled: true)
+			#expect(try bootLine(cfg) == "quiet")
+			#expect(try bootLine(try VMConfig.load(name: "kline")) == "quiet")
+			try cfg.setKernelOverride(forFileAt: active, commandLine: nil, enabled: false)
+			#expect(try bootLine(cfg) == "console=hvc0")
+		}
+	}
+
 	// D21: re-tagging the active kernel updated the draft but not the live boot payload, so
 	// the next start failed with "Kernel image not found: …/kernel/v1/…"; and the override
 	// moved to a key built from the tag trimmed of spaces only, while the file moved to one

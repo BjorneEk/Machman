@@ -15,8 +15,6 @@ import MachmanClient
 
 @Suite("Engine — hand-edited configs", .serialized, .enabled(if: Lab.runs(.l2)))
 struct EngineConfigEditTests {
-	/// Card D28: vm.kernel.setOverride saves the override and VMInfo lists it, but
-	/// makeBootLoader boots KernelSettings.commandLine; nothing reads kernelOverrides at start.
 	@Test(
 		"""
 		R3W2-3: a newer boot mode lists as Unknown, refuses Start and keeps its boot \
@@ -152,8 +150,6 @@ struct EngineConfigEditTests {
 				try await console.expect("LAB-READY", timeout: .seconds(60))
 				let cmdline = try await console.run("cat /proc/cmdline")
 				#expect(cmdline.status == 0)
-				// Fails until the open bug D28 (a kernel's command-line override never reaches
-				// the boot) is fixed.
 				#expect(cmdline.output.contains("lab.tf=r3w2-1"))
 				let after = try await vm.info().boot.ownedKernels?.first { $0.role == .kernel }
 				#expect(after?.path == moved.path)

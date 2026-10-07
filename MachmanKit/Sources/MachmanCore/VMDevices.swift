@@ -73,7 +73,7 @@ extension VMConfig {
 			if let initrd = k.initialRamdiskPath {
 				loader.initialRamdiskURL = URL(fileURLWithPath: initrd)
 			}
-			loader.commandLine = k.commandLine
+			loader.commandLine = effectiveKernelCommandLine(for: k)
 			return loader
 		case .macOS:
 			return VZMacOSBootLoader()

@@ -795,6 +795,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			initrdPath: kernelSettings?.initialRamdiskPath)
 	}
 
+	// The command line a kernel boot reads (D28): the active kernel file's own override while
+	// it is on, else the VM's. The one rule for the boot and for any effective line served.
+	func effectiveKernelCommandLine(for boot: LinuxKernelBoot) -> String {
+		guard let file = ownedKernelFiles().first(where: {
+			$0.role == .kernel && $0.path == boot.kernelPath
+		}), let override = kernelOverrides[Self.kernelOverrideKey(for: file)], override.enabled
+		else { return boot.commandLine }
+		return override.commandLine
+	}
+
 	// How the VM directory changed: moved (rename, promotion — the files are now only at
 	// the new place) or copied (vm.copy, safe-run shadowing — the source keeps its files).
 	enum OwnedPathChange {
