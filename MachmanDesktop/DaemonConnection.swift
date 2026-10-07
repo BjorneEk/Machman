@@ -236,18 +236,29 @@ final class DaemonConnection: ObservableObject {
 	// sanitizer variants included.)
 	func launchDaemon() {
 		if Self.embedsCurrentAgent {
-			NSWorkspace.shared.openApplication(
-				at: Self.embeddedAgent, configuration: NSWorkspace.OpenConfiguration())
+			Self.openAgent(at: Self.embeddedAgent)
 			return
 		}
 		if let url = NSWorkspace.shared.urlForApplication(
 			withBundleIdentifier: Self.daemonBundleID) {
-			NSWorkspace.shared.openApplication(
-				at: url, configuration: NSWorkspace.OpenConfiguration())
+			Self.openAgent(at: url)
 			return
 		}
 		MachmanLogger.log(.passiveError,
 			"no \(Self.daemonBundleID) embedded in this app or known to Launch Services")
+	}
+
+	// The agent's launch stays out of Recent Items and never raises a Launch Services prompt
+	// (E50); a launch that fails says why in the log, as the connect loop keeps trying.
+	private static func openAgent(at url: URL) {
+		let configuration = NSWorkspace.OpenConfiguration()
+		configuration.addsToRecentItems = false
+		configuration.promptsUserIfNeeded = false
+		NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+			guard let error else { return }
+			MachmanLogger.log(.passiveError,
+				"couldn't launch \(url.lastPathComponent): \(error.localizedDescription)")
+		}
 	}
 }
 

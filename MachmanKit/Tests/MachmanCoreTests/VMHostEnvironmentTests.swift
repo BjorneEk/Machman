@@ -53,4 +53,36 @@ struct VMHostEnvironmentTests {
 			"MACHMAN_LAB_VERSION": "stray",
 		])
 	}
+
+	// E50: both background launches kept OpenConfiguration's defaults, so each VM start
+	// recorded Machman VM in Recent Items, and a launch Launch Services wanted confirmed raised
+	// its dialog from the background agent instead of failing into an error the client sees.
+	@Test("E50: a vmhost's launch stays out of Recent Items and never prompts")
+	@MainActor func aVMHostsLaunchStaysQuiet() {
+		let configuration = RoutingMachman.vmhostLaunchConfiguration(
+			arguments: ["--vm", "alpha"], environment: ["MACHMAN_VERSION": "1.0.12"])
+		#expect(!configuration.addsToRecentItems)
+		#expect(!configuration.promptsUserIfNeeded)
+		#expect(!configuration.activates)
+		#expect(configuration.createsNewApplicationInstance)
+		#expect(configuration.arguments == ["--vm", "alpha"])
+		#expect(configuration.environment == ["MACHMAN_VERSION": "1.0.12"])
+	}
+
+	// The desktop's launch of the agent is app-target code: read from its source. Every
+	// OpenConfiguration it makes sets both flags off.
+	@Test("E50: the desktop's agent launch stays out of Recent Items and never prompts")
+	func theAgentsLaunchStaysQuiet() throws {
+		for file in [
+			"MachmanDesktop/DaemonConnection.swift",
+			"MachmanKit/Sources/MachmanCore/RoutingMachman+HostSupervisor.swift",
+		] {
+			let made = try SourceScan.hits(#"OpenConfiguration\(\)"#, in: [file]).count
+			#expect(made > 0, "\(file)")
+			for flag in ["addsToRecentItems", "promptsUserIfNeeded"] {
+				let off = try SourceScan.hits("\\.\(flag) = false", in: [file]).count
+				#expect(off == made, "\(file): \(flag) is off for \(off) of \(made)")
+			}
+		}
+	}
 }

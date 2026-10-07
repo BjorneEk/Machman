@@ -429,20 +429,16 @@ extension RoutingMachman {
 				code: .internalError,
 				message: "Machman VM is missing from this copy of Machman — reinstall Machman")
 		}
-		// Standalone, never a child: the vmhost is its own TCC responsible process by
-		// construction — the same identity story as a launchd-started host.
-		let configuration = NSWorkspace.OpenConfiguration()
-		configuration.createsNewApplicationInstance = true   // one instance per VM, shared id
-		configuration.activates = false
-		configuration.arguments = [
-			"--data-dir", dataDir, "--vm", name, "--socket", identity.socketPath,
-		] + extraArguments
 		// OpenConfiguration.environment REPLACES the child's environment (no inheritance),
 		// which scrubs any MACHMAN_DATA_DIR override for free. The bundle id identifies the
 		// suite and the bundle version the vmhost's build (E22); MACHMAN_VERSION is only the
 		// fallback for an unversioned build. Outside test mode that is all it gets.
 		let lab = LabEnvironment.current
-		configuration.environment = Self.vmhostEnvironment(daemonVersion: daemonVersion, lab: lab)
+		let configuration = Self.vmhostLaunchConfiguration(
+			arguments: [
+				"--data-dir", dataDir, "--vm", name, "--socket", identity.socketPath,
+			] + extraArguments,
+			environment: Self.vmhostEnvironment(daemonVersion: daemonVersion, lab: lab))
 		if let lab {
 			MachmanLogger.log(.log, "test mode: vmhost for \(name) inherits "
 				+ lab.forwardedVariables.keys.sorted().joined(separator: ", "))
@@ -485,6 +481,25 @@ extension RoutingMachman {
 		app.forceTerminate()
 		throw MachmanError(
 			code: .internalError, message: Self.hostDidNotStart(name, reason: lastError))
+	}
+
+	// How a vmhost is launched. Standalone, never a child: it is its own TCC responsible
+	// process by construction — the same identity story as a launchd-started host. One
+	// instance per VM under the shared bundle id, in the background, and quiet (E50): never
+	// listed in Recent Items, and never a Launch Services prompt raised from a background
+	// agent — a launch that would need one fails into spawnHost's error, which reaches the
+	// client.
+	nonisolated static func vmhostLaunchConfiguration(
+		arguments: [String], environment: [String: String]
+	) -> NSWorkspace.OpenConfiguration {
+		let configuration = NSWorkspace.OpenConfiguration()
+		configuration.createsNewApplicationInstance = true
+		configuration.activates = false
+		configuration.addsToRecentItems = false
+		configuration.promptsUserIfNeeded = false
+		configuration.arguments = arguments
+		configuration.environment = environment
+		return configuration
 	}
 
 	// A vmhost's whole environment. Under a test suite it also inherits the suite, the fake
