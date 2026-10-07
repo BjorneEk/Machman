@@ -90,6 +90,53 @@ struct GuestScriptConsoleUninstallTests {
 		}
 	}
 
+	// Review F9: a copy's run treats its source's state as another VM's, so the logins its
+	// source's runs enabled read as set up outside Machman and its uninstall left them on.
+	// A unit carries no marker, so the record is the only owner there is: a copy keeps its
+	// source's console logins (systemd, runit) and kld_list entries, and its first state
+	// carries them on.
+	@Test("S51: a copy's uninstall disables the logins its source's run enabled")
+	func aCopysUninstallDisablesItsSourcesLogins() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=1000
+				INIT=systemd
+				GETTY_MECH=systemd
+				CONSOLE_DEVICES="hvc0 hvc1 hvc2"
+				state_paths() { STATE_DIR="$D/state"; STATE_FILE="$STATE_DIR/state.env"; }
+				mkdir -p "$D/state"
+				printf "MARKER='%s'\nCONSOLE_LOGINS='hvc1'\nKLD_ADDED='fusefs'\n" \
+					machman-ffffffffffff > "$D/state/state.env"
+				systemctl() {
+					printf '%s\n' "$*" >> "$D/systemctl.log"
+					case "$1 $2" in
+					"is-enabled serial-getty@hvc0.service") echo enabled-runtime ;;
+					"is-enabled "*) echo enabled ;;
+					esac
+				}
+				console_session_device() { :; }
+				read_state
+				for dev in hvc1 hvc2; do echo "$dev $(console_ownership "$dev")"; done
+				write_state ""
+				grep -E '^(MARKER|CONSOLE_LOGINS|KLD_ADDED)=' "$STATE_FILE"
+				console_uninstall
+				grep -v is-enabled "$D/systemctl.log"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				   this guest looks cloned from another Machman VM - treating it as new
+				hvc1 ours
+				hvc2 foreign
+				MARKER='\(GuestScriptHarness.marker)'
+				CONSOLE_LOGINS='hvc1'
+				KLD_ADDED='fusefs'
+				   hvc2 keeps its login (set up outside Machman).
+				disable --now serial-getty@hvc1.service
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// inittab and ttys: the lines go either way, but init rereads the file only when no
 	// session sits on one of the consoles — a HUP would end the one this run is read on.
 	@Test func sharedFilesReloadInitOnlyOffTheConsoles() async throws {

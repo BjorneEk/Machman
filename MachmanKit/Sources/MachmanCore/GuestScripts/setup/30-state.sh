@@ -68,11 +68,18 @@ read_state() {
 	[ -r "$STATE_FILE" ] || return 0
 	# A cloned guest carries the source VM's state; its records describe artifacts
 	# tagged with the source's marker, which the ownership probes treat as foreign.
-	# Start fresh instead of trusting them. (Pre-marker v3 states pass as ours.)
+	# Start fresh instead of trusting them. (Pre-marker v3 states pass as ours.) What
+	# carries no marker is known only from the record, so that much stays, and the copy's
+	# first state carries it on: the systemd units and runit links its source's runs
+	# enabled, and the kld_list entries they added.
 	_rs_marker="$(state_get MARKER)"
 	if [ -n "$_rs_marker" ] && [ "$_rs_marker" != "$MARKER" ]; then
 		note "this guest looks cloned from another Machman VM — treating it as new"
 		CLONED=1
+		case "$INIT" in
+		systemd|runit) ST_CONSOLE_LOGINS="$(state_get CONSOLE_LOGINS)" ;;
+		esac
+		ST_KLD_ADDED="$(state_get KLD_ADDED)"
 		return 0
 	fi
 	HAD_STATE=1
