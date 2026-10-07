@@ -75,8 +75,10 @@ extension RoutingMachman {
 			try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options) {
 			return
 		}
-		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
+		// The disk guard first, as BootGuard.refusal orders them (E55): force never overrides
+		// it, so a MAC conflict met first offered a Start Anyway that could never work.
 		try checkSharedDisks(name: name)
+		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
 		if options.safe {
 			try await startSafe(vm: vm, name: name, options: options, claim: claim)
 			return
@@ -407,8 +409,8 @@ extension RoutingMachman {
 					message: "\(name) is still prepared from an earlier start — start it "
 						+ "normally, or wait up to 3 minutes to start it safe")
 			}
+			try checkSharedDisks(name: name)   // before the MAC guard, as a fresh start (E55)
 			try checkMACConflict(name: name, mac: mac, options: options)
-			try checkSharedDisks(name: name)
 		}
 		var forwarded = options
 		forwarded.safe = false

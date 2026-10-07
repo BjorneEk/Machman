@@ -215,4 +215,33 @@ struct DiskReferenceTests {
 			#expect(error.message.contains("stop kept before starting alpha"))
 		}
 	}
+
+	// E55: the MAC guard ran first, so a plain start of a VM sharing a disk AND a MAC with a
+	// running one answered macConflict, offered Start Anyway, and the forced start then met
+	// the disk guard. The guard force never overrides is met first now.
+	@Test("E55: a plain start meets the shared-disk refusal before a MAC conflict")
+	@MainActor func aPlainStartMeetsTheDiskGuardFirst() async throws {
+		let image = TestEnvironment.scratch + "shared-\(UUID().uuidString).img"
+		var routing: RoutingMachman!
+		var mac: String?
+		try VMTestDir.withRedirectedDir {
+			for name in ["alpha", "kept"] {
+				try VMConfig.createNewVMDirectory(name: name)
+				let cfg = try VMConfig(name: name, memorySize: 2048, cpuCount: 2)
+				try cfg.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: image))))
+				if name == "alpha" { mac = cfg.macAddress }
+			}
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+		}
+		routing.locateVMHost = { nil }
+		routing.reserveStart("kept", mac: try #require(mac))   // the saved run keeps alpha's MAC
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("expected a refusal")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message.contains("stop kept before starting alpha"))
+		}
+	}
 }
