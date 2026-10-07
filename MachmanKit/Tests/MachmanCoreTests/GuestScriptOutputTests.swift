@@ -50,4 +50,56 @@ struct GuestScriptOutputTests {
 			#expect(wide.isEmpty, "\(shell): \(wide)")
 		}
 	}
+
+	// S56: a yes/no question and the numbered menus (TERM=dumb, pipes) printed their text
+	// whole, so NetBSD's user-mount question ran to 97 columns; they fold like everything
+	// said now — the answer still goes after the hint on the question's last line, an item
+	// goes on under its number.
+	@Test("S56: yes/no questions and numbered menus fold to the console's width")
+	func questionsAndNumberedMenusFold() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=80
+				INTERACTIVE=1
+				printf 'y\n2\n\n' > "$D/answers"
+				exec 3< "$D/answers"
+				UI_IN=3
+				choices="$(printf '%s\n%s\t%s' short long "a note far longer than any console \
+				line could ever hold in a single line")"
+				features="$(printf '%s\t%s\n%s\t%s' "Console logins" "hvc2 configured outside \
+				Machman - report only - 1 to set up" SSH short)"
+				{
+					ask_yes_no "Let ANY user of this guest mount filesystems \
+				(vfs.generic.usermount=1)? Root can mount without it." n
+					echo "<$R_YES>"
+					ask_choice 'Which one?' "$choices" 1
+					echo "<$R_INDEX>"
+					menu_multi 'Set up which?' "$features" 1
+					echo "<$R_MARKS>"
+				} | sed 's/ *$//'
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				Let ANY user of this guest mount filesystems (vfs.generic.usermount=1)? Root
+				can mount without it. [y/N] <1>
+
+				Which one?
+
+				  1) short
+				  2) long a note far longer than any console line could ever hold in a single
+				     line
+
+				Choose [1]: <2>
+
+				Set up which?
+
+				  1) [x] Console logins hvc2 configured outside Machman - report only - 1 to
+				         set up
+				  2) [ ] SSH short
+
+				Toggle numbers (space-separated), empty keeps the selection: <1>
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }

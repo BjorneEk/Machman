@@ -308,9 +308,11 @@ ask_yes_no() {
 		verbose ask "$1 → ${2} (not interactive)"
 		return 0
 	fi
+	# Folded like everything said, the answer going after the hint on its last line.
+	_ayn_text="$(wrap "$1 $_ayn_hint")"
 	_ayn_tries=0
 	while [ "$_ayn_tries" -lt 3 ]; do
-		printf '%s %s ' "$1" "$_ayn_hint"
+		printf '%s ' "$_ayn_text"
 		if ! read -r _ayn_answer <&3; then
 			printf '\n'
 			die 3 "no answer — cancelled." "Re-run with the matching option to decide up front."
@@ -361,7 +363,7 @@ ask_choice() {
 	_ac_i=1
 	for _ac_item in "$@"; do
 		# Items may be "title<TAB>note" pairs (the arrow menus' format): flatten here.
-		printf '  %s) %s\n' "$_ac_i" "$(printf '%s' "$_ac_item" | tr '	' ' ')"
+		wrap_hanging "  $_ac_i) " "$(printf '%s' "$_ac_item" | tr '	' ' ')"
 		_ac_i=$((_ac_i + 1))
 	done
 	say ""
@@ -619,8 +621,8 @@ menu_multi() {
 		for _mm_it in "$@"; do
 			_mm_flat="$(printf '%s' "$_mm_it" | tr '	' ' ')"
 			case ",$_mm_marks," in
-			*",$_mm_i,"*) printf '  %s) %s %s\n' "$_mm_i" "$G_ON" "$_mm_flat" ;;
-			*) printf '  %s) %s %s\n' "$_mm_i" "$G_OFF" "$_mm_flat" ;;
+			*",$_mm_i,"*) wrap_hanging "  $_mm_i) $G_ON " "$_mm_flat" ;;
+			*) wrap_hanging "  $_mm_i) $G_OFF " "$_mm_flat" ;;
 			esac
 			_mm_i=$((_mm_i + 1))
 		done
