@@ -135,11 +135,9 @@ struct SerialPortBridgeTests {
 		Thread.sleep(forTimeInterval: 0.2)
 		close(dead)   // vanish; a broadcast write to it would raise SIGPIPE (ignored)
 
-		// A burst so the drain writes to the dead fd before noticing EOF — but SMALL enough
-		// to fit the live socket's send+receive buffers (~16 KB on macOS AF_UNIX): the
-		// broadcast is deliberately best-effort, so a burst bigger than the buffers gets its
-		// tail (the marker!) dropped whenever the drain outruns this test's reader. That made
-		// the old 25 KB burst fail on an idle machine and pass on a loaded one.
+		// A burst so the drain writes to the dead fd before noticing EOF. (It once had to fit
+		// the live socket's ~16 KB of buffers: past them the broadcast dropped the tail, the
+		// marker with it, whenever the drain outran this test's reader — E58.)
 		for _ in 0..<8 { env.guestOut.write(Data(String(repeating: "x", count: 512).utf8)) }
 		env.guestOut.write(Data("STILL_ALIVE\n".utf8))
 		#expect(recv(live, until: "STILL_ALIVE").contains("STILL_ALIVE"))
@@ -320,6 +318,54 @@ struct SerialPortBridgeTests {
 		#expect(counts.line(port: "console2", client: .init(sent: 4000, lost: 96))
 			== "serial console2 counts: typed 12, taken 10, waiting 2, dropped 0, output 4096; "
 				+ "client got 4000, lost 96")
+	}
+
+	// E58: a client that stopped reading for a moment (a busy terminal, a loaded test) lost
+	// what its socket could not take at once — all but 8 KiB of a burst, the echo a console
+	// session waited for among it. Its output now waits for it (C29: up to 1 MiB).
+	@Test("E58: a client that stops reading for a moment still gets every byte of a 64 KiB burst")
+	func aPausedClientGetsTheWholeBurst() throws {
+		let env = makeBridge("paused")
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+
+		let burst = String(repeating: "x", count: 64 * 1024) + "END_OF_BURST\n"
+		env.guestOut.write(Data(burst.utf8))   // the client reads nothing meanwhile
+		let total = UInt64(burst.utf8.count)
+		#expect(counts(env.bridge) { $0.port.output == total }.port.output == total)
+		let got = recv(client, until: "END_OF_BURST", timeout: 5)
+		#expect(got.hasSuffix("END_OF_BURST\n"))
+		#expect(got.utf8.count == burst.utf8.count)
+		#expect(counts(env.bridge) { $0.clients.first?.sent == total }.clients
+			== [SerialPortBridge.ClientCounts(sent: total, lost: 0)])
+	}
+
+	// …and one that never reads loses only what passes its backlog, without holding up the
+	// drain for the others.
+	@Test("E58: a client that never reads loses only what passes its 1 MiB backlog")
+	func aStuckClientLosesOnlyPastItsBacklog() throws {
+		let env = makeBridge("stuck")
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let stuck = connect(env.bridge.socketPath)
+		defer { close(stuck) }
+		Thread.sleep(forTimeInterval: 0.2)
+
+		let chunk = Data(repeating: 0x79, count: 64 * 1024)
+		for _ in 0..<24 { env.guestOut.write(chunk) }   // 1.5 MiB the client never reads
+		env.guestOut.write(Data("STILL_FLOWING\n".utf8))
+		let late = connect(env.bridge.socketPath)
+		defer { close(late) }
+		#expect(recv(late, until: "STILL_FLOWING").contains("STILL_FLOWING"))
+		let output = UInt64(24 * 64 * 1024 + 14)
+		let now = counts(env.bridge) { $0.port.output == output }
+		let first = try #require(now.clients.max { $0.lost < $1.lost })
+		#expect(first.lost > 0)
+		#expect(first.sent + first.lost <= output)
+		#expect(Int64(first.lost) >= Int64(output) - 1024 * 1024 - Int64(first.sent))
 	}
 
 	// E18: what the pipe can't take at once is buffered, not lost — below the cap a slow guest

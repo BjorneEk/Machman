@@ -9,9 +9,10 @@
 //  socket-research 02-socket-bridge spike. One bridge per port.
 //
 //  All state runs on one serial queue, so there are no locks: the drain, the accept loop and the
-//  per-client reads are DispatchSources targeting `queue`. Client writes are non-blocking and
-//  best-effort (a slow client drops output rather than stalling the shared drain — and with it
-//  the guest). Guest input is non-blocking too: what the guest pipe won't take waits in a
+//  per-client reads are DispatchSources targeting `queue`. Client writes are non-blocking: what
+//  a client's socket won't take waits in a bounded per-client backlog (C29), and only a client
+//  that falls further behind drops output — never the shared drain, and with it the guest,
+//  stalls on it. Guest input is non-blocking too: what the guest pipe won't take waits in a
 //  bounded buffer, and a guest that reads nothing loses input rather than freezing the drain.
 //  SIGPIPE is ignored process-wide (a client that vanishes mid-write must not kill the vmhost),
 //  and a closed guest end (EPIPE while VZ tears down) ends input instead of raising. Every byte
@@ -36,8 +37,7 @@ final class SerialPortBridge {
 	private var log: FileHandle?
 	private var logBytes: UInt64 = 0
 	private var ring = Data()
-	private var clients: [Int32: DispatchSourceRead] = [:]
-	private var warnedDrop: Set<Int32> = []
+	private var clients: [Int32: Client] = [:]
 	private var listener: BoundSocket?
 	private var acceptSource: DispatchSourceRead?
 	// The socket's timestamps, refreshed like the control sockets' (E30): the temp cleaner
@@ -57,7 +57,6 @@ final class SerialPortBridge {
 	private var guestInputClosed = false
 	private var warnedInputDrop = false
 	private var counts = Counters()
-	private var clientCounts: [Int32: ClientCounts] = [:]
 
 	// What crossed the port this run (E58). Every typed byte is taken by the guest pipe,
 	// waiting for it, or dropped (past the buffer, or the guest end gone).
@@ -84,8 +83,33 @@ final class SerialPortBridge {
 		var lost: UInt64 = 0
 	}
 
+	// One attached terminal: its socket, the output the socket has not taken yet (flushed by
+	// `writer` as the client reads), and its counts. The descriptor closes once no source
+	// watches it any more (GCD's rule, E48): the reader and, while output waits, the writer.
+	private final class Client {
+		let fd: Int32
+		var reader: DispatchSourceRead?
+		var writer: DispatchSourceWrite?
+		var backlog = Data()
+		var counts = ClientCounts()
+		var warned = false
+		private var watching = 0
+
+		init(fd: Int32) { self.fd = fd }
+
+		func watch(_ source: DispatchSourceProtocol) {
+			watching += 1
+			source.setCancelHandler { [self] in
+				watching -= 1
+				if watching == 0 { close(fd) }
+			}
+		}
+	}
+
 	private static let replayCap = 256 * 1024
 	private static let guestInputCap = 64 * 1024
+	// C29: how far one terminal may fall behind the guest's output before it loses some.
+	private static let clientBacklogCap = 1024 * 1024
 
 	private static let ignoreSIGPIPE: Void = {
 		signal(SIGPIPE, SIG_IGN)
@@ -148,7 +172,7 @@ final class SerialPortBridge {
 			self.guestInput.removeAll()
 			self.acceptSource?.cancel()
 			self.keepAliveTimer?.cancel()
-			for (_, source) in self.clients { source.cancel() }
+			for client in self.clients.values { self.cancel(client) }
 			self.clients.removeAll()
 			try? self.log?.close()
 			self.log = nil
@@ -185,7 +209,7 @@ final class SerialPortBridge {
 			if self.ring.count > Self.replayCap {
 				self.ring.dropHead(self.ring.count - Self.replayCap, live: Self.replayCap)
 			}
-			for fd in self.clients.keys { self.write(fd, data) }
+			for client in self.clients.values { self.send(client, data) }
 		}
 		// The fd must outlive the source's registration: the cancel handler holds the handle.
 		source.setCancelHandler { [fromGuest] in _ = fromGuest }
@@ -241,30 +265,81 @@ final class SerialPortBridge {
 
 	// MARK: - Clients
 
-	// Best-effort, non-blocking: a client that can't keep up drops output rather than stalling
-	// the drain. Runs on `queue`, so no locking around `warnedDrop`.
-	private func write(_ fd: Int32, _ data: Data) {
+	// Output to one client without ever blocking `queue`: what its socket takes now, the rest
+	// (in order) for its write source, and past clientBacklogCap new output dropped — a
+	// terminal that stops reading must not stall the drain. The socket alone holds about 16
+	// KiB: a burst that came while a busy client wasn't reading lost its tail, the echo a
+	// console session waited on among it (E58).
+	private func send(_ client: Client, _ data: Data) {
+		var pending = data
+		if client.backlog.isEmpty {
+			let (sent, failed) = writeToClient(client.fd, data)
+			client.counts.sent += UInt64(sent)
+			pending = data.dropFirst(sent)
+			if failed {
+				// Gone: its reader's EOF removes it.
+				client.counts.lost += UInt64(pending.count)
+				return
+			}
+		}
+		guard !pending.isEmpty else { return }
+		let kept = pending.prefix(max(0, Self.clientBacklogCap - client.backlog.count))
+		client.counts.lost += UInt64(pending.count - kept.count)
+		if kept.count < pending.count, !client.warned {
+			client.warned = true
+			MachmanLogger.log(.log, "serial \(kind.rawValue)\(index): slow client, dropping output")
+		}
+		client.backlog.append(kept)
+		if !client.backlog.isEmpty { armWriter(client) }
+	}
+
+	// Non-blocking write of as much as the socket takes, and whether it failed for good.
+	private func writeToClient(_ fd: Int32, _ data: Data) -> (sent: Int, failed: Bool) {
+		var failed = false
 		let sent = data.withUnsafeBytes { raw -> Int in
-			guard let base = raw.baseAddress else { return data.count }
+			guard let base = raw.baseAddress else { return 0 }
 			var off = 0
 			while off < data.count {
 				let n = Foundation.write(fd, base + off, data.count - off)
 				if n > 0 { off += n; continue }
 				if n < 0 && errno == EINTR { continue }
-				break   // EAGAIN or error: drop the remainder
+				failed = n < 0 && errno != EAGAIN
+				break   // EAGAIN: the socket is full — the rest waits for the write source
 			}
 			return off
 		}
-		clientCounts[fd, default: ClientCounts()].sent += UInt64(sent)
-		clientCounts[fd, default: ClientCounts()].lost += UInt64(data.count - sent)
-		if sent < data.count, warnedDrop.insert(fd).inserted {
-			MachmanLogger.log(.log, "serial \(kind.rawValue)\(index): slow client, dropping output")
+		return (sent, failed)
+	}
+
+	private func armWriter(_ client: Client) {
+		guard client.writer == nil else { return }
+		let source = DispatchSource.makeWriteSource(fileDescriptor: client.fd, queue: queue)
+		source.setEventHandler { [weak self, weak client] in
+			guard let self, let client else { return }
+			self.flush(client)
+		}
+		client.watch(source)
+		client.writer = source
+		source.resume()
+	}
+
+	private func flush(_ client: Client) {
+		let (sent, failed) = writeToClient(client.fd, client.backlog)
+		client.counts.sent += UInt64(sent)
+		client.backlog.dropHead(sent, live: Self.clientBacklogCap)
+		if failed {
+			client.counts.lost += UInt64(client.backlog.count)
+			client.backlog.removeAll()
+		}
+		if client.backlog.isEmpty {
+			client.writer?.cancel()
+			client.writer = nil
 		}
 	}
 
 	private func addClient(_ fd: Int32) {
 		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
-		write(fd, ring)   // replay recent context to the new arrival
+		let client = Client(fd: fd)
 		let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
 		source.setEventHandler { [weak self] in
 			guard let self = self else { return }
@@ -276,8 +351,10 @@ final class SerialPortBridge {
 				self.removeClient(fd)
 			}
 		}
-		source.setCancelHandler { close(fd) }
-		clients[fd] = source
+		client.watch(source)
+		client.reader = source
+		clients[fd] = client
+		send(client, ring)   // replay recent context to the new arrival
 		source.resume()
 	}
 
@@ -376,10 +453,16 @@ final class SerialPortBridge {
 	}
 
 	private func removeClient(_ fd: Int32) {
-		guard let source = clients.removeValue(forKey: fd) else { return }
-		warnedDrop.remove(fd)
-		MachmanLogger.log(.log, countsLine(client: clientCounts.removeValue(forKey: fd)))
-		source.cancel()
+		guard let client = clients.removeValue(forKey: fd) else { return }
+		MachmanLogger.log(.log, countsLine(client: client.counts))
+		cancel(client)
+	}
+
+	private func cancel(_ client: Client) {
+		client.writer?.cancel()
+		client.writer = nil
+		client.reader?.cancel()
+		client.reader = nil
 	}
 
 	private func countsLine(client: ClientCounts?) -> String {
@@ -457,7 +540,7 @@ final class SerialPortBridge {
 		queue.sync {
 			var now = counts
 			now.waiting = UInt64(guestInput.count)
-			return (now, clients.keys.map { clientCounts[$0] ?? ClientCounts() })
+			return (now, clients.values.map(\.counts))
 		}
 	}
 }

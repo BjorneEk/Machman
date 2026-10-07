@@ -103,7 +103,6 @@ struct ConsoleStallTests {
 				}
 				if stalls >= 3 { break }
 			}
-			// Fails until the open bug E58 (output dropped for a slow console client) is fixed.
 			#expect(lost == 0, "sessions lost \(lost) bytes of the guest's output")
 		}
 	}
