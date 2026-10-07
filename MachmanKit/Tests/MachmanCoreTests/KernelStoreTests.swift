@@ -70,6 +70,41 @@ struct KernelStoreTests {
 	// D16: ownership was a raw string prefix, so "<kernels>/../disk.raw" passed and
 	// vm.kernel.delete removed a VM file. Paths are resolved before the check, and a
 	// directory is never "an owned file".
+	// D30 (review 4): the scan listed every entry of a tag dir, so Finder's .DS_Store became an
+	// owned "kernel" that kept the Kernel section after the real one was deleted, and a
+	// folder became a row that delete refuses.
+	@Test("D30: Finder's .DS_Store and a stray folder in the kernels store are not kernel files")
+	func finderLeftoversAreNotKernelFiles() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "finder")
+			let cfg = try VMConfig(name: "finder", memorySize: 1 << 30, cpuCount: 2)
+			let kernelsDir = cfg.kernelsDirPath()
+			let src = TestEnvironment.scratch + "d30-\(UUID().uuidString)"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let kernel = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: kernelsDir, tag: "v1")
+			let fm = FileManager.default
+			let tagDir = (kernel as NSString).deletingLastPathComponent
+			let ds = Data([0, 0, 0, 1])
+			for dir in [tagDir, kernelsDir + "/kernel", kernelsDir] {
+				try ds.write(to: URL(fileURLWithPath: dir + "/.DS_Store"))
+			}
+			try fm.createDirectory(
+				atPath: kernelsDir + "/kernel/v2/stray", withIntermediateDirectories: true)
+			try fm.createDirectory(
+				atPath: kernelsDir + "/legacy", withIntermediateDirectories: true)
+			try ds.write(to: URL(fileURLWithPath: kernelsDir + "/legacy/.DS_Store"))
+
+			#expect(cfg.ownedKernelFiles().map(\.path) == [kernel])
+			try KernelStore.delete(path: kernel, kernelsDir: kernelsDir)
+			#expect(cfg.ownedKernelFiles().isEmpty)
+			#expect(!fm.fileExists(atPath: tagDir))   // its .DS_Store didn't keep it
+			// The user's own folder stays.
+			#expect(fm.fileExists(atPath: kernelsDir + "/kernel/v2/stray"))
+		}
+	}
+
 	@Test func deleteRefusesPathsThatClimbOutOfTheStore() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "k")

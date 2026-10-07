@@ -40,7 +40,8 @@ enum KernelStore {
 				guard fm.fileExists(atPath: tagDir, isDirectory: &isDir), isDir.boolValue else {
 					continue
 				}
-				for file in (try? fm.contentsOfDirectory(atPath: tagDir)) ?? [] {
+				for file in (try? fm.contentsOfDirectory(atPath: tagDir)) ?? []
+					where isKernelFile(tagDir + "/" + file) {
 					result.append(OwnedKernelFile(
 						role: role, tag: tag, fileName: file, path: tagDir + "/" + file))
 				}
@@ -58,9 +59,7 @@ enum KernelStore {
 			else { continue }
 			for file in (try? fm.contentsOfDirectory(atPath: storeDir)) ?? [] {
 				let path = storeDir + "/" + file
-				var fileIsDir: ObjCBool = false
-				guard fm.fileExists(atPath: path, isDirectory: &fileIsDir), !fileIsDir.boolValue
-				else { continue }
+				guard isKernelFile(path) else { continue }
 				let role: KernelRole
 				if path == kernelPath { role = .kernel }
 				else if path == initrdPath { role = .initramfs }
@@ -70,6 +69,16 @@ enum KernelStore {
 		}
 
 		return result.sorted { $0.path < $1.path }
+	}
+
+	// What a store dir holds that counts as a kernel file: not a directory, and not a hidden
+	// name — Finder drops a .DS_Store into any folder the user opens, and listed as an owned
+	// file it kept the Kernel section after the last real kernel went (D30).
+	private static func isKernelFile(_ path: String) -> Bool {
+		guard !(path as NSString).lastPathComponent.hasPrefix(".") else { return false }
+		var isDirectory: ObjCBool = false
+		return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+			&& !isDirectory.boolValue
 	}
 
 	// Best-effort role for a legacy file the config doesn't reference, by name.
@@ -167,6 +176,10 @@ enum KernelStore {
 		// something; legacy-layout files (no role level) just make fewer hops.
 		var dir = (path as NSString).deletingLastPathComponent
 		while dir.hasPrefix(kernelsDir) {
+			// Finder's .DS_Store is not the user's: it doesn't keep an emptied dir alive (D30).
+			if (try? fm.contentsOfDirectory(atPath: dir)) == [".DS_Store"] {
+				try? fm.removeItem(atPath: dir + "/.DS_Store")
+			}
 			guard removeEmptyDirectory(dir) else { break }
 			if dir == kernelsDir { break }
 			dir = (dir as NSString).deletingLastPathComponent
