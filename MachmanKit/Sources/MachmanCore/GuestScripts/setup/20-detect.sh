@@ -443,6 +443,8 @@ find_addresses() {
 			IP="$(ipconfig getifaddr "$_fa_if" 2>/dev/null || true)"
 		elif [ -n "$_fa_if" ]; then
 			IP="$(ifconfig "$_fa_if" 2>/dev/null | awk '/inet /{ print $2; exit }' || true)"
+			# NetBSD prints the prefix length with it (inet 10.0.2.15/24).
+			IP="${IP%%/*}"
 		fi
 		;;
 	Linux)

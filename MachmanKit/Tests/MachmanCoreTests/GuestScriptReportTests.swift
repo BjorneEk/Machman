@@ -134,6 +134,37 @@ struct GuestScriptReportTests {
 		}
 	}
 
+	// S53: NetBSD's ifconfig prints the address with its prefix length (inet 10.0.2.15/24),
+	// which the summary put in its ssh line and the host refused as no address; FreeBSD's
+	// and OpenBSD's print it bare, with a netmask after it.
+	@Test("S53: a NetBSD address reads without its prefix length")
+	func bsdAddressesCarryNoPrefixLength() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				route() {
+					printf '   route to: default\n    gateway: 10.0.2.2\n  interface: vioif0\n'
+				}
+				ifconfig() { printf '%s: flags=0x8843<UP> mtu 1500\n\tinet %s\n' "$1" "$INET"; }
+				for OS in NetBSD FreeBSD OpenBSD; do
+					case "$OS" in
+					NetBSD) INET='10.0.2.15/24 broadcast 10.0.2.255 flags 0' ;;
+					*) INET='10.0.2.15 netmask 0xffffff00 broadcast 10.0.2.255' ;;
+					esac
+					IP=""
+					find_addresses
+					echo "$OS $IP $GATEWAY"
+				done
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				NetBSD 10.0.2.15 10.0.2.2
+				FreeBSD 10.0.2.15 10.0.2.2
+				OpenBSD 10.0.2.15 10.0.2.2
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// S31: --at-boot is the boot hook's --report-only, and it first waits for the share's
 	// drop-box and a default route (the sshfs automounts need one) — polling, bounded — so
 	// a boot report never marks them unavailable before DHCP. The locked copy accepts it.

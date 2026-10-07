@@ -148,7 +148,6 @@ struct THSpikeTests {
 			let from = try #require(
 				run.output.split(separator: "\n").first { $0.hasPrefix("From your Mac:") },
 				"no 'From your Mac:' line (exit \(run.status)):\n\(run.output)")
-			// Fails until the open bug S53 (the address keeps its prefix length) is fixed.
 			#expect(!from.contains("/"), "\(from)")
 			try await g.reboot()
 			let console = try await LabConsole.connect(
