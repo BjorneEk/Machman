@@ -29,6 +29,12 @@ enum THClones {
 		return try await source.sibling(copy)
 	}
 
+	/// The DHCP client id systemd-networkd leased with (its lease file's CLIENTID).
+	static func dhcpClientID(_ g: THVZGuest) async throws -> String {
+		try await g.check(
+			"sed -n 's/^CLIENTID=//p' /run/systemd/netif/leases/* 2>/dev/null | head -n 1")
+	}
+
 	/// The guest's IPv4 address (the source of its route out) once DHCP gave it one.
 	static func address(_ g: THVZGuest) async throws -> String {
 		try await LabStep.run("\(g.vm.name): waiting ≤60 s for a DHCP address") {
@@ -174,7 +180,9 @@ struct THCloneTests {
 	// leases on that id: the copy leased the source's address, and side by side the two
 	// fought over it. The copy's Guest Setup run (its state is the source's, so it knows it
 	// is a copy) gives it a machine id of its own, which its network takes up at the next
-	// boot: a new client id, and with the source's lease still held, an address of its own.
+	// boot: a client id of its own, and with the source's lease still held, an address of
+	// its own. Both VMs stop from the host, never shut down: a shutdown hands the lease back
+	// (networkd releases it), and a released address may go to the new client all the same.
 	// (A lab copy shares its source's disk image, so the two never run at once.)
 	@Test("S55: a duplicate's Guest Setup gives it a machine id, so it leases its own address")
 	func duplicateLeasesItsOwnAddress() async throws {
@@ -186,7 +194,10 @@ struct THCloneTests {
 			#expect(setUp.status == 0, "\(setUp.output)")
 			let sourceID = try await g.check("cat /etc/machine-id")
 			let sourceAddress = try await THClones.address(source)
-			let copy = try await THClones.copyAndBoot(source, as: "deb id copy")
+			let sourceClient = try await THClones.dhcpClientID(source)
+			try await g.check("sync")
+			try await source.vm.forceQuit()
+			let copy = try await source.sibling(try await source.vm.copy(as: "deb id copy"))
 			do {
 				let run = try await copy.install("-y --ssh --user lab")
 				#expect(run.status == 0, "\(run.output)")
@@ -195,8 +206,11 @@ struct THCloneTests {
 				let copyID = try await copy.check("cat /etc/machine-id")
 				#expect(copyID.count == 32 && copyID != sourceID,
 					"source \(sourceID), copy \(copyID)")
-				try await copy.reboot()
+				try await copy.restartFromHost()
 				let copyAddress = try await THClones.address(copy)
+				let copyClient = try await THClones.dhcpClientID(copy)
+				#expect(!sourceClient.isEmpty && copyClient != sourceClient,
+					"source client id \(sourceClient), copy \(copyClient)")
 				#expect(copyAddress != sourceAddress,
 					"the copy leases its source's \(sourceAddress) (machine id \(copyID))")
 				await copy.shutdown()
