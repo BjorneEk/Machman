@@ -77,6 +77,18 @@ struct TreeSectionsTests {
 		#expect(parked.showsKernelSections && parked.kernelSectionParked)
 	}
 
+	// N3 (the user's review-4 note): the sections followed the draft's presence, not what it
+	// holds, so an empty draft left behind by kernel boot kept them, parked, for good.
+	@Test("N3: an EFI VM whose kernel draft holds nothing shows no kernel sections")
+	func anEmptyParkedDraftShowsNoSections() {
+		var vm = Samples.linux()
+		vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		vm.boot.ownedKernels = nil
+		#expect(vm.boot.mode == .efi)
+		// Fails until the open bug N3 (an empty kernel draft keeps the parked sections) is fixed.
+		#expect(!vm.showsKernelSections)
+	}
+
 	@Test func serialPortsListConsolesThenUARTs() {
 		let ports = Samples.kernelBoot().allSerialPorts
 		#expect(ports.map(\.kind) == [.console, .uart])

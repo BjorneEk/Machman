@@ -57,6 +57,48 @@ struct KernelSettingsTests {
 		}
 	}
 
+	// N3 (the user's review-4 note): kernel boot switched on creates an empty draft, and
+	// switching it off kept that draft for good, so the tree drew parked Kernel and Initramfs
+	// sections with nothing in them and no way to remove them. A draft holding nothing
+	// (no file, no command line) goes with kernel boot.
+	@Test("N3: kernel boot switched on and off with nothing set leaves no draft")
+	func anEmptyDraftGoesWithKernelBoot() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "blank")
+			let cfg = try VMConfig(name: "blank", memorySize: 2048, cpuCount: 2)
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.setKernelBoot(enabled: false)
+			#expect(cfg.boot == .efi)
+			// Fails until the open bug N3 (an empty kernel draft outlives kernel boot) is fixed.
+			#expect(cfg.kernelSettings == nil)
+			// Fails until the open bug N3 (an empty kernel draft outlives kernel boot) is fixed.
+			#expect(try VMConfig.load(name: "blank").kernelSettings == nil)
+		}
+	}
+
+	@Test("N3: deleting the only kernel file while kernel boot is off leaves no draft")
+	func deletingTheLastFileOfAParkedDraftDropsIt() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "parked")
+			let cfg = try VMConfig(name: "parked", memorySize: 2048, cpuCount: 2)
+			let kernelsDir = cfg.kernelsDirPath()
+			let path = kernelsDir + "/kernel/v1/vmlinuz"
+			try FileManager.default.createDirectory(
+				atPath: kernelsDir + "/kernel/v1", withIntermediateDirectories: true)
+			try Data("kern".utf8).write(to: URL(fileURLWithPath: path))
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(
+				LinuxKernelBoot(kernelPath: path, initialRamdiskPath: nil, commandLine: ""))
+			try cfg.setKernelBoot(enabled: false)
+			#expect(cfg.kernelSettings?.kernelPath == path)   // a draft with a file is kept
+			// LocalMachman.deleteKernelFile's config steps.
+			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
+			try cfg.clearKernelReference(to: path)
+			// Fails until the open bug N3 (an empty kernel draft outlives kernel boot) is fixed.
+			#expect(cfg.kernelSettings == nil)
+		}
+	}
+
 	// C1: a rename moves the directory the owned kernel paths embed — they must follow, in
 	// the draft AND the live boot payload, while external paths stay put.
 	@Test func renameRepointsOwnedKernelPaths() throws {

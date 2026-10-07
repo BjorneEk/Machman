@@ -75,14 +75,17 @@ struct TreeSelectionPruneTests {
 		#expect(await eventually { h.viewModel.treeSelection.isEmpty })
 	}
 
+	// Back to EFI with every file deleted: the daemon still serves the draft, emptied (the
+	// state this test once modeled as no draft at all, which hid N3 — review 4).
 	@Test func theKernelGroupGoesWithKernelBoot() async {
 		let h = await selecting("Kernel Lab")
 		h.viewModel.treeSelection = [.group("Kernel"), .disk("storage:system")]
 		change(h, "Kernel Lab") { vm in
 			vm.boot.mode = .efi
-			vm.boot.kernel = nil
+			vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 			vm.boot.ownedKernels = []
 		}
+		// Fails until the open bug N3 (an empty kernel draft keeps the parked sections) is fixed.
 		#expect(await eventually { h.viewModel.treeSelection == [.disk("storage:system")] })
 	}
 
