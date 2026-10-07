@@ -131,12 +131,9 @@ enum THReadOnlyRows {
 			let text = String(decoding: bytes, as: UTF8.self)
 			let lines = THConsoleSession.clean(text).split(separator: "\n").map(String.init)
 			#expect(THGlyphs.colours(in: text).isEmpty, "SGR colours on a vt100 console")
-			// Every line, the plan's consoles line included. Fails until the open bugs S48
-			// (prose keeps its em dashes) and S49 (the consoles line joins with a hard-coded
-			// '·') are fixed.
+			// Every line, the plan's consoles line included.
 			for glyph in THGlyphs.unicode {
 				let found = lines.filter { $0.contains(glyph) }
-				// Fails until the open bugs S49 and S48 are fixed.
 				#expect(found.isEmpty, "a UTF-8 glyph '\(glyph)' on a LANG=C console: \(found)")
 			}
 			let wide = lines.filter { $0.count > 80 }

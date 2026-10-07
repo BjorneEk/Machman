@@ -88,6 +88,39 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// S49: the plan's consoles line joined its devices with a hard-coded '·', the one
+	// separator that bypassed the ASCII glyphs, and ran past the console on Debian's three
+	// consoles; each console now gets a line of its own under the first.
+	@Test("S49: the consoles plan lists one console per line, with no '·' between them")
+	func consolesPlanListsOneConsolePerLine() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=80
+				INIT=systemd
+				GETTY_MECH=systemd
+				CONSOLE_DEVICES="null zero random"
+				ST_CONSOLE_LOGINS="zero"
+				ps() { :; }
+				systemctl() {
+					case "$1 $2" in
+					"is-enabled serial-getty@null.service") echo enabled-runtime ;;
+					"is-enabled "*) echo enabled ;;
+					esac
+				}
+				CONSOLES_OVERRIDE="null zero random"
+				console_decide
+				console_plan
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				  consoles         null (automatic — nothing to do)
+				                   zero (verify — no changes expected)
+				                   random (report only — configured outside Machman)
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// S51 (choice C28): a systemd login Machman's runs never enabled is reported and left as
 	// is, never adopted: a unit someone else enabled is not ours to take over, as runit's
 	// service dirs aren't, so no Leave/Adopt question asks about it. inittab and ttys, where

@@ -348,7 +348,9 @@ Adopt — comment the existing line (restorable) and manage a marked one" 1
 		case "$_cdc_act" in
 		install|verify|adopt) CONSOLE_MANAGED="$CONSOLE_MANAGED $_cdc_dev" ;;
 		esac
-		CONSOLE_PLAN="$CONSOLE_PLAN$_cdc_dev ($_cdc_what) · "
+		# One console per line: plan_line puts each under the first.
+		CONSOLE_PLAN="${CONSOLE_PLAN:+$CONSOLE_PLAN
+}$_cdc_dev ($_cdc_what)"
 	done
 	CONSOLE_ACTIONS="${CONSOLE_ACTIONS# }"
 	CONSOLE_MANAGED="${CONSOLE_MANAGED# }"
@@ -361,7 +363,6 @@ Adopt — comment the existing line (restorable) and manage a marked one" 1
 			CONSOLE_MANAGED="${CONSOLE_MANAGED:+$CONSOLE_MANAGED }$_cdc_dev"
 		fi
 	done
-	CONSOLE_PLAN="${CONSOLE_PLAN% · }"
 	[ -n "$CONSOLE_PLAN" ] || CONSOLE_PLAN="none selected"
 	return 0
 }
