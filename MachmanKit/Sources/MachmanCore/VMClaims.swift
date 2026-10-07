@@ -127,6 +127,15 @@ final class VMClaims {
 		.map { ($0.name, $0.kind) }
 	}
 
+	// The copies a VM's vmhost runs for this process (proxied), oldest first: they outlive it.
+	var proxied: [(name: String, kind: Kind)] {
+		table.flatMap { name, claims in
+			claims.filter { !$0.inDaemon }.map { (name: name, kind: $0.kind, order: $0.order) }
+		}
+		.sorted { $0.order < $1.order }
+		.map { ($0.name, $0.kind) }
+	}
+
 	// The names a start or a save holds: the router lists them as starting.
 	var startingNames: Set<String> {
 		Set(table.filter { $0.value.contains { $0.kind == .starting || $0.kind == .saving } }

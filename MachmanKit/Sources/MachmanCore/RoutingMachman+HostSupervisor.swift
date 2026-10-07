@@ -127,7 +127,9 @@ extension RoutingMachman {
 	// whether its own vmhost cancels in front and says what to do. Only a vmhost running its
 	// VM and answering does; a start in flight (its vmhost not there yet, or idle until the
 	// start arrives), a host that stopped answering and one that never answered leave it to
-	// the agent — as does work the agent runs itself on a VM that runs nothing (C13). One
+	// the agent — as does work the agent runs itself on a VM that runs nothing (C13). A copy a
+	// vmhost runs for the agent (an import it drains into its stopped VM) holds it too: that
+	// vmhost cancels the log out and says so (E46), and the agent must stay with it (V15). One
 	// entry per VM.
 	public var sessionHolders: [SessionHolder] {
 		let starting = pendingStarts
@@ -149,6 +151,9 @@ extension RoutingMachman {
 		for (name, kind) in claims.inDaemon where holders[name] == nil {
 			holders[name] = SessionHolder(
 				vm: name, activity: kind.activity, promptsItself: false, isAgentWork: true)
+		}
+		for (name, kind) in claims.proxied where holders[name] == nil {
+			holders[name] = SessionHolder(vm: name, activity: kind.activity, promptsItself: true)
 		}
 		for vm in registry.list() where holders[vm.name] == nil && registry.isInstalling(vm) {
 			holders[vm.name] = SessionHolder(

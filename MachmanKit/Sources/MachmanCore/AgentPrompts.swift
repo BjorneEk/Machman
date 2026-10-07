@@ -30,8 +30,10 @@ public enum AgentQuitDecision: Equatable, Sendable {
 		reason: VMHostQuitReason, runningVMs: Int, holders: [SessionHolder]
 	) -> AgentQuitDecision {
 		if reason == .userQuit {
-			if runningVMs > 0 { return .ask(holders.filter(\.isAgentWork)) }
-			return holders.isEmpty ? .quit : .askAboutWork(holders)
+			// Only the agent's own work dies with it: a copy a vmhost runs goes on (V15).
+			let work = holders.filter(\.isAgentWork)
+			if runningVMs > 0 { return .ask(work) }
+			return work.isEmpty ? .quit : .askAboutWork(work)
 		}
 		guard !holders.isEmpty else { return .quit }
 		let unexplained = holders.filter { !$0.promptsItself }

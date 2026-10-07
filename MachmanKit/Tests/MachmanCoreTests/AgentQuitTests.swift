@@ -65,7 +65,8 @@ struct AgentQuitDecisionTests {
 	// E47: with no VM running, the user's own quit stopped a copy or an install without a
 	// word. It asks now; a session end cancels and says what runs (C13).
 	@Test func workTheAgentRunsHoldsAQuit() {
-		let copying = SessionHolder(vm: "gamma", activity: "is being copied", promptsItself: false)
+		let copying = SessionHolder(
+			vm: "gamma", activity: "is being copied", promptsItself: false, isAgentWork: true)
 		#expect(AgentQuitDecision.decide(reason: .userQuit, runningVMs: 0, holders: [copying])
 			== .askAboutWork([copying]))
 		for reason in sessionEnds {
@@ -215,7 +216,8 @@ struct RoutingRunningVMTests {
 	}
 
 	// C13: work the agent runs itself dies with it, so it holds a log out too — one entry per
-	// VM, however many copies run into it.
+	// VM, however many copies run into it. A copy its vmhost runs holds it as well, and that
+	// vmhost says so itself (V15).
 	@Test @MainActor func theAgentsOwnWorkHoldsALogOut() throws {
 		let routing = try makeRouting()
 		routing.claims.insert("alpha", .importingDisk)
@@ -229,7 +231,29 @@ struct RoutingRunningVMTests {
 				isAgentWork: true),
 			SessionHolder(
 				vm: "beta", activity: "is being copied", promptsItself: false, isAgentWork: true),
+			SessionHolder(vm: "gamma", activity: "is importing a disk", promptsItself: true),
 		])
+	}
+
+	// V15: an import the agent proxied to a stopped VM's vmhost held no log out, so the agent
+	// quit with the session while that vmhost canceled it (E46) and stayed. It holds one now,
+	// quietly — the vmhost's own alert says why — and still never holds the user's own quit:
+	// the import goes on in its vmhost without the agent.
+	@Test("V15: a vmhost's import for the agent holds a log out quietly, never a quit")
+	@MainActor func aVMHostsImportHoldsALogOutQuietly() throws {
+		let routing = try makeRouting()
+		routing.claims.insert("gamma", .importingDisk, inDaemon: false)
+		let holders = routing.sessionHolders
+		#expect(holders == [
+			SessionHolder(vm: "gamma", activity: "is importing a disk", promptsItself: true),
+		])
+		for reason in [VMHostQuitReason.logOut, .restart, .shutDown] {
+			#expect(AgentQuitDecision.decide(reason: reason, runningVMs: 0, holders: holders)
+				== .cancelQuietly)
+		}
+		#expect(AgentQuitDecision.decide(reason: .userQuit, runningVMs: 0, holders: holders)
+			== .quit)
+		#expect(routing.daemonWorkRefusal() == nil)   // nor a newer agent's Replace
 	}
 
 	@Test @MainActor func aMacOSInstallHoldsALogOut() throws {

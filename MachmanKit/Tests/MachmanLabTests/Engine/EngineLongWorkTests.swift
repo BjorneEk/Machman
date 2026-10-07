@@ -207,6 +207,30 @@ struct EngineLongWorkTests {
 		}
 	}
 
+	// V15: the agent counted no holder for an import it proxied to that vmhost, so a log out
+	// quit the agent while the vmhost canceled it and stayed. The agent stays now, quietly:
+	// the vmhost's own alert says why.
+	@Test("V15: a log out during a vmhost's import after its guest shut down keeps the agent")
+	func logOutDuringDrainKeepsTheAgent() async throws {
+		try await Self.onHFS("import-logout-agent") { agent, _ in
+			let (host, op, importing) = try await Self.drainingImport(agent)
+			let mark = LabLog.mark()
+			#expect(try await agent.control("quit logOut") == "ok")
+			_ = try await LabLog.waitFor(
+				"logOut canceled: dev is importing a disk", after: mark, process: "MachmanAgent")
+			try await Self.stillRunning(agent.api, op)
+			try await Task.sleep(for: .seconds(1))
+			#expect(LabProcesses.isAlive(agent.pid))
+			#expect(try await agent.control("ping") == "ok")
+			try await LabLog.caughtUp()
+			#expect(LabLog.count("test prompt agent\\.sessionEndHeld", after: mark) == 0)
+			let info = try await importing.value
+			#expect(info.disks.contains { $0.path?.hasSuffix("big.raw") == true })
+			#expect(await LabProcesses.waitForExit(host, timeout: .seconds(30)))
+			TFVM.forget(agent, "dev")
+		}
+	}
+
 	// C24: the user's own quit in that drain asks first; Cancel keeps the import.
 	@Test("E46: quitting a vmhost during its import after the guest shut down asks first")
 	func quitDuringDrainAsks() async throws {

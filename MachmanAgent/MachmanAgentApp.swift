@@ -272,15 +272,19 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 		Self.labQuitReason = nil
 		let reason = lab ?? VMHostQuitReason.current()
 		let running = Daemon.api.runningVMNames
+		let sessionHolders = Daemon.api.sessionHolders
 		switch AgentQuitDecision.decide(
-			reason: reason, runningVMs: running.count, holders: Daemon.api.sessionHolders) {
+			reason: reason, runningVMs: running.count, holders: sessionHolders) {
 		case .quit:
 			Daemon.server.stop()
 			return .terminateNow
 		case .cancelQuietly:
-			// Each VM's own window cancels the log out too and says what to do (V1).
-			MachmanLogger.log(.log,
-				"\(reason) canceled: \(running.joined(separator: ", ")) still running")
+			// Each VM's own window cancels the log out too and says what to do (V1), as does a
+			// vmhost finishing work for the agent with no VM running (V15).
+			let held = running.isEmpty
+				? sessionHolders.map { "\($0.vm) \($0.activity)" }.joined(separator: ", ")
+				: running.joined(separator: ", ") + " still running"
+			MachmanLogger.log(.log, "\(reason) canceled: \(held)")
 			return .terminateCancel
 		case .cancelAndExplain(let holders):
 			// No VM window will say why (V10). The alert comes after this reply: the log out
