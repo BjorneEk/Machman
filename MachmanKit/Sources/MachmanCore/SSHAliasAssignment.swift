@@ -80,14 +80,16 @@ enum SSHAliasAssignment {
 
 	// The alias each VM answers to, by VM name. Stored aliases claim first, exactly as
 	// stored; derived defaults follow in tie-break order, each taking its default when free
-	// and the first free suffix otherwise.
+	// and the first free suffix otherwise. "Taken" ignores case (C31): ssh lowercases a
+	// HostKeyAlias and looks up known_hosts case-insensitively, so Dev.machman and
+	// dev.machman would share one host-key pin.
 	static func resolve(_ claims: [Claim]) -> [String: String] {
 		var result: [String: String] = [:]
 		var taken = Set<String>()
 		for claim in claims.sorted(by: { $0.name < $1.name }) {
 			guard let stored = claim.stored else { continue }
 			result[claim.name] = stored
-			taken.insert(stored)
+			taken.insert(stored.lowercased())
 		}
 		let derived = claims.filter { $0.stored == nil }.sorted { a, b in
 			let aPlain = needsNoMapping(a.name)
@@ -99,7 +101,7 @@ enum SSHAliasAssignment {
 		for claim in derived {
 			let alias = firstFree(SSHAliasRule.defaultAlias(for: claim.name), taken: taken)
 			result[claim.name] = alias
-			taken.insert(alias)
+			taken.insert(alias.lowercased())
 		}
 		return result
 	}
@@ -109,18 +111,25 @@ enum SSHAliasAssignment {
 	static func yieldingAlias(for name: String, among others: [Claim]) -> String? {
 		let taken = Set(resolve(others.filter { $0.name != name }).values)
 		let base = SSHAliasRule.defaultAlias(for: name)
-		return taken.contains(base) ? firstFree(base, taken: taken) : nil
+		return isTaken(base, in: taken) ? firstFree(base, taken: taken) : nil
 	}
 
-	// `base` itself, else "<stem>-2.machman", "<stem>-3.machman", … — the first not taken.
+	// `base` itself, else "<stem>-2.machman", "<stem>-3.machman", … — the first not taken,
+	// in any case.
 	static func firstFree(_ base: String, taken: Set<String>) -> String {
-		guard taken.contains(base) else { return base }
+		guard isTaken(base, in: taken) else { return base }
 		let suffix = SSHAliasRule.defaultSuffix
 		let stem = base.hasSuffix(suffix) ? String(base.dropLast(suffix.count)) : base
 		let tail = base.hasSuffix(suffix) ? suffix : ""
 		var n = 2
-		while taken.contains("\(stem)-\(n)\(tail)") { n += 1 }
+		while isTaken("\(stem)-\(n)\(tail)", in: taken) { n += 1 }
 		return "\(stem)-\(n)\(tail)"
+	}
+
+	// Whether `alias` names the same host key as one in `taken` (case folded, C31).
+	static func isTaken(_ alias: String, in taken: Set<String>) -> Bool {
+		let folded = alias.lowercased()
+		return taken.contains { $0.lowercased() == folded }
 	}
 
 	// Whether `alias` is a suffix this rule gave `name` (as opposed to one the user chose):

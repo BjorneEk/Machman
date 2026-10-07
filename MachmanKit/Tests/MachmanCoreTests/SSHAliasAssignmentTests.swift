@@ -198,6 +198,38 @@ struct SSHAliasAssignmentTests {
 			"a.machman", taken: ["a.machman", "a-2.machman"]) == "a-3.machman")
 	}
 
+	// C31 (review 4): ssh lowercases a HostKeyAlias and reads known_hosts case-insensitively
+	// (reproduced with ssh -G and ssh-keygen -F), so aliases that differ only in case share
+	// one host-key pin: after a lease swap one VM's key would be accepted for the other.
+	@Test("C31: SSH aliases that differ only in case count as one alias")
+	func aliasesAreOneInAnyCase() throws {
+		let created = Date(timeIntervalSince1970: 0)
+		let resolved = SSHAliasAssignment.resolve([
+			.init(name: "alpha", stored: "Dev.machman", created: created),
+			.init(name: "dev", stored: nil, created: created),
+		])
+		#expect(resolved == ["alpha": "Dev.machman", "dev": "dev-2.machman"])
+		#expect(SSHAliasAssignment.yieldingAlias(
+			for: "dev", among: [.init(name: "alpha", stored: "DEV.machman", created: created)])
+			== "dev-2.machman")
+		#expect(SSHAliasAssignment.firstFree("dev.machman", taken: ["Dev.machman"])
+			== "dev-2.machman")
+		try VMTestDir.withRedirectedDir {
+			try makeVM("alpha")
+			let beta = try makeVM("beta")
+			var ssh = SSHConfig()
+			ssh.alias = "Dev.machman"
+			beta.ssh = ssh
+			try beta.saveVMConfig()
+			let routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }
+			let error = try #require(throws: MachmanError.self) {
+				try routing.requireSSHAliasFree("dev.machman", for: "alpha")
+			}
+			#expect(error.message == "beta already answers to \u{201C}Dev.machman\u{201D}")
+		}
+	}
+
 	// C24: a hosted VM takes an alias through its vmhost, which saves it to disk while the
 	// daemon's copy predates the run. vm.ssh.set checked that copy, so another VM could store
 	// the same alias (and an alias the VM had given up stayed refused).

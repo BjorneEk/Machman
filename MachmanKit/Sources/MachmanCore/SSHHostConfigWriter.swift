@@ -97,8 +97,10 @@ public struct SSHHostConfigWriter {
 				else { return nil }
 			// Backstop only: aliases are made unique where a VM takes one. Two blocks with
 			// one Host name would silently merge settings across VMs, so the first wins.
-			// Exact compare — OpenSSH matches Host patterns case-sensitively.
-			guard claimed.insert(entry.alias).inserted else {
+			// Case folded (C31): Host patterns match case-sensitively, but HostKeyAlias is
+			// lowercased and known_hosts read case-insensitively, so two aliases differing
+			// only in case would share one pin.
+			guard claimed.insert(entry.alias.lowercased()).inserted else {
 				MachmanLogger.log(.log,
 					"\(entry.name): \(entry.alias) already names another VM in ~/.ssh — skipped")
 				return nil

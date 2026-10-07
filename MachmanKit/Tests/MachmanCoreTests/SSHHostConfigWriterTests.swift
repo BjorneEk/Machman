@@ -87,6 +87,22 @@ struct SSHHostConfigWriterTests {
 		#expect(!after.contains(#"Host "other""#))
 	}
 
+	// C31: the backstop skips a second block whose alias differs only in case — written, it
+	// would share the first one's host-key pin.
+	@Test("C31: ~/.ssh gets one block for aliases that differ only in case")
+	func aCaseVariantAliasIsSkipped() throws {
+		let root = try makeRoot()
+		defer { try? FileManager.default.removeItem(at: root) }
+		try SSHHostConfigWriter(sshDir: root).apply(entries: [
+			entry(name: "alpha", alias: "Dev.machman", address: "192.168.64.9"),
+			entry(name: "beta", alias: "dev.machman", address: "192.168.64.10"),
+		])
+		let managed = try String(
+			contentsOf: root.appendingPathComponent("machman/config"), encoding: .utf8)
+		#expect(managed.contains("HostName 192.168.64.9"))
+		#expect(!managed.contains("192.168.64.10"))
+	}
+
 	@Test func includeLineSurgeryLeavesUserContentAlone() throws {
 		let root = try makeRoot()
 		defer { try? FileManager.default.removeItem(at: root) }

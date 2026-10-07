@@ -335,10 +335,11 @@ extension RoutingMachman {
 		for other in registry.list() where other.name != name {
 			let alias = onDisk[other.name].map { $0.stored ?? other.config.resolvedDefaultAlias }
 				?? other.config.effectiveSSHAlias
-			guard alias == wanted else { continue }
+			// Case folded (C31): ssh keys the host-key pin by the lowercased alias.
+			guard alias.lowercased() == wanted.lowercased() else { continue }
 			throw MachmanError(
 				code: .invalidArgument,
-				message: "\(other.name) already answers to \u{201C}\(wanted)\u{201D}")
+				message: "\(other.name) already answers to \u{201C}\(alias)\u{201D}")
 		}
 	}
 
