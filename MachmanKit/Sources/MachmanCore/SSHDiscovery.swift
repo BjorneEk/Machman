@@ -4,10 +4,12 @@
 //
 //  Guest address discovery for SSH (daemon-side; host-global inputs): the vmnet DHCP
 //  lease table (/var/db/dhcpd_leases, bootpd's format) keyed by the VM's in-use MAC, the
-//  ARP table as fallback, and a TCP:22 liveness probe so an address is only surfaced once
-//  sshd actually answers. Pure string parsers + injectable inputs — tests never read
-//  /var/db or run arp. One normalization rule makes matching work at all: bootpd (and
-//  arp) strip leading zeros per MAC octet, VZMACAddress strings don't.
+//  ARP table as fallback, then what the guest's reports taught the VM's config (the DHCP
+//  client id its lease is kept under, the address it reported), and a TCP:22 liveness probe
+//  so an address is only surfaced once sshd actually answers. Pure string parsers +
+//  injectable inputs — tests never read /var/db or run arp. One normalization rule makes
+//  matching work at all: bootpd (and arp) strip leading zeros per MAC octet, VZMACAddress
+//  strings don't.
 //
 
 import Foundation
@@ -18,7 +20,19 @@ import os
 enum SSHDiscovery {
 	struct Answer: Equatable, Sendable {
 		var address: String
-		var source: String   // "dhcp" | "arp" — SSHInfo.addressSource vocabulary
+		var source: String   // "dhcp" | "arp" | "report" — SSHInfo.addressSource vocabulary
+	}
+
+	// What the VM's config owner learned from the guest's reports (E56): the DHCP client id
+	// bootpd keeps the guest's lease under, and the address the guest last reported.
+	struct Hints: Equatable, Sendable {
+		var clientID: String?
+		var reported: String?
+
+		init(clientID: String? = nil, reported: String? = nil) {
+			self.clientID = clientID
+			self.reported = reported
+		}
 	}
 
 	// "0a:0B:0c:01:02:03" and "a:b:c:1:2:3" become the same key.
@@ -31,12 +45,22 @@ enum SSHDiscovery {
 
 	// MARK: - dhcpd_leases
 
-	// Entries are brace-delimited key=value blocks; the same MAC can appear in several
-	// (renewals) — the highest lease timestamp wins. hw_address carries a "type," prefix.
-	static func leaseIP(for mac: String, inLeasesText text: String) -> String? {
-		let wanted = normalizedMAC(mac)
-		var bestIP: String?
-		var bestLease: UInt64 = 0
+	// One entry of bootpd's table. hw_address and identifier carry a "type," prefix: 1 is an
+	// Ethernet MAC. A client that sends a DHCP client identifier is kept under it — type ff,
+	// RFC 4361's IAID and DUID, what systemd-networkd and dhcpcd send by default — so its
+	// entry names no MAC at all (E56).
+	struct Lease: Equatable, Sendable {
+		var ip: String
+		var hardware: String     // hw_address's value, normalized
+		var identifier: String   // "type,value", normalized; hw_address when there is none
+		var expiry: UInt64       // lease=, seconds since 1970 (hex)
+
+		var isHardware: Bool { identifier.hasPrefix("1,") || !identifier.contains(",") }
+	}
+
+	// Entries are brace-delimited key=value blocks, in file order.
+	static func leases(inText text: String) -> [Lease] {
+		var found: [Lease] = []
 		var current: [String: String] = [:]
 		for rawLine in text.components(separatedBy: .newlines) {
 			let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -44,23 +68,60 @@ enum SSHDiscovery {
 				current = [:]
 			} else if line == "}" {
 				if let hw = current["hw_address"], let ip = current["ip_address"] {
-					let macPart = hw.split(separator: ",").last.map(String.init) ?? hw
-					if normalizedMAC(macPart) == wanted {
-						let lease = current["lease"].flatMap {
+					let value = hw.split(separator: ",").last.map(String.init) ?? hw
+					found.append(Lease(
+						ip: ip, hardware: normalizedMAC(value),
+						identifier: normalizedClientID(current["identifier"] ?? hw),
+						expiry: current["lease"].flatMap {
 							UInt64($0.dropFirst($0.hasPrefix("0x") ? 2 : 0), radix: 16)
-						} ?? 0
-						if bestIP == nil || lease >= bestLease {
-							bestIP = ip
-							bestLease = lease
-						}
-					}
+						} ?? 0))
 				}
 				current = [:]
 			} else if let eq = line.firstIndex(of: "=") {
 				current[String(line[..<eq])] = String(line[line.index(after: eq)...])
 			}
 		}
-		return bestIP
+		return found
+	}
+
+	// "FF,F1:F5:DD:7F:00:02" and "ff,f1:f5:dd:7f:0:2" become the same key.
+	static func normalizedClientID(_ id: String) -> String {
+		guard let comma = id.firstIndex(of: ",") else { return normalizedMAC(id) }
+		let value = String(id[id.index(after: comma)...])
+		return id[..<comma].lowercased() + "," + normalizedMAC(value)
+	}
+
+	// The same client can appear in several entries (renewals): the latest lease wins, and
+	// of two equal ones the later in the file.
+	private static func newest(_ leases: [Lease], where matches: (Lease) -> Bool) -> Lease? {
+		leases.reduce(nil) { best, lease in
+			guard matches(lease) else { return best }
+			guard let best else { return lease }
+			return lease.expiry >= best.expiry ? lease : best
+		}
+	}
+
+	static func leaseIP(for mac: String, inLeasesText text: String) -> String? {
+		leaseIP(for: mac, in: leases(inText: text))
+	}
+
+	static func leaseIP(for mac: String, in leases: [Lease]) -> String? {
+		let wanted = normalizedMAC(mac)
+		return newest(leases) { $0.hardware == wanted }?.ip
+	}
+
+	// The address of the lease kept under a client id the guest was seen with (E56).
+	static func leaseIP(forClientID id: String, in leases: [Lease]) -> String? {
+		let wanted = normalizedClientID(id)
+		return newest(leases) { $0.identifier == wanted }?.ip
+	}
+
+	// The client id of the lease that holds `ip`, when that lease is kept under one rather
+	// than a MAC — what a guest's reported address teaches the VM (E56).
+	static func clientID(holding ip: String, inLeasesText text: String) -> String? {
+		guard let lease = newest(leases(inText: text), where: { $0.ip == ip }),
+			!lease.isHardware else { return nil }
+		return lease.identifier
 	}
 
 	// MARK: - ARP table
@@ -232,18 +293,39 @@ enum SSHDiscovery {
 
 	// MARK: - Orchestration
 
-	// Leases first (authoritative while fresh), ARP as fallback (needs recent guest
-	// traffic). Deliberately NO liveness gate: the address is a fact of the running VM
-	// whether or not anything listens on it yet (a guest without sshd still has an IP
-	// worth showing) — ssh reachability is the connection's own business. The cost is
-	// that a stale lease can win briefly after renumbering; a reboot or the refresh
-	// button re-resolves.
-	static func discover(mac: String, leasesText: String?, arpText: String?) -> Answer? {
-		if let leasesText, let ip = leaseIP(for: mac, inLeasesText: leasesText) {
+	// The MAC's lease first (authoritative while fresh), ARP as fallback (needs recent guest
+	// traffic). A guest whose DHCP client sends a client id has no lease under its MAC
+	// (E56): next the lease kept under the client id the VM's config learned, then the
+	// address the guest reported — taken only on a subnet this Mac is on, and never while
+	// another client holds a live lease on it (a static address, or one whose id was not
+	// learned yet). Deliberately NO liveness gate: the address is a fact of the running VM
+	// whether or not anything listens on it yet (a guest without sshd still has an IP worth
+	// showing) — ssh reachability is the connection's own business. The cost is that a
+	// stale lease can win briefly after renumbering; a reboot or the refresh button
+	// re-resolves.
+	static func discover(
+		mac: String, leasesText: String?, arpText: String?, hints: Hints = Hints(),
+		interfaces: @autoclosure () -> [IPv4Interface] = currentIPv4Interfaces(),
+		now: Date = Date()
+	) -> Answer? {
+		let table = leasesText.map(leases(inText:)) ?? []
+		if let ip = leaseIP(for: mac, in: table) {
 			return Answer(address: ip, source: "dhcp")
 		}
 		if let arpText, let ip = arpIP(for: mac, inARPOutput: arpText) {
 			return Answer(address: ip, source: "arp")
+		}
+		if let id = hints.clientID, let ip = leaseIP(forClientID: id, in: table) {
+			return Answer(address: ip, source: "dhcp")
+		}
+		if let reported = hints.reported,
+			hostAddress(seenFrom: reported, interfaces: interfaces()) != nil {
+			// A lease of this VM's would have answered above: a live one on the address is
+			// a client nothing ties to this VM.
+			let seconds = UInt64(max(0, now.timeIntervalSince1970))
+			if !table.contains(where: { $0.ip == reported && $0.expiry > seconds }) {
+				return Answer(address: reported, source: "report")
+			}
 		}
 		return nil
 	}

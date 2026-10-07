@@ -85,7 +85,7 @@ public struct SSHInfo: Codable, Sendable, Equatable {
 	public var hostUser: String?           // the Mac account Machman runs as
 	// Daemon-overlay half — present only while the VM runs.
 	public var address: String?
-	public var addressSource: String?      // "dhcp" | "arp"
+	public var addressSource: String?      // "dhcp" | "arp" | "report"
 	public var hostAddressForGuest: String?   // this Mac as the guest addresses it (gateway)
 	public var reachability: Reachability?
 	public var reachabilityDetail: String?

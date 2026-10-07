@@ -107,6 +107,108 @@ struct SSHDiscoveryTests {
 			mac: "de:ad:be:ef:00:01", leasesText: leases, arpText: arp) == nil)
 	}
 
+	// E56: bootpd keeps a client that sends a DHCP client id (RFC 4361: type ff, IAID and
+	// DUID — systemd-networkd's default) under that id, so its lease names no MAC: the lab's
+	// Debian guests sat at "SSH waiting" because only ARP could find them.
+	private let clientIDLeases = """
+		{
+			name=debian
+			ip_address=192.168.64.17
+			hw_address=ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d
+			identifier=ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d
+			lease=0x66aa0001
+		}
+		{
+			ip_address=192.168.64.21
+			hw_address=ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d
+			identifier=ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d
+			lease=0x66aa9999
+		}
+		{
+			name=other
+			ip_address=192.168.64.30
+			hw_address=1,3a:1:2:3:4:5
+			identifier=1,3a:1:2:3:4:5
+			lease=0x66aa5555
+		}
+		"""
+	private let debianID = "ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d"
+	private let vmMAC = "5e:2c:7a:10:44:01"
+
+	private func vmnet() throws -> [SSHDiscovery.IPv4Interface] {
+		[try #require(SSHDiscovery.IPv4Interface("192.168.64.1", mask: "255.255.255.0"))]
+	}
+
+	@Test("E56: a lease kept under a DHCP client id is found by that id, the newest first")
+	func clientIDLeaseLookup() {
+		let table = SSHDiscovery.leases(inText: clientIDLeases)
+		#expect(SSHDiscovery.leaseIP(forClientID: debianID, in: table) == "192.168.64.21")
+		// Full-form octets match bootpd's stripped ones, as MACs do.
+		#expect(SSHDiscovery.leaseIP(
+			forClientID: "FF,F1:F5:DD:7F:00:02:00:00:AB:11:B5:33:C7:D7:F3:C8:58:7D", in: table)
+			== "192.168.64.21")
+		#expect(SSHDiscovery.leaseIP(for: vmMAC, in: table) == nil)   // no MAC in the lease
+		#expect(SSHDiscovery.clientID(holding: "192.168.64.17", inLeasesText: clientIDLeases)
+			== debianID)
+		// A MAC lease teaches no client id; nor does an address no lease holds.
+		#expect(SSHDiscovery.clientID(holding: "192.168.64.30", inLeasesText: clientIDLeases)
+			== nil)
+		#expect(SSHDiscovery.clientID(holding: "192.168.64.99", inLeasesText: clientIDLeases)
+			== nil)
+	}
+
+	@Test("E56: discovery finds a client-id guest by the client id its config keeps")
+	func clientIDGuestIsFound() throws {
+		let net = try vmnet()
+		let hints = SSHDiscovery.Hints(clientID: debianID, reported: "192.168.64.17")
+		#expect(SSHDiscovery.discover(
+			mac: vmMAC, leasesText: clientIDLeases, arpText: "", hints: hints,
+			interfaces: net)
+			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
+		#expect(SSHDiscovery.discover(
+			mac: vmMAC, leasesText: clientIDLeases, arpText: "", interfaces: net) == nil)
+	}
+
+	@Test(
+		"""
+		E56: a reported address answers only on this Mac's subnets and while no live lease names \
+		another client
+		""")
+	func reportedAddressIsChecked() throws {
+		let net = try vmnet()
+		let beforeExpiry = Date(timeIntervalSince1970: TimeInterval(0x66aa0000))
+		let afterExpiry = Date(timeIntervalSince1970: TimeInterval(0x66ab0000))
+		func answer(_ reported: String, at now: Date) -> SSHDiscovery.Answer? {
+			SSHDiscovery.discover(
+				mac: vmMAC, leasesText: clientIDLeases, arpText: "",
+				hints: SSHDiscovery.Hints(reported: reported), interfaces: net, now: now)
+		}
+		// A static address no lease names.
+		#expect(answer("192.168.64.40", at: beforeExpiry)
+			== SSHDiscovery.Answer(address: "192.168.64.40", source: "report"))
+		// Another client's live lease, then the same lease run out.
+		#expect(answer("192.168.64.30", at: beforeExpiry) == nil)
+		#expect(answer("192.168.64.30", at: afterExpiry)
+			== SSHDiscovery.Answer(address: "192.168.64.30", source: "report"))
+		// Off every subnet of this Mac (another interface in the guest).
+		#expect(answer("172.17.0.1", at: beforeExpiry) == nil)
+	}
+
+	@Test("E56: the MAC's lease and the ARP table still answer first")
+	func macSourcesComeFirst() throws {
+		let net = try vmnet()
+		let hints = SSHDiscovery.Hints(clientID: debianID, reported: "192.168.64.40")
+		#expect(SSHDiscovery.discover(
+			mac: "A6:83:E7:12:03:45", leasesText: leases + clientIDLeases, arpText: "",
+			hints: hints, interfaces: net)
+			== SSHDiscovery.Answer(address: "192.168.64.9", source: "dhcp"))
+		let arp = "? (192.168.64.50) at 5e:2c:7a:10:44:1 on bridge100 [ethernet]"
+		#expect(SSHDiscovery.discover(
+			mac: vmMAC, leasesText: clientIDLeases, arpText: arp, hints: hints,
+			interfaces: net)
+			== SSHDiscovery.Answer(address: "192.168.64.50", source: "arp"))
+	}
+
 	// What the guest calls "the Mac", shown in the BSD setup guide before any guest has
 	// reported its own default route: the Mac's address on the guest's subnet. C25: it was
 	// the ".1 of a /24", wrong for any other vmnet subnet and the router for a bridged guest.
