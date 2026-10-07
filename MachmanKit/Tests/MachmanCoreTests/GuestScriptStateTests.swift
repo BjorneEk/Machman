@@ -317,7 +317,8 @@ struct GuestScriptStateTests {
 	// warning. A copy's run makes each host key anew (a link stays, and a type ssh-keygen
 	// can no longer make, such as DSA, keeps its old key quietly) and reloads sshd, so the
 	// report it writes carries the key sshd serves; where the reload fails, it says when
-	// sshd takes them up.
+	// sshd takes them up. A BSD copy, whose dhcpcd client id the run renews, gets new keys
+	// too, reloaded through its rc.
 	@Test("S55: a copy's run gives the guest new ssh host keys")
 	func aCopyGetsSSHHostKeysOfItsOwn() async throws {
 		for shell in GuestScriptHarness.shells {
@@ -367,6 +368,17 @@ struct GuestScriptStateTests {
 				echo "renewed=$IDENTITY_RENEWED failed=[$FAILED_STEPS]"
 				systemctl() { return 1; }
 				identity_act
+				echo ---
+				OS=FreeBSD
+				INIT=freebsd-rc
+				printf 'duid\n' > "$D/duid"
+				DHCPCD_ID_FILES="$D/duid"
+				old="$(fp "$K/ssh_host_ed25519_key.pub")"
+				service() { echo "service $*" >> "$D/service.log"; }
+				identity_plan
+				identity_act
+				[ "$(fp "$K/ssh_host_ed25519_key.pub")" != "$old" ] && echo "a new ed25519 key"
+				cat "$D/service.log"
 				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
@@ -384,6 +396,13 @@ struct GuestScriptStateTests {
 				renewed=0 failed=[]
 				[ok] gave this copy SSH host keys of its own
 				   sshd serves them from the next boot.
+				---
+				  identity         a new DHCP client id and SSH host keys for this copy - its own \
+				address from the next boot
+				[ok] dropped the source's DHCP client id (dhcpcd makes one at the next boot)
+				[ok] gave this copy SSH host keys of its own
+				a new ed25519 key
+				service sshd reload
 
 				""", "\(shell): \(r.out)")
 		}
