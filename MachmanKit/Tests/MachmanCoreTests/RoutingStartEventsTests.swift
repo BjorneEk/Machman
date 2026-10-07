@@ -138,6 +138,55 @@ struct RoutingStartEventsTests {
 		let reload = try #require(collected.events.firstIndex(of: .listChanged))
 		#expect(drained < announced && announced < reload)
 	}
+
+	// V14: a start said nothing between taking its claim and hostStarted, so a client that
+	// follows events only (the agent menu, another desktop) showed a VM preparing a safe run
+	// as stopped for minutes, with the Stop that cancels it (C14) switched off.
+	@Test("V14: a start says starting once its guards pass, before its shadow copy returns")
+	@MainActor func aStartSaysStartingBeforeItsShadowCopyReturns() async throws {
+		let (routing, _) = try makeRouting()
+		let (collected, reader) = await collect(routing)
+		defer { reader.cancel() }
+		let safeDir = TestEnvironment.scratch + "safe-\(UUID().uuidString)"
+		defer { try? FileManager.default.removeItem(atPath: safeDir) }
+		routing.safeRunsDir = { safeDir }
+		let starting = VMEvent.stateChanged(vm: "alpha", state: .starting)
+		var saidDuringCopy = false
+		routing.copyShadow = { @MainActor _ in
+			saidDuringCopy = await eventually { collected.events.contains(starting) }
+			throw CancellationError()   // the preparation ends here; nothing spawns
+		}
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions(safe: true))
+			Issue.record("expected the shadow copy's failure")
+		} catch {}
+		#expect(saidDuringCopy)
+		// The failed start's listChanged puts the state back, after.
+		#expect(await eventually { collected.events.contains(.listChanged) })
+		let said = try #require(collected.events.firstIndex(of: starting))
+		let reload = try #require(collected.events.lastIndex(of: .listChanged))
+		#expect(said < reload)
+		#expect(!collected.events.contains(.stateChanged(vm: "alpha", state: .running)))
+	}
+
+	@Test("V14: a start its guards refuse never says starting")
+	@MainActor func aRefusedStartNeverSaysStarting() async throws {
+		let (routing, _) = try makeRouting()
+		let mac = try #require(routing.registry.vm(named: "alpha")?.config.macAddress)
+		routing.reserveStart("kept", mac: mac)   // an earlier start holds alpha's MAC
+		let (collected, reader) = await collect(routing)
+		defer { reader.cancel() }
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("expected the MAC conflict")
+		} catch let error as MachmanError {
+			#expect(error.code == .macConflict)
+		}
+		#expect(await eventually { collected.events.contains(.listChanged) })
+		#expect(!collected.events.contains(.stateChanged(vm: "alpha", state: .starting)))
+	}
 }
 
 @MainActor

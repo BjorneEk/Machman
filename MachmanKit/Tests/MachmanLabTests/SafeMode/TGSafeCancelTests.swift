@@ -30,7 +30,6 @@ struct TGSafeCancelTests {
 	static let canceled = "The safe run was canceled"
 	static let tooLate = "the copy finished before the cancel landed (T20: add the shadow hold)"
 
-	/// Card V14, the agent menu during a safe run's preparation (r3-tg, V/BUG).
 	static func shadowBuild(_ events: TGEvents, vm: String, after mark: Int) -> OperationInfo? {
 		events.operations(kind: OperationInfo.Kind.shadowBuild, vm: vm, after: mark).first
 	}
@@ -101,14 +100,13 @@ struct TGSafeCancelTests {
 				try await Self.desktopStopsPreparation(vm: vm, agent: agent, events: events)
 				#expect(await TG.waitForNoRunRoots(agent.scope).isEmpty)
 				// The agent menu: Start Safe, then Shut Down while it prepares: its Shut Down must
-				// be on. Fails until the open bug V14 (the menu lists a preparing VM as stopped)
-				// is fixed; the wire's Stop then stops it, so the alert checks still run.
+				// be on (V14). Should it be off, the wire's Stop stops it, so the alert checks
+				// still run.
 				let mark = LabLog.mark()
 				let index = events.mark()
 				#expect(try await SeamProbe.control(agent, "menu startSafe stopped-prep") == "ok")
 				try await events.waitForMidCopy(vm: "stopped-prep", after: index)
 				let menu = try await agent.control("menu shutDown stopped-prep")
-				// Fails until the open bug V14 is fixed.
 				#expect(menu == "ok")
 				if menu != "ok" { try await agent.api.stop(vm: "stopped-prep", mode: .soft) }
 				try await Self.waitForCanceledBuild(events, vm: "stopped-prep", after: index)

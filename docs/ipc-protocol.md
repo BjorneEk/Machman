@@ -320,7 +320,8 @@ re-encoded them, which cut an unknown type down to `{"type"}`. The `log` events 
 emits while its VM boots (a serial port it could not attach, a start without a window) reach
 subscribers too (1.0.12+; older daemons subscribed to a vmhost only after its boot, so they
 reached nobody). A freshly spawned vmhost's own state and list changes from before its start
-returns are not passed on: the VM lists as `starting` until then, and then the daemon
+returns are not passed on: the VM lists as `starting` until then — the daemon says
+`stateChanged` `starting` once the start's checks pass (1.0.12+) — and then the daemon
 announces the run with `stateChanged` `running` followed by `listChanged` (1.0.12+; older
 daemons sent only the `listChanged`). The vmhost's own `running` may still follow just
 after; a repeated state changes nothing.

@@ -79,6 +79,12 @@ extension RoutingMachman {
 		// it, so a MAC conflict met first offered a Start Anyway that could never work.
 		try checkSharedDisks(name: name)
 		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
+		// The start goes ahead: say so now, not at hostStarted (V14). A client that follows
+		// events only — the agent menu, another desktop — would show a safe run's minutes-long
+		// preparation as stopped, with Stop (its cancel, C14) off. vm.list says starting
+		// already; a failed start's listChanged puts the state back. No running state or list
+		// of a running VM comes before hostStarted (O-6a), so a start still toasts once.
+		registry.events.emit(.stateChanged(vm: name, state: .starting))
 		if options.safe {
 			try await startSafe(vm: vm, name: name, options: options, claim: claim)
 			return
