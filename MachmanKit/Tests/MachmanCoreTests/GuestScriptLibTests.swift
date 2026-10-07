@@ -338,6 +338,36 @@ struct GuestScriptLibTests {
 		}
 	}
 
+	// S47: the numbered fallback (TERM=dumb, pipes) split its items into the positional
+	// parameters before it printed the question, so it printed the first item instead, and
+	// an empty list gave up on "parameter not set" (exit 2) without naming its question.
+	@Test("S47: a numbered choice prints its question and names it when it gives up")
+	func numberedChoicePrintsItsQuestion() async throws {
+		for shell in Self.shells {
+			let r = try await run(#"""
+				INTERACTIVE=1
+				printf '2\n' > "$D/answers"
+				exec 3< "$D/answers"
+				UI_IN=3
+				ask_choice 'Which user?' "$(printf 'lab\t/home/lab\nroot\t/root')" 1
+				printf '[%s]\n' "$R_ITEM" | tr '\t' '|'
+				ask_choice 'Nothing to pick?' '' 1
+				"""#, under: shell)
+			#expect(r.status == 3, "\(shell): \(r.out)")
+			#expect(r.out == """
+
+				Which user?
+
+				  1) lab /home/lab
+				  2) root /root
+
+				Choose [1]: [root|/root]
+				[xx] nothing to choose from for: Nothing to pick?
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// fstab escapes survive the body (no awk -v escape processing), and a file without a
 	// final newline does not glue its last line to our block.
 	@Test func blockBodiesArriveVerbatim() async throws {

@@ -313,6 +313,8 @@ ask_yes_no() {
 # ask_choice <question> <items, one per line> <default index> → R_INDEX, R_ITEM
 # The numbered fallback; menu_select prefers arrows and calls this when they cannot work.
 ask_choice() {
+	# The question first: `set --` below hands the positional parameters to the items.
+	_ac_q="$1"
 	_ac_items="$2"
 	_ac_default="$3"
 	_ac_count=0
@@ -325,7 +327,7 @@ ask_choice() {
 	set +f
 	IFS="$_ac_old_ifs"
 	_ac_count=$#
-	[ "$_ac_count" -gt 0 ] || die 3 "nothing to choose from for: $1"
+	[ "$_ac_count" -gt 0 ] || die 3 "nothing to choose from for: $_ac_q"
 	if [ "$_ac_count" -eq 1 ]; then
 		R_INDEX=1
 		R_ITEM="$1"
@@ -338,7 +340,7 @@ ask_choice() {
 		return 0
 	fi
 	say ""
-	say "$1"
+	say "$_ac_q"
 	say ""
 	_ac_i=1
 	for _ac_item in "$@"; do
@@ -375,7 +377,7 @@ ask_choice() {
 		warn "pick a number between 1 and $_ac_count (or q to cancel)"
 		_ac_tries=$((_ac_tries + 1))
 	done
-	die 3 "no usable answer to: $1" "Pass the matching option instead."
+	die 3 "no usable answer to: $_ac_q" "Pass the matching option instead."
 }
 
 # --------------------------------------------------------------------- raw key input ----

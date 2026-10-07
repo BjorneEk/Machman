@@ -96,8 +96,6 @@ enum THReadOnlyRows {
 		let choices = THPrompt.numbered(list)
 		#expect(choices.contains { $0.text.hasPrefix("lab ") }, "\(list)")
 		#expect(choices.contains { $0.text.hasPrefix("root ") }, "\(list)")
-		// Fails until the open bug S47 (TERM=dumb prints the first item, not the question) is
-		// fixed.
 		#expect(list.contains("Which user should Machman set up SSH for?"), "\(list)")
 		#expect(THPlan(run.before(.proceed) ?? "")["user"] == "lab -> /home/lab", "\(run.output)")
 
