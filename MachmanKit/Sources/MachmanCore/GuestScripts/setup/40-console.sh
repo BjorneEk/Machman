@@ -186,6 +186,16 @@ console_is_configured() {
 	return 1
 }
 
+# What a run may do with a login configured outside Machman: adopt it where a shared file
+# holds its line (inittab, ttys), else only report it — a unit or service dir someone else
+# enabled is not ours to take over.
+console_foreign_note() {
+	case "$GETTY_MECH" in
+	inittab|ttys) echo "configured outside Machman — adopt or report" ;;
+	*) echo "configured outside Machman — report only" ;;
+	esac
+}
+
 # The one-line annotation for the feature menu: the worst case first.
 console_menu_note() {
 	_cmn_foreign=""
@@ -209,7 +219,7 @@ console_menu_note() {
 	_cmn_out=""
 	[ -n "$_cmn_ours" ] && _cmn_out="${_cmn_ours# } managed"
 	if [ -n "$_cmn_foreign" ]; then
-		_cmn_f="${_cmn_foreign# } configured outside Machman — adopt or report"
+		_cmn_f="${_cmn_foreign# } $(console_foreign_note)"
 		_cmn_out="${_cmn_out:+$_cmn_out $G_SEP }$_cmn_f"
 	fi
 	if [ "$_cmn_todo" -gt 0 ]; then
@@ -242,7 +252,7 @@ console_menu_lines() {
 		active-auto) echo "$_cml_dev	login active (automatic)" ;;
 		active|configured)
 			if [ "$(console_ownership "$_cml_dev")" = foreign ]; then
-				echo "$_cml_dev	configured outside Machman — adopt or report"
+				echo "$_cml_dev	$(console_foreign_note)"
 			else
 				echo "$_cml_dev	managed by Machman — verify"
 			fi
@@ -307,8 +317,8 @@ console_decide() {
 			;;
 		active|configured)
 			if [ "$(console_ownership "$_cdc_dev")" = foreign ]; then
-				if [ "$GETTY_MECH" = runit ]; then
-					# Someone else's service dir is not ours to take over.
+				if [ "$GETTY_MECH" = runit ] || [ "$GETTY_MECH" = systemd ]; then
+					# Someone else's service dir or unit is not ours to take over.
 					_cdc_act=report
 					_cdc_what="report only — configured outside Machman"
 				else

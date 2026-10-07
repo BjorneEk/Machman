@@ -88,6 +88,39 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
+	// S51 (choice C28): a systemd login Machman's runs never enabled is reported and left as
+	// is, never adopted: a unit someone else enabled is not ours to take over, as runit's
+	// service dirs aren't, so no Leave/Adopt question asks about it. inittab and ttys, where
+	// adopting comments a line out, still offer it.
+	@Test("S51: a systemd login enabled outside Machman is reported, never adopted")
+	func systemdForeignLoginsAreReportedNotAdopted() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				INIT=systemd
+				GETTY_MECH=systemd
+				CONSOLE_DEVICES="null zero"
+				ST_CONSOLE_LOGINS="zero"
+				ps() { :; }
+				systemctl() { [ "$1" != is-enabled ] || echo enabled; }
+				menu_select() { echo "asked: $1"; R_INDEX=2; }
+				CONSOLES_OVERRIDE="null zero"
+				console_decide
+				echo "$CONSOLE_ACTIONS | $CONSOLE_MANAGED"
+				console_menu_lines | tr '\\t' '|'
+				GETTY_MECH=inittab
+				console_foreign_note
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				null=report zero=verify | zero
+				null|configured outside Machman — report only
+				zero|managed by Machman — verify
+				configured outside Machman — adopt or report
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - runit (S18)
 
 	// Void's stock agetty-<dev> runs the shared agetty-generic script through a link: it is
