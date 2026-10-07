@@ -283,10 +283,12 @@ final class UDSListener {
 }
 
 // Tests only: what runs between a starter's probe of a dead leftover at a path and its unlink
-// (review F1), by path. Empty in production.
+// (review F1), and between its bind of the staging name and its publish (review F21), by path.
+// Empty in production.
 enum SocketStartHooks {
 	private static let lock = NSLock()
 	nonisolated(unsafe) private static var leftoverHooks: [String: () -> Void] = [:]
+	nonisolated(unsafe) private static var stagingHooks: [String: () -> Void] = [:]
 
 	static func setLeftoverProbed(_ path: String, _ hook: (() -> Void)?) {
 		lock.withLock { leftoverHooks[path] = hook }
@@ -294,6 +296,14 @@ enum SocketStartHooks {
 
 	static func leftoverProbed(_ path: String) {
 		lock.withLock { leftoverHooks[path] }?()
+	}
+
+	static func setStagingBound(_ path: String, _ hook: (() -> Void)?) {
+		lock.withLock { stagingHooks[path] = hook }
+	}
+
+	static func stagingBound(_ path: String) {
+		lock.withLock { stagingHooks[path] }?()
 	}
 }
 
@@ -322,12 +332,13 @@ struct BoundSocket {
 			return try bindListening(path)
 		}
 		// Nothing stands between a bind of this name and its rename while the starter has its
-		// turn: a file here is one a starter left as it died. Past the turn's bound, a second
-		// starter removes the first one's, whose rename then fails: still exactly one serves.
+		// turn: a file here is one a starter left as it died. (Past the turn's bound, starters
+		// share the name: publish decides which one serves.)
 		unlink(staging)
 		let bound = try bindListening(staging)
+		SocketStartHooks.stagingBound(path)
 		do {
-			try publish(staging, at: path)
+			try publish(bound, from: staging, at: path)
 		} catch {
 			bound.unlinkIfOurs(staging)
 			close(bound.fd)
@@ -344,11 +355,20 @@ struct BoundSocket {
 	}
 
 	// Renames the listening socket at `staging` onto `path` unless a file is there: a live one
-	// is another process serving the path; a dead leftover goes, once.
-	private static func publish(_ staging: String, at path: String) throws {
+	// is another process serving the path; a dead leftover goes, once. Published means the file
+	// at `path` is this socket's, whoever's rename put it there (review F21): starters past the
+	// turn share the staging name, so one's rename can publish another's socket — the one whose
+	// socket is at the path serves, the other lost, as if it had found the path served.
+	private static func publish(
+		_ bound: BoundSocket, from staging: String, at path: String
+	) throws {
 		for attempt in 1...2 {
-			if renamex_np(staging, path, UInt32(RENAME_EXCL)) == 0 { return }
+			if renamex_np(staging, path, UInt32(RENAME_EXCL)) == 0 {
+				guard bound.isAt(path) else { throw UDSError.alreadyRunning(path) }
+				return
+			}
 			let err = errno
+			if err == ENOENT, bound.isAt(path) { return }
 			guard err == EEXIST else { throw UDSError.systemError("rename", err) }
 			guard attempt == 1 else { break }
 			try clearLeftover(at: path)
@@ -462,9 +482,13 @@ struct BoundSocket {
 	// a successor may own the path by now. Called before the descriptor closes — while the
 	// socket still listens a probe reads it live, so nothing replaces the file in between.
 	func unlinkIfOurs(_ path: String) {
+		if isAt(path) { unlink(path) }
+	}
+
+	// Whether the file at `path` is the one this socket bound (a rename keeps it).
+	func isAt(_ path: String) -> Bool {
 		var info = stat()
-		guard lstat(path, &info) == 0, info.st_dev == device, info.st_ino == inode else { return }
-		unlink(path)
+		return lstat(path, &info) == 0 && info.st_dev == device && info.st_ino == inode
 	}
 }
 

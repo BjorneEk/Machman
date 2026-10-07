@@ -217,4 +217,66 @@ struct SocketPublishTests {
 		#expect(UDSListener.isLive(path: path))
 		listener?.shutdown()
 	}
+
+	// The two starters' meeting points: the first one, bound, starts the second and waits until
+	// that one bound too; the second one waits there until the first one is done.
+	private final class StagingRace: @unchecked Sendable {
+		let path: String
+		let lock = NSLock()
+		var calls = 0
+		var second: BoundSocket?
+		let secondBound = DispatchSemaphore(value: 0)
+		let firstDone = DispatchSemaphore(value: 0)
+		let secondFinished = DispatchSemaphore(value: 0)
+
+		init(path: String) { self.path = path }
+
+		func bound() {
+			let call = lock.withLock { () -> Int in
+				calls += 1
+				return calls
+			}
+			if call == 1 {
+				Thread.detachNewThread { [self] in
+					let socket = try? BoundSocket.listen(at: path)
+					lock.withLock { second = socket }
+					secondFinished.signal()
+				}
+				_ = secondBound.wait(timeout: .now() + 10)
+			} else {
+				secondBound.signal()
+				_ = firstDone.wait(timeout: .now() + 10)
+			}
+		}
+	}
+
+	// Review F21: past the turn (its lock file can't be opened, or a starter stopped past the
+	// bound resumes) starters of one path share its staging name. The second one replaced the
+	// first one's staging file with its own, the first one's rename published the second one's
+	// socket, and the second one's rename then failed, so it closed its socket: the path named
+	// a closed socket, and the first one "served" where nobody could reach it. The hook holds
+	// the second starter between its bind and its publish while the first one publishes.
+	@Test("E48: two unserialized starters of one path leave exactly one reachable")
+	func twoUnserializedStartersLeaveExactlyOneReachable() async throws {
+		let dir = TestEnvironment.socketPath("mm-unser", suffix: "")
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let path = dir + "/u.sock"
+		let race = StagingRace(path: path)
+		SocketStartHooks.setStagingBound(path) { race.bound() }
+		defer { SocketStartHooks.setStagingBound(path, nil) }
+		// Without the turn: BoundSocket.listen itself, as a starter past the bound runs it.
+		let first = await offPool { try? BoundSocket.listen(at: path) }
+		race.firstDone.signal()
+		await offPool { race.secondFinished.wait() }
+		let serving = [first, race.lock.withLock { race.second }].compactMap { $0 }
+		defer {
+			for socket in serving {
+				socket.unlinkIfOurs(path)
+				close(socket.fd)
+			}
+		}
+		#expect(serving.count == 1, "\(serving.count) starters serve one path")
+		#expect(UDSListener.isLive(path: path), "the path names a socket nobody listens on")
+	}
 }
