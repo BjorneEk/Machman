@@ -121,7 +121,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 			// present in Activity Monitor, no menu bar item, nothing answering the socket.
 			MachmanLogger.log(.interactionError, "cannot start: \(error)")
 			let prompt = AgentPrompt.cannotStart(reason: MachmanError.userMessage(for: error))
-			_ = PromptAlert.run(prompt.labPrompt, front: .lendDockIcon, style: .critical)
+			_ = PromptAlert.run(prompt.labPrompt, style: .critical)
 			NSApp.terminate(nil)
 			return
 		}
@@ -224,7 +224,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	// an LSUIElement app's alert can otherwise sit behind every window. The chosen button's
 	// index; under a test suite, the lab's answer.
 	private static func runInFront(_ prompt: AgentPrompt) -> Int {
-		PromptAlert.run(prompt.labPrompt, front: .lendDockIcon)
+		PromptAlert.run(prompt.labPrompt)
 	}
 
 	// Test mode only (MACHMAN_LAB_AGENT_CONTROL): what a lab test triggers in here that no
@@ -315,7 +315,7 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 	) -> NSApplication.TerminateReply {
 		// In front, where they can see it. Its buttons: leave them running, shut them down,
 		// force stop them, Cancel.
-		let choice = PromptAlert.run(AgentPrompt.vmsStillRunning.labPrompt, front: .activate)
+		let choice = PromptAlert.run(AgentPrompt.vmsStillRunning.labPrompt)
 		guard (0...2).contains(choice) else { return .terminateCancel }
 		if !work.isEmpty,
 			Self.runInFront(AgentPrompt.quitDuringWork(work)) != 1 {   // Quit Anyway

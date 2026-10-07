@@ -185,7 +185,7 @@ public final class MenuBarModel: ObservableObject {
 
 	// True when the user chose Start Anyway.
 	private static func present(_ failure: MenuBarFailure) -> Bool {
-		let answer = PromptAlert.run(failure.labPrompt, front: .activate)
+		let answer = PromptAlert.run(failure.labPrompt)
 		return failure.forceStart != nil && answer == 0
 	}
 }

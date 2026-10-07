@@ -340,8 +340,9 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		return index.map(prompt.choice(forButtonAt:)) ?? .cancel
 	}
 
-	// Brought to the front (PromptActivation): a windowless host is lent a Dock icon for the
-	// prompt, and bounces it if activation doesn't take — a log out drives other apps too.
+	// Brought to the front (PromptFront, the agent's rule too): a windowless host is lent a
+	// Dock icon for the prompt, and bounces it if activation doesn't take — a log out drives
+	// other apps too.
 	private func runAlert(_ prompt: HostPrompt) -> HostChoice {
 		let alert = NSAlert()
 		alert.messageText = prompt.message
@@ -352,15 +353,19 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		if let escape = prompt.escapeButton {
 			alert.buttons[escape].keyEquivalent = "\u{1b}"
 		}
-		let lent = PromptActivation.lendsDockIcon(
-			managesPolicy: managesActivationPolicy, current: NSApp.activationPolicy())
-		if lent {
-			NSApp.setActivationPolicy(.regular)
+		let steps = PromptFront.steps(
+			ownsPolicy: managesActivationPolicy,
+			hasDockIcon: NSApp.activationPolicy() == .regular)
+		for step in steps {
+			switch step {
+			case .lendDockIcon: NSApp.setActivationPolicy(.regular)
+			case .activate: NSApp.activate(ignoringOtherApps: true)
+			case .requestAttention: NSApp.requestUserAttention(.criticalRequest)
+			}
 		}
-		NSApp.activate(ignoringOtherApps: true)
-		NSApp.requestUserAttention(.criticalRequest)
 		let response = alert.runModal()
-		if PromptActivation.returnsToAccessory(lent: lent, windowsOpen: !windows.isEmpty) {
+		let lent = steps.contains(.lendDockIcon)
+		if PromptFront.returnsToAccessory(lent: lent, windowsOpen: !windows.isEmpty) {
 			NSApp.setActivationPolicy(.accessory)
 		}
 		return prompt.choice(forButtonAt:

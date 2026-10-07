@@ -55,17 +55,15 @@ struct PromptAlertTests {
 	func promptAlertAnswersFromTheFile() throws {
 		let quit = EndProcessPrompt.forQuit(leaving: ["Debian"])
 		let lab = try Self.lab(answers: #"{"agent.endProcessOnQuit": "End Process"}"#)
-		for front in [PromptAlert.Front.activate, .lendDockIcon] {
-			#expect(PromptAlert.run(quit.labPrompt, front: front, lab: lab) == 0)
-			#expect(PromptAlert.run(
-				EndProcessPrompt.forVM("Debian").labPrompt, front: front, destructiveIndex: 0,
-				lab: lab) == 1)   // not listed: its cancel button
-		}
+		#expect(PromptAlert.run(quit.labPrompt, lab: lab) == 0)
+		#expect(PromptAlert.run(
+			EndProcessPrompt.forVM("Debian").labPrompt, destructiveIndex: 0,
+			lab: lab) == 1)   // not listed: its cancel button
 		let none = try Self.lab(answers: "{}")
 		let conflict = MenuBarFailure(
 			vm: "Debian", action: .start(StartOptions()),
 			error: MachmanError(code: .macConflict, message: "Alpine already uses it"))
-		#expect(PromptAlert.run(conflict.labPrompt, front: .activate, lab: none) == 1)
+		#expect(PromptAlert.run(conflict.labPrompt, lab: none) == 1)
 	}
 
 	@Test("Q18: PromptAlert shows an alert only outside test mode (TB9)")
@@ -78,5 +76,19 @@ struct PromptAlertTests {
 		}
 		// This run is a test suite: an alert the code forgets to route is still answered.
 		#expect(PromptAlert.route(lab: .current) == .lab)
+	}
+
+	// V13: five agent prompts lent a Dock icon, the rest (VMs still running, both End Process
+	// prompts, the menu's failure and Start Anyway alerts) only activated — declinable since
+	// macOS 14 — and none asked for attention, so an alert could sit behind every window with
+	// no Dock icon to find it by. Every agent prompt now takes the vmhost's steps.
+	@Test("V13: every agent prompt comes to the front the same way")
+	func everyAgentPromptComesToTheFrontTheSameWay() {
+		#expect(PromptAlert.frontSteps(policy: .accessory)
+			== [.lendDockIcon, .activate, .requestAttention])
+		#expect(PromptAlert.frontSteps(policy: .regular) == [.activate, .requestAttention])
+		// The vmhost's own rule for a windowless host.
+		#expect(PromptAlert.frontSteps(policy: .accessory)
+			== PromptFront.steps(ownsPolicy: true, hasDockIcon: false))
 	}
 }

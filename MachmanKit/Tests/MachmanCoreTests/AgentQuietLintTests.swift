@@ -48,6 +48,24 @@ struct AgentQuietLintTests {
 		#expect(launches > 0)
 	}
 
+	// V13: each caller chose how its alert came to the front, and they differed — some only
+	// activated, which macOS 14+ may decline, and none bounced the Dock icon. One rule now
+	// (PromptFront), shared with the vmhost's prompts: no caller passes its own.
+	@Test("V13: no agent prompt picks its own way to the front")
+	func noAgentPromptPicksItsOwnWayToTheFront() throws {
+		let callers = SourceScan.swiftFiles(under: "MachmanAgent")
+			+ SourceScan.swiftFiles(under: "MachmanKit/Sources/MachmanUI")
+		let chosen = try SourceScan.hits(#"front: *\."#, in: callers)
+		#expect(chosen.isEmpty, "\(chosen)")
+		for file in [
+			"MachmanKit/Sources/MachmanUI/PromptAlert.swift",
+			"MachmanKit/Sources/MachmanCore/WindowPresenter.swift",
+		] {
+			#expect(!(try SourceScan.hits(#"PromptFront\.steps\("#, in: [file])).isEmpty,
+				"\(file) brings its prompts to the front without PromptFront")
+		}
+	}
+
 	// A MenuBarExtra makes an NSStatusItem even when it isn't inserted, and AppKit saves the
 	// item's visibility into the agent's preferences: the dev agent's own domain, which the lab
 	// agent shares. So under a test suite the agent builds no scene at all: its entry point

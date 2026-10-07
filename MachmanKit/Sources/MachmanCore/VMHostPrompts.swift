@@ -211,20 +211,3 @@ public enum VMHostQuitReason: Equatable, Sendable {
 		return VMHostQuitReason(appleEventCode: code)
 	}
 }
-
-// Every vmhost prompt comes to the front: it answers the user's own stop or quit, and an
-// app-modal alert also blocks the VM window. A windowless (accessory) host has no Dock icon
-// to bounce or ⌘-Tab to, so it turns regular while the prompt shows — never the daemon's
-// presenter, which doesn't manage the menu-bar agent's policy.
-enum PromptActivation {
-	static func lendsDockIcon(
-		managesPolicy: Bool, current: NSApplication.ActivationPolicy
-	) -> Bool {
-		managesPolicy && current != .regular
-	}
-
-	// A window opened meanwhile keeps the app regular, as openWindow set it.
-	static func returnsToAccessory(lent: Bool, windowsOpen: Bool) -> Bool {
-		lent && !windowsOpen
-	}
-}

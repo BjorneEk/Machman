@@ -4,9 +4,9 @@
 //
 //  The one way the menu-bar agent shows an alert: every question it asks (AgentPrompt, the
 //  menu's failures, EndProcessPrompt) comes through here as a LabPrompt. Outside test mode it
-//  is today's alert, brought to the front the way its caller asks. Under a test suite it is
-//  logged and answered from the lab's answers file (LabAnswers) without touching NSApp at
-//  all: no alert, no activation, no Dock icon.
+//  is today's alert, brought to the front one way for all of them (PromptFront, V13). Under a
+//  test suite it is logged and answered from the lab's answers file (LabAnswers) without
+//  touching NSApp at all: no alert, no activation, no Dock icon.
 //
 
 import AppKit
@@ -14,14 +14,6 @@ import MachmanAPI
 
 @MainActor
 public enum PromptAlert {
-	// How an alert comes to the front: an LSUIElement app's alert can otherwise sit behind
-	// every window.
-	public enum Front: Sendable {
-		case activate
-		// …and a Dock icon while it shows, so it can be found again.
-		case lendDockIcon
-	}
-
 	public enum Route: Equatable, Sendable {
 		case lab
 		case alert
@@ -31,20 +23,33 @@ public enum PromptAlert {
 		lab == nil ? .alert : .lab
 	}
 
+	// How every agent alert comes to the front (V13), the vmhost's rule: an LSUIElement app's
+	// alert can otherwise sit behind every window with no Dock icon to find it by.
+	public nonisolated static func frontSteps(
+		policy: NSApplication.ActivationPolicy
+	) -> [PromptFront.Step] {
+		PromptFront.steps(ownsPolicy: true, hasDockIcon: policy == .regular)
+	}
+
 	// The chosen button's index.
 	public static func run(
-		_ prompt: LabPrompt, front: Front, style: NSAlert.Style = .warning,
+		_ prompt: LabPrompt, style: NSAlert.Style = .warning,
 		destructiveIndex: Int? = nil, lab: LabEnvironment? = .current
 	) -> Int {
 		if route(lab: lab) == .lab, let answer = LabAnswers.answerIfTesting(prompt, lab: lab) {
 			return answer
 		}
-		if front == .lendDockIcon {
-			NSApp.setActivationPolicy(.regular)
+		let steps = frontSteps(policy: NSApp.activationPolicy())
+		for step in steps {
+			switch step {
+			case .lendDockIcon: NSApp.setActivationPolicy(.regular)
+			case .activate: NSApp.activate(ignoringOtherApps: true)
+			case .requestAttention: NSApp.requestUserAttention(.criticalRequest)
+			}
 		}
-		NSApp.activate(ignoringOtherApps: true)
 		defer {
-			if front == .lendDockIcon {
+			let lent = steps.contains(.lendDockIcon)
+			if PromptFront.returnsToAccessory(lent: lent, windowsOpen: false) {
 				NSApp.setActivationPolicy(.accessory)
 			}
 		}

@@ -152,16 +152,19 @@ struct VMHostQuitTests {
 	}
 
 	// Only a vmhost (which manages its policy) lends itself a Dock icon, and only while it
-	// has none; it gives it back unless a window opened meanwhile.
+	// has none; it gives it back unless a window opened meanwhile. Every prompt activates and
+	// asks for attention (PromptFront, the agent's rule too).
 	@Test func promptActivation() {
-		#expect(PromptActivation.lendsDockIcon(managesPolicy: true, current: .accessory))
-		#expect(PromptActivation.lendsDockIcon(managesPolicy: true, current: .prohibited))
-		#expect(!PromptActivation.lendsDockIcon(managesPolicy: true, current: .regular))
-		#expect(!PromptActivation.lendsDockIcon(managesPolicy: false, current: .accessory))
+		#expect(PromptFront.steps(ownsPolicy: true, hasDockIcon: false)
+			== [.lendDockIcon, .activate, .requestAttention])
+		#expect(PromptFront.steps(ownsPolicy: true, hasDockIcon: true)
+			== [.activate, .requestAttention])
+		#expect(PromptFront.steps(ownsPolicy: false, hasDockIcon: false)
+			== [.activate, .requestAttention])
 
-		#expect(PromptActivation.returnsToAccessory(lent: true, windowsOpen: false))
-		#expect(!PromptActivation.returnsToAccessory(lent: true, windowsOpen: true))
-		#expect(!PromptActivation.returnsToAccessory(lent: false, windowsOpen: false))
+		#expect(PromptFront.returnsToAccessory(lent: true, windowsOpen: false))
+		#expect(!PromptFront.returnsToAccessory(lent: true, windowsOpen: true))
+		#expect(!PromptFront.returnsToAccessory(lent: false, windowsOpen: false))
 	}
 
 	// Return stays on the default; Esc goes to a cancel AppKit wouldn't find by its title.

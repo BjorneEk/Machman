@@ -49,10 +49,9 @@ public struct EndProcessPrompt: Equatable, Sendable {
 		LabPrompt(id: id, message: title, info: message, buttons: [confirm, cancel], cancelIndex: 1)
 	}
 
-	// The agent's alert, in front: true when the user chose to end the process. Its menu-bar
-	// app has no Dock icon, so the alert is brought forward.
+	// The agent's alert, in front (PromptAlert): true when the user chose to end the process.
 	@MainActor
 	public func runInFront() -> Bool {
-		PromptAlert.run(labPrompt, front: .activate, destructiveIndex: 0) == 0
+		PromptAlert.run(labPrompt, destructiveIndex: 0) == 0
 	}
 }
