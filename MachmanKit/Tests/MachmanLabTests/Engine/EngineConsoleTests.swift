@@ -90,6 +90,8 @@ struct EngineConsoleTests {
 					"serial console0: guest not reading input, dropping it", after: mark,
 					process: "MachmanVMHost", timeout: .seconds(20))
 				try await console.expect("LAB-AFTER-42", timeout: .seconds(30))
+				// One line per paste burst (C25, E59): a guest that drains the buffer in
+				// bursts mid-paste hasn't caught up, so it is not warned about again.
 				#expect(LabLog.count("guest not reading input, dropping it", after: mark) == 1)
 				#expect(try await vm.info().state == .running)
 			}

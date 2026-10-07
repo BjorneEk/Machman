@@ -55,7 +55,13 @@ final class SerialPortBridge {
 	private var guestInput = Data()
 	private var guestInputSource: DispatchSourceWrite?
 	private var guestInputClosed = false
+	// The "guest not reading input" warning says it once per paste burst (C25, E59): it
+	// re-arms only after nothing has waited for the guest for a second — a guest that drains
+	// the buffer in bursts mid-paste is not caught up.
 	private var warnedInputDrop = false
+	private var caughtUpSince: UInt64?
+	private let clock: @Sendable () -> UInt64
+	private static let inputWarningRearm: UInt64 = 1_000_000_000
 	private var counts = Counters()
 
 	// What crossed the port this run (E58). Every typed byte is taken by the guest pipe,
@@ -118,7 +124,8 @@ final class SerialPortBridge {
 	init(
 		kind: SerialPortKind, index: Int, socketPath: String, logURL: URL,
 		logConfig: SerialLogConfig, toGuest: FileHandle, fromGuest: FileHandle,
-		keepAlive: DispatchTimeInterval = MachmanServer.keepAlive()
+		keepAlive: DispatchTimeInterval = MachmanServer.keepAlive(),
+		clock: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
 	) {
 		self.kind = kind
 		self.index = index
@@ -128,6 +135,7 @@ final class SerialPortBridge {
 		self.toGuest = toGuest
 		self.fromGuest = fromGuest
 		self.keepAlive = keepAlive
+		self.clock = clock
 	}
 
 	// The on-disk log path when logging is enabled (nil when disabled or not yet started).
@@ -381,6 +389,14 @@ final class SerialPortBridge {
 			}
 		}
 		guard !pending.isEmpty else { return }
+		if guestInput.isEmpty {
+			// A backlog starts: a guest that kept up for a second may be warned about again.
+			if warnedInputDrop, let since = caughtUpSince,
+				clock() &- since >= Self.inputWarningRearm {
+				warnedInputDrop = false
+			}
+			caughtUpSince = nil
+		}
 		let room = max(0, Self.guestInputCap - guestInput.count)
 		if pending.count > room, !warnedInputDrop {
 			warnedInputDrop = true
@@ -437,7 +453,7 @@ final class SerialPortBridge {
 		if guestInput.isEmpty {
 			guestInputSource?.cancel()
 			guestInputSource = nil
-			warnedInputDrop = false
+			caughtUpSince = clock()
 		}
 	}
 

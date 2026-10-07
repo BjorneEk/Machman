@@ -17,7 +17,8 @@ struct SerialPortBridgeTests {
 	}
 
 	private func makeBridge(
-		_ tag: String, log: SerialLogConfig = SerialLogConfig(mode: .disabled)
+		_ tag: String, log: SerialLogConfig = SerialLogConfig(mode: .disabled),
+		clock: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
 	) -> (bridge: SerialPortBridge, guestOut: FileHandle, guestIn: FileHandle, logURL: URL) {
 		let toGuest = Pipe()      // bridge writes -> guestIn reads
 		let fromGuest = Pipe()    // guestOut writes -> bridge reads
@@ -26,7 +27,7 @@ struct SerialPortBridgeTests {
 		let bridge = SerialPortBridge(
 			kind: .console, index: 0, socketPath: socketPath, logURL: logURL,
 			logConfig: log, toGuest: toGuest.fileHandleForWriting,
-			fromGuest: fromGuest.fileHandleForReading)
+			fromGuest: fromGuest.fileHandleForReading, clock: clock)
 		return (bridge, fromGuest.fileHandleForWriting, toGuest.fileHandleForReading, logURL)
 	}
 
@@ -368,6 +369,63 @@ struct SerialPortBridgeTests {
 		#expect(Int64(first.lost) >= Int64(output) - 1024 * 1024 - Int64(first.sent))
 	}
 
+	// Types `count` bytes from a non-blocking client that the guest doesn't read: the bridge
+	// takes all of it (buffering or dropping), so the writes never stall.
+	private func paste(_ client: Int32, _ count: Int) {
+		let chunk = [UInt8](repeating: 0x70, count: 4096)
+		var sent = 0
+		let deadline = Date().addingTimeInterval(3)
+		while sent < count, Date() < deadline {
+			let n = chunk.withUnsafeBytes {
+				write(client, $0.baseAddress, min($0.count, count - sent))
+			}
+			if n > 0 { sent += n } else { Thread.sleep(forTimeInterval: 0.01) }
+		}
+	}
+
+	// Reads the guest end until the bridge has nothing waiting and the pipe is empty.
+	private func drainGuest(_ bridge: SerialPortBridge, _ guestIn: FileHandle) {
+		let fd = guestIn.fileDescriptor
+		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+		var buf = [UInt8](repeating: 0, count: 64 * 1024)
+		let deadline = Date().addingTimeInterval(5)
+		while Date() < deadline {
+			if read(fd, &buf, buf.count) > 0 { continue }
+			if bridge.countsForTesting.port.waiting == 0, read(fd, &buf, buf.count) <= 0 {
+				return
+			}
+			Thread.sleep(forTimeInterval: 0.005)
+		}
+	}
+
+	// E59: under four lab shards the guest drained the bridge's buffer once mid-paste, and the
+	// "guest not reading input" warning came twice. C25: one warning per paste burst — it
+	// re-arms only after nothing has waited for the guest for a second.
+	@Test("E59: an unread paste warns once per burst, and again after the guest kept up a second")
+	func unreadPasteWarnsOncePerBurst() throws {
+		let time = ManualClock()
+		let env = makeBridge("burst", clock: { time.now })
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+		_ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK)
+		let burst = 256 * 1024
+
+		paste(client, burst)
+		#expect(counts(env.bridge) { $0.port.typed == UInt64(burst) }.port.dropWarnings == 1)
+		drainGuest(env.bridge, env.guestIn)   // the guest drains it at once…
+		paste(client, burst)                  // …and the paste goes on: the same burst
+		#expect(counts(env.bridge) { $0.port.typed == UInt64(2 * burst) }.port.dropWarnings
+			== 1)
+		drainGuest(env.bridge, env.guestIn)
+		time.advance(seconds: 1.5)            // caught up for a second: a new paste warns
+		paste(client, burst)
+		#expect(counts(env.bridge) { $0.port.typed == UInt64(3 * burst) }.port.dropWarnings
+			== 2)
+	}
+
 	// E18: what the pipe can't take at once is buffered, not lost — below the cap a slow guest
 	// still receives every byte, in order.
 	@Test func bufferedInputReachesASlowGuestInOrder() throws {
@@ -403,5 +461,17 @@ struct SerialPortBridgeTests {
 			}
 		}
 		#expect(got == sent)
+	}
+}
+
+// A monotonic clock the test moves by hand.
+private final class ManualClock: @unchecked Sendable {
+	private let lock = NSLock()
+	private var nanoseconds: UInt64 = 1_000_000_000
+
+	var now: UInt64 { lock.withLock { nanoseconds } }
+
+	func advance(seconds: Double) {
+		lock.withLock { nanoseconds += UInt64(seconds * 1_000_000_000) }
 	}
 }
