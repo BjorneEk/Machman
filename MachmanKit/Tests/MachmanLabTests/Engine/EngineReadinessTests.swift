@@ -35,8 +35,11 @@ struct EngineReadinessL3Tests {
 		_ = try await console.run(
 			"mkdir -p /mnt/s && (mountpoint -q /mnt/s || mount -t virtiofs host-share /mnt/s)")
 		let key = try await console.run("cat /etc/ssh/ssh_host_ed25519_key.pub")
+		// Its own address, as every installer report carries it: the agent learns the
+		// guest's DHCP client id from the lease that holds it (E56).
+		let address = try await TFGuest.address(console)
 		try await TFGuest.writeReport(
-			console, TFReport.standard(hostKey: key.output).render())
+			console, TFReport.standard(ip: address, hostKey: key.output).render())
 		if let prepare { _ = try await console.run(prepare, timeout: .seconds(60)) }
 		console.close()
 		try await TFWait.vm(agent.api, name, "reported", timeout: .seconds(20)) {
@@ -77,7 +80,6 @@ struct EngineReadinessL3Tests {
 			let (vm, console) = try await Self.reportedDebian(
 				agent, "sshd-stopped", prepare: "systemctl disable --now ssh.service ssh.socket")
 			defer { console.close() }
-			// Fails until the open bug E56 (no address for a client-id DHCP guest) is fixed.
 			let index = try await desktop.toasts.waitFor(
 				"sshd-stopped: SSH not answering", timeout: .seconds(90))
 			#expect(desktop.toasts.entries[index].message.hasSuffix(":22 after 3 minutes"))

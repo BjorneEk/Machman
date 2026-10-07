@@ -58,7 +58,8 @@ extension RoutingMachman {
 	// The VM's name is read at every ask and every announcement, never kept: Save as New
 	// VM re-keys a running host, and a run that went on under the original's name sent
 	// clients to refetch a stopped VM while the saved one's row stayed "waiting" (E42).
-	// `probes` is where it looks: the live tables and port 22, or a test's stand-ins.
+	// `probes` is where it looks: the live tables, what the guest's reports taught the VM's
+	// config (E56) and port 22, or a test's stand-ins.
 	func startSSHDiscovery(_ host: HostedVM, probes: SSHDiscovery.Probes = .live) {
 		host.sshDiscoveryTask?.cancel()
 		guard let mac = host.identity.macInUse else { return }
@@ -75,7 +76,9 @@ extension RoutingMachman {
 			var attempt = 0
 			var address: String?
 			while !Task.isCancelled, address == nil {
-				let answer = await probes.address(mac)
+				guard let name = self?.host(withID: id)?.identity.name else { return }
+				let answer = await probes.address(
+					SSHDiscovery.Lookup(mac: mac, vm: name, library: machmanVMDir))
 				guard let self, let host = self.host(withID: id) else { return }
 				if let answer {
 					if host.sshAnswer != answer {

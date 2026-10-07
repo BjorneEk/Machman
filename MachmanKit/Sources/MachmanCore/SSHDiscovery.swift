@@ -279,15 +279,24 @@ enum SSHDiscovery {
 
 	// MARK: - Probes
 
-	// Where discovery looks: the live tables and a connect to port 22, or a test's
-	// stand-ins.
+	// Whom a pass looks for: the VM's in-use MAC, and its config by the VM's current name —
+	// what the guest's reports taught it (E56).
+	struct Lookup: Equatable, Sendable {
+		var mac: String
+		var vm: String
+		var library: String
+	}
+
+	// Where discovery looks: the live tables, the VM's config and a connect to port 22, or a
+	// test's stand-ins.
 	struct Probes: Sendable {
-		var address: @Sendable (_ mac: String) async -> Answer?
+		var address: @Sendable (_ lookup: Lookup) async -> Answer?
 		var sshd: @Sendable (_ address: String) async -> Bool
 
 		static let live = Probes(
-			// Detached: the live loaders read /var/db and run arp — off the main actor.
-			address: { mac in await Task.detached { discoverLive(mac: mac) }.value },
+			// Detached: the live loaders read /var/db and the config and run arp — off the
+			// main actor.
+			address: { lookup in await Task.detached { discoverLive(lookup) }.value },
 			sshd: { await probeTCP(host: $0, timeout: 1.5) })
 	}
 
@@ -330,10 +339,19 @@ enum SSHDiscovery {
 		return nil
 	}
 
-	// The live variant — reads /var/db/dhcpd_leases and runs arp. Call off the main
-	// actor (Process + file reads block their thread).
-	static func discoverLive(mac: String) -> Answer? {
-		discover(mac: mac, leasesText: leases(atPath: leasesPath), arpText: currentARPOutput())
+	// The live variant — reads /var/db/dhcpd_leases and the VM's config, and runs arp. Call
+	// off the main actor (Process + file reads block their thread).
+	static func discoverLive(_ lookup: Lookup) -> Answer? {
+		discover(
+			mac: lookup.mac, leasesText: leases(atPath: leasesPath), arpText: currentARPOutput(),
+			hints: hints(vm: lookup.vm, library: lookup.library))
+	}
+
+	// What the guest's reports taught the VM, read decode-only from its config: while the VM
+	// runs its vmhost owns the config and saves every report there (E56).
+	static func hints(vm name: String, library: String) -> Hints {
+		let ssh = BootGuard.peekConfig(name: name, library: library)?.ssh
+		return Hints(clientID: ssh?.dhcpClientID, reported: ssh?.lastAddress)
 	}
 
 	static let leasesPath = "/var/db/dhcpd_leases"

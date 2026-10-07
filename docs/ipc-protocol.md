@@ -210,7 +210,7 @@ served it as `"unknown"`).
 reverseState: "none"|"pending"|"approved"|"denied", reversePublicKey?, integrationEnabled?,
 lastReportAt?, lastRunStatus?, lastRunNote?, lastTransport?, scriptVersion?,
 sshfsAvailable?, sshfsMountReady?, sshfsMountRoot?, alias?, identityFilePath?,
-knownHostsPath?, setupSharePath?, hostUser?, address?, addressSource?: "dhcp"|"arp",
+knownHostsPath?, setupSharePath?, hostUser?, address?, addressSource?: "dhcp"|"arp"|"report",
 hostAddressForGuest?, reachability?: "unknown"|"waiting"|"ready"|"unreachable",
 reachabilityDetail?, readySince?}` — absent entirely when SSH was never used (or from an
 older daemon). `configured` (1.0.6+) is true when SSH is part of that VM — state on

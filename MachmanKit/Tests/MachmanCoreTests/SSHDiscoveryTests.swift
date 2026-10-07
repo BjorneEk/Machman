@@ -209,6 +209,24 @@ struct SSHDiscoveryTests {
 			== SSHDiscovery.Answer(address: "192.168.64.50", source: "arp"))
 	}
 
+	// E56: the vmhost owns a running VM's config and saves every report there; each pass
+	// reads what it learned, under the VM's name now.
+	@Test("E56: discovery reads the client id and the reported address from the VM's config")
+	@MainActor func hintsComeFromTheConfigOnDisk() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "hinted")
+			let vm = try VMConfig(name: "hinted", memorySize: 1 << 30, cpuCount: 2)
+			var state = SSHConfig()
+			state.lastAddress = "192.168.64.17"
+			state.dhcpClientID = debianID
+			vm.ssh = state
+			try vm.saveVMConfig()
+			#expect(SSHDiscovery.hints(vm: "hinted", library: machmanVMDir)
+				== SSHDiscovery.Hints(clientID: debianID, reported: "192.168.64.17"))
+			#expect(SSHDiscovery.hints(vm: "gone", library: machmanVMDir) == SSHDiscovery.Hints())
+		}
+	}
+
 	// What the guest calls "the Mac", shown in the BSD setup guide before any guest has
 	// reported its own default route: the Mac's address on the guest's subnet. C25: it was
 	// the ".1 of a /24", wrong for any other vmnet subnet and the router for a bridged guest.
