@@ -51,6 +51,47 @@ struct GuestScriptOutputTests {
 		}
 	}
 
+	// S48: ui_detect gave a non-UTF-8 console ASCII glyphs, but the prose kept its em dashes
+	// (and the verbose lines their arrows), garbage on a real vt100 or a LANG=C serial line.
+	// Everything printed follows the glyphs now, through one point; the report keeps the
+	// text as written, and a UTF-8 terminal gets it unchanged.
+	@Test("S48: an ASCII console gets ASCII prose and a UTF-8 one keeps it")
+	func asciiConsolesGetAsciiProse() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=80
+				say "Machman guest setup — VM \"x\" · a → b…"
+				note "cancelled — nothing was changed."
+				plan_line "kernel console" "off — enable with --kernel-console (edits the boot \
+				loader)"
+				menu_draw 1 - "Leave it — report only" "Adopt — comment the line" \
+					| tr -d '\r\033' | sed 's/\[K//'
+				VERBOSE=1
+				verbose ask "Proceed? → y (not interactive)"
+				step_failed identity "could not — y" 2>&1
+				printf '%s\n' "$ERR_LINES"
+				echo ---
+				LANG=C.UTF-8
+				ui_detect
+				say "a — b → c"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				Machman guest setup - VM "x" - a -> b...
+				   cancelled - nothing was changed.
+				  kernel console   off - enable with --kernel-console (edits the boot loader)
+				  > Leave it - report only
+				    Adopt - comment the line
+				[ask] Proceed? -> y (not interactive)
+				[!!] could not - y
+				identity: could not — y
+				---
+				a — b → c
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// S56: a yes/no question and the numbered menus (TERM=dumb, pipes) printed their text
 	// whole, so NetBSD's user-mount question ran to 97 columns; they fold like everything
 	// said now — the answer still goes after the hint on the question's last line, an item

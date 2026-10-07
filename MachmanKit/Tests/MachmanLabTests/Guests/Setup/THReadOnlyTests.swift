@@ -36,7 +36,10 @@ enum THReadOnlyRows {
 		let escalation: GuestEscalation = g.kind.isLinux ? .root : g.kind.escalation
 		let run = try await g.install("--dry-run", user: "lab", escalation: escalation)
 		#expect(run.status == 0, "\(run.output)")
-		#expect(run.output.contains("Dry run — nothing was changed."), "\(run.output)")
+		// Sentences compare as an ASCII terminal shows them: the run's locale decides which
+		// the guest printed (TH.ascii).
+		#expect(TH.ascii(run.output).contains(TH.ascii("Dry run — nothing was changed.")),
+			"\(run.output)")
 		let plan = THPlan(run.output)
 		let facts = try await THFacts.read(g, reportAs: escalation == .root ? "lab" : nil)
 		#expect(
@@ -46,11 +49,11 @@ enum THReadOnlyRows {
 		#expect(plan["payload"] == GuestPaths.share + "/GuestSetup (over \(transport))")
 		#expect(plan["user"] == "lab -> \(facts.labHome)", "\(run.output)")
 		#expect(
-			plan["ssh server"] == (facts.sshdRunning
+			TH.ascii(plan["ssh server"] ?? "") == TH.ascii(facts.sshdRunning
 				? "already running — make sure it stays enabled"
 				: "installed, not running — enable and start"), "\(run.output)")
 		#expect(
-			plan["report"] == (facts.reportWritableByLab
+			TH.ascii(plan["report"] ?? "") == TH.ascii(facts.reportWritableByLab
 				? GuestPaths.share + "/GuestReport"
 				: "NOT writable — Machman will not learn any of this"), "\(run.output)")
 		try await THFingerprint.expectUnchanged(g, since: before)
@@ -67,7 +70,8 @@ enum THReadOnlyRows {
 			return try await s.drive(proceed: "q")
 		}
 		#expect(run.status == 3, "\(run.output)")
-		#expect(run.output.contains("cancelled — nothing was changed."), "\(run.output)")
+		#expect(TH.ascii(run.output).contains(TH.ascii("cancelled — nothing was changed.")),
+			"\(run.output)")
 		// A sudo run knows its user: no question lists the users (a console another tool set
 		// up may still be asked about — a genuine ambiguity).
 		#expect(!run.prompts.contains { $0.prompt == .choose && $0.before.contains("/home/lab") },
@@ -141,7 +145,6 @@ enum THReadOnlyRows {
 			let nonASCII = lines.filter { line in
 				line.unicodeScalars.contains { $0.value >= 0x80 }
 			}
-			// Fails until the open bug S48 (prose keeps its em dashes) is fixed.
 			#expect(nonASCII.isEmpty,
 				"\(nonASCII.count) lines with non-ASCII text: \(nonASCII.prefix(5))")
 		}
@@ -191,8 +194,9 @@ enum THReadOnlyRows {
 		let menu = dry.before(.toggle) ?? ""
 		#expect(!menu.isEmpty && !menu.contains("Kernel console"), "\(menu)")
 		#expect(
-			THPlan(dry.output)["kernel console"]
-				== "off — enable with --kernel-console (edits the boot loader)", "\(dry.output)")
+			TH.ascii(THPlan(dry.output)["kernel console"] ?? "")
+				== TH.ascii("off — enable with --kernel-console (edits the boot loader)"),
+			"\(dry.output)")
 		let help = try await g.sh("\(TH.installer) --help")
 		#expect(help.output.contains("WARNING: EDITS THE BOOT LOADER"))
 	}

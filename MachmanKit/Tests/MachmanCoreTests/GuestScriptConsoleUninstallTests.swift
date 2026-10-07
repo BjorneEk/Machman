@@ -37,7 +37,7 @@ struct GuestScriptConsoleUninstallTests {
 				""", under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				   hvc1 keeps its login until the next boot — stopping it now would end \
+				   hvc1 keeps its login until the next boot - stopping it now would end \
 				this session.
 				---
 				disable --now serial-getty@hvc0.service
@@ -111,11 +111,11 @@ struct GuestScriptConsoleUninstallTests {
 			#expect(r.out == """
 				strip /etc/inittab
 				restore /etc/inittab
-				   /etc/inittab changes take effect at the next boot — reloading init now \
+				   /etc/inittab changes take effect at the next boot - reloading init now \
 				would end this session on hvc0.
 				strip /etc/ttys
 				restore /etc/ttys
-				   /etc/ttys changes take effect at the next boot — reloading init now would \
+				   /etc/ttys changes take effect at the next boot - reloading init now would \
 				end this session on hvc0.
 				strip /etc/inittab
 				restore /etc/inittab
@@ -148,7 +148,7 @@ struct GuestScriptConsoleUninstallTests {
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
 				launchctl bootout system/com.machman.console-getty.cu.virtio
-				   cu.virtio1 keeps its login until the next boot — stopping it now would end \
+				   cu.virtio1 keeps its login until the next boot - stopping it now would end \
 				this session.
 				0
 
@@ -194,10 +194,10 @@ struct GuestScriptConsoleUninstallTests {
 				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				[!!] the login on hvc1 stays (removing it would end this session) — remove \
+				[!!] the login on hvc1 stays (removing it would end this session) - remove \
 				D/service/machman-agetty-hvc1 and D/sv/machman-agetty-hvc1 after you log out.
 				kept=1 machman-agetty-hvc1 \("")
-				[!!] the login on hvc0 stays (removing it would end this session) — remove \
+				[!!] the login on hvc0 stays (removing it would end this session) - remove \
 				D/service/agetty-hvc0 after you log out.
 				kept=1 agetty-hvc0 \("")
 				kept=0 \("")

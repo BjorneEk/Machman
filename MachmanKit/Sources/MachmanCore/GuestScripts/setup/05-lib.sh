@@ -6,9 +6,10 @@
 #     their temporaries (_fn_foo) and hand results back through R_* globals.
 #   * Every mutation goes through run()/run_live() so it can be narrated (-v), skipped
 #     (--dry-run) and, when it fails, blamed on a named step instead of a bare tool error.
-#   * Output degrades: colour only when the terminal says so, ASCII glyphs when neither
-#     the locale nor the ssh session says UTF-8, numbered prompts when arrow keys cannot
-#     work — these scripts are read through serial consoles, ssh sessions and pipes alike.
+#   * Output degrades: colour only when the terminal says so, ASCII glyphs and prose when
+#     neither the locale nor the ssh session says UTF-8, numbered prompts when arrow keys
+#     cannot work — these scripts are read through serial consoles, ssh sessions and pipes
+#     alike.
 
 # ---------------------------------------------------------------------------- state ----
 
@@ -35,6 +36,7 @@ R_MARKS=""           # menu_multi result: comma list of ON indexes
 R_KEY=""             # key_read result
 R_MOUNT_WHAT=""      # sshfsauto_entry results: source and mountpoint, two slots —
 R_MOUNT_WHERE=""     # host paths carry spaces, so they are never packed into one
+R_TEXT=""            # ascii_of result
 
 # Styling defaults so `set -u` is safe before (and without) ui_detect.
 C_RESET=""; C_DIM=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""
@@ -47,6 +49,7 @@ CR="$(printf '\r')"
 
 UI_COLOR=0
 UI_UNICODE=0
+UI_ASCII=0           # 1 once ui_detect gave the terminal ASCII glyphs: prose follows them
 UI_NAV=0
 UI_COLS=80
 UI_IN=""             # fd to read answers from, empty when nothing can answer
@@ -111,9 +114,11 @@ ui_detect() {
 	if [ "$UI_UNICODE" -eq 1 ]; then
 		G_OK="✓"; G_RUN="→"; G_WARN="!"; G_ERR="✗"; G_PTR="❯"; G_ON="◉"; G_OFF="○"
 		G_SEP="·"
+		UI_ASCII=0
 	else
 		G_OK="[ok]"; G_RUN="[..]"; G_WARN="[!!]"; G_ERR="[xx]"
 		G_PTR=">"; G_ON="[x]"; G_OFF="[ ]"; G_SEP="-"
+		UI_ASCII=1
 	fi
 
 	# Where interactive answers come from: the controlling terminal if there is one (so a
@@ -154,11 +159,23 @@ sh_quote() {
 	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
+# ascii_of <text> → R_TEXT: what a terminal shows of the script's own text — on an ASCII one
+# (UI_ASCII) its em dashes, arrows, middle dots and ellipses spelled in ASCII, else the
+# text as it is (no fork). Every printer goes through here; reports and state keep the text
+# as written.
+ascii_of() {
+	R_TEXT="$1"
+	[ "$UI_ASCII" -eq 1 ] || return 0
+	R_TEXT="$(printf '%s\n' "$1" | LC_ALL=C sed 's/—/-/g; s/→/->/g; s/·/-/g; s/…/.../g')"
+	return 0
+}
+
 wrap() {
+	ascii_of "$1"
 	if have fold; then
-		printf '%s\n' "$1" | fold -s -w "$((UI_COLS - 2))"
+		printf '%s\n' "$R_TEXT" | fold -s -w "$((UI_COLS - 2))"
 	else
-		printf '%s\n' "$1"
+		printf '%s\n' "$R_TEXT"
 	fi
 }
 
@@ -166,15 +183,16 @@ wrap() {
 # and indented under it on the rest (a plan value under its column, a menu item's text
 # under its number); a multi-line <text>'s lines too.
 wrap_hanging() {
+	ascii_of "$2"
 	_wh_w=$((UI_COLS - 2 - ${#1}))
 	[ "$_wh_w" -ge 20 ] || _wh_w=20
 	if have fold; then
-		printf '%s\n' "$2" | fold -s -w "$_wh_w" | awk -v p="$1" '
+		printf '%s\n' "$R_TEXT" | fold -s -w "$_wh_w" | awk -v p="$1" '
 			{ sub(/ +$/, "") }
 			NR == 1 { print p $0; next }
 			{ printf "%" length(p) "s%s\n", "", $0 }'
 	else
-		printf '%s%s\n' "$1" "$2"
+		printf '%s%s\n' "$1" "$R_TEXT"
 	fi
 }
 
@@ -461,13 +479,16 @@ menu_draw() {
 	[ "$_md_marks" != "-" ] && _md_mw=$((${#G_ON} + 1))
 	_md_w=0
 	for _md_it in "$@"; do
-		_md_t="${_md_it%%	*}"
+		ascii_of "$_md_it"
+		_md_t="${R_TEXT%%	*}"
 		[ "${#_md_t}" -gt "$_md_w" ] && _md_w="${#_md_t}"
 	done
 	[ "$_md_w" -gt 30 ] && _md_w=30
 	_md_i=1
 	for _md_it in "$@"; do
 		printf '\r\033[K'
+		ascii_of "$_md_it"
+		_md_it="$R_TEXT"
 		_md_t="${_md_it%%	*}"
 		_md_note=""
 		case "$_md_it" in
@@ -554,7 +575,8 @@ menu_select() {
 		R_ITEM="$1"
 		return 0
 	fi
-	printf '%s%s%s  %s(arrows, enter)%s\n' "$C_BOLD" "$_ms_q" "$C_RESET" "$C_DIM" "$C_RESET"
+	ascii_of "$_ms_q"
+	printf '%s%s%s  %s(arrows, enter)%s\n' "$C_BOLD" "$R_TEXT" "$C_RESET" "$C_DIM" "$C_RESET"
 	raw_on
 	trap 'raw_off; exit 130' INT
 	menu_draw "$_ms_hi" "-" "$@"
@@ -642,8 +664,9 @@ menu_multi() {
 		return 0
 	fi
 	_mm_hi=1
+	ascii_of "$_mm_q"
 	printf '%s%s%s  %s(arrows, space toggles, enter)%s\n' \
-		"$C_BOLD" "$_mm_q" "$C_RESET" "$C_DIM" "$C_RESET"
+		"$C_BOLD" "$R_TEXT" "$C_RESET" "$C_DIM" "$C_RESET"
 	raw_on
 	trap 'raw_off; exit 130' INT
 	menu_draw "$_mm_hi" "${_mm_marks:-none}" "$@"

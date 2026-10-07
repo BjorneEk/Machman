@@ -232,6 +232,15 @@ enum TH {
 		output.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
 			.joined(separator: " ")
 	}
+
+	/// `text` as an ASCII terminal shows the installer's prose (05-lib.sh ascii_of): its em
+	/// dashes, arrows, middle dots and ellipses spelled in ASCII. A row compares sentences in
+	/// this form, so they match whichever the guest's locale gave the run (FreeBSD's doas
+	/// drops LANG, so its runs are ASCII).
+	static func ascii(_ text: String) -> String {
+		text.replacingOccurrences(of: "—", with: "-").replacingOccurrences(of: "→", with: "->")
+			.replacingOccurrences(of: "·", with: "-").replacingOccurrences(of: "…", with: "...")
+	}
 }
 
 /// How a TH guest is built.

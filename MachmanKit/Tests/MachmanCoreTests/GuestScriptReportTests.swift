@@ -66,7 +66,7 @@ struct GuestScriptReportTests {
 				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				[ok] sshfs automounts armed (docs) — each mounts on first access
+				[ok] sshfs automounts armed (docs) - each mounts on first access
 				systemctl daemon-reload
 				escape -p --suffix=automount -- D/mounts/docs
 				systemctl start mnt-docs.automount

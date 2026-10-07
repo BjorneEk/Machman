@@ -113,9 +113,9 @@ struct GuestScriptConsoleTests {
 				""", under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				  consoles         null (automatic — nothing to do)
-				                   zero (verify — no changes expected)
-				                   random (report only — configured outside Machman)
+				  consoles         null (automatic - nothing to do)
+				                   zero (verify - no changes expected)
+				                   random (report only - configured outside Machman)
 
 				""", "\(shell): \(r.out)")
 		}
@@ -250,7 +250,7 @@ struct GuestScriptConsoleTests {
 				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				[!!] console=hvc1 console=tty0 stays in the boot entries — Machman has no record \
+				[!!] console=hvc1 console=tty0 stays in the boot entries - Machman has no record \
 				of adding it.
 				   Remove it: grubby --update-kernel=ALL --remove-args='console=hvc1 console=tty0'
 				kept=1
@@ -467,7 +467,7 @@ struct GuestScriptConsoleTests {
 				""" + Self.reloadProbe, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				   D/inittab changes take effect at the next boot \u{2014} reloading init now \
+				   D/inittab changes take effect at the next boot - reloading init now \
 				would end this session on hvc0.
 				[ok] logins land in D/inittab
 				kills: \n

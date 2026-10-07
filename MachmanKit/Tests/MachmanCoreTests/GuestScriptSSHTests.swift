@@ -176,8 +176,11 @@ struct GuestScriptSSHTests {
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			let note = "'ssh mac' stays your own entry in D/home/.ssh/config — Machman's "
 				+ "'Host mac' after it does not apply"
+			// The harness's terminal is ASCII (S48): the run spells the dash so; the report's
+			// note keeps it.
+			let said = note.replacingOccurrences(of: "—", with: "-")
 			#expect(r.out == """
-				[!!] \(note)
+				[!!] \(said)
 				   It works once you approve this VM in Machman and Remote Login is on.
 				---
 				hostname studio.lan

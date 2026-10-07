@@ -179,9 +179,9 @@ struct THConsoleLoginTests {
 			try s.start("\(TH.installer) -y --consoles \"hvc0 hvc1\"")
 			let run = try await s.finish(timeout: .seconds(300))
 			#expect(run.status == 0, "\(run.output)")
-			#expect(TH.unwrapped(run.output).contains("/etc/inittab changes take effect at the"
-				+ " next boot — reloading init now would end this session on hvc1."),
-				"\(run.output)")
+			#expect(TH.ascii(TH.unwrapped(run.output)).contains(TH.ascii("/etc/inittab changes"
+				+ " take effect at the next boot — reloading init now would end this session on"
+				+ " hvc1.")), "\(run.output)")
 			let alive = try await THConsoleSession.run(hvc1, "echo th-alive")
 			#expect(alive.output == "th-alive", "the session on hvc1 still answers")
 			let now = try await THConsoles.block(g, "/etc/inittab", marker: try g.marker())
@@ -204,13 +204,14 @@ struct THConsoleLoginTests {
 			try s.start("\(TH.installer) --uninstall -y")
 			let run = try await s.finish(timeout: .seconds(300))
 			#expect(run.status == 0 || run.status == 4, "\(run.output)")
-			let said = TH.unwrapped(run.output)
+			// As an ASCII terminal shows it: the login's locale decides (TH.ascii).
+			let said = TH.ascii(TH.unwrapped(run.output))
 			if kind == .alpine {
-				#expect(said.contains("/etc/inittab changes take effect at the next boot"
-					+ " — reloading init now would end this session on hvc1."), "\(run.output)")
+				#expect(said.contains(TH.ascii("/etc/inittab changes take effect at the next boot"
+					+ " — reloading init now would end this session on hvc1.")), "\(run.output)")
 			} else {
-				#expect(said.contains("hvc1 keeps its login until the next boot — stopping"
-					+ " it now would end this session."), "\(run.output)")
+				#expect(said.contains(TH.ascii("hvc1 keeps its login until the next boot —"
+					+ " stopping it now would end this session.")), "\(run.output)")
 			}
 			let alive = try await THConsoleSession.run(hvc1, "echo th-alive")
 			#expect(alive.output == "th-alive", "the session on hvc1 still answers")

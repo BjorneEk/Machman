@@ -245,7 +245,7 @@ struct GuestScriptSshfsTests {
 				# BEGIN \(block)
 				vfs.generic.usermount=1
 				# END \(block)
-				   vfs.generic.usermount=1 stays — 'sysctl -w vfs.generic.usermount=0' and the \
+				   vfs.generic.usermount=1 stays - 'sysctl -w vfs.generic.usermount=0' and the \
 				\(block) block in D/sysctl.conf revert it.
 				---
 				[!!] could not set vfs.generic.usermount

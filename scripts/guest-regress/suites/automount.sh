@@ -39,11 +39,12 @@ $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-ins
 	--no-service >/tmp/run1.log 2>&1
 [ "$(block | grep -c fuse.sshfs)" = 2 ] || R VFS_KEEPS_SSHFS "uncalibrated"
 # S14: the automounts are armed now where systemd-escape names their units, and the run
-# claims mounting only for those (the script folds its lines: read them back unfolded).
+# claims mounting only for those (the script folds its lines: read them back unfolded; and
+# spells its dashes in ASCII where the locale isn't UTF-8, as in a container).
 tr '\n' ' ' < /tmp/run1.log | tr -s ' ' > /tmp/run1.flat
 if command -v systemd-escape >/dev/null 2>&1; then
 	systemctl_did start "$UNIT" \
-		&& grep -q 'armed (projects, docs) — each mounts on first access' /tmp/run1.flat \
+		&& grep -Eq 'armed \(projects, docs\) (—|-) each mounts on first access' /tmp/run1.flat \
 		&& armed=pass || armed=fail
 else
 	grep -q '(projects, docs) are armed at the next boot' /tmp/run1.flat \
