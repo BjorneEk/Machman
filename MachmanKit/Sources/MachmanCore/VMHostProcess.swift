@@ -3,10 +3,9 @@
 //  MachmanCore
 //
 //  This user's MachmanVMHost processes, seen from outside: by their executable, and by the
-//  socket each was launched to serve (`--socket`, which the agent's spawn and an autostart job
-//  both pass). The answer when a socket can't give one (E61): a vmhost that never accepts —
-//  frozen, SIGSTOPped — keeps every probe's connection in its accept queue for good, and once
-//  the queue is full a connect is refused as if nothing served the path.
+//  listening sockets they hold. The answer when a socket can't give one (E61): a vmhost that
+//  never accepts — frozen, SIGSTOPped — keeps every probe's connection in its accept queue for
+//  good, and once the queue is full a connect is refused as if nothing served the path.
 //
 
 import Foundation
@@ -21,54 +20,44 @@ enum VMHostProcess {
 			.hasSuffix("/" + VMHostLocator.bundleName + "/Contents/MacOS/MachmanVMHost")
 	}
 
-	// The live vmhost, other than this process, launched to serve the socket at `path`; nil
-	// when there is none. A run saved as a new VM moved its socket away from its launch path,
-	// so it is not found by the new one.
+	// The live vmhost, other than this process, whose listener for the socket at `path` refuses
+	// because its accept queue is full; nil when there is none. The listener is told by its
+	// bind-time address, which the kernel keeps for life: the path itself, or the staging name
+	// it was published from (BoundSocket.listen). Never by the vmhost's --socket argument: a run
+	// saved as a new VM serves another path from then on, and a leftover file at the path it was
+	// launched on read live while it ran — End Process there ended it (review F17).
 	static func serving(socketPath path: String) -> pid_t? {
-		if let pid = TestHook.serving(path) { return pid }
-		let me = getpid()
-		let wanted = canonical(path)
-		for pid in userPIDs() where pid != me && isVMHost(pid) {
-			guard let argv = arguments(of: pid), let served = socketArgument(argv) else {
-				continue
+		let names = Set([path, BoundSocket.stagingPath(for: path)].map(canonical))
+		let candidates = TestHook.serving(path).map { [$0] }
+			?? userPIDs().filter { $0 != getpid() && isVMHost($0) }
+		return candidates.first { holdsFullListener($0, boundAt: names) }
+	}
+
+	// Whether `pid` holds a listening unix socket bound at one of `names` whose accept queue is
+	// full: what refuses a connect while it never accepts.
+	static func holdsFullListener(_ pid: pid_t, boundAt names: Set<String>) -> Bool {
+		let entry = MemoryLayout<proc_fdinfo>.stride
+		let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+		guard bytes > 0 else { return false }
+		// Room for descriptors opened between the two calls.
+		var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / entry + 16)
+		let filled = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, Int32(fds.count * entry))
+		guard filled > 0 else { return false }
+		for fd in fds.prefix(Int(filled) / entry)
+		where fd.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
+			var info = socket_fdinfo()
+			let size = Int32(MemoryLayout<socket_fdinfo>.size)
+			guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDSOCKETINFO, &info, size) == size
+			else { continue }
+			let socket = info.psi
+			guard socket.soi_family == AF_UNIX, Int32(socket.soi_options) & SO_ACCEPTCONN != 0,
+				socket.soi_qlimit > 0, socket.soi_qlen >= socket.soi_qlimit else { continue }
+			let bound = withUnsafeBytes(of: socket.soi_proto.pri_un.unsi_addr.ua_sun.sun_path) {
+				String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
 			}
-			if served == path || canonical(served) == wanted { return pid }
+			if names.contains(canonical(bound)) { return true }
 		}
-		return nil
-	}
-
-	// The path after a vmhost's `--socket`, nil without one.
-	static func socketArgument(_ argv: [String]) -> String? {
-		guard let flag = argv.firstIndex(of: "--socket"), flag + 1 < argv.count else {
-			return nil
-		}
-		return argv[flag + 1]
-	}
-
-	// A process's argv as the kernel keeps it (KERN_PROCARGS2: argc, the executable path and
-	// its padding, then the arguments); nil once it is gone or not this user's.
-	static func arguments(of pid: pid_t) -> [String]? {
-		var argmax: Int32 = 0
-		var size = MemoryLayout<Int32>.size
-		var argmaxName: [Int32] = [CTL_KERN, KERN_ARGMAX]
-		guard sysctl(&argmaxName, 2, &argmax, &size, nil, 0) == 0, argmax > 0 else { return nil }
-		var buffer = [UInt8](repeating: 0, count: Int(argmax))
-		size = buffer.count
-		var name: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-		guard sysctl(&name, 3, &buffer, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size
-		else { return nil }
-		let argc = Int(buffer.withUnsafeBytes { $0.load(as: Int32.self) })
-		var index = MemoryLayout<Int32>.size
-		while index < size, buffer[index] != 0 { index += 1 }   // the executable path
-		while index < size, buffer[index] == 0 { index += 1 }   // its padding
-		var argv: [String] = []
-		while argv.count < argc, index < size {
-			let start = index
-			while index < size, buffer[index] != 0 { index += 1 }
-			argv.append(String(decoding: buffer[start..<index], as: UTF8.self))
-			index += 1
-		}
-		return argv.count == argc ? argv : nil
+		return false
 	}
 
 	private static func userPIDs() -> [pid_t] {
@@ -84,14 +73,18 @@ enum VMHostProcess {
 		return pids.prefix(Int(filled) / MemoryLayout<pid_t>.size).filter { $0 > 0 }
 	}
 
+	// A socket path with its directory resolved: a staging name no longer exists once it was
+	// published, so only the directory can be.
 	private static func canonical(_ path: String) -> String {
-		guard let resolved = realpath(path, nil) else { return path }
+		let directory = (path as NSString).deletingLastPathComponent
+		guard let resolved = realpath(directory, nil) else { return path }
 		defer { free(resolved) }
-		return String(cString: resolved)
+		return String(cString: resolved) + "/" + (path as NSString).lastPathComponent
 	}
 
-	// Tests only: the process that plays the vmhost serving a path (an in-process listener's
-	// is the test itself, which is no vmhost), by path. Empty in production.
+	// Tests only: the process that plays the vmhost of a path — an in-process listener's is the
+	// test itself, which is no vmhost — by path; its listeners are looked at as a vmhost's are.
+	// Empty in production.
 	enum TestHook {
 		private static let lock = NSLock()
 		nonisolated(unsafe) private static var servers: [String: pid_t] = [:]

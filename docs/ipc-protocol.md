@@ -442,12 +442,13 @@ meets a vmhost on its way out (its VM stopped, or its connection dropped) waits 
 way, then goes to whatever owns the VM; one whose connection dropped and that neither comes back
 nor exits answers "… is not responding — try again in a moment". A vmhost still draining an
 import into its stopped VM is not waited for: per-VM calls go to it, and whole-VM edits refuse
-at once with "… is importing a disk — try again when it finishes". A vmhost the daemon has not adopted yet (busy when
-the daemon started, or started by a launch agent) is adopted on its VM's next per-VM call or
-list; until then the VM lists with state `unknown`, plus `unresponsive` once an adoption failed
-(the first failure is followed by a `listChanged`; from then on the daemon asks it again every
-5 s, not on each list). A vmhost that never accepts (frozen) still counts as running while its
-process lives, even once its socket refuses connections.
+at once with "… is importing a disk — try again when it finishes". A vmhost the daemon has not
+adopted yet (busy when the daemon started, or started by a launch agent) is adopted on its VM's
+next per-VM call or list; until then the VM lists with state `unknown`, plus `unresponsive` once
+an adoption failed (the first failure is followed by a `listChanged`; from then on the daemon
+asks it again every 5 s, not on each list). A vmhost that never accepts (frozen) still counts as
+running while it lives and listens on the VM's socket, even once that socket refuses
+connections.
 `vm.start` adopts every such vmhost first (one whose adoption already failed is not asked
 again), so its MAC and shared-disk checks see their VMs; one that can't be adopted counts with
 its config's MAC and every disk it may have attached.

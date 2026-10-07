@@ -44,33 +44,6 @@ private final class HungHost: @unchecked Sendable {
 	}
 }
 
-// Listens and never accepts: a frozen (SIGSTOPped) vmhost. Its accept queue holds one
-// connection, so the connects that pile up in it fill it at once, as 128 do a vmhost's.
-private final class FrozenHost {
-	private let fd: Int32
-	private let path: String
-
-	init(path: String) throws {
-		self.path = path
-		var addr = try UDSListener.makeAddr(path)
-		fd = socket(AF_UNIX, SOCK_STREAM, 0)
-		let bound = withUnsafePointer(to: &addr) {
-			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
-			}
-		}
-		guard bound, listen(fd, 1) == 0 else {
-			Darwin.close(fd)
-			throw POSIXError(.EADDRINUSE)
-		}
-	}
-
-	func close() {
-		Darwin.close(fd)
-		unlink(path)
-	}
-}
-
 struct RoutingAdoptionTests {
 	// Deadlines: a test against a live in-process stub host gets a generous one, because the
 	// stub answers on the main actor, which parallel @MainActor suites keep busy; only the

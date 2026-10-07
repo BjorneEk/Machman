@@ -201,7 +201,7 @@ final class UDSListener {
 	// nothing either: a full accept queue refuses like a dead socket (see the backlog in
 	// init), and a vmhost that never accepts — frozen, SIGSTOPped — fills its queue with the
 	// probes themselves, each connect staying in it for good (E61). So a refused connect on a
-	// file that's there asks whether a vmhost launched to serve the path is alive.
+	// file that's there asks whether a live vmhost still listens there with its queue full.
 	static func isLive(path: String) -> Bool {
 		guard FileManager.default.fileExists(atPath: path) else { return false }
 		return accepts(path) || VMHostProcess.serving(socketPath: path) != nil
@@ -293,21 +293,31 @@ struct BoundSocket {
 	// inode unlinkIfOurs checks). A staging name too long for sun_path binds at the path.
 	static func listen(at path: String) throws -> BoundSocket {
 		_ = try UDSListener.makeAddr(path)
-		let staging = (path as NSString).deletingLastPathComponent + "/.m"
-			+ UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
+		let staging = stagingPath(for: path)
 		guard (try? UDSListener.makeAddr(staging)) != nil else {
 			try clearLeftover(at: path)
 			return try bindListening(path)
 		}
+		// Nothing stands between a bind of this name and its rename while the starter has its
+		// turn: a file here is one a starter left as it died. Past the turn's bound, a second
+		// starter removes the first one's, whose rename then fails: still exactly one serves.
+		unlink(staging)
 		let bound = try bindListening(staging)
 		do {
 			try publish(staging, at: path)
 		} catch {
-			unlink(staging)
+			bound.unlinkIfOurs(staging)
 			close(bound.fd)
 			throw error
 		}
 		return bound
+	}
+
+	// Where a socket for `path` listens until it is published: beside it, named after it. The
+	// kernel keeps a socket's bind-time address for life, renamed or not, so this name is how
+	// its listener is told from outside — a frozen vmhost's, whose connects all refuse (E61).
+	static func stagingPath(for path: String) -> String {
+		(path as NSString).deletingLastPathComponent + "/.m" + (path as NSString).lastPathComponent
 	}
 
 	// Renames the listening socket at `staging` onto `path` unless a file is there: a live one

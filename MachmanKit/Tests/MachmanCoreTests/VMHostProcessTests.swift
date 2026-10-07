@@ -2,9 +2,9 @@
 //  VMHostProcessTests.swift
 //  MachmanCoreTests
 //
-//  E61: a socket whose connects are refused is asked about from outside — is a vmhost launched
-//  to serve it (its executable, its --socket argument) still alive? The lookup's parts, read
-//  off this test process, and what the socket probes make of its answer. No vmhost runs here.
+//  E61: a socket whose connects are refused is asked about from outside — does a live vmhost
+//  still listen there, its accept queue full? This test process plays the vmhost (TestHook);
+//  its listeners are read as a vmhost's are. No vmhost runs here.
 //
 
 import Testing
@@ -13,23 +13,7 @@ import MachmanTestSupport
 @testable import MachmanCore
 
 struct VMHostProcessTests {
-	@Test("E61: a process's arguments read from outside are the ones it was launched with")
-	func argumentsReadFromOutsideMatch() {
-		#expect(VMHostProcess.arguments(of: getpid()) == CommandLine.arguments)
-	}
-
-	@Test("E61: the socket a vmhost serves is the path after its --socket")
-	func theServedSocketIsItsSocketArgument() {
-		let argv = [
-			"/Applications/Machman.app/Contents/MacOS/MachmanVMHost",
-			"--data-dir", "/d", "--vm", "dev", "--socket", "/t/vm-1.sock",
-		]
-		#expect(VMHostProcess.socketArgument(argv) == "/t/vm-1.sock")
-		#expect(VMHostProcess.socketArgument(Array(argv.dropLast())) == nil)
-		#expect(VMHostProcess.socketArgument(Array(argv.prefix(5))) == nil)
-	}
-
-	@Test("E61: a socket file no vmhost was launched for reads dead when it refuses")
+	@Test("E61: a socket file no vmhost listens on reads dead when it refuses")
 	func aRefusingSocketNoVMHostServesReadsDead() {
 		let path = TestEnvironment.socketPath("mm-dead")
 		FileManager.default.createFile(atPath: path, contents: nil)   // a SIGKILL leftover
@@ -39,16 +23,53 @@ struct VMHostProcessTests {
 		#expect(UDSListener.holderPID(path: path) == nil)
 	}
 
-	@Test("E61: a refusing socket a live vmhost was launched for reads live and stays")
-	func aRefusingSocketAVMHostServesReadsLive() {
-		let path = TestEnvironment.socketPath("mm-frozen")
-		FileManager.default.createFile(atPath: path, contents: nil)   // refuses every connect
+	// Review F17: a vmhost counted as serving a path by its --socket argument alone. A run
+	// saved as a new VM serves another path for the rest of its life, so a dead leftover at the
+	// path it was launched on read live while it ran, and End Process there ended it — another
+	// running VM. A process counts only while it holds a full listener bound for that path.
+	@Test("E61: a socket file a live vmhost no longer listens on reads dead")
+	func aSocketFileALiveVMHostNoLongerListensOnReadsDead() {
+		let path = TestEnvironment.socketPath("mm-stale")
+		FileManager.default.createFile(atPath: path, contents: nil)   // a crashed run's leftover
 		defer { unlink(path) }
+		VMHostProcess.TestHook.setServing(path, getpid())   // a live vmhost, listening elsewhere
+		defer { VMHostProcess.TestHook.setServing(path, nil) }
+		#expect(!UDSListener.isLive(path: path))
+		#expect(UDSListener.holderPID(path: path) == nil)
+		#expect(BoundSocket.removeIfDead(path) == .removed)
+		#expect(!FileManager.default.fileExists(atPath: path))
+	}
+
+	@Test("E61: a frozen vmhost's full listener at a socket path reads live and stays")
+	func aFrozenVMHostsFullListenerReadsLive() throws {
+		let path = TestEnvironment.socketPath("mm-frozen")
+		let host = try FrozenHost(path: path)
+		defer { host.close() }
 		VMHostProcess.TestHook.setServing(path, getpid())   // this process plays the vmhost
 		defer { VMHostProcess.TestHook.setServing(path, nil) }
+		#expect(host.fill() >= 1)   // its queue is full: every connect is refused now
 		#expect(UDSListener.isLive(path: path))
 		#expect(UDSListener.holderPID(path: path) == getpid())
 		#expect(BoundSocket.removeIfDead(path) == .live)
 		#expect(FileManager.default.fileExists(atPath: path))
+	}
+
+	// A vmhost's own listener is published from a staging name beside its path, and that is the
+	// address the kernel keeps: the name has to say which path it serves.
+	@Test("E61: a frozen vmhost's listener as published reads live once its queue is full")
+	func aPublishedListenerReadsLiveOnceFull() throws {
+		let path = TestEnvironment.socketPath("mm-published")
+		let queue = DispatchQueue(label: "mm-published-accept")
+		let listener = try UDSListener(path: path, queue: queue) { close($0) }
+		VMHostProcess.TestHook.setServing(path, getpid())
+		defer { VMHostProcess.TestHook.setServing(path, nil) }
+		queue.suspend()   // frozen: nothing accepts any more
+		defer {
+			queue.resume()
+			listener.shutdown()
+		}
+		#expect(FrozenHost.fill(path) > 0)
+		#expect(UDSListener.isLive(path: path))
+		#expect(UDSListener.holderPID(path: path) == getpid())
 	}
 }
