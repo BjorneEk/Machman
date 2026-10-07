@@ -23,17 +23,20 @@ enum THHostSSH {
 
 	static let skip = "Deferred: local network (opt-in MACHMAN_LAB_LOCAL_NETWORK=1)"
 
-	/// The test's own options, after the product's (ssh takes each option's first value, so
-	/// the product's win) and before the destination. TFSSH.hostQuietPrefix goes before the
-	/// product's argv: ssh reads ~/.ssh/config through getpwuid, whatever HOME says, so only
-	/// its -F /dev/null keeps the user's config (ControlMaster, Include, ProxyCommand) out; a
-	/// product -F after it still wins (ssh keeps the last -F).
-	static func sandbox(_ agent: LabAgent) throws -> [String] {
+	/// The test's own options, after the product's argv (ssh takes the first value of an option
+	/// on its command line, so the product's win) and before the destination.
+	/// TFSSH.hostQuietPrefix goes before the product's argv: ssh reads ~/.ssh/config through
+	/// getpwuid, whatever HOME says, so only its -F /dev/null keeps the user's config
+	/// (ControlMaster, Include, ProxyCommand) out; a product -F after it still wins (ssh keeps
+	/// the last -F). A config file loses to every command-line option, though: a run through
+	/// the managed config (`viaConfig`) leaves the known-hosts options to it — its pin file is
+	/// the scope's.
+	static func sandbox(_ agent: LabAgent, viaConfig: Bool = false) throws -> [String] {
 		let known = try TH.hostDir(agent, "ssh") + "/known_hosts"
-		return [
-			"-o", "BatchMode=yes", "-o", "UserKnownHostsFile=\(known)", "-o",
-			"StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10",
+		let pins = viaConfig ? [] : [
+			"-o", "UserKnownHostsFile=\(known)", "-o", "StrictHostKeyChecking=accept-new",
 		]
+		return ["-o", "BatchMode=yes"] + pins + ["-o", "ConnectTimeout=10"]
 	}
 
 	static func environment(_ agent: LabAgent) -> [String: String] {
@@ -42,12 +45,13 @@ enum THHostSSH {
 
 	/// /usr/bin/ssh with the host-quiet prefix, then `argv` with the sandbox options before its
 	/// last word (the destination or, with a command, the word before it).
-	static func run(_ agent: LabAgent, _ argv: [String], command: String = "true")
-		async throws -> Subprocess.Result {
+	static func run(
+		_ agent: LabAgent, _ argv: [String], command: String = "true", viaConfig: Bool = false
+	) async throws -> Subprocess.Result {
 		var arguments = argv
 		let destination = arguments.removeLast()
-		arguments = TFSSH.hostQuietPrefix + arguments + (try sandbox(agent))
-			+ [destination, command]
+		arguments = TFSSH.hostQuietPrefix + arguments
+			+ (try sandbox(agent, viaConfig: viaConfig)) + [destination, command]
 		return try await Subprocess.run(
 			"/usr/bin/ssh", arguments, environment: environment(agent), timeout: 60)
 	}
@@ -106,7 +110,7 @@ struct THHostSSHTests {
 			let config = g.agent.scope.homeDir + "/.ssh/machman/config"
 			let known = try TH.hostDir(g.agent, "ssh") + "/known_hosts"
 			let before = (try? String(contentsOfFile: known, encoding: .utf8)) ?? ""
-			let ssh = try await THHostSSH.run(g.agent, ["-F", config, "dev"])
+			let ssh = try await THHostSSH.run(g.agent, ["-F", config, "dev"], viaConfig: true)
 			#expect(ssh.status == 0, "\(ssh.output)")
 			let after = (try? String(contentsOfFile: known, encoding: .utf8)) ?? ""
 			#expect(after == before, "the managed pin answered, no key was learned")
@@ -120,7 +124,8 @@ struct THHostSSHTests {
 			_ = try await g.agent.api.setSSH(
 				vm: g.vm.name, integrationEnabled: true, reverseApproved: nil, alias: nil)
 			let config = g.agent.scope.homeDir + "/.ssh/machman/config"
-			let ssh = try await THHostSSH.run(g.agent, ["-F", config, "dev-copy.machman"])
+			let ssh = try await THHostSSH.run(
+				g.agent, ["-F", config, "dev-copy.machman"], viaConfig: true)
 			#expect(ssh.status == 0, "\(ssh.output)")
 		}
 	}
