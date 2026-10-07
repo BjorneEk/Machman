@@ -15,11 +15,22 @@ import MachmanUI
 import MachmanTestSupport
 @testable import MachmanDesktopUI
 
-// A bridge stand-in: each accepted connection is sent its line, the first is closed, and
-// `serving` says whether the socket stays to take the next one.
+// A bridge stand-in, serving connections in order by `plan`; past the plan, with `churn`, it
+// closes every new connection at once. `serving` false unlinks the socket (as a stopping
+// bridge does) before the first close. `accepted` counts connections.
 private final class StandInBridge: @unchecked Sendable {
+	enum Reply {
+		case send(String)            // and keep the connection
+		case sendThenClose(String)   // once the terminal has had a moment to show it
+		case close                   // at once, nothing sent
+	}
+
 	let path = TestEnvironment.socketPath("mm-rj", suffix: ".sock")
 	private let listener: Int32
+	private let lock = NSLock()
+	private var count = 0
+
+	var accepted: Int { lock.withLock { count } }
 
 	init() throws {
 		unlink(path)
@@ -37,25 +48,40 @@ private final class StandInBridge: @unchecked Sendable {
 		}
 	}
 
-	// Serves `lines` in order, one per connection; after the first it closes that connection,
-	// first unlinking the socket (as a stopping bridge does) when `serving` is false. Only
-	// stop() closes the listener.
-	func serve(_ lines: [String], serving: Bool) {
+	// Only stop() closes the listener.
+	func serve(_ plan: [Reply], serving: Bool = true, churn: Bool = false) {
 		let listener = listener, path = path
-		Thread.detachNewThread {
+		Thread.detachNewThread { [self] in
 			var held: [Int32] = []
-			for (n, line) in lines.enumerated() {
+			var step = 0
+			while step < plan.count || churn {
 				let fd = accept(listener, nil, nil)
-				guard fd >= 0 else { return }
-				_ = line.utf8CString.withUnsafeBytes { write(fd, $0.baseAddress, line.utf8.count) }
-				guard n == 0 else { held.append(fd); continue }
-				Thread.sleep(forTimeInterval: 0.2)   // the terminal shows the line first
-				if !serving { unlink(path) }
-				close(fd)
-				if !serving { return }
+				guard fd >= 0 else { break }
+				lock.withLock { count += 1 }
+				let reply = step < plan.count ? plan[step] : .close
+				step += 1
+				switch reply {
+				case .send(let line):
+					write(fd, line)
+					held.append(fd)
+				case .sendThenClose(let line):
+					write(fd, line)
+					Thread.sleep(forTimeInterval: 0.2)
+					if !serving { unlink(path) }
+					close(fd)
+					if !serving { return }
+				case .close:
+					close(fd)
+				}
 			}
 			Thread.sleep(forTimeInterval: 10)
 			held.forEach { close($0) }
+		}
+	}
+
+	private func write(_ fd: Int32, _ line: String) {
+		_ = line.utf8CString.withUnsafeBytes {
+			Darwin.write(fd, $0.baseAddress, line.utf8.count)
 		}
 	}
 
@@ -86,7 +112,7 @@ struct SerialRejoinTests {
 	func aClosedTabRejoinsAndRedraws() async throws {
 		let bridge = try StandInBridge()
 		defer { bridge.stop() }
-		bridge.serve(["FIRST-SCREEN\r\n", "REPLAYED\r\n"], serving: true)
+		bridge.serve([.sendThenClose("FIRST-SCREEN\r\n"), .send("REPLAYED\r\n")])
 		let c = try await terminal(on: bridge)
 		#expect(await eventually { text(c).contains("REPLAYED") }, "\(text(c))")
 		#expect(!text(c).contains("FIRST-SCREEN"), "the replay landed on the old screen")
@@ -99,10 +125,39 @@ struct SerialRejoinTests {
 	func aStoppedPortsTabKeepsItsScreen() async throws {
 		let bridge = try StandInBridge()
 		defer { bridge.stop() }
-		bridge.serve(["LAST-SCREEN\r\n"], serving: false)
+		bridge.serve([.sendThenClose("LAST-SCREEN\r\n")], serving: false)
 		let c = try await terminal(on: bridge)
 		#expect(await eventually { !c.connected }, "\(text(c))")
 		#expect(text(c).contains("LAST-SCREEN"))
 		#expect(!text(c).contains("reconnected"))
+	}
+
+	// Review F3: a connect alone proves little — a crashed vmhost's listener can take one
+	// during its exit. A rejoin that gets no replay leaves the screen and Save Terminal's
+	// transcript as they were, without the marker, and the tab offers Reconnect.
+	@Test("E58: a tab whose rejoin gets no replay keeps its screen")
+	func aRejoinWithoutReplayKeepsTheScreen() async throws {
+		let bridge = try StandInBridge()
+		defer { bridge.stop() }
+		bridge.serve([.sendThenClose("PANIC-SCREEN\r\n"), .close])
+		let c = try await terminal(on: bridge)
+		#expect(await eventually { !c.connected && bridge.accepted == 2 }, "\(text(c))")
+		#expect(text(c).contains("PANIC-SCREEN"))
+		#expect(!text(c).contains("reconnected"))
+		#expect(String(decoding: c.transcript(), as: UTF8.self).contains("PANIC-SCREEN"))
+	}
+
+	// …and a socket that takes a connection and closes it at once gets one automatic rejoin,
+	// not a loop of them.
+	@Test("E58: a socket that keeps closing at once gets one automatic rejoin")
+	func rejoinsAreBounded() async throws {
+		let bridge = try StandInBridge()
+		defer { bridge.stop() }
+		bridge.serve([.sendThenClose("SCREEN\r\n")], churn: true)
+		let c = try await terminal(on: bridge)
+		#expect(await eventually { !c.connected && bridge.accepted >= 2 })
+		try await Task.sleep(for: .milliseconds(500))
+		#expect(bridge.accepted == 2, "\(bridge.accepted) connections")
+		#expect(text(c).contains("SCREEN"))
 	}
 }

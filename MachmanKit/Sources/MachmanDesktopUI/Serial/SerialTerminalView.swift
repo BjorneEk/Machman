@@ -42,6 +42,13 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// guest's output and goes on serving (E58), so a connection that ends while the socket
 	// still takes one was this terminal's own: it rejoins (see rejoin()).
 	private var servedPath: String?
+	// Set while a rejoin waits for the replay: until its first bytes the screen and the
+	// stream it replaced (lastStream, for Save Terminal) stay. And when the last one
+	// started: one automatic rejoin per rejoinPause, so a socket that accepts and closes at
+	// once can't make the tab loop.
+	private var rejoining = false
+	private var lastRejoin: ContinuousClock.Instant?
+	static let rejoinPause: Duration = .seconds(5)
 
 	// The startup-only settings baked into terminalView at creation. The info panel compares this
 	// against the current profile to decide whether a Reload is needed (font/colours apply live;
@@ -122,16 +129,30 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// The generalized seam: any TerminalByteStream (serial socket, PTY-backed ssh).
 	func connect(stream: TerminalByteStream) {
 		guard connection == nil else { return }
-		let c = stream
+		guard attach(stream) else {
+			if disconnectedAt == nil { disconnectedAt = .now }   // a failed retry keeps the first
+			return
+		}
+		lastStream = nil
+		disconnectedAt = nil
+		connected = true
+	}
+
+	// Wires `c` to the terminal and connects it; false when the connect failed.
+	private func attach(_ c: TerminalByteStream) -> Bool {
 		c.onData = { [weak self] data in
-			self?.terminalView.feed(byteArray: [UInt8](data)[...])
+			guard let self else { return }
+			if self.rejoining { self.replayArrived() }
+			self.terminalView.feed(byteArray: [UInt8](data)[...])
 		}
 		// Clear the connection on close so a VM restart (same socket path) can reconnect.
 		// `weak c` (not captured strongly — that would cycle through onClose) is alive here:
-		// the closing stream is the one invoking us.
+		// the closing stream is the one invoking us. A rejoin that got no replay is not kept:
+		// the stream it replaced stays the one Save Terminal reads.
 		c.onClose = { [weak self, weak c] in
 			guard let self else { return }
-			if let c { self.lastStream = c }
+			if !self.rejoining, let c { self.lastStream = c }
+			self.rejoining = false
 			self.connection = nil
 			if self.rejoin() { return }
 			self.disconnectedAt = .now
@@ -141,29 +162,36 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		// view that already has its final frame, sends no resize of its own.
 		let terminal = terminalView.getTerminal()
 		c.setWindowSize(cols: terminal.cols, rows: terminal.rows)
-		if c.connect() {
-			connection = c
-			lastStream = nil
-			disconnectedAt = nil
-			connected = true
-		} else if disconnectedAt == nil {
-			disconnectedAt = .now   // a failed retry keeps the first failure's time
-		}
+		guard c.connect() else { return false }
+		connection = c
+		return true
 	}
 
 	// E58: the bridge closed this terminal for falling 1 MiB behind and still serves (a stopped
-	// port's socket is gone before its terminals see the end). The terminal starts over from
-	// the bridge's replay of recent output, cleared first so nothing it showed shows twice.
-	// Called as the connection ends; false when nothing serves the socket any more.
+	// port's socket is gone before its terminals see the end). Called as the connection ends;
+	// false when nothing serves the socket any more, or a rejoin started within rejoinPause.
+	// A connect alone proves little — a crashed vmhost's listener can take one during its
+	// exit — so the screen changes only once the replay arrives (replayArrived).
 	private func rejoin() -> Bool {
 		guard let path = servedPath else { return false }
-		connect(stream: SerialTerminalConnection(path: path))
-		guard connection != nil else { return false }
-		// The replay reaches the terminal on a later main-queue turn: the reset lands first.
+		if let last = lastRejoin, ContinuousClock.now - last < Self.rejoinPause { return false }
+		lastRejoin = .now
+		rejoining = true
+		guard attach(SerialTerminalConnection(path: path)) else {
+			rejoining = false
+			return false
+		}
+		return true
+	}
+
+	// The rejoin's first bytes: the terminal starts over from the bridge's replay of recent
+	// output, cleared first so nothing it showed shows twice, and the stream it replaced goes.
+	private func replayArrived() {
+		rejoining = false
+		lastStream = nil
 		terminalView.getTerminal().resetToInitialState()
 		note("reconnected after falling behind "
 			+ Date().formatted(date: .omitted, time: .shortened))
-		return true
 	}
 
 	// Machman's own line in the guest's terminal — session boundaries, nothing else. CRLF
@@ -179,10 +207,14 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		connection?.stop()
 		connection = nil
 		lastStream = nil
+		rejoining = false
 		connected = false
 	}
 
-	func transcript() -> Data { (connection ?? lastStream)?.transcriptData() ?? Data() }
+	// A rejoin still waiting for its replay has nothing to save yet: the stream it replaced does.
+	func transcript() -> Data {
+		((rejoining ? nil : connection) ?? lastStream)?.transcriptData() ?? Data()
+	}
 
 	// MARK: TerminalViewDelegate (called on the main thread by SwiftTerm)
 	func send(source: TerminalView, data: ArraySlice<UInt8>) {
