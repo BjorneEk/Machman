@@ -162,6 +162,22 @@ wrap() {
 	fi
 }
 
+# wrap_hanging <prefix> <text> — <text> folded like wrap, after <prefix> on its first line
+# and indented under it on the rest (a plan value under its column, a menu item's text
+# under its number); a multi-line <text>'s lines too.
+wrap_hanging() {
+	_wh_w=$((UI_COLS - 2 - ${#1}))
+	[ "$_wh_w" -ge 20 ] || _wh_w=20
+	if have fold; then
+		printf '%s\n' "$2" | fold -s -w "$_wh_w" | awk -v p="$1" '
+			{ sub(/ +$/, "") }
+			NR == 1 { print p $0; next }
+			{ printf "%" length(p) "s%s\n", "", $0 }'
+	else
+		printf '%s%s\n' "$1" "$2"
+	fi
+}
+
 say() {
 	[ "$QUIET" -eq 1 ] && return 0
 	wrap "$1"
@@ -438,6 +454,9 @@ key_read() {
 # pointer.
 menu_draw() {
 	_md_hi="$1"; _md_marks="$2"; shift 2
+	# The mark's own columns ("◉ " is 2, "[x] " 4): a note stops at the console's edge.
+	_md_mw=0
+	[ "$_md_marks" != "-" ] && _md_mw=$((${#G_ON} + 1))
 	_md_w=0
 	for _md_it in "$@"; do
 		_md_t="${_md_it%%	*}"
@@ -478,7 +497,7 @@ menu_draw() {
 		fi
 		_md_tail=""
 		if [ -n "$_md_note" ]; then
-			_md_room=$((UI_COLS - 8 - _md_w))
+			_md_room=$((UI_COLS - 6 - _md_mw - _md_w))
 			if [ "$_md_room" -lt 8 ]; then
 				_md_note=""
 			elif [ "${#_md_note}" -gt "$_md_room" ]; then

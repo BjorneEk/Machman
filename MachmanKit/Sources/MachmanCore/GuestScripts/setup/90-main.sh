@@ -19,9 +19,11 @@ feature_title() {
 	esac
 }
 
+# plan_line <label> <value> — "  <label padded to 16> <value>", the value folded to the
+# console's width under its own column (a multi-line value's lines too).
 plan_line() {
 	[ "$QUIET" -eq 1 ] && return 0
-	printf '  %-16s %s\n' "$1" "$2"
+	wrap_hanging "$(printf '  %-16s ' "$1")" "$2"
 	return 0
 }
 

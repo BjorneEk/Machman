@@ -132,15 +132,14 @@ enum THReadOnlyRows {
 			let lines = THConsoleSession.clean(text).split(separator: "\n").map(String.init)
 			#expect(THGlyphs.colours(in: text).isEmpty, "SGR colours on a vt100 console")
 			// Every line, the plan's consoles line included. Fails until the open bugs S48
-			// (prose keeps its em dashes), S49 (the consoles line joins with a hard-coded '·')
-			// and S50 (plan lines are never folded to 80 columns) are fixed.
+			// (prose keeps its em dashes) and S49 (the consoles line joins with a hard-coded
+			// '·') are fixed.
 			for glyph in THGlyphs.unicode {
 				let found = lines.filter { $0.contains(glyph) }
 				// Fails until the open bugs S49 and S48 are fixed.
 				#expect(found.isEmpty, "a UTF-8 glyph '\(glyph)' on a LANG=C console: \(found)")
 			}
 			let wide = lines.filter { $0.count > 80 }
-			// Fails until the open bug S50 (plan lines are never folded) is fixed.
 			#expect(wide.isEmpty, "lines over 80 columns: \(wide)")
 			let nonASCII = lines.filter { line in
 				line.unicodeScalars.contains { $0.value >= 0x80 }
@@ -202,19 +201,32 @@ enum THReadOnlyRows {
 	}
 }
 
-/// The installer's plan lines ("  <key padded to 16> <value>").
+/// The installer's plan lines ("  <key padded to 16> <value>"); a value the installer folded
+/// onto the lines under its column, or gave lines of its own, reads back whole, its lines
+/// joined by a space.
 struct THPlan {
 	let values: [String: String]
 
 	init(_ output: String) {
 		var values: [String: String] = [:]
+		// The key of the plan line just read, while its value may go on below it.
+		var open: String?
 		for raw in THConsoleSession.clean(output).split(separator: "\n") {
 			let line = Array(raw)
+			if let key = open, line.count > 19, line[..<19].allSatisfy({ $0 == " " }),
+				line[19] != " " {
+				values[key]? += " " + String(line[19...])
+				continue
+			}
+			open = nil
 			guard line.count > 19, line[0] == " ", line[1] == " ", line[2] != " ",
 				line[18] == " "
 			else { continue }
 			let key = String(line[2..<18]).trimmingCharacters(in: .whitespaces)
-			if values[key] == nil { values[key] = String(line[19...]) }
+			if values[key] == nil {
+				values[key] = String(line[19...])
+				open = key
+			}
 		}
 		self.values = values
 	}
