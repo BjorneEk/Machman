@@ -73,6 +73,32 @@ struct VMDiskCodableTests {
 		}
 	}
 
+	// D38 (review 4): D26 made a newer boot mode survive a load, but a disk entry of a kind
+	// this build can't decode (a newer Machman's) still failed the whole config: the VM
+	// vanished from every client with one passive log line, and its name looked free.
+	@Test("D38: a config with a disk kind this build doesn't know still loads, keeping it")
+	func aNewerDiskKindStillLoads() throws {
+		try VMTestDir.withRedirectedDir {
+			let dir = "\(machmanVMDir)/newer-disk"
+			try FileManager.default.createDirectory(
+				atPath: dir, withIntermediateDirectories: true)
+			let config = """
+			{"name":"newer-disk","memorySize":2048,"cpuCount":2,"created":100000,
+			"macAddress":"aa:bb:cc:dd:ee:02",
+			"disks":[{"kind":{"storage":{"_0":"system","_1":0}}},
+			{"kind":{"nvme":{"_0":"fast","_1":512}},"safe":false}]}
+			"""
+			try Data(config.utf8).write(to: URL(fileURLWithPath: "\(dir)/config"))
+			let loaded = try? VMConfig.load(name: "newer-disk")
+			// Fails until the open bug D38 (one undecodable disk entry hides the whole VM) is
+			// fixed.
+			#expect(loaded != nil)
+			// Fails until the open bug D38 (one undecodable disk entry hides the whole VM) is
+			// fixed: the entry is kept for the Machman that wrote it.
+			#expect(loaded?.disks.count == 2)
+		}
+	}
+
 	@Test func mountKindDefaultsPinsAndPreservesUnknowns() throws {
 		// Legacy mounts (no kind) decode as virtiofs.
 		let legacy = try JSONDecoder().decode(HostMountPoint.self,

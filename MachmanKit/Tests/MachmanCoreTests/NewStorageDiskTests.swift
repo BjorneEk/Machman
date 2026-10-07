@@ -214,6 +214,28 @@ struct NewStorageDiskTests {
 		}
 	}
 
+	// D40 (review 4): VM folders were made 0755 and raw disks 0644, so only ~/Library's own
+	// mode kept other accounts out; a library moved with MachmanDataDir to /Users/Shared or
+	// another volume let every local account read every guest's disk.
+	@Test("D40: a new VM's folder and a new disk are readable by their owner only")
+	func newVMFilesArePrivate() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("private")
+			try vm.addNewStorageDisk(name: "system", size: mib)
+			let fm = FileManager.default
+			func mode(_ path: String) throws -> Int {
+				let attributes = try fm.attributesOfItem(atPath: path)
+				return (attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1
+			}
+			let folder = try mode(vm.configFilePath(file: ""))
+			let disk = try mode(vm.configFilePath(file: "system.raw"))
+			// Fails until the open bug D40 (VM folders and disks are world-readable) is fixed.
+			#expect(folder & 0o077 == 0, "folder \(String(folder, radix: 8))")
+			// Fails until the open bug D40 (VM folders and disks are world-readable) is fixed.
+			#expect(disk & 0o077 == 0, "disk \(String(disk, radix: 8))")
+		}
+	}
+
 	@Test func importNamesFollowTheRule() {
 		#expect(VMCopier.storageName(
 			for: URL(fileURLWithPath: "/x/.hidden.raw"), taken: []) == "hidden")
