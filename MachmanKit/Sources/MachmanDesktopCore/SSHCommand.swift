@@ -23,8 +23,7 @@ public enum SSHCommand {
 	// with "no host key is known" — measured), and both path options expand %-tokens, as -i
 	// does: a VM named "50% off" made ssh die, one named dev"x made it refuse the option (C28).
 	public static func arguments(for vm: VMInfo) -> [String]? {
-		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
-			let identity = ssh.identityFilePath,
+		guard let ssh = vm.ssh, let target = target(ssh), let identity = ssh.identityFilePath,
 			var arguments = identityArguments(identity) else { return nil }
 		arguments += [
 			"-o", "IdentitiesOnly=yes",
@@ -46,7 +45,16 @@ public enum SSHCommand {
 		} else {
 			arguments += ["-o", "StrictHostKeyChecking=accept-new"]
 		}
-		return arguments + ["\(user)@\(address)"]
+		return arguments + [target]
+	}
+
+	// user@address, only when both have the shape the guest's report is held to (C33): a
+	// config written before the report was checked is served as stored, and the copied line
+	// goes into a shell unquoted — a stored user such as x$(…) would run on the Mac.
+	private static func target(_ ssh: SSHInfo) -> String? {
+		guard let user = ssh.guestUser, GuestValueRule.isUserName(user),
+			let address = ssh.address, GuestValueRule.isAddress(address) else { return nil }
+		return "\(user)@\(address)"
 	}
 
 	// The key as ssh reads it intact: a quoted IdentityFile option; for a name stored before
@@ -66,10 +74,10 @@ public enum SSHCommand {
 	// quoted (C26). ssh expands %-tokens in -i too, so a literal % doubles there (C28); a
 	// path holding "${" gives no line (see identityArguments).
 	public static func shellLine(for vm: VMInfo) -> String? {
-		guard let ssh = vm.ssh, let user = ssh.guestUser, let address = ssh.address,
-			let identity = ssh.identityFilePath, !identity.contains("${") else { return nil }
+		guard let ssh = vm.ssh, let target = target(ssh), let identity = ssh.identityFilePath,
+			!identity.contains("${") else { return nil }
 		let key = ShellQuote.single(identity.replacingOccurrences(of: "%", with: "%%"))
-		return "ssh -i \(key) -o IdentitiesOnly=yes \(user)@\(address)"
+		return "ssh -i \(key) -o IdentitiesOnly=yes \(target)"
 	}
 
 	// The name the VM's pin is keyed by. The daemon serves it; the fallback is for older

@@ -99,6 +99,29 @@ struct SSHCommandTests {
 		#expect(SSHCommand.shellLine(for: vm) == nil)
 	}
 
+	// C33 (review 4): the report is checked since 3881232, but a config written before it is
+	// served as stored, and the copied line pastes user and address into a shell unquoted.
+	@Test("C33: a served guest user or address of the wrong shape gives no command")
+	func aMisshapenUserOrAddressGivesNoCommand() {
+		let bad: [(user: String, address: String)] = [
+			("x$(open -a Calculator)", "192.168.64.7"), ("a;b", "192.168.64.7"),
+			("-oProxyCommand=x", "192.168.64.7"), ("demo", "192.168.64.7;id"),
+			("demo", "evil.example.com"),
+		]
+		for (user, address) in bad {
+			var vm = pinned(alias: "x.machman")
+			vm.ssh?.guestUser = user
+			vm.ssh?.address = address
+			#expect(SSHCommand.arguments(for: vm) == nil, "\(user)@\(address)")
+			#expect(SSHCommand.shellLine(for: vm) == nil, "\(user)@\(address)")
+		}
+		var good = pinned(alias: "x.machman")
+		good.ssh?.guestUser = "demo"
+		good.ssh?.address = "fd00::7"
+		#expect(SSHCommand.arguments(for: good)?.last == "demo@fd00::7")
+		#expect(SSHCommand.shellLine(for: good)?.hasSuffix(" demo@fd00::7") == true)
+	}
+
 	// A legacy name with a line break can't be quoted: -i takes it raw, "%" doubled.
 	@Test func aKeyPathWithALineBreakGoesInRaw() throws {
 		var vm = pinned(alias: "x.machman")
