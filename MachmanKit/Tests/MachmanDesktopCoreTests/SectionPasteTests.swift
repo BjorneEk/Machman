@@ -88,7 +88,7 @@ struct SectionPasteTests {
 			vm: "Debian", viewModel: h.viewModel)
 		#expect(await eventually { !kernels(h).isEmpty })
 		#expect(kernels(h).map(\.role) == [.initramfs])
-		#expect(kernels(h).map(\.tag) == ["vmlinuz-6"])
+		#expect(kernels(h).map(\.tag) == ["vmlinuz-6.13"])   // its version kept (D35)
 	}
 
 	@Test func eachSectionNamesTheKindItTakes() {

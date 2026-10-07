@@ -61,8 +61,8 @@ extension AddFlows {
 		}
 	}
 
-	// Pick a kernel/initramfs file; it is promoted (copied) into the VM's owned set with
-	// the file's base name as its tag.
+	// Pick a kernel/initramfs file; it is promoted (copied) into the VM's owned set under
+	// the tag its file name suggests.
 	static func chooseKernelFile(
 		viewModel: VMListViewModel, vm: String, role: KernelRole, panels: OpenPanels = .system
 	) {
@@ -70,7 +70,7 @@ extension AddFlows {
 			guard let url else { return }
 			viewModel.promoteKernel(
 				vm, role: role, sourcePath: url.path,
-				tag: url.deletingPathExtension().lastPathComponent)
+				tag: KernelTag.suggested(forFile: url.path))
 		}
 	}
 

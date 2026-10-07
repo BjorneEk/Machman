@@ -33,9 +33,7 @@ public struct EntityClipboard: Codable {
 
 	public var fileName: String { (path as NSString).lastPathComponent }
 
-	private var defaultTag: String {
-		URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-	}
+	private var defaultTag: String { KernelTag.suggested(forFile: path) }
 
 	// Paste entities into a VM through the same funnels as the picker and drop entry points;
 	// the disks among them share one copy-or-reference question.

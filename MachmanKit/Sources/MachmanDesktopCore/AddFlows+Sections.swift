@@ -42,7 +42,7 @@ extension AddFlows {
 			for url in urls {
 				viewModel.promoteKernel(
 					vm, role: role, sourcePath: url.path,
-					tag: url.deletingPathExtension().lastPathComponent)
+					tag: KernelTag.suggested(forFile: url.path))
 			}
 		}
 	}

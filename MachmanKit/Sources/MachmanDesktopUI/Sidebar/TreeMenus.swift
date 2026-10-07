@@ -204,8 +204,7 @@ extension TreeContext {
 			Button("Promote to Owned") {
 				viewModel.promoteKernel(
 					vm.name, role: role, sourcePath: file.id,
-					tag: URL(fileURLWithPath: file.id)
-						.deletingPathExtension().lastPathComponent)
+					tag: KernelTag.suggested(forFile: file.id))
 			}
 		}
 		if file.owned {

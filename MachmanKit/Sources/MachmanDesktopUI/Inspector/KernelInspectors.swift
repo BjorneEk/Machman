@@ -235,8 +235,7 @@ private struct KernelFileActionsSection: View {
 					) {
 						viewModel.promoteKernel(
 							vm.name, role: entry.role, sourcePath: entry.path,
-							tag: URL(fileURLWithPath: entry.path)
-								.deletingPathExtension().lastPathComponent)
+							tag: KernelTag.suggested(forFile: entry.path))
 					}
 				} else {
 					IconButton(symbol: MachmanSymbols.delete, tooltip: "Delete file…") {
