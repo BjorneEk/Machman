@@ -204,6 +204,59 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// S54: NetBSD's rc raises kern.securelevel to 1, which refuses raising the knob while
+	// the system runs; /etc/rc.d/sysctl applies sysctl.conf before that at the next boot. So
+	// the block is kept whatever the live set does, a refusal at securelevel 1 is a note,
+	// not a failed step, and the uninstall names the block even before that boot. Below
+	// securelevel 1 a refusal still fails the step.
+	@Test("S54: at securelevel 1 the user-mount sysctl is kept for the next boot, not failed")
+	func netbsdUserMountsWaitForTheNextBoot() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=1000
+				OS_FAMILY=netbsd
+				WANT_MOUNT_SETUP=1
+				SYSCTL_CONF="$D/sysctl.conf"
+				LEVEL=1
+				sysctl() {
+					case "$1 $2" in
+					"-n kern.securelevel") echo "$LEVEL" ;;
+					"-n "*) echo 0 ;;
+					*) echo "sysctl: $2: Operation not permitted" >&2; return 1 ;;
+					esac
+				}
+				sshfs_act_user_mounts
+				echo "failed=[$FAILED_STEPS]"
+				cat "$SYSCTL_CONF"
+				sshfs_uninstall | sed "s|$D|D|g"
+				echo ---
+				LEVEL=0
+				rm "$SYSCTL_CONF"
+				sshfs_act_user_mounts 2>&1
+				echo "failed=[$FAILED_STEPS]"
+				grep -c usermount "$SYSCTL_CONF"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			let block = "\(GuestScriptHarness.marker)-usermount"
+			#expect(r.out == """
+				   vfs.generic.usermount=1 takes effect at the next boot (securelevel 1 refuses \
+				it now).
+				failed=[]
+				# BEGIN \(block)
+				vfs.generic.usermount=1
+				# END \(block)
+				   vfs.generic.usermount=1 stays — 'sysctl -w vfs.generic.usermount=0' and the \
+				\(block) block in D/sysctl.conf revert it.
+				---
+				[!!] could not set vfs.generic.usermount
+				   Set it yourself: sysctl -w vfs.generic.usermount=1
+				failed=[mount-setup]
+				3
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - The mount point (S43)
 
 	// S43: "ready" came right after the step that failed it; now only a mount point that

@@ -122,7 +122,10 @@ sshfs_act_fuse_ready() {
 	return 0
 }
 
-# The permission. Only ever reached when the user said yes to exactly this.
+# The permission. Only ever reached when the user said yes to exactly this. It is kept for
+# the next boot whether or not the running system takes it: NetBSD's rc raises
+# kern.securelevel to 1, which refuses raising the knob now, and applies sysctl.conf before
+# that at the next boot.
 sshfs_act_user_mounts() {
 	[ "$WANT_MOUNT_SETUP" = "1" ] || return 0
 	_sau_knob="$(usermount_knob)"
@@ -130,12 +133,15 @@ sshfs_act_user_mounts() {
 	# NetBSD's sysctl sets with -w; FreeBSD's takes name=value as it is.
 	_sau_w=""
 	[ "$OS_FAMILY" = netbsd ] && _sau_w=-w
-	if ! run "allowing user mounts" sysctl ${_sau_w:+"$_sau_w"} "$_sau_knob=1"; then
+	if run "allowing user mounts" sysctl ${_sau_w:+"$_sau_w"} "$_sau_knob=1"; then
+		ok "user mounts allowed ($_sau_knob=1)"
+	elif _sau_level="$(sysctl -n kern.securelevel 2>/dev/null)" \
+		&& [ "${_sau_level:-0}" -gt 0 ] 2>/dev/null; then
+		note "$_sau_knob=1 takes effect at the next boot (securelevel $_sau_level refuses it now)."
+	else
 		step_failed mount-setup "could not set $_sau_knob" \
 			"Set it yourself: sysctl ${_sau_w:+$_sau_w }$_sau_knob=1"
-		return 0
 	fi
-	ok "user mounts allowed ($_sau_knob=1)"
 	sshfs_keep_sysctl "$_sau_knob" 1
 	return 0
 }
@@ -196,7 +202,9 @@ sshfs_uninstall() {
 		note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
 	fi
 	_su_knob="$(usermount_knob)"
-	if [ -n "$_su_knob" ] && [ "$(sysctl -n "$_su_knob" 2>/dev/null || true)" = 1 ]; then
+	# On, or kept for the next boot (a securelevel refused it until then).
+	if [ -n "$_su_knob" ] && { [ "$(sysctl -n "$_su_knob" 2>/dev/null || true)" = 1 ] \
+		|| grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; }; then
 		_su_off="sysctl $_su_knob=0"
 		[ "$OS_FAMILY" = netbsd ] && _su_off="sysctl -w $_su_knob=0"
 		if grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; then

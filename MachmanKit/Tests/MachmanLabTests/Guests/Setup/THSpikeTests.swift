@@ -109,20 +109,16 @@ struct THSpikeTests {
 			// NetBSD raises securelevel to 1 at boot, which refuses raising the knob at run
 			// time; /etc/sysctl.conf is applied before that, at the next boot. So the knob is
 			// live at once only below securelevel 1; above it, the run must say it takes effect
-			// at the next boot. Both, and the value after the reboot, fail until the open bug
-			// S54 (the step fails at securelevel 1 and keeps nothing) is fixed.
+			// at the next boot.
 			let level = Int(try await g.check("sysctl -n kern.securelevel")) ?? 0
 			if level < 1 {
-				// Fails until the open bug S54 is fixed.
 				#expect(try await g.check("sysctl -n vfs.generic.usermount") == "1",
 					"securelevel \(level):\n\(run.output)")
 			} else {
-				// Fails until the open bug S54 is fixed.
 				#expect(TH.unwrapped(run.output).lowercased().contains("next boot"),
 					"securelevel \(level), no next-boot note:\n\(run.output)")
 			}
 			try await g.reboot()
-			// Fails until the open bug S54 is fixed.
 			#expect(try await g.check("sysctl -n vfs.generic.usermount") == "1", "after a reboot")
 		}
 	}
