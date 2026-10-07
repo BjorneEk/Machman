@@ -152,6 +152,41 @@ struct NewStorageDiskTests {
 		}
 	}
 
+	// D34 (review 4): vm.disk.add appended any image or iso path, so the same raw picked twice
+	// (or the VM's own raw by reference) made two entries with one id — the inspector couldn't
+	// tell them apart, removing one removed both — and both attached writable at a start.
+	@Test("D34: a file the VM already attaches can't be added a second time")
+	func aFileIsAttachedOnce() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("twice")
+			try vm.addNewStorageDisk(name: "system", size: mib)
+			let image = TestEnvironment.scratch + "d34-\(UUID().uuidString).raw"
+			try Data(count: Int(mib)).write(to: URL(fileURLWithPath: image))
+			let link = image + ".link"
+			try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: image)
+			defer {
+				try? FileManager.default.removeItem(atPath: image)
+				try? FileManager.default.removeItem(atPath: link)
+			}
+			try vm.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: image))))
+			let again: [VMDisk] = [
+				VMDisk(kind: .fromUrl(URL(fileURLWithPath: image))),
+				VMDisk(kind: .fromUrl(URL(fileURLWithPath: link))),
+				VMDisk(kind: .iso(URL(fileURLWithPath: image))),
+				VMDisk(kind: .fromUrl(URL(fileURLWithPath: vm.configFilePath(file: "system.raw")))),
+			]
+			for disk in again {
+				let error = try #require(throws: MachmanError.self, "\(disk.id)") {
+					try vm.addDisk(disk: disk)
+				}
+				#expect(error.code == .alreadyExists)
+			}
+			#expect(vm.disks.count == 2)
+			let reloaded = try VMConfig.load(name: "twice")
+			#expect(reloaded.disks.count == 2)
+		}
+	}
+
 	@Test func importNamesFollowTheRule() {
 		#expect(VMCopier.storageName(
 			for: URL(fileURLWithPath: "/x/.hidden.raw"), taken: []) == "hidden")

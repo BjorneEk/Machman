@@ -478,7 +478,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
+	// One entry per file (D34): a second entry for a file the VM already attaches shares the
+	// first one's id, so neither can be addressed alone (removing one removed both), and a
+	// start attached the file twice, writable, past the shared-disk guard's per-file sets.
 	public func addDisk(disk: VMDisk) throws {
+		let file = attachedFile(of: disk)
+		if disks.contains(where: { Self.sameFile(attachedFile(of: $0), file) }) {
+			throw MachmanError(
+				code: .alreadyExists,
+				message: "\(name) already uses “\((file as NSString).lastPathComponent)”")
+		}
 		disks.append(disk)
 		try saveVMConfig()
 	}
