@@ -55,13 +55,16 @@ struct SheetSettingsTests {
 		}
 	}
 
-	@Test("S55: a Linux VM's Duplicate sheet says Guest Setup gives the copy its own address")
-	func duplicateSheetNamesGuestSetupForALinuxCopy() async throws {
+	// Review F11: the copy's run renews its identity only when it finds its source's state
+	// (a copy of a VM that never ran Guest Setup isn't recognized), and it does so on the
+	// BSDs too, so the sheet says when it works, for every guest but macOS.
+	@Test("S55: a Duplicate sheet says a set-up VM's copy gets its own address from Guest Setup")
+	func duplicateSheetNamesGuestSetupForASetUpCopy() async throws {
 		let h = await UIHarness.make([Samples.linux("Debian"), Samples.macOS("Sequoia")])
 		let linux = try await h.snapshot(
 			CopyVMSheet(vm: h.vm("Debian"), viewModel: h.viewModel))
-		let said = "Copies the disk file into the new VM — run Guest Setup in a Linux copy so "
-			+ "it leases its own address"
+		let said = "Copies the disk file into the new VM — if this VM has run Guest Setup, run "
+			+ "it again in the copy so the copy leases its own address"
 		#expect(linux.all.contains { $0.help == said }, "\(linux.dump())")
 		let mac = try await h.snapshot(CopyVMSheet(vm: h.vm("Sequoia"), viewModel: h.viewModel))
 		#expect(mac.all.contains { $0.help == "Copies the disk file into the new VM" },

@@ -39,13 +39,14 @@ struct CopyVMSheet: View {
 	// ISOs always travel by reference; only writable disks are a choice.
 	private var writableDisks: [DiskInfo] { vm.disks.filter { $0.type != .iso } }
 
-	// A copied disk keeps its guest's machine id, and a Linux guest's DHCP client id with it:
-	// the copy's Guest Setup run gives it its own (S55).
+	// A copied disk keeps its guest's machine id and DHCP client id (Linux's, dhcpcd's on the
+	// BSDs): the copy's Guest Setup run gives it its own (S55), but only knows it is a copy
+	// when its source ran Guest Setup — a never-set-up guest's copy isn't recognized (S57).
 	private var storageDiskHelp: String {
 		vm.boot.mode == .macOS
 			? "Copies the disk file into the new VM"
-			: "Copies the disk file into the new VM — run Guest Setup in a Linux copy so it "
-				+ "leases its own address"
+			: "Copies the disk file into the new VM — if this VM has run Guest Setup, run it "
+				+ "again in the copy so the copy leases its own address"
 	}
 
 	// Worst case — only cloned storage disks can cost real space.
