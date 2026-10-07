@@ -4,10 +4,11 @@
 //
 //  A TerminalByteStream backed by a local process on a PTY — the transport behind the
 //  ephemeral SSH tabs. The pty is the child's controlling terminal (PTYChild), so a window
-//  size reaches it as SIGWINCH and it can prompt on /dev/tty; the descriptor side (reads,
-//  non-blocking sends, the transcript) is the shared TerminalFDChannel. Reports the session's
-//  end as onClose exactly once, after the child's last output, whether the process quit or
-//  the pty hung up first; an explicit stop() reports nothing.
+//  size reaches it as SIGWINCH, it can prompt on /dev/tty, and the app's end (a quit or a
+//  crash closes the master) hangs it up; the descriptor side (reads, non-blocking sends, the
+//  transcript) is the shared TerminalFDChannel. Reports the session's end as onClose exactly
+//  once, after the child's last output, whether the process quit or the pty hung up first;
+//  an explicit stop() reports nothing.
 //
 
 import Foundation

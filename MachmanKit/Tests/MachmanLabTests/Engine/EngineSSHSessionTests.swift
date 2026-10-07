@@ -22,15 +22,6 @@ import MachmanTestSupport
 @Suite("Engine — ssh sessions", .serialized, .enabled(if: Lab.runs(.l2)))
 @MainActor
 struct EngineSSHSessionTests {
-	/// Card P42: PTYChild opens the pty's slave in a posix_spawn file action and
-	/// relies on that open to make it the child's controlling terminal; on macOS it doesn't
-	/// (a probe: `ps -o tty=` shows "??" for the spawned ssh; forkpty's TIOCSCTTY does). So
-	/// ssh can't open /dev/tty for a password prompt, and a hung-up pty (the app quitting or
-	/// crashing) sends it no SIGHUP: the session and its ssh stay.
-	// The open bug P42 (an ssh session tab's ssh has no controlling terminal: no password
-	// prompt, and ssh outlives an app that quits or crashes) fails three checks below until
-	// it is fixed.
-
 	struct Session {
 		let sessions: TerminalSessions
 		let target: TFSSHTarget
@@ -149,22 +140,16 @@ struct EngineSSHSessionTests {
 			try #require(seen.contains("TF-42"), "the session's shell never answered: \(seen)")
 			// The pty is ssh's controlling terminal (what a hang-up and /dev/tty need).
 			let tty = try await TFProcess.controllingTTY(child.pid)
-			// Fails until the open bug P42 (ssh has no controlling terminal) is fixed.
 			#expect(tty.hasPrefix("ttys"), "ssh's controlling terminal is \(tty)")
 			// What the kernel does for an app that exits: its pty master closes, no signal.
 			close(master)
 			closed = true
-			do {
-				try await Self.until(
-					"the ssh client and its session to end", key: target.keyPath,
-					timeout: .seconds(10)
-				) {
-					let servers = try await TFSSH.sshdSessions()
-					return !LabProcesses.isAlive(child.pid) && servers.isEmpty
-				}
-			} catch {
-				// Fails until the open bug P42 (ssh outlives its pty's owner) is fixed.
-				Issue.record(Comment(rawValue: "\(error)"))
+			try await Self.until(
+				"the ssh client and its session to end", key: target.keyPath,
+				timeout: .seconds(10)
+			) {
+				let servers = try await TFSSH.sshdSessions()
+				return !LabProcesses.isAlive(child.pid) && servers.isEmpty
 			}
 		}
 	}
@@ -200,15 +185,12 @@ struct EngineSSHSessionTests {
 			let s = try await Self.open(sshd, authorized: false, waitForShell: false)
 			// Recorded, not thrown, so the session is dropped below.
 			do {
-				// Fails until the open bug P42 (no password prompt without a tty) is fixed.
 				try await TFTerminals.waitFor(s.controller, "[Pp]assword:", timeout: .seconds(20))
 			} catch {
 				let described = await TFSSH.describe(key: s.target.keyPath)
-				// Fails until the open bug P42 (no password prompt without a tty) is fixed.
 				Issue.record(Comment(rawValue: "ssh's password prompt never came; the session's "
 					+ "bytes:\n" + Self.rawTranscript(s.controller) + "\n" + described))
 			}
-			// Fails until the open bug P42 (ssh gives up without a tty) is fixed.
 			#expect(s.controller.connected)
 			s.sessions.drop(.ssh(s.ref), vm: TFSSHTarget.vmName)
 			try await TFWait.until("the ssh client to end", timeout: .seconds(5)) {

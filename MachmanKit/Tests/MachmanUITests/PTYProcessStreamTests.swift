@@ -3,7 +3,7 @@
 //  MachmanUITests
 //
 //  The PTY-backed byte stream behind the SSH tabs, exercised with plain system binaries
-//  (/bin/cat, /usr/bin/true, /bin/sh) — no ssh, no network.
+//  (/bin/cat, /usr/bin/true, /bin/sh, /bin/stty, /bin/sleep) — no ssh, no network.
 //
 
 import Testing
@@ -153,18 +153,33 @@ struct PTYProcessStreamTests {
 		}
 	}
 
-	// P20: password prompts need a /dev/tty, which exists only for a controlling terminal.
-	@Test @MainActor func thePTYIsTheChildsControllingTerminal() async throws {
+	// P20/P42: password prompts need a /dev/tty, which opens only for a controlling terminal.
+	// ssh never opens its pty itself; /bin/sh did, and so got one on its own while ssh had
+	// none. stty is no shell: it prints the size only if /dev/tty opens.
+	@Test("P42: a child that is no shell opens /dev/tty on its pty")
+	@MainActor func aChildThatIsNoShellOpensDevTTY() async throws {
 		let stream = PTYProcessStream(
-			executablePath: "/bin/sh",
-			arguments: ["-c", "if (exec 3</dev/tty) 2>/dev/null; then echo TTY_OK; "
-				+ "else echo TTY_NONE; fi"])
+			executablePath: "/bin/stty", arguments: ["-f", "/dev/tty", "size"])
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
+		stream.setWindowSize(cols: 123, rows: 45)
 		#expect(stream.connect())
 		#expect(await eventually { sink.isClosed })
-		#expect(sink.text.contains("TTY_OK"), "got \(sink.text)")
+		#expect(sink.text.contains("45 123"), "got \(sink.text)")
+	}
+
+	// P42: an app that quits or crashes leaves the kernel to close the pty's master, and only
+	// that hang-up (SIGHUP to the session's leader) ends the child. sleep is no shell.
+	@Test("P42: closing the pty's master hangs up a child that is no shell")
+	@MainActor func closingTheMasterHangsUpTheChild() async throws {
+		let sink = StreamSink()
+		let (child, master) = try #require(PTYChild.spawn(
+			executablePath: "/bin/sleep", arguments: ["30"], environment: [:], size: nil,
+			onExit: { sink.markClosed() }))
+		defer { child.terminate() }   // SIGTERM only while the pid is still the child's
+		close(master)
+		#expect(await eventually { sink.isClosed }, "sleep outlived its pty")
 	}
 
 	// P20: a reconnect (a new stream on a terminal that keeps its size) starts at that size.

@@ -2,12 +2,13 @@
 //  PTYChild.swift
 //  MachmanUI
 //
-//  A process started on a fresh pty that is its CONTROLLING terminal: posix_spawn makes it a
-//  session leader (POSIX_SPAWN_SETSID) and its first open of the pty's slave makes that its
-//  controlling tty. Only then does a TIOCSWINSZ on the master signal SIGWINCH to it (ssh
-//  forwards a resize on SIGWINCH alone), and only then can it open /dev/tty for a password
-//  prompt (P20). posix_spawn rather than forkpty: no Swift code runs between fork and exec,
-//  and POSIX_SPAWN_CLOEXEC_DEFAULT keeps every other descriptor of the app out of the child.
+//  A process started on a fresh pty that is its CONTROLLING terminal: it leads a session of
+//  its own and took the pty's slave with TIOCSCTTY (machman_pty_spawn, C). Only then does a
+//  TIOCSWINSZ on the master signal SIGWINCH to it (ssh forwards a resize on SIGWINCH alone),
+//  can it open /dev/tty for a password prompt (P20), and does closing the master — the app
+//  quitting or crashing — hang it up with SIGHUP (P42). A plain posix_spawn gave none of
+//  that: it runs its file actions before it makes the session. Not forkpty either: no Swift
+//  runs between fork and exec, and every other descriptor of the app stays out of the child.
 //
 //  The child is reaped on its own serial queue the moment it exits, whether or not anyone
 //  still listens, and signalled only on that queue before the reap — so it never lingers as a
@@ -15,6 +16,8 @@
 //
 
 import Foundation
+import MachmanAPI
+import MachmanPTYSpawn
 
 final class PTYChild: @unchecked Sendable {
 	let pid: pid_t
@@ -39,32 +42,7 @@ final class PTYChild: @unchecked Sendable {
 		guard opened == 0 else { return nil }
 		_ = fcntl(master, F_SETFD, FD_CLOEXEC)
 		_ = fcntl(slave, F_SETFD, FD_CLOEXEC)
-		defer { close(slave) }   // the child opens the slave itself, by name
-		var name = [CChar](repeating: 0, count: 128)
-		guard ptsname_r(master, &name, name.count) == 0 else {
-			close(master)
-			return nil
-		}
-
-		var actions: posix_spawn_file_actions_t?
-		posix_spawn_file_actions_init(&actions)
-		defer { posix_spawn_file_actions_destroy(&actions) }
-		// The new session leader's first tty open makes that tty its controlling terminal.
-		posix_spawn_file_actions_addopen(&actions, 0, name, O_RDWR, 0)
-		posix_spawn_file_actions_adddup2(&actions, 0, 1)
-		posix_spawn_file_actions_adddup2(&actions, 0, 2)
-		var attributes: posix_spawnattr_t?
-		posix_spawnattr_init(&attributes)
-		defer { posix_spawnattr_destroy(&attributes) }
-		var all = sigset_t()
-		sigfillset(&all)
-		var none = sigset_t()
-		sigemptyset(&none)
-		posix_spawnattr_setsigdefault(&attributes, &all)
-		posix_spawnattr_setsigmask(&attributes, &none)
-		posix_spawnattr_setflags(&attributes, Int16(
-			POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF
-				| POSIX_SPAWN_SETSIGMASK))
+		defer { close(slave) }   // the child has its own copies, on 0, 1 and 2
 
 		let argv = ([executablePath] + arguments).map { strdup($0) } + [nil]
 		let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
@@ -72,8 +50,11 @@ final class PTYChild: @unchecked Sendable {
 			argv.forEach { free($0) }
 			envp.forEach { free($0) }
 		}
-		var pid: pid_t = 0
-		guard posix_spawn(&pid, executablePath, &actions, &attributes, argv, envp) == 0 else {
+		let pid = machman_pty_spawn(executablePath, argv, envp, slave)
+		guard pid > 0 else {
+			let reason = String(cString: strerror(errno))
+			MachmanLogger.log(
+				.interactionWarning, "\(executablePath) didn't start on a pty: \(reason)")
 			close(master)
 			return nil
 		}

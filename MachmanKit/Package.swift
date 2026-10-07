@@ -7,6 +7,7 @@ import PackageDescription
 //                Imports Foundation ONLY — never Virtualization or AppKit. Everything a
 //                client (GUI, CLI, non-Swift) needs to talk to the daemon, nothing more.
 //   MachmanCore  the VM engine behind the protocol.
+//   MachmanPTYSpawn  C: starts the ssh tabs' process on a pty that is its controlling terminal.
 //   MachmanDesktopCore  the desktop's view models and stores (no views, no windows): what the
 //                headless view-model tests drive. Never MachmanCore or Virtualization.
 //   MachmanDesktopUI    the desktop's SwiftUI views; the app target is a thin shell over it,
@@ -77,12 +78,15 @@ let package = Package(
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
 		// Shared SwiftUI vocabulary + controls for the Machman UIs (desktop and daemon menu).
-		// Depends on MachmanAPI only — never MachmanCore.
+		// Depends on MachmanAPI and the pty spawn only — never MachmanCore.
 		.target(
 			name: "MachmanUI",
-			dependencies: ["MachmanAPI"],
+			dependencies: ["MachmanAPI", "MachmanPTYSpawn"],
 			swiftSettings: [.swiftLanguageMode(.v5)]
 		),
+		// PTYChild's spawn, in C: its child runs code between fork and exec, where no Swift may
+		// run. Not a product — MachmanUI links it.
+		.target(name: "MachmanPTYSpawn"),
 		// The desktop client's logic: view models + stores over MachmanControlling. Anything
 		// that talks to the window server, the pasteboard, panels or NSWorkspace lives in
 		// MachmanDesktopUI (or the app), so every type here runs headless under swift test.
