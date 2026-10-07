@@ -447,8 +447,8 @@ struct RosettaInspector: View {
 
 // MARK: - Guest address ---------------------------------------------------------------------
 
-// The guest's discovered address — a fact of the running VM (leases/ARP by its MAC),
-// not of SSH, so it shows for every VM whether or not SSH is set up.
+// The guest's discovered address — a fact of the running VM (leases/ARP by its MAC, or what
+// the guest reported), not of SSH, so it shows for every VM whether or not SSH is set up.
 struct NetworkAddressSection: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
@@ -475,12 +475,21 @@ struct NetworkAddressSection: View {
 					}
 				}
 			}
-			if let source = vm.ssh?.addressSource {
-				Text(source == "dhcp"
-					? "Found in this Mac’s DHCP leases." : "Found in the ARP table.")
+			if let caption = Self.sourceCaption(vm.ssh?.addressSource) {
+				Text(caption)
 					.font(.caption2)
 					.foregroundStyle(.tertiary)
 			}
+		}
+	}
+
+	// Where discovery found the address; nothing for a source this build doesn't know.
+	static func sourceCaption(_ source: String?) -> String? {
+		switch source {
+		case "dhcp": "Found in this Mac’s DHCP leases."
+		case "arp": "Found in the ARP table."
+		case "report": "Reported by the guest."
+		default: nil
 		}
 	}
 }

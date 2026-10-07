@@ -359,6 +359,10 @@ enum InspectorScenes {
 		device(.audioInput, "DeviceInspector, audio input"),
 		device(.audioOutput, "DeviceInspector, audio output"),
 		device(.network, "NetworkInspector"),
+		// E56: an address no lease names, taken from the guest's report.
+		inspector(
+			"device.network.reported", "NetworkInspector, an address the guest reported",
+			vms: { [Samples.reportedAddress()] }, node: .device(.network)),
 		device(.clipboard, "ClipboardInspector"),
 		device(.entropy, "DeviceInspector, entropy", select: "Kernel Lab"),
 		device(.rosetta, "RosettaInspector", select: "Kernel Lab"),
