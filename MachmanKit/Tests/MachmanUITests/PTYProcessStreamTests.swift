@@ -182,6 +182,21 @@ struct PTYProcessStreamTests {
 		#expect(await eventually { sink.isClosed }, "sleep outlived its pty")
 	}
 
+	// P42: a resize reaches the child as SIGWINCH, which TIOCSWINSZ sends to the pty's
+	// foreground process group: only a child that took the pty as its controlling terminal
+	// leads one. The /bin/sh resize tests can't tell — sh takes the tty on its own.
+	@Test("P42: a child that is no shell leads its pty's foreground group")
+	@MainActor func aChildThatIsNoShellLeadsTheForegroundGroup() throws {
+		let (child, master) = try #require(PTYChild.spawn(
+			executablePath: "/bin/sleep", arguments: ["30"], environment: [:], size: nil,
+			onExit: {}))
+		defer {
+			close(master)
+			child.terminate()
+		}
+		#expect(tcgetpgrp(master) == child.pid)
+	}
+
 	// P20: a reconnect (a new stream on a terminal that keeps its size) starts at that size.
 	@Test @MainActor func aSizeSetBeforeConnectIsTheFirstSize() async throws {
 		let stream = PTYProcessStream(executablePath: "/bin/sh", arguments: ["-c", "stty size"])

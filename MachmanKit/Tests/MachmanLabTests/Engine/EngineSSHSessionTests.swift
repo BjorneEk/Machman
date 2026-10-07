@@ -160,10 +160,16 @@ struct EngineSSHSessionTests {
 		try await LabSSHD.with { sshd in
 			let s = try await Self.open(sshd)
 			let terminal = s.controller.terminalView.getTerminal()
-			#expect(try await Self.sttySize(s, "SZ1") == "\(terminal.rows) \(terminal.cols)")
-			s.controller.terminalView.resize(cols: 100, rows: 30)
+			let first = try await Self.sttySize(s, "SZ1")
+			#expect(first == "\(terminal.rows) \(terminal.cols)")
+			// A size the session is at in neither dimension: only a SIGWINCH that reached ssh
+			// carries it to the guest's pty (the view's own grid is about 30 x 100 already).
+			let rowsCols = first.split(separator: " ")
+			try #require(rowsCols.count == 2 && rowsCols[0] != "21" && rowsCols[1] != "83",
+				"the session's first size is \(first)")
+			s.controller.terminalView.resize(cols: 83, rows: 21)
 			try await Task.sleep(for: .milliseconds(500))
-			#expect(try await Self.sttySize(s, "SZ2") == "30 100")
+			#expect(try await Self.sttySize(s, "SZ2") == "21 83")
 			TFTerminals.type(s.controller, "exit\n")
 			try await TFWait.until("the session to end", timeout: .seconds(10)) {
 				!s.controller.connected
@@ -173,7 +179,7 @@ struct EngineSSHSessionTests {
 				profile: s.profile)
 			#expect(s.controller.connected)
 			try await TFTerminals.waitFor(s.controller, "reconnected", timeout: .seconds(5))
-			#expect(try await Self.sttySize(s, "SZ3") == "30 100")
+			#expect(try await Self.sttySize(s, "SZ3") == "21 83")
 			s.sessions.drop(.ssh(s.ref), vm: TFSSHTarget.vmName)
 		}
 		#expect(HostQuiet.breaches(since: quiet) == [])
