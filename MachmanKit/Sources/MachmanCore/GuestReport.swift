@@ -20,6 +20,9 @@ import MachmanAPI
 
 struct GuestReport {
 	var values: [String: String]
+	// Found by the host beside the report, never one of its claims: the DHCP client id of the
+	// lease that holds the address the guest reported (E56).
+	var leaseClientID: String?
 
 	// Which halves an apply() actually moved — the caller emits per-half events.
 	struct Changes {
@@ -56,14 +59,24 @@ struct GuestReport {
 		let report: GuestReport?
 	}
 
-	// nil when there is no report file, or its mtime is still `since`.
-	static func poll(atPath path: String, since: Date?) -> Found? {
+	// nil when there is no report file, or its mtime is still `since`. A new report that names
+	// an address gets the client id of the lease holding it: bootpd granted that lease just
+	// before the guest wrote the report, so its holder is this guest (E56). `leases` is the
+	// lease table's text (a test passes its own).
+	static func poll(
+		atPath path: String, since: Date?,
+		leases: () -> String? = { SSHDiscovery.leases(atPath: SSHDiscovery.leasesPath) }
+	) -> Found? {
 		var info = stat()
 		guard lstat(path, &info) == 0 else { return nil }
 		let mtime = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec)
 			+ TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
 		guard mtime != since else { return nil }
-		return Found(mtime: mtime, report: read(atPath: path))
+		var report = read(atPath: path)
+		if let ip = report?.values["IP"], GuestValueRule.isAddress(ip), let table = leases() {
+			report?.leaseClientID = SSHDiscovery.clientID(holding: ip, inLeasesText: table)
+		}
+		return Found(mtime: mtime, report: report)
 	}
 
 	// The drop-box is guest-writable, so the name is trusted for nothing: a regular file
@@ -278,10 +291,12 @@ struct GuestReport {
 				vm: config) {
 				state.guestHostKey = key
 			}
-			// The address is a claim (the drop-box is guest-writable), kept only as the
-			// fallback that survives a rename — the daemon's own discovery is the truth.
+			// The address is a claim (the drop-box is guest-writable), kept as the fallback
+			// that survives a rename, with the client id its lease is kept under — the
+			// daemon's discovery checks both against the lease table (E56).
 			if let ip = shaped("IP", GuestValueRule.isAddress, "IP address", vm: config) {
 				state.lastAddress = ip
+				if let leaseClientID { state.dhcpClientID = leaseClientID }
 			}
 			// What the run achieved. A v1 report carries none of this: absence means
 			// "an older script ran", not "it failed", so nothing is cleared here.

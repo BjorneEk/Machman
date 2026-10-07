@@ -30,6 +30,10 @@ struct SSHConfig: Codable, Equatable {
 	// The last address the guest reported. The managed ~/.ssh file is otherwise the only
 	// memory of it, so a rename — or an alias change — would silently strand the entry.
 	var lastAddress: String?
+	// The DHCP client id the guest's lease is kept under, learned from the lease that held a
+	// reported address (E56): bootpd files a client that sends one under it, never its MAC,
+	// so discovery matches the lease on this id. Host-found, never on the wire.
+	var dhcpClientID: String?
 	// What the last script run achieved, in the script's own vocabulary (plain strings,
 	// the reverseState lesson: a newer daemon's value round-trips through this one).
 	var lastRunStatus: String?
@@ -57,15 +61,17 @@ struct SSHConfig: Codable, Equatable {
 
 	// THE list of what must not survive onto a machine with a fresh identity (vm.copy,
 	// safeSave promotion): the alias (one VM's name — the setSSH uniqueness check never saw
-	// the copy), the lease and pinned host key (publishing them would alias the new VM to
-	// the SOURCE), the reverse pair (its authorized_keys line is labeled with the source's
-	// marker, so revoking here would remove nothing), and the cached marker itself
-	// (re-derived from the fresh identity at the next payload assembly). Disk-derived facts
-	// — user, OS, sshfs, what the last script run achieved — stay: they describe the cloned
-	// disk. The user's integration switch stays too: it is a choice, not an observation.
+	// the copy), the lease, its client id and the pinned host key (publishing them would
+	// alias the new VM to the SOURCE), the reverse pair (its authorized_keys line is labeled
+	// with the source's marker, so revoking here would remove nothing), and the cached marker
+	// itself (re-derived from the fresh identity at the next payload assembly). Disk-derived
+	// facts — user, OS, sshfs, what the last script run achieved — stay: they describe the
+	// cloned disk. The user's integration switch stays too: it is a choice, not an
+	// observation.
 	mutating func resetInstanceIdentity() {
 		alias = nil
 		lastAddress = nil
+		dhcpClientID = nil
 		guestHostname = nil
 		guestHostKey = nil
 		reversePublicKey = nil
@@ -88,6 +94,7 @@ struct SSHConfig: Codable, Equatable {
 		case marker
 		case alias
 		case lastAddress
+		case dhcpClientID
 		case lastRunStatus
 		case lastRunNote
 		case lastTransport
@@ -113,6 +120,7 @@ struct SSHConfig: Codable, Equatable {
 		self.marker = try c.decodeIfPresent(String.self, forKey: .marker)
 		self.alias = try c.decodeIfPresent(String.self, forKey: .alias)
 		self.lastAddress = try c.decodeIfPresent(String.self, forKey: .lastAddress)
+		self.dhcpClientID = try c.decodeIfPresent(String.self, forKey: .dhcpClientID)
 		self.lastRunStatus = try c.decodeIfPresent(String.self, forKey: .lastRunStatus)
 		self.lastRunNote = try c.decodeIfPresent(String.self, forKey: .lastRunNote)
 		self.lastTransport = try c.decodeIfPresent(String.self, forKey: .lastTransport)

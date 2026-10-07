@@ -70,6 +70,50 @@ struct GuestReportTests {
 		}
 	}
 
+	// E56: a guest whose DHCP client sends a client id (systemd-networkd's default) has no
+	// lease under its MAC. The lease that holds the address it reports is kept under that
+	// id: the report teaches it, and the VM keeps it for discovery to match the lease on.
+	@Test("E56: a report's address teaches the VM the client id of the lease that holds it")
+	@MainActor func reportTeachesTheLeaseClientID() throws {
+		let id = "ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d"
+		let leases = """
+			{
+				ip_address=192.168.64.17
+				hw_address=\(id)
+				identifier=\(id)
+				lease=0x66aa0001
+			}
+			{
+				ip_address=192.168.64.30
+				hw_address=1,3a:1:2:3:4:5
+				identifier=1,3a:1:2:3:4:5
+				lease=0x66aa5555
+			}
+			"""
+		let dir = TestEnvironment.scratchURL
+			.appendingPathComponent("machman-report-\(UUID().uuidString)")
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: dir) }
+		func polled(_ text: String) throws -> GuestReport {
+			let path = dir.appendingPathComponent("report.env").path
+			try text.write(toFile: path, atomically: true, encoding: .utf8)
+			return try #require(GuestReport.poll(atPath: path, since: nil) { leases }?.report)
+		}
+		let report = try polled("USER=admin\nIP=192.168.64.17\n")
+		#expect(report.leaseClientID == id)
+		// A lease kept under a MAC teaches none; neither does a report without an address.
+		#expect(try polled("USER=admin\nIP=192.168.64.30\n").leaseClientID == nil)
+		#expect(try polled("USER=admin\n").leaseClientID == nil)
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "client-id")
+			let vm = try VMConfig(name: "client-id", memorySize: 1 << 30, cpuCount: 2)
+			#expect(try report.apply(to: vm, stampedAt: Date()).ssh)
+			let saved = try VMConfig.load(name: "client-id").ssh
+			#expect(saved?.dhcpClientID == id)
+			#expect(saved?.lastAddress == "192.168.64.17")
+		}
+	}
+
 	@Test func oversizedValuesAndFilesAreRefused() {
 		let huge = String(repeating: "x", count: GuestReport.maxValueLength + 1)
 		#expect(GuestReport.parse("USER=\(huge)").values["USER"] == nil)

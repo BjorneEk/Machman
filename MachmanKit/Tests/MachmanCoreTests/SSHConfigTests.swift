@@ -51,6 +51,25 @@ struct SSHConfigTests {
 		}
 	}
 
+	// E56: the client id a guest's lease is kept under is this machine's, like the lease:
+	// it survives a save, and a copy (or a promoted safe run) forgets it.
+	@Test("E56: the guest's DHCP client id round-trips and a copy forgets it")
+	@MainActor func dhcpClientIDIsKeptButNotCopied() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "sshclientid")
+			let vm = try VMConfig(name: "sshclientid", memorySize: 1 << 30, cpuCount: 2)
+			var state = SSHConfig()
+			state.lastAddress = "192.168.64.17"
+			state.dhcpClientID = "ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d"
+			vm.ssh = state
+			try vm.saveVMConfig()
+			#expect(try VMConfig.load(name: "sshclientid").ssh == state)
+			state.resetInstanceIdentity()
+			#expect(state.dhcpClientID == nil)
+			#expect(state.lastAddress == nil)
+		}
+	}
+
 	// The alias becomes an ssh_config Host pattern, so what it may contain is not a matter
 	// of taste: a glob would capture unrelated hosts.
 	@Test @MainActor func aliasIsValidatedAndResettable() throws {
