@@ -17,7 +17,6 @@ struct TGDiskOwnershipTests {
 	static let qcowRefusal = "Machman can\u{2019}t use qcow2 images \u{2014} convert to raw first "
 		+ "(qemu-img convert -O raw)"
 
-	/// Card D29, a qcow2 attached by reference (r3-tg, D/RISK).
 	/// A file whose first bytes are qcow2's magic ("QFI\u{FB}"), 64 KiB in all.
 	static func writeQcow(_ path: String) throws {
 		var bytes = Data([0x51, 0x46, 0x49, 0xFB, 0x00, 0x00, 0x00, 0x03])
@@ -92,8 +91,6 @@ struct TGDiskOwnershipTests {
 				refusal = error
 			}
 			let attached = try await vm.info().disks.contains { $0.path == qcow }
-			// Fails until the open bug D29 (a disk added by reference skips the format sniff)
-			// is fixed.
 			#expect(refusal?.code == .invalidArgument)
 			#expect(refusal?.message == Self.qcowRefusal)
 			#expect(!attached)

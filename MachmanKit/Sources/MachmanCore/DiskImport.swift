@@ -38,10 +38,45 @@ enum DiskFormat: Equatable {
 enum DiskImport {
 	static let stagingPrefix = ".machman-import-"
 
+	// What a disk file attaches as once it passed the format gate.
+	enum Attachable: Equatable {
+		case raw(bytes: UInt64)   // a block device of that size
+		case iso                  // ISO9660, read-only
+	}
+
+	// The one format gate for a disk file, copied in or referenced (D29): magic bytes decide,
+	// never the picker or the extension. VZ exposes any file as raw bytes, so a qcow2 would
+	// read as garbage and a guest's writes would corrupt it in place; a misaligned raw image
+	// fails only at boot, with an opaque error.
+	nonisolated static func attachable(path: String) throws -> Attachable {
+		guard FileManager.default.fileExists(atPath: path) else {
+			throw MachmanError(code: .notFound, message: "No file at \(path)")
+		}
+		switch DiskFormat.sniff(path: path) {
+		case .qcow:
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "Machman can’t use qcow2 images — convert to raw first "
+					+ "(qemu-img convert -O raw)")
+		case .unreadable:
+			throw MachmanError(code: .invalidArgument, message: "Couldn’t read \(path)")
+		case .raw:
+			let size = fileSize(atPath: path) ?? 0
+			guard size > 0, size % 512 == 0 else {
+				throw MachmanError(
+					code: .invalidArgument,
+					message: "Raw disk images must be a non-empty multiple of 512 bytes, and "
+						+ "\((path as NSString).lastPathComponent) is \(size) bytes")
+			}
+			return .raw(bytes: size)
+		case .iso:
+			return .iso
+		}
+	}
+
 	// Copies src into vmDir as an owned disk file and returns the entry to attach:
 	// raw → .storage(<derived>, size) as <derived>.raw; iso → .iso(<vmDir>/<basename>).
-	// Both are backup-excluded (VM-owned now). Throws typed errors for qcow, unreadable
-	// files, and misaligned raw images (VZ would reject those at boot with an opaque error).
+	// Both are backup-excluded (VM-owned now). Refuses what the format gate refuses.
 	// Names are derived when the copy LANDS (stagedCopy), against the directory as it is
 	// then. `transfer` is stagedCopy's test seam.
 	nonisolated static func importFile(
@@ -51,25 +86,8 @@ enum DiskImport {
 		transfer: ((String, String) throws -> Void)? = nil
 	) throws -> VMDisk {
 		let fm = FileManager.default
-		guard fm.fileExists(atPath: src) else {
-			throw MachmanError(code: .notFound, message: "No file at \(src)")
-		}
-		let size = fileSize(atPath: src) ?? 0
-		switch DiskFormat.sniff(path: src) {
-		case .qcow:
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "Machman can’t use qcow2 images — convert to raw first "
-					+ "(qemu-img convert -O raw)")
-		case .unreadable:
-			throw MachmanError(code: .invalidArgument, message: "Couldn’t read \(src)")
-		case .raw:
-			guard size > 0, size % 512 == 0 else {
-				throw MachmanError(
-					code: .invalidArgument,
-					message: "Raw disk images must be a non-empty multiple of 512 bytes, and "
-						+ "\((src as NSString).lastPathComponent) is \(size) bytes")
-			}
+		switch try attachable(path: src) {
+		case .raw(let size):
 			let placed = try stagedCopy(
 				src: src, vmDir: vmDir,
 				name: {

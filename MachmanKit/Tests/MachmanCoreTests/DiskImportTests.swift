@@ -98,6 +98,49 @@ struct DiskImportTests {
 		}
 	}
 
+	// D29: vm.disk.add attached any file by reference: a qcow2 (Ubuntu's cloud images are named
+	// .img) went to VZ as raw bytes, where a guest's writes corrupt it, and a misaligned raw
+	// image failed only at boot. A reference passes the import's own gate now.
+	@Test("D29: an image added by reference passes the import's format gate first")
+	@MainActor func aReferencePassesTheImportsFormatGate() async throws {
+		var api: LocalMachman!
+		var vm: VirtualMachine!
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			vm = try registry.create()
+			api = LocalMachman(registry: registry)
+		}
+		let dir = try makeDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let qcow = dir + "/cloud.img"
+		try Data([0x51, 0x46, 0x49, 0xFB, 0, 0, 0, 3] + [UInt8](repeating: 0, count: 504))
+			.write(to: URL(fileURLWithPath: qcow))
+		let odd = dir + "/odd.raw"
+		try Data(repeating: 0xAB, count: 100).write(to: URL(fileURLWithPath: odd))
+		let convert = "Machman can’t use qcow2 images — convert to raw first "
+			+ "(qemu-img convert -O raw)"
+		let refusals: [(NewDisk, MachmanError.Code, String)] = [
+			(.image(path: qcow), .invalidArgument, convert),
+			(.iso(path: qcow), .invalidArgument, convert),
+			(.image(path: odd), .invalidArgument,
+				"Raw disk images must be a non-empty multiple of 512 bytes, and odd.raw is 100 "
+					+ "bytes"),
+			(.image(path: dir + "/gone.img"), .notFound, "No file at \(dir)/gone.img"),
+		]
+		let disks = vm.config.disks.count
+		for (disk, code, message) in refusals {
+			var refusal: MachmanError?
+			do {
+				try await api.addDisk(vm: vm.config.name, disk)
+			} catch let error as MachmanError {
+				refusal = error
+			}
+			#expect(refusal?.code == code, "\(disk)")
+			#expect(refusal?.message == message, "\(disk)")
+		}
+		#expect(vm.config.disks.count == disks)   // refused before the config changed
+	}
+
 	// D23: attributesOfItem is lstat, so a raw image passed as a symlink measured as the link
 	// itself (a hundred-odd bytes) and was refused as misaligned; a fromUrl disk that is a
 	// link showed the link's length, and a copy's progress total took it too.
