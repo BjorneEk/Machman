@@ -27,6 +27,14 @@ struct SSHAliasFormTests {
 		#expect(!h.stub.calls.contains("setSSH"))
 	}
 
+	@Test("C31: the alias field refuses another VM's alias in any letter case")
+	func anAliasAnotherVMUsesInAnotherCaseIsExplained() async throws {
+		let h = await DesktopHarness.make()
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		#expect(h.viewModel.sshAliasProblem("Fedora.MACHMAN", for: debian)
+			== "Fedora already answers to \u{201C}fedora.machman\u{201D}")
+	}
+
 	@Test func anAliasAnotherVMUsesIsExplained() async throws {
 		let h = await DesktopHarness.make()
 		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
