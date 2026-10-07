@@ -111,7 +111,8 @@ final class THMac: @unchecked Sendable {
 /// The guest-side network rules of a VZ guest (see THMac).
 enum THNet {
 	/// The ruleset for a guest whose gateway is `gateway`: its port 22 goes to the lab sshd on
-	/// `gateway:port` (1 = refused, when no lab sshd runs); nothing else leaves but DHCP.
+	/// `gateway:port` (1 = refused, when no lab sshd runs); nothing else leaves but DHCP and the
+	/// replies to connections the guest accepted (the Mac's readiness probe and ssh).
 	static func ruleset(gateway: String, port: Int) -> [String] {
 		[
 			"#!/usr/sbin/nft -f",
@@ -126,6 +127,7 @@ enum THNet {
 			"table inet th_lab {",
 			"  chain out {",
 			"    type filter hook output priority 0; policy accept;",
+			"    ct state established,related accept",
 			"    oif \"lo\" accept",
 			"    udp dport 67 accept",
 			"    ip daddr \(gateway) tcp dport \(port) accept",

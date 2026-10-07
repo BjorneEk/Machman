@@ -40,7 +40,11 @@ struct EngineReadinessL3Tests {
 		let address = try await TFGuest.address(console)
 		try await TFGuest.writeReport(
 			console, TFReport.standard(ip: address, hostKey: key.output).render())
-		if let prepare { _ = try await console.run(prepare, timeout: .seconds(60)) }
+		if let prepare {
+			// Synced: the VM is force-stopped next, and a change still in the page cache
+			// would not survive into the boot under test.
+			_ = try await console.run(prepare + " && sync", timeout: .seconds(60))
+		}
 		console.close()
 		try await TFWait.vm(agent.api, name, "reported", timeout: .seconds(20)) {
 			$0.ssh?.guestUser == "root"
@@ -80,10 +84,13 @@ struct EngineReadinessL3Tests {
 			let (vm, console) = try await Self.reportedDebian(
 				agent, "sshd-stopped", prepare: "systemctl disable --now ssh.service ssh.socket")
 			defer { console.close() }
+			// This boot's verdict first: a login retried on a fresh boot leaves the boot
+			// before's toast behind.
+			_ = try await TFWait.vm(agent.api, "sshd-stopped", "not answering",
+				timeout: .seconds(90)) { $0.ssh?.reachability == .unreachable }
 			let index = try await desktop.toasts.waitFor(
-				"sshd-stopped: SSH not answering", timeout: .seconds(90))
+				"sshd-stopped: SSH not answering", timeout: .seconds(10))
 			#expect(desktop.toasts.entries[index].message.hasSuffix(":22 after 3 minutes"))
-			#expect(try await vm.info().ssh?.reachability == .unreachable)
 			_ = try await console.run("systemctl start ssh")
 			desktop.viewModel.refreshSSH("sshd-stopped")
 			try await desktop.toasts.waitFor("sshd-stopped: SSH ready", timeout: .seconds(60))
