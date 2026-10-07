@@ -3,7 +3,8 @@
 # (scripts/lab/qemu/prepare.sh build debian; open network). Installs what the guest-regress
 # suites and the lab's Debian rows need, grows the root file system into the 8 GiB disk,
 # leaves hvc2 to the lab's console driver (never a console under test), writes a manifest and
-# the marker the host waits for. Per-run boots never fetch anything.
+# the marker the host waits for, and leaves the machine-id empty for each clone to make its
+# own. Per-run boots never fetch anything.
 set -eu
 D=/var/lib/machman-lab
 mkdir -p "$D"
@@ -34,3 +35,9 @@ fstrim -av || true
 	dpkg-query -W -f '${Package} ${Version}\n' | sort
 } > "$D/manifest"
 touch "$D/prepared"
+# Last: every clone makes its own machine-id at its first boot. systemd-networkd derives its
+# DHCP client id from it and bootpd keeps the lease under that id, so clones sharing one
+# leased one address between them (Q24). Emptied, not removed: an empty file is not a first
+# boot (machine-id(5)), so no systemd-firstboot prompt waits on the console.
+: > /etc/machine-id
+rm -f /var/lib/dbus/machine-id

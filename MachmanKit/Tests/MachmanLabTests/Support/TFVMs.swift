@@ -152,4 +152,19 @@ enum TFGuest {
 	static func listen22(_ console: LabConsole) async throws {
 		_ = try await console.run("(while :; do nc -l -p 22 </dev/null; done) >/dev/null 2>&1 &")
 	}
+
+	/// The guest's own IPv4 address on the VM network, once DHCP gave it one (iproute2's ip,
+	/// as on the Debian image; up to a minute).
+	static func address(_ console: LabConsole) async throws -> String {
+		let show = "ip -4 -o addr show scope global"
+		let result = try await console.run(
+			"for i in $(seq 60); do \(show) | grep -q inet && break; sleep 1; done; \(show)",
+			timeout: .seconds(90))
+		guard let found = result.output.range(of: #"inet [0-9.]+/"#, options: .regularExpression)
+		else {
+			throw LabError.commandFailed(
+				command: show, status: result.status, output: result.output)
+		}
+		return String(result.output[found].dropFirst("inet ".count).dropLast())
+	}
 }
