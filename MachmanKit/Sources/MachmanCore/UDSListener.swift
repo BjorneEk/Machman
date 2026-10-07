@@ -44,16 +44,17 @@ public enum UDSError: Error, CustomStringConvertible, LocalizedError {
 }
 
 final class UDSListener {
-	private let fd: Int32
-	private let bound: BoundSocket
-	private let queue: DispatchQueue
-	private let source: DispatchSourceRead
-	private let keepAliveTimer: DispatchSourceTimer
-	// Where the socket is served. Confined to `queue`: move(to:) renames it (Save as New VM)
-	// while the keep-alive timer touches the current path.
+	// The socket served now and the source accepting on it, and where it is served. Confined to
+	// `queue`: move(to:) replaces all three (Save as New VM) while the keep-alive timer touches
+	// the current path.
+	private var bound: BoundSocket
+	private var source: DispatchSourceRead
 	private var path: String
+	private let queue: DispatchQueue
+	private let onAccept: (Int32) -> Void
+	private let keepAliveTimer: DispatchSourceTimer
 	private var reportedMissing = false
-	// Left by the source's cancel handler, which removes the file and closes the descriptor.
+	// Left by each source's cancel handler, which removes its file and closes its descriptor.
 	private let cancelled = DispatchGroup()
 	// Confined to `queue`: false only for simulateKillForTesting, which leaves the file behind.
 	private var unlinksOnCancel = true
@@ -70,6 +71,7 @@ final class UDSListener {
 	) throws {
 		self.path = path
 		self.queue = queue
+		self.onAccept = onAccept
 		_ = try Self.makeAddr(path)   // the sun_path ceiling, before touching any file
 
 		// A leftover socket file is connect-probed as the socket is published: a live daemon
@@ -84,20 +86,8 @@ final class UDSListener {
 			MachmanLogger.log(.passiveWarning, "\(served) is already served by \(holder)")
 			throw UDSError.alreadyRunning(served)
 		}
-		let fd = bound.fd
-		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 		self.bound = bound
-		self.fd = fd
-
-		source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-		source.setEventHandler {
-			while true {
-				let client = accept(fd, nil, nil)
-				if client < 0 { break }   // EWOULDBLOCK: drained
-				onAccept(client)
-			}
-		}
-		source.resume()
+		source = Self.acceptingSource(on: bound, queue: queue, onAccept: onAccept)
 
 		// macOS's dirhelper deletes entries under /var/folders/…/T that went untouched for 3
 		// days (CLEAN_FILES_OLDER_THAN_DAYS=3, run daily at 03:35), and connects never refresh
@@ -116,38 +106,68 @@ final class UDSListener {
 				"\(path) was removed — new clients cannot reach this process until it restarts")
 		}
 		keepAliveTimer.resume()
+		closeOnCancel(source, bound)
+	}
 
-		// GCD closes a source's descriptor in its cancel handler, once nothing watches it any
-		// more (E48): closed right after cancel(), its number could be reused under a source
-		// still armed on it. The file goes first, and only while it is ours (E44).
+	// A read source that accepts every connection pending on `bound` and hands each on. Resumed.
+	private static func acceptingSource(
+		on bound: BoundSocket, queue: DispatchQueue, onAccept: @escaping (Int32) -> Void
+	) -> DispatchSourceRead {
+		let fd = bound.fd
+		_ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+		let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+		source.setEventHandler { acceptAll(fd, onAccept) }
+		source.resume()
+		return source
+	}
+
+	private static func acceptAll(_ fd: Int32, _ onAccept: (Int32) -> Void) {
+		while true {
+			let client = accept(fd, nil, nil)
+			if client < 0 { break }   // EWOULDBLOCK: drained
+			onAccept(client)
+		}
+	}
+
+	// GCD closes a source's descriptor in its cancel handler, once nothing watches it any
+	// more (E48): closed right after cancel(), its number could be reused under a source
+	// still armed on it. The file goes first, and only while it is ours (E44).
+	private func closeOnCancel(_ source: DispatchSourceRead, _ bound: BoundSocket) {
 		cancelled.enter()
-		source.setCancelHandler { [weak self, bound, cancelled] in
+		source.setCancelHandler { [weak self, cancelled] in
 			if let self, self.unlinksOnCancel {
 				bound.unlinkIfOurs(self.path)
 			}
-			close(fd)
+			close(bound.fd)
 			cancelled.leave()
 		}
 	}
 
-	// Serves the same bound socket at a new path (a vmhost whose VM was saved as a new VM,
-	// E27). Probe-proven on Darwin: a listening socket follows a rename, accepted connections
-	// keep delivering, and a dead leftover at the destination is replaced — a live one never
-	// is. Synchronous on `queue`; accept handlers never wait on their caller, so it can't
-	// deadlock.
+	// Serves at a new path (a vmhost whose VM was saved as a new VM, E27): a socket bound for
+	// the new path takes over, and the old one goes once what queued on it was accepted, while
+	// accepted connections keep delivering. Bound anew, never renamed: the kernel keeps a
+	// socket's bind-time address for life, and that address is how a frozen vmhost's listener
+	// is told from outside (E61) — a renamed one went on naming its first path. A dead leftover
+	// at the destination is replaced, a live one never is. Synchronous on `queue`; accept
+	// handlers never wait on their caller, so it can't deadlock.
 	func move(to newPath: String) throws {
 		_ = try Self.makeAddr(newPath)   // the sun_path ceiling, as at bind
 		try queue.sync {
 			guard newPath != path else { return }
 			// In turn with any starter of newPath (review F1): a dead leftover there goes.
-			try BoundSocket.whileStarting(newPath) {
-				guard !Self.isLive(path: newPath) else { throw UDSError.alreadyRunning(newPath) }
-				guard rename(path, newPath) == 0 else {
-					throw UDSError.systemError("rename", errno)
-				}
+			let moved = try BoundSocket.whileStarting(newPath) {
+				try BoundSocket.listen(at: newPath)
 			}
+			let (old, oldSource, oldPath) = (bound, source, path)
+			bound = moved
+			source = Self.acceptingSource(on: moved, queue: queue, onAccept: onAccept)
+			closeOnCancel(source, moved)
 			path = newPath
 			reportedMissing = false
+			// The old file goes first, so nothing more queues there; what did is accepted.
+			old.unlinkIfOurs(oldPath)
+			Self.acceptAll(old.fd, onAccept)
+			oldSource.cancel()
 		}
 	}
 
@@ -159,12 +179,12 @@ final class UDSListener {
 	// never called on `queue`.
 	func shutdown() {
 		keepAliveTimer.cancel()
-		source.cancel()
+		queue.sync { source }.cancel()
 		cancelled.wait()
 	}
 
 	// For tests that stand in for a forked child holding a copy of the listener.
-	var descriptorForTesting: Int32 { fd }
+	var descriptorForTesting: Int32 { queue.sync { bound.fd } }
 
 	// For tests that need to simulate a kill: drop the socket but keep the file, exactly
 	// what SIGKILL leaves behind. The descriptor closes in the source's cancel handler — a
@@ -176,8 +196,11 @@ final class UDSListener {
 	// dead, or after awaitDeath.
 	func simulateKillForTesting(awaitDeath: Duration = .seconds(5)) {
 		keepAliveTimer.cancel()
-		queue.sync { unlinksOnCancel = false }
-		source.cancel()
+		let current = queue.sync { () -> DispatchSourceRead in
+			unlinksOnCancel = false
+			return source
+		}
+		current.cancel()
 		cancelled.wait()
 		let served = queue.sync { path }
 		let clock = ContinuousClock()

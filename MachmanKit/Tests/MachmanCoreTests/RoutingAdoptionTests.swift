@@ -216,6 +216,51 @@ struct RoutingAdoptionTests {
 		#expect(FileManager.default.fileExists(atPath: socketPath))   // never unlinked
 	}
 
+	// E61 (review F18): a run saved as a new VM moved its socket by renaming it, and the kernel
+	// keeps a socket's bind-time address, so once a frozen vmhost's queue at the moved path was
+	// full nothing told its listener from a dead socket's. Its retry timer added connects every
+	// 5 s: minutes later the saved VM listed stopped, and a Start spawned a second vmhost on its
+	// disks. A move binds a listener for the new path now.
+	@Test("E61: a frozen vmhost serving a saved VM's moved socket never lists stopped")
+	@MainActor func aFrozenVMHostAtAMovedSocketNeverListsStopped() async throws {
+		let (routing, socketPath) = try makeRouting(
+			helloDeadline: .milliseconds(200), probeDeadline: .milliseconds(300))
+		routing.adoptionRetryInterval = .milliseconds(50)   // its timer runs meanwhile
+		// The run was launched on another VM's path and saved as alpha: it serves alpha's now.
+		let queue = DispatchQueue(label: "mm-moved-accept")
+		let listener = try UDSListener(
+			path: TestEnvironment.socketPath("mm-launched"), queue: queue) { close($0) }
+		try listener.move(to: socketPath)
+		queue.suspend()   // frozen: nothing accepts any more
+		defer {
+			queue.resume()
+			listener.shutdown()
+		}
+		VMHostProcess.TestHook.setServing(socketPath, getpid())   // this process plays it
+		defer { VMHostProcess.TestHook.setServing(socketPath, nil) }
+		#expect(FrozenHost.fill(socketPath) > 0)   // its accept queue is full
+
+		var states: [VMState] = []
+		let clock = ContinuousClock()
+		let until = clock.now.advanced(by: .seconds(1))
+		while clock.now < until {
+			let alpha = try #require(try await routing.listVMs().first { $0.name == "alpha" })
+			states.append(alpha.state)
+			try await Task.sleep(for: .milliseconds(20))
+		}
+		#expect(!states.contains(.stopped), "listed \(states)")
+		#expect(await eventually { routing.adoptionAttempts >= 3 })   // and never read it dark
+		let listed = try await routing.listVMs().first { $0.name == "alpha" }
+		#expect(listed?.unresponsive == true)
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("a start went past a live vmhost")
+		} catch let error as MachmanError {
+			#expect(error.message == "alpha is not responding — try again in a moment")
+		}
+		#expect(FileManager.default.fileExists(atPath: socketPath))   // never unlinked
+	}
+
 	// A safe run's vmhost adopted late must be a safe run again (its shadow is discarded at
 	// stop, never absorbed as the real VM) — and only the marker carrying its pid counts.
 	@Test @MainActor func lateAdoptionReattachesItsSafeRun() async throws {

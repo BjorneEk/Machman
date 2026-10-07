@@ -2,9 +2,9 @@
 //  SocketFollowsSaveTests.swift
 //  MachmanTests
 //
-//  E27: a vmhost's control socket is found by its VM's name, so when Save as New VM renames
-//  the run, the vmhost moves its live listener to the saved VM's path (rename(2) of a bound
-//  socket — connections stay), and the daemon follows it. Before, the run kept answering on
+//  E27: a vmhost's control socket is found by its VM's name, so when Save as New VM renames the
+//  run, the vmhost moves its live listener to the saved VM's path (a socket bound anew there
+//  takes over — connections stay), and the daemon follows it. Before, the run kept answering on
 //  the original's path, and a daemon restart adopted it as the original.
 //
 
