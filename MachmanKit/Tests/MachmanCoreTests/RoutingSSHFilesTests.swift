@@ -103,6 +103,17 @@ struct RoutingSSHFilesTests {
 		await finish(rig)
 	}
 
+	// C30: `ssh <alias>` run right after vm.ssh.set turned the integration on found no managed
+	// config — the write ran after the reply (A1b met it). The reply now waits for it.
+	@Test("C30: vm.ssh.set replies once ~/.ssh/machman/config lists the VM's alias")
+	func setSSHRepliesAfterTheWrite() async throws {
+		let rig = try await makeRig(["alpha"], stalled: [], deadline: .seconds(5))
+		_ = try await rig.routing.setSSH(
+			vm: "alpha", integrationEnabled: true, reverseApproved: nil, alias: nil)
+		#expect(rig.managed.contains(#"Host "alpha-now.machman""#))
+		await finish(rig)
+	}
+
 	// Both stalled hosts are asked before either ask could have run out: asked in turn, the
 	// second would wait out the first's 30 s deadline. Released, both answer fresh.
 	@Test func theHostsAreAskedAtOnce() async throws {

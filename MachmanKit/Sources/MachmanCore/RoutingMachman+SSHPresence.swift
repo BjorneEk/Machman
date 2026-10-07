@@ -258,7 +258,7 @@ extension RoutingMachman {
 				revokeReverseKey(marker: marker, vmName: name, announce: .always)
 			}
 		}
-		scheduleSSHHostConfigWrite()
+		await writeSSHHostConfig()
 		return info
 	}
 
@@ -321,7 +321,7 @@ extension RoutingMachman {
 		if let marker {
 			revokeReverseKey(marker: marker, vmName: name, announce: .always)
 		}
-		scheduleSSHHostConfigWrite()
+		await writeSSHHostConfig()
 		return info
 	}
 
@@ -337,6 +337,14 @@ extension RoutingMachman {
 	// the one that lands.
 	func scheduleSSHHostConfigWrite() {
 		sshFiles?.regenerate { [weak self] in await self?.sshHostEntries() }
+	}
+
+	// The same, for a request whose reply says the change is made: vm.ssh.set and reset
+	// answer once ~/.ssh says what they set, so `ssh <alias>` right after the reply works —
+	// a client that ran it at once found no managed config yet.
+	private func writeSSHHostConfig() async {
+		scheduleSSHHostConfigWrite()
+		await sshFiles?.settled()
 	}
 
 	// One entry per VM with the ~/.ssh integration on, from current state. The vmhosts are
