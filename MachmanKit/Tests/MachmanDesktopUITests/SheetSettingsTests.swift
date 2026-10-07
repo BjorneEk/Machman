@@ -55,6 +55,20 @@ struct SheetSettingsTests {
 		}
 	}
 
+	@Test("S55: a Linux VM's Duplicate sheet says Guest Setup gives the copy its own address")
+	func duplicateSheetNamesGuestSetupForALinuxCopy() async throws {
+		let h = await UIHarness.make([Samples.linux("Debian"), Samples.macOS("Sequoia")])
+		let linux = try await h.snapshot(
+			CopyVMSheet(vm: h.vm("Debian"), viewModel: h.viewModel))
+		let said = "Copies the disk file into the new VM — run Guest Setup in a Linux copy so "
+			+ "it leases its own address"
+		#expect(linux.all.contains { $0.help == said }, "\(linux.dump())")
+		let mac = try await h.snapshot(CopyVMSheet(vm: h.vm("Sequoia"), viewModel: h.viewModel))
+		#expect(mac.all.contains { $0.help == "Copies the disk file into the new VM" },
+			"\(mac.dump())")
+		#expect(!mac.all.contains { $0.help?.contains("Guest Setup") == true }, "\(mac.dump())")
+	}
+
 	@Test("W3-35: the picker's row menu and both Back chevrons read their tooltips")
 	func pickerControlsReadTheirTooltips() async throws {
 		let h = await UIHarness.make()
