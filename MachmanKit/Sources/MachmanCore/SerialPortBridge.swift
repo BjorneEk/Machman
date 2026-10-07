@@ -10,10 +10,11 @@
 //
 //  All state runs on one serial queue, so there are no locks: the drain, the accept loop and the
 //  per-client reads are DispatchSources targeting `queue`. Client writes are non-blocking: what
-//  a client's socket won't take waits in a bounded per-client backlog (C29), and only a client
-//  that falls further behind drops output — never the shared drain, and with it the guest,
-//  stalls on it. Guest input is non-blocking too: what the guest pipe won't take waits in a
-//  bounded buffer, and a guest that reads nothing loses input rather than freezing the drain.
+//  a client's socket won't take waits in a bounded per-client backlog (C29), and a client that
+//  falls further behind is closed, to come back to the replay — never the shared drain, and
+//  with it the guest, stalls on it. Guest input is non-blocking too: what the guest pipe won't
+//  take waits in a bounded buffer, and a guest that reads nothing loses input rather than
+//  freezing the drain.
 //  SIGPIPE is ignored process-wide (a client that vanishes mid-write must not kill the vmhost),
 //  and a closed guest end (EPIPE while VZ tears down) ends input instead of raising. Every byte
 //  is counted (E58) and the counts logged when a client leaves and at stop, so a console that
@@ -98,7 +99,6 @@ final class SerialPortBridge {
 		var writer: DispatchSourceWrite?
 		var backlog = Data()
 		var counts = ClientCounts()
-		var warned = false
 		private var watching = 0
 
 		init(fd: Int32) { self.fd = fd }
@@ -114,7 +114,7 @@ final class SerialPortBridge {
 
 	private static let replayCap = 256 * 1024
 	private static let guestInputCap = 64 * 1024
-	// C29: how far one terminal may fall behind the guest's output before it loses some.
+	// C29: how far one terminal may fall behind the guest's output before it is closed.
 	private static let clientBacklogCap = 1024 * 1024
 
 	private static let ignoreSIGPIPE: Void = {
@@ -173,6 +173,9 @@ final class SerialPortBridge {
 		queue.async { [self] in
 			guard !self.stopped else { return }
 			self.stopped = true
+			// The socket goes first: a terminal that sees its connection end must not find a
+			// bridge still serving and take it for one that closed it for falling behind.
+			self.listener?.unlinkIfOurs(self.socketPath)
 			MachmanLogger.log(.log, self.countsLine(client: nil))
 			self.drainSource?.cancel()
 			self.guestInputSource?.cancel()
@@ -274,10 +277,11 @@ final class SerialPortBridge {
 	// MARK: - Clients
 
 	// Output to one client without ever blocking `queue`: what its socket takes now, the rest
-	// (in order) for its write source, and past clientBacklogCap new output dropped — a
-	// terminal that stops reading must not stall the drain. The socket alone holds about 16
-	// KiB: a burst that came while a busy client wasn't reading lost its tail, the echo a
-	// console session waited on among it (E58).
+	// (in order) for its write source — a terminal that stops reading must not stall the
+	// drain. The socket alone holds about 16 KiB: a burst that came while a busy client wasn't
+	// reading lost its tail, the echo a console session waited on among it (E58). A client
+	// still clientBacklogCap behind is stuck (C29): it is closed rather than handed output with
+	// a hole in it, and a terminal that comes back starts over from the replay.
 	private func send(_ client: Client, _ data: Data) {
 		var pending = data
 		if client.backlog.isEmpty {
@@ -291,14 +295,16 @@ final class SerialPortBridge {
 			}
 		}
 		guard !pending.isEmpty else { return }
-		let kept = pending.prefix(max(0, Self.clientBacklogCap - client.backlog.count))
-		client.counts.lost += UInt64(pending.count - kept.count)
-		if kept.count < pending.count, !client.warned {
-			client.warned = true
-			MachmanLogger.log(.log, "serial \(kind.rawValue)\(index): slow client, dropping output")
+		guard client.backlog.count + pending.count <= Self.clientBacklogCap else {
+			client.counts.lost += UInt64(client.backlog.count + pending.count)
+			client.backlog.removeAll()
+			MachmanLogger.log(.log, "serial \(kind.rawValue)\(index): a client fell "
+				+ "\(Self.clientBacklogCap >> 20) MiB behind the guest's output, closing it")
+			removeClient(client.fd)
+			return
 		}
-		client.backlog.append(kept)
-		if !client.backlog.isEmpty { armWriter(client) }
+		client.backlog.append(pending)
+		armWriter(client)
 	}
 
 	// Non-blocking write of as much as the socket takes, and whether it failed for good.

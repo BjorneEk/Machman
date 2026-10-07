@@ -344,10 +344,25 @@ struct SerialPortBridgeTests {
 			== [SerialPortBridge.ClientCounts(sent: total, lost: 0)])
 	}
 
-	// …and one that never reads loses only what passes its backlog, without holding up the
-	// drain for the others.
-	@Test("E58: a client that never reads loses only what passes its 1 MiB backlog")
-	func aStuckClientLosesOnlyPastItsBacklog() throws {
+	// Reads a client's socket until the bridge closes it: what it got, and whether it ended.
+	private func recvToEnd(_ fd: Int32, timeout: Double = 5) -> (data: Data, ended: Bool) {
+		var tv = timeval(tv_sec: 0, tv_usec: 100_000)
+		setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+		var got = Data()
+		let deadline = Date().addingTimeInterval(timeout)
+		while Date() < deadline {
+			var buf = [UInt8](repeating: 0, count: 64 * 1024)
+			let n = read(fd, &buf, buf.count)
+			if n > 0 { got.append(contentsOf: buf[0..<n]) } else if n == 0 { return (got, true) }
+		}
+		return (got, false)
+	}
+
+	// …and one that never reads is stuck once it is 1 MiB behind: C29 closes it rather than
+	// hand it output with a hole in it, the drain goes on for the others, and a terminal that
+	// comes back gets the replay.
+	@Test("C29: a client 1 MiB behind is closed, and its reconnect gets the replay")
+	func aStuckClientIsClosedAndComesBackToTheReplay() throws {
 		let env = makeBridge("stuck")
 		env.bridge.start()
 		defer { env.bridge.stop() }
@@ -358,15 +373,31 @@ struct SerialPortBridgeTests {
 		let chunk = Data(repeating: 0x79, count: 64 * 1024)
 		for _ in 0..<24 { env.guestOut.write(chunk) }   // 1.5 MiB the client never reads
 		env.guestOut.write(Data("STILL_FLOWING\n".utf8))
-		let late = connect(env.bridge.socketPath)
-		defer { close(late) }
-		#expect(recv(late, until: "STILL_FLOWING").contains("STILL_FLOWING"))
 		let output = UInt64(24 * 64 * 1024 + 14)
-		let now = counts(env.bridge) { $0.port.output == output }
-		let first = try #require(now.clients.max { $0.lost < $1.lost })
-		#expect(first.lost > 0)
-		#expect(first.sent + first.lost <= output)
-		#expect(Int64(first.lost) >= Int64(output) - 1024 * 1024 - Int64(first.sent))
+		#expect(counts(env.bridge) { $0.port.output == output }.clients.isEmpty)
+		let (got, ended) = recvToEnd(stuck)
+		#expect(ended, "the stuck client was not closed")
+		#expect(got.count < 1024 * 1024 + 64 * 1024)   // its socket's share, not the rest
+
+		let back = connect(env.bridge.socketPath)
+		defer { close(back) }
+		let replay = recv(back, until: "STILL_FLOWING")
+		#expect(replay.hasSuffix("STILL_FLOWING\n"))
+		#expect(replay.utf8.count == 256 * 1024)   // the whole ring
+	}
+
+	// The socket goes before the clients: a terminal whose connection ends finds no bridge
+	// to come back to, and so never takes a stop for being closed as stuck.
+	@Test("C29: a stopped bridge's socket is gone before its clients see the end")
+	func aStoppedBridgeUnlinksBeforeClosingClients() throws {
+		let env = makeBridge("stopping")
+		env.bridge.start()
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+		env.bridge.stop()
+		#expect(recvToEnd(client).ended)
+		#expect(!FileManager.default.fileExists(atPath: env.bridge.socketPath))
 	}
 
 	// Types `count` bytes from a non-blocking client that the guest doesn't read: the bridge

@@ -38,6 +38,10 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	private var lastStream: TerminalByteStream?
 	// What applyLive last set, so a repeat sets nothing.
 	private var appliedLive: TerminalLiveSettings?
+	// A serial terminal's socket. Its bridge closes a terminal that fell 1 MiB behind the
+	// guest's output and goes on serving (C29), so a connection that ends while the socket
+	// still takes one was this terminal's own: it rejoins (see rejoin()).
+	private var servedPath: String?
 
 	// The startup-only settings baked into terminalView at creation. The info panel compares this
 	// against the current profile to decide whether a Reload is needed (font/colours apply live;
@@ -111,6 +115,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 
 	// Idempotent: connect once per socket. A different socket (VM restart) is a new controller.
 	func connect(path: String) {
+		servedPath = path
 		connect(stream: SerialTerminalConnection(path: path))
 	}
 
@@ -128,6 +133,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 			guard let self else { return }
 			if let c { self.lastStream = c }
 			self.connection = nil
+			if self.rejoin() { return }
 			self.disconnectedAt = .now
 			self.connected = false
 		}
@@ -143,6 +149,21 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		} else if disconnectedAt == nil {
 			disconnectedAt = .now   // a failed retry keeps the first failure's time
 		}
+	}
+
+	// C29: the bridge closed this terminal for falling 1 MiB behind and still serves (a stopped
+	// port's socket is gone before its terminals see the end). The terminal starts over from
+	// the bridge's replay of recent output, cleared first so nothing it showed shows twice.
+	// Called as the connection ends; false when nothing serves the socket any more.
+	private func rejoin() -> Bool {
+		guard let path = servedPath else { return false }
+		connect(stream: SerialTerminalConnection(path: path))
+		guard connection != nil else { return false }
+		// The replay reaches the terminal on a later main-queue turn: the reset lands first.
+		terminalView.getTerminal().resetToInitialState()
+		note("reconnected after falling behind "
+			+ Date().formatted(date: .omitted, time: .shortened))
+		return true
 	}
 
 	// Machman's own line in the guest's terminal — session boundaries, nothing else. CRLF
