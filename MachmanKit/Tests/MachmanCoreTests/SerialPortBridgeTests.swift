@@ -257,6 +257,71 @@ struct SerialPortBridgeTests {
 		#expect(recv(client, until: "STILL_ALIVE").contains("STILL_ALIVE"))
 	}
 
+	// The bridge's counts once `done` holds them (they move on its own queue).
+	private func counts(
+		_ bridge: SerialPortBridge, timeout: Double = 3,
+		until done: ((port: SerialPortBridge.Counters, clients: [SerialPortBridge.ClientCounts]))
+			-> Bool
+	) -> (port: SerialPortBridge.Counters, clients: [SerialPortBridge.ClientCounts]) {
+		let deadline = Date().addingTimeInterval(timeout)
+		var now = bridge.countsForTesting
+		while !done(now), Date() < deadline {
+			Thread.sleep(forTimeInterval: 0.02)
+			now = bridge.countsForTesting
+		}
+		return now
+	}
+
+	// E58: a console that seemed to stop taking input — the counts tell input lost here from
+	// a guest that stopped reading (input waiting) and from output a client never got.
+	@Test("E58: the bridge counts every byte in and out, and typed is taken, waiting or dropped")
+	func countsEveryByte() throws {
+		let env = makeBridge("counts")
+		env.bridge.start()
+		defer { env.bridge.stop() }
+		let client = connect(env.bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)
+
+		let typed = "TYPED\n"
+		_ = typed.utf8CString.withUnsafeBytes { write(client, $0.baseAddress, typed.utf8.count) }
+		#expect(readPipe(env.guestIn, until: "TYPED").contains("TYPED"))
+		env.guestOut.write(Data("ECHO_42\n".utf8))
+		#expect(recv(client, until: "ECHO_42").contains("ECHO_42"))
+		let first = counts(env.bridge) { $0.port.output == 8 && $0.clients.first?.sent == 8 }
+		#expect(first.port == SerialPortBridge.Counters(typed: 6, taken: 6, output: 8))
+		#expect(first.clients == [SerialPortBridge.ClientCounts(sent: 8, lost: 0)])
+
+		// A guest that reads nothing more: the pipe and the 64 KiB buffer fill, the rest is
+		// dropped with one warning, and every typed byte is still accounted for.
+		_ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK)
+		let chunk = [UInt8](repeating: 0x61, count: 4096)
+		var sent = 0
+		let deadline = Date().addingTimeInterval(3)
+		while sent < 256 * 1024, Date() < deadline {
+			let n = chunk.withUnsafeBytes { write(client, $0.baseAddress, $0.count) }
+			if n > 0 { sent += n } else { Thread.sleep(forTimeInterval: 0.01) }
+		}
+		#expect(sent == 256 * 1024)
+		let full = counts(env.bridge) { $0.port.typed == UInt64(6 + sent) }
+		#expect(full.port.typed == UInt64(6 + sent))
+		#expect(full.port.taken + full.port.waiting + full.port.dropped == full.port.typed)
+		#expect(full.port.waiting == 64 * 1024)
+		#expect(full.port.dropped > 0)
+		#expect(full.port.dropWarnings == 1)
+	}
+
+	@Test("E58: the counts read as one log line, with a leaving client's share")
+	func countsReadAsOneLine() {
+		let counts = SerialPortBridge.Counters(
+			typed: 12, taken: 10, waiting: 2, dropped: 0, output: 4096)
+		#expect(counts.line(port: "console2")
+			== "serial console2 counts: typed 12, taken 10, waiting 2, dropped 0, output 4096")
+		#expect(counts.line(port: "console2", client: .init(sent: 4000, lost: 96))
+			== "serial console2 counts: typed 12, taken 10, waiting 2, dropped 0, output 4096; "
+				+ "client got 4000, lost 96")
+	}
+
 	// E18: what the pipe can't take at once is buffered, not lost — below the cap a slow guest
 	// still receives every byte, in order.
 	@Test func bufferedInputReachesASlowGuestInOrder() throws {

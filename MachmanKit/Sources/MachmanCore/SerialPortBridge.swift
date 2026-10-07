@@ -14,7 +14,10 @@
 //  the guest). Guest input is non-blocking too: what the guest pipe won't take waits in a
 //  bounded buffer, and a guest that reads nothing loses input rather than freezing the drain.
 //  SIGPIPE is ignored process-wide (a client that vanishes mid-write must not kill the vmhost),
-//  and a closed guest end (EPIPE while VZ tears down) ends input instead of raising.
+//  and a closed guest end (EPIPE while VZ tears down) ends input instead of raising. Every byte
+//  is counted (E58) and the counts logged when a client leaves and at stop, so a console that
+//  seems to stop taking input can be told apart: input lost here, a guest that stopped reading
+//  (input left waiting), or output a slow client never got.
 //
 
 import Foundation
@@ -53,6 +56,33 @@ final class SerialPortBridge {
 	private var guestInputSource: DispatchSourceWrite?
 	private var guestInputClosed = false
 	private var warnedInputDrop = false
+	private var counts = Counters()
+	private var clientCounts: [Int32: ClientCounts] = [:]
+
+	// What crossed the port this run (E58). Every typed byte is taken by the guest pipe,
+	// waiting for it, or dropped (past the buffer, or the guest end gone).
+	struct Counters: Equatable, Sendable {
+		var typed: UInt64 = 0
+		var taken: UInt64 = 0
+		var waiting: UInt64 = 0
+		var dropped: UInt64 = 0
+		var dropWarnings = 0
+		var output: UInt64 = 0
+
+		// "serial console2 counts: typed 12, taken 12, waiting 0, dropped 0, output 4096", and
+		// for a client that left "; client got 4096, lost 0".
+		func line(port: String, client: ClientCounts? = nil) -> String {
+			"serial \(port) counts: typed \(typed), taken \(taken), waiting \(waiting), "
+				+ "dropped \(dropped), output \(output)"
+				+ (client.map { "; client got \($0.sent), lost \($0.lost)" } ?? "")
+		}
+	}
+
+	// One client's share of the output: what it was sent, and what it lost by not reading.
+	struct ClientCounts: Equatable, Sendable {
+		var sent: UInt64 = 0
+		var lost: UInt64 = 0
+	}
 
 	private static let replayCap = 256 * 1024
 	private static let guestInputCap = 64 * 1024
@@ -111,6 +141,7 @@ final class SerialPortBridge {
 		queue.async { [self] in
 			guard !self.stopped else { return }
 			self.stopped = true
+			MachmanLogger.log(.log, self.countsLine(client: nil))
 			self.drainSource?.cancel()
 			self.guestInputSource?.cancel()
 			self.guestInputSource = nil
@@ -148,6 +179,7 @@ final class SerialPortBridge {
 			let n = read(self.fromGuest.fileDescriptor, &buf, buf.count)
 			guard n > 0 else { return }
 			let data = Data(buf[0..<n])
+			self.counts.output += UInt64(n)
 			self.appendToLog(data)
 			self.ring.append(data)
 			if self.ring.count > Self.replayCap {
@@ -223,6 +255,8 @@ final class SerialPortBridge {
 			}
 			return off
 		}
+		clientCounts[fd, default: ClientCounts()].sent += UInt64(sent)
+		clientCounts[fd, default: ClientCounts()].lost += UInt64(data.count - sent)
 		if sent < data.count, warnedDrop.insert(fd).inserted {
 			MachmanLogger.log(.log, "serial \(kind.rawValue)\(index): slow client, dropping output")
 		}
@@ -253,26 +287,40 @@ final class SerialPortBridge {
 	// the rest (in order) for the write source, and past guestInputCap drop new input — a guest
 	// that reads nothing must not freeze the drain.
 	private func sendToGuest(_ data: Data) {
-		guard !stopped, !guestInputClosed else { return }
+		guard !stopped else { return }
+		counts.typed += UInt64(data.count)
+		guard !guestInputClosed else {
+			counts.dropped += UInt64(data.count)
+			return
+		}
 		var pending = data
 		if guestInput.isEmpty {
-			guard let sent = writeToGuest(data) else { return }
+			let (sent, failure) = writeToGuest(data)
 			pending = data.dropFirst(sent)
+			if failure != 0 {
+				counts.dropped += UInt64(pending.count)
+				closeGuestInput(failure)
+				return
+			}
 		}
 		guard !pending.isEmpty else { return }
 		let room = max(0, Self.guestInputCap - guestInput.count)
 		if pending.count > room, !warnedInputDrop {
 			warnedInputDrop = true
+			counts.dropWarnings += 1
 			MachmanLogger.log(
 				.log, "serial \(kind.rawValue)\(index): guest not reading input, dropping it")
 		}
-		guestInput.append(pending.prefix(room))
+		let kept = pending.prefix(room)
+		counts.dropped += UInt64(pending.count - kept.count)
+		guestInput.append(kept)
 		if !guestInput.isEmpty { armGuestInput() }
 	}
 
-	// Non-blocking write of as much as the pipe takes: the byte count, or nil once the guest
-	// end is gone (EPIPE) or the write failed, which closes input for the rest of the run.
-	private func writeToGuest(_ data: Data) -> Int? {
+	// Non-blocking write of as much as the pipe takes, counted as taken, and the errno that
+	// stopped it: a guest end that is gone (EPIPE) or a failed write is the caller's to close
+	// input on for the rest of the run.
+	private func writeToGuest(_ data: Data) -> (sent: Int, failure: Int32) {
 		let fd = toGuest.fileDescriptor
 		var failure: Int32 = 0
 		let sent = data.withUnsafeBytes { raw -> Int in
@@ -287,11 +335,8 @@ final class SerialPortBridge {
 			}
 			return off
 		}
-		guard failure == 0 else {
-			closeGuestInput(failure)
-			return nil
-		}
-		return sent
+		counts.taken += UInt64(sent)
+		return (sent, failure)
 	}
 
 	private func armGuestInput() {
@@ -306,8 +351,12 @@ final class SerialPortBridge {
 
 	private func flushGuestInput() {
 		guard !stopped, !guestInputClosed else { return }
-		guard let sent = writeToGuest(guestInput) else { return }
+		let (sent, failure) = writeToGuest(guestInput)
 		guestInput.dropHead(sent, live: Self.guestInputCap)
+		if failure != 0 {
+			closeGuestInput(failure)
+			return
+		}
 		if guestInput.isEmpty {
 			guestInputSource?.cancel()
 			guestInputSource = nil
@@ -317,6 +366,7 @@ final class SerialPortBridge {
 
 	private func closeGuestInput(_ error: Int32) {
 		guestInputClosed = true
+		counts.dropped += UInt64(guestInput.count)
 		guestInput.removeAll()
 		guestInputSource?.cancel()
 		guestInputSource = nil
@@ -328,7 +378,14 @@ final class SerialPortBridge {
 	private func removeClient(_ fd: Int32) {
 		guard let source = clients.removeValue(forKey: fd) else { return }
 		warnedDrop.remove(fd)
+		MachmanLogger.log(.log, countsLine(client: clientCounts.removeValue(forKey: fd)))
 		source.cancel()
+	}
+
+	private func countsLine(client: ClientCounts?) -> String {
+		var now = counts
+		now.waiting = UInt64(guestInput.count)
+		return now.line(port: "\(kind.rawValue)\(index)", client: client)
 	}
 
 	// MARK: - Socket
@@ -393,6 +450,15 @@ final class SerialPortBridge {
 	// What the two head-trimmed buffers' storage spans (E31) — a test seam.
 	var retainedForTesting: (ring: Int, guestInput: Int) {
 		queue.sync { (ring.endIndex, guestInput.endIndex) }
+	}
+
+	// What crossed the port so far, and each attached client's share (E58) — a test seam.
+	var countsForTesting: (port: Counters, clients: [ClientCounts]) {
+		queue.sync {
+			var now = counts
+			now.waiting = UInt64(guestInput.count)
+			return (now, clients.keys.map { clientCounts[$0] ?? ClientCounts() })
+		}
 	}
 }
 
