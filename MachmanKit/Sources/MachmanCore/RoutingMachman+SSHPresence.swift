@@ -118,6 +118,28 @@ extension RoutingMachman {
 		}
 	}
 
+	// The config's owner ingested a guest report (its sshChanged). Discovery starts over when it
+	// has no address yet, or never watched readiness (reach .unknown: the guest had not run
+	// the script when this run started) — a fresh report can mean sshd just appeared. And an
+	// answer that rests on what an earlier report taught (a client id, a reported address)
+	// is asked again: when the lookup now lands elsewhere — a stale report's lesson replaced
+	// by this run's — discovery starts over from it (review F5).
+	func sshReportArrived(_ host: HostedVM, probes: SSHDiscovery.Probes = .live) {
+		guard let answer = host.sshAnswer, host.sshReach != .unknown else {
+			startSSHDiscovery(host, probes: probes)
+			return
+		}
+		guard answer.hints != nil, let mac = host.identity.macInUse else { return }
+		let id = host.identity.id
+		let lookup = SSHDiscovery.Lookup(mac: mac, vm: host.identity.name, library: machmanVMDir)
+		Task { [weak self] in
+			let now = await probes.address(lookup)
+			guard let self, let host = self.host(withID: id), host.sshAnswer == answer,
+				now?.address != answer.address else { return }
+			self.startSSHDiscovery(host, probes: probes)
+		}
+	}
+
 	// Whether this run's guest has SSH set up, read from the process that OWNS the config —
 	// the vmhost: the daemon's registry copy was parsed at scan time and never sees the
 	// guest's first report, which left readiness stuck at "unknown" for exactly the run

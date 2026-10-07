@@ -114,6 +114,36 @@ struct GuestReportTests {
 		}
 	}
 
+	// Review F5: a report a crashed run left in the drop-box names an address whose lease may
+	// be another guest's by now; only a report written during this run teaches a client id.
+	@Test("E56: a report older than this run teaches no client id")
+	func aReportOlderThanTheRunTeachesNoClientID() throws {
+		let id = "ff,f1:f5:dd:7f:0:2:0:0:ab:11:b5:33:c7:d7:f3:c8:58:7d"
+		let leases = """
+			{
+				ip_address=192.168.64.17
+				hw_address=\(id)
+				identifier=\(id)
+				lease=0x66aa0001
+			}
+			"""
+		let dir = TestEnvironment.scratchURL
+			.appendingPathComponent("machman-report-\(UUID().uuidString)")
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(at: dir) }
+		let path = dir.appendingPathComponent("report.env").path
+		try "USER=admin\nIP=192.168.64.17\n".write(toFile: path, atomically: true, encoding: .utf8)
+		let later = Date().addingTimeInterval(60)
+		let stale = try #require(
+			GuestReport.poll(atPath: path, since: nil, notBefore: later) { leases }?.report)
+		#expect(stale.leaseClientID == nil)
+		#expect(stale.values["IP"] == "192.168.64.17")   // the claim itself still reads
+		let earlier = Date().addingTimeInterval(-60)
+		let fresh = try #require(
+			GuestReport.poll(atPath: path, since: nil, notBefore: earlier) { leases }?.report)
+		#expect(fresh.leaseClientID == id)
+	}
+
 	@Test func oversizedValuesAndFilesAreRefused() {
 		let huge = String(repeating: "x", count: GuestReport.maxValueLength + 1)
 		#expect(GuestReport.parse("USER=\(huge)").values["USER"] == nil)

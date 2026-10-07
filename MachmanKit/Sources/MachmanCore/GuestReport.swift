@@ -61,10 +61,12 @@ struct GuestReport {
 
 	// nil when there is no report file, or its mtime is still `since`. A new report that names
 	// an address gets the client id of the lease holding it: bootpd granted that lease just
-	// before the guest wrote the report, so its holder is this guest (E56). `leases` is the
-	// lease table's text (a test passes its own).
+	// before the guest wrote the report, so its holder is this guest (E56) — when the report
+	// is no older than `notBefore` (the run's start): an older one is a crashed run's, and
+	// its address may be another guest's lease by now. `leases` is the lease table's text (a
+	// test passes its own).
 	static func poll(
-		atPath path: String, since: Date?,
+		atPath path: String, since: Date?, notBefore: Date? = nil,
 		leases: () -> String? = { SSHDiscovery.leases(atPath: SSHDiscovery.leasesPath) }
 	) -> Found? {
 		var info = stat()
@@ -73,7 +75,8 @@ struct GuestReport {
 			+ TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
 		guard mtime != since else { return nil }
 		var report = read(atPath: path)
-		if let ip = report?.values["IP"], GuestValueRule.isAddress(ip), let table = leases() {
+		if notBefore.map({ mtime >= $0 }) ?? true, let ip = report?.values["IP"],
+			GuestValueRule.isAddress(ip), let table = leases() {
 			report?.leaseClientID = SSHDiscovery.clientID(holding: ip, inLeasesText: table)
 		}
 		return Found(mtime: mtime, report: report)

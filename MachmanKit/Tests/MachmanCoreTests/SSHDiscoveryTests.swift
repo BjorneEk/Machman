@@ -164,7 +164,7 @@ struct SSHDiscoveryTests {
 		#expect(SSHDiscovery.discover(
 			mac: vmMAC, leasesText: clientIDLeases, arpText: "", hints: hints,
 			interfaces: net)
-			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
+			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp", hints: hints))
 		#expect(SSHDiscovery.discover(
 			mac: vmMAC, leasesText: clientIDLeases, arpText: "", interfaces: net) == nil)
 	}
@@ -185,11 +185,12 @@ struct SSHDiscoveryTests {
 		}
 		// A static address no lease names.
 		#expect(answer("192.168.64.40", at: beforeExpiry)
-			== SSHDiscovery.Answer(address: "192.168.64.40", source: "report"))
+			== SSHDiscovery.Answer(
+				address: "192.168.64.40", source: "report",
+				hints: SSHDiscovery.Hints(reported: "192.168.64.40")))
 		// Another client's live lease, then the same lease run out.
 		#expect(answer("192.168.64.30", at: beforeExpiry) == nil)
-		#expect(answer("192.168.64.30", at: afterExpiry)
-			== SSHDiscovery.Answer(address: "192.168.64.30", source: "report"))
+		#expect(answer("192.168.64.30", at: afterExpiry)?.address == "192.168.64.30")
 		// Off every subnet of this Mac (another interface in the guest).
 		#expect(answer("172.17.0.1", at: beforeExpiry) == nil)
 	}

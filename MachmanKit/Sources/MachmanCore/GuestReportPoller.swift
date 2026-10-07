@@ -24,13 +24,17 @@ final class GuestReportPoller {
 	private var reading = false
 	private var stopped = false
 
+	// The live reader learns a DHCP client id only from a report written since the poller
+	// started — this run's: a report a crashed run left in the drop-box names an address
+	// whose lease may be another guest's by now (E56, review F5).
 	init(
 		path: @escaping () -> String,
-		read: @escaping Reader = { GuestReport.poll(atPath: $0, since: $1) },
+		read: Reader? = nil,
 		ingest: @escaping (GuestReport) -> Void
 	) {
 		self.path = path
-		self.read = read
+		let started = Date()
+		self.read = read ?? { GuestReport.poll(atPath: $0, since: $1, notBefore: started) }
 		self.ingest = ingest
 	}
 

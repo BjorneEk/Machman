@@ -68,6 +68,25 @@ private final class HeldAsk {
 	}
 }
 
+// An answer the test moves, taught by the guest's reports (`taught`) or not; how often asked.
+@MainActor
+private final class MovingAnswer {
+	var address = "192.168.64.20"
+	var taught: SSHDiscovery.Hints? = SSHDiscovery.Hints(clientID: "ff,1:2:3")
+	private(set) var asks = 0
+
+	var probes: SSHDiscovery.Probes {
+		SSHDiscovery.Probes(
+			address: { _ in await self.answer() },
+			sshd: { _ in true })
+	}
+
+	private func answer() -> SSHDiscovery.Answer? {
+		asks += 1
+		return SSHDiscovery.Answer(address: address, source: "dhcp", hints: taught)
+	}
+}
+
 @MainActor
 struct SSHAddressDeadlineTests {
 	private static let mac = "aa:bb:cc:dd:ee:01"
@@ -157,6 +176,36 @@ struct SSHAddressDeadlineTests {
 		#expect(!(await eventually(timeout: .milliseconds(500)) {
 			rig.host.sshReach == .unreachable
 		}), "the cancelled pass wrote \(String(describing: rig.host.sshReachDetail))")
+		await tearDown(rig)
+	}
+
+	// Review F5: an answer resting on what a report taught (here a client id) is asked again
+	// when the next report arrives, and a lookup that now lands elsewhere starts discovery
+	// over. One from the MAC's lease or ARP isn't asked again.
+	@Test("E56: a report that moves a hint-sourced answer starts discovery over")
+	func aReportMovesAHintSourcedAnswer() async throws {
+		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
+		let stand = MovingAnswer()
+		rig.routing.startSSHDiscovery(rig.host, probes: stand.probes, pace: Self.pace)
+		#expect(await eventually { rig.host.sshReach == .ready })
+		stand.address = "192.168.64.21"
+		stand.taught = SSHDiscovery.Hints(clientID: "ff,4:5:6")
+		rig.routing.sshReportArrived(rig.host, probes: stand.probes)
+		#expect(await eventually {
+			rig.host.sshAnswer?.address == "192.168.64.21" && rig.host.sshReach == .ready
+		})
+
+		// The MAC's lease answered: a report doesn't ask again.
+		stand.taught = nil
+		rig.routing.startSSHDiscovery(rig.host, probes: stand.probes, pace: Self.pace)
+		#expect(await eventually {
+			rig.host.sshReach == .ready && rig.host.sshAnswer?.hints == nil
+		})
+		let asked = stand.asks
+		stand.address = "192.168.64.22"
+		rig.routing.sshReportArrived(rig.host, probes: stand.probes)
+		#expect(stand.asks == asked)
+		#expect(rig.host.sshAnswer?.address == "192.168.64.21")
 		await tearDown(rig)
 	}
 

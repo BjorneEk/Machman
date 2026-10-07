@@ -611,13 +611,7 @@ extension RoutingMachman {
 				}
 				if case .sshChanged(let changed) = event {
 					self.reconcileReverseKey(vm: changed)
-					if let host = self.host(withID: id),
-						host.sshAnswer == nil || host.sshReach == .unknown {
-						// A fresh report can mean sshd just appeared — probe again now.
-						// (reach == .unknown means the guest had not run the script when
-						// this run started, so readiness was never being watched.)
-						self.startSSHDiscovery(host)
-					}
+					if let host = self.host(withID: id) { self.sshReportArrived(host) }
 					// Report ingestion may have changed users/keys the managed file pins.
 					self.scheduleSSHHostConfigWrite()
 				}

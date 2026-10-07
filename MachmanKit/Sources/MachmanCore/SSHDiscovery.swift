@@ -21,6 +21,16 @@ enum SSHDiscovery {
 	struct Answer: Equatable, Sendable {
 		var address: String
 		var source: String   // "dhcp" | "arp" | "report" — SSHInfo.addressSource vocabulary
+		// What the guest's reports taught that this answer rests on (a client id's lease or a
+		// reported address); nil for the MAC's lease and ARP. A later report that teaches
+		// something else can move it (review F5).
+		var hints: Hints?
+
+		init(address: String, source: String, hints: Hints? = nil) {
+			self.address = address
+			self.source = source
+			self.hints = hints
+		}
 	}
 
 	// What the VM's config owner learned from the guest's reports (E56): the DHCP client id
@@ -325,7 +335,7 @@ enum SSHDiscovery {
 			return Answer(address: ip, source: "arp")
 		}
 		if let id = hints.clientID, let ip = leaseIP(forClientID: id, in: table) {
-			return Answer(address: ip, source: "dhcp")
+			return Answer(address: ip, source: "dhcp", hints: hints)
 		}
 		if let reported = hints.reported,
 			hostAddress(seenFrom: reported, interfaces: interfaces()) != nil {
@@ -333,7 +343,7 @@ enum SSHDiscovery {
 			// a client nothing ties to this VM.
 			let seconds = UInt64(max(0, now.timeIntervalSince1970))
 			if !table.contains(where: { $0.ip == reported && $0.expiry > seconds }) {
-				return Answer(address: reported, source: "report")
+				return Answer(address: reported, source: "report", hints: hints)
 			}
 		}
 		return nil
