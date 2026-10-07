@@ -195,6 +195,37 @@ struct SSHDiscoveryTests {
 		#expect(answer("172.17.0.1", at: beforeExpiry) == nil)
 	}
 
+	// Review F8: a copy's config can hold its source's client id until its own report teaches
+	// its own; while the source runs and answers that lease's address, the copy's hint must
+	// not take it. The copy's own id leads to its own lease.
+	@Test("E56: a client-id hint whose address another running VM answers is skipped")
+	func aHintSkipsAnAddressAnotherVMAnswers() throws {
+		let net = try vmnet()
+		let newID = "ff,f1:f5:dd:7f:0:2:0:0:ab:11:aa:bb:cc:dd:ee:ff:0:1"
+		let table = clientIDLeases + """
+			{
+				ip_address=192.168.64.33
+				hw_address=\(newID)
+				identifier=\(newID)
+				lease=0x66aaaaaa
+			}
+			"""
+		let source: Set<String> = ["192.168.64.21"]
+		#expect(SSHDiscovery.discover(
+			mac: vmMAC, leasesText: table, arpText: "",
+			hints: SSHDiscovery.Hints(clientID: debianID), interfaces: net, taken: source)
+			== nil)
+		#expect(SSHDiscovery.discover(
+			mac: vmMAC, leasesText: table, arpText: "",
+			hints: SSHDiscovery.Hints(clientID: newID), interfaces: net, taken: source)?.address
+			== "192.168.64.33")
+		// The reported address the same: never one another running VM answers.
+		#expect(SSHDiscovery.discover(
+			mac: vmMAC, leasesText: table, arpText: "",
+			hints: SSHDiscovery.Hints(reported: "192.168.64.40"), interfaces: net,
+			taken: ["192.168.64.40"]) == nil)
+	}
+
 	@Test("E56: the MAC's lease and the ARP table still answer first")
 	func macSourcesComeFirst() throws {
 		let net = try vmnet()

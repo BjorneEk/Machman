@@ -295,6 +295,8 @@ enum SSHDiscovery {
 		var mac: String
 		var vm: String
 		var library: String
+		// What the other running VMs answer now: a hint never takes one of those (review F8).
+		var taken: Set<String> = []
 	}
 
 	// Where discovery looks: the live tables, the VM's config and a connect to port 22, or a
@@ -317,15 +319,17 @@ enum SSHDiscovery {
 	// (E56): next the lease kept under the client id the VM's config learned, then the
 	// address the guest reported — taken only on a subnet this Mac is on, and never while
 	// another client holds a live lease on it (a static address, or one whose id was not
-	// learned yet). Deliberately NO liveness gate: the address is a fact of the running VM
-	// whether or not anything listens on it yet (a guest without sshd still has an IP worth
-	// showing) — ssh reachability is the connection's own business. The cost is that a
-	// stale lease can win briefly after renumbering; a reboot or the refresh button
-	// re-resolves.
+	// learned yet). Neither hint takes an address another running VM answers (`taken`): a
+	// copy's config can hold its source's client id until its own report teaches its own
+	// (review F8), and the source's answer wins. Deliberately NO liveness gate: the address
+	// is a fact of the running VM whether or not anything listens on it yet (a guest without
+	// sshd still has an IP worth showing) — ssh reachability is the connection's own
+	// business. The cost is that a stale lease can win briefly after renumbering; a reboot or
+	// the refresh button re-resolves.
 	static func discover(
 		mac: String, leasesText: String?, arpText: String?, hints: Hints = Hints(),
 		interfaces: @autoclosure () -> [IPv4Interface] = currentIPv4Interfaces(),
-		now: Date = Date()
+		now: Date = Date(), taken: Set<String> = []
 	) -> Answer? {
 		let table = leasesText.map(leases(inText:)) ?? []
 		if let ip = leaseIP(for: mac, in: table) {
@@ -334,10 +338,11 @@ enum SSHDiscovery {
 		if let arpText, let ip = arpIP(for: mac, inARPOutput: arpText) {
 			return Answer(address: ip, source: "arp")
 		}
-		if let id = hints.clientID, let ip = leaseIP(forClientID: id, in: table) {
+		if let id = hints.clientID, let ip = leaseIP(forClientID: id, in: table),
+			!taken.contains(ip) {
 			return Answer(address: ip, source: "dhcp", hints: hints)
 		}
-		if let reported = hints.reported,
+		if let reported = hints.reported, !taken.contains(reported),
 			hostAddress(seenFrom: reported, interfaces: interfaces()) != nil {
 			// A lease of this VM's would have answered above: a live one on the address is
 			// a client nothing ties to this VM.
@@ -354,7 +359,7 @@ enum SSHDiscovery {
 	static func discoverLive(_ lookup: Lookup) -> Answer? {
 		discover(
 			mac: lookup.mac, leasesText: leases(atPath: leasesPath), arpText: currentARPOutput(),
-			hints: hints(vm: lookup.vm, library: lookup.library))
+			hints: hints(vm: lookup.vm, library: lookup.library), taken: lookup.taken)
 	}
 
 	// What the guest's reports taught the VM, read decode-only from its config: while the VM

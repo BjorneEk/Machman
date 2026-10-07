@@ -82,8 +82,9 @@ extension RoutingMachman {
 			var gaveUp = false
 			while !Task.isCancelled, address == nil {
 				guard let name = self?.host(withID: id)?.identity.name else { return }
-				let answer = await probes.address(
-					SSHDiscovery.Lookup(mac: mac, vm: name, library: machmanVMDir))
+				let answer = await probes.address(SSHDiscovery.Lookup(
+					mac: mac, vm: name, library: machmanVMDir,
+					taken: self?.answeredByOthers(than: id) ?? []))
 				// A restart cancelled this pass during the ask: the host is the new pass's now.
 				guard !Task.isCancelled, let self, let host = self.host(withID: id) else { return }
 				if let answer {
@@ -131,13 +132,20 @@ extension RoutingMachman {
 		}
 		guard answer.hints != nil, let mac = host.identity.macInUse else { return }
 		let id = host.identity.id
-		let lookup = SSHDiscovery.Lookup(mac: mac, vm: host.identity.name, library: machmanVMDir)
+		let lookup = SSHDiscovery.Lookup(
+			mac: mac, vm: host.identity.name, library: machmanVMDir,
+			taken: answeredByOthers(than: id))
 		Task { [weak self] in
 			let now = await probes.address(lookup)
 			guard let self, let host = self.host(withID: id), host.sshAnswer == answer,
 				now?.address != answer.address else { return }
 			self.startSSHDiscovery(host, probes: probes)
 		}
+	}
+
+	// The addresses the other hosted VMs answer now: discovery's hints never take one (F8).
+	private func answeredByOthers(than id: UUID) -> Set<String> {
+		Set(hosted.values.filter { $0.identity.id != id }.compactMap { $0.sshAnswer?.address })
 	}
 
 	// Whether this run's guest has SSH set up, read from the process that OWNS the config —

@@ -87,6 +87,20 @@ private final class MovingAnswer {
 	}
 }
 
+// The hints a VM's reports taught, as the test changes them; how often they were read.
+@MainActor
+private final class Taught {
+	var hints: SSHDiscovery.Hints
+	private(set) var asks = 0
+
+	init(_ hints: SSHDiscovery.Hints) { self.hints = hints }
+
+	func ask() -> SSHDiscovery.Hints {
+		asks += 1
+		return hints
+	}
+}
+
 @MainActor
 struct SSHAddressDeadlineTests {
 	private static let mac = "aa:bb:cc:dd:ee:01"
@@ -124,6 +138,20 @@ struct SSHAddressDeadlineTests {
 		let host = routing.adopt(identity: identity, client: client)
 		host.identity.macInUse = Self.mac
 		return Rig(routing: routing, server: server, host: host)
+	}
+
+	// Another running VM beside the rig's, adopted from a stub vmhost of its own.
+	private func adoptAnother(
+		_ rig: Rig, _ name: String
+	) async throws -> (host: RoutingMachman.HostedVM, server: MachmanServer) {
+		let path = TestEnvironment.socketPath("mm-e57b", suffix: ".sock")
+		let stub = StubMachman()
+		stub.vms[name] = StubMachman.makeInfo(name, state: .running)
+		let server = MachmanServer(api: stub, socketPath: path, daemonVersion: "test")
+		try startServing(server)
+		let identity = RoutingMachman.HostIdentity(id: UUID(), name: name, socketPath: path)
+		let client = try await rig.routing.connectHost(identity: identity)
+		return (rig.routing.adopt(identity: identity, client: client), server)
 	}
 
 	private func tearDown(_ rig: Rig) async {
@@ -206,6 +234,50 @@ struct SSHAddressDeadlineTests {
 		rig.routing.sshReportArrived(rig.host, probes: stand.probes)
 		#expect(stand.asks == asked)
 		#expect(rig.host.sshAnswer?.address == "192.168.64.21")
+		await tearDown(rig)
+	}
+
+	// Review F8: Duplicate, Guest Setup in the copy, the reboot that renews its machine id. The
+	// copy's config still holds the source's client id, whose lease names the address the
+	// running source answers: the copy keeps looking, and its own report's id moves it to its
+	// own lease.
+	@Test("E56: a copy's stale client id waits while its source answers that address")
+	func aStaleHintWaitsWhileTheSourceAnswers() async throws {
+		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
+		let (source, sourceServer) = try await adoptAnother(rig, "source")
+		source.sshAnswer = SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp")
+		let leases = """
+			{
+				ip_address=192.168.64.21
+				hw_address=ff,1:2:3
+				identifier=ff,1:2:3
+				lease=0x66aa0001
+			}
+			{
+				ip_address=192.168.64.33
+				hw_address=ff,4:5:6
+				identifier=ff,4:5:6
+				lease=0x66aa0002
+			}
+			"""
+		let taught = Taught(SSHDiscovery.Hints(clientID: "ff,1:2:3"))
+		let probes = SSHDiscovery.Probes(
+			address: { lookup in
+				SSHDiscovery.discover(
+					mac: lookup.mac, leasesText: leases, arpText: "",
+					hints: await taught.ask(), interfaces: [], taken: lookup.taken)
+			},
+			sshd: { _ in true })
+		let patient = RoutingMachman.DiscoveryPace(
+			fast: .milliseconds(10), fastTries: 100_000, slow: .seconds(1))
+		rig.routing.startSSHDiscovery(rig.host, probes: probes, pace: patient)
+		#expect(await eventually { taught.asks >= 5 })
+		#expect(rig.host.sshAnswer == nil, "took \(String(describing: rig.host.sshAnswer))")
+		taught.hints = SSHDiscovery.Hints(clientID: "ff,4:5:6")   // the copy's own report
+		rig.routing.sshReportArrived(rig.host, probes: probes)
+		#expect(await eventually { rig.host.sshAnswer?.address == "192.168.64.33" })
+		sourceServer.stop()
+		await source.client.disconnect()
 		await tearDown(rig)
 	}
 
