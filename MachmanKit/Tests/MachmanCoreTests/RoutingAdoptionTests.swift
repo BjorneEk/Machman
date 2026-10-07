@@ -142,6 +142,36 @@ struct RoutingAdoptionTests {
 		#expect(routing.hostedNames.isEmpty)
 	}
 
+	// E53: a failed adoption only noted the name, and no event said so: a client that listed
+	// the VM before (the agent menu, while startup adoption ran) kept it as unknown and never
+	// offered End Process. The first failure has clients list again; a repeat says nothing.
+	// The host here accepts and hangs up at once: live, and never adoptable.
+	@Test("E53: a vmhost that can't be adopted makes clients list again, once")
+	@MainActor func aFailedAdoptionHasClientsListAgainOnce() async throws {
+		let (routing, socketPath) = try makeRouting()
+		let listener = try UDSListener(
+			path: socketPath, queue: DispatchQueue(label: "mm-unadoptable-accept")) { fd in
+				close(fd)
+			}
+		defer { listener.shutdown() }
+		let lists = ListCount()
+		let stream = await routing.events()
+		let reader = Task { @MainActor in
+			for await event in stream where event == .listChanged { lists.count += 1 }
+		}
+		defer { reader.cancel() }
+
+		let first = try await routing.listVMs().first { $0.name == "alpha" }
+		#expect(first?.state == .unknown)   // its adoption has only begun
+		#expect(await eventually { lists.count == 1 })
+		let listed = try await routing.listVMs().first { $0.name == "alpha" }
+		#expect(listed?.unresponsive == true)
+		// That list asked the host again; its second failure says nothing new.
+		#expect(await eventually { routing.adoptionAttempts >= 2 && routing.adoptions.isEmpty })
+		try await Task.sleep(for: .milliseconds(200))
+		#expect(lists.count == 1)
+	}
+
 	// A safe run's vmhost adopted late must be a safe run again (its shadow is discarded at
 	// stop, never absorbed as the real VM) — and only the marker carrying its pid counts.
 	@Test @MainActor func lateAdoptionReattachesItsSafeRun() async throws {
@@ -229,4 +259,9 @@ struct RoutingAdoptionTests {
 		await adoption.value
 		#expect(routing.hostedNames.sorted() == ["alpha", "beta"])
 	}
+}
+
+@MainActor
+private final class ListCount {
+	var count = 0
 }

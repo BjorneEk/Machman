@@ -18,10 +18,6 @@ import MachmanUI
 
 @Suite("Engine — frozen vmhosts", .serialized, .enabled(if: Lab.runs(.l2)))
 struct EngineFrozenHostTests {
-	/// Card E53: after a restart the agent can't adopt the frozen vmhost, and its
-	/// Force Stop answers "not responding — try again in a moment" (invalidState) instead of
-	/// asking to end the process; nothing tells the menu (or the desktop) the VM is not
-	/// responding, so End Process is never offered.
 	/// A running VM whose vmhost is frozen, the agent quit leaving it and started again: the
 	/// new agent meets a vmhost that never answers. Returns the vmhost's pid (still stopped).
 	static func frozenAcrossRestart(_ agent: LabAgent, _ vm: LabVM) async throws -> pid_t {
@@ -61,15 +57,14 @@ struct EngineFrozenHostTests {
 				mark = LabLog.mark()
 				#expect(
 					try await SeamProbe.control(agent, "menu forceStop frozen-readopted") == "ok")
-				// What the Force Stop then does: C9 says ask to end the process. Fails until the
-				// open bug E53 (after an agent restart it never offers End Process) is fixed;
-				// recorded, not thrown, so the frozen vmhost is resumed below.
+				// What the Force Stop then does: C9 says ask to end the process (E53: the failed
+				// adoption has the menu list it Not responding). Recorded, not thrown, so the
+				// frozen vmhost is resumed below.
 				do {
 					_ = try await LabLog.waitFor(
 						SeamProbe.promptLine("agent.endProcess", "Cancel \\(not listed\\)"),
 						after: mark, process: "MachmanAgent", timeout: .seconds(20))
 				} catch {
-					// Fails until the open bug E53 is fixed.
 					Issue.record(Comment(rawValue:
 						"Force Stop on the frozen VM never asked to end its process: \(error)"))
 				}

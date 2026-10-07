@@ -174,7 +174,12 @@ extension RoutingMachman {
 			unadoptable.remove(name)
 			return host
 		} catch {
-			if UDSListener.isLive(path: socketPath) { unadoptable.insert(name) }
+			// Clients list the VM again once it can't be adopted (E53): it lists Not responding
+			// from now on, which a client that listed it before (the agent menu, while startup
+			// adoption ran) would never learn. A repeat failure inserts nothing, so no loop.
+			if UDSListener.isLive(path: socketPath), unadoptable.insert(name).inserted {
+				registry.events.emit(.listChanged)
+			}
 			throw error
 		}
 	}
