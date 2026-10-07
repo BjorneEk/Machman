@@ -115,39 +115,90 @@ struct GuestScriptConsoleTests {
 			#expect(r.out == """
 				  consoles         null (automatic - nothing to do)
 				                   zero (verify - no changes expected)
-				                   random (report only - configured outside Machman)
+				                   random (verify - set up outside Machman)
 
 				""", "\(shell): \(r.out)")
 		}
 	}
 
-	// S51 (choice C28): a systemd login Machman's runs never enabled is reported and left as
-	// is, never adopted: a unit someone else enabled is not ours to take over, as runit's
-	// service dirs aren't, so no Leave/Adopt question asks about it. inittab and ttys, where
-	// adopting comments a line out, still offer it.
-	@Test("S51: a systemd login enabled outside Machman is reported, never adopted")
-	func systemdForeignLoginsAreReportedNotAdopted() async throws {
+	// S51, choice C28 (track origin): a login set up outside Machman where it can't be
+	// adopted — a systemd unit, a runit service — is listed, planned, checked and reported
+	// like Machman's own, never asked about; the state never records it, so the uninstall
+	// leaves it on and says so. inittab and ttys, where adopting comments a line out, still
+	// offer that, and a line left alone there still reads external.
+	@Test("S51: a login set up outside Machman reads active and stays after uninstall")
+	func outsideLoginsReadActiveAndStayAfterUninstall() async throws {
 		for shell in GuestScriptHarness.shells {
-			let r = try await GuestScriptHarness.run("""
-				INIT=systemd
-				GETTY_MECH=systemd
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=1000
 				CONSOLE_DEVICES="null zero"
 				ST_CONSOLE_LOGINS="zero"
-				ps() { :; }
-				systemctl() { [ "$1" != is-enabled ] || echo enabled; }
-				menu_select() { echo "asked: $1"; R_INDEX=2; }
 				CONSOLES_OVERRIDE="null zero"
-				console_decide
-				echo "$CONSOLE_ACTIONS | $CONSOLE_MANAGED"
-				console_menu_lines | tr '\\t' '|'
+				menu_select() { echo "asked: $1"; R_INDEX=2; }
+				console_session_device() { :; }
+				walk() {
+					console_menu_lines | tr '\t' '|'
+					console_menu_note
+					console_decide
+					echo "$CONSOLE_ACTIONS | $CONSOLE_MANAGED"
+					console_plan
+					console_act
+					console_report
+					console_uninstall
+				}
+				INIT=systemd
+				GETTY_MECH=systemd
+				ps() { :; }
+				systemctl() {
+					printf '%s\n' "$*" >> "$D/systemctl.log"
+					[ "$1" != is-enabled ] || echo enabled
+				}
+				walk
+				grep -E '^(enable|disable)' "$D/systemctl.log" || echo "no systemctl changes"
+				echo ---
+				INIT=runit
+				GETTY_MECH=runit
+				RUNIT_SV_DIR="$D/sv"
+				RUNIT_SERVICE_DIR="$D/service"
+				mkdir -p "$RUNIT_SV_DIR/agetty-null" "$RUNIT_SV_DIR/agetty-zero" \
+					"$RUNIT_SERVICE_DIR"
+				ln -s "$RUNIT_SV_DIR/agetty-null" "$RUNIT_SV_DIR/agetty-zero" \
+					"$RUNIT_SERVICE_DIR/"
+				ps() { echo '1 ? agetty null 38400'; echo '2 ? agetty zero 38400'; }
+				walk
+				ls "$RUNIT_SERVICE_DIR"
+				echo ---
 				GETTY_MECH=inittab
 				console_foreign_note
-				""", under: shell)
+				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				null=report zero=verify | zero
-				null|configured outside Machman — report only
+				null|set up outside Machman — verify
 				zero|managed by Machman — verify
+				zero managed - null set up outside Machman — verify
+				null=keep zero=verify | zero
+				  consoles         null (verify - set up outside Machman)
+				                   zero (verify - no changes expected)
+				[ok] login on null verified (set up outside Machman)
+				[ok] login on zero verified
+				CONSOLE_1=null active
+				CONSOLE_2=zero active
+				   null keeps its login (set up outside Machman).
+				disable --now serial-getty@zero.service
+				---
+				null|set up outside Machman — verify
+				zero|managed by Machman — verify
+				zero managed - null set up outside Machman — verify
+				null=keep zero=verify | zero
+				  consoles         null (verify - set up outside Machman)
+				                   zero (verify - no changes expected)
+				[ok] login on null verified (set up outside Machman)
+				[ok] login on zero verified
+				CONSOLE_1=null active
+				CONSOLE_2=zero active
+				   null keeps its login (set up outside Machman).
+				agetty-null
+				---
 				configured outside Machman — adopt or report
 
 				""", "\(shell): \(r.out)")

@@ -3,14 +3,16 @@
 # the port NOW; is one persistent for the next boot) — distro tables lie, running
 # processes do not — and OWNERSHIP-aware: a login configured outside Machman (no marker)
 # is never touched blind. Per console the plan carries a verb: install, verify, adopt
-# (comment the existing line, tagged for restore, and manage a marked one), or report
-# only. systemd's getty-generator gives hvc0 a login on its own; that shows up as
-# "active (automatic)" and is left alone.
+# (comment the existing line, tagged for restore, and manage a marked one), report only,
+# or keep — a login set up outside Machman that cannot be adopted (a systemd unit, a runit
+# service) is checked like Machman's own, but never recorded as Machman's, so the
+# uninstall leaves it on. systemd's getty-generator gives hvc0 a login on its own; that
+# shows up as "active (automatic)" and is left alone.
 
 CONSOLE_DEVICES=""         # expected device names, space-separated
 CONSOLE_SELECTED=""        # devices chosen for this run, space-separated
 CONSOLE_MANAGED=""         # devices this run manages (for the state file)
-CONSOLE_ACTIONS=""         # "dev=install dev=verify dev=adopt dev=report dev=auto"
+CONSOLE_ACTIONS=""         # "dev=install dev=verify dev=adopt dev=report dev=keep dev=auto"
 CONSOLE_PLAN=""
 avail_console=0
 reason_console=""
@@ -186,14 +188,24 @@ console_is_configured() {
 	return 1
 }
 
-# What a run may do with a login configured outside Machman: adopt it where a shared file
-# holds its line (inittab, ttys), else only report it — a unit or service dir someone else
-# enabled is not ours to take over.
-console_foreign_note() {
+# Whether a login set up outside Machman may be adopted: where a shared file holds its line
+# (inittab, ttys), adopting comments that line out for a marked one. A unit or service dir
+# someone else enabled is not ours to take over: such a login is listed and checked like
+# Machman's own and kept — never asked about, never disabled by the uninstall.
+console_adoptable() {
 	case "$GETTY_MECH" in
-	inittab|ttys) echo "configured outside Machman — adopt or report" ;;
-	*) echo "configured outside Machman — report only" ;;
+	inittab|ttys) return 0 ;;
 	esac
+	return 1
+}
+
+# What a run may do with a login set up outside Machman.
+console_foreign_note() {
+	if console_adoptable; then
+		echo "configured outside Machman — adopt or report"
+	else
+		echo "set up outside Machman — verify"
+	fi
 }
 
 # The one-line annotation for the feature menu: the worst case first.
@@ -305,7 +317,7 @@ console_decide() {
 	fi
 	# The verb per selected device — what this run WILL do, shown before it does it.
 	# CONSOLE_MANAGED collects the devices WE manage after this run (install/verify/
-	# adopt) — report-only and automatic ones are not ours and stay out of the state.
+	# adopt) — report-only, kept and automatic ones are not ours and stay out of the state.
 	CONSOLE_ACTIONS=""
 	CONSOLE_MANAGED=""
 	CONSOLE_PLAN=""
@@ -317,10 +329,9 @@ console_decide() {
 			;;
 		active|configured)
 			if [ "$(console_ownership "$_cdc_dev")" = foreign ]; then
-				if [ "$GETTY_MECH" = runit ] || [ "$GETTY_MECH" = systemd ]; then
-					# Someone else's service dir or unit is not ours to take over.
-					_cdc_act=report
-					_cdc_what="report only — configured outside Machman"
+				if ! console_adoptable; then
+					_cdc_act=keep
+					_cdc_what="verify — set up outside Machman"
 				else
 					menu_select \
 						"$_cdc_dev already has a login not managed by Machman:" \
@@ -764,6 +775,15 @@ console_act() {
 		report)
 			note "$_ca_dev left as is (configured outside Machman)."
 			;;
+		keep)
+			# Checked like a login of ours, but never taken over: gone since detection, it
+			# is set up by a re-run, not here.
+			if getty_persistent_on "$_ca_dev"; then
+				ok "login on $_ca_dev verified (set up outside Machman)"
+			else
+				note "$_ca_dev has no login now (it was set up outside Machman) — re-run to set one up."
+			fi
+			;;
 		adopt)
 			if [ "$DRY_RUN" -eq 1 ]; then
 				acting "would supersede the existing $_ca_dev line and manage a marked one"
@@ -814,9 +834,11 @@ console_report() {
 		missing) _cr_out="$_cr_dev missing" ;;
 		*) _cr_out="$_cr_dev none" ;;
 		esac
+		# External: a login left alone where it could have been adopted. One a unit or
+		# service dir keeps reads like Machman's own (the uninstall still leaves it on).
 		case "$_cr_state" in
 		active|configured)
-			[ "$(console_ownership "$_cr_dev")" = foreign ] \
+			console_adoptable && [ "$(console_ownership "$_cr_dev")" = foreign ] \
 				&& _cr_out="$_cr_out external"
 			;;
 		esac
@@ -879,6 +901,12 @@ console_session_kept() {
 	return 0
 }
 
+# A login set up outside Machman stays on: the uninstall undoes only what a run did. <dev>
+console_kept_outside() {
+	note "$1 keeps its login (set up outside Machman)."
+	return 0
+}
+
 # init rereads <file> now — unless this session runs on one of the consoles, whose login
 # that would end: then the change waits for the next boot, said so.
 console_uninstall_reload() {
@@ -914,7 +942,7 @@ console_uninstall() {
 		for _cu_dev in $CONSOLE_DEVICES; do
 			if ! has_word "$_cu_dev" "$ST_CONSOLE_LOGINS" && getty_unit_enabled "$_cu_dev"
 			then
-				note "$_cu_dev left as is (configured outside Machman)."
+				console_kept_outside "$_cu_dev"
 			fi
 		done
 		;;
@@ -967,6 +995,11 @@ console_uninstall() {
 				else
 					rm -f "$_cu_link"
 				fi
+			fi
+		done
+		for _cu_dev in $CONSOLE_DEVICES; do
+			if [ "$(console_ownership "$_cu_dev")" = foreign ]; then
+				console_kept_outside "$_cu_dev"
 			fi
 		done
 		if console_runit_damaged; then

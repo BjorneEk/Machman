@@ -78,7 +78,7 @@ struct GuestScriptConsoleUninstallTests {
 				""", under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
-				   hvc2 left as is (configured outside Machman).
+				   hvc2 keeps its login (set up outside Machman).
 				---
 				disable --now serial-getty@hvc1.service
 				---

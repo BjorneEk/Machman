@@ -217,7 +217,9 @@ struct THConsoleLoginTests {
 			#expect(alive.output == "th-alive", "the session on hvc1 still answers")
 			if kind == .debian {
 				// hvc2's login is the image's own (the lab's driver), never Machman's: the
-				// uninstall must leave it enabled and running.
+				// uninstall must leave it enabled and running, and say so.
+				#expect(said.contains("hvc2 keeps its login (set up outside Machman)."),
+					"\(run.output)")
 				let unit = "serial-getty@hvc2.service"
 				let state = try await THConsoleSession.run(
 					hvc1, "systemctl is-enabled \(unit); systemctl is-active \(unit)")
