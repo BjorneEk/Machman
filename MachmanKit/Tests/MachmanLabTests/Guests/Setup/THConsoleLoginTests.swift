@@ -220,13 +220,7 @@ struct THConsoleLoginTests {
 				let unit = "serial-getty@hvc2.service"
 				let state = try await THConsoleSession.run(
 					hvc1, "systemctl is-enabled \(unit); systemctl is-active \(unit)")
-				// Fails until the open bug S51 (--uninstall disables every serial getty, even
-				// ones Machman never set up) is fixed.
 				#expect(state.output == "enabled\nactive", "\(state.output)")
-				// Back to the lab's driver on hvc2 for the rest of the row (needed only while
-				// S51 is open; the fix drops it).
-				_ = try await THConsoleSession.run(hvc1, "systemctl enable --now \(unit)")
-				try await vz.reconnectDriver()
 			}
 			// The connection stays through the reboot: only what the new boot prints counts
 			// (a fresh connection would replay the old session's output).

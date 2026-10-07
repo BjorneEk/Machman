@@ -23,7 +23,11 @@ struct GuestScriptConsoleUninstallTests {
 				UI_COLS=1000
 				GETTY_MECH=systemd
 				CONSOLE_DEVICES="hvc0 hvc1"
-				systemctl() { printf '%s\\n' "$*" >> "$D/systemctl.log"; }
+				ST_CONSOLE_LOGINS="hvc0 hvc1"
+				systemctl() {
+					printf '%s\\n' "$*" >> "$D/systemctl.log"
+					[ "$1" != is-enabled ] || echo enabled
+				}
 				console_session_device() { printf hvc1; }
 				console_uninstall
 				console_session_device() { :; }
@@ -40,6 +44,47 @@ struct GuestScriptConsoleUninstallTests {
 				disable serial-getty@hvc1.service
 				disable --now serial-getty@hvc0.service
 				disable --now serial-getty@hvc1.service
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// S51: a systemd unit names no owner, so a login is Machman's only when a run of the
+	// script enabled it (the state lists it), and the uninstall disables only those, while
+	// is-enabled still says "enabled": hvc0's getty-generator unit (enabled-runtime) is
+	// systemd's own, and a login the image or the admin enabled stays — said so.
+	@Test("S51: uninstall disables only the logins the state lists, and only while enabled")
+	func systemdUninstallKeepsLoginsMachmanNeverEnabled() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=1000
+				INIT=systemd
+				GETTY_MECH=systemd
+				CONSOLE_DEVICES="hvc0 hvc1 hvc2"
+				ST_CONSOLE_LOGINS="hvc1"
+				systemctl() {
+					printf '%s\\n' "$*" >> "$D/systemctl.log"
+					case "$1 $2" in
+					"is-enabled serial-getty@hvc0.service") echo enabled-runtime ;;
+					"is-enabled "*) echo enabled ;;
+					esac
+				}
+				console_session_device() { :; }
+				console_uninstall
+				echo ---
+				grep -v is-enabled "$D/systemctl.log"
+				echo ---
+				for dev in hvc0 hvc1 hvc2; do echo "$dev $(console_ownership "$dev")"; done
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				   hvc2 left as is (configured outside Machman).
+				---
+				disable --now serial-getty@hvc1.service
+				---
+				hvc0 none
+				hvc1 ours
+				hvc2 foreign
 
 				""", "\(shell): \(r.out)")
 		}

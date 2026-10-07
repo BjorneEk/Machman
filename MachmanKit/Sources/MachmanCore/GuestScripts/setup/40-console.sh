@@ -79,13 +79,16 @@ console_inittab_re() {
 }
 
 # Who owns the persistent login: ours (marker-managed, or attributable to us) | foreign
-# (configured, but not by this script) | none. systemd enablement is unattributable but
-# also duplication-free, so it counts as ours; launchd persistence is only ever probed
-# through our own plist labels.
+# (configured, but not by this script) | none. systemd enablement names no owner, so a
+# unit is ours only when a run of this script enabled it (the state lists it), as runit's
+# links; launchd persistence is only ever probed through our own plist labels.
 console_ownership() {
 	getty_persistent_on "$1" || { echo none; return 0; }
 	case "$GETTY_MECH" in
-	systemd|launchd) echo ours ;;
+	systemd)
+		if has_word "$1" "$ST_CONSOLE_LOGINS"; then echo ours; else echo foreign; fi
+		;;
+	launchd) echo ours ;;
 	inittab)
 		if console_line_in_block /etc/inittab "$(console_inittab_re "$1")"; then
 			echo ours
@@ -883,9 +886,11 @@ console_uninstall() {
 	_cu_own="$(console_session_device)"
 	case "$GETTY_MECH" in
 	systemd)
-		# Only what a run of this script would have enabled: the explicit units.
-		for _cu_dev in $CONSOLE_DEVICES; do
-			systemctl is-enabled "serial-getty@$_cu_dev.service" >/dev/null 2>&1 || continue
+		# Only what a run of this script enabled (the state lists it), while it still is: a
+		# runtime or generated unit (the getty-generator's hvc0) is systemd's own.
+		for _cu_dev in $ST_CONSOLE_LOGINS; do
+			[ "$(systemctl is-enabled "serial-getty@$_cu_dev.service" 2>/dev/null \
+				| head -n 1)" = enabled ] || continue
 			if [ "$_cu_dev" = "$_cu_own" ]; then
 				run "disabling the login on $_cu_dev" \
 					systemctl disable "serial-getty@$_cu_dev.service" || true
@@ -893,6 +898,12 @@ console_uninstall() {
 			else
 				run "disabling the login on $_cu_dev" \
 					systemctl disable --now "serial-getty@$_cu_dev.service" || true
+			fi
+		done
+		for _cu_dev in $CONSOLE_DEVICES; do
+			if ! has_word "$_cu_dev" "$ST_CONSOLE_LOGINS" && getty_unit_enabled "$_cu_dev"
+			then
+				note "$_cu_dev left as is (configured outside Machman)."
 			fi
 		done
 		;;
