@@ -332,15 +332,28 @@ extension RoutingMachman {
 		host.exitingAfterRun || host.reconnectTask != nil
 	}
 
-	// Waits, up to hostExitGrace, for a leaving host to be gone, or reconnected and serving its
-	// run again. One that overstays is still shutting down; one whose connection is gone and
-	// that is listed not responding says so, at once.
+	// Whether a call waits a leaving host out before it goes anywhere — one rule for routed
+	// calls and stop-first edits. Not while the host still works for a claim on its VM: an
+	// import it drains into its stopped VM (E34) keeps it serving the VM's config until it
+	// exits, past any grace, so a routed call goes to it and a stop-first edit answers the
+	// claim at once (review F15). A dropped connection is waited out whatever holds the VM.
+	func isWaitedOut(_ host: HostedVM) -> Bool {
+		guard isLeaving(host) else { return false }
+		return host.reconnectTask != nil || claims.refusal(for: host.identity.name) == nil
+	}
+
+	// Waits, up to hostExitGrace, for a leaving host to be gone, reconnected and serving its
+	// run again, or working for a claim. One whose run is over and that overstays is still
+	// shutting down; one leaving only because its connection dropped is not responding — at
+	// once when it is listed so, else once the grace runs out (its VM still runs).
 	func waitOutLeaving(_ host: HostedVM, name: String) async throws {
 		let clock = ContinuousClock()
 		let deadline = clock.now.advanced(by: hostExitGrace)
-		while let current = self.host(withID: host.identity.id), isLeaving(current) {
+		while let current = self.host(withID: host.identity.id), isWaitedOut(current) {
 			if current.unresponsive, current.reconnectTask != nil { throw notResponding(name) }
-			guard clock.now < deadline else { throw stillShuttingDown(name) }
+			guard clock.now < deadline else {
+				throw current.exitingAfterRun ? stillShuttingDown(name) : notResponding(name)
+			}
 			try? await Task.sleep(for: .milliseconds(50))
 		}
 	}

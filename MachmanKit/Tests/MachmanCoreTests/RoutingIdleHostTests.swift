@@ -358,7 +358,9 @@ struct RoutingIdleHostTests {
 	}
 
 	// …and a call never goes down a connection that already dropped: it waits for the host to
-	// come back or go, and says why when it does neither.
+	// come back or go, and says why when it does neither. Its VM still runs, so it is not
+	// responding — never "still shutting down" (review F15), even when the reconnect has not
+	// decided by the time the call's own wait runs out.
 	@Test("E52: a settings edit at a vmhost whose connection dropped is never sent down it")
 	@MainActor func aSettingsEditAtADroppedHostWaits() async throws {
 		let routing = try makeRouting(exitGrace: .milliseconds(500))
@@ -367,19 +369,36 @@ struct RoutingIdleHostTests {
 		let host = try #require(routing.hostForTesting("alpha"))
 		rig.server.stop()
 		#expect(await eventually { host.reconnectTask != nil })
+		host.reconnectTask?.cancel()   // undecided: it never marks the host not responding
 
 		do {
 			_ = try await routing.removeDevice(vm: "alpha", kind: .guestSetup)
 			Issue.record("expected a refusal")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
-			#expect([
-				"alpha is still shutting down — try again in a moment",
-				"alpha is not responding — try again in a moment",
-			].contains(error.message))
+			#expect(error.message == "alpha is not responding — try again in a moment")
 		} catch {
 			Issue.record("sent down the dropped connection: \(error)")
 		}
-		host.reconnectTask?.cancel()
+	}
+
+	// E52 (review F15): a vmhost that drains an import into its stopped VM (E34) is exiting
+	// after its run for the whole import. The route waited each edit out for the exit grace,
+	// then said "still shutting down", again and again; the host serves the VM's config until
+	// it exits, so the edit goes to it at once, as it did before E52's routed half.
+	@Test("E52: a settings edit during a vmhost's import drain answers at once")
+	@MainActor func aSettingsEditDuringAnImportDrainAnswersAtOnce() async throws {
+		let rig = try await adoptStub(try makeRouting(exitGrace: .seconds(3)), state: .stopped)
+		defer { rig.server.stop() }
+		let host = try #require(rig.routing.hostForTesting("alpha"))
+		host.sawRun = true
+		host.lastAnswer = rig.stub.vms["alpha"]   // its run is over…
+		let drain = try rig.routing.claims.claim("alpha", .importingDisk, inDaemon: false)
+		defer { rig.routing.claims.release(drain) }   // …and an import still drains into it
+
+		try await rig.routing.setHardware(
+			vm: "alpha", cpuCount: 3, memoryBytes: nil, nestedVirtualization: nil)
+		#expect(rig.stub.calls.contains("setHardware"))
+		#expect(rig.stub.vms["alpha"]?.cpuCount == 3)
 	}
 }

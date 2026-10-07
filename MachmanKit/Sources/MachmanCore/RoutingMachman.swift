@@ -178,8 +178,9 @@ public final class RoutingMachman: MachmanControlling {
 		switch residence(of: name) {
 		case .hosted(let host):
 			// A host on its way out would fail a call forwarded now ("The connection was
-			// lost"): wait it out, then route to whatever owns the VM (E52).
-			guard isLeaving(host) else { return host.client }
+			// lost"): wait it out, then route to whatever owns the VM (E52). Not one that still
+			// drains an import into its VM: it serves the VM until it exits.
+			guard isWaitedOut(host) else { return host.client }
 			try await waitOutLeaving(host, name: name)
 			return try await proxy(name)
 		case .starting:
@@ -250,11 +251,11 @@ public final class RoutingMachman: MachmanControlling {
 			guard isLeaving(host) else {
 				throw MachmanError(code: .invalidState, message: "Stop \(name) before \(action)")
 			}
-			// An import still draining into it answers at once, with no wait.
+			// An import still draining into it answers at once, with no wait (isWaitedOut).
 			if let busy = claims.refusal(for: name) { throw busy }
 			try await waitOutLeaving(host, name: name)
 			// The wait suspended: decide again on what owns the VM now — a start, a claim or
-			// a host may have come meanwhile. The one waited for is gone.
+			// a host may have come meanwhile. The one waited for is gone, back, or draining.
 			try await requireStopped(name, action)
 		case .starting:
 			throw MachmanError(
