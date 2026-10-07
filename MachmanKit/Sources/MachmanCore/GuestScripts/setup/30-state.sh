@@ -233,14 +233,18 @@ remove_state() {
 # client id from, and dhcpcd's own DUID (and the secret behind its stable IPv6 addresses):
 # the copy would lease the source's address. Their files, and dbus's copy of the machine id
 # where the distro keeps one (Debian does). dhcpcd 9 and later keep theirs in its database
-# dir (Linux's or the BSDs'), older ones beside its config.
+# dir (Linux's or the BSDs'), older ones beside its config. It keeps its source's SSH host
+# keys too, so a client that mixed the two VMs up (an address, a client id) would log into
+# the source without a warning.
 MACHINE_ID_FILE=/etc/machine-id
 DBUS_MACHINE_ID_FILE=/var/lib/dbus/machine-id
 DHCPCD_ID_FILES="/var/lib/dhcpcd/duid /var/lib/dhcpcd/secret /var/db/dhcpcd/duid
 /var/db/dhcpcd/secret /etc/dhcpcd.duid /etc/dhcpcd.secret"
-IDENTITY_RENEWED=0
+SSH_HOST_KEY_DIR=/etc/ssh
+IDENTITY_RENEWED=0         # the machine id or DHCP client id: the address follows at boot
 
-# What a copy renews: "machine-id", "dhcpcd", both, or nothing (no copy, nothing to renew).
+# What a copy renews: any of "machine-id", "dhcpcd" and "ssh-keys", or nothing (no copy,
+# nothing to renew).
 identity_to_renew() {
 	[ "$CLONED" -eq 1 ] || return 0
 	_itr=""
@@ -253,7 +257,19 @@ identity_to_renew() {
 			break
 		fi
 	done
+	[ -n "$(identity_host_keys)" ] && _itr="${_itr:+$_itr }ssh-keys"
 	printf '%s' "$_itr"
+}
+
+# The SSH host keys there are (ssh_host_<type>_key), one path per line; a link is someone
+# else's arrangement and stays.
+identity_host_keys() {
+	for _ihk in "$SSH_HOST_KEY_DIR"/ssh_host_*_key; do
+		if regular_file "$_ihk"; then
+			printf '%s\n' "$_ihk"
+		fi
+	done
+	return 0
 }
 
 # A random machine id as systemd writes one: 32 lowercase hex digits, version 4.
@@ -266,13 +282,30 @@ identity_new_id() {
 }
 
 identity_plan() {
-	case "$(identity_to_renew)" in
-	"machine-id dhcpcd") _ip_what="a new machine id and DHCP client id" ;;
-	machine-id) _ip_what="a new machine id" ;;
-	dhcpcd) _ip_what="a new DHCP client id" ;;
-	*) return 0 ;;
+	_ip_renew="$(identity_to_renew)"
+	set --
+	for _ip_w in $_ip_renew; do
+		case "$_ip_w" in
+		machine-id) set -- "$@" "machine id" ;;
+		dhcpcd) set -- "$@" "DHCP client id" ;;
+		ssh-keys) set -- "$@" "SSH host keys" ;;
+		esac
+	done
+	case $# in
+	0) return 0 ;;
+	1) _ip_what="$1" ;;
+	2) _ip_what="$1 and $2" ;;
+	*) _ip_what="$1, $2 and $3" ;;
 	esac
-	plan_line "identity" "$_ip_what for this copy, from the next boot"
+	case "$_ip_what" in
+	SSH*) _ip_what="new $_ip_what" ;;
+	*) _ip_what="a new $_ip_what" ;;
+	esac
+	_ip_what="$_ip_what for this copy"
+	case "$_ip_renew" in
+	*machine-id*|*dhcpcd*) _ip_what="$_ip_what — its own address from the next boot" ;;
+	esac
+	plan_line "identity" "$_ip_what"
 }
 
 # Written now, taken up at the next boot (networkd and dhcpcd read theirs when they start):
@@ -312,7 +345,56 @@ identity_act() {
 			ok "dropped the source's DHCP client id (dhcpcd makes one at the next boot)"
 		fi
 	fi
+	has_word ssh-keys "$_ia_what" && identity_new_host_keys
 	return 0
+}
+
+# Each host key is made anew beside the old one and moved over it (one ssh-keygen cannot
+# make keeps the old: OpenSSH 9.8 dropped DSA, whose key its sshd no longer serves either),
+# then sshd reloads — its listener reads the keys again, running sessions stay — so the
+# report this run writes carries the key sshd serves, and the host pins it.
+identity_new_host_keys() {
+	_inh_done=0
+	for _inh_key in $(identity_host_keys); do
+		_inh_type="${_inh_key##*/ssh_host_}"
+		_inh_type="${_inh_type%_key}"
+		rm -f "$_inh_key.new" "$_inh_key.new.pub"
+		if ssh-keygen -q -t "$_inh_type" -N '' -f "$_inh_key.new" >/dev/null 2>&1 \
+			&& mv -f "$_inh_key.new" "$_inh_key" && mv -f "$_inh_key.new.pub" "$_inh_key.pub"
+		then
+			if have restorecon; then
+				restorecon "$_inh_key" "$_inh_key.pub" >/dev/null 2>&1 || true
+			fi
+			_inh_done=1
+		else
+			rm -f "$_inh_key.new" "$_inh_key.new.pub"
+			[ "$_inh_type" = dsa ] && continue
+			step_failed identity "could not make a new $_inh_type host key for this copy" \
+				"Remove $_inh_key and run 'ssh-keygen -A', then reload sshd."
+		fi
+	done
+	[ "$_inh_done" -eq 1 ] || return 0
+	ok "gave this copy SSH host keys of its own"
+	if [ "$SSHD" = running ] && ! identity_reload_sshd; then
+		note "sshd serves them from the next boot."
+	fi
+	return 0
+}
+
+# sshd re-reads its host keys on a reload; launchd's starts per connection, so the next
+# one has them.
+identity_reload_sshd() {
+	case "$INIT" in
+	launchd) return 0 ;;
+	systemd) run "reloading sshd" systemctl reload "$SSHD_UNIT" ;;
+	freebsd-rc) run "reloading sshd" service sshd reload ;;
+	openbsd-rc) run "reloading sshd" rcctl reload sshd ;;
+	netbsd-rc) run "reloading sshd" /etc/rc.d/sshd reload ;;
+	openrc) run "reloading sshd" rc-service sshd reload ;;
+	runit) run "reloading sshd" sv hup sshd ;;
+	inittab|sysv) run "reloading sshd" service "$SSHD_UNIT" reload ;;
+	*) return 1 ;;
+	esac
 }
 
 # ------------------------------------------------------------------------ mounts.list ----

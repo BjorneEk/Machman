@@ -183,7 +183,8 @@ struct THCloneTests {
 	// boot: a client id of its own, and with the source's lease still held, an address of
 	// its own. Both VMs stop from the host, never shut down: a shutdown hands the lease back
 	// (networkd releases it), and a released address may go to the new client all the same.
-	// (A lab copy shares its source's disk image, so the two never run at once.)
+	// (A lab copy shares its source's disk image, so the two never run at once.) Review F8:
+	// the run also gives the copy SSH host keys of its own, and its sshd serves them at once.
 	@Test("S55: a duplicate's Guest Setup gives it a machine id, so it leases its own address")
 	func duplicateLeasesItsOwnAddress() async throws {
 		var options = THGuestOptions()
@@ -195,6 +196,8 @@ struct THCloneTests {
 			let sourceID = try await g.check("cat /etc/machine-id")
 			let sourceAddress = try await THClones.address(source)
 			let sourceClient = try await THClones.dhcpClientID(source)
+			let hostKey = "cut -d ' ' -f 2 /etc/ssh/ssh_host_ed25519_key.pub"
+			let sourceKey = try await g.check(hostKey)
 			try await g.check("sync")
 			try await source.vm.forceQuit()
 			let copy = try await source.sibling(try await source.vm.copy(as: "deb id copy"))
@@ -206,6 +209,12 @@ struct THCloneTests {
 				let copyID = try await copy.check("cat /etc/machine-id")
 				#expect(copyID.count == 32 && copyID != sourceID,
 					"source \(sourceID), copy \(copyID)")
+				let copyKey = try await copy.check(hostKey)
+				// ssh-keyscan prints its "# host:port <banner>" line on stdout too.
+				let served = try await copy.check(
+					"ssh-keyscan -t ed25519 127.0.0.1 2>/dev/null | grep -v '^#' | cut -d ' ' -f 3")
+				#expect(!copyKey.isEmpty && copyKey != sourceKey && served == copyKey,
+					"source key \(sourceKey), copy \(copyKey), served \(served)")
 				try await copy.restartFromHost()
 				let copyAddress = try await THClones.address(copy)
 				let copyClient = try await THClones.dhcpClientID(copy)

@@ -14,10 +14,11 @@ import Foundation
 
 struct GuestScriptStateTests {
 
-	// The state dir, moved under $D for every probe.
+	// The state dir, moved under $D for every probe, and the SSH host keys a copy renews.
 	static let stateHere = """
 		state_paths() { STATE_DIR="$D/state"; STATE_FILE="$STATE_DIR/state.env"; }
 		state_paths
+		SSH_HOST_KEY_DIR="$D/ssh"
 		T="$(printf '\\t')"
 
 		"""
@@ -294,8 +295,8 @@ struct GuestScriptStateTests {
 			#expect(r.out == """
 				no copy: [] 0123456789abcdef0123456789abcdef
 				   this guest looks cloned from another Machman VM - treating it as new
-				  identity         a new machine id and DHCP client id for this copy, from the \
-				next boot
+				  identity         a new machine id and DHCP client id for this copy - its own \
+				address from the next boot
 				[ok] gave this copy a machine id of its own
 				[ok] dropped the source's DHCP client id (dhcpcd makes one at the next boot)
 				a new version-4 id
@@ -306,6 +307,83 @@ struct GuestScriptStateTests {
 				renewed=1 failed=[]
 				a link: []
 				not Linux: []
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// Review F8 (S55, script half): a copy keeps its source's SSH host keys, so a client
+	// that mixed the two VMs up (an address, a client id) logged into the source with no
+	// warning. A copy's run makes each host key anew (a link stays, and a type ssh-keygen
+	// can no longer make, such as DSA, keeps its old key quietly) and reloads sshd, so the
+	// report it writes carries the key sshd serves; where the reload fails, it says when
+	// sshd takes them up.
+	@Test("S55: a copy's run gives the guest new ssh host keys")
+	func aCopyGetsSSHHostKeysOfItsOwn() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS=Linux
+				INIT=systemd
+				SSHD=running
+				SSHD_UNIT=ssh
+				MACHINE_ID_FILE="$D/none"
+				DHCPCD_ID_FILES="$D/none"
+				K="$SSH_HOST_KEY_DIR"
+				mkdir -p "$K" "$STATE_DIR"
+				ssh-keygen -q -t ed25519 -N '' -f "$K/ssh_host_ed25519_key"
+				ssh-keygen -q -t ecdsa -N '' -f "$D/elsewhere_ecdsa_key"
+				ln -s "$D/elsewhere_ecdsa_key" "$K/ssh_host_ecdsa_key"
+				echo "an old DSA key" > "$K/ssh_host_dsa_key"
+				# OpenSSH 9.8 dropped DSA: this ssh-keygen can't make one, whatever the Mac's can.
+				mkdir -p "$D/bin"
+				{
+					echo '#!/bin/sh'
+					echo 'case " $* " in *" -t dsa "*) echo "unknown key type dsa" >&2; exit 255 ;;'
+					echo 'esac'
+					echo 'exec /usr/bin/ssh-keygen "$@"'
+				} > "$D/bin/ssh-keygen"
+				chmod +x "$D/bin/ssh-keygen"
+				PATH="$D/bin:$PATH"
+				systemctl() { echo "systemctl $*" >> "$D/systemctl.log"; }
+				fp() { ssh-keygen -lf "$1" | cut -d ' ' -f 2; }
+				old="$(fp "$K/ssh_host_ed25519_key.pub")"
+				link="$(fp "$D/elsewhere_ecdsa_key.pub")"
+				read_state
+				echo "not a copy: [$(identity_to_renew)]"
+				printf "MARKER='machman-ffffffffffff'\n" > "$STATE_FILE"
+				read_state
+				identity_plan
+				identity_act
+				new="$(fp "$K/ssh_host_ed25519_key.pub")"
+				[ -n "$new" ] && [ "$new" != "$old" ] && echo "a new ed25519 key"
+				[ "$(ssh-keygen -y -f "$K/ssh_host_ed25519_key" | cut -d ' ' -f 1,2)" \
+					= "$(cut -d ' ' -f 1,2 "$K/ssh_host_ed25519_key.pub")" ] && echo "its pair"
+				ls -ln "$K/ssh_host_ed25519_key" | cut -c1-10
+				[ "$(fp "$D/elsewhere_ecdsa_key.pub")" = "$link" ] && echo "the link's key stays"
+				cat "$K/ssh_host_dsa_key"
+				ls "$K" | paste -s -d ' ' -
+				cat "$D/systemctl.log"
+				echo "renewed=$IDENTITY_RENEWED failed=[$FAILED_STEPS]"
+				systemctl() { return 1; }
+				identity_act
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				not a copy: []
+				   this guest looks cloned from another Machman VM - treating it as new
+				  identity         new SSH host keys for this copy
+				[ok] gave this copy SSH host keys of its own
+				a new ed25519 key
+				its pair
+				-rw-------
+				the link's key stays
+				an old DSA key
+				ssh_host_dsa_key ssh_host_ecdsa_key ssh_host_ed25519_key ssh_host_ed25519_key.pub
+				systemctl reload ssh
+				renewed=0 failed=[]
+				[ok] gave this copy SSH host keys of its own
+				   sshd serves them from the next boot.
 
 				""", "\(shell): \(r.out)")
 		}
