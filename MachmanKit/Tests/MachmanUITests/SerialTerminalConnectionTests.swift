@@ -121,6 +121,38 @@ struct SerialTerminalConnectionTests {
 		#expect(on != 0)
 	}
 
+	// E60, the console's half (review F13): the socket refused SIGPIPE only after connect(),
+	// and Darwin refuses that option (EINVAL) once the peer already hung up — a tab connecting,
+	// or rejoining, while its vmhost's bridge goes away. Its first keystroke then raised
+	// SIGPIPE, which kills the desktop.
+	@Test("E60: a serial terminal's socket refuses SIGPIPE before it connects")
+	func theSocketRefusesSIGPIPEBeforeItConnects() throws {
+		let fd = SerialTerminalConnection.newSocket()
+		try #require(fd >= 0)
+		defer { close(fd) }
+		#expect(Self.noSIGPIPE(fd))
+	}
+
+	@Test("E60: a bridge that hangs up at once never raises SIGPIPE in a serial terminal")
+	func aBridgeThatHangsUpAtOnceNeverRaisesSIGPIPE() throws {
+		let host = try HangUpHost()
+		defer { host.close() }
+		for _ in 0..<20 {
+			let fd = try #require(SerialTerminalConnection.connectedSocket(path: host.socketPath))
+			defer { close(fd) }
+			// Checked before the write: without it the write below would kill the runner.
+			try #require(Self.noSIGPIPE(fd))
+			var key = UInt8(ascii: "k")
+			_ = write(fd, &key, 1)   // EPIPE once the bridge has left
+		}
+	}
+
+	private static func noSIGPIPE(_ fd: Int32) -> Bool {
+		var on: Int32 = 0
+		var length = socklen_t(MemoryLayout<Int32>.size)
+		return getsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, &length) == 0 && on != 0
+	}
+
 	// P6: the peer hangs up while the main thread keeps typing. Before the channel the
 	// reader closed the socket under a running send (ThreadSanitizer: races in send() and
 	// stop()), and the write into the hung-up socket raised SIGPIPE.
