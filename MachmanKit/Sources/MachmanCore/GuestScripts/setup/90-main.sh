@@ -249,6 +249,7 @@ done
 say ""
 plan_line "guest" "${OS_ID}${OS_VERSION:+ $OS_VERSION} ($OS_FAMILY), $INIT init${PM_NAME:+, $PM_NAME}"
 plan_line "payload" "$PAYLOAD_DIR (over $TRANSPORT)"
+identity_plan
 for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_plan"
 done
@@ -301,6 +302,8 @@ say ""
 
 # ------------------------------------------------------------------------------- act ----
 
+# A copy gets an identity of its own first (it takes it up at the next boot).
+identity_act
 for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_act"
 done
@@ -356,6 +359,8 @@ if [ -n "$_mm_skipped" ]; then
 		[ -n "$_mm_line" ] && note "$_mm_line"
 	done
 fi
+# A copy's new identity is taken up at the next boot, its own address with it.
+[ "$IDENTITY_RENEWED" -eq 1 ] && say "Reboot this copy so it leases an address of its own."
 if [ -n "$FAILED_STEPS" ]; then
 	warn "done, with gaps: $FAILED_STEPS"
 	note "Machman's Guest Setup inspector shows what is missing."
@@ -363,7 +368,8 @@ if [ -n "$FAILED_STEPS" ]; then
 	exit 4
 fi
 ok "done — guest setup is complete."
-if feature_selected ssh && [ -n "$IP" ]; then
+# Not before that boot: until then the copy holds its source's address.
+if feature_selected ssh && [ -n "$IP" ] && [ "$IDENTITY_RENEWED" -eq 0 ]; then
 	say "From your Mac:    ssh $U@$IP"
 fi
 say "Machman's Guest Setup inspector shows this VM's state."

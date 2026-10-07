@@ -22,6 +22,7 @@ ST_LAST_NOTE=""            # …with its one-sentence note, failed steps, and th
 ST_LAST_FAILED_STEPS=""    # note lines ("step: message", newline-separated) that explain
 ST_ERR_LINES=""            # it
 ST_NOTE_LINES=""
+CLONED=0                   # the state was another VM's: this guest is a copy of it
 
 state_paths() {
 	case "$OS_FAMILY" in
@@ -70,6 +71,7 @@ read_state() {
 	_rs_marker="$(state_get MARKER)"
 	if [ -n "$_rs_marker" ] && [ "$_rs_marker" != "$MARKER" ]; then
 		note "this guest looks cloned from another Machman VM — treating it as new"
+		CLONED=1
 		return 0
 	fi
 	HAD_STATE=1
@@ -194,6 +196,94 @@ write_state() {
 remove_state() {
 	rm -f "$STATE_FILE" 2>/dev/null || true
 	rmdir "$STATE_DIR" 2>/dev/null || true
+	return 0
+}
+
+# -------------------------------------------------------------- a copy's own identity ----
+
+# A copy's disk keeps its source's machine id, which systemd-networkd derives its DHCP
+# client id from, and dhcpcd's own DUID (and the secret behind its stable IPv6 addresses):
+# the copy would lease the source's address. Their files, and dbus's copy of the machine id
+# where the distro keeps one (Debian does). dhcpcd 9 and later keep theirs in its database
+# dir (Linux's or the BSDs'), older ones beside its config.
+MACHINE_ID_FILE=/etc/machine-id
+DBUS_MACHINE_ID_FILE=/var/lib/dbus/machine-id
+DHCPCD_ID_FILES="/var/lib/dhcpcd/duid /var/lib/dhcpcd/secret /var/db/dhcpcd/duid
+/var/db/dhcpcd/secret /etc/dhcpcd.duid /etc/dhcpcd.secret"
+IDENTITY_RENEWED=0
+
+# What a copy renews: "machine-id", "dhcpcd", both, or nothing (no copy, nothing to renew).
+identity_to_renew() {
+	[ "$CLONED" -eq 1 ] || return 0
+	_itr=""
+	if linux_guest && regular_file "$MACHINE_ID_FILE" && [ -s "$MACHINE_ID_FILE" ]; then
+		_itr=machine-id
+	fi
+	for _itr_f in $DHCPCD_ID_FILES; do
+		if regular_file "$_itr_f"; then
+			_itr="${_itr:+$_itr }dhcpcd"
+			break
+		fi
+	done
+	printf '%s' "$_itr"
+}
+
+# A random machine id as systemd writes one: 32 lowercase hex digits, version 4.
+identity_new_id() {
+	od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' | awk '
+		length($0) == 32 {
+			v = substr("89ab", index("0123456789abcdef", substr($0, 17, 1)) % 4 + 1, 1)
+			print substr($0, 1, 12) "4" substr($0, 14, 3) v substr($0, 18)
+		}'
+}
+
+identity_plan() {
+	case "$(identity_to_renew)" in
+	"machine-id dhcpcd") _ip_what="a new machine id and DHCP client id" ;;
+	machine-id) _ip_what="a new machine id" ;;
+	dhcpcd) _ip_what="a new DHCP client id" ;;
+	*) return 0 ;;
+	esac
+	plan_line "identity" "$_ip_what for this copy, from the next boot"
+}
+
+# Written now, taken up at the next boot (networkd and dhcpcd read theirs when they start):
+# a whole new id rather than an emptied file, so no init has to fill one in. Edited in place
+# (rewrite_file), so each file keeps its owner and mode.
+identity_act() {
+	_ia_what="$(identity_to_renew)"
+	if has_word machine-id "$_ia_what"; then
+		R_ERROR=""
+		_ia_id="$(identity_new_id)"
+		if [ "${#_ia_id}" -eq 32 ] \
+			&& rewrite_file "$MACHINE_ID_FILE" printf '%s\n' "$_ia_id"; then
+			if regular_file "$DBUS_MACHINE_ID_FILE"; then
+				rewrite_file "$DBUS_MACHINE_ID_FILE" printf '%s\n' "$_ia_id" \
+					|| warn "$R_ERROR — dbus keeps the source's machine id."
+			fi
+			IDENTITY_RENEWED=1
+			ok "gave this copy a machine id of its own"
+		else
+			step_failed identity \
+				"could not give this copy a machine id of its own${R_ERROR:+: $R_ERROR}" \
+				"Write a new one yourself (systemd-machine-id-setup does), then reboot."
+		fi
+	fi
+	if has_word dhcpcd "$_ia_what"; then
+		_ia_dropped=0
+		for _ia_f in $DHCPCD_ID_FILES; do
+			regular_file "$_ia_f" || continue
+			if rm -f "$_ia_f"; then
+				_ia_dropped=1
+			else
+				step_failed identity "could not remove $_ia_f" "Remove it yourself, then reboot."
+			fi
+		done
+		if [ "$_ia_dropped" -eq 1 ]; then
+			IDENTITY_RENEWED=1
+			ok "dropped the source's DHCP client id (dhcpcd makes one at the next boot)"
+		fi
+	fi
 	return 0
 }
 

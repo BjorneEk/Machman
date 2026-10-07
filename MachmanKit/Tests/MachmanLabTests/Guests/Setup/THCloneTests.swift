@@ -28,6 +28,24 @@ enum THClones {
 		let copy = try await source.vm.copy(as: name)
 		return try await source.sibling(copy)
 	}
+
+	/// The guest's IPv4 address (the source of its route out) once DHCP gave it one.
+	static func address(_ g: THVZGuest) async throws -> String {
+		try await LabStep.run("\(g.vm.name): waiting ≤60 s for a DHCP address") {
+			let deadline = ContinuousClock.now + .seconds(60)
+			while true {
+				let address = try await g.check(
+					"ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i < NF; i++)"
+						+ " if ($i == \"src\") { print $(i + 1); exit } }'; true")
+				if !address.isEmpty { return address }
+				if ContinuousClock.now >= deadline {
+					throw LabError.stateTimeout(
+						vm: g.vm.name, wanted: "a DHCP address", last: "none")
+				}
+				try await Task.sleep(for: .seconds(2))
+			}
+		}
+	}
 }
 
 // L3 — duplicated Debian guests and a fresh guest's first report.
@@ -147,6 +165,44 @@ struct THCloneTests {
 				let hit = pattern.firstMatch(
 					in: text, range: NSRange(text.startIndex..., in: text))
 				#expect(hit != nil, "a stray line in report.env: \(text)")
+			}
+		}
+	}
+
+	// S55: Duplicate gives the copy a new MAC, but its disk keeps /etc/machine-id, which
+	// systemd-networkd derives its DHCP client id from, and the Mac's DHCP server keys its
+	// leases on that id: the copy leased the source's address, and side by side the two
+	// fought over it. The copy's Guest Setup run (its state is the source's, so it knows it
+	// is a copy) gives it a machine id of its own, which its network takes up at the next
+	// boot: a new client id, and with the source's lease still held, an address of its own.
+	// (A lab copy shares its source's disk image, so the two never run at once.)
+	@Test("S55: a duplicate's Guest Setup gives it a machine id, so it leases its own address")
+	func duplicateLeasesItsOwnAddress() async throws {
+		var options = THGuestOptions()
+		options.name = "deb id"
+		try await TH.withGuest(.debian, options) { g in
+			let source = try #require(g as? THVZGuest)
+			let setUp = try await g.install("-y --ssh --user lab")
+			#expect(setUp.status == 0, "\(setUp.output)")
+			let sourceID = try await g.check("cat /etc/machine-id")
+			let sourceAddress = try await THClones.address(source)
+			let copy = try await THClones.copyAndBoot(source, as: "deb id copy")
+			do {
+				let run = try await copy.install("-y --ssh --user lab")
+				#expect(run.status == 0, "\(run.output)")
+				#expect(THPlan(run.output)["identity"]?.contains("a new machine id") == true,
+					"\(run.output)")
+				let copyID = try await copy.check("cat /etc/machine-id")
+				#expect(copyID.count == 32 && copyID != sourceID,
+					"source \(sourceID), copy \(copyID)")
+				try await copy.reboot()
+				let copyAddress = try await THClones.address(copy)
+				#expect(copyAddress != sourceAddress,
+					"the copy leases its source's \(sourceAddress) (machine id \(copyID))")
+				await copy.shutdown()
+			} catch {
+				await copy.shutdown()
+				throw error
 			}
 		}
 	}

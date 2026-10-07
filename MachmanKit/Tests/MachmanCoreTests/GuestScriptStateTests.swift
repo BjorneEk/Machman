@@ -169,4 +169,73 @@ struct GuestScriptStateTests {
 			#expect(r.out == "ssh sshfsauto|ok|reg|docs|/mnt/it's\n", "\(shell): \(r.out)")
 		}
 	}
+
+	// S55: a duplicate's disk keeps its source's machine id, which systemd-networkd derives
+	// its DHCP client id from, and dhcpcd's DUID: the copy leased the source's address. A run
+	// that finds another VM's state gives the guest a new machine id (version 4, the file's
+	// mode kept, dbus's copy following) and drops dhcpcd's identity; a guest that is no copy,
+	// a machine id that is a link and a guest that isn't Linux keep theirs.
+	@Test("S55: a copy's run gives a Linux guest a new machine id, and dbus's copy follows")
+	func aCopyGetsAMachineIdOfItsOwn() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS=Linux
+				mkdir -p "$D/id" "$STATE_DIR"
+				MACHINE_ID_FILE="$D/id/machine-id"
+				DBUS_MACHINE_ID_FILE="$D/id/dbus-machine-id"
+				DHCPCD_ID_FILES="$D/id/duid $D/id/secret $D/id/none"
+				old=0123456789abcdef0123456789abcdef
+				printf '%s\n' "$old" > "$MACHINE_ID_FILE"
+				chmod 444 "$MACHINE_ID_FILE"
+				printf '%s\n' "$old" > "$DBUS_MACHINE_ID_FILE"
+				printf 'duid\n' > "$D/id/duid"
+				printf 'secret\n' > "$D/id/secret"
+				read_state
+				identity_plan
+				identity_act
+				echo "no copy: [$(identity_to_renew)] $(cat "$MACHINE_ID_FILE")"
+				printf "MARKER='machman-ffffffffffff'\n" > "$STATE_FILE"
+				read_state
+				identity_plan
+				identity_act
+				new="$(cat "$MACHINE_ID_FILE")"
+				case "$new" in
+				"$old") echo "the source's id" ;;
+				*[!0-9a-f]*) echo "not hex: $new" ;;
+				????????????4???[89ab]???????????????) echo "a new version-4 id" ;;
+				*) echo "an odd id: $new" ;;
+				esac
+				cmp -s "$MACHINE_ID_FILE" "$DBUS_MACHINE_ID_FILE" && echo "dbus's copy follows"
+				ls -ln "$MACHINE_ID_FILE" | cut -c1-10
+				ls "$D/id"
+				echo "renewed=$IDENTITY_RENEWED failed=[$FAILED_STEPS]"
+				rm "$MACHINE_ID_FILE"
+				ln -s "$DBUS_MACHINE_ID_FILE" "$MACHINE_ID_FILE"
+				echo "a link: [$(identity_to_renew)]"
+				rm "$MACHINE_ID_FILE"
+				cp "$DBUS_MACHINE_ID_FILE" "$MACHINE_ID_FILE"
+				OS=FreeBSD
+				echo "not Linux: [$(identity_to_renew)]"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				no copy: [] 0123456789abcdef0123456789abcdef
+				   this guest looks cloned from another Machman VM - treating it as new
+				  identity         a new machine id and DHCP client id for this copy, from the \
+				next boot
+				[ok] gave this copy a machine id of its own
+				[ok] dropped the source's DHCP client id (dhcpcd makes one at the next boot)
+				a new version-4 id
+				dbus's copy follows
+				-r--r--r--
+				dbus-machine-id
+				machine-id
+				renewed=1 failed=[]
+				a link: []
+				not Linux: []
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }
