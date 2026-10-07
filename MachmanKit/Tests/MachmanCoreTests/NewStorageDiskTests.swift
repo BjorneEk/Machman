@@ -187,6 +187,33 @@ struct NewStorageDiskTests {
 		}
 	}
 
+	// D36 (review 4): on the default case-insensitive volume, Data → data found the disk's
+	// own file at the new name and was refused as "already in the VM's folder"; a kernel
+	// tag V1 → v1 the same. Only the letter case changes, so the rename goes through.
+	@Test("D36: a disk or kernel tag renamed only in letter case is renamed")
+	func aCaseOnlyRenameGoesThrough() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("cases")
+			try vm.addNewStorageDisk(name: "Data", size: mib)
+			try vm.renameStorageDisk(id: "storage:Data", to: "data")
+			#expect(vm.disks.map(\.id) == ["storage:data"])
+			let files = try FileManager.default.contentsOfDirectory(
+				atPath: vm.configFilePath(file: ""))
+			#expect(files.contains("data.raw") && !files.contains("Data.raw"), "\(files)")
+
+			let src = TestEnvironment.scratch + "d36-\(UUID().uuidString)"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let kernelsDir = vm.kernelsDirPath()
+			let kernel = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: kernelsDir, tag: "V1")
+			let moved = try KernelStore.rename(path: kernel, kernelsDir: kernelsDir, newTag: "v1")
+			#expect(FileManager.default.fileExists(atPath: moved))
+			let tags = try FileManager.default.contentsOfDirectory(atPath: kernelsDir + "/kernel")
+			#expect(tags == ["v1"])
+		}
+	}
+
 	@Test func importNamesFollowTheRule() {
 		#expect(VMCopier.storageName(
 			for: URL(fileURLWithPath: "/x/.hidden.raw"), taken: []) == "hidden")

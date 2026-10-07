@@ -60,17 +60,6 @@ extension VMConfig {
 		}
 	}
 
-	// Whether two paths name one file: the same inode when both exist (a link, or another
-	// spelling on a case-insensitive volume), else the same standardized path.
-	static func sameFile(_ a: String, _ b: String) -> Bool {
-		var left = stat()
-		var right = stat()
-		if stat(a, &left) == 0, stat(b, &right) == 0 {
-			return left.st_dev == right.st_dev && left.st_ino == right.st_ino
-		}
-		return (a as NSString).standardizingPath == (b as NSString).standardizingPath
-	}
-
 	// The file a disk entry owns — what deleteDisk deletes: a storage raw, or an iso inside
 	// the VM's folder. nil for a reference, whose removal only disconnects it.
 	func ownedFile(of disk: VMDisk) -> String? {

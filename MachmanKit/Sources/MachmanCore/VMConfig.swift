@@ -483,7 +483,7 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// start attached the file twice, writable, past the shared-disk guard's per-file sets.
 	public func addDisk(disk: VMDisk) throws {
 		let file = attachedFile(of: disk)
-		if disks.contains(where: { Self.sameFile(attachedFile(of: $0), file) }) {
+		if disks.contains(where: { isSameFile(attachedFile(of: $0), file) }) {
 			throw MachmanError(
 				code: .alreadyExists,
 				message: "\(name) already uses “\((file as NSString).lastPathComponent)”")

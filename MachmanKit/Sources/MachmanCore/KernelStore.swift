@@ -139,6 +139,13 @@ enum KernelStore {
 		guard trimmed != rel[1] else { return path }
 		let newDir = kernelsDir + "/" + rel[0] + "/" + trimmed
 		let newPath = newDir + "/" + rel[2]
+		let oldDir = kernelsDir + "/" + rel[0] + "/" + rel[1]
+		// A change of letter case only finds the same tag dir on a case-insensitive volume
+		// (D36): the dir itself takes the new spelling.
+		if fm.fileExists(atPath: newPath), isSameFile(path, newPath) {
+			try fm.moveItem(atPath: oldDir, toPath: newDir)
+			return newPath
+		}
 		guard !fm.fileExists(atPath: newPath) else {
 			throw MachmanError(
 				code: .alreadyExists,
@@ -147,7 +154,6 @@ enum KernelStore {
 		}
 		try fm.createDirectory(atPath: newDir, withIntermediateDirectories: true)
 		try fm.moveItem(atPath: path, toPath: newPath)
-		let oldDir = kernelsDir + "/" + rel[0] + "/" + rel[1]
 		if let leftovers = try? fm.contentsOfDirectory(atPath: oldDir), leftovers.isEmpty {
 			try? fm.removeItem(atPath: oldDir)
 		}

@@ -245,7 +245,10 @@ extension VMConfig {
 		}
 		let oldPath = configFilePath(file: "\(oldName).raw")
 		let newPath = configFilePath(file: "\(trimmed).raw")
-		guard !FileManager.default.fileExists(atPath: newPath) else {
+		// A change of letter case only finds the disk's own file on a case-insensitive
+		// volume (D36): that is no other file, and the move renames it.
+		guard !FileManager.default.fileExists(atPath: newPath) || isSameFile(oldPath, newPath)
+		else {
 			throw MachmanError(
 				code: .alreadyExists,
 				message: "A file named \u{201C}\(trimmed).raw\u{201D} is already in the "

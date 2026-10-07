@@ -62,6 +62,17 @@ func removeEmptyDirectory(_ path: String) -> Bool {
 	return !fm.fileExists(atPath: path)
 }
 
+// Whether two paths name one file: the same inode when both exist (a link, or another
+// spelling on a case-insensitive volume), else the same standardized path.
+func isSameFile(_ a: String, _ b: String) -> Bool {
+	var left = stat()
+	var right = stat()
+	if stat(a, &left) == 0, stat(b, &right) == 0 {
+		return left.st_dev == right.st_dev && left.st_ino == right.st_ino
+	}
+	return (a as NSString).standardizingPath == (b as NSString).standardizingPath
+}
+
 // Time Machine must not copy VM disks: they are large, rewritten constantly, and worthless in a
 // half-captured state. Applied when a disk is created AND on every registry scan, because every
 // image that exists today predates this call and would otherwise never be marked.
