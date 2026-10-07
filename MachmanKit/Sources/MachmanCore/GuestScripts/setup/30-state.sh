@@ -251,7 +251,7 @@ SSH_HOST_KEY_DIR=/etc/ssh
 IDENTITY_RENEWED=0         # the machine id or DHCP client id: the address follows at boot
 
 # What a copy renews: any of "machine-id", "dhcpcd" and "ssh-keys", or nothing (no copy,
-# nothing to renew).
+# nothing to renew); "ssh-key-links" when host keys it keeps are links.
 identity_to_renew() {
 	[ "$CLONED" -eq 1 ] || return 0
 	_itr=""
@@ -265,16 +265,21 @@ identity_to_renew() {
 		fi
 	done
 	[ -n "$(identity_host_keys)" ] && _itr="${_itr:+$_itr }ssh-keys"
+	[ -n "$(identity_host_keys -l)" ] && _itr="${_itr:+$_itr }ssh-key-links"
 	printf '%s' "$_itr"
 }
 
-# The SSH host keys there are (ssh_host_<type>_key), one path per line; a link is someone
-# else's arrangement and stays.
+# The SSH host keys there are (ssh_host_<type>_key), one path per line: the files, or with
+# -l the links — someone else's arrangement (NixOS keeps them on /persist, which a copy's
+# disk carries too), kept and named.
 identity_host_keys() {
 	for _ihk in "$SSH_HOST_KEY_DIR"/ssh_host_*_key; do
-		if regular_file "$_ihk"; then
-			printf '%s\n' "$_ihk"
+		if [ "${1:-}" = -l ]; then
+			[ -L "$_ihk" ] || continue
+		else
+			regular_file "$_ihk" || continue
 		fi
+		printf '%s\n' "$_ihk"
 	done
 	return 0
 }
@@ -353,6 +358,11 @@ identity_act() {
 		fi
 	fi
 	has_word ssh-keys "$_ia_what" && identity_new_host_keys
+	if has_word ssh-key-links "$_ia_what"; then
+		for _ia_link in $(identity_host_keys -l); do
+			note "$_ia_link is a link, so it stays and this copy serves its source's host key until you replace it."
+		done
+	fi
 	return 0
 }
 

@@ -314,11 +314,11 @@ struct GuestScriptStateTests {
 
 	// Review F8 (S55, script half): a copy keeps its source's SSH host keys, so a client
 	// that mixed the two VMs up (an address, a client id) logged into the source with no
-	// warning. A copy's run makes each host key anew (a link stays, and a type ssh-keygen
-	// can no longer make, such as DSA, keeps its old key quietly) and reloads sshd, so the
-	// report it writes carries the key sshd serves; where the reload fails, it says when
-	// sshd takes them up. A BSD copy, whose dhcpcd client id the run renews, gets new keys
-	// too, reloaded through its rc.
+	// warning. A copy's run makes each host key anew (a link stays, named, and a type
+	// ssh-keygen can no longer make, such as DSA, keeps its old key quietly) and reloads
+	// sshd, so the report it writes carries the key sshd serves; where the reload fails, it
+	// says when sshd takes them up. A BSD copy, whose dhcpcd client id the run renews, gets
+	// new keys too, reloaded through its rc.
 	@Test("S55: a copy's run gives the guest new ssh host keys")
 	func aCopyGetsSSHHostKeysOfItsOwn() async throws {
 		for shell in GuestScriptHarness.shells {
@@ -355,7 +355,7 @@ struct GuestScriptStateTests {
 				printf "MARKER='machman-ffffffffffff'\n" > "$STATE_FILE"
 				read_state
 				identity_plan
-				identity_act
+				identity_act | sed "s|$D|D|g"
 				new="$(fp "$K/ssh_host_ed25519_key.pub")"
 				[ -n "$new" ] && [ "$new" != "$old" ] && echo "a new ed25519 key"
 				[ "$(ssh-keygen -y -f "$K/ssh_host_ed25519_key" | cut -d ' ' -f 1,2)" \
@@ -367,7 +367,7 @@ struct GuestScriptStateTests {
 				cat "$D/systemctl.log"
 				echo "renewed=$IDENTITY_RENEWED failed=[$FAILED_STEPS]"
 				systemctl() { return 1; }
-				identity_act
+				identity_act | sed "s|$D|D|g"
 				echo ---
 				OS=FreeBSD
 				INIT=freebsd-rc
@@ -376,7 +376,7 @@ struct GuestScriptStateTests {
 				old="$(fp "$K/ssh_host_ed25519_key.pub")"
 				service() { echo "service $*" >> "$D/service.log"; }
 				identity_plan
-				identity_act
+				identity_act | sed "s|$D|D|g"
 				[ "$(fp "$K/ssh_host_ed25519_key.pub")" != "$old" ] && echo "a new ed25519 key"
 				cat "$D/service.log"
 				"""#, under: shell)
@@ -386,6 +386,8 @@ struct GuestScriptStateTests {
 				   this guest looks cloned from another Machman VM - treating it as new
 				  identity         new SSH host keys for this copy
 				[ok] gave this copy SSH host keys of its own
+				   D/ssh/ssh_host_ecdsa_key is a link, so it stays and this copy serves its \
+				source's host key until you replace it.
 				a new ed25519 key
 				its pair
 				-rw-------
@@ -396,13 +398,68 @@ struct GuestScriptStateTests {
 				renewed=0 failed=[]
 				[ok] gave this copy SSH host keys of its own
 				   sshd serves them from the next boot.
+				   D/ssh/ssh_host_ecdsa_key is a link, so it stays and this copy serves its \
+				source's host key until you replace it.
 				---
 				  identity         a new DHCP client id and SSH host keys for this copy - its own \
 				address from the next boot
 				[ok] dropped the source's DHCP client id (dhcpcd makes one at the next boot)
 				[ok] gave this copy SSH host keys of its own
+				   D/ssh/ssh_host_ecdsa_key is a link, so it stays and this copy serves its \
+				source's host key until you replace it.
 				a new ed25519 key
 				service sshd reload
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// Review F20 (S55): a host key that is a link (NixOS impermanence keeps them on
+	// /persist, which a duplicate clones too) is someone else's arrangement and stays, but it
+	// stayed silently, so the copy served its source's key with no word; with only linked
+	// keys there was nothing in the identity step at all. Each linked key is named now.
+	@Test("S55: a copy keeps a linked ssh host key and says so")
+	func aCopySaysWhichHostKeysAreLinks() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS=FreeBSD
+				INIT=freebsd-rc
+				SSHD=installed
+				DHCPCD_ID_FILES="$D/none"
+				K="$SSH_HOST_KEY_DIR"
+				mkdir -p "$K" "$STATE_DIR" "$D/persist"
+				ssh-keygen -q -t ed25519 -N '' -f "$K/ssh_host_ed25519_key"
+				ssh-keygen -q -t ecdsa -N '' -f "$D/persist/ssh_host_ecdsa_key"
+				ln -s "$D/persist/ssh_host_ecdsa_key" "$K/ssh_host_ecdsa_key"
+				fp() { ssh-keygen -lf "$1" | cut -d ' ' -f 2; }
+				old="$(fp "$K/ssh_host_ed25519_key.pub")"
+				kept="$(fp "$D/persist/ssh_host_ecdsa_key.pub")"
+				printf "MARKER='machman-ffffffffffff'\n" > "$STATE_FILE"
+				read_state
+				identity_plan
+				identity_act 2>&1 | sed "s|$D|D|g"
+				[ "$(fp "$K/ssh_host_ed25519_key.pub")" != "$old" ] && echo "a new ed25519 key"
+				[ -L "$K/ssh_host_ecdsa_key" ] \
+					&& [ "$(fp "$D/persist/ssh_host_ecdsa_key.pub")" = "$kept" ] \
+					&& echo "the link and its target stay"
+				echo ---
+				rm "$K/ssh_host_ed25519_key" "$K/ssh_host_ed25519_key.pub"
+				identity_plan
+				identity_act 2>&1 | sed "s|$D|D|g"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				   this guest looks cloned from another Machman VM - treating it as new
+				  identity         new SSH host keys for this copy
+				[ok] gave this copy SSH host keys of its own
+				   D/ssh/ssh_host_ecdsa_key is a link, so it stays and this copy serves its \
+				source's host key until you replace it.
+				a new ed25519 key
+				the link and its target stay
+				---
+				   D/ssh/ssh_host_ecdsa_key is a link, so it stays and this copy serves its \
+				source's host key until you replace it.
 
 				""", "\(shell): \(r.out)")
 		}
