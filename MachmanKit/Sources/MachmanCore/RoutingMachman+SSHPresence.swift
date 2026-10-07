@@ -84,7 +84,8 @@ extension RoutingMachman {
 				guard let name = self?.host(withID: id)?.identity.name else { return }
 				let answer = await probes.address(
 					SSHDiscovery.Lookup(mac: mac, vm: name, library: machmanVMDir))
-				guard let self, let host = self.host(withID: id) else { return }
+				// A restart cancelled this pass during the ask: the host is the new pass's now.
+				guard !Task.isCancelled, let self, let host = self.host(withID: id) else { return }
 				if let answer {
 					if gaveUp {
 						// An address after all: back to waiting, for phase 2 to answer.

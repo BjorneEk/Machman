@@ -37,6 +37,37 @@ private final class AddressSwitch {
 	}
 }
 
+// Holds one ask until the test lets it go; every other ask answers nil at once.
+@MainActor
+private final class HeldAsk {
+	let held: Int
+	private(set) var asks = 0
+	private(set) var released = false
+	private var waiter: CheckedContinuation<Void, Never>?
+
+	init(held: Int) { self.held = held }
+
+	var probes: SSHDiscovery.Probes {
+		SSHDiscovery.Probes(
+			address: { _ in await self.answer() },
+			sshd: { _ in true })
+	}
+
+	func release() {
+		released = true
+		waiter?.resume()
+		waiter = nil
+	}
+
+	private func answer() async -> SSHDiscovery.Answer? {
+		asks += 1
+		if asks == held, !released {
+			await withCheckedContinuation { waiter = $0 }
+		}
+		return nil
+	}
+}
+
 @MainActor
 struct SSHAddressDeadlineTests {
 	private static let mac = "aa:bb:cc:dd:ee:01"
@@ -105,6 +136,27 @@ struct SSHAddressDeadlineTests {
 		#expect(info.ssh?.address == "192.168.64.20")
 		#expect(info.ssh?.reachability == .ready)
 		#expect(info.ssh?.reachabilityDetail == nil)
+		await tearDown(rig)
+	}
+
+	// Review F6: a restart (a refresh, a report, a reboot) cancels the pass whose last quick
+	// ask is still out; that ask's late answer must not give the new pass's VM the old pass's
+	// verdict.
+	@Test("E57: a cancelled pass's late ask leaves no verdict on the pass after it")
+	func aCancelledPassWritesNoVerdict() async throws {
+		let rig = try await adopt(ssh: SSHInfo(configured: true, guestUser: "admin"))
+		let stand = HeldAsk(held: Self.pace.fastTries)
+		rig.routing.startSSHDiscovery(rig.host, probes: stand.probes, pace: Self.pace)
+		#expect(await eventually { stand.asks == Self.pace.fastTries })
+		// The new pass asks at a pace that never gives up within the test.
+		let patient = RoutingMachman.DiscoveryPace(
+			fast: .milliseconds(10), fastTries: 100_000, slow: .seconds(1))
+		rig.routing.startSSHDiscovery(rig.host, probes: stand.probes, pace: patient)
+		#expect(await eventually { rig.host.sshReach == .waiting })
+		stand.release()
+		#expect(!(await eventually(timeout: .milliseconds(500)) {
+			rig.host.sshReach == .unreachable
+		}), "the cancelled pass wrote \(String(describing: rig.host.sshReachDetail))")
 		await tearDown(rig)
 	}
 
