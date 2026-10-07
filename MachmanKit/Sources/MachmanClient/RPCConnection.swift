@@ -155,7 +155,7 @@ public actor RPCConnection {
 				_ = socketPath.withCString { strlcpy(dst, $0, maxLen + 1) }
 			}
 		}
-		let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+		let fd = Self.newSocket(sendTimeout: sendTimeout)
 		guard fd >= 0 else { throw ConnectionError.connectFailed(socketPath, errno) }
 		let connected = withUnsafePointer(to: &addr) {
 			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -168,15 +168,6 @@ public actor RPCConnection {
 			throw ConnectionError.connectFailed(socketPath, err)
 		}
 		self.socket = SocketLifetime(fd: fd)
-		// Bounded writes: no progress for sendTimeout fails the write with EAGAIN, and a
-		// write to a peer that left fails with EPIPE instead of raising SIGPIPE.
-		let (seconds, attoseconds) = sendTimeout.components
-		var timeout = timeval(
-			tv_sec: Int(seconds), tv_usec: Int32(attoseconds / 1_000_000_000_000))
-		_ = setsockopt(
-			fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-		var on: Int32 = 1
-		_ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
 		var pid: pid_t = 0
 		var len = socklen_t(MemoryLayout<pid_t>.size)
 		// LOCAL_PEERPID: hard-coded 0x002 — stable Darwin ABI, the constant does not
@@ -216,6 +207,25 @@ public actor RPCConnection {
 			}
 			await self?.teardown()
 		}
+	}
+
+	// A socket set up for its connection before it connects: no write progress for sendTimeout
+	// fails the write with EAGAIN, and a write to a peer that left fails with EPIPE instead of
+	// raising SIGPIPE in the whole process. Before the connect, never after: Darwin refuses
+	// SO_NOSIGPIPE (EINVAL) on a socket whose peer already hung up, so a host that accepted and
+	// left at once (one exiting, one that never serves) killed the client on its first write.
+	// -1 with errno when there is no socket.
+	nonisolated static func newSocket(sendTimeout: Duration) -> Int32 {
+		let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+		guard fd >= 0 else { return fd }
+		let (seconds, attoseconds) = sendTimeout.components
+		var timeout = timeval(
+			tv_sec: Int(seconds), tv_usec: Int32(attoseconds / 1_000_000_000_000))
+		_ = setsockopt(
+			fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+		var on: Int32 = 1
+		_ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+		return fd
 	}
 
 	// MARK: - Calls
