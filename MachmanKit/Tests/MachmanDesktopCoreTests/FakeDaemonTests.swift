@@ -73,9 +73,10 @@ struct FakeDaemonTests {
 		await remote.disconnect()
 	}
 
-	// RPCConnection.events() adds a subscriber whether or not the connection already died, and
-	// only a live teardown finishes subscribers: a store that subscribes just after a drop
-	// waits on its stream forever (the loop reconnects with new stores; the old task leaks).
+	// E49: RPCConnection.events() added a subscriber whether or not the connection had already
+	// died, and only a live teardown finishes subscribers: a store that subscribed just after a
+	// drop waited on its stream forever (the loop reconnects with new stores; the old task
+	// leaked).
 	@Test("Q18: an event stream opened after the connection dropped ends at once")
 	func streamOpenedAfterADropEnds() async throws {
 		let daemon = try FakeDaemon()
@@ -87,8 +88,6 @@ struct FakeDaemonTests {
 		#expect(await eventually { dropped.isSet })
 		let stream = await remote.events()
 		let first = await FirstEvent.of(stream, within: .seconds(2))
-		// Fails until the open bug E49 (RPCConnection registers a stream after teardown) is
-		// fixed.
 		#expect(first == .ended)
 	}
 

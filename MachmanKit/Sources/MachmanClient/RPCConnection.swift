@@ -362,8 +362,15 @@ public actor RPCConnection {
 
 	// MARK: - Events
 
+	// A stream asked for after the connection died ends at once (E49): only a live teardown
+	// finishes subscribers, so a stored one would wait forever. The builder runs on the actor,
+	// so the check can't race the teardown.
 	public func events() -> AsyncStream<VMEvent> {
 		AsyncStream { continuation in
+			guard !self.closed else {
+				continuation.finish()
+				return
+			}
 			let id = UUID()
 			self.eventSubscribers[id] = continuation
 			continuation.onTermination = { _ in
@@ -372,9 +379,14 @@ public actor RPCConnection {
 		}
 	}
 
-	// Every event from now on with the line it arrived in, in arrival order.
+	// Every event from now on with the line it arrived in, in arrival order; ended at once on a
+	// dead connection, like events().
 	public func eventLines() -> AsyncStream<EventLine> {
 		AsyncStream { continuation in
+			guard !self.closed else {
+				continuation.finish()
+				return
+			}
 			let id = UUID()
 			self.lineSubscribers[id] = continuation
 			continuation.onTermination = { _ in
