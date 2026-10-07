@@ -311,14 +311,37 @@ extension RoutingMachman {
 		return true
 	}
 
-	// The one wait for a host on its way out (E12, E52): a start, a stop-first edit and the end
-	// of an outdated idle host all give it hostExitGrace; one that overstays — still draining
-	// an import — is still shutting down.
+	// The wait for a host to be gone (E12): a start meeting one that ran and stopped, and the
+	// end of an outdated idle host, give it hostExitGrace; one that overstays — still
+	// draining an import — is still shutting down.
 	func waitOutExit(of host: HostedVM, name: String) async throws {
 		guard await waitForHostGone(id: host.identity.id, timeout: hostExitGrace) else {
-			throw MachmanError(
-				code: .invalidState,
-				message: "\(name) is still shutting down — try again in a moment")
+			throw stillShuttingDown(name)
+		}
+	}
+
+	func stillShuttingDown(_ name: String) -> MachmanError {
+		MachmanError(
+			code: .invalidState, message: "\(name) is still shutting down — try again in a moment")
+	}
+
+	// A host on its way out (E52): its VM ran and stopped (or failed), or its connection
+	// already dropped. A call forwarded to it now dies with it ("The connection was lost"),
+	// and a stop-first edit must not take a VM the clients list stopped for a running one.
+	func isLeaving(_ host: HostedVM) -> Bool {
+		host.exitingAfterRun || host.reconnectTask != nil
+	}
+
+	// Waits, up to hostExitGrace, for a leaving host to be gone, or reconnected and serving its
+	// run again. One that overstays is still shutting down; one whose connection is gone and
+	// that is listed not responding says so, at once.
+	func waitOutLeaving(_ host: HostedVM, name: String) async throws {
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: hostExitGrace)
+		while let current = self.host(withID: host.identity.id), isLeaving(current) {
+			if current.unresponsive, current.reconnectTask != nil { throw notResponding(name) }
+			guard clock.now < deadline else { throw stillShuttingDown(name) }
+			try? await Task.sleep(for: .milliseconds(50))
 		}
 	}
 

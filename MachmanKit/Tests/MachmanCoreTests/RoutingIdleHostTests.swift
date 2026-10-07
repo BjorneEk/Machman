@@ -329,4 +329,57 @@ struct RoutingIdleHostTests {
 		}
 		#expect(rig.routing.hostedNames == ["alpha"])
 	}
+
+	// E52, the routed half (R3W2-11): a settings edit right after a forced stop went to the
+	// vmhost that had just exited — "The connection was lost". It waits the exit out and lands
+	// on whatever owns the VM now.
+	@Test("E52: a settings edit routed at a vmhost that just exited lands locally")
+	@MainActor func aSettingsEditAtAnExitedHostLandsLocally() async throws {
+		let rig = try await adoptStub(try makeRouting(), state: .stopped)
+		let host = try #require(rig.routing.hostForTesting("alpha"))
+		host.sawRun = true
+		host.lastAnswer = rig.stub.vms["alpha"]   // its run is over: it is on its way out
+		let server = rig.server
+		Task { @MainActor in
+			try? await Task.sleep(for: .milliseconds(100))
+			server.stop()   // the host exits
+		}
+
+		do {
+			_ = try await rig.routing.removeDevice(vm: "alpha", kind: .guestSetup)
+		} catch let error as MachmanError {
+			// The daemon's own engine answered (outside the test's redirected library).
+			#expect(error.code == .notFound)
+		} catch {
+			Issue.record("routed to the exiting vmhost: \(error)")
+		}
+		#expect(!rig.stub.calls.contains("removeDevice"))
+		#expect(rig.routing.hostedNames.isEmpty)
+	}
+
+	// …and a call never goes down a connection that already dropped: it waits for the host to
+	// come back or go, and says why when it does neither.
+	@Test("E52: a settings edit at a vmhost whose connection dropped is never sent down it")
+	@MainActor func aSettingsEditAtADroppedHostWaits() async throws {
+		let routing = try makeRouting(exitGrace: .milliseconds(500))
+		routing.isProcessAlive = { _ in true }   // its process lingers, its socket is dark
+		let rig = try await adoptStub(routing, state: .running)
+		let host = try #require(routing.hostForTesting("alpha"))
+		rig.server.stop()
+		#expect(await eventually { host.reconnectTask != nil })
+
+		do {
+			_ = try await routing.removeDevice(vm: "alpha", kind: .guestSetup)
+			Issue.record("expected a refusal")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect([
+				"alpha is still shutting down — try again in a moment",
+				"alpha is not responding — try again in a moment",
+			].contains(error.message))
+		} catch {
+			Issue.record("sent down the dropped connection: \(error)")
+		}
+		host.reconnectTask?.cancel()
+	}
 }

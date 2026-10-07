@@ -436,7 +436,9 @@ as `starting`, and most of its per-VM calls refuse with `invalidState`, saying t
 starting; `vm.preview` answers `null`. Whole-VM edits (rename, copy, delete, MAC, disk
 files, serial ports, kernel files, macOS install) also refuse while any vmhost answers on the
 VM's socket, adopted by this daemon or not; one exiting after its VM stopped is waited out for
-up to 3 s first, then "… is still shutting down — try again in a moment". A vmhost the daemon has not adopted yet (busy when
+up to 3 s first, then "… is still shutting down — try again in a moment". Any per-VM call that
+meets a vmhost on its way out (its VM stopped, or its connection dropped) waits for it the same
+way, then goes to whatever owns the VM. A vmhost the daemon has not adopted yet (busy when
 the daemon started, or started by a launch agent) is adopted on its VM's next per-VM call or
 list; until then the VM lists with state `unknown`, plus `unresponsive` once an adoption failed
 (the first failure is followed by a `listChanged`).

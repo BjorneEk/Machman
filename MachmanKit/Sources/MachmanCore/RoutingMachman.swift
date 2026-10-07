@@ -177,7 +177,11 @@ public final class RoutingMachman: MachmanControlling {
 	func proxy(_ name: String) async throws -> MachmanControlling {
 		switch residence(of: name) {
 		case .hosted(let host):
-			return host.client
+			// A host on its way out would fail a call forwarded now ("The connection was
+			// lost"): wait it out, then route to whatever owns the VM (E52).
+			guard isLeaving(host) else { return host.client }
+			try await waitOutLeaving(host, name: name)
+			return try await proxy(name)
 		case .starting:
 			throw MachmanError(
 				code: .invalidState,
@@ -237,18 +241,18 @@ public final class RoutingMachman: MachmanControlling {
 	// Whole-VM edits the framework fixes at start (files moved, ports, MAC) refuse rather
 	// than proxy unless the VM is stopped — and stopped means no start in flight and no
 	// vmhost answering on its socket either, whether this daemon adopted it or not — and
-	// while a copy writes into the VM's folder or reads it whole (D20). A vmhost exiting after
-	// its VM's run, which clients already list as stopped, is waited out as a start waits for
-	// it (E52). Callers call it before they read any state: it may suspend.
+	// while a copy writes into the VM's folder or reads it whole (D20). A vmhost on its way
+	// out — its VM's run over, which clients already list as stopped, or its connection gone
+	// — is waited out first (E52). Callers call it before they read any state: it may suspend.
 	func requireStopped(_ name: String, _ action: String) async throws {
 		switch residence(of: name) {
 		case .hosted(let host):
-			guard host.exitingAfterRun else {
+			guard isLeaving(host) else {
 				throw MachmanError(code: .invalidState, message: "Stop \(name) before \(action)")
 			}
 			// An import still draining into it answers at once, with no wait.
 			if let busy = claims.refusal(for: name) { throw busy }
-			try await waitOutExit(of: host, name: name)
+			try await waitOutLeaving(host, name: name)
 			// The wait suspended: decide again on what owns the VM now — a start, a claim or
 			// a host may have come meanwhile. The one waited for is gone.
 			try await requireStopped(name, action)

@@ -136,8 +136,6 @@ struct THHostSSHTests {
 			_ = try await THHostSSH.ready(g)
 			try await g.check("sync")
 			try await g.vm.stop(.force)
-			// Fails until the open bug E52 (an edit right after a stop reaches the vmhost that
-			// just exited: "The connection was lost") is fixed.
 			_ = try await g.agent.api.removeDevice(vm: g.vm.name, kind: .guestSetup)
 			try await g.vm.rename(to: "deb c23 renamed")
 			try await g.vm.start()
