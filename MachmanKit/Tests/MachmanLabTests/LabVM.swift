@@ -226,12 +226,18 @@ final class LabVM: @unchecked Sendable {
 					index, user: user, label: boot == 1 ? label : "\(label)-boot\(boot)",
 					tries: 1)
 			} catch let error as LabError where boot < boots {
-				LabRetry.note(
-					"\(name) console \(index): no login on boot \(boot) of \(boots), booting"
-						+ " again: \(error)")
+				let mark = LabLog.mark()
 				try await api.stop(vm: name, mode: .force)
 				try await waitForState(.stopped, timeout: .seconds(60))
 				await awaitHostExit()
+				// E58: what the console's bridge saw — input the guest never took, or took
+				// without an echo — read from the counts its vmhost logged at stop.
+				let counts = (try? await LabLog.waitFor(
+					"serial console\(index) counts:", after: mark, process: "MachmanVMHost",
+					timeout: .seconds(10)))?.eventMessage ?? "no counts logged"
+				LabRetry.note(
+					"\(name) console \(index): no login on boot \(boot) of \(boots), booting"
+						+ " again: \(error) — \(counts)")
 				boot += 1
 			}
 		}
