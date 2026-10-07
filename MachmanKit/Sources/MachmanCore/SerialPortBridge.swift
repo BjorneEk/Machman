@@ -10,7 +10,7 @@
 //
 //  All state runs on one serial queue, so there are no locks: the drain, the accept loop and the
 //  per-client reads are DispatchSources targeting `queue`. Client writes are non-blocking: what
-//  a client's socket won't take waits in a bounded per-client backlog (C29), and a client that
+//  a client's socket won't take waits in a bounded per-client backlog (E58), and a client that
 //  falls further behind is closed, to come back to the replay — never the shared drain, and
 //  with it the guest, stalls on it. Guest input is non-blocking too: what the guest pipe won't
 //  take waits in a bounded buffer, and a guest that reads nothing loses input rather than
@@ -114,7 +114,7 @@ final class SerialPortBridge {
 
 	private static let replayCap = 256 * 1024
 	private static let guestInputCap = 64 * 1024
-	// C29: how far one terminal may fall behind the guest's output before it is closed.
+	// E58: how far one terminal may fall behind the guest's output before it is closed.
 	private static let clientBacklogCap = 1024 * 1024
 
 	private static let ignoreSIGPIPE: Void = {
@@ -280,7 +280,7 @@ final class SerialPortBridge {
 	// (in order) for its write source — a terminal that stops reading must not stall the
 	// drain. The socket alone holds about 16 KiB: a burst that came while a busy client wasn't
 	// reading lost its tail, the echo a console session waited on among it (E58). A client
-	// still clientBacklogCap behind is stuck (C29): it is closed rather than handed output with
+	// still clientBacklogCap behind is stuck (E58): it is closed rather than handed output with
 	// a hole in it, and a terminal that comes back starts over from the replay.
 	private func send(_ client: Client, _ data: Data) {
 		var pending = data

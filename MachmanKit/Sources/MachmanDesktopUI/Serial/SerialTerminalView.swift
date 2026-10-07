@@ -39,7 +39,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 	// What applyLive last set, so a repeat sets nothing.
 	private var appliedLive: TerminalLiveSettings?
 	// A serial terminal's socket. Its bridge closes a terminal that fell 1 MiB behind the
-	// guest's output and goes on serving (C29), so a connection that ends while the socket
+	// guest's output and goes on serving (E58), so a connection that ends while the socket
 	// still takes one was this terminal's own: it rejoins (see rejoin()).
 	private var servedPath: String?
 
@@ -151,7 +151,7 @@ final class SerialTerminalController: NSObject, ObservableObject, TerminalViewDe
 		}
 	}
 
-	// C29: the bridge closed this terminal for falling 1 MiB behind and still serves (a stopped
+	// E58: the bridge closed this terminal for falling 1 MiB behind and still serves (a stopped
 	// port's socket is gone before its terminals see the end). The terminal starts over from
 	// the bridge's replay of recent output, cleared first so nothing it showed shows twice.
 	// Called as the connection ends; false when nothing serves the socket any more.

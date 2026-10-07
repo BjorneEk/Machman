@@ -2,7 +2,7 @@
 //  SerialRejoinTests.swift
 //  MachmanDesktopUITests
 //
-//  C29: the console bridge closes a terminal that fell 1 MiB behind the guest's output and goes
+//  E58: the console bridge closes a terminal that fell 1 MiB behind the guest's output and goes
 //  on serving. The serial tab's controller then rejoins on its own and redraws from the bridge's
 //  replay — cleared first, so nothing it showed shows twice — while a tab whose socket is gone
 //  (the port stopped: the bridge unlinks first) keeps what it shows. Driven over a stand-in
@@ -82,7 +82,7 @@ struct SerialRejoinTests {
 		}
 	}
 
-	@Test("C29: a serial tab its bridge closed comes back on its own, redrawn from the replay")
+	@Test("E58: a serial tab its bridge closed comes back on its own, redrawn from the replay")
 	func aClosedTabRejoinsAndRedraws() async throws {
 		let bridge = try StandInBridge()
 		defer { bridge.stop() }
@@ -95,7 +95,7 @@ struct SerialRejoinTests {
 		c.disconnect()
 	}
 
-	@Test("C29: a serial tab whose socket is gone keeps what it shows")
+	@Test("E58: a serial tab whose socket is gone keeps what it shows")
 	func aStoppedPortsTabKeepsItsScreen() async throws {
 		let bridge = try StandInBridge()
 		defer { bridge.stop() }

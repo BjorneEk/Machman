@@ -323,7 +323,7 @@ struct SerialPortBridgeTests {
 
 	// E58: a client that stopped reading for a moment (a busy terminal, a loaded test) lost
 	// what its socket could not take at once — all but 8 KiB of a burst, the echo a console
-	// session waited for among it. Its output now waits for it (C29: up to 1 MiB).
+	// session waited for among it. Its output now waits for it (E58: up to 1 MiB).
 	@Test("E58: a client that stops reading for a moment still gets every byte of a 64 KiB burst")
 	func aPausedClientGetsTheWholeBurst() throws {
 		let env = makeBridge("paused")
@@ -358,10 +358,10 @@ struct SerialPortBridgeTests {
 		return (got, false)
 	}
 
-	// …and one that never reads is stuck once it is 1 MiB behind: C29 closes it rather than
+	// …and one that never reads is stuck once it is 1 MiB behind: the bridge closes it rather than
 	// hand it output with a hole in it, the drain goes on for the others, and a terminal that
 	// comes back gets the replay.
-	@Test("C29: a client 1 MiB behind is closed, and its reconnect gets the replay")
+	@Test("E58: a client 1 MiB behind is closed, and its reconnect gets the replay")
 	func aStuckClientIsClosedAndComesBackToTheReplay() throws {
 		let env = makeBridge("stuck")
 		env.bridge.start()
@@ -388,7 +388,7 @@ struct SerialPortBridgeTests {
 
 	// The socket goes before the clients: a terminal whose connection ends finds no bridge
 	// to come back to, and so never takes a stop for being closed as stuck.
-	@Test("C29: a stopped bridge's socket is gone before its clients see the end")
+	@Test("E58: a stopped bridge's socket is gone before its clients see the end")
 	func aStoppedBridgeUnlinksBeforeClosingClients() throws {
 		let env = makeBridge("stopping")
 		env.bridge.start()
