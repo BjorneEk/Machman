@@ -182,8 +182,10 @@ extension RoutingMachman {
 			// Clients list the VM again once it can't be adopted (E53): it lists Not responding
 			// from now on, which a client that listed it before (the agent menu, while startup
 			// adoption ran) would never learn. A repeat failure inserts nothing, so no loop.
+			// From then on its timer asks it again (E61).
 			if UDSListener.isLive(path: socketPath), unadoptable.insert(name).inserted {
 				registry.events.emit(.listChanged)
+				retryAdoption(of: name)
 			}
 			throw error
 		}
@@ -209,10 +211,32 @@ extension RoutingMachman {
 		return results
 	}
 
-	// Fire-and-forget adoption for the read paths; a no-op while one is in flight.
+	// Fire-and-forget adoption for the read paths; a no-op while one is in flight, and for a
+	// name that could not be adopted (E61): every list asked that one again, and each connect
+	// to a vmhost that never accepts stays in its accept queue for good. Its timer asks it.
 	func scheduleAdoption(_ name: String) {
-		guard adoptions[name] == nil else { return }
+		guard adoptions[name] == nil, !unadoptable.contains(name) else { return }
 		Task { _ = try? await self.adoptLiveHost(name) }
+	}
+
+	// An unadoptable name's adoption, tried again every adoptionRetryInterval until it is
+	// adopted, or until its socket is dark: then clients list the VM again, stopped (nothing
+	// watched that vmhost's exit). One timer per name.
+	private func retryAdoption(of name: String) {
+		guard adoptionRetries[name] == nil else { return }
+		adoptionRetries[name] = Task { [weak self] in
+			while let interval = self?.adoptionRetryInterval {
+				try? await Task.sleep(for: interval)
+				guard let self, !Task.isCancelled, self.unadoptable.contains(name) else { break }
+				guard UDSListener.isLive(path: self.hostSocketPath(for: name)) else {
+					self.unadoptable.remove(name)
+					self.registry.events.emit(.listChanged)
+					break
+				}
+				_ = try? await self.adoptLiveHost(name)
+			}
+			self?.adoptionRetries[name] = nil
+		}
 	}
 
 	// The one adoption path — startup, probe-adopt and on demand: connect, ask the host once
@@ -407,15 +431,8 @@ extension RoutingMachman {
 	// True when it is gone already.
 	nonisolated static func killVMHost(pid: pid_t) -> Bool {
 		if kill(pid, 0) != 0, errno == ESRCH { return true }
-		guard isVMHostProcess(pid) else { return false }
+		guard VMHostProcess.isVMHost(pid) else { return false }
 		return kill(pid, SIGKILL) == 0 || errno == ESRCH
-	}
-
-	nonisolated static func isVMHostProcess(_ pid: pid_t) -> Bool {
-		var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))   // PROC_PIDPATHINFO_MAXSIZE
-		guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
-		return String(cString: path)
-			.hasSuffix("/" + VMHostLocator.bundleName + "/Contents/MacOS/MachmanVMHost")
 	}
 
 	// A stop for a VM its vmhost runs (E36). Shut Down asks the guest through the host, so

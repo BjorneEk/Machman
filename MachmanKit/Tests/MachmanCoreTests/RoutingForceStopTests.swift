@@ -214,7 +214,7 @@ struct RoutingForceStopTests {
 
 	// The pid a SIGKILL goes to must still be a vmhost's: never this test process.
 	@Test func onlyAVMHostProcessIsEverKilled() {
-		#expect(!RoutingMachman.isVMHostProcess(getpid()))
+		#expect(!VMHostProcess.isVMHost(getpid()))
 		#expect(!RoutingMachman.killVMHost(pid: getpid()))
 	}
 

@@ -4,9 +4,10 @@
 //
 //  L2 — a frozen vmhost (SIGSTOP) as the agent's menu and quit see it: across an agent
 //  restart its VM is unknown, offers stops and no starts (V11, P37), and the agent's Force
-//  Stop and Force Stop All & Quit ask before they end its process (E36). Prompts are
-//  answered from the scope's answers file and logged; the menu items come through the lab
-//  control socket under the menu's own enabled rule.
+//  Stop and Force Stop All & Quit ask before they end its process (E36), and however often its
+//  VM is listed it never lists stopped (E61). Prompts are answered from the scope's answers
+//  file and logged; the menu items come through the lab control socket under the menu's own
+//  enabled rule.
 //
 
 import Foundation
@@ -110,6 +111,35 @@ struct EngineFrozenHostTests {
 				) {
 					$0.state == .running && !$0.isUnresponsive
 				}
+			}
+		}
+	}
+
+	// E61: every connect to a frozen vmhost stays in its accept queue, and each list of its VM
+	// added one. Once the queue was full a connect was refused like a dead socket's: the VM
+	// listed stopped, for a Start to spawn a second vmhost on its disks. The agent then asks
+	// for the vmhost launched to serve the socket, so the VM keeps listing not responding,
+	// and ending its process still finds it.
+	@Test("E61: a frozen vmhost's VM never lists stopped, however often clients list it")
+	func frozenNeverListsStopped() async throws {
+		try await Lab.withAgent { agent in
+			try await agent.withVM(LabVMSpec(name: "frozen-full-queue", boot: .alpine())) { vm in
+				let host = try await Self.frozenAcrossRestart(agent, vm)
+				defer { TFProcess.resume(host) }
+				var stopped = 0
+				for _ in 0..<250 {   // past what its accept queue holds
+					if try await vm.info().state == .stopped { stopped += 1 }
+				}
+				// The case holds: the queue is full, a connect is refused.
+				let probe = LabConsole.connectOnce(MachmanPaths.vmSocketPath(vm: vm.name))
+				if probe >= 0 { close(probe) }
+				#expect(probe < 0, "its accept queue never filled")
+				#expect(stopped == 0, "listed stopped \(stopped) times in 250")
+				#expect(try await vm.info().isUnresponsive)
+				try await agent.api.endProcess(vm: vm.name)
+				#expect(await LabProcesses.waitForExit(host, timeout: .seconds(20)))
+				try await vm.waitForState(.stopped, timeout: .seconds(20))
+				TFVM.forget(agent, vm.name)
 			}
 		}
 	}

@@ -109,6 +109,11 @@ public final class RoutingMachman: MachmanControlling {
 	var adoptions: [String: Task<HostedVM, Error>] = [:]
 	var unadoptable: Set<String> = []
 	var adoptionAttempts = 0   // test seam: connects made to adopt a host
+	// An unadoptable name is asked again on its own timer, never by each list (E61). Short:
+	// a vmhost that thaws reads running again within seconds, as it did when each list asked
+	// it, and an attempt in flight then gets through at once. A seam for tests.
+	var adoptionRetries: [String: Task<Void, Never>] = [:]
+	var adoptionRetryInterval: Duration = .seconds(5)
 
 	// Where the vmhost app lives. Internal test seam: a test that reaches spawnHost pins this
 	// to nil, so it fails at "not found" on every machine instead of depending on where the

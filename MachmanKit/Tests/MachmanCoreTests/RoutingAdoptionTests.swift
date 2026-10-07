@@ -44,6 +44,33 @@ private final class HungHost: @unchecked Sendable {
 	}
 }
 
+// Listens and never accepts: a frozen (SIGSTOPped) vmhost. Its accept queue holds one
+// connection, so the connects that pile up in it fill it at once, as 128 do a vmhost's.
+private final class FrozenHost {
+	private let fd: Int32
+	private let path: String
+
+	init(path: String) throws {
+		self.path = path
+		var addr = try UDSListener.makeAddr(path)
+		fd = socket(AF_UNIX, SOCK_STREAM, 0)
+		let bound = withUnsafePointer(to: &addr) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+			}
+		}
+		guard bound, listen(fd, 1) == 0 else {
+			Darwin.close(fd)
+			throw POSIXError(.EADDRINUSE)
+		}
+	}
+
+	func close() {
+		Darwin.close(fd)
+		unlink(path)
+	}
+}
+
 struct RoutingAdoptionTests {
 	// Deadlines: a test against a live in-process stub host gets a generous one, because the
 	// stub answers on the main actor, which parallel @MainActor suites keep busy; only the
@@ -149,6 +176,7 @@ struct RoutingAdoptionTests {
 	@Test("E53: a vmhost that can't be adopted makes clients list again, once")
 	@MainActor func aFailedAdoptionHasClientsListAgainOnce() async throws {
 		let (routing, socketPath) = try makeRouting()
+		routing.adoptionRetryInterval = .milliseconds(100)
 		let listener = try UDSListener(
 			path: socketPath, queue: DispatchQueue(label: "mm-unadoptable-accept")) { fd in
 				close(fd)
@@ -166,10 +194,53 @@ struct RoutingAdoptionTests {
 		#expect(await eventually { lists.count == 1 })
 		let listed = try await routing.listVMs().first { $0.name == "alpha" }
 		#expect(listed?.unresponsive == true)
-		// That list asked the host again; its second failure says nothing new.
+		// Its timer asks the host again (E61); the second failure says nothing new.
 		#expect(await eventually { routing.adoptionAttempts >= 2 && routing.adoptions.isEmpty })
 		try await Task.sleep(for: .milliseconds(200))
 		#expect(lists.count == 1)
+	}
+
+	// E61: a vmhost that never accepts (frozen, SIGSTOPped) keeps every connect in its accept
+	// queue for good, and each list's liveness probe and re-adoption added some. Once the
+	// queue was full a connect was refused like a dead socket's: the VM listed stopped,
+	// stop-first edits went through under a live VZ, and Start unlinked the socket to spawn a
+	// second vmhost on the same disks. This process plays the vmhost serving the path.
+	@Test(
+		"E61: a vmhost that never accepts keeps listing not responding however often clients list")
+	@MainActor func aVMHostThatNeverAcceptsKeepsListingNotResponding() async throws {
+		let (routing, socketPath) = try makeRouting(
+			helloDeadline: .milliseconds(200), probeDeadline: .milliseconds(300))
+		routing.adoptionRetryInterval = .seconds(60)   // no timer tick inside the test
+		let host = try FrozenHost(path: socketPath)
+		defer { host.close() }
+		VMHostProcess.TestHook.setServing(socketPath, getpid())
+		defer { VMHostProcess.TestHook.setServing(socketPath, nil) }
+
+		var states: [VMState] = []
+		for _ in 0..<50 {
+			let alpha = try #require(try await routing.listVMs().first { $0.name == "alpha" })
+			states.append(alpha.state)
+			try await Task.sleep(for: .milliseconds(10))
+		}
+		#expect(!states.contains(.stopped), "listed \(states)")
+		#expect(await eventually { routing.adoptions.isEmpty })
+		let listed = try await routing.listVMs().first { $0.name == "alpha" }
+		#expect(listed?.state == .unknown)
+		#expect(listed?.unresponsive == true)
+		#expect(routing.adoptionAttempts == 1)   // tried again on a timer, never on each list
+		do {
+			try await routing.requireStopped("alpha", "deleting it")
+			Issue.record("a stop-first edit went past a live vmhost")
+		} catch let error as MachmanError {
+			#expect(error.message == "alpha is still running — stop it before deleting it")
+		}
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("a start went past a live vmhost")
+		} catch let error as MachmanError {
+			#expect(error.message == "alpha is not responding — try again in a moment")
+		}
+		#expect(FileManager.default.fileExists(atPath: socketPath))   // never unlinked
 	}
 
 	// A safe run's vmhost adopted late must be a safe run again (its shadow is discarded at

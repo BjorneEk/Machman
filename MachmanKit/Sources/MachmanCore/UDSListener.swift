@@ -196,12 +196,18 @@ final class UDSListener {
 		return utimes(path, nil) == 0
 	}
 
-	// Whether something is actually accepting on this socket. The file existing means nothing:
-	// only an orderly shutdown removes it, so anything killed leaves one behind. A refused
-	// connect also means a full accept queue (see the backlog in init), which SOMAXCONN makes
-	// unlikely but not impossible.
+	// Whether something serves this socket. The file existing means nothing: only an orderly
+	// shutdown removes it, so anything killed leaves one behind. A refused connect means
+	// nothing either: a full accept queue refuses like a dead socket (see the backlog in
+	// init), and a vmhost that never accepts — frozen, SIGSTOPped — fills its queue with the
+	// probes themselves, each connect staying in it for good (E61). So a refused connect on a
+	// file that's there asks whether a vmhost launched to serve the path is alive.
 	static func isLive(path: String) -> Bool {
 		guard FileManager.default.fileExists(atPath: path) else { return false }
+		return accepts(path) || VMHostProcess.serving(socketPath: path) != nil
+	}
+
+	private static func accepts(_ path: String) -> Bool {
 		guard var addr = try? makeAddr(path) else { return false }
 		let probe = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard probe >= 0 else { return false }
@@ -213,11 +219,12 @@ final class UDSListener {
 		}
 	}
 
-	// The pid of the process listening on this socket, nil when nothing accepts. A connect is
+	// The pid of the process listening on this socket, nil when nothing serves it. A connect is
 	// enough: LOCAL_PEERPID answers for the listener before it accepts (probe-checked), so
 	// the probe never waits on the holder. It answers only while the connection stands: a
 	// holder that accepts and hangs up before the ask leaves nothing to answer for (ENOTCONN,
 	// nil). No server here does that — each keeps a connection until its peer leaves (Q17).
+	// A connect refused on a file that's there asks for the vmhost serving it, as isLive does.
 	static func holderPID(path: String) -> pid_t? {
 		guard var addr = try? makeAddr(path) else { return nil }
 		let probe = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -228,7 +235,10 @@ final class UDSListener {
 				connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
 			}
 		}
-		guard connected else { return nil }
+		guard connected else {
+			guard FileManager.default.fileExists(atPath: path) else { return nil }
+			return VMHostProcess.serving(socketPath: path)
+		}
 		var pid: pid_t = 0
 		var length = socklen_t(MemoryLayout<pid_t>.size)
 		guard getsockopt(probe, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 else { return nil }
