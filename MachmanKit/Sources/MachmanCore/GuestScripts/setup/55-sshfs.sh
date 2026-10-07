@@ -102,7 +102,7 @@ sshfs_act_fuse_ready() {
 		fi
 		if [ "$FUSE_PERSISTED" -eq 0 ]; then
 			# A driver that is not loaded at boot just breaks the next mount.
-			run "keeping fusefs across reboots" sysrc "kld_list+=fusefs" \
+			kld_list_add fusefs \
 				|| step_failed sshfs "could not persist the fusefs module" \
 					"Add it yourself: sysrc kld_list+=fusefs"
 		fi
@@ -197,8 +197,8 @@ sshfs_uninstall() {
 	# The package and the sysctl stay: both may serve the user beyond Machman, and v2
 	# never removed them either. The kld_list entry stays with the package — sshfs
 	# without a boot-loaded fusefs just breaks mysteriously on the next reboot. All
-	# deliberate keeps are DISCLOSED here, with their one-line reverts.
-	if [ "$OS_FAMILY" = freebsd ] && sysrc -n kld_list 2>/dev/null | grep -q fusefs; then
+	# deliberate keeps of what a run added are DISCLOSED here, with their one-line reverts.
+	if [ "$OS_FAMILY" = freebsd ] && kld_list_ours fusefs; then
 		note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
 	fi
 	_su_knob="$(usermount_knob)"

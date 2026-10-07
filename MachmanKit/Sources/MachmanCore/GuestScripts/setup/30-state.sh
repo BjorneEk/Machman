@@ -17,6 +17,7 @@ ST_KERNEL_CONSOLE_METHOD=""
 ST_SSH_USER=""
 ST_AUTOMOUNT_SSHFS=""      # TAB-separated mount names (they carry spaces)
 ST_MOUNTPOINT=""           # where sshfs automounts land — report-only reconstructs with it
+ST_KLD_ADDED=""            # FreeBSD kld_list entries a run added (KLD_ADDED; none before v7)
 ST_LAST_STATUS=""          # ok|partial from the last real run — --report-only keeps it
 ST_LAST_NOTE=""            # …with its one-sentence note, failed steps, and the error and
 ST_LAST_FAILED_STEPS=""    # note lines ("step: message", newline-separated) that explain
@@ -87,6 +88,7 @@ read_state() {
 	''|1) ST_AUTOMOUNT_SSHFS="$(printf '%s' "$ST_AUTOMOUNT_SSHFS" | tr ' ' '\t')" ;;
 	esac
 	ST_MOUNTPOINT="$(state_get MOUNTPOINT)"
+	ST_KLD_ADDED="$(state_get KLD_ADDED)"
 	ST_LAST_STATUS="$(state_get LAST_STATUS)"
 	ST_LAST_NOTE="$(state_get LAST_NOTE)"
 	ST_LAST_FAILED_STEPS="$(state_get LAST_FAILED_STEPS)"
@@ -180,6 +182,12 @@ write_state() {
 		fi
 		[ -n "$_ws_auto" ] && state_line AUTOMOUNT_SSHFS "$_ws_auto"
 		[ -n "$_ws_auto" ] && state_line MOUNTPOINT "$_ws_root"
+		# The kld_list entries any run added: one a later run finds in place stays its.
+		_ws_kld="$ST_KLD_ADDED"
+		for _ws_m in $KLD_ADDED; do
+			has_word "$_ws_m" "$_ws_kld" || _ws_kld="${_ws_kld:+$_ws_kld }$_ws_m"
+		done
+		[ -n "$_ws_kld" ] && state_line KLD_ADDED "$_ws_kld"
 		:
 	} > "$_ws_tmp"
 	if ! write_file -m 600 "$STATE_FILE" < "$_ws_tmp"; then
@@ -191,6 +199,26 @@ write_state() {
 	rm -f "$_ws_tmp"
 	verbose state "wrote $STATE_FILE"
 	return 0
+}
+
+# ---------------------------------------------------------------- FreeBSD kld_list ----
+
+# A kld_list entry carries no marker, so a run records the ones it adds, and the uninstall
+# names only those (an entry the admin listed is theirs). A state without the record, as
+# every one before v7 is, added none.
+KLD_ADDED=""               # the entries this run added, space-separated
+
+# kld_list_add <module> — loaded at every boot from now on, recorded as this run's.
+kld_list_add() {
+	run "keeping $1 across reboots" sysrc "kld_list+=$1" || return 1
+	KLD_ADDED="${KLD_ADDED:+$KLD_ADDED }$1"
+	return 0
+}
+
+# Is <module> in kld_list because a run of this script put it there?
+kld_list_ours() {
+	has_word "$1" "$ST_KLD_ADDED $KLD_ADDED" || return 1
+	sysrc -n kld_list 2>/dev/null | grep -q "$1"
 }
 
 remove_state() {

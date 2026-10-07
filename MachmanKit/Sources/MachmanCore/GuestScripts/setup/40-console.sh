@@ -740,8 +740,7 @@ console_act() {
 					"Load it yourself: kldload virtio_console"
 		fi
 		if ! sysrc -n kld_list 2>/dev/null | grep -q virtio_console; then
-			run "keeping virtio_console across reboots" sysrc "kld_list+=virtio_console" \
-				|| true
+			kld_list_add virtio_console || true
 		fi
 	fi
 	# Older versions staged into these files; one a killed run left behind goes.
@@ -955,10 +954,9 @@ console_uninstall() {
 		strip_block /etc/ttys || uninstall_kept
 		restore_superseded /etc/ttys || uninstall_kept
 		console_uninstall_reload /etc/ttys
-		# Deliberate keep, disclosed: un-listing virtio_console would take away the
-		# console devices — possibly the very one this uninstall is being read on.
-		if [ "$OS_FAMILY" = freebsd ] \
-			&& sysrc -n kld_list 2>/dev/null | grep -q virtio_console; then
+		# Deliberate keep, disclosed when a run listed it: un-listing virtio_console would
+		# take away the console devices — possibly the very one this uninstall is read on.
+		if [ "$OS_FAMILY" = freebsd ] && kld_list_ours virtio_console; then
 			note "kld_list keeps virtio_console (the console devices stay) — 'sysrc kld_list-=virtio_console' reverts it."
 		fi
 		;;

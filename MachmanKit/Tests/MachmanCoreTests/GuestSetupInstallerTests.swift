@@ -85,7 +85,7 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("/usr/libexec/getty"))
 		#expect(s.contains("active-auto"))
 		#expect(s.contains("kldload virtio_console"))
-		#expect(s.contains("kld_list+=virtio_console"))
+		#expect(s.contains("kld_list_add virtio_console"))
 		// Guest device naming mirrors SerialPortKind.guestDevice.
 		#expect(s.contains("cu.virtio"))
 		#expect(s.contains(#"echo "ttyV$1.0""#))

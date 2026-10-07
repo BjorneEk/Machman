@@ -170,6 +170,78 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S59: the uninstall said kld_list keeps fusefs and virtio_console, with a revert,
+	// whenever kld_list held them — the admin's own entries too. A run now records the
+	// entries it adds (a later run that finds them in place keeps the record), and the
+	// uninstall names only those; a state without the record (v6 and older) added none.
+	@Test("S59: the uninstall names only the kld_list entries a run added")
+	func uninstallNamesOnlyTheKldListEntriesARunAdded() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS_FAMILY=freebsd
+				GETTY_MECH=ttys
+				U="$(id -un)"
+				GROUP="$(id -gn)"
+				MOUNTPOINT="$D/mnt"
+				kldstat() { echo 'fusefs.ko virtio_console.ko'; }
+				sysrc() {
+					case "$1" in
+					-n) tr '\n' ' ' < "$D/kld"; echo ;;
+					kld_list+=*) echo "${1#kld_list+=}" >> "$D/kld" ;;
+					esac
+				}
+				strip_block() { :; }
+				restore_superseded() { :; }
+				console_uninstall_reload() { :; }
+				CONSOLE_SELECTED=ttyV0.0
+				CONSOLE_ACTIONS=ttyV0.0=report
+				a_run() {
+					KLD_ADDED=""
+					FUSE_PERSISTED=0
+					fuse_persisted && FUSE_PERSISTED=1
+					sshfs_act_fuse_ready >/dev/null
+					console_act >/dev/null
+					write_state sshfs
+				}
+				uninstall() {
+					KLD_ADDED=""
+					echo "$1:"
+					read_state
+					sshfs_uninstall
+					console_uninstall
+				}
+				: > "$D/kld"
+				a_run
+				read_state
+				a_run
+				grep '^KLD_ADDED=' "$STATE_FILE" || echo "no record"
+				uninstall "both added"
+				ST_KLD_ADDED=""
+				echo virtio_console > "$D/kld"
+				a_run
+				uninstall "fusefs added"
+				printf "MARKER='%s'\n" "$MARKER" > "$STATE_FILE"
+				printf 'fusefs\nvirtio_console\n' > "$D/kld"
+				uninstall "a v6 state"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				KLD_ADDED='fusefs virtio_console'
+				both added:
+				   kld_list keeps fusefs (sshfs stays usable) - 'sysrc kld_list-=fusefs' reverts \
+				it.
+				   kld_list keeps virtio_console (the console devices stay) - 'sysrc \
+				kld_list-=virtio_console' reverts it.
+				fusefs added:
+				   kld_list keeps fusefs (sshfs stays usable) - 'sysrc kld_list-=fusefs' reverts \
+				it.
+				a v6 state:
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// S55: a duplicate's disk keeps its source's machine id, which systemd-networkd derives
 	// its DHCP client id from, and dhcpcd's DUID: the copy leased the source's address. A run
 	// that finds another VM's state gives the guest a new machine id (version 4, the file's
