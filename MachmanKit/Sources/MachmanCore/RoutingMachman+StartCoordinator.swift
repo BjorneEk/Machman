@@ -415,6 +415,13 @@ extension RoutingMachman {
 			!host.sawRun, isOutdated(host), try await endOutdatedIdleHost(host, name: name) {
 			return false
 		}
+		// An idle host a safe start prepared serves the run's shadow, not the VM (E63): left
+		// by an agent that went away before the forward, a plain start sent to it booted the
+		// shadow and the stop threw its writes away. It is ended for a fresh spawn.
+		if host.identity.isSafe, host.lastAnswer?.state.isRunning != true, !options.safe {
+			try await endIdleSafeHost(host, name: name)
+			return false
+		}
 		if host.lastAnswer?.state.isRunning == true {
 			if options.safe {
 				MachmanLogger.log(.passiveWarning,
@@ -453,6 +460,18 @@ extension RoutingMachman {
 	}
 
 	// True once the host is gone; false when there is nothing to end it by.
+	private func endIdleSafeHost(_ host: HostedVM, name: String) async throws {
+		guard endHost(host) else {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is still prepared from an earlier safe start — wait up to 3 "
+					+ "minutes, then start it again")
+		}
+		MachmanLogger.log(.log,
+			"ending \(name)'s idle vmhost, prepared for a safe run, so a plain start runs the VM")
+		try await waitOutExit(of: host, name: name)
+	}
+
 	private func endOutdatedIdleHost(_ host: HostedVM, name: String) async throws -> Bool {
 		guard endHost(host) else {
 			MachmanLogger.log(.passiveWarning,

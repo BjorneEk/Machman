@@ -205,6 +205,43 @@ struct RoutingIdleHostTests {
 		#expect(rig.routing.hostedNames.isEmpty)
 	}
 
+	// E63 (review 4): an agent that went away between a safe start's spawn and its forward
+	// leaves a vmhost idling on the VM's socket with the safe run's shadow as its library. The
+	// next agent adopts it as safe; a plain start then went to it (only a SAFE start on an
+	// idle host was refused) and booted the shadow, whose writes the stop throws away.
+	@Test("E63: a plain start never runs an idle vmhost that was prepared for a safe run")
+	@MainActor func aPlainStartNeverRunsAnIdleSafeHost() async throws {
+		let routing = try makeRouting()
+		let socketPath = TestEnvironment.socketPath("mm-idle-safe")
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .stopped)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try startServing(server)
+		defer { server.stop() }
+		var identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: socketPath, macInUse: nil)
+		identity.isSafe = true
+		identity.shadowRoot = TestEnvironment.scratch + "safe-run-\(UUID().uuidString)"
+		let client = try await routing.connectHost(identity: identity)
+		routing.adopt(identity: identity, client: client)
+		var ended = 0
+		routing.endHost = { _ in
+			ended += 1
+			server.stop()   // the host exits; the fresh spawn then can't finish in a test host
+			return true
+		}
+
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+			Issue.record("expected the fresh-start path to fail in the test host")
+		} catch let error as MachmanError {
+			#expect(error.message.contains("reinstall Machman"))   // the spawn, past the host
+		}
+		#expect(stub.starts.isEmpty, "the safe run's vmhost booted its shadow for a plain start")
+		#expect(ended == 1)
+		#expect(routing.hostedNames.isEmpty)
+	}
+
 	// R3-3: an idle host an older daemon left behind runs older code than this one; handed
 	// the start, the VM would boot locked ("Restart this VM to finish updating"). It is ended
 	// instead and the start spawns a current host (which a test host cannot finish).

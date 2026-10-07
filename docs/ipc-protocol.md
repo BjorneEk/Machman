@@ -466,7 +466,10 @@ runs this start, MAC check included; a safe start there answers `invalidState` (
 prepared from an earlier start — start it normally, or wait up to 3 minutes to start it safe"),
 since that host runs the real VM, never a shadow. An idle host older than the daemon (1.0.12+)
 is ended instead and the start spawns a current one, so the run does not start locked by
-`outdatedHost`; one the daemon has no process to end by still runs the start, locked.
+`outdatedHost`; one the daemon has no process to end by still runs the start, locked. An idle
+host a safe start spawned serves that run's shadow, so a plain start ends it and spawns a fresh
+one; if it can't be ended the start answers `invalidState` ("… is still prepared from an earlier
+safe start — wait up to 3 minutes, then start it again").
 A host whose VM just stopped is exiting — once an operation it runs for that VM (an import, a
 kernel promote) has finished: the
 start waits up to 3 s for it to go and then starts normally; if the host is still there, the
