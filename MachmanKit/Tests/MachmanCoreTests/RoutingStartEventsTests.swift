@@ -162,11 +162,15 @@ struct RoutingStartEventsTests {
 			Issue.record("expected the shadow copy's failure")
 		} catch {}
 		#expect(saidDuringCopy)
-		// The failed start's listChanged puts the state back, after.
+		// The failed start says stopped, then its listChanged puts the list back (review F14:
+		// with only the list, a desktop's preview loop that starting began polled a VM that
+		// never ran until its selection changed).
 		#expect(await eventually { collected.events.contains(.listChanged) })
 		let said = try #require(collected.events.firstIndex(of: starting))
+		let stopped = try #require(
+			collected.events.firstIndex(of: .stateChanged(vm: "alpha", state: .stopped)))
 		let reload = try #require(collected.events.lastIndex(of: .listChanged))
-		#expect(said < reload)
+		#expect(said < stopped && stopped < reload)
 		#expect(!collected.events.contains(.stateChanged(vm: "alpha", state: .running)))
 	}
 
@@ -186,6 +190,7 @@ struct RoutingStartEventsTests {
 		}
 		#expect(await eventually { collected.events.contains(.listChanged) })
 		#expect(!collected.events.contains(.stateChanged(vm: "alpha", state: .starting)))
+		#expect(!collected.events.contains(.stateChanged(vm: "alpha", state: .stopped)))
 	}
 }
 

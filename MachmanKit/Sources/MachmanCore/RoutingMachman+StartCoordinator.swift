@@ -82,9 +82,25 @@ extension RoutingMachman {
 		// The start goes ahead: say so now, not at hostStarted (V14). A client that follows
 		// events only — the agent menu, another desktop — would show a safe run's minutes-long
 		// preparation as stopped, with Stop (its cancel, C14) off. vm.list says starting
-		// already; a failed start's listChanged puts the state back. No running state or list
-		// of a running VM comes before hostStarted (O-6a), so a start still toasts once.
+		// already. No running state or list of a running VM comes before hostStarted (O-6a),
+		// so a start still toasts once.
 		registry.events.emit(.stateChanged(vm: name, state: .starting))
+		do {
+			try await startFresh(vm, name: name, options: options, claim: claim)
+		} catch {
+			// …and one that fails after saying so says stopped, before start()'s listChanged
+			// (review F14): a client that follows states — a desktop's preview loop, which
+			// starting began — kept polling a VM that never ran. Starting to stopped toasts
+			// nothing.
+			registry.events.emit(.stateChanged(vm: name, state: .stopped))
+			throw error
+		}
+	}
+
+	// A start no host serves yet: a safe run's shadow build, or a spawned vmhost.
+	private func startFresh(
+		_ vm: VirtualMachine, name: String, options: StartOptions, claim: VMClaims.Token
+	) async throws {
 		if options.safe {
 			try await startSafe(vm: vm, name: name, options: options, claim: claim)
 			return
