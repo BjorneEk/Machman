@@ -22,7 +22,7 @@ struct EmbeddedScriptTests {
 	@Test func assembledGuestSetupIsWhole() {
 		let text = GuestSetupScript.assembled.text
 		#expect(text.hasPrefix("#!/bin/sh"))
-		#expect(GuestSetupScript.assembled.version == 6)
+		#expect(GuestSetupScript.assembled.version == 7)
 		#expect(text.contains(GuestInstallerWriter.environmentFileName))
 		for part in GuestSetupScript.parts {
 			let marker = GuestSetupScript.marker(for: part.name)

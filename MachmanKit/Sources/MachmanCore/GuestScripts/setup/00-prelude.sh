@@ -20,8 +20,12 @@ set -eu
 # re-enabled; 5: a boot-time report copy kept in the guest, console re-runs that keep every
 # login, state that remembers unselected features, Void and NetBSD consoles, notes; 6:
 # 'ssh mac' ahead of the user's Host * defaults, OpenBSD consoles, NetBSD's user-mount
-# sysctl checked, the share's link mounted with a trailing slash).
-SCRIPT_VERSION=6
+# sysctl checked, the share's link mounted with a trailing slash; 7: systemd logins owned
+# only where a run enabled them and hvc0's automatic one read so, ASCII prose and lines
+# folded to an ASCII console, a re-run that leaves init alone under its own console, every
+# sshfs host folder through a trailing slash, NetBSD's bare address and its user-mount
+# sysctl kept for the next boot, a copy's own machine id).
+SCRIPT_VERSION=7
 
 # ------------------------------------------------------------------- payload bootstrap ----
 
