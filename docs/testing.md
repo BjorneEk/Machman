@@ -53,7 +53,10 @@ issue by its title) or skip reason hung under it, dimmed (`├─`, `└─`). P
 with `--plain`, every line is printed with its time, and a quiet minute gets a stall line
 naming the running test, its step and the last console line. Harness waits that run past 5 s
 narrate themselves (`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and
-`report/test-times.tsv`. Lab VMs are named for their role in the test, never after a row.
+`report/test-times.tsv`; the sandbox goes at exit, so a run past the harness tier copies its
+report, logs and transcripts to the lab cache's `last-run/` (the next run replaces it), and
+`--out DIR` keeps a dated copy for good. Lab VMs are named for their role in the test, never
+after a row.
 
 A run with L2 or L3 tests runs in parallel shards (`--jobs N`; by default a core each with two
 left over and 5 GB of memory each past the first 8 GB, at most 8): each shard is a sandbox of

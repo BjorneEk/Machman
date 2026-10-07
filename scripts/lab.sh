@@ -16,7 +16,8 @@
 #   --filter    matches Swift Testing ids (type and function names, unanchored), never
 #               display names; without a mode it runs every tier
 #   --keep      keep the sandbox for a day (after the run: lab: kept <root>)
-#   --out DIR   copy report, logs and transcripts to DIR (absolute; git-ignored if in the repo)
+#   --out DIR   copy report, logs and transcripts to DIR (absolute; git-ignored if in the repo);
+#               without it a run past the harness tier keeps them in the lab cache's last-run/
 #   --no-build  skip the xcodebuild and swift build steps
 #   -v, -vv     more live progress (scripts/lab/progress.py), which always shows each test's
 #               result, duration and issues by what the test does: -v adds the lab log (agent,
@@ -678,13 +679,14 @@ lab_run() {
 	fi
 	if [[ -n "$out" ]]; then
 		local dest="$out/lab-$(date +%Y%m%d-%H%M%S)-$token"
-		mkdir -p "$dest"
-		cp -R "$report" "$root/logs" "$root/transcripts" "$dest/"
-		for ((k = 0; k < ${#SHARD_ROOTS[@]}; k++)); do
-			mkdir -p "$dest/shard-$((k + 2))"
-			cp -R "${SHARD_ROOTS[$k]}"/{report,logs,transcripts} "$dest/shard-$((k + 2))/"
-		done
+		lab_keep_report "$dest" "$root" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}
 		echo "lab: report copied to $dest"
+	elif [[ "$tiers" != harness ]]; then
+		# The sandbox goes at exit: a run past the harness keeps its report until the next one
+		# (a full run's results were once only in a closed terminal).
+		lab_keep_report "$MACHMAN_LAB_CACHE/last-run" "$root" \
+			${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}
+		echo "lab: report kept in $MACHMAN_LAB_CACHE/last-run (the next run replaces it)"
 	fi
 	((breaches)) && exit 3
 	((teststatus)) && exit 1
@@ -780,12 +782,28 @@ lab_doctor() {
 	exit $((missing ? 69 : 0))
 }
 
+# lab_keep_report <dest> <root> [shard roots…]: <dest> becomes a copy of the run's report, logs
+# and transcripts, each shard's under shard-2, shard-3, … (the numbering progress.py prints).
+lab_keep_report() {
+	local dest="$1" run="$2" k=2 shard
+	shift 2
+	[[ "$dest" == /?*/?* ]] || return 1   # never "", "/" or a top-level dir
+	rm -rf "$dest"
+	mkdir -p "$dest"
+	cp -R "$run/report" "$run/logs" "$run/transcripts" "$dest/"
+	for shard in "$@"; do
+		mkdir -p "$dest/shard-$k"
+		cp -R "$shard"/{report,logs,transcripts} "$dest/shard-$k/"
+		k=$((k + 1))
+	done
+}
+
 # lab_selfcheck_audits: lab.sh's own audit plumbing fails on a provoked breach — the worktree
 # audit (a change in a scratch repo), the count over the three report files, and one armed
 # harness pass with an injected window breach, which must end "1 breaches" with exit 3.
 # Prints "ok   <check>" or "FAIL <check>: <why>"; returns the failure count.
 lab_selfcheck_audits() {
-	local failures=0 sc out rc
+	local failures=0 sc out rc r
 	ok() { echo "ok   $1"; }
 	fail() { echo "FAIL $1: $2"; failures=$((failures + 1)); }
 	sc="$(mktemp -d /tmp/mml-selfcheck.XXXXXX)"
@@ -814,6 +832,20 @@ lab_selfcheck_audits() {
 	else
 		fail "audit count: every report file's breaches and warnings are counted" \
 			"$LAB_BREACHES breaches, $LAB_WARNS warnings"
+	fi
+	for r in "$sc/run" "$sc/shard"; do
+		mkdir -p "$r/report" "$r/logs" "$r/transcripts"
+		echo "$r" > "$r/report/suite-runs.tsv"
+	done
+	echo stale > "$sc/kept"
+	lab_keep_report "$sc/kept" "$sc/run" "$sc/shard"
+	if [[ "$(cat "$sc/kept/report/suite-runs.tsv")" == "$sc/run" ]] &&
+		[[ "$(cat "$sc/kept/shard-2/report/suite-runs.tsv")" == "$sc/shard" ]] &&
+		[[ -d "$sc/kept/logs" && -d "$sc/kept/shard-2/transcripts" ]]; then
+		ok "report kept: a run's report, logs, transcripts and shards replace the last"
+	else
+		fail "report kept: a run's report, logs, transcripts and shards replace the last" \
+			"$(find "$sc/kept" | sed "s|$sc/||" | tr '\n' ' ')"
 	fi
 	rm -rf "$sc"
 	out="$(MACHMAN_LAB_SELFCHECK_INJECT=window "$repo/scripts/lab.sh" --harness --no-build \
