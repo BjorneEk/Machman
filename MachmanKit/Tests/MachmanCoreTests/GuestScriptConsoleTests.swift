@@ -49,9 +49,13 @@ struct GuestScriptConsoleTests {
 		}
 	}
 
-	// S6: the getty-generator's serial-getty@ is active without being enabled — "active
-	// (automatic)", which no process line could prove (/dev/null stands in for the device).
-	@Test func systemdGeneratorGettyReadsActiveAuto() async throws {
+	// S6, S52: the getty-generator's serial-getty@ is active without being enabled — "active
+	// (automatic)", which no process line could prove (/dev/null and /dev/zero stand in for
+	// the devices). systemd 257 says so in is-enabled's word (enabled-runtime) but exits 0
+	// all the same, so the word decides; a guest whose only login is automatic gets the
+	// console row off.
+	@Test("S52: the getty-generator's login reads active (automatic) though is-enabled exits 0")
+	func systemdGeneratorGettyReadsActiveAuto() async throws {
 		for shell in GuestScriptHarness.shells {
 			let r = try await GuestScriptHarness.run("""
 				INIT=systemd
@@ -59,13 +63,28 @@ struct GuestScriptConsoleTests {
 				ps() { :; }
 				systemctl() {
 					printf '%s\\n' "$*" >> "$D/systemctl.log"
-					case "$1" in is-active) return 0 ;; *) return 1 ;; esac
+					case "$1 $2" in
+					"is-enabled serial-getty@null.service") echo enabled-runtime ;;
+					"is-enabled serial-getty@zero.service") echo enabled ;;
+					esac
+					return 0
 				}
-				console_login_state null
+				for dev in null zero; do
+					printf '%s %s ' "$dev" "$(console_login_state "$dev")"
+					getty_persistent_on "$dev" && echo persistent || echo automatic
+				done
+				CONSOLE_DEVICES=null
+				echo "menu default $(console_menu_default)"
 				grep -c 'is-active --quiet serial-getty@null.service' "$D/systemctl.log"
 				""", under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
-			#expect(r.out == "active-auto\n1\n", "\(shell): \(r.out)")
+			#expect(r.out == """
+				null active-auto automatic
+				zero active persistent
+				menu default 0
+				2
+
+				""", "\(shell): \(r.out)")
 		}
 	}
 

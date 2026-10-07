@@ -495,15 +495,24 @@ getty_active_on() {
 		| grep -Eq "(^|[^A-Za-z0-9._])$(console_dev_esc "$1")([^A-Za-z0-9._]|\$)"
 }
 
+# Did something ENABLE <dev>'s serial-getty@ unit? is-enabled's word says, never its exit
+# status: that is 0 for the getty-generator's runtime unit too (enabled-runtime), which no
+# one enabled. enabled, alias and linked are enablements; enabled-runtime, generated,
+# static, indirect and transient are systemd's own.
+getty_unit_enabled() {
+	case "$(systemctl is-enabled "serial-getty@$1.service" 2>/dev/null | head -n 1)" in
+	enabled|alias|linked) return 0 ;;
+	esac
+	return 1
+}
+
 # Is a login configured to come back at the next boot? Per-init config check; "auto"
 # covers systemd's getty-generator, which spawns serial-getty@hvc0 on its own when the
 # device exists.
 getty_persistent_on() {
 	case "$INIT" in
 	systemd)
-		if systemctl is-enabled "serial-getty@$1.service" >/dev/null 2>&1; then
-			return 0
-		fi
+		getty_unit_enabled "$1" && return 0
 		[ "$1" = "hvc0" ] && [ -e /dev/hvc0 ]
 		;;
 	launchd)

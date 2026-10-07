@@ -57,8 +57,7 @@ struct THConsoleLoginTests {
 			let hvc0 = setup.consoles?.first { $0.device == "hvc0" }
 			let now = try await g.sh("systemctl is-enabled \(unit)").output
 			#expect(hvc0?.login != nil, "\(setup.consoles ?? [])")
-			// systemd 257 says enabled-runtime for the generator's unit (exit 0), which the
-			// script reads as an enabled login: fails until the open bug S52 is fixed.
+			// systemd 257 says enabled-runtime for the generator's unit, and exits 0.
 			#expect(hvc0?.login == GuestConsoleLogin.activeAuto,
 				"\(setup.consoles ?? []); before: \(before); is-enabled now: \(now)")
 		}

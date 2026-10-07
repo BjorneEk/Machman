@@ -47,8 +47,7 @@ console_login_state() {
 		return 0
 	fi
 	if getty_active_on "$1"; then
-		if [ "$GETTY_MECH" = systemd ] \
-			&& ! systemctl is-enabled "serial-getty@$1.service" >/dev/null 2>&1; then
+		if [ "$GETTY_MECH" = systemd ] && ! getty_unit_enabled "$1"; then
 			echo active-auto
 		else
 			echo active
