@@ -70,6 +70,12 @@ extension RoutingMachman {
 		// Whether this host ever ran its VM (E12): an idle host from a start whose forward
 		// never happened can take a new start; one whose run stopped is exiting.
 		var sawRun = false
+		// A host that ran its VM and since told it stopped (or failed) is exiting: after its
+		// stop flush, and after any import it still drains (E34). Clients already list the VM
+		// stopped (E52).
+		var exitingAfterRun: Bool {
+			sawRun && (lastState == .stopped || lastState == .error)
+		}
 
 		// A start this daemon forwarded succeeded: the VM runs, whether or not its running
 		// event got here first (a later event still moves lastState on).
@@ -293,6 +299,17 @@ extension RoutingMachman {
 			try? await Task.sleep(for: .milliseconds(50))
 		}
 		return true
+	}
+
+	// The one wait for a host on its way out (E12, E52): a start, a stop-first edit and the end
+	// of an outdated idle host all give it hostExitGrace; one that overstays — still draining
+	// an import — is still shutting down.
+	func waitOutExit(of host: HostedVM, name: String) async throws {
+		guard await waitForHostGone(id: host.identity.id, timeout: hostExitGrace) else {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is still shutting down — try again in a moment")
+		}
 	}
 
 	// MARK: - Ending a vmhost (C9)

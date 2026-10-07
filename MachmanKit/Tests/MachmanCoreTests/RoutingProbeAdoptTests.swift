@@ -139,7 +139,7 @@ struct RoutingProbeAdoptTests {
 			}
 
 		do {
-			try routing.requireStopped("alpha", "deleting it")
+			try await routing.requireStopped("alpha", "deleting it")
 			Issue.record("expected invalidState while the socket is live")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
@@ -148,8 +148,8 @@ struct RoutingProbeAdoptTests {
 
 		// SIGKILL leftover: the file exists but nothing listens — no refusal.
 		listener.simulateKillForTesting()
-		#expect(throws: Never.self) {
-			try routing.requireStopped("alpha", "deleting it")
+		await #expect(throws: Never.self) {
+			try await routing.requireStopped("alpha", "deleting it")
 		}
 		unlink(socketPath)
 	}

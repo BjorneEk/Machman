@@ -237,11 +237,21 @@ public final class RoutingMachman: MachmanControlling {
 	// Whole-VM edits the framework fixes at start (files moved, ports, MAC) refuse rather
 	// than proxy unless the VM is stopped — and stopped means no start in flight and no
 	// vmhost answering on its socket either, whether this daemon adopted it or not — and
-	// while a copy writes into the VM's folder or reads it whole (D20).
-	func requireStopped(_ name: String, _ action: String) throws {
+	// while a copy writes into the VM's folder or reads it whole (D20). A vmhost exiting after
+	// its VM's run, which clients already list as stopped, is waited out as a start waits for
+	// it (E52). Callers call it before they read any state: it may suspend.
+	func requireStopped(_ name: String, _ action: String) async throws {
 		switch residence(of: name) {
-		case .hosted:
-			throw MachmanError(code: .invalidState, message: "Stop \(name) before \(action)")
+		case .hosted(let host):
+			guard host.exitingAfterRun else {
+				throw MachmanError(code: .invalidState, message: "Stop \(name) before \(action)")
+			}
+			// An import still draining into it answers at once, with no wait.
+			if let busy = claims.refusal(for: name) { throw busy }
+			try await waitOutExit(of: host, name: name)
+			// The wait suspended: decide again on what owns the VM now — a start, a claim or
+			// a host may have come meanwhile. The one waited for is gone.
+			try await requireStopped(name, action)
 		case .starting:
 			throw MachmanError(
 				code: .invalidState, message: "\(name) is starting — wait before \(action)")
@@ -364,7 +374,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func deleteVM(named name: String) async throws {
-		try requireStopped(name, "deleting it")
+		try await requireStopped(name, "deleting it")
 		// Capture the marker BEFORE the identity file dies with the VM dir.
 		let sshMarker = existingSSHMarker(name)
 		try await local.deleteVM(named: name)
@@ -376,7 +386,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func renameVM(named name: String, to newName: String) async throws {
-		try requireStopped(name, "renaming it")
+		try await requireStopped(name, "renaming it")
 		try await local.renameVM(named: name, to: newName)
 		// The managed ssh alias is name-keyed; regeneration re-keys the block (the
 		// marker — and with it the reverse authorized_keys label — never changes).
@@ -406,7 +416,7 @@ public final class RoutingMachman: MachmanControlling {
 		regenerateMAC: Bool
 	) async throws -> VMInfo {
 		// Cloning images under an active writer produces torn copies.
-		try requireStopped(name, "copying it")
+		try await requireStopped(name, "copying it")
 		return try await withClaim(name, .copying, inDaemon: true) {
 			try await local.copyVM(
 				vm: name, newName: newName, diskIDs: diskIDs, mountIDs: mountIDs,
@@ -417,7 +427,7 @@ public final class RoutingMachman: MachmanControlling {
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
 	// tracking captures macInUse at spawn — a mid-run change would desynchronize both.
 	public func regenerateMAC(vm name: String) async throws -> VMInfo {
-		try requireStopped(name, "regenerating its MAC")
+		try await requireStopped(name, "regenerating its MAC")
 		return try await local.regenerateMAC(vm: name)
 	}
 
@@ -428,7 +438,7 @@ public final class RoutingMachman: MachmanControlling {
 	public func removeDisk(vm name: String, diskID: String) async throws {
 		// Unlinking the backing file under a live VZ attachment is unsafe — stop first
 		// (the guest would keep a ghost disk until shutdown, then the data is gone).
-		try requireStopped(name, "removing its disks")
+		try await requireStopped(name, "removing its disks")
 		try await local.removeDisk(vm: name, diskID: diskID)
 	}
 
@@ -446,7 +456,7 @@ public final class RoutingMachman: MachmanControlling {
 	// attachment holds open read-write (torn owned copy — copyVM's refusal reason), and the
 	// config rewire under that attachment makes the next boot silently switch disks.
 	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
-		try requireStopped(name, "promoting its disks")
+		try await requireStopped(name, "promoting its disks")
 		return try await withClaim(name, .promotingDisk, inDaemon: true) {
 			try await local.promoteDisk(vm: name, diskID: diskID)
 		}
@@ -463,22 +473,22 @@ public final class RoutingMachman: MachmanControlling {
 	// Serial ports are fixed at VM start, so add/remove is refused while hosted (like MAC), but
 	// setSerialLogging proxies to the live bridge.
 	public func addConsolePort(vm name: String) async throws {
-		try requireStopped(name, "changing its serial ports")
+		try await requireStopped(name, "changing its serial ports")
 		try await local.addConsolePort(vm: name)
 	}
 
 	public func removeConsolePort(vm name: String) async throws {
-		try requireStopped(name, "changing its serial ports")
+		try await requireStopped(name, "changing its serial ports")
 		try await local.removeConsolePort(vm: name)
 	}
 
 	public func addUartPort(vm name: String) async throws {
-		try requireStopped(name, "changing its serial ports")
+		try await requireStopped(name, "changing its serial ports")
 		try await local.addUartPort(vm: name)
 	}
 
 	public func removeUartPort(vm name: String) async throws {
-		try requireStopped(name, "changing its serial ports")
+		try await requireStopped(name, "changing its serial ports")
 		try await local.removeUartPort(vm: name)
 	}
 
@@ -577,13 +587,13 @@ public final class RoutingMachman: MachmanControlling {
 	public func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws
 		-> VMInfo {
 		// Growing the raw file under a live VZ attachment is unsafe — stop first.
-		try requireStopped(name, "resizing its disks")
+		try await requireStopped(name, "resizing its disks")
 		return try await local.resizeDisk(vm: name, diskID: diskID, sizeBytes: sizeBytes)
 	}
 	public func renameDisk(vm name: String, diskID: String, newName: String) async throws
 		-> VMInfo {
 		// Moving the raw file under a live VZ attachment is unsafe — stop first.
-		try requireStopped(name, "renaming its disks")
+		try await requireStopped(name, "renaming its disks")
 		return try await local.renameDisk(vm: name, diskID: diskID, newName: newName)
 	}
 	public func setMountTag(vm name: String, mountID: String, tag: String) async throws
@@ -599,7 +609,7 @@ public final class RoutingMachman: MachmanControlling {
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
 		-> VMInfo {
 		// The hosted VM's config references the old path — stop first.
-		try requireStopped(name, "renaming its kernel files")
+		try await requireStopped(name, "renaming its kernel files")
 		return try await local.renameKernelFile(vm: name, path: path, tag: tag)
 	}
 
@@ -791,7 +801,7 @@ public final class RoutingMachman: MachmanControlling {
 	}
 
 	public func startMacInstall(vm name: String, source: InstallSource) async throws {
-		try requireStopped(name, "installing macOS")
+		try await requireStopped(name, "installing macOS")
 		try await local.startMacInstall(vm: name, source: source)
 	}
 

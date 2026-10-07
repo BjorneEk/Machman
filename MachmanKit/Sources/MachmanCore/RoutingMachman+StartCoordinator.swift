@@ -381,11 +381,7 @@ extension RoutingMachman {
 		case .failed:
 			break   // its connection is going: wait for it like an exit
 		}
-		guard await waitForHostGone(id: host.identity.id, timeout: hostExitGrace) else {
-			throw MachmanError(
-				code: .invalidState,
-				message: "\(name) is still shutting down — try again in a moment")
-		}
+		try await waitOutExit(of: host, name: name)
 	}
 
 	// Hands a start to a host this daemon holds: an idle adopted one, or whoever answered
@@ -451,11 +447,7 @@ extension RoutingMachman {
 		MachmanLogger.log(.log,
 			"ending \(name)'s idle vmhost \(host.version), older than this daemon's "
 				+ "\(daemonVersion), so the start runs on a current one")
-		guard await waitForHostGone(id: host.identity.id, timeout: hostExitGrace) else {
-			throw MachmanError(
-				code: .invalidState,
-				message: "\(name) is still shutting down — try again in a moment")
-		}
+		try await waitOutExit(of: host, name: name)
 		return true
 	}
 

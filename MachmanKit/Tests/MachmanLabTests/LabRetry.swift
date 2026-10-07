@@ -18,9 +18,9 @@ enum LabRetry {
 		Issue.record(Comment(rawValue: what), severity: .warning)
 	}
 
-	/// The agent's refusal while it settles a stop: it still counts a VM that just listed
-	/// stopped as hosted until the vmhost's exit reaches it ("Stop <VM> before …"), which is
-	/// the open bug E52.
+	/// The agent's refusal while it settles a stop: it counted a VM that just listed stopped
+	/// as hosted until the vmhost's exit reached it ("Stop <VM> before …", E52). It waits the
+	/// exit out now, so a retry noted here is a regression to look at.
 	static func isSettling(_ error: Error) -> Bool {
 		(error as? MachmanError)?.code == .invalidState
 	}

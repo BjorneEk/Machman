@@ -276,4 +276,57 @@ struct RoutingIdleHostTests {
 		}
 		#expect(alpha.stub.starts.isEmpty)
 	}
+
+	// E52: a VM lists stopped once its vmhost says so, but the host stays hosted until it exits
+	// (its stop flush, an import it drains): every stop-first edit answered "Stop alpha before
+	// …" for a VM shown stopped. It waits the exit out now, as a start does.
+	@Test("E52: a stop-first edit waits out a vmhost exiting after its VM stopped")
+	@MainActor func aStopFirstEditWaitsOutAnExitingHost() async throws {
+		let rig = try await adoptStub(try makeRouting(), state: .stopped)
+		let host = try #require(rig.routing.hostForTesting("alpha"))
+		host.sawRun = true
+		host.lastAnswer = rig.stub.vms["alpha"]   // what clients were shown: stopped
+		let server = rig.server
+		Task { @MainActor in
+			try? await Task.sleep(for: .milliseconds(100))
+			server.stop()   // the host exits inside the grace
+		}
+
+		do {
+			try await rig.routing.removeDisk(vm: "alpha", diskID: "storage:none")
+			Issue.record("expected the engine's answer for a disk alpha doesn't have")
+		} catch let error as MachmanError {
+			// Past the guard: the daemon's own engine owns the VM now, and (outside the test's
+			// redirected library) finds no such disk.
+			#expect(error.code == .notFound)
+			#expect(!error.message.hasPrefix("Stop alpha before"))
+		}
+		#expect(rig.routing.hostedNames.isEmpty)
+	}
+
+	@Test("E52: a vmhost that overstays its exit is still shutting down; a running one is not")
+	@MainActor func anOverstayingHostIsStillShuttingDown() async throws {
+		let rig = try await adoptStub(
+			try makeRouting(exitGrace: .milliseconds(300)), state: .stopped)
+		defer { rig.server.stop() }
+		let host = try #require(rig.routing.hostForTesting("alpha"))
+		host.sawRun = true
+		host.lastAnswer = rig.stub.vms["alpha"]
+
+		do {
+			try await rig.routing.removeDisk(vm: "alpha", diskID: "storage:none")
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message == "alpha is still shutting down — try again in a moment")
+		}
+		host.lastState = .running
+		do {
+			try await rig.routing.removeDisk(vm: "alpha", diskID: "storage:none")
+			Issue.record("expected invalidState")
+		} catch let error as MachmanError {
+			#expect(error.message == "Stop alpha before removing its disks")
+		}
+		#expect(rig.routing.hostedNames == ["alpha"])
+	}
 }
