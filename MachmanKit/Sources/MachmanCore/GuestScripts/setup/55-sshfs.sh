@@ -202,16 +202,13 @@ sshfs_uninstall() {
 		note "kld_list keeps fusefs (sshfs stays usable) — 'sysrc kld_list-=fusefs' reverts it."
 	fi
 	_su_knob="$(usermount_knob)"
-	# On, or kept for the next boot (a securelevel refused it until then).
-	if [ -n "$_su_knob" ] && { [ "$(sysctl -n "$_su_knob" 2>/dev/null || true)" = 1 ] \
-		|| grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; }; then
+	# Machman's only while this VM's block keeps it (on now, or from the next boot where a
+	# securelevel refused it): one the guest or its admin turned on is theirs to mention.
+	if [ -n "$_su_knob" ] \
+		&& grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; then
 		_su_off="sysctl $_su_knob=0"
 		[ "$OS_FAMILY" = netbsd ] && _su_off="sysctl -w $_su_knob=0"
-		if grep -qxF "# BEGIN $MARKER-usermount" "$SYSCTL_CONF" 2>/dev/null; then
-			note "$_su_knob=1 stays — '$_su_off' and the $MARKER-usermount block in $SYSCTL_CONF revert it."
-		else
-			note "$_su_knob=1 stays — '$_su_off' plus its $SYSCTL_CONF line revert it."
-		fi
+		note "$_su_knob=1 stays — '$_su_off' and the $MARKER-usermount block in $SYSCTL_CONF revert it."
 	fi
 	return 0
 }

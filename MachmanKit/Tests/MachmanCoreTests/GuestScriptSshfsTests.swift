@@ -257,6 +257,42 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// S58: the uninstall named the user-mount sysctl as Machman's whenever it was on, even
+	// when the guest or its admin had turned it on; now it names it only while this VM's
+	// <marker>-usermount block keeps it (another VM's block, on a copy, is not this run's).
+	@Test("S58: the uninstall names the user-mount sysctl only when this VM's block keeps it")
+	func uninstallNamesOnlyMachmansUserMountSysctl() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run("""
+				UI_COLS=1000
+				OS_FAMILY=freebsd
+				SYSCTL_CONF="$D/sysctl.conf"
+				sysctl() { echo 1; }
+				sysrc() { :; }
+				say_uninstall() { echo "$1:"; sshfs_uninstall | sed "s|$D|D|g"; }
+				say_uninstall "no file"
+				printf 'vfs.usermount=1\\n' > "$SYSCTL_CONF"
+				say_uninstall "the admin's line"
+				printf '# BEGIN machman-ba5eba11c0de-usermount\\nvfs.usermount=1\\n' \\
+					> "$SYSCTL_CONF"
+				printf '# END machman-ba5eba11c0de-usermount\\n' >> "$SYSCTL_CONF"
+				say_uninstall "another VM's block"
+				put_block "$SYSCTL_CONF" "$MARKER-usermount" "vfs.usermount=1"
+				say_uninstall "this VM's block"
+				""", under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				no file:
+				the admin's line:
+				another VM's block:
+				this VM's block:
+				   vfs.usermount=1 stays - 'sysctl vfs.usermount=0' and the \
+				\(GuestScriptHarness.marker)-usermount block in D/sysctl.conf revert it.
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// MARK: - The mount point (S43)
 
 	// S43: "ready" came right after the step that failed it; now only a mount point that
