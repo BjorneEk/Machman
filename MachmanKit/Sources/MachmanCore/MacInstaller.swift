@@ -85,6 +85,16 @@ final class MacInstaller {
 	// disk, or a retry's own (VMConfig.ensureMacSystemDisk).
 	let systemDisk: String?
 
+	// Why a picked disk can't be erased now, or nil — the registry's check that no other VM
+	// names its file (VMRegistry.macInstallTargetRefusal). The download takes minutes, and
+	// another VM may take up the file meanwhile, so the install asks again before it writes.
+	typealias PickedDiskRefusal = @MainActor (_ diskID: String) -> MachmanError?
+	var pickedDiskRefusal: PickedDiskRefusal = { _ in nil }
+
+	func checkPickedDisk() throws {
+		if let systemDisk, let refusal = pickedDiskRefusal(systemDisk) { throw refusal }
+	}
+
 	init(config: VMConfig, systemDisk: String? = nil) {
 		self.config = config
 		self.systemDisk = systemDisk
@@ -122,8 +132,9 @@ final class MacInstaller {
 			}
 		}
 		// The last stage boundary: from here to installer.install() nothing awaits, so a
-		// cancel can't land in between.
+		// cancel can't land in between — nor can another VM take up the picked disk.
 		try throwIfCancelled()
+		try checkPickedDisk()
 		guard let requirements = image.mostFeaturefulSupportedConfiguration else {
 			throw VirtualMachineError.critical("This Mac can’t install that restore image")
 		}

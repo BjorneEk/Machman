@@ -677,6 +677,10 @@ public final class VMRegistry {
 			isVMRunning: { [weak self, config = vm.config] in
 				self?.vms[config.name]?.state.isRunning ?? false
 			},
+			pickedDiskRefusal: { [weak self, config = vm.config] diskID in
+				guard let self, let current = self.vms[config.name] else { return nil }
+				return self.macInstallTargetRefusal(diskID, of: current)
+			},
 			run: installRunner)
 		installSessions[vm.config.name] = session
 		return session

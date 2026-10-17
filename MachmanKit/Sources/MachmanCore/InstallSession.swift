@@ -20,6 +20,7 @@ final class InstallSession {
 	let config: VMConfig
 	private let events: EventBus
 	private let isVMRunning: () -> Bool
+	private let pickedDiskRefusal: MacInstaller.PickedDiskRefusal
 	private let run: Runner
 	private var installer: MacInstaller?
 	private var version = "macOS"
@@ -45,13 +46,17 @@ final class InstallSession {
 
 	// `run` nil = the real installer. Resolved in the body: a default argument is evaluated
 	// outside the main actor, where runInstaller is out of reach.
+	// `pickedDiskRefusal`: the registry's check that no other VM names a picked disk's file,
+	// asked again when the install places it (D32).
 	init(
 		config: VMConfig, events: EventBus, isVMRunning: @escaping () -> Bool,
+		pickedDiskRefusal: @escaping MacInstaller.PickedDiskRefusal = { _ in nil },
 		run: Runner? = nil
 	) {
 		self.config = config
 		self.events = events
 		self.isVMRunning = isVMRunning
+		self.pickedDiskRefusal = pickedDiskRefusal
 		self.run = run ?? Self.runInstaller
 		self.phase = Self.phase(for: config.boot, hasActiveInstall: false)
 	}
@@ -101,7 +106,7 @@ final class InstallSession {
 			}
 			installerSource = .localIPSW(URL(fileURLWithPath: path))
 		}
-		let installer = MacInstaller(config: config, systemDisk: diskID)
+		let installer = makeInstaller(diskID: diskID)
 		self.installer = installer
 		let isRemote = source.kind == .latest
 		installer.onResolved = { [weak self] version, build in
@@ -168,6 +173,13 @@ final class InstallSession {
 
 	func cancel() {
 		installer?.cancel()
+	}
+
+	// The installer one start runs, with the registry's check of a picked disk.
+	func makeInstaller(diskID: String?) -> MacInstaller {
+		let installer = MacInstaller(config: config, systemDisk: diskID)
+		installer.pickedDiskRefusal = pickedDiskRefusal
+		return installer
 	}
 
 	private func finishSession() {

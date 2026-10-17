@@ -228,6 +228,31 @@ struct NewStorageDiskTests {
 		}
 	}
 
+	// D32 (review 4, from the wave's review): a picked disk's file was checked for another VM's
+	// use only before the download, which takes minutes; another VM could reference it
+	// meanwhile, and the install then erased it. The install asks the registry again.
+	@Test("D32: a disk another VM takes up during the download is refused when placed")
+	func aPickedDiskTakenMeanwhileIsRefused() throws {
+		try VMTestDir.withRedirectedDir {
+			let owner = try makeVM("owner")
+			try owner.addNewStorageDisk(name: "shared", size: mib)
+			_ = try makeVM("other")
+			let registry = VMRegistry()
+			let vm = try #require(registry.vm(named: "owner"))
+			let installer = registry.installSession(for: vm)
+				.makeInstaller(diskID: "storage:shared")
+			try installer.checkPickedDisk()   // free when the install starts
+			let other = try #require(registry.vm(named: "other"))
+			try other.config.addDisk(disk: VMDisk(kind: .fromUrl(
+				URL(fileURLWithPath: owner.configFilePath(file: "shared.raw")))))
+			let refused = try #require(throws: MachmanError.self) {
+				try installer.checkPickedDisk()
+			}
+			#expect(refused.message == "other also uses \u{201C}shared.raw\u{201D}, so macOS "
+				+ "can\u{2019}t be installed on it")
+		}
+	}
+
 	// D34 (review 4): vm.disk.add appended any image or iso path, so the same raw picked twice
 	// (or the VM's own raw by reference) made two entries with one id — the inspector couldn't
 	// tell them apart, removing one removed both — and both attached writable at a start.
