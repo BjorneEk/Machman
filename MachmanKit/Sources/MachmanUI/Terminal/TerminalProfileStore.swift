@@ -255,7 +255,9 @@ extension TerminalProfileStore: VMKeyedState {
 		// A name whose last association went (a port set back to the default, a profile
 		// deleted) keeps no date: it would stay pairable as a rename (T34).
 		var pruned = false
-		for vm in created.dates.keys where !owners.contains(vm) { pruned = created.forget(vm) || pruned }
+		for vm in created.dates.keys where !owners.contains(vm) {
+			pruned = created.forget(vm) || pruned
+		}
 		if reconciled || pruned { save() }
 	}
 }
