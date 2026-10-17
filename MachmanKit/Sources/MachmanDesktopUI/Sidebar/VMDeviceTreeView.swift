@@ -149,9 +149,10 @@ struct VMDeviceTreeView: View {
 			ctx.open(node)
 			return .handled
 		}
-		// ←/→ fold and unfold a selected group label, as an outline did (TreeGroup, T26).
-		.onKeyPress(.leftArrow) { foldSelectedGroup(open: false) }
-		.onKeyPress(.rightArrow) { foldSelectedGroup(open: true) }
+		// ←/→ fold and unfold a selected group label, as an outline did (TreeGroup, T26), and
+		// the group an entry row sits in (TreeFolding, H60).
+		.onKeyPress(.leftArrow) { fold(open: false) }
+		.onKeyPress(.rightArrow) { fold(open: true) }
 		// Programmatic selection (row menus, batch actions) flows back into the List.
 		.onChange(of: viewModel.treeSelection) {
 			if localSelection != viewModel.treeSelection {
@@ -190,11 +191,12 @@ struct VMDeviceTreeView: View {
 		}
 	}
 
-	private func foldSelectedGroup(open: Bool) -> KeyPress.Result {
-		guard localSelection.count == 1, let node = localSelection.first,
-			case .group = node else { return .ignored }
+	private func fold(open: Bool) -> KeyPress.Result {
+		guard let group = TreeFolding.target(
+			open: open, selection: localSelection, expanded: expanded,
+			renaming: renamingRoot || renamingNode != nil) else { return .ignored }
 		withAnimation(.easeOut(duration: 0.15)) {
-			if open { expanded.insert(node) } else { expanded.remove(node) }
+			if open { expanded.insert(group) } else { expanded.remove(group) }
 		}
 		return .handled
 	}
