@@ -36,3 +36,49 @@ extension VMKeyedState {
 	public func vmDeleted(_ vm: String) {}
 	public func listed(_ vms: [VMInfo]) {}
 }
+
+// Which VM a name's kept state belongs to, for a store that outlives absence: each name's
+// created date, learned from the first list that shows it, tells a new VM under that name
+// from the one the state is for. Persisted by its store as a plain name → date dictionary.
+public struct VMOwnerDates: Equatable, Sendable {
+	public private(set) var dates: [String: Date]
+
+	public init(_ dates: [String: Date] = [:]) {
+		self.dates = dates
+	}
+
+	// A list landed and `owners` hold state. Returns the names now carried by another VM —
+	// their state is stale and their date gone — and whether any date was learned or dropped.
+	public mutating func reconcile(_ vms: [VMInfo], owners: Set<String>)
+		-> (stale: [String], changed: Bool) {
+		var stale: [String] = []
+		var changed = false
+		for vm in vms where owners.contains(vm.name) {
+			if let recorded = dates[vm.name] {
+				guard !Self.sameVM(recorded, vm.created) else { continue }
+				dates[vm.name] = nil
+				stale.append(vm.name)
+			} else {
+				dates[vm.name] = vm.created
+			}
+			changed = true
+		}
+		return (stale, changed)
+	}
+
+	// A rename keeps the VM, so its date goes along.
+	public mutating func move(from old: String, to new: String) {
+		dates[new] = dates.removeValue(forKey: old)
+	}
+
+	// True when there was a date to forget.
+	@discardableResult
+	public mutating func forget(_ vm: String) -> Bool {
+		dates.removeValue(forKey: vm) != nil
+	}
+
+	// The same VM, as far as a created date says (a millisecond for the encoders' rounding).
+	private static func sameVM(_ a: Date, _ b: Date) -> Bool {
+		abs(a.timeIntervalSince(b)) < 0.001
+	}
+}

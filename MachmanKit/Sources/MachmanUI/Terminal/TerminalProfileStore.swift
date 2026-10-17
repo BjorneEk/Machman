@@ -23,7 +23,7 @@ public final class TerminalProfileStore: ObservableObject {
 	@Published private var associations: [String: UUID]
 	// VM name → the created date of the VM its associations belong to, learned from the first
 	// list that shows it (a file from before has none until then).
-	private var created: [String: Date]
+	private var created: VMOwnerDates
 	// Which profile the settings view is currently editing (drives its picker).
 	@Published public var editingProfileID: UUID?
 	// The profile whose delete waits for confirmation (H9; the settings view asks). UI state,
@@ -53,7 +53,7 @@ public final class TerminalProfileStore: ObservableObject {
 		let state = file.load()
 		self.profiles = state?.profiles ?? []
 		self.associations = state?.associations ?? [:]
-		self.created = state?.created ?? [:]
+		self.created = VMOwnerDates(state?.created ?? [:])
 		ensureDefault()
 	}
 
@@ -172,7 +172,7 @@ public final class TerminalProfileStore: ObservableObject {
 			if move { associations[key] = nil }
 			moved = true
 		}
-		if move { created[new] = created.removeValue(forKey: old) }
+		if move { created.move(from: old, to: new) }
 		if changed || moved { save() }
 	}
 
@@ -180,15 +180,9 @@ public final class TerminalProfileStore: ObservableObject {
 	@discardableResult
 	private func drop(_ vm: String) -> Bool {
 		let kept = associations.filter { key, _ in Self.vm(ofKey: key) != vm[...] }
-		let had = kept.count != associations.count || created[vm] != nil
-		if kept.count != associations.count { associations = kept }
-		created[vm] = nil
-		return had
-	}
-
-	// The same VM, as far as a created date says (a millisecond for the encoders' rounding).
-	private static func sameVM(_ a: Date, _ b: Date) -> Bool {
-		abs(a.timeIntervalSince(b)) < 0.001
+		let hadAssociations = kept.count != associations.count
+		if hadAssociations { associations = kept }
+		return created.forget(vm) || hadAssociations
 	}
 
 	private func uniqueName(basedOn base: String) -> String {
@@ -199,7 +193,7 @@ public final class TerminalProfileStore: ObservableObject {
 	private func save() {
 		// Snapshot on the main actor (cheap value copy); the file encodes + writes off it.
 		file.save(PersistedState(
-			profiles: profiles, associations: associations, created: created))
+			profiles: profiles, associations: associations, created: created.dates))
 	}
 
 	private struct PersistedState: Codable, Sendable {
@@ -249,16 +243,8 @@ extension TerminalProfileStore: VMKeyedState {
 	// the default (T29).
 	public func listed(_ vms: [VMInfo]) {
 		let owners = Set(associations.keys.compactMap { Self.vm(ofKey: $0).map(String.init) })
-		var changed = false
-		for vm in vms where owners.contains(vm.name) {
-			if let recorded = created[vm.name] {
-				guard !Self.sameVM(recorded, vm.created) else { continue }
-				drop(vm.name)
-			} else {
-				created[vm.name] = vm.created
-			}
-			changed = true
-		}
+		let (stale, changed) = created.reconcile(vms, owners: owners)
+		for vm in stale { drop(vm) }
 		if changed { save() }
 	}
 }
