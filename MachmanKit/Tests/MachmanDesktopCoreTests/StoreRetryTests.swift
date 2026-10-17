@@ -84,4 +84,30 @@ struct StoreRetryTests {
 		try? await Task.sleep(for: .milliseconds(300))
 		#expect(stub.calls.filter { $0 == "listVMs" }.count == calls)
 	}
+
+	// Q32: the stores' one retry mechanism. Asked twice while waiting, it retries once; the
+	// retry has cleared itself when it runs, so it can schedule the next; a reset drops a
+	// pending retry and starts the waits over.
+	@Test("Q32: one retry is pending at a time, cleared before it runs, reset by a success")
+	func oneRetryPendingAtATime() async {
+		let retry = RetryScheduler(delays: [.milliseconds(20), .seconds(30)])
+		var runs = 0
+		var pendingWhileRunning: Bool?
+		retry.schedule {
+			runs += 1
+			pendingWhileRunning = retry.isPending
+		}
+		retry.schedule { runs += 100 }
+		#expect(retry.isPending)
+		#expect(await eventually { runs == 1 })
+		#expect(pendingWhileRunning == false)
+		#expect(!retry.isPending)
+		// The second wait is the long one; a reset drops it and the first wait comes back.
+		retry.schedule { runs += 100 }
+		#expect(retry.isPending)
+		retry.reset()
+		#expect(!retry.isPending)
+		retry.schedule { runs += 1 }
+		#expect(await eventually { runs == 2 })
+	}
 }

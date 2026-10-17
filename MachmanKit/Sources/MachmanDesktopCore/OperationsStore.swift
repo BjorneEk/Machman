@@ -25,8 +25,7 @@ public final class OperationsStore: ObservableObject {
 	@Published public private(set) var installPhases: [String: InstallPhase] = [:]
 	private var api: MachmanControlling?
 	private var eventTask: Task<Void, Never>?
-	private var retryTask: Task<Void, Never>?
-	private var backoff: RetryBackoff
+	private let retry: RetryScheduler
 	private let linger: Duration
 	// Finished operations already pruned here; host.operations may still list them.
 	private var forgotten: Set<String> = []
@@ -44,7 +43,7 @@ public final class OperationsStore: ObservableObject {
 		retryDelays: [Duration] = RetryBackoff.standardDelays, linger: Duration = .seconds(5),
 		activity: ActivityLog? = nil
 	) {
-		backoff = RetryBackoff(delays: retryDelays)
+		retry = RetryScheduler(delays: retryDelays)
 		self.linger = linger
 		self.activity = activity ?? ActivityLog()
 	}
@@ -52,7 +51,7 @@ public final class OperationsStore: ObservableObject {
 	public func attach(api: MachmanControlling) {
 		detach()
 		self.api = api
-		backoff.reset()
+		retry.reset()
 		// What the last agent reported may be gone with it: an install it ran is cut short
 		// (the list says interrupted), and nothing else would ever replace its last phase.
 		// primeInstallPhases refills the live ones from the first list.
@@ -70,8 +69,7 @@ public final class OperationsStore: ObservableObject {
 	public func detach() {
 		eventTask?.cancel()
 		eventTask = nil
-		retryTask?.cancel()
-		retryTask = nil
+		retry.cancel()
 		api = nil
 		phasePrimesInFlight.removeAll()
 	}
@@ -131,7 +129,7 @@ public final class OperationsStore: ObservableObject {
 			recordOutcome(op)
 			schedulePrune(op.id)
 		}
-		backoff.reset()
+		retry.reset()
 	}
 
 	// Once per operation. The list may already hold it: a relaunch's first resync lists
@@ -154,14 +152,7 @@ public final class OperationsStore: ObservableObject {
 
 	// Silent: progress cards are passive, and the next event or retry fills them in.
 	private func scheduleRetry() {
-		guard retryTask == nil else { return }
-		let delay = backoff.next()
-		retryTask = Task { [weak self] in
-			try? await Task.sleep(for: delay)
-			guard !Task.isCancelled, let self else { return }
-			self.retryTask = nil
-			await self.resync()
-		}
+		retry.schedule { [weak self] in await self?.resync() }
 	}
 
 	private func handle(event: VMEvent) {

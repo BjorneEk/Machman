@@ -26,8 +26,7 @@ public final class VMStore: ObservableObject {
 	@Published public private(set) var listProblem: String?
 	public private(set) var api: MachmanControlling?
 	private var eventTask: Task<Void, Never>?
-	private var retryTask: Task<Void, Never>?
-	private var backoff: RetryBackoff
+	private let retry: RetryScheduler
 	// The fetch in flight (its id outlives a detach), the requests made so far, and how many
 	// of them the last landed fetch answers: one started after a request answers it.
 	private var fetch: Task<Void, Never>?
@@ -41,7 +40,7 @@ public final class VMStore: ObservableObject {
 	private var patchedDuringFetch: [String: VMState] = [:]
 
 	public init(retryDelays: [Duration] = RetryBackoff.standardDelays) {
-		backoff = RetryBackoff(delays: retryDelays)
+		retry = RetryScheduler(delays: retryDelays)
 	}
 
 	// Wire the store to a (re)connection: subscribe first, then load, so no change between
@@ -50,7 +49,7 @@ public final class VMStore: ObservableObject {
 		detach()
 		self.api = api
 		listProblem = nil
-		backoff.reset()
+		retry.reset()
 		eventTask = Task { [weak self] in
 			let stream = await api.events()
 			await self?.reload()
@@ -64,8 +63,7 @@ public final class VMStore: ObservableObject {
 	public func detach() {
 		eventTask?.cancel()
 		eventTask = nil
-		retryTask?.cancel()
-		retryTask = nil
+		retry.cancel()
 		fetch?.cancel()
 		fetch = nil
 		fetchID += 1
@@ -132,23 +130,12 @@ public final class VMStore: ObservableObject {
 		if capabilities == nil {
 			scheduleRetry()   // the sheets' limits are missing; the list itself is fine
 		} else {
-			backoff.reset()
-			retryTask?.cancel()
-			retryTask = nil
+			retry.reset()
 		}
 	}
 
-	// One pending retry at a time; it clears itself before reloading, so a reload that
-	// fails again schedules the next one.
 	private func scheduleRetry() {
-		guard retryTask == nil else { return }
-		let delay = backoff.next()
-		retryTask = Task { [weak self] in
-			try? await Task.sleep(for: delay)
-			guard !Task.isCancelled, let self else { return }
-			self.retryTask = nil
-			await self.reload()
-		}
+		retry.schedule { [weak self] in await self?.reload() }
 	}
 
 	// Capabilities are fetched once per connection; forms showing live figures (free disk
