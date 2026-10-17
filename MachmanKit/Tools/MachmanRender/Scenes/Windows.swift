@@ -182,6 +182,23 @@ enum WindowScenes {
 		) { ctx in
 			mainWindow(ctx, inspector: true)
 		},
+		// N5: before the first VM the sidebar offers New VM… (the template chooser) and the
+		// detail pane says there are none yet.
+		RenderScene(
+			"window.main.no-vms", "VMNavigationView with no VMs yet",
+			widths: RenderScene.windowWidths, height: 820, chrome: .window, vms: { [] },
+			panels: { ctx in
+				[
+					AnyView(NoVMSidebar(viewModel: ctx.viewModel)),
+					AnyView(NoSelectionInspector().padding(.top, 52)),
+				]
+			}
+		) { ctx in
+			ctx.viewModel.showInfoPanel = true
+			return AnyView(VMNavigationView(
+				viewModel: ctx.viewModel, selection: .constant(nil),
+				profiles: ctx.profiles, daemonVersion: "1.0.10", pasteboard: ctx.pasteboard))
+		},
 		RenderScene(
 			"window.main.not-responding", "VMNavigationView, Debian's vmhost not responding",
 			widths: RenderScene.windowWidths, height: 820, chrome: .window,

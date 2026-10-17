@@ -46,20 +46,7 @@ public struct VMNavigationView: View {
 						canvases: viewModel.canvases, profiles: profiles, vm: vm,
 						pasteboard: pasteboard)
 				} else {
-					VStack(spacing: 12) {
-						Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VM selected")
-							.foregroundColor(.secondary)
-						Button(action: {
-							Task {
-								if let name = await viewModel.createVM() {
-									viewModel.select(name: name)
-								}
-							}
-						}) {
-							Label("New VM", systemImage: MachmanSymbols.add)
-						}
-					}
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
+					NoVMSidebar(viewModel: viewModel)
 				}
 			}
 			// Mirror the view model's selection into the window-scoped binding (rename,
@@ -326,5 +313,24 @@ private struct CanvasFloor: ViewModifier {
 		let panes = vm.map { canvases.canvas(for: $0).panes.count } ?? 1
 		content.frame(
 			minWidth: inspectorShown ? nil : MainWindowLayout.canvasMinWidth(panes: panes))
+	}
+}
+
+// The sidebar while no VM is selected. New VM… opens the picker's template page, as ⌘N and
+// the picker's own row do — never a Default VM made without asking (N5).
+struct NoVMSidebar: View {
+	@ObservedObject var viewModel: VMListViewModel
+
+	var body: some View {
+		VStack(spacing: 12) {
+			Text(viewModel.vms.isEmpty ? "No VMs yet" : "No VM selected")
+				.foregroundColor(.secondary)
+			Button {
+				viewModel.requestNewVM()
+			} label: {
+				Label("New VM\u{2026}", systemImage: MachmanSymbols.add)
+			}
+		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
 	}
 }

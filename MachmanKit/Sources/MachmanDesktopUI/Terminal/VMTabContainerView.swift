@@ -24,7 +24,8 @@ struct VMTabContainerView: View {
 			if let vm = viewModel.selected {
 				pane(vm)
 			} else {
-				Text("Select a VM")
+				// Nothing to select before the first VM exists (N5).
+				Text(viewModel.vms.isEmpty ? "No VMs yet" : "Select a VM")
 					.font(.title)
 					.foregroundColor(.secondary)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
