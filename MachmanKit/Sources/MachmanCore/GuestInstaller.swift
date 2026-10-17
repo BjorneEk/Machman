@@ -139,6 +139,27 @@ enum GuestInstallerWriter {
 		try? FileManager.default.removeItem(atPath: config.configFilePath(file: name))
 	}
 
+	// The payload as written: the script, machman.env and the extra files, by name — a nil
+	// value names one that must be absent. machman.env also carries SETUP_CKSUM, the POSIX
+	// cksum of the script and then the present extras in name order: a run checks its own
+	// copy against it before it acts (S65, K6a).
+	static func files(
+		script: Data, scriptName: String, environment: [String: String], extras: [String: Data?]
+	) -> [String: Data?] {
+		var checked = script
+		for name in extras.keys.sorted() {
+			if let data = extras[name] ?? nil { checked.append(data) }
+		}
+		var environment = environment
+		environment[checksumKey] = POSIXChecksum.cksum(checked)
+		var files = extras
+		files[scriptName] = script
+		files[environmentFileName] = Data(environmentFile(environment).utf8)
+		return files
+	}
+
+	static let checksumKey = "SETUP_CKSUM"
+
 	// Writes (and rewrites) a payload directory. Called at every VM assembly, so it is
 	// idempotent and always leaves the current content — never a merge of old and new.
 	@discardableResult
@@ -149,24 +170,18 @@ enum GuestInstallerWriter {
 		let dir = payloadDirectory(named: P.directoryName, for: config)
 		try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 		removeLegacyPayload(named: P.directoryName, for: config)
-
-		let scriptURL = dir.appendingPathComponent(P.scriptName)
-		try P.script.text.write(to: scriptURL, atomically: true, encoding: .utf8)
-		try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-
-		let envURL = dir.appendingPathComponent(environmentFileName)
-		try environmentFile(try P.environment(for: config))
-			.write(to: envURL, atomically: true, encoding: .utf8)
-		try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: envURL.path)
-
-		for (name, data) in try P.extraFiles(for: config) {
+		let files = files(
+			script: Data(P.script.text.utf8), scriptName: P.scriptName,
+			environment: try P.environment(for: config), extras: try P.extraFiles(for: config))
+		for (name, data) in files {
 			let url = dir.appendingPathComponent(name)
 			guard let data else {
 				try? fm.removeItem(at: url)
 				continue
 			}
 			try data.write(to: url, options: .atomic)
-			try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+			let mode = name == P.scriptName ? 0o755 : 0o644
+			try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
 		}
 		return dir
 	}

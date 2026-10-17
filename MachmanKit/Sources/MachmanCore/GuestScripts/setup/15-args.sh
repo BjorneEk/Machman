@@ -20,6 +20,7 @@ AT_BOOT=0                  # --at-boot: --report-only, once the share and the ne
 NO_SERVICE=0
 USER_OVERRIDE=""
 PM_OVERRIDE=""
+WANT_CHANGED=0             # --changed: run a copy that changed after Machman served it
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -73,6 +74,7 @@ while [ $# -gt 0 ]; do
 		USER_OVERRIDE="$1"
 		;;
 	--uninstall) UNINSTALL=1 ;;
+	--changed) WANT_CHANGED=1 ;;
 	-y|--yes) ASSUME_YES=1 ;;
 	-n|--dry-run) DRY_RUN=1 ;;
 	-v|--verbose) VERBOSE=1 ;;

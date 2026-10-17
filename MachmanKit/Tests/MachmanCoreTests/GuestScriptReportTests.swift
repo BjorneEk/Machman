@@ -364,4 +364,19 @@ struct GuestScriptReportTests {
 				""", "\(shell): \(r.out)")
 		}
 	}
+
+	// S65 (v8): the report names the exact copy that ran — SCRIPT_CKSUM, what the guest's own
+	// cksum prints for the running script — right beside SCRIPT_VERSION.
+	@Test("S65: a report carries the running script's cksum beside its version")
+	func theReportCarriesTheScriptsCksum() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				write_report
+				own="$(cksum < "$PAYLOAD_DIR/${0##*/}" | awk '{ print $1, $2 }')"
+				sed -n '2p' "$D/GuestReport/report.env" | sed "s/=$own\$/=<its cksum>/"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == "SCRIPT_CKSUM=<its cksum>\n", "\(shell): \(r.out)")
+		}
+	}
 }

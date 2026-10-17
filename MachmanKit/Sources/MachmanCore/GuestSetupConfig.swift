@@ -23,6 +23,7 @@ struct GuestSetupConfig: Codable, Equatable {
 	var guestInit: String?
 	var lastReportAt: Date?          // stamped by the host at ingestion
 	var scriptVersion: Int?          // the script version that produced the report
+	var scriptCksum: String?         // …and its POSIX cksum, "<crc> <length>" (v8; host-only)
 	var lastRunStatus: String?
 	var lastRunNote: String?
 	var lastTransport: String?
@@ -49,6 +50,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		case guestInit
 		case lastReportAt
 		case scriptVersion
+		case scriptCksum
 		case lastRunStatus
 		case lastRunNote
 		case lastTransport
@@ -71,6 +73,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		self.guestInit = try c.decodeIfPresent(String.self, forKey: .guestInit)
 		self.lastReportAt = try c.decodeIfPresent(Date.self, forKey: .lastReportAt)
 		self.scriptVersion = try c.decodeIfPresent(Int.self, forKey: .scriptVersion)
+		self.scriptCksum = try c.decodeIfPresent(String.self, forKey: .scriptCksum)
 		self.lastRunStatus = try c.decodeIfPresent(String.self, forKey: .lastRunStatus)
 		self.lastRunNote = try c.decodeIfPresent(String.self, forKey: .lastRunNote)
 		self.lastTransport = try c.decodeIfPresent(String.self, forKey: .lastTransport)

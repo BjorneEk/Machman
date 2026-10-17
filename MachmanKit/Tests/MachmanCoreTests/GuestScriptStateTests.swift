@@ -471,6 +471,48 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S65 (K6a): the guest may change its own copy of the payload, so a run that would change
+	// the guest notices a copy changed since Machman served it — machman.env carries the copy's
+	// cksum — and stops before acting, unless told to run it as it is (--changed); a dry run
+	// says so and plans on, and a payload without the cksum (an older one) goes unchecked.
+	@Test("S65: a run over a changed copy stops before acting, and --changed runs it")
+	func aChangedCopyStopsTheRun() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=1000
+				printf 'ssh-ed25519 AAAA mac\n' > "$PAYLOAD_DIR/host_key.pub"
+				sum() {
+					cat "$PAYLOAD_DIR/${0##*/}" "$PAYLOAD_DIR/host_key.pub" | cksum \
+						| awk '{ print $1, $2 }'
+				}
+				SETUP_CKSUM="$(sum)"
+				payload_check && echo "as served: runs"
+				echo "# mine" >> "$PAYLOAD_DIR/host_key.pub"
+				( payload_check ) 2>&1 || echo "exit $?"
+				WANT_CHANGED=1
+				payload_check 2>&1
+				WANT_CHANGED=0
+				DRY_RUN=1
+				payload_check 2>&1
+				DRY_RUN=0
+				SETUP_CKSUM=""
+				payload_check && echo "an older payload: unchecked"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			let changed = "this copy of Guest Setup changed after Machman served it"
+			#expect(r.out == """
+				as served: runs
+				[xx] \(changed).
+				   Restart the VM for a fresh copy, or pass --changed to run this one as it is.
+				exit 3
+				[!!] \(changed) - running it as it is (--changed).
+				[!!] \(changed) - a real run stops here (or pass --changed).
+				an older payload: unchecked
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// Review F8 (S55, script half): a copy keeps its source's SSH host keys, so a client
 	// that mixed the two VMs up (an address, a client id) logged into the source with no
 	// warning. A copy's run makes each host key anew (a link stays, named, and a type

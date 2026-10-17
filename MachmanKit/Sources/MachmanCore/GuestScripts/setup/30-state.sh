@@ -597,6 +597,48 @@ our_block_in() {
 	[ -n "$ADOPT_FROM" ] && grep -q "^# BEGIN $ADOPT_FROM" "$1" 2>/dev/null
 }
 
+# --------------------------------------------------------------- this copy of the setup ----
+
+# Each VM's guest sees its own copy of this payload, which it may change; Machman keeps the
+# real one (S65). The copy carries the cksum of its script and files as served (SETUP_CKSUM,
+# the script first, then host_key.pub, host_machine_key.pub and mounts.list where present,
+# as Machman sums them): a run that would change the guest notices a copy changed since —
+# an edit in the guest, or one left from an older serve — and stops before acting unless
+# told to run it as it is. It is a change detector, not a lock: a swap made on purpose can
+# drop this check too; only root reaches the copy on the sshfs share (its boot mount has
+# no allow_other). Machman writes a fresh copy at the VM's next start.
+payload_check() {
+	[ -n "$SETUP_CKSUM" ] && [ -z "$BOOT_REPORT_DIR" ] || return 0
+	if ! have cksum; then
+		note "no cksum on this guest — this copy of Guest Setup goes unchecked."
+		return 0
+	fi
+	_pc_sum="$({
+		cat "$PAYLOAD_DIR/${0##*/}"
+		for _pc_name in host_key.pub host_machine_key.pub mounts.list; do
+			[ ! -f "$PAYLOAD_DIR/$_pc_name" ] || cat "$PAYLOAD_DIR/$_pc_name"
+		done
+	} | cksum | awk '{ print $1, $2 }')"
+	[ "$_pc_sum" != "$SETUP_CKSUM" ] || return 0
+	_pc_what="this copy of Guest Setup changed after Machman served it"
+	if [ "$WANT_CHANGED" -eq 1 ]; then
+		warn "$_pc_what — running it as it is (--changed)."
+	elif [ "$DRY_RUN" -eq 1 ]; then
+		warn "$_pc_what — a real run stops here (or pass --changed)."
+	else
+		die 3 "$_pc_what." \
+			"Restart the VM for a fresh copy, or pass --changed to run this one as it is."
+	fi
+	return 0
+}
+
+# The POSIX cksum of the running script ("<crc> <length>"; nothing without cksum): the
+# report carries it beside SCRIPT_VERSION, so Machman knows exactly which copy ran.
+script_cksum() {
+	have cksum || return 0
+	cksum < "$PAYLOAD_DIR/${0##*/}" | awk '{ print $1, $2 }'
+}
+
 # ------------------------------------------------------------------------ mounts.list ----
 
 # kind<TAB>name<TAB>hostpath per line. Consumed by the automount features; missing file

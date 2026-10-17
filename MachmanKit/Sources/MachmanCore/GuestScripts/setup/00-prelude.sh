@@ -41,6 +41,9 @@ BOOT_REPORT_DIR=""
 # Set only in a copy's payloads until the copy first reports: the VM it was copied from (its
 # marker) — a copy of a guest that never ran Guest Setup has no state to say so itself.
 COPY_OF=""
+# The POSIX cksum of this copy's script and files as Machman served them (payload_check);
+# older payloads and the boot-time copy carry none.
+SETUP_CKSUM=""
 # VM_NAME, MARKER, REPORT_DIR_NAME, MOUNT_ROOT, SHARE_ROOT, SHARE_TAG, SHARE_HOST_PATH,
 # BOOT_MODE, CONSOLE_COUNT, UART_COUNT, HOST_USER, HOST_NAME, HOST_LOCAL
 . "$PAYLOAD_DIR/machman.env"

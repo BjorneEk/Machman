@@ -434,6 +434,25 @@ struct GuestReportTests {
 		}
 	}
 
+	// S65 (v8): a report names the exact copy that ran — SCRIPT_CKSUM, the running script's
+	// POSIX cksum beside SCRIPT_VERSION — and the setup state keeps it as reported; a value
+	// that isn't "<crc> <length>" is ignored, the rest of the report applies.
+	@Test("S65: a report's SCRIPT_CKSUM is kept with the setup, a malformed one ignored")
+	@MainActor func theReportedScriptCksumIsKept() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "cksumreport")
+			let vm = try VMConfig(name: "cksumreport", memorySize: 1 << 30, cpuCount: 2)
+			_ = try GuestReport.parse("SCRIPT_VERSION=8\nSCRIPT_CKSUM=3052041169 221171\nSTATUS=ok")
+				.apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.scriptCksum == "3052041169 221171")
+			#expect(vm.setup?.scriptVersion == 8)
+			_ = try GuestReport.parse("SCRIPT_VERSION=8\nSCRIPT_CKSUM=$(reboot)\nSTATUS=partial")
+				.apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.scriptCksum == "3052041169 221171")
+			#expect(vm.setup?.lastRunStatus == "partial")
+		}
+	}
+
 	// S36: informational lines (a repair made, a boot refresh that will not run) arrive as
 	// notes, not errors — a clean run lists none under Errors — and go with an uninstall.
 	@Test @MainActor func notesAreNotErrors() throws {

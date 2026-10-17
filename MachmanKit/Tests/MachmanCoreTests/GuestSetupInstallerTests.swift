@@ -18,6 +18,7 @@ import Testing
 import Foundation
 import SystemConfiguration
 import MachmanAPI
+import MachmanTestSupport
 @testable import MachmanCore
 
 struct GuestSetupInstallerTests {
@@ -500,6 +501,44 @@ struct GuestSetupInstallerTests {
 			#expect((try? fm.destinationOfSymbolicLink(atPath: stale)) == nil)
 			#expect(resolved(path).hasSuffix("/after/share"))
 		}
+	}
+
+	// S65 (K6a): machman.env carries SETUP_CKSUM, the POSIX cksum of the script and then the
+	// payload's other files in name order — the order the guest's payload_check cats them in
+	// — and it is exactly what the system's own cksum prints for those bytes.
+	@Test("S65: machman.env carries the cksum the guest's own cksum computes")
+	@MainActor func theEnvironmentCarriesTheGuestsCksum() async throws {
+		let (dir, names, cksum): (URL, [String], String?) = try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "cksum")
+			let vm = try VMConfig(name: "cksum", memorySize: 1 << 30, cpuCount: 2)
+			try vm.addMountPoint(HostMountPoint(
+				path: "/Users/x/My Docs", tag: "docs", kind: MountKind.sshfs))
+			let (payload, _) = try GuestSetupInstaller.writePayload(for: vm)
+			let env = try String(
+				contentsOf: payload.appendingPathComponent(
+					GuestInstallerWriter.environmentFileName), encoding: .utf8)
+			let line = env.split(separator: "\n").first { $0.hasPrefix("SETUP_CKSUM=") }
+			let names = [GuestSetupInstaller.scriptName, "host_key.pub", "host_machine_key.pub",
+				GuestSetupInstallerInfo.mountsFileName]
+				.filter { FileManager.default.fileExists(
+					atPath: payload.appendingPathComponent($0).path) }
+			// The redirected library goes with the closure: the files are summed from a copy.
+			let copy = TestEnvironment.scratchURL
+				.appendingPathComponent("cksum-\(UUID().uuidString)", isDirectory: true)
+			try FileManager.default.copyItem(at: payload, to: copy)
+			return (copy, names, line.map {
+				String($0.dropFirst("SETUP_CKSUM=".count)).trimmingCharacters(
+					in: CharacterSet(charactersIn: "'"))
+			})
+		}
+		#expect(names.contains(GuestSetupInstallerInfo.mountsFileName))
+		let system = try await Subprocess.run(
+			"/bin/sh", ["-c", "cd \"$1\" && shift && cat \"$@\" | cksum", "cksum",
+				dir.path] + names)
+		let words = system.output.split(whereSeparator: \.isWhitespace).prefix(2)
+		#expect(cksum == words.joined(separator: " "), "\(system.output)")
+		// The guest sums the same files in the same order.
+		#expect(script.contains("for _pc_name in host_key.pub host_machine_key.pub mounts.list"))
 	}
 
 	// S32: a run that failed after touching the guest (the exit trap's report) is a report

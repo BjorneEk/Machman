@@ -451,6 +451,7 @@ extension GuestSetupConfig {
 		reinstallRequested = nil
 		lastReportAt = nil
 		scriptVersion = nil
+		scriptCksum = nil
 		lastRunStatus = nil
 		lastRunNote = nil
 		lastTransport = nil

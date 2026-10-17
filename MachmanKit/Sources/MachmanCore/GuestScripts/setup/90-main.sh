@@ -118,6 +118,9 @@ if [ "$REPORT_ONLY" -eq 1 ]; then
 	exit 0
 fi
 
+# A run that changes the guest checks its own copy first (an uninstall too).
+payload_check
+
 # ------------------------------------------------------------------------- uninstall ----
 
 if [ "$UNINSTALL" -eq 1 ]; then

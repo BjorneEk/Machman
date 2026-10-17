@@ -42,7 +42,7 @@ struct GuestReport {
 	// script writes that nothing here reads (HOME, GATEWAY, TWO_WAY, SSHD, SSHFS_VERSION,
 	// FAILED_STEPS, KERNEL_CONSOLE, KERNEL_CONSOLE_METHOD).
 	static let allowedKeys: Set<String> = [
-		"SCRIPT_VERSION", "MARKER", "OS_ID", "USER", "HOSTNAME",
+		"SCRIPT_VERSION", "SCRIPT_CKSUM", "MARKER", "OS_ID", "USER", "HOSTNAME",
 		"IP", "HOST_KEY", "REVERSE_PUBKEY", "UNINSTALLED",
 		// 1.0.6: what the run achieved, how it got here, and what the guest can do.
 		"STATUS", "NOTE", "TRANSPORT", "OS_FAMILY", "OS_VERSION", "INIT",
@@ -377,6 +377,11 @@ struct GuestReport {
 				setup.guestInit = initSystem
 			}
 			if let scriptVersion { setup.scriptVersion = scriptVersion }
+			// v8: the running script's POSIX cksum ("<crc> <length>"), kept as reported.
+			if let cksum = values["SCRIPT_CKSUM"],
+				cksum.range(of: #"^[0-9]{1,10} [0-9]{1,12}$"#, options: .regularExpression) != nil {
+				setup.scriptCksum = cksum
+			}
 			// …while the RUN is a whole snapshot: a clean run replaces a partial one's
 			// status, errors and sections instead of accumulating them.
 			setup.lastRunStatus = values["STATUS"]

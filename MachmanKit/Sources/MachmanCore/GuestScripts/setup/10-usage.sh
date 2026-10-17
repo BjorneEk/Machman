@@ -38,6 +38,7 @@ How
                          this at every boot.
       --at-boot          what that copy runs: waits up to 5 minutes for the share
                          and the network, then --report-only
+      --changed          run this copy even though it changed after Machman served it
   -v, --verbose          narrate every decision and command
   -q, --quiet            only the summary and errors
   -h, --help             this text
