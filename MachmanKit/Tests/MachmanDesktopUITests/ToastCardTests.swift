@@ -95,6 +95,39 @@ struct ToastCardTests {
 		}
 	}
 
+	@Test("F16: an install's card leaves with one announcement of its outcome")
+	func anEndedInstallIsAnnounced() async throws {
+		let h = await UIHarness.make()
+		let heard = Heard()
+		try await OffscreenHost.withHost(
+			NotificationOverlay(viewModel: h.viewModel, operations: h.operations)
+				.environment(\.toastAnnouncer, ToastAnnouncer { heard.posts.append($0) }),
+			width: 800, height: 600
+		) { hosted in
+			for vm in ["Sequoia", "Debian"] {
+				h.stub.emit(.installPhaseChanged(
+					vm: vm, phase: InstallPhase(kind: .installing, version: "15.4")))
+			}
+			#expect(await eventually {
+				hosted.snapshot().find(text: "Debian \u{2014} Installing macOS") != nil
+			})
+			#expect(heard.posts.isEmpty, "a running install said \(heard.posts)")
+			h.stub.emit(.installPhaseChanged(vm: "Sequoia", phase: InstallPhase(kind: .installed)))
+			#expect(await eventually { heard.posts.count == 1 })
+			h.stub.emit(.installPhaseChanged(
+				vm: "Debian", phase: InstallPhase(kind: .failed, message: "No space left")))
+			#expect(await eventually { heard.posts.count == 2 })
+			await hosted.settle()
+			#expect(heard.posts == [
+				ToastAnnouncement(
+					text: "Sequoia \u{2014} Installing macOS: Installed", urgent: false),
+				ToastAnnouncement(
+					text: "Debian \u{2014} Installing macOS: Failed \u{2014} No space left",
+					urgent: true),
+			])
+		}
+	}
+
 	@MainActor
 	private final class Heard {
 		var posts: [ToastAnnouncement] = []

@@ -6,7 +6,8 @@
 //  toasts (engine warnings) over persistent progress cards — the daemon's live operations
 //  plus running macOS installs, with ETA math from ProgressETA. A running card's ✕ cancels
 //  (op.cancel / vm.install.cancel); finished operations linger a few seconds showing their
-//  outcome, then prune from the store, and their ✕ only dismisses them.
+//  outcome, then prune from the store, and their ✕ only dismisses them. An install's card
+//  leaves when its phase ends, saying the outcome to VoiceOver (F16).
 //
 
 import SwiftUI
@@ -19,6 +20,7 @@ struct NotificationOverlay: View {
 	@ObservedObject var operations: OperationsStore
 	// The toast stack publishes on its own, so a toast re-renders only this corner (Q10).
 	@ObservedObject private var toasts: ToastCenter
+	@Environment(\.toastAnnouncer) private var announcer
 
 	init(viewModel: VMListViewModel, operations: OperationsStore) {
 		self.viewModel = viewModel
@@ -32,6 +34,11 @@ struct NotificationOverlay: View {
 			progress: cards,
 			dismissProgress: viewModel.closeProgressCard,
 			hoverToast: toasts.hold)
+		.onChange(of: operations.installPhases) { old, new in
+			for announcement in InstallPhase.announcements(from: old, to: new) {
+				announcer.post(announcement)
+			}
+		}
 	}
 
 	private var cards: [ProgressCardModel] {
@@ -48,17 +55,14 @@ struct NotificationOverlay: View {
 		}
 		// Running macOS installs ride the richer install-phase flow, not OperationInfo.
 		for (vm, phase) in operations.installPhases {
-			switch phase.kind {
-			case .resolving, .downloading, .installing:
+			if phase.isRunning {
 				cards.append(ProgressCardModel(
 					id: VMListViewModel.installCardPrefix + vm,
-					title: "\(vm) — Installing macOS",
+					title: InstallPhase.cardTitle(vm: vm),
 					symbol: MachmanSymbols.bootMacTab,
 					phase: phase.displayLabel,
 					fraction: phase.progress?.fraction,
 					etaSeconds: phase.etaSeconds(now: MachmanClock.now())))
-			default:
-				break
 			}
 		}
 		return cards
