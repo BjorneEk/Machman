@@ -299,10 +299,11 @@ class Follower:
 
     # --- output -----------------------------------------------------------------------------
 
-    def line(self, epoch, text):
-        # A multi-line message keeps the time column: its other lines are indented under it.
+    def line(self, epoch, text, whole=False):
+        # A multi-line message keeps the time column: its other lines are indented under it, at
+        # most 12 of them unless the record is `whole` (a list that must keep every item).
         rest = [l.rstrip() for l in text.split("\n")[1:] if l.strip()]
-        if len(rest) > 12:
+        if len(rest) > 12 and not whole:
             rest = rest[:12] + ["… %d more lines" % (len(rest) - 12)]
         return "%s %s" % (clock(epoch), text.split("\n", 1)[0].rstrip()) + "".join(
             "\n" + " " * 13 + l for l in rest)
@@ -317,7 +318,7 @@ class Follower:
                 # The shard a line comes from, where lines of several interleave.
                 line = self.line(epoch, "  %d│%s" % (lane.index + 1, text.strip()))
             else:
-                line = self.line(epoch, text)
+                line = self.line(epoch, text, extras.get("whole", False))
             self.log.write(line + "\n")
             if self.screen is None:
                 if level <= self.level:
@@ -759,19 +760,23 @@ class Follower:
                     at for known, at in self.issues.get(r[0], []) if not known) or "?")
                 for r in failed), "result"))
         # The warnings once more (a retry the harness rode over, a kept start failure), a line
-        # per place and message with how often and in which tests: one that starts to recur
-        # reads as what it may be, a product bug, and never pushes the others out of the list.
+        # per place: a warning is placed where its retry happened, so the place names the kind of
+        # retry (its message names a VM, an error, counts). With how often it came, in which
+        # tests (a parameterized one with its argument) and its first message, one that starts to
+        # recur reads as what it may be, a product bug. Every place stays: the block is never cut
+        # short like a long message.
         warned = {}
         for test_id, items in self.details.items():
             for glyph, at, text, _ in items:
                 if glyph == "!":
-                    first = fit(text.split("\n", 1)[0], 160)
-                    warned.setdefault((at, first), []).append(self.name(test_id))
+                    place, _, case = at.partition(" [")
+                    first, tests = warned.setdefault(place, (fit(text.split("\n", 1)[0], 120), []))
+                    tests.append(self.name(test_id) + (" [" + case if case else ""))
         if warned:
             out.append((now, 0, "lab: warnings\n" + "\n".join(
-                "%s: %s%s (%s)" % (at, first, " ×%d" % len(tests) if len(tests) > 1 else "",
-                                   some(tests))
-                for (at, first), tests in warned.items()), "result"))
+                "%s%s (%s): %s" % (place, " ×%d" % len(tests) if len(tests) > 1 else "",
+                                   some(tests), first)
+                for place, (first, tests) in warned.items()), "result", {"whole": True}))
         self.emit(out, now)
         with open(os.path.join(self.root, "report", "test-times.tsv"), "w") as f:
             f.write("seconds\tstatus\ttest\n")
@@ -1294,26 +1299,35 @@ def self_check():
               and "✔ 1/2 a retry warns · " in text
               and "✘ Retry.swift:22: no console\n" in text and "Issue recorded" not in text)
         check("Q42: a run's warnings are listed once more at its end",
-              "lab: warnings\n" + " " * 13 + "Retry.swift:12: retried once: a stop settled "
-              "(a retry warns)\n" in text and text.count("Retry.swift:12") == 2)
+              "lab: warnings\n" + " " * 13 + "Retry.swift:12 (a retry warns): retried once: a "
+              "stop settled\n" in text and text.count("Retry.swift:12") == 2)
 
-    # A retry that recurs (Q42): its place and message once, how often and in which tests, so a
-    # warning elsewhere stays in the end list (a line per warning ran past the 12 lines a record
-    # keeps in plain output and progress.log).
+    # A retry that recurs (Q42): real lab warnings name their VM and carry an error or counts, so
+    # the end list keys on the place alone, which names the kind of retry (a warning is placed
+    # where its retry happened), with how often and in which tests; and it lists every place, never
+    # cut short like a long message (the 12 lines a record keeps in plain output and progress.log).
     with tempfile.TemporaryDirectory() as root:
         t0 = time.time() - 60
         records, events = [], [event("runStarted", t0)]
-        for i in range(14):
+        for i in range(27):
             test_id = "Mod.Suite/t%d()/File.swift:%d:3" % (i, i + 1)
             records.append(test("R%d: test %d" % (i, i), "t%d()" % i, i + 1))
+            if i < 13:
+                place = ("Mod/LabVM.swift", 243)
+                said = "vm-%d console 0: no login on boot 1 of 3, booting again: timed out " \
+                    "— in=%d echoed=0" % (i, 40 + i)
+            elif i == 13:
+                place = ("Mod/TFStartFailure.swift", 233)
+                said = "vm-13's start failed: the disk is locked; kept in report/x.txt"
+            else:
+                place = ("Mod/THVM.swift", 300 + i)
+                said = "vm-%d console 1: login try 1 failed: closed" % i
             events += [
                 event("testStarted", t0 + i, test_id),
                 event("issueRecorded", t0 + i + 0.1, test_id, [
-                    ("warning", "Issue recorded"),
-                    ("details", "a change was refused while a stop settled")], issue={
+                    ("warning", "Issue recorded"), ("details", said)], issue={
                         "isKnown": False, "severity": "warning", "isFailure": False,
-                        "sourceLocation": {"fileID": "Mod/LabVM.swift",
-                                           "line": 209 if i < 13 else 300}}),
+                        "sourceLocation": {"fileID": place[0], "line": place[1]}}),
                 event("testEnded", t0 + i + 0.2, test_id, [("pass", "passed with 1 warning")])]
         events.append(event("runEnded", t0 + 30, messages=[("pass", "Test run passed.")]))
         write(root + "/report/events.jsonl", records + events)
@@ -1323,11 +1337,15 @@ def self_check():
         text = buf.getvalue()
         with open(root + "/report/progress.log") as f:
             log = f.read()
+        listed = text[text.find("lab: warnings\n"):]
         check("Q42: a run's warnings stay listed at its end when one recurs",
-              "\n" + " " * 13 + "LabVM.swift:209: a change was refused while a stop settled ×13 "
-              "(test 0, test 1, test 2 and 10 more)\n" in text
-              and "\n" + " " * 13 + "LabVM.swift:300: a change was refused while a stop settled "
-              "(test 13)\n" in text
+              "\n" + " " * 13 + "LabVM.swift:243 ×13 (test 0, test 1, test 2 and 10 more): vm-0 "
+              "console 0: no login on boot 1 of 3, booting again: timed out — in=40 echoed=0\n"
+              in listed and listed.count("LabVM.swift:243") == 1
+              and "\n" + " " * 13 + "TFStartFailure.swift:233 (test 13): vm-13's start failed: "
+              "the disk is locked; kept in report/x.txt\n" in listed)
+        check("Q42: the end list keeps every place that warned, however many",
+              all("THVM.swift:%d (test %d): " % (300 + i, i) in listed for i in range(14, 27))
               and "more lines" not in text and "more lines" not in log)
 
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))

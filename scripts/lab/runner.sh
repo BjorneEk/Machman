@@ -472,7 +472,7 @@ lab_selfcheck_runner() {
 	# Once under its test, once in the run's closing list of warnings.
 	if [[ $rc == 0 ]] && grep -qxF "lab: tests passed" <<<"$out" &&
 		grep -qF "  ! $at [\"q42\"]: $noted" <<<"$out" && grep -q " lab: warnings$" <<<"$out" &&
-		[[ "$(grep -cF "$at [\"q42\"]: $noted" <<<"$out")" == 2 ]] &&
+		grep -F " $at (" <<<"$out" | grep -qF " [\"q42\"]): $noted" &&
 		grep -qxF "lab: audits: 0 breaches, 0 warnings" <<<"$out"; then
 		echo "ok   $check"
 	else
