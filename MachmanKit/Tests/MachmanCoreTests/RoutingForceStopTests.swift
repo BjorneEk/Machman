@@ -25,14 +25,13 @@ private final class Heard {
 	var ended: [String] = []
 }
 
-// Waits until `expected.count` sleepers are armed on `clock`, checks they are `expected` (the
-// deadlines under test, armed together), then moves time past them.
+// Waits until what is armed on `clock` is exactly `expected` (the deadlines under test, armed
+// together), then moves time past them — past anything else armed too, so a wrong deadline
+// fails the check instead of hanging the test.
 @MainActor
 private func passArmed(_ clock: TestClock, _ expected: [Duration]) async {
-	#expect(await eventually { clock.armed.count >= expected.count })
-	let armed = clock.armed
-	#expect(armed == expected)
-	clock.advance(by: armed.max() ?? .zero)
+	#expect(await eventually { clock.armed == expected }, "armed \(clock.armed)")
+	clock.advance(by: (clock.armed + expected).max() ?? .zero)
 }
 
 // A check that waits on a deadline nothing moves past would hang: the limit ends it.
@@ -66,6 +65,8 @@ struct RoutingForceStopTests {
 		let identity = RoutingMachman.HostIdentity(
 			id: UUID(), name: "alpha", socketPath: socketPath)
 		routing.adopt(identity: identity, client: try await routing.connectHost(identity: identity))
+		// The adoption's event subscription is a call with a deadline: it ends with its reply.
+		if let clock { #expect(await eventually { clock.armed.isEmpty }) }
 		return Rig(routing: routing, stub: stub, server: server)
 	}
 
@@ -291,6 +292,7 @@ struct RoutingForceStopTests {
 			stubs[name] = stub
 			servers[name] = server
 		}
+		#expect(await eventually { clock.armed.isEmpty })   // the subscriptions' deadlines
 		defer {
 			for stub in stubs.values { stub.stalled = [] }
 			for server in servers.values { server.stop() }

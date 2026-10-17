@@ -106,14 +106,14 @@ struct RoutingIdleHostTests {
 			rig.server.stop()
 		}
 		rig.stub.stalled = ["vm"]
+		// The adoption's event subscription is a call with a deadline: it ends with its reply.
+		#expect(await eventually { clock.armed.isEmpty })
 
 		let start = Task { @MainActor in
 			try await rig.routing.start(vm: "alpha", options: StartOptions())
 		}
-		#expect(await eventually { !clock.armed.isEmpty })
-		let armed = clock.armed
-		#expect(armed == [.seconds(1)])
-		clock.advance(by: armed.max() ?? .seconds(1))
+		#expect(await eventually { clock.armed == [.seconds(1)] }, "armed \(clock.armed)")
+		clock.advance(by: (clock.armed + [.seconds(1)]).max() ?? .zero)
 		do {
 			try await start.value
 			Issue.record("expected invalidState")

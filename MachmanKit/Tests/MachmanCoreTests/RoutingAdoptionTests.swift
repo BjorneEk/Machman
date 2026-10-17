@@ -140,10 +140,8 @@ struct RoutingAdoptionTests {
 		let first = try await routing.listVMs().first { $0.name == "alpha" }
 		#expect(first?.state == .unknown)   // its adoption has only begun
 		#expect(first?.unresponsive == nil)
-		#expect(await eventually { !clock.armed.isEmpty })
-		let armed = clock.armed
-		#expect(armed == [.milliseconds(200)])
-		clock.advance(by: armed.max() ?? .milliseconds(200))
+		#expect(await eventually { clock.armed == [.milliseconds(200)] }, "armed \(clock.armed)")
+		clock.advance(by: (clock.armed + [.milliseconds(200)]).max() ?? .zero)
 		#expect(await eventually { routing.unadoptable == ["alpha"] })
 		let alpha = try await routing.listVMs().first { $0.name == "alpha" }
 		#expect(alpha?.unresponsive == true)

@@ -67,6 +67,8 @@ struct RoutingUnresponsiveTests {
 			stubs.append(stub)
 			servers.append(server)
 		}
+		// Each adoption's event subscription is a call with a deadline: it ends with its reply.
+		#expect(await eventually { clock.armed.isEmpty })
 		return Rig(
 			routing: routing, clock: clock, alpha: stubs[0], beta: stubs[1], servers: servers)
 	}
@@ -83,14 +85,13 @@ struct RoutingUnresponsiveTests {
 	) async throws -> T {
 		let armedBefore = rig.clock.everArmed.count
 		let task = Task { @MainActor in try await call() }
+		let left = Array(repeating: rig.routing.hostProbeDeadline, count: stalled)
 		for round in 0..<rounds {
 			#expect(await eventually {
 				rig.clock.everArmed.count >= armedBefore + hosts + round * stalled
-					&& rig.clock.armed.count == stalled
-			})
-			let armed = rig.clock.armed
-			#expect(armed == Array(repeating: rig.routing.hostProbeDeadline, count: stalled))
-			rig.clock.advance(by: armed.max() ?? rig.routing.hostProbeDeadline)
+					&& rig.clock.armed == left
+			}, "armed \(rig.clock.armed), expected \(left)")
+			rig.clock.advance(by: (rig.clock.armed + left).max() ?? .zero)
 		}
 		return try await task.value
 	}
