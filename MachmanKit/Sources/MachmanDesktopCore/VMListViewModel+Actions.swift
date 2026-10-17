@@ -684,64 +684,6 @@ extension VMListViewModel {
 		}
 	}
 
-	// MARK: - Kernel
-
-	public func requestDeleteKernel(_ name: String, path: String, fileName: String) {
-		pendingKernelDelete = PendingKernelDelete(vm: name, path: path, fileName: fileName)
-	}
-
-	// The file's path changes with its tag — repoint a selection that was on the old path.
-	// `refused` takes a refusal to the field instead of an alert.
-	public func renameKernelTag(
-		_ name: String, path: String, tag: String,
-		refused: (@MainActor (String) -> Void)? = nil
-	) {
-		let fileName = (path as NSString).lastPathComponent
-		perform("Renaming a kernel file", refused: refused) {
-			try await $0.renameKernelFile(vm: name, path: path, tag: tag)
-		} then: { model, updated in
-			// Said only once the reply holds the file under its new tag.
-			guard let file = updated.boot.ownedKernels?.first(where: {
-				$0.tag == tag && $0.fileName == fileName
-			}) else { return }
-			let old: SidebarNode = file.role == .kernel ? .kernel(path) : .initramfs(path)
-			if model.treeSelection == [old] {
-				model.treeSelection = [file.role == .kernel
-					? .kernel(file.path) : .initramfs(file.path)]
-			}
-			model.pushToast(
-				symbol: MachmanSymbols.rename,
-				message: ToastWording.renamed(to: tag))
-		}
-	}
-
-	public func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, tag: String) {
-		perform("Promoting a kernel file") {
-			try await $0.promoteKernelFile(vm: name, role: role, sourcePath: sourcePath, tag: tag)
-		}
-	}
-
-	public func deleteKernel(_ name: String, path: String) {
-		perform("Deleting a kernel file") { try await $0.deleteKernelFile(vm: name, path: path) }
-	}
-
-	public func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
-		let switched: Void? = await attempt("Switching boot mode") {
-			try await $0.setKernelBoot(vm: name, enabled: enabled)
-		}
-		return switched != nil
-	}
-
-	public func setKernelOverride(
-		_ name: String, path: String, commandLine: String? = nil, overrideEnabled: Bool? = nil
-	) {
-		perform("Updating the kernel override") {
-			try await $0.setKernelOverride(
-				vm: name, path: path, commandLine: commandLine,
-				overrideEnabled: overrideEnabled)
-		}
-	}
-
 	// MARK: - SSH and guest setup (1.0.5)
 
 	// A failure is titled by what the toggle did: added or removed the alias.

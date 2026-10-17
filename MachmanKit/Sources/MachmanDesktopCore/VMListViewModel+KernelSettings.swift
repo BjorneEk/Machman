@@ -2,8 +2,9 @@
 //  VMListViewModel+KernelSettings.swift
 //  MachmanDesktopCore
 //
-//  Kernel-boot settings writes: the active kernel and initramfs picks, and the VM command
-//  line's commit (P41). vm.kernel.update replaces the whole KernelSettings, so a write built
+//  Kernel boot's requests: the active kernel and initramfs picks and the VM command line's
+//  commit (P41), the kernel files' promote, re-tag and delete, the boot toggle and the
+//  per-file overrides. vm.kernel.update replaces the whole KernelSettings, so a write built
 //  from any copy of them undoes whatever changed since the copy was made: a render's copy
 //  reverted a pick made while the editor's debounce waited, and even the served copy lags
 //  each write by its reply, the agent's listChanged and the next fetch (review F8). So each
@@ -13,6 +14,7 @@
 
 import Foundation
 import MachmanAPI
+import MachmanUI
 
 extension VMListViewModel {
 	// Select or deselect an active kernel or initramfs file by rewiring the kernel-boot draft
@@ -62,6 +64,64 @@ extension VMListViewModel {
 				try await $0.updateKernelSettings(vm: name, settings)
 			}
 			if sent != nil { await store.reload() }
+		}
+	}
+
+	// MARK: - Kernel files, boot toggle and overrides
+
+	public func requestDeleteKernel(_ name: String, path: String, fileName: String) {
+		pendingKernelDelete = PendingKernelDelete(vm: name, path: path, fileName: fileName)
+	}
+
+	// The file's path changes with its tag — repoint a selection that was on the old path.
+	// `refused` takes a refusal to the field instead of an alert.
+	public func renameKernelTag(
+		_ name: String, path: String, tag: String,
+		refused: (@MainActor (String) -> Void)? = nil
+	) {
+		let fileName = (path as NSString).lastPathComponent
+		perform("Renaming a kernel file", refused: refused) {
+			try await $0.renameKernelFile(vm: name, path: path, tag: tag)
+		} then: { model, updated in
+			// Said only once the reply holds the file under its new tag.
+			guard let file = updated.boot.ownedKernels?.first(where: {
+				$0.tag == tag && $0.fileName == fileName
+			}) else { return }
+			let old: SidebarNode = file.role == .kernel ? .kernel(path) : .initramfs(path)
+			if model.treeSelection == [old] {
+				model.treeSelection = [file.role == .kernel
+					? .kernel(file.path) : .initramfs(file.path)]
+			}
+			model.pushToast(
+				symbol: MachmanSymbols.rename,
+				message: ToastWording.renamed(to: tag))
+		}
+	}
+
+	public func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, tag: String) {
+		perform("Promoting a kernel file") {
+			try await $0.promoteKernelFile(vm: name, role: role, sourcePath: sourcePath, tag: tag)
+		}
+	}
+
+	public func deleteKernel(_ name: String, path: String) {
+		perform("Deleting a kernel file") { try await $0.deleteKernelFile(vm: name, path: path) }
+	}
+
+	public func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
+		let switched: Void? = await attempt("Switching boot mode") {
+			try await $0.setKernelBoot(vm: name, enabled: enabled)
+		}
+		return switched != nil
+	}
+
+	public func setKernelOverride(
+		_ name: String, path: String, commandLine: String? = nil, overrideEnabled: Bool? = nil
+	) {
+		perform("Updating the kernel override") {
+			try await $0.setKernelOverride(
+				vm: name, path: path, commandLine: commandLine,
+				overrideEnabled: overrideEnabled)
 		}
 	}
 }

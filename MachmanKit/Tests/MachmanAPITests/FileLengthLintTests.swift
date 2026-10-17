@@ -20,10 +20,7 @@ struct FileLengthLintTests {
 	static let roots = ["MachmanKit/Sources", "MachmanAgent", "MachmanVMHost", "MachmanDesktop"]
 
 	// Files over the limit that wait for their split, each with its reason.
-	static let waiting: [String: String] = [
-		"MachmanKit/Sources/MachmanDesktopCore/VMListViewModel+Actions.swift":
-			"every daemon request with its confirm half, by section; split on its next big change",
-	]
+	static let waiting: [String: String] = [:]
 
 	// Lines as wc -l counts them, plus an unterminated last one.
 	static func lineCount(_ text: String) -> Int {
