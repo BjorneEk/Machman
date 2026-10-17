@@ -38,8 +38,10 @@ struct WindowPrompts: ViewModifier {
 				claim()
 			})
 			.onChange(of: prompts.current?.id, initial: true) { claim() }
+			// While no main window is up, the main window's questions show in the key one.
+			.onAppear { prompts.presenterAppeared(window) }
 			.onDisappear {
-				prompts.release(window)
+				prompts.presenterDisappeared(window)
 				shown = nil
 			}
 			.modifier(ErrorAlert(error: shownError, isPresented: presented { $0.isError }))

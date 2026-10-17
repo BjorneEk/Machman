@@ -120,5 +120,51 @@ struct PromptCenterTests {
 		h.viewModel.isErrorPresented = false
 		#expect(await eventually { h.viewModel.pendingKernelClear?.vm == "Kernel Lab" })
 	}
+
+	// A confirmation asked while the main window is closed — ⌘. from a torn terminal, Delete
+	// disk… from a torn VM inspector — had no window to show in: it sat unseen as the current
+	// prompt, and every later one (a failure, Start Anyway, End Process) queued behind it.
+	// With no main window up it shows in the key window; one the main window would show isn't
+	// shown twice when it comes back.
+	@Test("Q31: with the main window closed, a main-window question shows in the key window")
+	func aMainWindowQuestionFallsBackToTheKeyWindow() async throws {
+		let h = await DesktopHarness.make()
+		let prompts = h.viewModel.prompts
+		let torn = CommandWindow.torn(TornTab(vm: "Debian", tab: .config))
+		prompts.presenterAppeared(torn)   // only a torn window is up
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		h.viewModel.requestStop(debian, mode: .soft)
+		let stop = try #require(prompts.current)
+		#expect(prompts.shows(stop.id, in: torn, isKey: true, anyWindowKey: true))
+
+		// The main window comes back while the torn window shows it: shown once, there.
+		prompts.presenterAppeared(.main)
+		#expect(!prompts.shows(stop.id, in: .main, isKey: true, anyWindowKey: true))
+		#expect(prompts.shows(stop.id, in: torn, isKey: false, anyWindowKey: true))
+
+		// A failure asked meanwhile shows once the question is answered.
+		h.viewModel.present(message: "no", while: "Doing A")
+		#expect(h.viewModel.presentedError == nil)
+		prompts.release(torn)
+		h.viewModel.confirmStop(try #require(h.viewModel.pendingStop))
+		#expect(await eventually { h.viewModel.presentedError?.message == "no" })
+		let error = try #require(prompts.current)
+		#expect(prompts.shows(error.id, in: torn, isKey: true, anyWindowKey: true))
+	}
+
+	// With the main window up, a confirmation still shows there only, as before.
+	@Test("Q31: with the main window up, a main-window question shows there only")
+	func aMainWindowQuestionStaysOnTheMainWindow() async throws {
+		let h = await DesktopHarness.make()
+		let prompts = h.viewModel.prompts
+		let torn = CommandWindow.torn(TornTab(vm: "Debian", tab: .config))
+		prompts.presenterAppeared(.main)
+		prompts.presenterAppeared(torn)
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		h.viewModel.deleteVM(debian)
+		let delete = try #require(prompts.current)
+		#expect(!prompts.shows(delete.id, in: torn, isKey: true, anyWindowKey: true))
+		#expect(prompts.shows(delete.id, in: .main, isKey: false, anyWindowKey: true))
+	}
 }
 

@@ -7,10 +7,11 @@
 //  (WindowPrompts), so a prompt coming and going re-renders no other view (P9). A prompt that
 //  arrives while another shows waits its turn — none replaces another — and a dismissal shows
 //  the next once the last has animated out. Where a prompt shows is its placement: the window
-//  that is key when it arrives (C22, K8), claimed through PromptWindowClaim. Each kind's words
-//  and buttons are decided here (PromptContent), so a new question is a new kind and touches
-//  no view. One per view model, like the toasts: a reconnect starts a fresh queue, and what
-//  the lost connection cut off is announced anew (P12).
+//  that is key when it arrives (C22, K8), claimed through PromptWindowClaim, or the main
+//  window — the key one while no main window is up. Each kind's words and buttons are decided
+//  here (PromptContent), so a new question is a new kind and touches no view. One per view
+//  model, like the toasts: a reconnect starts a fresh queue, and what the lost connection cut
+//  off is announced anew (P12).
 //
 
 import Foundation
@@ -70,8 +71,8 @@ public struct Prompt: Identifiable {
 	public typealias Choice = PromptContent.Choice
 
 	// Alerts and the start/stop follow-ups show where the user is; the confirmations on the
-	// main window, whose surfaces ask them (a menu item brings it forward first); a session
-	// close in the window that asked it.
+	// main window, whose surfaces ask them (a menu item brings it forward first), or in the
+	// key window while the main window is closed; a session close in the window that asked.
 	public var placement: PromptPlacement {
 		switch kind {
 		case .error, .forceStart, .endProcess:
@@ -300,6 +301,9 @@ public final class PromptCenter: ObservableObject {
 	@Published private var queue = PresentationQueue<Prompt>()
 	// Which window shows the current prompt: every window's presenter asks it.
 	private var claim = PromptWindowClaim()
+	// The windows whose presenter is up. A main-window prompt shows in the key window while
+	// the main window is closed, so it never sits unseen ahead of every later prompt.
+	private var presenters: [CommandWindow: Int] = [:]
 
 	public init() {}
 
@@ -336,13 +340,26 @@ public final class PromptCenter: ObservableObject {
 		_ id: UUID?, in window: CommandWindow, isKey: Bool, anyWindowKey: Bool
 	) -> Bool {
 		guard let id, let prompt = queue.current, prompt.id == id else { return false }
+		let mainClosed = prompt.placement == .window(.main) && presenters[.main] == nil
 		return claim.claims(
-			id, placement: prompt.placement, for: window, isKey: isKey,
-			anyWindowKey: anyWindowKey)
+			id, placement: mainClosed ? .keyWindow : prompt.placement, for: window,
+			isKey: isKey, anyWindowKey: anyWindowKey)
 	}
 
-	// `window` closed or its prompt was dismissed: what it held is free for the next taker.
+	// `window`'s prompt was dismissed: what it held is free for the next taker.
 	public func release(_ window: CommandWindow) {
+		claim.release(window)
+	}
+
+	// A window's presenter came up (WindowPrompts' appear) or went with its window: a closed
+	// window holds no prompt.
+	public func presenterAppeared(_ window: CommandWindow) {
+		presenters[window, default: 0] += 1
+	}
+
+	public func presenterDisappeared(_ window: CommandWindow) {
+		let left = (presenters[window] ?? 0) - 1
+		presenters[window] = left > 0 ? left : nil
 		claim.release(window)
 	}
 }
