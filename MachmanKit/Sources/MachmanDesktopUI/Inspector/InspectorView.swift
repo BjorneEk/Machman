@@ -208,16 +208,21 @@ struct VMInspector: View {
 					}
 					.help(BootInfo.newerModeReason)
 				} else {
-					Picker("Bootloader", selection: bootBinding) {
-						Text(BootInfo.Mode.efi.menuTitle).tag(BootInfo.Mode.efi)
-						Text(BootInfo.Mode.linuxKernel.menuTitle).tag(BootInfo.Mode.linuxKernel)
-						// Installing is stop-first (H41): the row waits while the VM runs, as
-						// the sheet's buttons and Install macOS… do.
-						Text("macOS…").tag(BootInfo.Mode.macOS)
-							.disabled(vm.refusal(.installMacOS) != nil)
+					// The value drops under its label when the row can't hold both (L7).
+					LabeledContent("Bootloader") {
+						Picker("Bootloader", selection: bootBinding) {
+							Text(BootInfo.Mode.efi.menuTitle).tag(BootInfo.Mode.efi)
+							Text(BootInfo.Mode.linuxKernel.menuTitle)
+								.tag(BootInfo.Mode.linuxKernel)
+							// Installing is stop-first (H41): the row waits while the VM runs,
+							// as the sheet's buttons and Install macOS… do.
+							Text("macOS…").tag(BootInfo.Mode.macOS)
+								.disabled(vm.refusal(.installMacOS) != nil)
+						}
+						.labelsHidden()
+						.disabled(viewModel.isInstalling(vm) || bootPickerRefusal != nil)
+						.help(bootPickerRefusal ?? vm.boot.mode.menuTitle)
 					}
-					.disabled(viewModel.isInstalling(vm) || bootPickerRefusal != nil)
-					.help(bootPickerRefusal ?? "")
 					// Already in macOS mode but not installed (a failed or cancelled install,
 					// or an unfinished Mac's copy): re-selecting macOS can't fire the picker,
 					// so the install needs its own way in.

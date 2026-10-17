@@ -52,6 +52,7 @@ struct SSHSessionInspector: View {
 						Text(p.name).tag(p.id)
 					}
 				}
+				.help(profileName)
 			}
 			Section {
 				// A session whose ssh died is worth reviving in place (same tab, same
@@ -88,6 +89,11 @@ struct SSHSessionInspector: View {
 
 	private func reconnect() {
 		sessions.reconnectSSHSession(vm: vm, ref: ref, profiles: profiles)
+	}
+
+	// The picked profile's name, whole: the picker's tooltip (L7).
+	private var profileName: String {
+		profiles.profiles.first { $0.id == profileBinding.wrappedValue }?.name ?? ""
 	}
 
 	private var profileBinding: Binding<UUID> {

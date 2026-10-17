@@ -401,5 +401,9 @@ enum InspectorScenes {
 		inspector(
 			"device.graphics.disabled", "GraphicsInspector, a disabled display",
 			vms: { [Samples.linuxNoDisplay(state: .stopped)] }, node: .device(.graphics)),
+		// L7: the Bootloader's longest value, which drops under its label at the floor.
+		inspector(
+			"vm.kernel-boot", "VMInspector, a kernel-boot VM (Bootloader Kernel Boot)",
+			select: "Kernel Lab", node: nil),
 	]
 }

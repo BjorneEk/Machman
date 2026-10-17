@@ -243,7 +243,7 @@ struct InspectorGatingTests {
 		#expect(tree.find(text: "Unknown") != nil, "\(tree.dump())")
 		#expect(tree.all.contains { $0.help == BootInfo.newerModeReason }, "\(tree.dump())")
 		#expect(tree.find(text: "Allow nested virtualization") == nil)
-		#expect(!tree.all.contains { $0.role == "AXPopUpButton" && $0.text == "EFI" })
+		#expect(!tree.all.contains { $0.role == "AXPopUpButton" && $0.value == "EFI" })
 	}
 
 	@Test("H61: two kernel files offer no batch Enable or Disable, and say why")

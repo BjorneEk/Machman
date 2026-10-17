@@ -55,16 +55,19 @@ struct SerialInspector: View {
 
 	// MARK: - Terminal profile
 
-	// Icon actions only (design): reload (always visible) + terminal settings; the
-	// tooltips carry the descriptions.
+	// Icon actions only (design): reload (always visible) + terminal settings, the
+	// tooltips carrying the descriptions, on a row of their own under the picker — beside
+	// it they cut its value to a stub at the inspector's floor (L7).
 	private var terminalSection: some View {
 		Section("Terminal") {
-			HStack(spacing: 4) {
-				Picker("Profile", selection: profileBinding) {
-					ForEach(profiles.profiles) { p in
-						Text(p.name).tag(p.id)
-					}
+			Picker("Profile", selection: profileBinding) {
+				ForEach(profiles.profiles) { p in
+					Text(p.name).tag(p.id)
 				}
+			}
+			.help(profiles.profile(vm: vm.name, ref: ref).name)
+			.liveWhileSettingsLocked()   // the desktop's own choice, not the VM's
+			HStack(spacing: 4) {
 				IconButton(
 					symbol: MachmanSymbols.reloadTerminal,
 					tooltip: "Reload the terminal — rebuilds it with the profile’s "
@@ -75,8 +78,9 @@ struct SerialInspector: View {
 				}
 				.disabled(gate != nil || sessions.controller(vm: vm.name, ref: ref) == nil)
 				terminalSettingsButton
+				Spacer()
 			}
-			.liveWhileSettingsLocked()   // the desktop's own choice, not the VM's
+			.liveWhileSettingsLocked()
 			if reloadNeeded {
 				Text("Startup settings changed — reload to apply.")
 					.font(.caption)
@@ -152,21 +156,28 @@ struct SerialInspector: View {
 	private var loggingSection: some View {
 		Section("Logging") {
 			Picker("Mode", selection: modeBinding) {
-				Text("Disabled").tag(SerialLogMode.disabled)
-				Text("Reset on Boot").tag(SerialLogMode.resetOnBoot)
-				Text("Continuous").tag(SerialLogMode.continuous)
+				ForEach(Self.logModes, id: \.mode) { item in
+					Text(item.label).tag(item.mode)
+				}
 			}
+			.help(Self.logModes.first { $0.mode == modeBinding.wrappedValue }?.label ?? "")
+			let caps = SerialLogCaps.items(current: port?.logging.maxBytes)
 			Picker("Max size", selection: sizeBinding) {
-				ForEach(SerialLogCaps.items(current: port?.logging.maxBytes), id: \.bytes) { item in
+				ForEach(caps, id: \.bytes) { item in
 					Text(item.label).tag(item.bytes)
 				}
 			}
+			.help(caps.first { $0.bytes == sizeBinding.wrappedValue }?.label ?? "")
 			.disabled(port?.logging.mode == .disabled)
 			if let logPath = port?.logPath {
 				PathRow(label: "Log file", path: logPath) { Finder.reveal(logPath) }
 			}
 		}
 	}
+
+	private static let logModes: [(mode: SerialLogMode, label: String)] = [
+		(.disabled, "Disabled"), (.resetOnBoot, "Reset on Boot"), (.continuous, "Continuous"),
+	]
 
 	private var modeBinding: Binding<SerialLogMode> {
 		Binding(

@@ -192,13 +192,18 @@ struct GraphicsInspector: View {
 	var body: some View {
 		Form {
 			Section("Display") {
-				Picker("Resolution", selection: resolutionBinding) {
-					Text("Auto (Host Screen)").tag(Resolution.auto)
-					ForEach(commonPresets) { preset in
-						Text(presetLabel(preset.width, preset.height))
-							.tag(Resolution.preset(preset.width, preset.height))
+				// The value drops under its label when the row can't hold both (L7).
+				LabeledContent("Resolution") {
+					Picker("Resolution", selection: resolutionBinding) {
+						Text("Auto").tag(Resolution.auto)
+						ForEach(commonPresets) { preset in
+							Text(presetLabel(preset.width, preset.height))
+								.tag(Resolution.preset(preset.width, preset.height))
+						}
+						Text("Custom…").tag(Resolution.custom)
 					}
-					Text("Custom…").tag(Resolution.custom)
+					.labelsHidden()
+					.help(resolutionHelp)
 				}
 				if currentResolution == .custom {
 					LabeledContent("Width") {
@@ -240,6 +245,24 @@ struct GraphicsInspector: View {
 			DeviceRemoveRow(viewModel: viewModel, vm: vm, kind: .graphics)
 		}
 		.onAppear { seedCustomFields() }
+	}
+
+	// The value, whole: the picker's tooltip, with the host screen's size behind Auto.
+	private var resolutionHelp: String {
+		switch currentResolution {
+		case .auto:
+			guard let w = viewModel.capabilities?.hostDisplayWidthPixels,
+				let h = viewModel.capabilities?.hostDisplayHeightPixels else {
+				return "Auto (host screen)"
+			}
+			return "Auto (host screen, \(w) × \(h))"
+		case .preset(let w, let h):
+			return presetLabel(w, h)
+		case .custom:
+			let w = device.displayWidthPixels ?? customWidth
+			let h = device.displayHeightPixels ?? customHeight
+			return "Custom (\(w) × \(h))"
+		}
 	}
 
 	private func presetLabel(_ w: Int, _ h: Int) -> String {
