@@ -208,7 +208,8 @@ private struct KernelFileInfoSection: View {
 			LabeledContent("Ownership",
 				value: entry.owned ? "Owned (in VM directory)" : "External reference")
 			PathRow(label: "Path", path: entry.path) { Finder.reveal(entry.path) }
-			if entry.active {
+			// A macOS VM boots no kernel: none of its files is active (F21).
+			if entry.active && !vm.kernelSectionsRemoveOnly {
 				LabeledContent("Status") {
 					Label("Active", systemImage: MachmanSymbols.activeEntry)
 						.foregroundStyle(MachmanColors.activeEntry)

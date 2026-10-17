@@ -59,6 +59,9 @@ struct TreeKernelSection: View {
 		) {
 			ForEach(entries) { file in
 				let node: SidebarNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
+				// A macOS VM boots no kernel: none of its files reads as active (F21).
+				let removeOnly = ctx.vm.kernelSectionsRemoveOnly
+				let active = file.active && !removeOnly
 				HStack(spacing: 6) {
 					role == .kernel ? TreeIcon.tux : TreeIcon(symbol: MachmanSymbols.initramfs)
 					if ctx.renamingNode == node {
@@ -72,7 +75,7 @@ struct TreeKernelSection: View {
 						}
 					} else {
 						Text(file.label)
-							.fontWeight(file.active ? .medium : .regular)
+							.fontWeight(active ? .medium : .regular)
 							.truncationMode(.middle)
 							.lineLimit(1)
 							.help(file.id)
@@ -83,14 +86,14 @@ struct TreeKernelSection: View {
 							symbol: MachmanSymbols.externalReference,
 							help: "External file — promote to copy it into the VM")
 					}
-					if file.active {
+					if active {
 						TreeBadge(
 							symbol: MachmanSymbols.activeEntry, help: "Active", size: 10,
 							style: theme.accentColor)
 					}
 				}
 				.treeRow(
-					node, opacity: file.active ? 1 : MachmanColors.inactiveEntryOpacity
+					node, opacity: active || removeOnly ? 1 : MachmanColors.inactiveEntryOpacity
 				) { ctx.kernelEntryMenu(file, role: role) }
 			}
 			ctx.dropPreview(

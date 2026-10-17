@@ -318,6 +318,9 @@ enum InspectorScenes {
 			"kernel.parked", "KernelParentInspector, kernel boot switched off",
 			vms: { [Samples.kernelParked()] }, select: "Kernel Lab", node: .group("Kernel")),
 		inspector(
+			"kernel.macos", "KernelParentInspector, a macOS VM's kept kernel draft",
+			vms: { [Samples.macOSWithKernelFiles()] }, select: "Sequoia", node: .group("Kernel")),
+		inspector(
 			"kernel.entry-macos", "KernelEntryInspector, a macOS VM's kept kernel file",
 			vms: { [Samples.macOSWithKernelFiles()] }, select: "Sequoia",
 			node: .kernel(Samples.macOSWithKernelFiles().boot.ownedKernels![0].path)),

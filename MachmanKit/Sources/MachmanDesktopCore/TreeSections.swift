@@ -111,12 +111,15 @@ extension VMInfo {
 	public var kernelSectionParked: Bool { boot.mode != .linuxKernel }
 
 	// Why the kernel sections are dimmed, for the pointer and VoiceOver (H55); nil while
-	// kernel boot is on.
+	// kernel boot is on. A macOS VM never boots a kernel, so its sections say where they came
+	// from instead (F21).
 	public var kernelParkedReason: String? {
-		kernelSectionParked ? Self.kernelParkedReason : nil
+		guard kernelSectionParked else { return nil }
+		return kernelSectionsRemoveOnly ? Self.kernelKeptReason : Self.kernelParkedReason
 	}
 
 	public static let kernelParkedReason = "Used when the bootloader is Kernel Boot"
+	public static let kernelKeptReason = "Kept from before this VM switched to macOS"
 
 	// A macOS VM never boots a kernel: its kernel sections, kept from before its switch (K3),
 	// offer only what removes them — Delete…, Remove Kernel Settings…, Copy and Show in

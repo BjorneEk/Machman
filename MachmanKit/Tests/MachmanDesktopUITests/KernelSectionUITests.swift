@@ -134,4 +134,30 @@ struct KernelSectionUITests {
 		}
 		#expect(inspector.findAll { $0.role == "AXTextField" }.isEmpty)
 	}
+
+	// F21: on a macOS VM the parked sections said "Used when the bootloader is Kernel Boot" and
+	// the entry read Status Active — neither can happen there. They say where the files came
+	// from, and nothing reads as active.
+	@Test("F21: a macOS VM's kernel sections say they were kept and show nothing active")
+	func aMacOSVMSaysKeptAndNothingActive() async throws {
+		let h = await UIHarness.make([Samples.macOSWithKernelFiles()])
+		let kept = VMInfo.kernelKeptReason
+		let section = try await section(h, "Sequoia")
+		let label = section.findAll { $0.text == "Kernel" || $0.label == "Kernel" }
+		#expect(label.contains { $0.value == kept }, "\(section.dump())")
+		#expect(section.findAll { $0.help == kept }.count >= 2)
+		#expect(section.findAll { $0.value == Self.reason || $0.help == Self.reason }.isEmpty)
+		#expect(section.findAll { $0.label == "Active" }.isEmpty, "\(section.dump())")
+
+		let parent = try await kernelInspector(h, "Sequoia")
+		#expect(parent.find(text: kept + ".") != nil, "\(parent.dump())")
+		let file = try #require(h.vm("Sequoia").kernelTreeEntries(role: .kernel).first)
+		#expect(file.active)   // the draft still names it; the views don't say so
+		let entry = try await h.snapshot(
+			KernelEntryInspector(viewModel: h.viewModel, vm: h.vm("Sequoia"), path: file.id)
+				.formStyle(.grouped),
+			width: 320, height: 700)
+		#expect(entry.find(text: "Active") == nil, "\(entry.dump())")
+		#expect(entry.find(text: "Status") == nil)
+	}
 }
