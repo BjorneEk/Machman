@@ -261,4 +261,31 @@ struct MenuBarModelTests {
 		try await Task.sleep(for: .milliseconds(100))
 		#expect(model.vms.first?.state == .running)
 	}
+
+	// A VM the list in flight adds (a copy, a new VM, an adopted vmhost) has no row to patch
+	// yet: its state change still asks for one more list.
+	@Test("V16: a state change for a VM not listed yet asks for one more list")
+	func aStateChangeForAnUnlistedVMRereads() async throws {
+		let stub = StubMachman()
+		stub.vms["Debian"] = Samples.linux("Debian")
+		let model = MenuBarModel(api: stub)
+		model.begin()
+		#expect(await eventually { model.vms.count == 1 })
+		var release: CheckedContinuation<Void, Never>?
+		stub.pause = { name in
+			guard name == "listVMs" else { return }
+			await withCheckedContinuation { release = $0 }
+		}
+		stub.vms["Alpine"] = Samples.linux("Alpine")   // the parked list carries it stopped
+		stub.emit(.listChanged)
+		#expect(await eventually { release != nil })
+		stub.pause = nil
+		stub.vms["Alpine"]?.state = .running
+		stub.emit(.stateChanged(vm: "Alpine", state: .running))
+		try await Task.sleep(for: .milliseconds(50))
+		release?.resume()
+		#expect(await eventually {
+			model.vms.first { $0.name == "Alpine" }?.state == .running
+		}, "\(stub.calls)")
+	}
 }

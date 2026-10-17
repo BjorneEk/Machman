@@ -74,12 +74,11 @@ public final class MenuBarModel: ObservableObject {
 				guard let self = self else { return }
 				switch event {
 				case .stateChanged(let name, let state):
+					// During a fetch the next one reads it again, a VM the fetch adds included.
+					if self.patchedDuringFetch != nil { self.reloadPending = true }
 					if let index = self.vms.firstIndex(where: { $0.name == name }) {
 						self.vms[index].state = state
-						if self.patchedDuringFetch != nil {
-							self.patchedDuringFetch?[name] = state
-							self.reloadPending = true   // the next fetch reads it again
-						}
+						self.patchedDuringFetch?[name] = state
 					}
 				case .listChanged:
 					self.requestReload()
