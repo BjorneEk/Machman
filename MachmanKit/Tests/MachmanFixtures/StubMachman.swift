@@ -25,7 +25,7 @@ public final class StubMachman: MachmanControlling {
 	private var failures: [String: Error] = [:]
 	// Base names whose calls park while listed: a stalled vmhost (E20). They answer once
 	// removed, or after a minute. Honored by vm(named:), operations(), preview, safeSave,
-	// importDisk, stop and cancelOperation.
+	// importDisk, start, stop and cancelOperation.
 	public var stalled: Set<String> = []
 	// Called with a method's base name where a test may hold its reply back: listVMs after it
 	// read the list (the reply is the list as it was), renameVM after the rename landed and
@@ -657,6 +657,7 @@ public final class StubMachman: MachmanControlling {
 	public func start(vm name: String, options: StartOptions) async throws {
 		try gate()
 		starts.append((name, options))
+		await stallWhileScripted("start")
 		var vm = try get(name)
 		guard !vm.state.isRunning else {
 			// Mirrors the engine so probe-adopt's already-running arm is exercisable.

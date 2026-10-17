@@ -53,6 +53,11 @@ public final class RoutingMachman: MachmanControlling {
 	var pendingStarts: Set<String> { claims.startingNames }
 	var pendingStartMACs: [String: (order: Int, mac: String)] { claims.startMACs }
 
+	// Each start's vmhost while the start runs, by VM (E64): reachable, so a Force Stop or End
+	// Process can end a start whose vmhost stalls — both refused a start for as long as its
+	// forwarded boot could take (an hour). Internal for tests.
+	var startsInFlight: [String: StartInFlight] = [:]
+
 	// Claims the name (and its MAC) for a start; internal so tests can stage a start in flight.
 	func reserveStart(_ name: String, mac: String?) {
 		claims.insert(name, .starting, mac: mac)
@@ -381,6 +386,8 @@ public final class RoutingMachman: MachmanControlling {
 		switch residence(of: name) {
 		case .starting:
 			info.state = .starting
+			// A spawned vmhost that stopped answering during its start (E64).
+			if startsInFlight[name]?.host?.unresponsive == true { info.unresponsive = true }
 		case .unadopted:
 			scheduleAdoption(name)
 			info.state = .unknown
@@ -585,9 +592,13 @@ public final class RoutingMachman: MachmanControlling {
 			}
 			try await endUnadoptedHost(name)
 		case .starting:
-			throw MachmanError(
-				code: .invalidState,
-				message: "\(name) is starting — try again once it is running")
+			// A start's vmhost is ended at the user's word (E64), answering or not.
+			guard let flight = startsInFlight[name], flight.canEnd else {
+				throw MachmanError(
+					code: .invalidState,
+					message: "\(name) is starting — try again once it is running")
+			}
+			try await endStart(flight, name: name)
 		case .local:
 			throw MachmanError(code: .invalidState, message: "\(name) is not running")
 		}
@@ -603,6 +614,12 @@ public final class RoutingMachman: MachmanControlling {
 		// preparation, and its start fails as canceled (C14).
 		if let cancel = claims.cancelHook(for: name) {
 			cancel()
+			return
+		}
+		// A start whose vmhost runs already, or is launching: a Force Stop ends it, and the
+		// start fails as canceled (E64, K14). Shut Down waits for the VM to run.
+		if mode == .force, let flight = startsInFlight[name], flight.canEnd {
+			try await endStart(flight, name: name)
 			return
 		}
 		let target = try await proxy(name)

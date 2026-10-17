@@ -16,6 +16,11 @@ extension RoutingMachman {
 	// The shadow build's progress label; its card reads "<VM> — Preparing a safe run".
 	nonisolated static let safeRunLabel = "Preparing a safe run"
 
+	// What a start answers once a Force Stop or End Process ended its vmhost (E64): a cancel,
+	// which clients show no alert for.
+	nonisolated static let startCanceled = MachmanError(
+		code: .cancelled, message: "The start was canceled")
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		// Another start, or a copy into the VM (E33): its final config edit would land under
 		// the vmhost this start launches, whose own saves then revert it.
@@ -39,14 +44,47 @@ extension RoutingMachman {
 		// Claimed before the first await; the defer releases on every exit, success or
 		// throw. Everything in launch (probe, spawn, shadow build) runs under this claim.
 		let claim = try claims.claim(name, .starting, mac: vm.config.macAddress)
-		defer { claims.release(claim) }
+		let flight = StartInFlight()
+		startsInFlight[name] = flight
+		defer {
+			claims.release(claim)
+			flight.watch?.cancel()
+			startsInFlight[name] = nil
+		}
 		do {
 			try await launch(vm, name: name, options: options, claim: claim)
 		} catch {
 			// The VM listed as starting since the claim: a client that lists on listChanged
 			// would keep showing it starting after the start failed.
 			registry.events.emit(.listChanged)
-			throw error
+			// However the end of its vmhost surfaced (a lost connection, a quit while
+			// starting), the start was canceled (E64).
+			throw flight.canceled ? Self.startCanceled : error
+		}
+	}
+
+	// Ends a start's vmhost at the user's word (E64): the host the start was handed to, or
+	// the app it launched. The reply waits for the start to fail (bounded), so the VM lists
+	// stopped by then.
+	func endStart(_ flight: StartInFlight, name: String) async throws {
+		flight.canceled = true
+		let ended: Bool
+		if let host = flight.host {
+			ended = endHost(host)
+		} else if let app = flight.app {
+			ended = app.forceTerminate() || app.isTerminated
+		} else {
+			ended = false
+		}
+		guard ended else {
+			flight.canceled = false
+			throw MachmanError(
+				code: .invalidState,
+				message: "\(name) is starting, and Machman can’t end its process")
+		}
+		MachmanLogger.log(.passiveWarning, "ended \(name)'s vmhost during its start, as asked")
+		_ = await poll(every: .milliseconds(50), for: hostExitGrace) {
+			startsInFlight[name] !== flight
 		}
 	}
 
@@ -158,6 +196,9 @@ extension RoutingMachman {
 	// listChanged after it finds the VM running already, so a start still toasts once.
 	// Internal for tests.
 	func hostStarted(_ host: HostedVM, name: String, unattached: Set<String>) {
+		// Its start returned, so it answers: a mark from the start's watch goes (E64).
+		startsInFlight[name]?.watch?.cancel()
+		host.unresponsive = false
 		host.unattachedDisks = unattached
 		hosted[name] = host
 		// Explicit kick, not the event filter: the vmhost emitted .running while start()

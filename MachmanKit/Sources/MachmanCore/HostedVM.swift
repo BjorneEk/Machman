@@ -37,6 +37,18 @@ extension NSRunningApplication: VMHostApp {
 }
 
 extension RoutingMachman {
+	// A start's vmhost while the start runs (E64): the launched app from its launch, the host
+	// the start is handed to once it is reached (spawned, or idle and adopted), whether a
+	// Force Stop or End Process ended it, and the probe that watches a spawned one.
+	final class StartInFlight {
+		var app: VMHostApp?
+		var host: HostedVM?
+		var canceled = false
+		var watch: Task<Void, Never>?
+
+		var canEnd: Bool { app != nil || host != nil }
+	}
+
 	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
 	// recomputed: hostGone unlinks identity.socketPath and closures capture identity.id, so
 	// both survive any re-keying of `hosted` (safe mode re-keys on save-as-new, and re-points

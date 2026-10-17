@@ -65,6 +65,7 @@ extension RoutingMachman {
 				message: "Couldn’t open Machman VM for \(name): "
 					+ MachmanError.userMessage(for: error))
 		}
+		startsInFlight[name]?.app = app
 		let hostID = identity.id
 		let deathWatch = app.watchTermination { [weak self] in
 			Task { @MainActor [weak self] in
@@ -79,6 +80,8 @@ extension RoutingMachman {
 		// the vmhost this spawn launched counts (E62): whoever else answers on the path, or
 		// serves it once ours quit, holds the VM.
 		_ = await poll(every: .milliseconds(250), for: spawnConnectWindow) {
+			// Ended by a Force Stop or End Process (E64): the start fails as canceled.
+			guard startsInFlight[name]?.canceled != true else { return true }
 			guard !app.isTerminated else {
 				held = UDSListener.isLive(path: identity.socketPath)
 				lastError = Self.hostQuitWhileStarting
@@ -98,10 +101,15 @@ extension RoutingMachman {
 				return false
 			}
 		}
-		if let client {
+		if let client, startsInFlight[name]?.canceled != true {
 			return HostedVM(identity: identity, client: client, app: app, deathWatch: deathWatch)
 		}
+		await client?.disconnect()
 		deathWatch.invalidate()
+		if startsInFlight[name]?.canceled == true {
+			app.forceTerminate()
+			throw Self.startCanceled
+		}
 		if held {
 			app.forceTerminate()
 			MachmanLogger.log(.passiveWarning,
@@ -219,7 +227,13 @@ extension RoutingMachman {
 
 	// Hands a host its VM's start once the host has this daemon's subscription (E9), so the
 	// boot's own events — a uart it could not attach, a headless start — reach clients.
+	// The start stays reachable meanwhile (E64): a Force Stop or End Process ends this host,
+	// and a spawned one — no list probes it, it isn't hosted — is watched like a list probe.
 	func forwardStart(_ host: HostedVM, name: String, options: StartOptions) async throws {
+		if let flight = startsInFlight[name] {
+			flight.host = host
+			if hosted[name] !== host { watchStartingHost(host, name: name, flight: flight) }
+		}
 		if host.eventsSubscribed == nil { subscribeEvents(host) }
 		await host.eventsSubscribed?.value
 		try await host.client.start(vm: name, options: options)

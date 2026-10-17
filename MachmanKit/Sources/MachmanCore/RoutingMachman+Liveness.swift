@@ -141,6 +141,38 @@ extension RoutingMachman {
 		return result
 	}
 
+	// A spawned vmhost a start waits on (E64): asked like a list probe every recoveryInterval
+	// while the start runs, and listed as not responding while it misses the answer deadline
+	// — Force Stop and End Process end it. A vmhost going away ends the watch: the start
+	// fails on its own.
+	func watchStartingHost(_ host: HostedVM, name: String, flight: StartInFlight) {
+		flight.watch?.cancel()
+		flight.watch = Task { [weak self] in
+			while !Task.isCancelled {
+				guard let deadline = self?.hostProbeDeadline else { return }
+				let stalled: Bool
+				do {
+					_ = try await host.client.vm(named: name, deadline: deadline)
+					stalled = false
+				} catch let error as MachmanError where error.code == .timeout {
+					stalled = true
+				} catch {
+					return
+				}
+				guard !Task.isCancelled, let self else { return }
+				if host.unresponsive != stalled {
+					host.unresponsive = stalled
+					MachmanLogger.log(.passiveWarning, stalled
+						? "\(name)'s vmhost missed its \(deadline) answer deadline while starting "
+							+ "— listing it as not responding"
+						: "\(name)'s vmhost answers again")
+					self.registry.events.emit(.listChanged)
+				}
+				try? await Task.sleep(for: self.recoveryInterval)
+			}
+		}
+	}
+
 	// Transitions only: each one logs, announces itself with listChanged (clients reload on
 	// it — the only way a recovered VM's mark ever clears), and starts or ends the watcher.
 	func markUnresponsive(_ host: HostedVM, reason: String? = nil) {
