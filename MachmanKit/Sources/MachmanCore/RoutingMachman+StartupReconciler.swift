@@ -55,7 +55,9 @@ extension RoutingMachman {
 	// Start booted a second VZ on the same disks. Every live vmhost socket no VM accounts for
 	// is asked whom it serves (hello), all at once: one serving an entry's folder makes that
 	// entry Not responding until it exits (a Start is refused, End Process ends it); any other
-	// is logged and left running. A vmhost from before hello said so can't be placed.
+	// is logged and left running. One that doesn't answer in time (a stalled main actor) is
+	// asked again on the adoption timer until it answers or its socket goes dark (F23). A
+	// vmhost from before hello said so can't be placed.
 	func identifyOrphanedHosts(in dir: String) async {
 		let entries = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
 		let known = Set(registry.list().map { socketPathForVM($0.name) })
@@ -67,14 +69,40 @@ extension RoutingMachman {
 		for (path, ask) in asks {
 			guard let served = await ask.value else {
 				MachmanLogger.log(.passiveWarning,
-					"a vmhost answers on \(path), for no VM in the library — leaving it running")
+					"a vmhost answers on \(path), for no VM in the library, and didn't say whom "
+						+ "it serves — asking it again")
+				askAgain(path)
 				continue
 			}
 			noteOrphan(served, at: path)
 		}
 	}
 
+	// One timer per socket, until it says whom it serves, goes dark, or a VM claims it.
+	private func askAgain(_ path: String) {
+		guard orphanQuestions[path] == nil else { return }
+		orphanQuestions[path] = Task { [weak self] in
+			while let interval = self?.adoptionRetryInterval {
+				try? await Task.sleep(for: interval)
+				guard let self, !Task.isCancelled, UDSListener.isLive(path: path),
+					!self.isClaimed(socket: path) else { break }
+				if let served = await self.whomItServes(path) {
+					self.noteOrphan(served, at: path)
+					break
+				}
+			}
+			self?.orphanQuestions[path] = nil
+		}
+	}
+
+	private func isClaimed(socket path: String) -> Bool {
+		registry.list().contains { socketPathForVM($0.name) == path }
+			|| hosted.values.contains { $0.identity.socketPath == path }
+			|| orphanSockets.values.contains(path)
+	}
+
 	private func whomItServes(_ path: String) async -> RPCResults.Hello.Host? {
+		if let ask = whomItServesForTesting { return await ask(path) }
 		guard let client = try? await RemoteMachman(
 			socketPath: path, clientName: "machman-agent-router", helloDeadline: helloDeadline)
 		else { return nil }
@@ -83,10 +111,11 @@ extension RoutingMachman {
 	}
 
 	// Places a vmhost that serves `served` on a socket that isn't its VM's (E11): the library
-	// entry whose folder it serves answers through it until it exits.
+	// entry whose folder it serves answers through it until it exits. A safe run's vmhost
+	// names the real VM's folder, whose unsafe disks its run has attached (F23).
 	func noteOrphan(_ served: RPCResults.Hello.Host, at path: String) {
 		let library = libraryDir()
-		let entry = served.shadow ? nil : served.vmDir.flatMap { folder in
+		let entry = served.vmDir.flatMap { folder in
 			registry.list().first { isSameFile(folder, library + "/" + $0.name) }?.name
 		}
 		guard let entry else {

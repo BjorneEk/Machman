@@ -54,9 +54,10 @@ struct RoutingOrphanTests {
 		return Rig(routing: routing, library: library, runtime: runtime)
 	}
 
-	// A running vmhost for `vm`, answering on `vm`'s socket, that says it serves `folder`.
+	// A running vmhost for `vm`, answering on `vm`'s socket, that says it serves `folder` (as a
+	// safe run's shadow with `shadow`).
 	@MainActor
-	private func orphan(_ rig: Rig, vm: String, folder: String?) throws
+	private func orphan(_ rig: Rig, vm: String, folder: String?, shadow: Bool = false) throws
 		-> (StubMachman, MachmanServer) {
 		let stub = StubMachman()
 		stub.vms[vm] = StubMachman.makeInfo(vm, state: .running)
@@ -64,7 +65,7 @@ struct RoutingOrphanTests {
 			api: stub, socketPath: rig.runtime + "/vm-\(vm).sock", daemonVersion: "test-vmhost")
 		server.helloHost = {
 			RPCResults.Hello.Host(
-				pid: getpid(), vm: vm, dataDir: rig.library, vmDir: folder, shadow: false)
+				pid: getpid(), vm: vm, dataDir: rig.library, vmDir: folder, shadow: shadow)
 		}
 		try startServing(server)
 		return (stub, server)
@@ -162,5 +163,74 @@ struct RoutingOrphanTests {
 		await #expect(throws: MachmanError.self) { try await rig.routing.adoptLiveHost("beta") }
 		#expect(rig.routing.hostForTesting("alpha") == nil)
 		#expect(rig.routing.hostForTesting("beta") == nil)
+	}
+
+	// The entry an orphan answers for lists Not responding (its vmhost serves another name)
+	// and refuses a Start without spawning.
+	@MainActor
+	private func expectHeldByOrphan(_ rig: Rig, _ entry: String) async throws {
+		var listed: VMInfo?
+		let clock = ContinuousClock()
+		let deadline = clock.now.advanced(by: .seconds(20))
+		while clock.now < deadline {
+			let info = try await rig.routing.vm(named: entry)
+			if info.isUnresponsive {
+				listed = info
+				break
+			}
+			try await Task.sleep(for: .milliseconds(100))
+		}
+		#expect(listed?.state == .unknown)
+		do {
+			try await rig.routing.start(vm: entry, options: StartOptions(openWindow: false))
+			Issue.record("a start went through while the orphan runs \(entry)")
+		} catch let error as MachmanError {
+			#expect(error.message == "\(entry) is not responding \u{2014} try again in a moment")
+		}
+	}
+
+	// F23: a vmhost that missed its hello deadline at startup (a stalled main actor) was
+	// logged and never asked again, so its renamed entry listed stopped and a Start booted a
+	// second VZ on the same disks. It is asked again on the adoption timer until it answers.
+	@Test(
+		"""
+		F23: an orphan that misses its first hello is placed when it answers a later one, and \
+		its entry refuses a Start
+		""")
+	@MainActor func anOrphanThatMissesItsFirstHelloIsPlacedLater() async throws {
+		let rig = try makeRig(["beta"])
+		let (_, server) = try orphan(rig, vm: "alpha", folder: rig.library + "/beta")
+		defer { server.stop() }
+		let orphanSocket = rig.runtime + "/vm-alpha.sock"
+		rig.routing.adoptionRetryInterval = .milliseconds(100)
+		var asks = 0
+		let answer = RPCResults.Hello.Host(
+			pid: getpid(), vm: "alpha", dataDir: rig.library, vmDir: rig.library + "/beta",
+			shadow: false)
+		rig.routing.whomItServesForTesting = { _ in
+			asks += 1
+			return asks == 1 ? nil : answer   // the first hello ran out its deadline
+		}
+
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(rig.routing.orphanSockets.isEmpty)
+		// Before: never asked again.
+		#expect(await eventually { rig.routing.orphanSockets == ["beta": orphanSocket] })
+		try await expectHeldByOrphan(rig, "beta")
+	}
+
+	// F23: a safe run's vmhost whose VM folder was renamed while the agent was away answered
+	// as a shadow, which the sweep dropped: its entry listed stopped while the run had its
+	// unsafe disks attached. A shadow says the real VM's folder, and is placed by it.
+	@Test("F23: a safe run's orphaned vmhost holds its renamed entry, which refuses a Start")
+	@MainActor func aSafeRunsOrphanHoldsItsEntry() async throws {
+		let rig = try makeRig(["beta"])
+		let (_, server) = try orphan(
+			rig, vm: "alpha", folder: rig.library + "/beta", shadow: true)
+		defer { server.stop() }
+
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(rig.routing.orphanSockets == ["beta": rig.runtime + "/vm-alpha.sock"])
+		try await expectHeldByOrphan(rig, "beta")
 	}
 }

@@ -68,7 +68,8 @@ struct VMHostHelloTests {
 	}
 
 	// What VMHostBootstrap serves: the VM's current name and data folder, and a safe run's
-	// shadow until it is saved as a new VM (the name changes then).
+	// shadow until it is saved as a new VM (the name changes then) — whose folder, for the
+	// agent, is the real VM's (F23), and the shadow's own once it is saved.
 	@Test("E11: a vmhost's hello follows its VM's name and says whether it serves a shadow")
 	@MainActor func theHelloFollowsTheVMsNameAndShadow() throws {
 		try VMTestDir.withRedirectedDir {
@@ -76,15 +77,31 @@ struct VMHostHelloTests {
 			try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2).saveVMConfig()
 			let registry = VMRegistry(only: "alpha")
 			let folder = VMFolderPath(machmanVMDir + "/alpha")
-			let shadow = VMHostBootstrap.helloHost(
-				registry: registry, vmName: "alpha", folder: folder, isShadow: true)()
-			#expect(shadow?.vm == "alpha")
-			#expect(shadow?.dataDir == machmanVMDir)
-			#expect(shadow?.pid == getpid())
-			#expect(shadow?.shadow == true)
 			let plain = VMHostBootstrap.helloHost(
-				registry: registry, vmName: "alpha", folder: folder, isShadow: false)()
+				registry: registry, vmName: "alpha", folder: folder, realFolder: nil)()
+			#expect(plain?.vm == "alpha")
+			#expect(plain?.dataDir == machmanVMDir)
+			#expect(plain?.pid == getpid())
 			#expect(plain?.shadow == false)
+			#expect(plain?.vmDir.map { isSameFile($0, machmanVMDir + "/alpha") } == true)
+		}
+	}
+
+	@Test("F23: a safe run's vmhost says the real VM's folder is the one it serves")
+	@MainActor func aSafeRunsHelloNamesTheRealFolder() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2).saveVMConfig()
+			let real = TestEnvironment.scratch + "real-\(UUID().uuidString)"
+			try FileManager.default.createDirectory(
+				atPath: real + "/alpha", withIntermediateDirectories: true)
+			defer { try? FileManager.default.removeItem(atPath: real) }
+			let shadow = VMHostBootstrap.helloHost(
+				registry: VMRegistry(only: "alpha"), vmName: "alpha",
+				folder: VMFolderPath(machmanVMDir + "/alpha"),
+				realFolder: VMFolderPath(real + "/alpha"))()
+			#expect(shadow?.shadow == true)
+			#expect(shadow?.vmDir.map { isSameFile($0, real + "/alpha") } == true)
 		}
 	}
 }

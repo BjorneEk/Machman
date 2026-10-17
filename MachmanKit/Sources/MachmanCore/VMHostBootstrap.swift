@@ -79,7 +79,7 @@ public enum VMHostBootstrap {
 			api: api, socketPath: socketPath, daemonVersion: "\(daemonVersion)-vmhost")
 		server.helloHost = helloHost(
 			registry: registry, vmName: vmName, folder: VMFolderPath(vm.config.vmDirPath()),
-			isShadow: library != nil)
+			realFolder: library.map { VMFolderPath($0 + "/" + vmName) })
 		do {
 			try server.start()
 		} catch {
@@ -183,16 +183,18 @@ public enum VMHostBootstrap {
 	// Whom this vmhost serves, for hello (PR21): the agent adopts a vmhost as a VM only when it
 	// serves that VM's folder (E11). The VM's current name and the data folder follow a Save
 	// as New VM (the shadow is then the saved VM, in the library); the folder follows a rename
-	// in Finder too.
+	// in Finder too. A safe run (`realFolder`, the VM's own folder in the library) names that
+	// folder, whose unsafe disks it attached, until it is saved as a new VM (F23).
 	@MainActor
 	static func helloHost(
-		registry: VMRegistry, vmName: String, folder: VMFolderPath, isShadow: Bool
+		registry: VMRegistry, vmName: String, folder: VMFolderPath, realFolder: VMFolderPath?
 	) -> () -> RPCResults.Hello.Host? {
 		{ [weak registry] in
 			let current = registry?.restrictedName ?? vmName
+			let shadow = realFolder != nil && current == vmName
 			return RPCResults.Hello.Host(
-				pid: getpid(), vm: current, dataDir: machmanVMDir, vmDir: folder.current,
-				shadow: isShadow && current == vmName)
+				pid: getpid(), vm: current, dataDir: machmanVMDir,
+				vmDir: shadow ? realFolder?.current : folder.current, shadow: shadow)
 		}
 	}
 
