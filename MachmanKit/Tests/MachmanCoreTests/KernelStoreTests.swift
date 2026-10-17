@@ -220,4 +220,33 @@ struct KernelStoreTests {
 			#expect(Set(cfg.ownedKernelFiles().map(\.tag)) == ["new", "old"])
 		}
 	}
+
+	// D35 (review 4): two Debian kernels landed under one tag — only an identical file name was
+	// refused — and the tree drew two identical rows that the Tag field treated as one. K13: a
+	// tag names one kernel file, and a second is refused, saying why.
+	@Test("D35: a second kernel file into a tag that holds one is refused with a reason")
+	func aTakenTagRefusesASecondFile() throws {
+		let dir = TestEnvironment.scratch + "d35-\(UUID().uuidString)"
+		let kernels = dir + "/kernels"
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let first = dir + "/vmlinuz-6.1.0-18-arm64"
+		let second = dir + "/vmlinuz-6.1.0-21-arm64"
+		for file in [first, second] {
+			try Data("kernel".utf8).write(to: URL(fileURLWithPath: file))
+		}
+		_ = try KernelStore.promote(
+			role: .kernel, sourcePath: first, kernelsDir: kernels, tag: "vmlinuz-6.1")
+		let error = try #require(throws: MachmanError.self) {
+			try KernelStore.promote(
+				role: .kernel, sourcePath: second, kernelsDir: kernels, tag: "vmlinuz-6.1")
+		}
+		#expect(error.code == .alreadyExists)
+		#expect(error.message == "\u{201C}vmlinuz-6.1\u{201D} already holds a kernel file")
+		#expect(KernelStore.ownedFiles(kernelsDir: kernels).map(\.fileName)
+			== ["vmlinuz-6.1.0-18-arm64"])
+		// The initramfs role's tag of the same name is a tag of its own.
+		_ = try KernelStore.promote(
+			role: .initramfs, sourcePath: second, kernelsDir: kernels, tag: "vmlinuz-6.1")
+	}
 }

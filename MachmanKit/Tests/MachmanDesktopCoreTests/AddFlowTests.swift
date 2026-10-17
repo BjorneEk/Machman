@@ -124,4 +124,23 @@ struct AddFlowTests {
 			== "Importing \u{201C}a.raw\u{201D} into \u{201C}Debian\u{201D} failed")
 		#expect(h.viewModel.presentedError?.message == "disk full")
 	}
+
+	// D35: a kernel added under a tag that already holds one is refused (K13), and the add
+	// that asked says why: the drop's alert carries the agent's sentence.
+	@Test("D35: adding a kernel under a taken tag says why where it was added")
+	func aTakenKernelTagSaysWhy() async throws {
+		let h = await DesktopHarness.make([Samples.linux("Debian")])
+		let first = URL(fileURLWithPath: "/Users/demo/Downloads/vmlinuz")
+		AddFlows.add([first], to: .kernel(.kernel), vm: "Debian", viewModel: h.viewModel)
+		#expect(await eventually {
+			h.stub.vms["Debian"]?.boot.ownedKernels?.map(\.tag) == ["vmlinuz"]
+		})
+		let second = URL(fileURLWithPath: "/Users/demo/build/vmlinuz")
+		AddFlows.add([second], to: .kernel(.kernel), vm: "Debian", viewModel: h.viewModel)
+		#expect(await eventually { h.viewModel.presentedError != nil })
+		#expect(h.viewModel.presentedError?.title == "Promoting a kernel file failed")
+		#expect(h.viewModel.presentedError?.message
+			== "\u{201C}vmlinuz\u{201D} already holds a kernel file")
+		#expect(h.stub.vms["Debian"]?.boot.ownedKernels?.count == 1)
+	}
 }

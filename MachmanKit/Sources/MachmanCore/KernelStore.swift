@@ -88,6 +88,20 @@ enum KernelStore {
 		return initramfsHints.contains(where: name.contains) ? .initramfs : .kernel
 	}
 
+	// Whether a tag dir holds a kernel file already: a tag names one file (D35, K13).
+	static func holdsKernelFile(_ tagDir: String) -> Bool {
+		((try? FileManager.default.contentsOfDirectory(atPath: tagDir)) ?? []).contains {
+			isKernelFile(tagDir + "/" + $0)
+		}
+	}
+
+	// A second file under one tag drew two identical rows that the Tag field and its rename
+	// treated as one (D35): refused, saying why (K13).
+	static func tagTaken(_ tag: String) -> MachmanError {
+		MachmanError(
+			code: .alreadyExists, message: "\u{201C}\(tag)\u{201D} already holds a kernel file")
+	}
+
 	// Copy sourcePath into <kernelsDir>/<role>/<tag>/<basename> and return the new owned path.
 	static func promote(
 		role: KernelRole, sourcePath: String, kernelsDir: String, tag: String
@@ -98,6 +112,7 @@ enum KernelStore {
 		}
 		let trimmed = try NameRule.kernelTag.normalized(tag)
 		let tagDir = kernelsDir + "/" + role.rawValue + "/" + trimmed
+		guard !holdsKernelFile(tagDir) else { throw tagTaken(trimmed) }
 		let basename = (sourcePath as NSString).lastPathComponent
 		let dest = tagDir + "/" + basename
 		guard !fm.fileExists(atPath: dest) else {

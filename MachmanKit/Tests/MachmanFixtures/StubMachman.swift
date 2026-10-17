@@ -492,6 +492,11 @@ public final class StubMachman: MachmanControlling {
 	) async throws -> VMInfo {
 		try gate()
 		var vm = try get(name)
+		// Like the engine (KernelStore.promote, D35): a tag names one kernel file.
+		if (vm.boot.ownedKernels ?? []).contains(where: { $0.role == role && $0.tag == tag }) {
+			throw MachmanError(
+				code: .alreadyExists, message: "\u{201C}\(tag)\u{201D} already holds a kernel file")
+		}
 		let base = (sourcePath as NSString).lastPathComponent
 		let dest = "/vm/\(name)/kernels/\(role.rawValue)/\(tag)/\(base)"
 		vm.boot.ownedKernels = (vm.boot.ownedKernels ?? [])
