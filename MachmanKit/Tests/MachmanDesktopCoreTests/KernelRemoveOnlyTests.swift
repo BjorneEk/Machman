@@ -4,7 +4,7 @@
 //
 //  A macOS VM's kernel sections only remove what it kept from before its switch (D31): the
 //  tree's background Paste and Edit ▸ Paste reached EntityClipboard.paste and imported a
-//  copied kernel anyway (F20). They skip kernel files for a macOS VM now, and say so.
+//  copied kernel anyway (review F20). They skip kernel files for a macOS VM now, and say so.
 //
 
 import Testing
@@ -19,7 +19,7 @@ import MachmanTestSupport
 struct KernelRemoveOnlyTests {
 	private static let kernels = "\(Samples.vmsRoot)/Kernel Lab/kernels"
 
-	@Test("F20: pasting kernel files into a macOS VM sends no promote and says why")
+	@Test("D31: pasting kernel files into a macOS VM sends no promote and says why")
 	func pastingKernelsIntoAMacOSVMSkipsThem() async throws {
 		let h = await DesktopHarness.make([Samples.macOS("Sequoia"), Samples.linux("Debian")])
 		let kernel = EntityClipboard(kind: .kernel, path: Self.kernels + "/kernel/6.12/vmlinuz")

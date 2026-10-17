@@ -135,10 +135,10 @@ struct KernelSectionUITests {
 		#expect(inspector.findAll { $0.role == "AXTextField" }.isEmpty)
 	}
 
-	// F21: on a macOS VM the parked sections said "Used when the bootloader is Kernel Boot" and
-	// the entry read Status Active — neither can happen there. They say where the files came
-	// from, and nothing reads as active.
-	@Test("F21: a macOS VM's kernel sections say they were kept and show nothing active")
+	// H55 (review F21): on a macOS VM the parked sections said "Used when the bootloader is
+	// Kernel Boot" and the entry read Status Active — neither can happen there. They say where
+	// the files came from, and nothing reads as active.
+	@Test("H55: a macOS VM's kernel sections say they were kept and show nothing active")
 	func aMacOSVMSaysKeptAndNothingActive() async throws {
 		let h = await UIHarness.make([Samples.macOSWithKernelFiles()])
 		let kept = VMInfo.kernelKeptReason

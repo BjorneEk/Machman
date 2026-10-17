@@ -162,7 +162,7 @@ enum KernelStore {
 	// Hidden files are never kernel files (isKernelFile): Finder's .DS_Store, a FUSE mount's
 	// .fuse_hidden files (AppleDouble "._" files never show in a listing — Foundation hides
 	// them — and go with the dir). A dir holding only such files loses them so it can go (D30,
-	// F22); one holding anything else — a hidden folder included — keeps all of it.
+	// review F22); one holding anything else — a hidden folder included — keeps all of it.
 	private static func dropHiddenLeftovers(_ dir: String) {
 		let fm = FileManager.default
 		guard let entries = try? fm.contentsOfDirectory(atPath: dir), !entries.isEmpty,
@@ -250,7 +250,7 @@ enum KernelStore {
 		// something; legacy-layout files (no role level) just make fewer hops.
 		var dir = (path as NSString).deletingLastPathComponent
 		while dir.hasPrefix(kernelsDir) {
-			// Hidden files are not the user's: they don't keep an emptied dir alive (D30, F22).
+			// Hidden files are not the user's: they don't keep an emptied dir alive (D30).
 			dropHiddenLeftovers(dir)
 			guard removeEmptyDirectory(dir) else { break }
 			if dir == kernelsDir { break }

@@ -217,7 +217,7 @@ public final class StubMachman: MachmanControlling {
 		try Self.refuseKernelEdits(vm)
 		return vm
 	}
-	// Like the engine (LocalMachman.refuseKernelEdits, F20): a macOS VM's kernel files only go.
+	// Like the engine (LocalMachman.refuseKernelEdits, D31): a macOS VM's kernel files only go.
 	private static func refuseKernelEdits(_ vm: VMInfo) throws {
 		guard vm.boot.mode == .macOS else { return }
 		throw MachmanError(

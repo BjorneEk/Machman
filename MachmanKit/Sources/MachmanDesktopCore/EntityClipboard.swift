@@ -39,7 +39,7 @@ public struct EntityClipboard: Codable {
 	// Paste entities into a VM through the same funnels as the picker and drop entry points;
 	// the disks among them share one copy-or-reference question. A macOS VM takes no kernel
 	// file (its kernel sections only remove, D31): those are skipped, and a toast says so —
-	// the tree's background Paste and Edit ▸ Paste both land here (F20).
+	// the tree's background Paste and Edit ▸ Paste both land here (D31, review F20).
 	@MainActor
 	public static func paste(
 		_ items: [EntityClipboard], into vm: String, viewModel: VMListViewModel

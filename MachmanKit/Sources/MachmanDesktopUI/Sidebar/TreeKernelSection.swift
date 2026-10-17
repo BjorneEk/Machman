@@ -59,7 +59,7 @@ struct TreeKernelSection: View {
 		) {
 			ForEach(entries) { file in
 				let node: SidebarNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
-				// A macOS VM boots no kernel: none of its files reads as active (F21).
+				// A macOS VM boots no kernel: none of its files reads as active (H55).
 				let removeOnly = ctx.vm.kernelSectionsRemoveOnly
 				let active = file.active && !removeOnly
 				HStack(spacing: 6) {

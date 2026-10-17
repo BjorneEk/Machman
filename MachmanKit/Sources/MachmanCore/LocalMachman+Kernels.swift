@@ -12,7 +12,7 @@ import MachmanAPI
 extension LocalMachman {
 	// A macOS VM never boots a kernel: the kernel files and draft it kept from before its
 	// switch (K3) can only go — delete and vm.kernel.clear — never be added, picked, re-tagged
-	// or given an override (D31, F20), whichever client asks.
+	// or given an override (D31), whichever client asks.
 	private func refuseKernelEdits(_ vm: VirtualMachine) throws {
 		guard case .macOS = vm.config.boot else { return }
 		throw MachmanError(

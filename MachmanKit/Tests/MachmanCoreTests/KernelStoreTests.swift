@@ -403,12 +403,12 @@ struct KernelStoreTests {
 			== otherKernels + "/kernel/next/vmlinuz")
 	}
 
-	// F22: only a tag dir holding exactly Finder's .DS_Store was cleared; any other hidden
-	// leftover beside it (a FUSE mount's .fuse_hidden file; AppleDouble "._" files never list)
-	// kept the dir, and the import was refused with "“v1” already holds a kernel file" for a
-	// tag the tree lists nothing under. Any dir left with only hidden files is cleared now — at
-	// an import's placement and a delete's walk-up.
-	@Test("F22: a tag dir left with only hidden files takes the import and goes with a delete")
+	// D30 (review F22): only a tag dir holding exactly Finder's .DS_Store was cleared; any
+	// other hidden leftover beside it (a FUSE mount's .fuse_hidden file; AppleDouble "._" files
+	// never list) kept the dir, and the import was refused with "“v1” already holds a kernel
+	// file" for a tag the tree lists nothing under. Any dir left with only hidden files is
+	// cleared now — at an import's placement and a delete's walk-up.
+	@Test("D30: a tag dir left with only hidden files takes the import and goes with a delete")
 	func hiddenLeftoversNeverHoldATag() throws {
 		let (dir, kernels, source) = try storeDir()
 		defer {

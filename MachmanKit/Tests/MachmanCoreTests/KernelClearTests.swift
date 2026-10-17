@@ -120,12 +120,12 @@ struct KernelClearTests {
 		await client.disconnect()
 	}
 
-	// F20 (D31): the agent took kernel adds, picks, re-tags and overrides for a macOS VM, whose
-	// kept kernel files can only go — every client but the desktop could still add them. Each is
-	// refused with one sentence now, on the stub as in the engine (delete and vm.kernel.clear
-	// stay: "D31: a macOS VM keeps and lists its kernel files and draft", "D31: removing a
-	// macOS VM's kernel settings keeps it macOS").
-	@Test("F20: a macOS VM refuses kernel adds, picks, re-tags and overrides")
+	// D31 (review F20): the agent took kernel adds, picks, re-tags and overrides for a macOS
+	// VM, whose kept kernel files can only go — every client but the desktop could still add
+	// them. Each is refused with one sentence now, on the stub as in the engine (delete and
+	// vm.kernel.clear stay: "D31: a macOS VM keeps and lists its kernel files and draft",
+	// "D31: removing a macOS VM's kernel settings keeps it macOS").
+	@Test("D31: a macOS VM refuses kernel adds, picks, re-tags and overrides")
 	@MainActor
 	func aMacOSVMRefusesKernelEdits() async throws {
 		var engine: LocalMachman?
