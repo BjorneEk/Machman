@@ -209,7 +209,7 @@ struct RoutingOrphanTests {
 			shadow: false)
 		rig.routing.whomItServesForTesting = { _ in
 			asks += 1
-			return asks == 1 ? nil : answer   // the first hello ran out its deadline
+			return asks == 1 ? .silent : .served(answer)   // the first hello ran out its deadline
 		}
 
 		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
@@ -232,5 +232,37 @@ struct RoutingOrphanTests {
 		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
 		#expect(rig.routing.orphanSockets == ["beta": rig.runtime + "/vm-alpha.sock"])
 		try await expectHeldByOrphan(rig, "beta")
+	}
+
+	// E11 (review F29): a vmhost from before hello said whom it serves answered like one
+	// that never answered, so it was asked again — a connect and a hello every retry for its
+	// whole life. It is asked once, logged, and left running.
+	@Test("E11: a vmhost whose hello says nothing of whom it serves is asked once, not again")
+	@MainActor func aVMHostTooOldToSayIsAskedOnce() async throws {
+		let rig = try makeRig(["beta"])
+		let (_, server) = try orphan(rig, vm: "alpha", folder: nil)
+		defer { server.stop() }
+		rig.routing.adoptionRetryInterval = .milliseconds(50)
+		var asks = 0
+		rig.routing.whomItServesForTesting = { _ in
+			asks += 1
+			return .unsaid
+		}
+
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(asks == 1)
+		#expect(rig.routing.orphanQuestions.isEmpty)   // before: a retry timer for it
+		try await Task.sleep(for: .milliseconds(200))   // four retry intervals
+		#expect(asks == 1)
+		#expect(rig.routing.orphanSockets.isEmpty)
+
+		// The real ask tells a hello without its host from no hello at all.
+		rig.routing.whomItServesForTesting = nil
+		let old = MachmanServer(
+			api: StubMachman(), socketPath: rig.runtime + "/vm-gamma.sock", daemonVersion: "1.0.11")
+		try startServing(old)
+		defer { old.stop() }
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(rig.routing.orphanQuestions[rig.runtime + "/vm-gamma.sock"] == nil)
 	}
 }

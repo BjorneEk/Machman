@@ -56,8 +56,9 @@ extension RoutingMachman {
 	// is asked whom it serves (hello), all at once: one serving an entry's folder makes that
 	// entry Not responding until it exits (a Start is refused, End Process ends it); any other
 	// is logged and left running. One that doesn't answer in time (a stalled main actor) is
-	// asked again on the adoption timer until it answers or its socket goes dark (review F23). A
-	// vmhost from before hello said so can't be placed.
+	// asked again on the adoption timer until it answers or its socket goes dark (review F23).
+	// A vmhost from before hello said so can't be placed: it is logged once and not asked again
+	// (review F29) — every ask is a connect and a hello.
 	func identifyOrphanedHosts(in dir: String) async {
 		let entries = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
 		let known = Set(registry.list().map { socketPathForVM($0.name) })
@@ -67,15 +68,33 @@ extension RoutingMachman {
 			.filter { !known.contains($0) && UDSListener.isLive(path: $0) }
 		let asks = unclaimed.map { path in (path, Task { await self.whomItServes(path) }) }
 		for (path, ask) in asks {
-			guard let served = await ask.value else {
+			switch await ask.value {
+			case .served(let served):
+				noteOrphan(served, at: path)
+			case .unsaid:
+				noteTooOldToSay(path)
+			case .silent:
 				MachmanLogger.log(.passiveWarning,
 					"a vmhost answers on \(path), for no VM in the library, and didn't say whom "
 						+ "it serves — asking it again")
 				askAgain(path)
-				continue
 			}
-			noteOrphan(served, at: path)
 		}
+	}
+
+	// What a vmhost on an unclaimed socket said when asked whom it serves (E11).
+	enum HelloAnswer {
+		case served(RPCResults.Hello.Host)
+		// It answered hello without saying: a vmhost from before hello's host (PR21).
+		case unsaid
+		// No hello within its deadline (a stalled main actor), or no connection at all.
+		case silent
+	}
+
+	private func noteTooOldToSay(_ path: String) {
+		MachmanLogger.log(.passiveWarning,
+			"a vmhost answers on \(path), for no VM in the library, and is too old to say whom "
+				+ "it serves — leaving it running")
 	}
 
 	// One timer per socket, until it says whom it serves, goes dark, or a VM claims it.
@@ -86,10 +105,15 @@ extension RoutingMachman {
 				try? await Task.sleep(for: interval)
 				guard let self, !Task.isCancelled, UDSListener.isLive(path: path),
 					!self.isClaimed(socket: path) else { break }
-				if let served = await self.whomItServes(path) {
+				switch await self.whomItServes(path) {
+				case .served(let served):
 					self.noteOrphan(served, at: path)
-					break
+				case .unsaid:
+					self.noteTooOldToSay(path)
+				case .silent:
+					continue
 				}
+				break
 			}
 			self?.orphanQuestions[path] = nil
 		}
@@ -101,13 +125,13 @@ extension RoutingMachman {
 			|| orphanSockets.values.contains(path)
 	}
 
-	private func whomItServes(_ path: String) async -> RPCResults.Hello.Host? {
+	private func whomItServes(_ path: String) async -> HelloAnswer {
 		if let ask = whomItServesForTesting { return await ask(path) }
 		guard let client = try? await RemoteMachman(
 			socketPath: path, clientName: "machman-agent-router", helloDeadline: helloDeadline)
-		else { return nil }
+		else { return .silent }
 		await client.disconnect()
-		return client.hello.host
+		return client.hello.host.map(HelloAnswer.served) ?? .unsaid
 	}
 
 	// Places a vmhost that serves `served` on a socket that isn't its VM's (E11): the library

@@ -159,10 +159,10 @@ public final class RoutingMachman: MachmanControlling {
 	// The library a vmhost's folder is matched in (E11). A seam: routing tests keep their VMs'
 	// folders in a scratch library of their own.
 	var libraryDir: () -> String = { machmanVMDir }
-	// Unclaimed vmhost sockets that didn't say whom they serve yet, asked again on the
-	// adoption timer (review F23); and the ask itself, a seam for tests (nil: hello on the socket).
+	// Unclaimed vmhost sockets that didn't answer hello yet, asked again on the adoption timer
+	// (review F23); and the ask itself, a seam for tests (nil: hello on the socket).
 	var orphanQuestions: [String: Task<Void, Never>] = [:]
-	var whomItServesForTesting: ((String) async -> RPCResults.Hello.Host?)?
+	var whomItServesForTesting: ((String) async -> HelloAnswer)?
 
 	// Where a VM's vmhost answers: its name's socket, or an orphan's that serves its folder.
 	// A spawn always binds the name's own (socketPathForVM).
