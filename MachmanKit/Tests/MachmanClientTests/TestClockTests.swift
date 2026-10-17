@@ -32,7 +32,7 @@ struct TestClockTests {
 		#expect(!woken.done)
 		#expect(clock.armed == [.milliseconds(100)])
 		clock.advance(by: .milliseconds(100))
-		try await sleeper.value
+		try await sleeper.cancellableValue()
 		#expect(woken.done)
 		#expect(clock.armed.isEmpty)
 		#expect(clock.everArmed == [.milliseconds(300)])
@@ -60,5 +60,20 @@ struct TestClockTests {
 		let earlyResult = await early.result
 		#expect(throws: CancellationError.self) { try earlyResult.get() }
 		#expect(clock.armed.isEmpty)
+	}
+
+	// What a test's time limit does to a check stuck on a deadline nothing moves past: the
+	// cancelled wait cancels the work, which wakes and ends instead of hanging the run.
+	@Test("Q40: a cancelled wait for a task ends the task asleep on a test clock")
+	func aCancelledWaitEndsTheSleepingTask() async {
+		let clock = TestClock()
+		let sleeper = Task { try await clock.sleep(for: .seconds(3600)) }
+		let waiter = Task { try await sleeper.cancellableValue() }
+		#expect(await eventually { clock.armed == [.seconds(3600)] })
+		waiter.cancel()
+		let result = await sleeper.result
+		#expect(throws: CancellationError.self) { try result.get() }
+		#expect(clock.armed.isEmpty)
+		_ = await waiter.result
 	}
 }

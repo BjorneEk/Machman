@@ -86,7 +86,7 @@ struct RoutingPollTests {
 		clock.advance(by: .milliseconds(100))
 		#expect(await eventually { looks == 3 && clock.armed == [.milliseconds(100)] })
 		clock.advance(by: .milliseconds(100))   // 300 ms: past its 250
-		#expect(await wait.value == false)
+		#expect(await wait.cancellableValue() == false)
 		#expect(looks == 4)
 	}
 

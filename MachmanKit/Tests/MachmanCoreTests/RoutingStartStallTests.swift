@@ -113,7 +113,7 @@ struct RoutingStartStallTests {
 		let ending = Task { @MainActor in try await stalled.routing.endProcess(vm: "alpha") }
 		await expectCanceled(stalled.start)
 		clock.advance(by: .milliseconds(50))
-		try await ending.value
+		try await ending.cancellableValue()
 		#expect(stalled.app.ended == 1)
 		#expect(stalled.routing.pendingStarts.isEmpty)
 	}

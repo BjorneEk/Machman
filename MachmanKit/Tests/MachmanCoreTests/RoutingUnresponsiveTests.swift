@@ -93,7 +93,7 @@ struct RoutingUnresponsiveTests {
 			}, "armed \(rig.clock.armed), expected \(left)")
 			rig.clock.advance(by: (rig.clock.armed + left).max() ?? .zero)
 		}
-		return try await task.value
+		return try await task.cancellableValue()
 	}
 
 	// Lets parked requests finish, then takes the hosts down.

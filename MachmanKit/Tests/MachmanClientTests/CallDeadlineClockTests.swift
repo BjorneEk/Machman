@@ -40,7 +40,7 @@ struct CallDeadlineClockTests {
 		#expect(!outcome.ended)   // a millisecond short of its deadline: still waiting
 		clock.advance(by: .milliseconds(1))
 		do {
-			try await call.value
+			try await call.cancellableValue()
 			Issue.record("the call ended without an answer or its deadline")
 		} catch let error as MachmanError {
 			#expect(error.code == .timeout)
@@ -62,7 +62,7 @@ struct CallDeadlineClockTests {
 		#expect(await eventually { clock.armed == [.milliseconds(200)] })
 		clock.advance(by: .milliseconds(200))
 		do {
-			_ = try await connect.value
+			_ = try await connect.cancellableValue()
 			Issue.record("connected without a hello")
 		} catch let error as MachmanError {
 			#expect(error.code == .timeout)

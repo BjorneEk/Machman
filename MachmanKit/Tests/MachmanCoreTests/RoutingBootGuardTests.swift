@@ -149,7 +149,7 @@ struct RoutingBootGuardTests {
 		#expect(await eventually { done.raised || !clock.armed.isEmpty })
 		#expect(clock.everArmed.isEmpty, "the start waited on \(clock.everArmed)")
 		clock.advance(by: clock.armed.max() ?? .zero)   // a start that waited goes on
-		let error = try await start.value
+		let error = try await start.cancellableValue()
 		#expect(error.message.contains("reinstall Machman"))   // on to the spawn
 		#expect(rig.routing.adoptionAttempts == 0)
 	}

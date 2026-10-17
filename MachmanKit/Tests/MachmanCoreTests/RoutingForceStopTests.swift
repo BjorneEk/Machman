@@ -90,7 +90,7 @@ struct RoutingForceStopTests {
 		let stop = Task { @MainActor in try await rig.routing.stop(vm: "alpha", mode: .force) }
 		await passArmed(clock, [rig.routing.forceStopDeadline])   // before: the call's 30 s
 		do {
-			try await stop.value
+			try await stop.cancellableValue()
 			Issue.record("a wedged host's force stop went through")
 		} catch let error as MachmanError {
 			#expect(error.code == .timeout)
@@ -247,7 +247,7 @@ struct RoutingForceStopTests {
 			await rig.routing.stopAllHosted(softFirst: false, graceSeconds: 0)
 		}
 		await passArmed(clock, [rig.routing.forceStopDeadline])
-		#expect(await quit.value == ["alpha"])
+		#expect(await quit.cancellableValue() == ["alpha"])
 		#expect(!clock.everArmed.contains(.milliseconds(250)))   // no drain wait on top
 	}
 
@@ -315,7 +315,7 @@ struct RoutingForceStopTests {
 		// Ended like a confirmed End Process; the waits for each to go see it gone.
 		#expect(await eventually { routing.hostedNames.isEmpty })
 		clock.advance(by: .milliseconds(50))
-		let left = await quit.value
+		let left = await quit.cancellableValue()
 		#expect(left.isEmpty)
 		#expect(Set(heard.ended) == Set(names))
 		// One deadline, not the whole grace (before: 6 + 6 + 30 + 6 + 6 s): no 250 ms grace or

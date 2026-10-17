@@ -106,3 +106,26 @@ public final class TestClock: Clock, @unchecked Sendable {
 		}
 	}
 }
+
+// A task's value that cancels the task when the test awaiting it is cancelled: a test's time
+// limit then ends work left asleep on a TestClock nothing advances, instead of hanging the run
+// (a Task's plain value ignores its waiter's cancellation).
+extension Task where Failure == Error {
+	public func cancellableValue() async throws -> Success {
+		try await withTaskCancellationHandler {
+			try await value
+		} onCancel: {
+			cancel()
+		}
+	}
+}
+
+extension Task where Failure == Never {
+	public func cancellableValue() async -> Success {
+		await withTaskCancellationHandler {
+			await value
+		} onCancel: {
+			cancel()
+		}
+	}
+}

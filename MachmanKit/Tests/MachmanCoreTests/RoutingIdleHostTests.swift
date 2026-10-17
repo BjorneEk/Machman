@@ -115,7 +115,7 @@ struct RoutingIdleHostTests {
 		#expect(await eventually { clock.armed == [.seconds(1)] }, "armed \(clock.armed)")
 		clock.advance(by: (clock.armed + [.seconds(1)]).max() ?? .zero)
 		do {
-			try await start.value
+			try await start.cancellableValue()
 			Issue.record("expected invalidState")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
