@@ -415,17 +415,21 @@ extension RoutingMachman {
 	// VM whose host can't answer keeps its entry from what the daemon last knew.
 	private func sshHostEntries() async -> [SSHHostConfigWriter.VMEntry] {
 		let vms = registry.list()
-		var asks: [String: Task<VMInfo?, Never>] = [:]
+		var running: [String: HostedVM] = [:]
 		for vm in vms {
 			guard let host = hosted[vm.name], !host.identity.isSafe else { continue }
-			asks[vm.name] = Task { await self.sshState(of: host) }
+			running[vm.name] = host
+		}
+		let deadline = hostProbeDeadline
+		let answers = await fanOut(to: running, skippingUnresponsive: true) { name, host in
+			try? await host.client.vm(named: name, deadline: deadline)
 		}
 		var entries: [SSHHostConfigWriter.VMEntry] = []
 		for vm in vms {
 			let name = vm.name
 			let info: VMInfo?
-			if let ask = asks[name] {
-				info = await ask.value
+			if let host = running[name] {
+				info = await sshState(of: host, answer: answers[name] ?? nil)
 			} else {
 				// Stopped — or SAFE-hosted: a shadow's ssh state (its report, its
 				// address) is temporary by definition and must never persist into
@@ -448,15 +452,12 @@ extension RoutingMachman {
 	}
 
 	// A hosted VM's state with the daemon's overlay. The vmhost's answer is the fresh state
-	// (the registry copy predates the run), bounded like a list probe; a host that is Not
-	// responding or misses the deadline gives its last answer, else the registry copy — a
+	// (the registry copy predates the run), asked like a list probe; a host that is Not
+	// responding or missed the deadline gives its last answer, else the registry copy — a
 	// dropped answer used to drop the VM's alias and pinned key from ~/.ssh.
-	private func sshState(of host: HostedVM) async -> VMInfo? {
+	private func sshState(of host: HostedVM, answer: VMInfo?) async -> VMInfo? {
 		let name = host.identity.name
-		var info: VMInfo?
-		if !host.unresponsive {
-			info = try? await host.client.vm(named: name, deadline: hostProbeDeadline)
-		}
+		var info = answer
 		if info == nil { info = host.lastAnswer }
 		if info == nil { info = try? await local.vm(named: name) }
 		guard var found = info else { return nil }

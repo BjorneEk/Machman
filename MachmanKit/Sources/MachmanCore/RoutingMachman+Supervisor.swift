@@ -114,6 +114,23 @@ extension RoutingMachman {
 		return failed.filter { hosted[$0] != nil }.sorted()
 	}
 
+	// Asks every host at once (PR23): one main-actor Task per host, each suspending inside its
+	// own call with its own deadline, so they overlap and a stalled host costs the pass one
+	// deadline, never one per host (E20, E43, E66). With `skippingUnresponsive` a host listed
+	// as not responding isn't asked and has no answer.
+	func fanOut<Answer>(
+		to hosts: [String: HostedVM], skippingUnresponsive: Bool,
+		_ ask: @escaping @MainActor (String, HostedVM) async -> Answer
+	) async -> [String: Answer] {
+		let asks = hosts.filter { !(skippingUnresponsive && $0.value.unresponsive) }
+			.map { name, host in (name, Task { await ask(name, host) }) }
+		var answers: [String: Answer] = [:]
+		for (name, answer) in asks {
+			answers[name] = await answer.value
+		}
+		return answers
+	}
+
 	// The one wait loop of the host table (Q36): looks at `done` every `interval` until it
 	// holds or `timeout` has passed on ContinuousClock, and says which. `done` looks first,
 	// so a wait that is already over costs nothing; it may throw to end the wait early.
