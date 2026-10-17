@@ -3,7 +3,8 @@
 //  MachmanUI
 //
 //  One VM's state as a glyph (the agent menu's VM rows): macwindow (running, window open),
-//  terminal (running headless), pause otherwise; a safe run adds the shield badge.
+//  terminal (running headless), stop otherwise; a safe run adds the shield badge. VoiceOver
+//  reads the state, never the symbol's name (H65).
 //
 
 import SwiftUI
@@ -33,6 +34,8 @@ public struct StatusIcon: View {
 						.offset(x: 3, y: 2)
 				}
 			}
+			.accessibilityElement(children: .ignore)
+			.accessibilityLabel(state.displayLabel)
 	}
 
 	private var symbol: String {

@@ -13,7 +13,7 @@ public enum MachmanSymbols {
 	// MARK: - VM run state (StatusIcon vocabulary)
 	public static let vmRunningWindowed = "macwindow"
 	public static let vmRunningHeadless = "terminal"
-	public static let vmStopped = "pause.fill"
+	public static let vmStopped = "stop"   // never pause: Machman has no pause (H65)
 
 	// MARK: - Run / stop
 	public static let start = "play.fill"   // was play.circle — bolder, and the safe-start

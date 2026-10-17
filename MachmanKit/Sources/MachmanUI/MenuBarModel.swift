@@ -38,8 +38,19 @@ public final class MenuBarModel: ObservableObject {
 		await MainRunLoopCallout.run { MenuBarModel.present(failure) }
 	}
 
+	// Opens a folder in Finder (Show VMs in Finder, H65); tests record it instead. Under a test
+	// suite the agent builds no menu, so nothing reaches it there (TB10).
+	public var openFolder: @MainActor (String) -> Void = { path in
+		NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
+	}
+
 	public init(api: MachmanControlling) {
 		self.api = api
+	}
+
+	// The menu's library row: the VMs folder in Finder, never its raw path as text (H65).
+	public func showVMsInFinder() {
+		openFolder(MachmanPaths.dataDir())
 	}
 
 	// Lists the VMs and follows the engine's events from now on; a second call does nothing.

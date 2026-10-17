@@ -79,7 +79,7 @@ struct MenuBarView: View {
 				.disabled(!model.isEnabled(.forceStop, vm))
 			} label: {
 				// Menu rendering may flatten StatusIcon's green to a template glyph — the
-				// window/terminal/pause shapes still differentiate the states.
+				// window/terminal/stop shapes still differentiate the states.
 				Label {
 					Text(vm.name)
 				} icon: {
@@ -93,8 +93,7 @@ struct MenuBarView: View {
 			Text("No VMs")
 		}
 		Divider()
-		Text(MachmanPaths.dataDir())
-			.font(.caption)
+		Button("Show VMs in Finder") { model.showVMsInFinder() }
 		Divider()
 		Button {
 			openDesktop()

@@ -202,4 +202,13 @@ struct MenuBarModelTests {
 		model.stop("Debian", mode: .force)
 		#expect(await eventually { stub.calls.contains("endProcess") })
 	}
+
+	@Test("H65: Show VMs in Finder opens the library folder")
+	func showVMsInFinderOpensTheLibrary() {
+		let model = MenuBarModel(api: StubMachman())
+		var opened: [String] = []
+		model.openFolder = { opened.append($0) }
+		model.showVMsInFinder()
+		#expect(opened == [MachmanPaths.dataDir()])
+	}
 }

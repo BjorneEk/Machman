@@ -54,6 +54,18 @@ struct AccessibilityLabelTests {
 		#expect(toggle.label == "Close Window — the VM keeps running")
 	}
 
+	@Test("H65: the agent menu's stopped VM reads Stopped, never pause")
+	func aStoppedStatusIconReadsStopped() async throws {
+		#expect(!MachmanSymbols.vmStopped.hasPrefix("pause"))
+		let tree = try await OffscreenHost.withHost(HStack {
+			StatusIcon(state: .stopped, windowOpen: false)
+			StatusIcon(state: .running, windowOpen: true)
+		}) { $0.snapshot() }
+		#expect(tree.find(label: "Stopped") != nil, "\(tree.dump())")
+		#expect(tree.find(label: "Running") != nil)
+		#expect(tree.all.allSatisfy { $0.label?.lowercased().contains("pause") != true })
+	}
+
 	@Test("H39: a selected canvas tab reads as a selected button with Close Tab")
 	func canvasTabReadsAsASelectedButton() async throws {
 		let tree = try await OffscreenHost.withHost(HStack {
