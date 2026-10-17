@@ -105,40 +105,47 @@ struct SafeRunTests {
 	}
 
 	@Test func absorbShadowHistoryCopiesBackMonotonically() throws {
-		let dir = TestEnvironment.scratch + "safe-absorb-\(UUID().uuidString)"
-		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-		defer { try? FileManager.default.removeItem(atPath: dir) }
-		let realPath = dir + "/real-config"
-		let shadowPath = dir + "/shadow-config"
+		try VMTestDir.withRedirectedDir {
+			let shadowRoot = TestEnvironment.scratch + "safe-absorb-\(UUID().uuidString)"
+			defer { try? FileManager.default.removeItem(atPath: shadowRoot) }
+			let realDir = machmanVMDir + "/alpha"
+			let shadowDir = shadowRoot + "/alpha"
+			for dir in [realDir, shadowDir] {
+				try FileManager.default.createDirectory(
+					atPath: dir, withIntermediateDirectories: true)
+			}
+			let realPath = realDir + "/config"
+			let shadowPath = shadowDir + "/config"
 
-		let real = try makeConfig()
-		real.totalRuntimeSeconds = 40
-		try JSONEncoder().encode(real).write(to: URL(fileURLWithPath: realPath))
-		let shadow = try makeConfig()
-		shadow.lastRan = Date(timeIntervalSinceReferenceDate: 7000)
-		shadow.totalRuntimeSeconds = 100
-		try JSONEncoder().encode(shadow).write(to: URL(fileURLWithPath: shadowPath))
+			let real = try makeConfig()
+			real.totalRuntimeSeconds = 40
+			try JSONEncoder().encode(real).write(to: URL(fileURLWithPath: realPath))
+			let shadow = try makeConfig()
+			shadow.lastRan = Date(timeIntervalSinceReferenceDate: 7000)
+			shadow.totalRuntimeSeconds = 100
+			try JSONEncoder().encode(shadow).write(to: URL(fileURLWithPath: shadowPath))
 
-		SafeRun.absorbShadowHistory(realConfigPath: realPath, shadowConfigPath: shadowPath)
-		var absorbed = try JSONDecoder().decode(
-			VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: realPath)))
-		#expect(absorbed.lastRan == shadow.lastRan)
-		#expect(absorbed.totalRuntimeSeconds == 100)
+			SafeRun.absorbShadowHistory(realDir: realDir, shadowDir: shadowDir)
+			var absorbed = try JSONDecoder().decode(
+				VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: realPath)))
+			#expect(absorbed.lastRan == shadow.lastRan)
+			#expect(absorbed.totalRuntimeSeconds == 100)
 
-		// Monotonic: a shadow that somehow reports LESS never shrinks the real total.
-		shadow.totalRuntimeSeconds = 10
-		try JSONEncoder().encode(shadow).write(to: URL(fileURLWithPath: shadowPath))
-		SafeRun.absorbShadowHistory(realConfigPath: realPath, shadowConfigPath: shadowPath)
-		absorbed = try JSONDecoder().decode(
-			VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: realPath)))
-		#expect(absorbed.totalRuntimeSeconds == 100)
+			// Monotonic: a shadow that somehow reports LESS never shrinks the real total.
+			shadow.totalRuntimeSeconds = 10
+			try JSONEncoder().encode(shadow).write(to: URL(fileURLWithPath: shadowPath))
+			SafeRun.absorbShadowHistory(realDir: realDir, shadowDir: shadowDir)
+			absorbed = try JSONDecoder().decode(
+				VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: realPath)))
+			#expect(absorbed.totalRuntimeSeconds == 100)
 
-		// Unreadable shadow: the real config is untouched.
-		try Data("junk".utf8).write(to: URL(fileURLWithPath: shadowPath))
-		SafeRun.absorbShadowHistory(realConfigPath: realPath, shadowConfigPath: shadowPath)
-		let untouched = try JSONDecoder().decode(
-			VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: realPath)))
-		#expect(untouched.totalRuntimeSeconds == 100)
+			// Unreadable shadow: the real config is untouched.
+			try Data("junk".utf8).write(to: URL(fileURLWithPath: shadowPath))
+			SafeRun.absorbShadowHistory(realDir: realDir, shadowDir: shadowDir)
+			let untouched = try JSONDecoder().decode(
+				VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: realPath)))
+			#expect(untouched.totalRuntimeSeconds == 100)
+		}
 	}
 
 	@Test func sweepVerdictDecisionTable() {

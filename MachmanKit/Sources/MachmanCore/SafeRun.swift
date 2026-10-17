@@ -108,22 +108,20 @@ enum SafeRun {
 
 	// A clean safe-run stop copies the session's history back to the real VM (user
 	// decision): the shadow started FROM the real values and only added, so its lastRan and
-	// total are simply authoritative. Every failure is a silent no-op — a crash loses the
-	// session's history, the same as an unsafe run killed mid-flight.
-	static func absorbShadowHistory(realConfigPath: String, shadowConfigPath: String) {
-		let fm = FileManager.default
-		guard let shadowData = fm.contents(atPath: shadowConfigPath),
-			let realData = fm.contents(atPath: realConfigPath),
-			let shadow = try? JSONDecoder().decode(VMConfig.self, from: shadowData),
-			let real = try? JSONDecoder().decode(VMConfig.self, from: realData)
+	// total are simply authoritative. The shadow is only read; the real config is saved like
+	// any save (Q39). Every failure is a silent no-op — a crash loses the session's history,
+	// the same as an unsafe run killed mid-flight.
+	static func absorbShadowHistory(realDir: String, shadowDir: String) {
+		let shadowFolder = URL(fileURLWithPath: shadowDir)
+		guard let shadow = BootGuard.peekConfig(
+			name: shadowFolder.lastPathComponent,
+			library: shadowFolder.deletingLastPathComponent().path)
 		else { return }
-		if let lastRan = shadow.lastRan {
-			real.lastRan = lastRan
+		try? VMConfig.rewrite(atDir: realDir) { real in
+			if let lastRan = shadow.lastRan {
+				real.lastRan = lastRan
+			}
+			real.totalRuntimeSeconds = max(real.totalRuntimeSeconds, shadow.totalRuntimeSeconds)
 		}
-		real.totalRuntimeSeconds = max(real.totalRuntimeSeconds, shadow.totalRuntimeSeconds)
-		let encoder = JSONEncoder()
-		encoder.outputFormatting = .prettyPrinted
-		guard let encoded = try? encoder.encode(real) else { return }
-		try? encoded.write(to: URL(fileURLWithPath: realConfigPath), options: .atomic)
 	}
 }

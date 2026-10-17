@@ -98,18 +98,13 @@ extension DirectDiskMove {
 		rewriteConfig(in: originalDir) { $0.referenceMovedDisks(stranded, in: savedDir) }
 	}
 
-	// The persistence coder at an explicit folder: neither VM is this registry's to save.
+	// Neither VM is this registry's to save: each is rewritten at its folder (Q39).
 	private static func rewriteConfig(in dir: String, _ change: (VMConfig) -> Void) {
-		let url = URL(fileURLWithPath: dir + "/config")
 		do {
-			let config = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: url))
-			change(config)
-			let encoder = JSONEncoder()
-			encoder.outputFormatting = .prettyPrinted
-			try encoder.encode(config).write(to: url, options: .atomic)
+			try VMConfig.rewrite(atDir: dir, change)
 		} catch {
 			MachmanLogger.log(.passiveError,
-				"Save as New VM rollback: \(url.path) does not list where its disks are now: "
+				"Save as New VM rollback: \(dir)/config does not list where its disks are now: "
 					+ "\(error)")
 		}
 	}

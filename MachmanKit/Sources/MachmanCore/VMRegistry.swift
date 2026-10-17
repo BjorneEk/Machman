@@ -323,8 +323,7 @@ public final class VMRegistry {
 		let originalDir = library + "/" + oldName
 		// Read before anything moves. Unreadable, nothing is handed over: the run's direct
 		// disks stay references into the original's folder, which the cross-VM guards keep.
-		let original = try? JSONDecoder().decode(
-			VMConfig.self, from: Data(contentsOf: URL(fileURLWithPath: originalDir + "/config")))
+		let original = BootGuard.peekConfig(name: oldName, library: library)
 		// One atomic same-volume rename, never a copy (E15). The guest writes these images
 		// through open descriptors, which follow a rename but not a copy: a cross-volume
 		// move copied a torn image while the guest kept writing the unlinked originals, and
@@ -379,14 +378,12 @@ public final class VMRegistry {
 					saving: newName, folder: false)
 				moved.append(move)
 			}
-			if let original, !moves.isEmpty {
-				original.referenceMovedDisks(moves, in: destination)
-				// The persistence coder at the original's own path: nothing hosts it now
-				// (this run IS that VM), so this process is its config's single writer.
-				let encoder = JSONEncoder()
-				encoder.outputFormatting = .prettyPrinted
-				try encoder.encode(original).write(
-					to: URL(fileURLWithPath: originalDir + "/config"), options: .atomic)
+			if original != nil, !moves.isEmpty {
+				// Rewritten at the original's own folder: nothing hosts it now (this run IS
+				// that VM), so this process is its config's single writer (Q39).
+				try VMConfig.rewrite(atDir: originalDir) {
+					$0.referenceMovedDisks(moves, in: destination)
+				}
 			}
 		} catch {
 			var stranded: [DirectDiskMove] = []
@@ -397,7 +394,6 @@ public final class VMRegistry {
 				}
 			}
 			snapshot.restore(vm.config)
-			machmanVMDir = runRoot
 			// A disk that could not go back keeps the saved folder in the library, where its
 			// config lists it: the run root is deleted when the run ends. So does a folder
 			// whose own way back fails. Either way the saved VM stays a VM of its own: both
@@ -416,6 +412,9 @@ public final class VMRegistry {
 							? "because its folder could not go back"
 							: "with the disks that could not go back to \(oldName)"))
 			}
+			// Back to the run root only now: the configs rewritten above resolve their names
+			// against the library they live in.
+			machmanVMDir = runRoot
 			throw error
 		}
 		restrictedName = newName

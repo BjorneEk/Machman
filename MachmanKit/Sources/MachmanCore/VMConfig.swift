@@ -222,10 +222,10 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	// Load a VM from <library>/<name>/config: a plain decode, then two invariants. The
 	// DIRECTORY name is authoritative (renames move the directory; the file's name field is
-	// discarded), and configs predating macAddress get one minted and saved (one-time
+	// discarded), and configs predating macAddress get one minted and saved there (one-time
 	// migration). `library` is machmanVMDir unless the caller holds the folder's path (Save
-	// as New VM's daemon half); the VM's own paths, that save's among them, still resolve
-	// through machmanVMDir, which names the same folder outside tests.
+	// as New VM's daemon half, a rewrite); the VM's other paths still resolve through
+	// machmanVMDir, which names the same folder outside tests.
 	static func load(name: String, library: String = machmanVMDir) throws -> VMConfig {
 		let fileURL = URL(fileURLWithPath: "\(library)/\(name)/config")
 		let data = try Data(contentsOf: fileURL)
@@ -241,9 +241,22 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 			needsSave = true
 		}
 		if needsSave {
-			try config.saveVMConfig()
+			try config.saveVMConfig(atDir: "\(library)/\(name)")
 		}
 		return config
+	}
+
+	// A config this process changes outside the registry — a safe run's history going back,
+	// Save as New VM's hand-over and its rollback (Q39) — keeps every rule a registry VM's
+	// does: it loads through load (the folder names the VM, the migrations run) and saves
+	// through saveVMConfig at <dir>/config (a resolved alias suffix is stored). Names resolve
+	// against machmanVMDir, which every caller points at dir's library.
+	static func rewrite(atDir dir: String, _ change: (VMConfig) throws -> Void) throws {
+		let folder = URL(fileURLWithPath: dir).standardizedFileURL
+		let config = try load(
+			name: folder.lastPathComponent, library: folder.deletingLastPathComponent().path)
+		try change(config)
+		try config.saveVMConfig(atDir: folder.path)
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -366,13 +379,15 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 
 	// .atomic writes to a sibling temp file and renames. Without it a force quit or power loss
 	// mid-write leaves a truncated config, which the registry scan cannot parse — and a VM that
-	// cannot be parsed silently disappears from the app.
-	func saveVMConfig() throws {
+	// cannot be parsed silently disappears from the app. `dir`: the folder to save in, for a
+	// config loaded from an explicit library (load, rewrite); else configPath()'s.
+	func saveVMConfig(atDir dir: String? = nil) throws {
 		persistResolvedDefaultAlias()
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .prettyPrinted
 		let data = try encoder.encode(self)
-		try data.write(to: URL(fileURLWithPath: configPath()), options: .atomic)
+		let path = dir.map { $0 + "/config" } ?? configPath()
+		try data.write(to: URL(fileURLWithPath: path), options: .atomic)
 	}
 
 	func markRan() throws {

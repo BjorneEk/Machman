@@ -334,8 +334,7 @@ extension RoutingMachman {
 			// (single-writer safe — the host is gone), then discard the whole shadow. Before
 			// reload so the daemon's fresh read sees the absorbed values.
 			SafeRun.absorbShadowHistory(
-				realConfigPath: machmanVMDir + "/" + name + "/config",
-				shadowConfigPath: shadowRoot + "/" + name + "/config")
+				realDir: machmanVMDir + "/" + name, shadowDir: shadowRoot + "/" + name)
 			try? FileManager.default.removeItem(atPath: shadowRoot)
 		}
 		registry.reload(name: name)
