@@ -7,7 +7,9 @@
 //  the suite-scoped app-support directory (a dev build and a release build keep separate profiles).
 //  Associations are keyed by a port's stable logical identity (vm|kind|index), never its ephemeral
 //  socket path, so they survive VM stops and restarts; they follow their VM's name like the rest
-//  of the client state (VMKeyedState, T29).
+//  of the client state (VMKeyedState, T29). They outlive a VM's absence from a list and go with
+//  the VM itself: deleted here, or a new VM under its name — told apart by the created date
+//  recorded beside them.
 //
 
 import Foundation
@@ -19,6 +21,9 @@ public final class TerminalProfileStore: ObservableObject {
 	@Published public private(set) var profiles: [TerminalProfile]
 	// assocKey ("vm|kind|index") → profile id. A missing / dangling entry falls back to default.
 	@Published private var associations: [String: UUID]
+	// VM name → the created date of the VM its associations belong to, learned from the first
+	// list that shows it (a file from before has none until then).
+	private var created: [String: Date]
 	// Which profile the settings view is currently editing (drives its picker).
 	@Published public var editingProfileID: UUID?
 	// The profile whose delete waits for confirmation (H9; the settings view asks). UI state,
@@ -48,6 +53,7 @@ public final class TerminalProfileStore: ObservableObject {
 		let state = file.load()
 		self.profiles = state?.profiles ?? []
 		self.associations = state?.associations ?? [:]
+		self.created = state?.created ?? [:]
 		ensureDefault()
 	}
 
@@ -156,15 +162,33 @@ public final class TerminalProfileStore: ObservableObject {
 		return key[..<kindField]
 	}
 
-	// `old`'s associations under `new` too; `move` drops them from `old`.
+	// `old`'s associations under `new` too, in place of any `new` had; `move` drops them from
+	// `old`, and its created date goes along. A copy is a new VM: the next list says its date.
 	private func associate(_ old: String, as new: String, move: Bool) {
-		var changed = false
+		let changed = drop(new)
+		var moved = false
 		for (key, id) in associations where Self.vm(ofKey: key) == old[...] {
 			associations[new + key.dropFirst(old.count)] = id
 			if move { associations[key] = nil }
-			changed = true
+			moved = true
 		}
-		if changed { save() }
+		if move { created[new] = created.removeValue(forKey: old) }
+		if changed || moved { save() }
+	}
+
+	// Forget `vm`'s associations and its date; true when there was something to forget.
+	@discardableResult
+	private func drop(_ vm: String) -> Bool {
+		let kept = associations.filter { key, _ in Self.vm(ofKey: key) != vm[...] }
+		let had = kept.count != associations.count || created[vm] != nil
+		if kept.count != associations.count { associations = kept }
+		created[vm] = nil
+		return had
+	}
+
+	// The same VM, as far as a created date says (a millisecond for the encoders' rounding).
+	private static func sameVM(_ a: Date, _ b: Date) -> Bool {
+		abs(a.timeIntervalSince(b)) < 0.001
 	}
 
 	private func uniqueName(basedOn base: String) -> String {
@@ -174,23 +198,28 @@ public final class TerminalProfileStore: ObservableObject {
 
 	private func save() {
 		// Snapshot on the main actor (cheap value copy); the file encodes + writes off it.
-		file.save(PersistedState(profiles: profiles, associations: associations))
+		file.save(PersistedState(
+			profiles: profiles, associations: associations, created: created))
 	}
 
 	private struct PersistedState: Codable, Sendable {
 		var profiles: [TerminalProfile]
 		var associations: [String: UUID]
+		// Each VM's created date (T29); an older file has none, and reads with none.
+		var created: [String: Date]
 
-		init(profiles: [TerminalProfile], associations: [String: UUID]) {
+		init(profiles: [TerminalProfile], associations: [String: UUID], created: [String: Date]) {
 			self.profiles = profiles
 			self.associations = associations
+			self.created = created
 		}
 
-		// One bad profile or association costs only itself.
+		// One bad profile, association or date costs only itself.
 		init(from decoder: Decoder) throws {
 			let c = try decoder.container(keyedBy: CodingKeys.self)
 			profiles = c.decodeTolerantArray(of: TerminalProfile.self, forKey: .profiles)
 			associations = c.decodeTolerantDictionary(of: UUID.self, forKey: .associations)
+			created = c.decodeTolerantDictionary(of: Date.self, forKey: .created)
 		}
 	}
 }
@@ -206,14 +235,31 @@ extension TerminalProfileStore: VMKeyedState {
 		associate(old, as: new, move: false)
 	}
 
-	// A deleted VM's ports forget theirs: a new VM under its name starts on the default.
-	public func forgetVMs(except kept: Set<String>) {
-		let next = associations.filter { key, _ in
-			Self.vm(ofKey: key).map { kept.contains(String($0)) } ?? false
+	// Not on absence: a VM missing from one list (an external library asleep, a config that
+	// briefly failed to load) finds its port profiles again when it is back (T29).
+	public func forgetVMs(except kept: Set<String>) {}
+
+	// Deleted here: its ports forget theirs.
+	public func vmDeleted(_ vm: String) {
+		if drop(vm) { save() }
+	}
+
+	// A VM of a name with associations: the one they belong to, whose created date is
+	// recorded the first time a list shows it — or a new VM under that name, which starts on
+	// the default (T29).
+	public func listed(_ vms: [VMInfo]) {
+		let owners = Set(associations.keys.compactMap { Self.vm(ofKey: $0).map(String.init) })
+		var changed = false
+		for vm in vms where owners.contains(vm.name) {
+			if let recorded = created[vm.name] {
+				guard !Self.sameVM(recorded, vm.created) else { continue }
+				drop(vm.name)
+			} else {
+				created[vm.name] = vm.created
+			}
+			changed = true
 		}
-		guard next.count != associations.count else { return }
-		associations = next
-		save()
+		if changed { save() }
 	}
 }
 

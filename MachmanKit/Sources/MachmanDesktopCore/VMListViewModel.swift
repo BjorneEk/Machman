@@ -276,6 +276,7 @@ public final class VMListViewModel: ObservableObject {
 		let kept = names.union(pendingMigrations.values)
 		for state in keyedState {
 			state.forgetVMs(except: kept)
+			state.listed(list)
 		}
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone

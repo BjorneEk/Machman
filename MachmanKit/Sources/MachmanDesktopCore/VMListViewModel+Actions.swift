@@ -146,6 +146,9 @@ extension VMListViewModel {
 			if model.selectedName == vm.name {
 				model.select(name: nil)
 			}
+			for state in model.keyedState {
+				state.vmDeleted(vm.name)
+			}
 		}
 	}
 

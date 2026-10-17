@@ -3,6 +3,7 @@ import Foundation
 import MachmanTestSupport
 import MachmanAPI
 import MachmanUI
+import MachmanFixtures
 
 @MainActor
 struct TerminalProfileStoreTests {
@@ -194,4 +195,35 @@ struct TerminalProfileStoreTests {
 		store.flush()
 		#expect(TerminalProfileStore(fileURL: url).profile(id: profile.id)?.fontSize == 50)
 	}
+
+	// T29: associations carry their VM's created date, an additive key. A file from before
+	// has none: it reads as it was, the first list records the date, and a later VM under the
+	// name with another date starts on the default.
+	@Test("T29: a profiles file without created dates reads, and learns them from a list")
+	func aFileWithoutCreatedDatesReadsAndLearns() throws {
+		let url = tempURL()
+		let key = console.assocKey(vm: "vm1")
+		try write("""
+			{"profiles": [{"id": "\(Self.customID)", "name": "Big"}],
+			 "associations": {"\(key)": "\(Self.customID)"}}
+			""", to: url)
+		let store = TerminalProfileStore(fileURL: url)
+		#expect(store.associatedID(vm: "vm1", ref: console) == Self.customID)
+		let vm1 = StubMachman.makeInfo("vm1")
+		store.listed([vm1])
+		store.flush()
+		let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+		let created = (saved as? [String: Any])?["created"] as? [String: Any]
+		#expect(created?["vm1"] != nil, "\(saved)")
+
+		// Read back with its date: the same VM keeps the profile, a new one under the name not.
+		let reread = TerminalProfileStore(fileURL: url)
+		reread.listed([vm1])
+		#expect(reread.associatedID(vm: "vm1", ref: console) == Self.customID)
+		var reborn = vm1
+		reborn.created = vm1.created.addingTimeInterval(60)
+		reread.listed([reborn])
+		#expect(reread.associatedID(vm: "vm1", ref: console) == reread.defaultProfile.id)
+	}
 }
+
