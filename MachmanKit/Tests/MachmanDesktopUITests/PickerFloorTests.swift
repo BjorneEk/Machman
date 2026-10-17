@@ -46,6 +46,7 @@ struct PickerFloorTests {
 			Samples.linux("Debian", state: .running), Samples.kernelBoot(),
 			Samples.linuxDisplay("Wide", width: 2560, height: 1600),
 			Samples.linuxDisplay("Odd", width: 1700, height: 1000),
+			Samples.linuxDisplay("Host", width: 3024, height: 1964),
 		])
 		_ = await eventually { h.viewModel.capabilities != nil }
 		let floor = MainWindowLayout.inspector.min
@@ -55,7 +56,7 @@ struct PickerFloorTests {
 		for (vm, node) in [
 			("Debian", Self.console), ("Kernel Lab", .serial(SerialPortRef(kind: .uart, index: 0))),
 			("Debian", .device(.graphics)), ("Wide", .device(.graphics)),
-			("Odd", .device(.graphics)),
+			("Odd", .device(.graphics)), ("Host", .device(.graphics)),
 			("Debian", nil), ("Kernel Lab", nil), ("Debian", .mount(Samples.srcMountID)),
 		] as [(String, SidebarNode?)] {
 			let narrow = Self.pickers(try await inspector(h, vm, node, width: floor))

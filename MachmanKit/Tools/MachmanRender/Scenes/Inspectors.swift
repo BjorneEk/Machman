@@ -405,5 +405,9 @@ enum InspectorScenes {
 		inspector(
 			"vm.kernel-boot", "VMInspector, a kernel-boot VM (Bootloader Kernel Boot)",
 			select: "Kernel Lab", node: nil),
+		inspector(
+			"device.graphics.host", "GraphicsInspector, the host display's size",
+			vms: { [Samples.linuxDisplay(width: 3024, height: 1964)] },
+			node: .device(.graphics)),
 	]
 }

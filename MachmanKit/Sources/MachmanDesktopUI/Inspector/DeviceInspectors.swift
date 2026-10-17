@@ -268,7 +268,8 @@ struct GraphicsInspector: View {
 	private func presetLabel(_ w: Int, _ h: Int) -> String {
 		let host = viewModel.capabilities?.hostDisplayWidthPixels == w
 			&& viewModel.capabilities?.hostDisplayHeightPixels == h
-		return host ? "Host Display (\(w) × \(h))" : "\(w) × \(h)"
+		// The size first, so even the host's fits under its label at the floor (L7).
+		return host ? "\(w) × \(h) (Host)" : "\(w) × \(h)"
 	}
 
 	private var resolutionBinding: Binding<Resolution> {
