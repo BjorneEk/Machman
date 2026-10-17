@@ -8,8 +8,8 @@
 //  nothing but that sentence. Each record holds the error, every writable disk's state (size,
 //  lock, who has it open), the other VMs attaching it and how they stand, the Virtualization
 //  services alive, the locks again a moment later, and Virtualization's own log of the last
-//  minute: report/start-failures/<n>-<vm>.txt in the run (copied with the report; lab.sh lists
-//  them), summed up as a warning on the running test. The start's error is still thrown.
+//  minute: report/start-failures/<pid>-<n>-<vm>.txt in the run (copied with the report; lab.sh
+//  lists them), summed up as a warning on the running test. The start's error is still thrown.
 //
 
 import Darwin
@@ -104,7 +104,10 @@ enum TFStartFailure {
 		lines += ["", "\(settle) later:"] + files.map { "  \($0): \(lock(of: $0))" }
 		let log = await vzLog()
 		lines += ["", "Virtualization's log, its last minute:"] + log.map { "  " + $0 }
-		let path = reportDir + "/start-failures/\(Counter.next())-\(safeName(vm)).txt"
+		// The test process's pid first: each suite of a shard runs in a process of its own, and
+		// a later one's VM of the same name must not overwrite this record.
+		let path = reportDir
+			+ "/start-failures/\(getpid())-\(Counter.next())-\(safeName(vm)).txt"
 		do {
 			try FileManager.default.createDirectory(
 				atPath: reportDir + "/start-failures", withIntermediateDirectories: true)
@@ -232,7 +235,7 @@ enum TFStartFailure {
 		String(name.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
 	}
 
-	/// Run-wide record numbers.
+	/// This test process's record numbers.
 	private enum Counter {
 		private static let lock = NSLock()
 		nonisolated(unsafe) private static var value = 0

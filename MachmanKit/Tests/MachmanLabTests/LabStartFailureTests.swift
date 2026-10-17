@@ -115,4 +115,23 @@ struct LabStartFailureTests {
 		#expect(notes.first?.contains("The storage device attachment is invalid.") == true)
 		#expect(notes.first?.contains("write-locked") == true, "\(notes)")
 	}
+
+	@Test("Q28: a record's name carries its test process, so a later one of a VM so named stays")
+	func recordNamesCarryTheProcess() async throws {
+		let (dir, path) = try Self.image("x.img")
+		let info = await Self.vm("x", disks: [
+			DiskInfo(id: "1", type: .image, name: nil, path: path, sizeBytes: 4096),
+		])
+		var kept: [String] = []
+		for _ in 0..<2 {
+			kept.append(try #require(await TFStartFailure.keep(
+				vm: "x", error: Self.vzRefusal, info: info, others: [], reportDir: dir,
+				settle: .zero, vzLog: { [] }, note: { _ in })))
+		}
+		#expect(Set(kept).count == 2)
+		#expect(kept.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+		#expect(kept.allSatisfy {
+			($0 as NSString).lastPathComponent.hasPrefix("\(getpid())-")
+		}, "\(kept)")
+	}
 }
