@@ -73,6 +73,9 @@ public enum RPCMethod: String, Sendable {
 	case processEnd = "vm.process.end"
 	// Removes the kernel draft kept while kernel boot is off, with the VM's kernel files (H54).
 	case kernelClear = "vm.kernel.clear"
+	// The Guest Setup script store (S67): pin a VM to a stored script; import one into it.
+	case setupPin = "vm.setup.pin"
+	case setupScriptsImport = "host.setupScripts.import"
 	// Server -> client notification carrying a VMEvent as params.
 	case event = "event"
 }
@@ -370,6 +373,30 @@ public enum RPCParams {
 		public init(name: String, serve: Bool) {
 			self.name = name
 			self.serve = serve
+		}
+	}
+
+	// vm.setup.pin: the stored Guest Setup script (an id from GuestSetupInfo.scripts) the VM
+	// serves from its next served start — at once while it runs and serves.
+	public struct SetupPin: Codable, Equatable, Sendable {
+		public var name: String
+		public var id: String
+
+		public init(name: String, id: String) {
+			self.name = name
+			self.id = id
+		}
+	}
+
+	// host.setupScripts.import: a script file on this Mac copied into the store as a custom
+	// one, named after its file and dated with the VM it was imported for.
+	public struct SetupScriptImport: Codable, Equatable, Sendable {
+		public var path: String
+		public var vm: String?
+
+		public init(path: String, vm: String?) {
+			self.path = path
+			self.vm = vm
 		}
 	}
 

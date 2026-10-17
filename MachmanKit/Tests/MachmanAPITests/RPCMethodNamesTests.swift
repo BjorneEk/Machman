@@ -68,6 +68,8 @@ struct RPCMethodNamesTests {
 		"mountSetKind": "vm.mount.setKind",
 		"setupReset": "vm.setup.reset",
 		"setupServe": "vm.setup.serve",
+		"setupPin": "vm.setup.pin",
+		"setupScriptsImport": "host.setupScripts.import",
 		"hostOperations": "host.operations",
 		"operationCancel": "op.cancel",
 		"installRosetta": "host.installRosetta",

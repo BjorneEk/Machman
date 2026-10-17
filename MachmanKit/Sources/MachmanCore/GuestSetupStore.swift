@@ -148,11 +148,14 @@ struct GuestSetupStore {
 	// Every entry as GuestSetupInfo.scripts lists it, the latest marked.
 	func wireInfos() -> [GuestSetupScriptInfo] {
 		let latest = latest.id
-		return entries().map { entry in
-			GuestSetupScriptInfo(
-				id: entry.id, kind: entry.kind, version: entry.version, label: entry.label,
-				vm: entry.vm, addedAt: entry.addedAt, latest: entry.id == latest ? true : nil)
-		}
+		return entries().map { wireInfo($0, latest: latest) }
+	}
+
+	func wireInfo(_ entry: Entry, latest: String? = nil) -> GuestSetupScriptInfo {
+		GuestSetupScriptInfo(
+			id: entry.id, kind: entry.kind, version: entry.version, label: entry.label,
+			vm: entry.vm, addedAt: entry.addedAt,
+			latest: entry.id == (latest ?? self.latest.id) ? true : nil)
 	}
 
 	// The entry a report's script cksum names — the served one when several share it.
@@ -217,6 +220,40 @@ struct GuestSetupStore {
 	}
 
 	// MARK: - Writing
+
+	// host.setupScripts.import: a script file kept as a custom one, labeled with its name and
+	// dated with the VM it is for.
+	func importScript(atPath path: String, vm: String?) throws -> Entry {
+		try add(
+			Self.readImport(atPath: path), kind: Kind.custom, vm: vm,
+			label: (path as NSString).lastPathComponent)
+	}
+
+	// A script file the user picked: a regular file of UTF-8 text within the size cap,
+	// refused in words that name it.
+	static func readImport(atPath path: String) throws -> Data {
+		let name = (path as NSString).lastPathComponent
+		var info = stat()
+		guard stat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+			throw MachmanError(code: .invalidArgument, message: "“\(name)” isn’t a file")
+		}
+		guard info.st_size <= maxScriptBytes else {
+			throw MachmanError(code: .invalidArgument, message: "“\(name)” is larger than 1 MB")
+		}
+		let data: Data
+		do {
+			data = try Data(contentsOf: URL(fileURLWithPath: path))
+		} catch {
+			throw MachmanError(
+				code: .ioFailure,
+				message: "Couldn’t read “\(name)”: \(MachmanError.userMessage(for: error))")
+		}
+		guard !data.isEmpty, data.count <= maxScriptBytes, !data.contains(0),
+			String(data: data, encoding: .utf8) != nil else {
+			throw MachmanError(code: .invalidArgument, message: "“\(name)” isn’t a text file")
+		}
+		return data
+	}
 
 	// Keeps a script, once per content: a script already stored (or this build's) answers
 	// with its entry as it stands, its first date and VM kept.

@@ -122,6 +122,7 @@ struct RoutingPendingStartTests {
 			("resetSSH", { _ = try await routing.resetSSH(vm: vm) }),
 			("resetSetup", { _ = try await routing.resetSetup(vm: vm) }),
 			("setSetupServed", { _ = try await routing.setSetupServed(vm: vm, serve: true) }),
+			("setSetupScript", { _ = try await routing.setSetupScript(vm: vm, id: "v8-x") }),
 			("setMountTag", { _ = try await routing.setMountTag(vm: vm, mountID: "m", tag: "t") }),
 			("setMountKind", { _ = try await routing.setMountKind(
 				vm: vm, mountID: "m", kind: MountKind.sshfs) }),

@@ -269,4 +269,18 @@ extension RoutingMachman {
 			try await $0.setSetupServed(vm: name, serve: serve)
 		}
 	}
+
+	public func setSetupScript(vm name: String, id: String) async throws -> VMInfo {
+		// Like the serve switch: the vmhost owns a running VM's config and rewrites what its
+		// share serves.
+		try await editSettings(name) {
+			try await $0.setSetupScript(vm: name, id: id)
+		}
+	}
+
+	public func importSetupScript(path: String, vm: String?) async throws
+		-> GuestSetupScriptInfo {
+		// The store is the host's, beside the library — no VM's settings change.
+		try await local.importSetupScript(path: path, vm: vm)
+	}
 }

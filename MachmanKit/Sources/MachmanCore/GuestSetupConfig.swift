@@ -106,6 +106,29 @@ extension VMConfig {
 }
 
 extension VMConfig {
+	// vm.setup.pin's config half (S67): the VM serves the stored script `id` from its next
+	// served start. Refused without Guest Setup, and for an id the store can't serve.
+	func pinSetupScript(_ id: String, store: GuestSetupStore = .current) throws {
+		guard devices.contains(where: { $0.deviceKind == .guestSetup }) else {
+			throw MachmanError(
+				code: .invalidState, message: "Guest Setup isn’t attached to \(name)")
+		}
+		guard store.entry(id: id) != nil, store.script(id: id) != nil else {
+			throw MachmanError(
+				code: .notFound, message: "That Guest Setup script isn’t in Machman’s store")
+		}
+		if id == store.builtIn.entry.id {
+			store.ensureBuiltIn()
+		}
+		guard setup?.script != id else { return }
+		var state = setup ?? GuestSetupConfig()
+		state.script = id
+		setup = state
+		try saveVMConfig()
+	}
+}
+
+extension VMConfig {
 	// vm.setup.reset — forget the report state; the guest keeps what the script installed.
 	// The drop-box is wiped too, so a stale report cannot re-teach what was just forgotten;
 	// it regenerates empty at the next assembly while the device stays attached.

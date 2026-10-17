@@ -125,6 +125,15 @@ public protocol MachmanControlling: AnyObject {
 	// start registers the share empty. Fresh (never-installed) guests always serve.
 	func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo
 
+	// The Guest Setup script store (S67, additive). Pin a VM to a stored script: it serves
+	// those bytes from its next served start (at once while it runs and serves), whatever
+	// build of Machman writes the payload. Refused without Guest Setup and for an id the store
+	// lacks; an older daemon answers -32601.
+	func setSetupScript(vm name: String, id: String) async throws -> VMInfo
+	// Copy a script file on this Mac into the store as a custom script, named after its file
+	// and dated with the VM it is for; the same bytes again answer with their first entry.
+	func importSetupScript(path: String, vm: String?) async throws -> GuestSetupScriptInfo
+
 	// MARK: Operations (1.0.4)
 	// Live long-running operations, for progress-card resync after reconnect (events have no
 	// replay). Terminal states linger briefly; op.cancel cancels a running one.

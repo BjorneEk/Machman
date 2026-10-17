@@ -340,6 +340,18 @@ public final class RemoteMachman: MachmanControlling {
 			.setupReset, RPCParams.Name(name: name), expecting: VMInfo.self)
 	}
 
+	public func setSetupScript(vm name: String, id: String) async throws -> VMInfo {
+		try await connection.call(
+			.setupPin, RPCParams.SetupPin(name: name, id: id), expecting: VMInfo.self)
+	}
+
+	public func importSetupScript(path: String, vm: String?) async throws
+		-> GuestSetupScriptInfo {
+		try await connection.call(
+			.setupScriptsImport, RPCParams.SetupScriptImport(path: path, vm: vm),
+			expecting: GuestSetupScriptInfo.self)
+	}
+
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
 		-> VMInfo {
 		try await connection.call(

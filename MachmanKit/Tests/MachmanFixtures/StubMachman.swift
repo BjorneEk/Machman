@@ -314,6 +314,41 @@ public final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		return vm
 	}
+	// Like the engine (S67): a pin is the VM's servedScript, refused without Guest Setup or
+	// for an id its store lacks; an import joins every listed store — the host has one.
+	public private(set) var setupScriptImports: [(path: String, vm: String?)] = []
+	public func setSetupScript(vm name: String, id: String) async throws -> VMInfo {
+		try gate()
+		var vm = try get(name)
+		guard vm.devices?.contains(where: { $0.kind == .guestSetup }) == true else {
+			throw MachmanError(
+				code: .invalidState, message: "Guest Setup isn’t attached to \(name)")
+		}
+		guard vm.setup?.scripts?.contains(where: { $0.id == id }) == true else {
+			throw MachmanError(
+				code: .notFound, message: "That Guest Setup script isn’t in Machman’s store")
+		}
+		vm.setup?.servedScript = id
+		vms[name] = vm
+		emit(.setupChanged(vm: name))
+		emit(.listChanged)
+		return vm
+	}
+	public func importSetupScript(path: String, vm: String?) async throws
+		-> GuestSetupScriptInfo {
+		try gate()
+		setupScriptImports.append((path, vm))
+		let digest = String(UInt(bitPattern: path.hashValue), radix: 16)
+		let entry = GuestSetupScriptInfo(
+			id: "custom-" + digest.prefix(12), kind: GuestSetupScriptKind.custom,
+			label: (path as NSString).lastPathComponent, vm: vm, addedAt: Date())
+		for (name, info) in vms
+		where info.setup?.scripts?.contains(where: { $0.id == entry.id }) == false {
+			vms[name]?.setup?.scripts?.append(entry)
+		}
+		emit(.listChanged)
+		return entry
+	}
 	// Like the engine (VMConfig.renameKernelFile, Q29): the file moves to <role>/<tag>/ and the
 	// kernel fields that named it follow.
 	public func renameKernelFile(

@@ -104,8 +104,9 @@ struct RoutingVersionFloorTests {
 			("resetSSH", { _ = try await routing.resetSSH(vm: vm) }),
 			("resetSetup", { _ = try await routing.resetSetup(vm: vm) }),
 			("setSetupServed", { _ = try await routing.setSetupServed(vm: vm, serve: true) }),
+			("setSetupScript", { _ = try await routing.setSetupScript(vm: vm, id: "v8-x") }),
 		]
-		#expect(ops.count == 23)
+		#expect(ops.count == 24)
 		for (label, op) in ops {
 			do {
 				try await op()

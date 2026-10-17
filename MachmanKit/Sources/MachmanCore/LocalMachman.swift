@@ -317,31 +317,6 @@ public final class LocalMachman: MachmanControlling {
 		return info(for: vm)
 	}
 
-	public func resetSetup(vm name: String) async throws -> VMInfo {
-		let vm = try lookup(name)
-		try vm.config.resetSetup()
-		registry.events.emit(.setupChanged(vm: name))
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
-		let vm = try lookup(name)
-		// The persisted choice (only meaningful once installed — fresh guests always
-		// serve). ON fills the pre-registered share dirs live; OFF is deferred by
-		// design: content, if any, leaves with the run (teardown's removePayload) —
-		// never yanked from under a running guest.
-		if vm.config.setup != nil, vm.config.setup?.reinstallRequested != serve {
-			vm.config.setup?.reinstallRequested = serve
-			try vm.config.saveVMConfig()
-		}
-		if serve, vm.runtime != nil {
-			_ = try GuestSetupInstaller.writePayload(for: vm.config)
-		}
-		registry.events.emit(.setupChanged(vm: name))
-		return info(for: vm)
-	}
-
 	// MARK: - Operations (1.0.4)
 
 	public func operations() async throws -> [OperationInfo] {

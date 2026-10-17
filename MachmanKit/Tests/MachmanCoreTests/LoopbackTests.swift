@@ -60,6 +60,38 @@ struct LoopbackTests {
 		#expect(cleared.setup == nil)
 	}
 
+	@Test("S67: vm.setup.pin and host.setupScripts.import ride the wire both ways")
+	@MainActor func setupScriptsRoundTrip() async throws {
+		let socketPath = TestEnvironment.socketPath("mm")
+		let stub = StubMachman()
+		var info = StubMachman.makeInfo("Debian")
+		info.devices = [DeviceInfo(kind: .guestSetup)]
+		info.setup = GuestSetupInfo(
+			scripts: [GuestSetupScriptInfo(
+				id: "v8-0123456789ab", kind: GuestSetupScriptKind.build, version: 8,
+				latest: true)],
+			servedScript: "v8-0123456789ab")
+		stub.vms["Debian"] = info
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try startServing(server)
+		defer { server.stop() }
+		let client = try await RemoteMachman(socketPath: socketPath, clientName: "scripts-loop")
+
+		let entry = try await client.importSetupScript(
+			path: "/Users/x/Scripts/patched.sh", vm: "Debian")
+		#expect(stub.setupScriptImports.map(\.path) == ["/Users/x/Scripts/patched.sh"])
+		#expect(stub.setupScriptImports.map(\.vm) == ["Debian"])
+		#expect(entry.kind == GuestSetupScriptKind.custom && entry.label == "patched.sh")
+		#expect(entry.vm == "Debian" && entry.addedAt != nil)
+		let pinned = try await client.setSetupScript(vm: "Debian", id: entry.id)
+		#expect(pinned.setup?.servedScript == entry.id)
+		#expect(pinned.setup?.scripts?.map(\.id) == ["v8-0123456789ab", entry.id])
+		// A refusal keeps its code across the wire.
+		await #expect(throws: MachmanError.self) {
+			_ = try await client.setSetupScript(vm: "Debian", id: "custom-000000000000")
+		}
+	}
+
 	@Test @MainActor func wireRoundTrip() async throws {
 		let socketPath = TestEnvironment.socketPath("mm")
 		let stub = StubMachman()

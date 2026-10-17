@@ -328,4 +328,53 @@ struct StubParityTests {
 		#expect(activeTag(after.boot) == engine?.active)
 		#expect(engine?.active == "v2")
 	}
+
+	// S67: what a VM serves after an import and a pin, on both: the imported script, listed
+	// beside the build's as a custom one named after its file and dated with the VM.
+	struct ServedScripts: Equatable {
+		let servesTheImport: Bool
+		let kinds: [String]
+		let label: String?
+		let vm: String?
+		init(_ setup: GuestSetupInfo?, imported: GuestSetupScriptInfo) {
+			servesTheImport = setup?.servedScript == imported.id
+			kinds = (setup?.scripts ?? []).map(\.kind).sorted()
+			let listed = setup?.scripts?.first { $0.id == imported.id }
+			label = listed?.label
+			vm = listed?.vm
+		}
+	}
+
+	@Test("S67: the stub's import and pin serve what the engine serves")
+	func importAndPin() async throws {
+		let file = TestEnvironment.scratchURL.appendingPathComponent(
+			"parity-\(UUID().uuidString).sh")
+		try Data("#!/bin/sh\nSCRIPT_VERSION=8\necho patched\n".utf8).write(to: file)
+		let engine: ServedScripts = try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			try vm.config.addDevice(GuestDevice(kind: .guestSetup))
+			let api = LocalMachman(registry: registry)
+			let entry = try GuestSetupStore.current.importScript(
+				atPath: file.path, vm: vm.config.name)
+			try vm.config.pinSetupScript(entry.id)
+			return ServedScripts(
+				api.info(for: vm).setup, imported: GuestSetupStore.current.wireInfo(entry))
+		}
+		var info = StubMachman.makeInfo("Parity")
+		info.devices = [DeviceInfo(kind: .guestSetup)]
+		info.setup = GuestSetupInfo(
+			scripts: [GuestSetupScriptInfo(
+				id: "v8-0123456789ab", kind: GuestSetupScriptKind.build, version: 8,
+				latest: true)],
+			servedScript: "v8-0123456789ab")
+		let stub = StubMachman.serving([info])
+		let imported = try await stub.importSetupScript(path: file.path, vm: "Parity")
+		_ = try await stub.setSetupScript(vm: "Parity", id: imported.id)
+		let served = ServedScripts(try await stub.vm(named: "Parity").setup, imported: imported)
+		#expect(served.servesTheImport && engine.servesTheImport)
+		#expect(served.kinds == engine.kinds)
+		#expect(served.label == engine.label)
+		#expect(engine.vm?.hasPrefix("new-VM") == true && served.vm == "Parity")
+	}
 }
