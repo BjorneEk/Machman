@@ -238,6 +238,7 @@ write_report() {
 # strip_block the whole file, so they would clobber each other.
 
 REPORT_COPY=""             # the boot-time copy, once report_copy_install wrote it
+RC_LOCAL=/etc/rc.local     # the shared boot file the rc.local hooks keep their blocks in
 
 # --at-boot: the hooks start it early (in the background, so boot never waits on it).
 # It waits until the share's drop-box is writable and the guest has a default route —
@@ -426,16 +427,18 @@ report_hook_rc_local() {
 }
 
 # rc_local_put <marker> <body> — that marker's block in /etc/rc.local, ahead of its final
-# exit. A missing rc.local is created "#!/bin/sh", 0755; an existing one keeps its mode.
+# exit. A missing rc.local is created "#!/bin/sh", 0755 (the ledger says a run made it); an
+# existing one keeps its mode.
 rc_local_put() {
-	if [ ! -e /etc/rc.local ] && [ ! -L /etc/rc.local ]; then
+	if [ ! -e "$RC_LOCAL" ] && [ ! -L "$RC_LOCAL" ]; then
 		# A here-doc, not a pipe: write_file must run in this shell to hand back R_ERROR.
 		_rlp_shebang='#!/bin/sh'
-		write_file -m 755 /etc/rc.local <<EOF || return 1
+		write_file -m 755 "$RC_LOCAL" <<EOF || return 1
 $_rlp_shebang
 EOF
+		ledger_note rc-local created
 	fi
-	put_block /etc/rc.local "$1" "$2"
+	put_block "$RC_LOCAL" "$1" "$2"
 }
 
 # Will the init run /etc/rc.local? Linux inits run it only while it is executable: the
@@ -447,13 +450,31 @@ EOF
 rc_local_ready() {
 	linux_guest || return 0
 	# Missing (created executable) or a link (refused by name when written): not this.
-	[ -e /etc/rc.local ] && [ ! -L /etc/rc.local ] || return 0
-	[ -x /etc/rc.local ] && return 0
+	[ -e "$RC_LOCAL" ] && [ ! -L "$RC_LOCAL" ] || return 0
+	[ -x "$RC_LOCAL" ] && return 0
 	# Any VM's block counts: a cloned disk carries its source VM's marker.
-	grep -q '^# BEGIN machman-' /etc/rc.local 2>/dev/null || return 1
-	chmod +x /etc/rc.local || return 1
+	grep -q '^# BEGIN machman-' "$RC_LOCAL" 2>/dev/null || return 1
+	chmod +x "$RC_LOCAL" || return 1
+	ledger_note rc-local exec
 	report_note "$1" \
 		"/etc/rc.local was not executable — re-enabled (Machman's boot hook lives there)"
+	return 0
+}
+
+# The uninstall's last word on /etc/rc.local, once every Machman block is out of it: a file
+# a run created goes while it holds nothing but its first line, and an exec bit a run turned
+# on goes off; what the guest keeps there stays, named.
+rc_local_revert() {
+	[ -f "$RC_LOCAL" ] && [ ! -L "$RC_LOCAL" ] || return 0
+	if ledger_has rc-local created; then
+		if [ "$(grep -v '^[[:space:]]*$' "$RC_LOCAL")" = '#!/bin/sh' ]; then
+			rm -f "$RC_LOCAL" && ok "removed /etc/rc.local (setup created it)"
+		else
+			note "/etc/rc.local stays — setup created it, and it holds other lines now."
+		fi
+	elif ledger_has rc-local exec && [ -x "$RC_LOCAL" ]; then
+		chmod -x "$RC_LOCAL" && note "/etc/rc.local is not executable again, as before setup."
+	fi
 	return 0
 }
 
@@ -465,7 +486,7 @@ report_hook_uninstall() {
 	# The boot-time copy beside the state (remove_state then takes the emptied dir).
 	rm -f "$STATE_DIR/report.sh" "$STATE_DIR/machman.env" "$STATE_DIR/host_key.pub" \
 		"$STATE_DIR/mounts.list" 2>/dev/null || true
-	strip_block /etc/rc.local "$MARKER-report" || uninstall_kept
+	strip_block "$RC_LOCAL" "$MARKER-report" || uninstall_kept
 	# A systemctl without systemd as PID 1 (sysvinit with systemd installed) fails: nothing
 	# to reload then, and no reason to abort the uninstall.
 	if have systemctl; then

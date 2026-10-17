@@ -342,6 +342,6 @@ sshfsauto_report() {
 
 sshfsauto_uninstall() {
 	rm -f "$SSHFS_BOOT_SCRIPT" 2>/dev/null || true
-	strip_block /etc/rc.local || uninstall_kept
+	strip_block "$RC_LOCAL" || uninstall_kept
 	return 0
 }

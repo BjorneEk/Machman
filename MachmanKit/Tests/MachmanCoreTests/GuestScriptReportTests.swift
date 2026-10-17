@@ -242,4 +242,63 @@ struct GuestScriptReportTests {
 				""", "\(shell): \(r.out)")
 		}
 	}
+
+	// S64: an /etc/rc.local setup created (a bare "#!/bin/sh", 0755) or made executable
+	// outlived the uninstall, undisclosed. The ledger records both; once its blocks are out,
+	// a created file holding only that first line goes, one the guest has added to stays and
+	// is named, an exec bit a run turned on goes off — and one it found on stays on.
+	@Test("S64: the uninstall removes an rc.local setup created and turns off an exec bit it turned on")
+	func uninstallRevertsTheRcLocalARunMade() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=1000
+				OS=Linux
+				RC_LOCAL="$D/rc.local"
+				mode() { ls -l "$RC_LOCAL" | cut -c1-10; }
+				rc_local_put "$MARKER-report" "echo hook"
+				mode
+				strip_block "$RC_LOCAL" "$MARKER-report"
+				rc_local_revert
+				[ -e "$RC_LOCAL" ] || echo "created: removed"
+				echo ---
+				LEDGER_DONE=""
+				rc_local_put "$MARKER" "mount"
+				echo "echo mine" >> "$RC_LOCAL"
+				strip_block "$RC_LOCAL"
+				rc_local_revert
+				cat "$RC_LOCAL"
+				echo ---
+				LEDGER_DONE=""
+				printf '#!/bin/sh\n# BEGIN machman-0ddc105e9999\nold\n# END machman-0ddc105e9999\n' \
+					> "$RC_LOCAL"
+				chmod 644 "$RC_LOCAL"
+				rc_local_ready report-refresh >/dev/null 2>&1
+				mode
+				rc_local_revert
+				mode
+				echo ---
+				LEDGER_DONE=""
+				chmod 755 "$RC_LOCAL"
+				rc_local_revert
+				mode
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				-rwxr-xr-x
+				[ok] removed /etc/rc.local (setup created it)
+				created: removed
+				---
+				   /etc/rc.local stays - setup created it, and it holds other lines now.
+				#!/bin/sh
+				echo mine
+				---
+				-rwxr-xr-x
+				   /etc/rc.local is not executable again, as before setup.
+				-rw-r--r--
+				---
+				-rwxr-xr-x
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }

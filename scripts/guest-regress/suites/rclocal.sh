@@ -5,7 +5,7 @@
 # ran rc.local (the report is back) and the blocks still sit above its "exit 0".
 # CHECKS: RCLOCAL_INIT RCLOCAL_HOOK RCLOCAL_IDEMPOTENT RCLOCAL_PRISTINE
 # CHECKS: RCLOCAL_EXEC RCLOCAL_BEFORE_EXIT RCLOCAL_RUNS RCLOCAL_REENABLED RCLOCAL_DISABLED_KEPT
-# CHECKS: BOOT_REPORT_KEEPS_ERRORS
+# CHECKS: BOOT_REPORT_KEEPS_ERRORS RCLOCAL_EXEC_REVERTED RCLOCAL_CREATED_REMOVED
 # BOOT-CHECKS: RCLOCAL_RAN_AT_BOOT RCLOCAL_ORDER_KEPT
 . /mnt/machman/share/regress/lib.sh
 
@@ -140,6 +140,9 @@ else
 	R RCLOCAL_REENABLED fail; ls -l /etc/rc.local; grep -E '^(ERROR|NOTE)_' "$REPORT"
 fi
 $SH "$S" --uninstall -y >/tmp/unin3.log 2>&1
+# S64: the uninstall turns that exec bit off again — it undoes what the run did.
+if [ "$(meta /etc/rc.local | cut -d' ' -f1)" = "-rw-r--r--" ]; then R RCLOCAL_EXEC_REVERTED pass
+else R RCLOCAL_EXEC_REVERTED fail; ls -l /etc/rc.local; tail -n 3 /tmp/unin3.log; fi
 
 # …while one the guest switched off itself stays off and untouched: the boot mounts fail
 # with the remedy, and the report says the boot-time refresh will not run.
@@ -170,6 +173,18 @@ if grep -q '^ERROR_[0-9]*=automount-sshfs: /etc/rc.local is not executable' /tmp
 	R BOOT_REPORT_KEEPS_ERRORS pass
 else
 	R BOOT_REPORT_KEEPS_ERRORS fail; diff /tmp/outcome-run /tmp/outcome-boot
+fi
+
+# S64: an rc.local setup created (there was none) goes with the uninstall.
+$SH "$S" --uninstall -y >/tmp/unin4.log 2>&1
+rm -f /etc/rc.local
+$SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
+	>/tmp/run5.log 2>&1
+made="$(meta /etc/rc.local 2>/dev/null)"
+$SH "$S" --uninstall -y >/tmp/unin5.log 2>&1
+if [ -n "$made" ] && [ ! -e /etc/rc.local ]; then R RCLOCAL_CREATED_REMOVED pass; else
+	R RCLOCAL_CREATED_REMOVED "fail (${made:-never made})"; cat -n /etc/rc.local 2>&1
+	tail -n 3 /tmp/unin5.log
 fi
 
 # VM tail: the template rc.local back (executable), both blocks installed, the report gone —
