@@ -5,7 +5,9 @@
 //  H56: what VoiceOver hears of the bottom-right corner. A toast is announced as it arrives,
 //  once; a keyed slot replaced in place only when its words change; a progress card once it
 //  finishes, with its outcome; a problem toast at high priority. Nothing is said as a toast
-//  expires or a card goes. The hosted half (one push, one post) is ToastCardTests'.
+//  expires or a card goes. The hosted half (one push, one post) is ToastCardTests'. F17: a
+//  routine announcement is queued behind what VoiceOver is saying (low priority), so a
+//  burst keeps every one; only a problem interrupts (high).
 //
 
 import SwiftUI
@@ -67,5 +69,17 @@ struct ToastAnnouncementTests {
 			ToastAnnouncement(text: "Debian hit an error", urgent: true),
 			ToastAnnouncement(text: "Renamed to “dev”", urgent: false),
 		])
+	}
+
+	// .default would interrupt the current speech and be cut off by the next post.
+	@Test("F17: a routine announcement waits its turn, a problem interrupts")
+	func routineSpeechIsQueued() {
+		let routine = ToastAnnouncer.speech(
+			for: ToastAnnouncement(text: "Removed console port", urgent: false))
+		let problem = ToastAnnouncer.speech(
+			for: ToastAnnouncement(text: "Debian hit an error", urgent: true))
+		#expect(routine.accessibilitySpeechAnnouncementPriority == .low)
+		#expect(problem.accessibilitySpeechAnnouncementPriority == .high)
+		#expect(String(routine.characters) == "Removed console port")
 	}
 }

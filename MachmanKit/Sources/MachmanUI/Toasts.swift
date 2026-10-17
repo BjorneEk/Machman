@@ -206,9 +206,16 @@ public struct ToastAnnouncer: Sendable {
 	}
 
 	public static let voiceOver = ToastAnnouncer { announcement in
+		AccessibilityNotification.Announcement(speech(for: announcement)).post()
+	}
+
+	// What VoiceOver is handed (F17): a routine announcement queued behind the current
+	// speech, so a burst keeps every one; a problem interrupts. (.default would interrupt
+	// and be cut off by the next post.)
+	public static func speech(for announcement: ToastAnnouncement) -> AttributedString {
 		var text = AttributedString(announcement.text)
-		text.accessibilitySpeechAnnouncementPriority = announcement.urgent ? .high : .default
-		AccessibilityNotification.Announcement(text).post()
+		text.accessibilitySpeechAnnouncementPriority = announcement.urgent ? .high : .low
+		return text
 	}
 }
 
