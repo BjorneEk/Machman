@@ -248,7 +248,8 @@ extension RoutingMachman {
 	// one listed as not responding is refused at once instead of after the call's deadline.
 	// Force Stop is bounded: a host that misses the bound is marked not responding and the
 	// stop answers `timeout` — the clients' cue to ask about ending its process
-	// (vm.process.end, C9). Nothing here ends a process.
+	// (vm.process.end, C9). Nothing here ends a process. A force stop that returned ends the
+	// run (E71).
 	func stopHosted(_ host: HostedVM, name: String, mode: StopMode) async throws {
 		switch mode {
 		case .soft:
@@ -260,6 +261,7 @@ extension RoutingMachman {
 		case .force:
 			do {
 				try await host.client.stop(vm: name, mode: .force, deadline: forceStopDeadline)
+				host.forceStopped = true
 			} catch let error as MachmanError where error.code == .timeout {
 				markUnresponsive(host, reason: "missed its force stop deadline")
 				throw MachmanError(

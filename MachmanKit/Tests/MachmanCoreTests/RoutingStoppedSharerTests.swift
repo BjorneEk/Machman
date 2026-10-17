@@ -171,6 +171,27 @@ struct RoutingStoppedSharerTests {
 		#expect(answer.contains("reinstall Machman"), "\(answer)")   // no macConflict
 	}
 
+	// The vmhost writes its events from a task of its own, so a force stop's reply can come
+	// before the VM's stopped state does: here beta's events no longer reach the router, and
+	// alpha's start goes the moment beta's force stop returned.
+	@Test("E71: a start sent the moment a sharer's force stop returned waits for its vmhost")
+	@MainActor func aStartRightAfterAForceStopWaits() async throws {
+		let rig = try await makeRig(runOver: false)
+		let host = try #require(rig.routing.hostForTesting("beta"))
+		host.eventTask?.cancel()   // its stopped state is still on the wire
+		try await rig.routing.stop(vm: "beta", mode: .force)
+		#expect(host.lastState == .running)
+		let (start, done) = startInTask(rig)
+		#expect(await eventually { done.raised || rig.clock.armed == [.milliseconds(50)] })
+		#expect(!done.raised, "decided before beta's vmhost exited")
+		rig.exit()
+		#expect(await eventually { rig.routing.hostedNames.isEmpty })
+		rig.clock.advance(by: .milliseconds(50))
+		let answer = await start.cancellableValue()
+		#expect(!answer.contains("is running with"), "\(answer)")
+		#expect(answer.contains("reinstall Machman"), "\(answer)")
+	}
+
 	@Test("E71: a running disk sharer still refuses at once")
 	@MainActor func aRunningSharerRefusesAtOnce() async throws {
 		let rig = try await makeRig(runOver: false)

@@ -106,17 +106,23 @@ extension RoutingMachman {
 		// Whether this host ever ran its VM (E12): an idle host from a start whose forward
 		// never happened can take a new start; one whose run stopped is exiting.
 		var sawRun = false
-		// A host that ran its VM and since told it stopped (or failed) is exiting: after its
-		// stop flush, and after any import it still drains (E34). Clients already list the VM
-		// stopped (E52).
+		// A Force Stop this daemon sent came back: the VM is torn down, whatever its events
+		// still on the way say — the vmhost writes them from a task of its own, so its stopped
+		// state can land after the reply, and a start sent the moment the stop returned found
+		// the VM still running (E71).
+		var forceStopped = false
+		// A host that ran its VM and since told it stopped (or failed), or whose force stop
+		// returned, is exiting: after its stop flush, and after any import it still drains
+		// (E34). Clients already list the VM stopped (E52).
 		var exitingAfterRun: Bool {
-			sawRun && (lastState == .stopped || lastState == .error)
+			sawRun && (forceStopped || lastState == .stopped || lastState == .error)
 		}
 
 		// A start this daemon forwarded succeeded: the VM runs, whether or not its running
 		// event got here first (a later event still moves lastState on).
 		func markStarted() {
 			sawRun = true
+			forceStopped = false
 			lastState = .running
 		}
 		// The disk files a start this daemon made left unattached (its disabled entries), or
