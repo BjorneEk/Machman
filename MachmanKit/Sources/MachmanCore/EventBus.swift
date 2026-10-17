@@ -26,6 +26,9 @@ final class EventBus {
 		AsyncStream { continuation in
 			let id = UUID()
 			self.continuations[id] = continuation
+			for notice in self.standingNotices {
+				continuation.yield(notice)
+			}
 			continuation.onTermination = { _ in
 				Task { @MainActor [weak self] in
 					self?.continuations[id] = nil
@@ -38,12 +41,30 @@ final class EventBus {
 		AsyncStream { continuation in
 			let id = UUID()
 			self.lineContinuations[id] = continuation
+			for notice in self.standingNotices {
+				continuation.yield(EventLine(event: notice, line: nil))
+			}
 			continuation.onTermination = { _ in
 				Task { @MainActor [weak self] in
 					self?.lineContinuations[id] = nil
 				}
 			}
 		}
+	}
+
+	// Standing notices (D38): what stays true while this process runs — a VM folder whose
+	// settings couldn't be read — reaches every subscriber, the ones that subscribe later
+	// included (the registry scans before any client connects). One per key; a new stream
+	// gets them first, in key order.
+	private var notices: [String: VMEvent] = [:]
+
+	private var standingNotices: [VMEvent] {
+		notices.keys.sorted().compactMap { notices[$0] }
+	}
+
+	func post(notice event: VMEvent, key: String) {
+		notices[key] = event
+		emit(event)
 	}
 
 	// Where a log event is written: the unified log. A seam for tests.

@@ -163,9 +163,11 @@ public final class VMRegistry {
 				} catch {
 					// Never swallow this. A directory that won't parse means a VM the user owns
 					// has vanished from the app, and silence makes that look like data loss
-					// rather than a damaged config file they could restore.
+					// rather than a damaged config file they could restore. The log keeps the
+					// error; every client is told (D38).
 					MachmanLogger.log(.passiveError,
 						"skipping '\(name)': its config could not be read: \(error)")
+					announceUnreadable(name, library: machmanVMDir)
 					continue
 				}
 				// Idempotent, and the only chance images created before this existed ever get
@@ -532,11 +534,26 @@ public final class VMRegistry {
 		// reverting everything the run persisted (E4).
 		installSessions[name] = nil
 		guard let fresh = try? VMConfig.load(name: name, library: library) else {
+			announceUnreadable(name, library: library)
 			vms[name] = nil
 			events.emit(.listChanged)
 			return
 		}
 		vms[name] = VirtualMachine(config: fresh, events: events)
+	}
+
+	// A VM folder whose config doesn't read stays the user's — create() never takes its name —
+	// but no client lists it: each client hears so, as "<folder>: …", whenever it subscribes
+	// (D38). A folder without a config (a stray folder, or what a failed delete left) is no
+	// VM and stays quiet.
+	nonisolated static let unreadableWarning =
+		"Its settings file couldn’t be read, so it isn’t in the list."
+
+	private func announceUnreadable(_ name: String, library: String) {
+		guard FileManager.default.fileExists(atPath: "\(library)/\(name)/config") else { return }
+		events.post(
+			notice: .log(vm: name, level: .warning, message: Self.unreadableWarning),
+			key: "unreadable:\(name)")
 	}
 
 	func create() throws -> VirtualMachine {
