@@ -243,7 +243,12 @@ struct InspectorGatingTests {
 		#expect(tree.find(text: "Unknown") != nil, "\(tree.dump())")
 		#expect(tree.all.contains { $0.help == BootInfo.newerModeReason }, "\(tree.dump())")
 		#expect(tree.find(text: "Allow nested virtualization") == nil)
-		#expect(!tree.all.contains { $0.role == "AXPopUpButton" && $0.value == "EFI" })
+		// A Bootloader picker drawn for a mode it has no row for would show no value at all
+		// (F19): no popup may carry the Bootloader name, whatever it shows.
+		let picker = tree.all.first {
+			$0.role == "AXPopUpButton" && ($0.label == "Bootloader" || $0.text == "Bootloader")
+		}
+		#expect(picker == nil, "\(tree.dump())")
 	}
 
 	@Test("H61: two kernel files offer no batch Enable or Disable, and say why")
