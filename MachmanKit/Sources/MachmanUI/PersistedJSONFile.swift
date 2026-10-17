@@ -20,6 +20,7 @@ public final class PersistedJSONFile<Value: Codable & Sendable> {
 	public let url: URL
 	// Where load() moved an unreadable file; nil when it read fine or was absent.
 	public private(set) var backupURL: URL?
+	private var backupTaken = false
 	private let label: String
 	// Serial, so a rapid edit stream never blocks the UI on disk I/O; flush() waits for it.
 	private let queue: DispatchQueue
@@ -67,6 +68,13 @@ public final class PersistedJSONFile<Value: Codable & Sendable> {
 		timer?.cancel()
 		writePending()
 		queue.sync {}
+	}
+
+	// backupURL for the one-time notice (PersistedSettingsStore): nil once it was taken.
+	public func takeBackupURL() -> URL? {
+		guard !backupTaken else { return nil }
+		backupTaken = true
+		return backupURL
 	}
 
 	private func writePending() {
@@ -118,6 +126,8 @@ public final class PersistedJSONFile<Value: Codable & Sendable> {
 				+ "not saving \(label) this session")
 	}
 }
+
+extension PersistedJSONFile: PersistedFile {}
 
 // A settings file this launch could not read and set aside, for the one-time notice.
 public struct SetAsideSettingsFile: Equatable, Sendable {

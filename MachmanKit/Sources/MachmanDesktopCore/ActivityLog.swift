@@ -108,7 +108,6 @@ public final class ActivityLog: ObservableObject {
 	@Published public private(set) var unseen: Set<UUID> = []
 
 	private let file: PersistedJSONFile<PersistedState>?
-	private var setAsideNotice: SetAsideSettingsFile?
 
 	// <app-support>/<suite>/Activity.json, beside the other per-suite settings files.
 	public nonisolated static func defaultURL() -> URL {
@@ -128,9 +127,6 @@ public final class ActivityLog: ObservableObject {
 			// Another build may have kept more, or in another order: the newest 50 count.
 			entries = Array(stored.entries.sorted { $0.date > $1.date }.prefix(Self.capacity))
 			unseen = Set(stored.unseen).intersection(entries.map(\.id))
-		}
-		setAsideNotice = file?.backupURL.map {
-			SetAsideSettingsFile(what: "activity list", backup: $0)
 		}
 	}
 
@@ -173,11 +169,6 @@ public final class ActivityLog: ObservableObject {
 		save()
 	}
 
-	// Block until pending writes have landed on disk (app termination and tests).
-	public func flush() {
-		file?.flush()
-	}
-
 	private func save() {
 		file?.save(PersistedState(entries: entries, unseen: Array(unseen)))
 	}
@@ -200,9 +191,7 @@ public final class ActivityLog: ObservableObject {
 	}
 }
 
-extension ActivityLog: SetAsideReporting {
-	public func takeSetAsideNotice() -> SetAsideSettingsFile? {
-		defer { setAsideNotice = nil }
-		return setAsideNotice
-	}
+extension ActivityLog: PersistedSettingsStore {
+	public var settingsFile: (any PersistedFile)? { file }
+	public static let settingsDescription = "activity list"
 }

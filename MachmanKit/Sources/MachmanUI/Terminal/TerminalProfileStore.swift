@@ -28,7 +28,6 @@ public final class TerminalProfileStore: ObservableObject {
 	// drags, typing) neither blocks the UI nor writes per change; flush() writes what is
 	// pending. An unreadable file is set aside, never overwritten.
 	private let file: PersistedJSONFile<PersistedState>
-	private var setAsideNotice: SetAsideSettingsFile?
 
 	// Default location: <app-support>/<suite>/TerminalProfiles.json. Injectable for tests.
 	// nonisolated so it can be used as a default argument (evaluated off the main actor).
@@ -48,9 +47,6 @@ public final class TerminalProfileStore: ObservableObject {
 		let state = file.load()
 		self.profiles = state?.profiles ?? []
 		self.associations = state?.associations ?? [:]
-		self.setAsideNotice = file.backupURL.map {
-			SetAsideSettingsFile(what: "terminal profiles", backup: $0)
-		}
 		ensureDefault()
 	}
 
@@ -174,11 +170,6 @@ public final class TerminalProfileStore: ObservableObject {
 		file.save(PersistedState(profiles: profiles, associations: associations))
 	}
 
-	// Block until pending writes have landed on disk (app termination and tests).
-	public func flush() {
-		file.flush()
-	}
-
 	private struct PersistedState: Codable, Sendable {
 		var profiles: [TerminalProfile]
 		var associations: [String: UUID]
@@ -197,9 +188,7 @@ public final class TerminalProfileStore: ObservableObject {
 	}
 }
 
-extension TerminalProfileStore: SetAsideReporting {
-	public func takeSetAsideNotice() -> SetAsideSettingsFile? {
-		defer { setAsideNotice = nil }
-		return setAsideNotice
-	}
+extension TerminalProfileStore: PersistedSettingsStore {
+	public var settingsFile: (any PersistedFile)? { file }
+	public static let settingsDescription = "terminal profiles"
 }

@@ -22,7 +22,6 @@ public final class CanvasStateStore: ObservableObject {
 	@Published public private(set) var canvases: [String: CanvasState]
 
 	private let file: PersistedJSONFile<PersistedState>
-	private var setAsideNotice: SetAsideSettingsFile?
 
 	// Default location: <app-support>/<suite>/CanvasLayouts.json. Injectable for tests.
 	public nonisolated static func defaultURL() -> URL {
@@ -39,9 +38,6 @@ public final class CanvasStateStore: ObservableObject {
 			queueLabel: "com.gustaffranzen.Machman.canvasLayouts.save", saveDelay: saveDelay)
 		self.file = file
 		self.canvases = file.load()?.canvases ?? [:]
-		self.setAsideNotice = file.backupURL.map {
-			SetAsideSettingsFile(what: "tab layouts", backup: $0)
-		}
 	}
 
 	// The canvas to show for a VM — a fresh single-pane layout when none was saved.
@@ -91,11 +87,6 @@ public final class CanvasStateStore: ObservableObject {
 		file.save(PersistedState(canvases: canvases.mapValues { $0.strippingEphemeralTabs() }))
 	}
 
-	// Block until pending writes have landed on disk (app termination and tests).
-	public func flush() {
-		file.flush()
-	}
-
 	private struct PersistedState: Codable, Sendable {
 		var canvases: [String: CanvasState]
 
@@ -111,9 +102,7 @@ public final class CanvasStateStore: ObservableObject {
 	}
 }
 
-extension CanvasStateStore: SetAsideReporting {
-	public func takeSetAsideNotice() -> SetAsideSettingsFile? {
-		defer { setAsideNotice = nil }
-		return setAsideNotice
-	}
+extension CanvasStateStore: PersistedSettingsStore {
+	public var settingsFile: (any PersistedFile)? { file }
+	public static let settingsDescription = "tab layouts"
 }
