@@ -5,8 +5,9 @@
 #   scripts/test.sh [swift test args]     e.g. --filter WireFixtureTests
 #   scripts/test.sh --self-check          prove the sandbox guard refuses unsandboxed runs
 #
-# MachmanLabTests never runs here: it needs scripts/lab.sh. MachmanDesktopUITests runs in a
-# swift test pass of its own, after the rest (one sandbox, one exit status).
+# MachmanLabTests never runs here: it needs scripts/lab.sh. MachmanDesktopCoreTests and then
+# MachmanDesktopUITests each run in a swift test pass of their own, after the rest (one
+# sandbox, one exit status).
 # Never launches an app or touches a live daemon. Every run gets its own suite id
 # (com.gustaffranzen.Machman.test-<token>), a scratch data dir and a fake home under
 # /tmp/mmt.<token>, all removed on exit — so a run can neither resolve the .dev / Release
@@ -86,8 +87,12 @@ run_pass() {
 }
 
 # MachmanDesktopUITests hosts its views on the main actor, one at a time, for most of a minute:
-# in the same process it starved the main-actor waits of the timing-sensitive suites. A run
-# with --filter stays one pass (a second --filter would widen it: filters OR together).
+# in the same process it starved the main-actor waits of the timing-sensitive suites. The
+# engine suites' @MainActor tests hold the main actor for whole seconds under load (Q41) — a
+# subprocess, a fork, a fsync — and MachmanDesktopCoreTests' waits on main-actor work ran out
+# behind them, so it runs on its own too (its pass takes seconds). A run with --filter stays
+# one pass (a second --filter would widen it: filters OR together).
+core='MachmanDesktopCoreTests\.'
 ui='MachmanDesktopUITests\.'
 filtered=0
 for arg in "$@"; do
@@ -96,7 +101,8 @@ done
 if ((filtered)); then
 	run_pass "$@"
 else
-	run_pass --skip "$ui" "$@"
+	run_pass --skip "$core" --skip "$ui" "$@"
+	run_pass --filter "$core" "$@"
 	run_pass --filter "$ui" "$@"
 fi
 
