@@ -76,6 +76,8 @@ real_window() {
 # window_row_ok: the helper's window is a breach and nothing of the run took focus: no lab
 # process with a Dock icon, active or frontmost. Another app coming to the front is the user's,
 # only a note, as in every lab run (Q44: requiring the front unchanged failed on a user's switch).
+# Focus is judged only from the watch summary: 3b's switch reaches it and lsappinfo (a PATH
+# shim), and no other live read of the front app.
 window_row_ok() {
 	[[ "$summary" == *"BREACH window pid $probe "* && "$summary" != *"BREACH policy"* &&
 		"$summary" != *"BREACH active"* && "$summary" != *"BREACH frontmost"* ]]
@@ -89,18 +91,34 @@ else
 	fail "audit window: a real off-screen window of a lab process is a breach" "$summary"
 fi
 
-# 3b: the user brings another app to the front during it and stays there (a real process
-# outside the run, injected as frontmost to the end): only a note, never the run's breach
+# 3b: the user brings another app to the front during it and stays there: only a note, never
+# the run's breach. The switch shows wherever a rule could look: in the watch (a real process
+# outside the run, injected as frontmost to the end) and in `lsappinfo front`, which a PATH shim,
+# first on PATH in this row's subshell only, answers with another app on every call.
+shim="$root/shim"
+mkdir -p "$shim"
+cat >"$shim/lsappinfo" <<'SHIM'
+#!/bin/sh
+# The front app of a user who keeps switching apps: another ASN on every call.
+n="$(cat "$0.calls" 2>/dev/null || echo 0)"
+echo $((n + 1)) >"$0.calls"
+echo "ASN:0x0-0x$((n + 1)):"
+SHIM
+chmod +x "$shim/lsappinfo"
 env -i "$hw" idle --seconds 6 &
 user=$!
-real_window user --inject "front=$user" --inject-after 6
-wait "$user"
-if window_row_ok && [[ "$summary" == *"NOTE frontmost injected ($user)"* ]]; then
+if (
+	PATH="$shim:$PATH"
+	real_window user --inject "front=$user" --inject-after 6
+	echo "$summary"
+	window_row_ok && [[ "$summary" == *"NOTE frontmost injected ($user)"* ]]
+) >"$root/user-row.txt"; then
 	ok "Q44: the user's app coming to the front during the real-window row is only a note"
 else
 	fail "Q44: the user's app coming to the front during the real-window row is only a note" \
-		"pid $user: $summary"
+		"pid $user: $(cat "$root/user-row.txt")"
 fi
+wait "$user"
 
 # 3c: the run's own window taking the front (its helper injected as frontmost) fails the row
 real_window steal --inject front=lab-window
