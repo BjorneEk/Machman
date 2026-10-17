@@ -67,9 +67,10 @@ its own (suite token, agent, lab sshd, log), the suites are shared out longest f
 times of earlier runs (`<cache>/suite-times.json`), and the suites in
 `scripts/lab/exclusive-suites.txt` (machine-wide state, timing) run alone after them. One audit
 watches every shard; on a terminal each shard has its own window in the block. Every test
-process runs the one built test bundle through SwiftPM's testing helper, never through
-`swift test`, whose build database a shard beside it can hold locked (shards once lost whole
-suites to it); without the helper the run falls back to one `swift test` process and says why.
+process runs the one built test bundle through the testing helper of the toolchain whose
+`swift` built it, never through `swift test`, whose build database a shard beside it can hold
+locked (shards once lost whole suites to it); without that helper (or with a `swift` on PATH
+that isn't the selected Xcode's) the run falls back to one `swift test` process and says why.
 A planned suite that reports no test fails the run with a `✘ <file>.swift:<line>` line at its
 `@Suite` (its exit status and first error beside it), and a `--filter` that matches no test
 fails it too.

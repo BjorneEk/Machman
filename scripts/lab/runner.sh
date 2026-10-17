@@ -10,6 +10,7 @@ LAB_TEST_HELPER=""
 LAB_TEST_BUNDLE=""
 LAB_TEST_PLATFORM=""
 LAB_TEST_SDK=""
+LAB_TEST_SWIFT=""
 LAB_RUNNER_WHY=""
 
 # lab_runner_resolve <helper> <bundle> <platform developer dir> <sdk>: what runs the tests.
@@ -33,15 +34,41 @@ lab_runner_resolve() {
 	fi
 }
 
+# lab_runner_toolchain <swift on PATH> <developer dir>: the swift that builds the test bundle
+# (PATH's; the /usr/bin shim resolved as it resolves, through xcrun) as LAB_TEST_SWIFT. Fails,
+# with LAB_RUNNER_WHY, when it isn't the selected Xcode's: its own helper would load that
+# Xcode's Testing frameworks into a bundle another toolchain built.
+lab_runner_toolchain() {
+	local swift="$1"
+	LAB_TEST_SWIFT=""
+	[[ "$swift" == /usr/bin/swift ]] && swift="$(xcrun --find swift 2>/dev/null)"
+	if [[ -z "$swift" ]]; then
+		LAB_RUNNER_WHY="no swift on PATH"
+		return 1
+	fi
+	# Its directory's real path (swift itself links to swift-frontend in the same place).
+	swift="$(cd "${swift%/*}" 2>/dev/null && pwd -P || echo "${swift%/*}")/${swift##*/}"
+	if [[ -z "$2" || "$swift" != "$2"/* ]]; then
+		LAB_RUNNER_WHY="swift at $swift isn't the selected Xcode's (${2:-none})"
+		return 1
+	fi
+	LAB_TEST_SWIFT="$swift"
+}
+
 # lab_runner_find: lab_runner_resolve on this toolchain and package, once the tests are built:
-# SwiftPM's testing helper beside swift, the bundle in the bin dir SwiftPM names (asked here,
-# before any test process starts), the macOS platform's frameworks (Testing.framework).
+# the testing helper of the toolchain whose swift builds the bundle (lab_runner_toolchain; any
+# other → swift test), the bundle in the bin dir SwiftPM names (asked here, before any test
+# process starts), the macOS platform's frameworks (Testing.framework).
 lab_runner_find() {
-	local swift bin platform
-	swift="$(xcrun --find swift 2>/dev/null)" || swift=""
+	local bin platform
+	if ! lab_runner_toolchain "$(command -v swift 2>/dev/null)" "$(xcode-select -p 2>/dev/null)"
+	then
+		LAB_TEST_HELPER=""
+		return 0
+	fi
 	bin="$(swift build --show-bin-path --package-path "$pkg" 2>/dev/null)" || bin=""
 	platform="$(xcrun --show-sdk-platform-path 2>/dev/null)" || platform=""
-	lab_runner_resolve "${swift%/*}/../libexec/swift/pm/swiftpm-testing-helper" \
+	lab_runner_resolve "${LAB_TEST_SWIFT%/*}/../libexec/swift/pm/swiftpm-testing-helper" \
 		"$bin/$LAB_TEST_PRODUCT.xctest/Contents/MacOS/$LAB_TEST_PRODUCT" "$platform/Developer" \
 		"$(xcrun --show-sdk-path 2>/dev/null)"
 }
@@ -321,6 +348,18 @@ lab_selfcheck_runner() {
 		echo "ok   $check"
 	else
 		echo "FAIL $check: $why"
+		failures=$((failures + 1))
+	fi
+	check="Q27: the testing helper is the one in the toolchain that builds the test bundle"
+	why="$(lab_runner_toolchain /opt/q27/usr/bin/swift /Applications/Q27.app/Contents/Developer
+		echo "$? $LAB_RUNNER_WHY")"
+	if [[ -n "$LAB_TEST_HELPER" && -n "$LAB_TEST_SWIFT" &&
+		"${LAB_TEST_HELPER%/libexec/swift/pm/swiftpm-testing-helper}" == \
+		"${LAB_TEST_SWIFT%/swift}/.." &&
+		"$why" == "1 swift at /opt/q27/usr/bin/swift isn't the selected Xcode's"* ]]; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: helper $LAB_TEST_HELPER, swift ${LAB_TEST_SWIFT:-?}; elsewhere: $why"
 		failures=$((failures + 1))
 	fi
 	check="Q27: through swift test, a filter that matches no test fails as through the helper"
