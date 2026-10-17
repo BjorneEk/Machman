@@ -60,7 +60,8 @@ struct WordingLintTests {
 		for file in RepoFiles.files(under: Self.surfaces, extension: "swift") {
 			let source = try String(contentsOf: file, encoding: .utf8)
 			let path = RepoFiles.relativePath(file)
-			for marker in ["Button(", "Label("] {
+			// Choice( is a prompt's button, drawn from PromptCenter's content (Q31).
+			for marker in ["Button(", "Label(", "Choice("] {
 				for (line, text) in SwiftCallStrings.arguments(of: marker, in: source)
 				where Self.says(text) {
 					read += 1
@@ -112,6 +113,15 @@ struct WordingLintTests {
 				messages += 1
 				#expect(SwiftCallStrings.sentences(message) == 1,
 					"\(RepoFiles.relativePath(file)): \(dialog.title): \(message)")
+			}
+		}
+		// The prompt center draws the window's questions from their content (Q31): their
+		// messages are said there.
+		let center = "MachmanKit/Sources/MachmanDesktopCore/PromptCenter.swift"
+		for call in SwiftCallStrings.calls(of: "message: ", in: try RepoFiles.text(center)) {
+			for message in call.texts where !message.isEmpty {
+				messages += 1
+				#expect(SwiftCallStrings.sentences(message) == 1, "\(center): \(message)")
 			}
 		}
 		#expect(messages >= 8, "the scan read only \(messages) dialog messages")

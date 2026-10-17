@@ -72,4 +72,55 @@ struct AlertWordingTests {
 		#expect(VMListViewModel.deleteVMMessage
 			== "The VM and the files it owns are deleted permanently.")
 	}
+
+	// Q31: the confirmations' words moved from VMNavigationView into the prompt center
+	// verbatim — title, message and buttons, with their roles.
+	@Test("Q31: every confirmation reads as it did before the prompt center")
+	func confirmationsKeepTheirWords() async throws {
+		let h = await DesktopHarness.make()
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		let disk = try #require(debian.disks.first { $0.owned == true })
+		func reads(_ kind: Prompt.Kind) -> [String] {
+			let content = Prompt(kind: kind).content(for: h.viewModel)
+			return [content.title, content.message] + content.choices.map { choice in
+				switch choice.role {
+				case .destructive?: return "\(choice.title) (destructive)"
+				case .cancel?: return "\(choice.title) (cancel)"
+				case nil: return choice.title
+				}
+			}
+		}
+		#expect(reads(.deleteVM(debian)) == [
+			"Delete \u{201C}Debian\u{201D}?", VMListViewModel.deleteVMMessage,
+			"Delete VM (destructive)", "Cancel (cancel)",
+		])
+		#expect(reads(.deleteDisk(.init(vm: "Debian", disk: disk))) == [
+			"Delete disk \u{201C}\(disk.name ?? "")\u{201D}?",
+			"The backing file belongs to Debian and is deleted with it.",
+			"Delete Disk (destructive)", "Cancel (cancel)",
+		])
+		#expect(reads(.deleteKernel(.init(vm: "Debian", path: "/k/vmlinuz", fileName: "vmlinuz")))
+			== [
+				"Delete \u{201C}vmlinuz\u{201D}?",
+				"The file belongs to Debian and is removed from its directory.",
+				"Delete File (destructive)", "Cancel (cancel)",
+			])
+		#expect(reads(.stop(PendingStop(vm: "Debian", mode: .force))) == [
+			"Force stop \u{201C}Debian\u{201D}?",
+			"Debian stops at once, like pulling its power cord.",
+			"Force Stop (destructive)", "Cancel (cancel)",
+		])
+		let file = URL(fileURLWithPath: "/Users/demo/a.raw")
+		#expect(reads(.diskAdd(.init(vm: "Debian", urls: [file]))) == [
+			"Add \u{201C}a.raw\u{201D}?",
+			"Copy a.raw into Debian (an independent copy that travels with the VM), or "
+				+ "reference the original in place?",
+			"Copy into VM", "Reference", "Cancel (cancel)",
+		])
+		#expect(reads(.forceStart(PendingForceStart(
+			name: "Debian", headless: false, safe: false, message: "MAC in use"))) == [
+			"MAC address conflict", "MAC in use", "Start Anyway", "Cancel (cancel)",
+		])
+	}
 }
+

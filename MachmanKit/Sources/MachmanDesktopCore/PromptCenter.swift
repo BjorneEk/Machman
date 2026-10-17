@@ -55,15 +55,40 @@ public struct Prompt: Identifiable {
 		case error(PresentedError)
 		case forceStart(PendingForceStart)
 		case endProcess(PendingEndProcess)
+		case stop(PendingStop)
+		case deleteVM(VMInfo)
+		case deleteDisk(VMListViewModel.PendingDiskDelete)
+		case deleteKernel(VMListViewModel.PendingKernelDelete)
+		case diskAdd(VMListViewModel.PendingDiskAdd)
+		case tabClose(PendingTabClose)
 	}
 
 	public let id = UUID()
 	public let kind: Kind
 
+	public typealias Choice = PromptContent.Choice
+
+	// Alerts and the start/stop follow-ups show where the user is; the confirmations on the
+	// main window, whose surfaces ask them (a menu item brings it forward first); a session
+	// close in the window that asked it.
 	public var placement: PromptPlacement {
 		switch kind {
 		case .error, .forceStart, .endProcess:
 			return .keyWindow
+		case .stop, .deleteVM, .deleteDisk, .deleteKernel, .diskAdd:
+			return .window(.main)
+		case .tabClose(let pending):
+			return .window(pending.window.map { .torn($0) } ?? .main)
+		}
+	}
+
+	// An alert, or a confirmation dialog — the HIG successor to the old modal NSAlerts.
+	public var style: PromptContent.Style {
+		switch kind {
+		case .error, .forceStart, .endProcess:
+			return .alert
+		case .stop, .deleteVM, .deleteDisk, .deleteKernel, .diskAdd, .tabClose:
+			return .dialog
 		}
 	}
 
@@ -73,29 +98,141 @@ public struct Prompt: Identifiable {
 	public func content(for viewModel: VMListViewModel) -> PromptContent {
 		switch kind {
 		case .error(let error):
-			return PromptContent(style: .alert, title: error.title, message: error.message)
+			return PromptContent(style: style, title: error.title, message: error.message)
 		case .forceStart(let pending):
 			return PromptContent(
-				style: .alert, title: "MAC address conflict", message: pending.message,
+				style: style, title: "MAC address conflict", message: pending.message,
 				choices: [
-					.init("Start Anyway") { [weak viewModel] in
+					Choice("Start Anyway") { [weak viewModel] in
 						viewModel?.startVM(
 							pending.name, headless: pending.headless, force: true,
 							safe: pending.safe)
 					},
-					.init("Cancel", role: .cancel),
+					Choice("Cancel", role: .cancel),
 				])
 		case .endProcess(let pending):
 			let prompt = pending.prompt
 			return PromptContent(
-				style: .alert, title: prompt.title, message: prompt.message,
+				style: style, title: prompt.title, message: prompt.message,
 				choices: [
-					.init(prompt.confirm, role: .destructive) { [weak viewModel] in
+					Choice(prompt.confirm, role: .destructive) { [weak viewModel] in
 						viewModel?.endProcess(pending.vm)
 					},
-					.init(prompt.cancel, role: .cancel),
+					Choice(prompt.cancel, role: .cancel),
+				])
+		case .stop(let pending):
+			let role: PromptContent.Role? = pending.mode == .force ? .destructive : nil
+			return PromptContent(
+				style: style, title: pending.title, message: pending.message,
+				choices: [
+					Choice(pending.confirmLabel, role: role) { [weak viewModel] in
+						viewModel?.confirmStop(pending)
+					},
+					Choice("Cancel", role: .cancel),
+				])
+		case .deleteVM(let vm):
+			return PromptContent(
+				style: style, title: VMListViewModel.deleteVMTitle(vm.name),
+				message: VMListViewModel.deleteVMMessage,
+				choices: [
+					Choice("Delete VM", role: .destructive) { [weak viewModel] in
+						viewModel?.performDeleteVM(vm)
+					},
+					Choice("Cancel", role: .cancel),
+				])
+		case .deleteDisk(let pending):
+			return PromptContent(
+				style: style, title: "Delete disk \u{201C}\(pending.disk.name ?? "")\u{201D}?",
+				message: "The backing file belongs to \(pending.vm) and is deleted with it.",
+				choices: [
+					Choice("Delete Disk", role: .destructive) { [weak viewModel] in
+						viewModel?.removeDisk(pending.vm, diskID: pending.disk.id)
+					},
+					Choice("Cancel", role: .cancel),
+				])
+		case .deleteKernel(let pending):
+			return PromptContent(
+				style: style, title: "Delete \u{201C}\(pending.fileName)\u{201D}?",
+				message: "The file belongs to \(pending.vm) and is removed from its directory.",
+				choices: [
+					Choice("Delete File", role: .destructive) { [weak viewModel] in
+						viewModel?.deleteKernel(pending.vm, path: pending.path)
+					},
+					Choice("Cancel", role: .cancel),
+				])
+		case .diskAdd(let pending):
+			return PromptContent(
+				style: style, title: pending.title, message: pending.message,
+				choices: [
+					Choice("Copy into VM") { [weak viewModel] in
+						guard let viewModel else { return }
+						AddFlows.addDiskCopies(viewModel: viewModel, pending)
+					},
+					Choice("Reference") { [weak viewModel] in
+						guard let viewModel else { return }
+						AddFlows.addDiskReferences(viewModel: viewModel, pending)
+					},
+					Choice("Cancel", role: .cancel),
+				])
+		case .tabClose(let pending):
+			return PromptContent(
+				style: style, title: VMListViewModel.closeSessionTitle(pending.name),
+				message: VMListViewModel.closeSessionMessage,
+				choices: [
+					Choice("Close Session", role: .destructive) { [weak viewModel] in
+						viewModel?.confirmTabClose(pending)
+					},
+					Choice("Cancel", role: .cancel),
 				])
 		}
+	}
+}
+
+// What a prompt asks, one kind at a time (the view model's read-only views of what shows).
+extension Prompt.Kind {
+	public var error: PresentedError? {
+		if case .error(let error) = self { return error }
+		return nil
+	}
+
+	public var forceStart: PendingForceStart? {
+		if case .forceStart(let pending) = self { return pending }
+		return nil
+	}
+
+	public var endProcess: PendingEndProcess? {
+		if case .endProcess(let pending) = self { return pending }
+		return nil
+	}
+
+	public var stop: PendingStop? {
+		if case .stop(let pending) = self { return pending }
+		return nil
+	}
+
+	public var deleteVM: VMInfo? {
+		if case .deleteVM(let vm) = self { return vm }
+		return nil
+	}
+
+	public var deleteDisk: VMListViewModel.PendingDiskDelete? {
+		if case .deleteDisk(let pending) = self { return pending }
+		return nil
+	}
+
+	public var deleteKernel: VMListViewModel.PendingKernelDelete? {
+		if case .deleteKernel(let pending) = self { return pending }
+		return nil
+	}
+
+	public var diskAdd: VMListViewModel.PendingDiskAdd? {
+		if case .diskAdd(let pending) = self { return pending }
+		return nil
+	}
+
+	public var tabClose: PendingTabClose? {
+		if case .tabClose(let pending) = self { return pending }
+		return nil
 	}
 }
 
@@ -159,6 +296,13 @@ public final class PromptCenter: ObservableObject {
 		_ kind: Prompt.Kind, duplicate: (Prompt.Kind, Prompt.Kind) -> Bool = { _, _ in false }
 	) {
 		queue.enqueue(Prompt(kind: kind), duplicate: { duplicate($0.kind, $1.kind) })
+	}
+
+	// Prompts no window is left to answer (a torn window that went away): the waiting ones go,
+	// and the one showing is dismissed, so it can't hold every later prompt behind it.
+	public func withdraw(where match: (Prompt) -> Bool) {
+		queue.removeWaiting(where: match)
+		if let current = queue.current, match(current) { dismiss(current.id) }
 	}
 
 	// The prompt showing was answered or dismissed: the next waiting one shows once this one

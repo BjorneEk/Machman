@@ -78,4 +78,33 @@ struct PromptCenterTests {
 		#expect(!prompts.shows(next.id, in: torn, isKey: false, anyWindowKey: false))
 		#expect(prompts.shows(next.id, in: .main, isKey: false, anyWindowKey: false))
 	}
+
+	// The confirmations were single slots too: ⌘. on one VM and ⌥⌘. on another replaced the
+	// first question with the second.
+	@Test("Q31: a second stop question waits for the first instead of replacing it")
+	func aSecondStopQuestionWaits() async throws {
+		let h = await DesktopHarness.make()
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
+		h.viewModel.requestStop(debian, mode: .soft)
+		h.viewModel.requestStop(alpine, mode: .force)
+		let first = try #require(h.viewModel.pendingStop)
+		#expect(first.vm == "Debian")
+		h.viewModel.confirmStop(first)
+		#expect(await eventually { h.viewModel.pendingStop?.vm == "Alpine" })
+	}
+
+	// One question at a time across kinds: a delete asked while an alert shows waits for it,
+	// instead of a second modal on the same window.
+	@Test("Q31: a delete question asked while an error shows waits its turn")
+	func aDeleteWaitsBehindAnError() async throws {
+		let h = await DesktopHarness.make()
+		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
+		h.viewModel.present(message: "no", while: "Doing A")
+		h.viewModel.deleteVM(alpine)
+		#expect(h.viewModel.presentedError?.message == "no")
+		#expect(h.viewModel.pendingVMDelete?.name == nil)
+		h.viewModel.isErrorPresented = false
+		#expect(await eventually { h.viewModel.pendingVMDelete?.name == "Alpine" })
+	}
 }

@@ -124,11 +124,12 @@ extension VMListViewModel {
 			closeTab(tab, vm: vm)
 			return
 		}
-		tabCloseQueue.enqueue(
-			PendingTabClose(
-				vm: vm, tab: tab, name: terminals.sshSessionName(vm: vm, ref: ref),
-				window: window),
-			duplicate: { $0.vm == $1.vm && $0.tab == $1.tab })
+		let pending = PendingTabClose(
+			vm: vm, tab: tab, name: terminals.sshSessionName(vm: vm, ref: ref), window: window)
+		prompts.ask(.tabClose(pending)) { shown, new in
+			guard let a = shown.tabClose, let b = new.tabClose else { return false }
+			return a.vm == b.vm && a.tab == b.tab
+		}
 	}
 
 	// Closing an SSH session whose ssh still runs ends a remote shell and its scrollback, so
@@ -141,14 +142,11 @@ extension VMListViewModel {
 			?? !UserDefaults.standard.bool(forKey: Self.skipSSHCloseQuestionKey)
 	}
 
-	public var pendingTabClose: PendingTabClose? { tabCloseQueue.current }
-
 	// Questions asked in a torn window that went away (a rename swap, its VM removed, a close
 	// from the tree) have no window left to answer them in: they go. The one showing would
 	// otherwise hold every later close question behind it (review F17).
 	func dropTabCloseQuestions(askedIn window: TornTab) {
-		tabCloseQueue.removeWaiting { $0.window == window }
-		if tabCloseQueue.current?.window == window { isTabClosePresented = false }
+		prompts.withdraw { $0.kind.tabClose?.window == window }
 	}
 
 	public func confirmTabClose(_ pending: PendingTabClose) {

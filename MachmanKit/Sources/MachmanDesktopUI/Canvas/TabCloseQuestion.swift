@@ -12,10 +12,18 @@ import MachmanUI
 import MachmanDesktopCore
 
 struct TabCloseQuestion: ViewModifier {
-	@ObservedObject var viewModel: VMListViewModel
+	let viewModel: VMListViewModel
+	// The questions live in the prompt center, beside every other prompt (Q31).
+	@ObservedObject private var prompts: PromptCenter
 	// The torn tab whose window this is; nil in the main window.
 	let window: TornTab?
 	@AppStorage(VMListViewModel.skipSSHCloseQuestionKey) private var skipQuestion = false
+
+	init(viewModel: VMListViewModel, window: TornTab?) {
+		self.viewModel = viewModel
+		self.prompts = viewModel.prompts
+		self.window = window
+	}
 
 	func body(content: Content) -> some View {
 		content
@@ -34,7 +42,7 @@ struct TabCloseQuestion: ViewModifier {
 	private var presented: Binding<Bool> {
 		Binding(
 			get: { viewModel.isTabClosePresented && viewModel.pendingTabClose?.window == window },
-			set: { viewModel.isTabClosePresented = $0 })
+			set: { if !$0 { viewModel.isTabClosePresented = false } })
 	}
 }
 

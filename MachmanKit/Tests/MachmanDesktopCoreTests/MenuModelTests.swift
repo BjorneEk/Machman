@@ -152,7 +152,12 @@ struct MenuModelTests {
 		_ = menu.perform(shutDown.action, window: .main)
 		#expect(h.viewModel.pendingStop?.title == "Shut down \u{201C}Debian\u{201D}?")
 		_ = menu.perform(force.action, window: .main)
-		#expect(h.viewModel.pendingStop?.title == "Force stop \u{201C}Debian\u{201D}?")
+		// One question at a time (Q31): the Force Stop question waits for the first.
+		#expect(h.viewModel.pendingStop?.title == "Shut down \u{201C}Debian\u{201D}?")
+		h.viewModel.dismissCurrentPrompt()
+		#expect(await eventually {
+			h.viewModel.pendingStop?.title == "Force stop \u{201C}Debian\u{201D}?"
+		})
 		try await Task.sleep(for: .milliseconds(50))
 		#expect(!h.stub.calls.contains("stop"))
 	}

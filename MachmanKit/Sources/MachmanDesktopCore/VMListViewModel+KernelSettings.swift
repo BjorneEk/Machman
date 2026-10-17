@@ -85,7 +85,11 @@ extension VMListViewModel {
 	// MARK: - Kernel files, boot toggle and overrides
 
 	public func requestDeleteKernel(_ name: String, path: String, fileName: String) {
-		pendingKernelDelete = PendingKernelDelete(vm: name, path: path, fileName: fileName)
+		let pending = PendingKernelDelete(vm: name, path: path, fileName: fileName)
+		prompts.ask(.deleteKernel(pending)) { shown, new in
+			guard let a = shown.deleteKernel, let b = new.deleteKernel else { return false }
+			return a.vm == b.vm && a.path == b.path
+		}
 	}
 
 	// The file's path changes with its tag — repoint a selection that was on the old path.

@@ -126,7 +126,7 @@ extension VMListViewModel {
 
 	// Request → confirmationDialog → perform (all deletes follow this shape).
 	public func deleteVM(_ vm: VMInfo) {
-		pendingVMDelete = vm
+		prompts.ask(.deleteVM(vm)) { $0.deleteVM?.name == $1.deleteVM?.name }
 	}
 
 	// Delete VM…'s question (X7: one sentence; the title names the VM, so the message
@@ -322,7 +322,10 @@ extension VMListViewModel {
 	// Owned disks confirm (the backing file dies with the entry); references detach silently.
 	public func requestRemoveDisk(_ name: String, disk: DiskInfo) {
 		if disk.owned == true {
-			pendingDiskDelete = PendingDiskDelete(vm: name, disk: disk)
+			prompts.ask(.deleteDisk(PendingDiskDelete(vm: name, disk: disk))) { shown, new in
+				guard let a = shown.deleteDisk, let b = new.deleteDisk else { return false }
+				return a.vm == b.vm && a.disk.id == b.disk.id
+			}
 		} else {
 			removeDisk(name, diskID: disk.id)
 		}

@@ -130,8 +130,7 @@ public struct VMNavigationView: View {
 				// An offset, not padding: the corner must never weigh on the window's floor.
 				.offset(x: viewModel.showInfoPanel ? -inspectorWidth : 0)
 		}
-		// Destructive/choice confirmations (the HIG successors to the old NSAlerts),
-		// isolated in a modifier so this chain stays type-checkable.
+		// Remove Kernel Settings…'s question, the one not in the prompt center yet.
 		.modifier(ConfirmationDialogs(viewModel: viewModel))
 		// The menu commands act on the key window (P22): this one is the main window,
 		// and ⌥⌘0 toggles its inspector.
@@ -192,63 +191,13 @@ public struct VMNavigationView: View {
 	}
 }
 
-// The window's confirmation dialogs, driven by the view model's pending items.
+// The window's one confirmation dialog not yet in the prompt center: Remove Kernel
+// Settings… (H54, K2). Every other question shows through WindowPrompts.
 private struct ConfirmationDialogs: ViewModifier {
 	@ObservedObject var viewModel: VMListViewModel
 
 	func body(content: Content) -> some View {
 		content
-			.confirmationDialog(
-				VMListViewModel.deleteVMTitle(viewModel.pendingVMDelete?.name ?? ""),
-				isPresented: presenting($viewModel.pendingVMDelete),
-				presenting: viewModel.pendingVMDelete
-			) { vm in
-				Button("Delete VM", role: .destructive) { viewModel.performDeleteVM(vm) }
-				Button("Cancel", role: .cancel) {}
-			} message: { _ in
-				Text(VMListViewModel.deleteVMMessage)
-			}
-			// One question per drop/paste/pick, for all its files; later ones queue.
-			.confirmationDialog(
-				viewModel.pendingDiskAdd?.title ?? "",
-				isPresented: $viewModel.isDiskAddPresented,
-				presenting: viewModel.pendingDiskAdd
-			) { pending in
-				Button("Copy into VM") {
-					AddFlows.addDiskCopies(viewModel: viewModel, pending)
-				}
-				Button("Reference") {
-					AddFlows.addDiskReferences(viewModel: viewModel, pending)
-				}
-				Button("Cancel", role: .cancel) {}
-			} message: { pending in
-				Text(pending.message)
-			}
-			.confirmationDialog(
-				"Delete disk "
-					+ "\u{201C}\(viewModel.pendingDiskDelete?.disk.name ?? "")\u{201D}?",
-				isPresented: presenting($viewModel.pendingDiskDelete),
-				presenting: viewModel.pendingDiskDelete
-			) { pending in
-				Button("Delete Disk", role: .destructive) {
-					viewModel.removeDisk(pending.vm, diskID: pending.disk.id)
-				}
-				Button("Cancel", role: .cancel) {}
-			} message: { pending in
-				Text("The backing file belongs to \(pending.vm) and is deleted with it.")
-			}
-			.confirmationDialog(
-				"Delete \u{201C}\(viewModel.pendingKernelDelete?.fileName ?? "")\u{201D}?",
-				isPresented: presenting($viewModel.pendingKernelDelete),
-				presenting: viewModel.pendingKernelDelete
-			) { pending in
-				Button("Delete File", role: .destructive) {
-					viewModel.deleteKernel(pending.vm, path: pending.path)
-				}
-				Button("Cancel", role: .cancel) {}
-			} message: { pending in
-				Text("The file belongs to \(pending.vm) and is removed from its directory.")
-			}
 			// Remove Kernel Settings… on a parked kernel draft asks once (H54, K2).
 			.confirmationDialog(
 				viewModel.pendingKernelClear?.title ?? "",
@@ -263,19 +212,6 @@ private struct ConfirmationDialogs: ViewModifier {
 				if let message = pending.message {
 					Text(message)
 				}
-			}
-			// Stop ▸ Shut Down… / Force Stop… (⌘. / ⌥⌘.) ask first (P26).
-			.confirmationDialog(
-				viewModel.pendingStop?.title ?? "",
-				isPresented: presenting($viewModel.pendingStop),
-				presenting: viewModel.pendingStop
-			) { pending in
-				Button(pending.confirmLabel, role: pending.mode == .force ? .destructive : nil) {
-					viewModel.confirmStop(pending)
-				}
-				Button("Cancel", role: .cancel) {}
-			} message: { pending in
-				Text(pending.message)
 			}
 	}
 

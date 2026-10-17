@@ -66,11 +66,14 @@ extension VMListViewModel {
 	// The Stop menu's chords ask before stopping; the toolbar, the picker, the Dock and the
 	// per-VM submenus stay immediate.
 	public func requestStop(_ vm: VMInfo, mode: StopMode) {
-		pendingStop = PendingStop(vm: vm.name, mode: mode)
+		prompts.ask(.stop(PendingStop(vm: vm.name, mode: mode))) { shown, new in
+			guard let a = shown.stop, let b = new.stop else { return false }
+			return a.vm == b.vm && a.mode == b.mode
+		}
 	}
 
 	public func confirmStop(_ pending: PendingStop) {
-		pendingStop = nil
+		if pendingStop?.id == pending.id { dismissCurrentPrompt() }
 		stopVM(pending.vm, mode: pending.mode)
 	}
 

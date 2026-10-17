@@ -8,7 +8,9 @@
 //  when it arrived, or the first to become key while it waits — so a refusal or a question
 //  from a torn window shows in that window, never twice. It observes the center, not the view
 //  model: a prompt coming and going re-renders this modifier only (P9). An error is its own
-//  alert with the system's OK; every other prompt is drawn from its PromptContent.
+//  alert with the system's OK; every other prompt is drawn from its PromptContent, as an alert
+//  or a confirmation dialog — except a session close, which TabCloseQuestion shows with its
+//  “Don’t ask again” toggle (a suppression toggle would join every dialog drawn here).
 //
 
 import SwiftUI
@@ -42,7 +44,10 @@ struct WindowPrompts: ViewModifier {
 			}
 			.modifier(ErrorAlert(error: shownError, isPresented: presented { $0.isError }))
 			.modifier(QuestionAlert(
-				content: shownQuestion, isPresented: presented { !$0.isError }))
+				content: shownQuestion(.alert),
+				isPresented: presented { !$0.isError && $0.style == .alert }))
+			.modifier(QuestionDialog(
+				content: shownQuestion(.dialog), isPresented: presented { $0.style == .dialog }))
 	}
 
 	// The prompt this window shows now, if any.
@@ -56,8 +61,8 @@ struct WindowPrompts: ViewModifier {
 		return nil
 	}
 
-	private var shownQuestion: PromptContent? {
-		guard let prompt = shownPrompt, !prompt.isError else { return nil }
+	private func shownQuestion(_ style: PromptContent.Style) -> PromptContent? {
+		guard let prompt = shownPrompt, !prompt.isError, prompt.style == style else { return nil }
 		return prompt.content(for: viewModel)
 	}
 
@@ -75,18 +80,18 @@ struct WindowPrompts: ViewModifier {
 	}
 
 	private func claim() {
-		let current = prompts.current?.id
+		guard let current = prompts.current, current.kind.tabClose == nil else {
+			shown = nil
+			return
+		}
 		let mine = prompts.shows(
-			current, in: window, isKey: isKey, anyWindowKey: NSApp.keyWindow != nil)
-		shown = mine ? current : nil
+			current.id, in: window, isKey: isKey, anyWindowKey: NSApp.keyWindow != nil)
+		shown = mine ? current.id : nil
 	}
 }
 
 extension Prompt {
-	fileprivate var isError: Bool {
-		if case .error = kind { return true }
-		return false
-	}
+	fileprivate var isError: Bool { kind.error != nil }
 }
 
 // A failure: its title and message, and the system's own OK.
@@ -110,6 +115,24 @@ private struct QuestionAlert: ViewModifier {
 
 	func body(content view: Content) -> some View {
 		view.alert(content?.title ?? "", isPresented: isPresented, presenting: content) { shown in
+			ForEach(shown.choices) { choice in
+				Button(choice.title, role: choice.role?.buttonRole) { choice.perform() }
+			}
+		} message: { shown in
+			Text(shown.message)
+		}
+	}
+}
+
+// A question drawn as a confirmation dialog, from its PromptContent.
+private struct QuestionDialog: ViewModifier {
+	let content: PromptContent?
+	let isPresented: Binding<Bool>
+
+	func body(content view: Content) -> some View {
+		view.confirmationDialog(
+			content?.title ?? "", isPresented: isPresented, presenting: content
+		) { shown in
 			ForEach(shown.choices) { choice in
 				Button(choice.title, role: choice.role?.buttonRole) { choice.perform() }
 			}

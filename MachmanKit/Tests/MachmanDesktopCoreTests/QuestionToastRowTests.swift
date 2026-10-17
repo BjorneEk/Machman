@@ -50,7 +50,7 @@ struct QuestionToastRowTests {
 		h.viewModel.isErrorPresented = false
 		#expect(await eventually { h.viewModel.presentedError?.message == "b" })
 		// A lower bound only: the alert animates out before the next one comes in.
-		let delay = VMListViewModel.representDelay
+		let delay = PromptCenter.representDelay
 		#expect(clock.now - dismissed >= delay * 0.9, "\(clock.now - dismissed)")
 		#expect(h.viewModel.isErrorPresented)
 	}

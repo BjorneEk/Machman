@@ -42,50 +42,48 @@ public final class VMListViewModel: ObservableObject {
 	public let canvases: CanvasStateStore
 	// Which torn-off tabs have windows, and the orders the list reconcile posts to them.
 	public let tornTabs: TornTabRegistry
-	// Closing a connected SSH session asks first, one question at a time (H42, +Tabs).
-	@Published var tabCloseQueue = PresentationQueue<PendingTabClose>()
-	public var isTabClosePresented: Bool {
-		get { tabCloseQueue.current != nil }
-		set {
-			if !newValue, tabCloseQueue.dismiss() { presentNext { $0.tabCloseQueue.advance() } }
-		}
-	}
 	// Tests: whether a connected session's close asks, in place of the stored preference.
 	var sshCloseAskOverride: Bool?
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published public var showInfoPanel = false
-	// Every alert and question, one at a time in arrival order (PR25; failures since P15),
-	// shown by the window that is key when it arrives. Its own observable: only the windows'
-	// presenters watch it. What shows is read below for code and tests.
+	// Every alert and question, one at a time in arrival order (PR25; failures since P15,
+	// disk adds since P17, session closes since H42): each shows in its window — the key one
+	// for alerts and the start/stop follow-ups, the main window for confirmations, the asking
+	// one for a session close. Its own observable: only the windows' presenters watch it.
+	// What shows is read below, one kind each, for code and tests; setting an is…Presented
+	// false is a dismissal, and the next prompt waiting shows after it.
 	public let prompts = PromptCenter()
-	public var presentedError: PresentedError? {
-		if case .error(let error)? = prompts.current?.kind { return error }
-		return nil
-	}
-	// Setting false is a dismissal: the next prompt waiting shows after it.
+	public var presentedError: PresentedError? { prompts.current?.kind.error }
 	public var isErrorPresented: Bool {
 		get { presentedError != nil }
 		set { if !newValue, presentedError != nil { dismissCurrentPrompt() } }
 	}
-	public var pendingForceStart: PendingForceStart? {
-		if case .forceStart(let pending)? = prompts.current?.kind { return pending }
-		return nil
-	}
+	public var pendingForceStart: PendingForceStart? { prompts.current?.kind.forceStart }
 	public var isForceStartPresented: Bool {
 		get { pendingForceStart != nil }
 		set { if !newValue, pendingForceStart != nil { dismissCurrentPrompt() } }
 	}
-	public var pendingEndProcess: PendingEndProcess? {
-		if case .endProcess(let pending)? = prompts.current?.kind { return pending }
-		return nil
-	}
+	public var pendingEndProcess: PendingEndProcess? { prompts.current?.kind.endProcess }
 	public var isEndProcessPresented: Bool {
 		get { pendingEndProcess != nil }
 		set { if !newValue, pendingEndProcess != nil { dismissCurrentPrompt() } }
 	}
-	// Pending destructive/choice confirmations, presented as confirmationDialogs by
-	// VMNavigationView (the HIG successor to the old modal NSAlerts).
+	public var pendingDiskAdd: PendingDiskAdd? { prompts.current?.kind.diskAdd }
+	public var isDiskAddPresented: Bool {
+		get { pendingDiskAdd != nil }
+		set { if !newValue, pendingDiskAdd != nil { dismissCurrentPrompt() } }
+	}
+	public var pendingTabClose: PendingTabClose? { prompts.current?.kind.tabClose }
+	public var isTabClosePresented: Bool {
+		get { pendingTabClose != nil }
+		set { if !newValue, pendingTabClose != nil { dismissCurrentPrompt() } }
+	}
+	public var pendingVMDelete: VMInfo? { prompts.current?.kind.deleteVM }
+	public var pendingDiskDelete: PendingDiskDelete? { prompts.current?.kind.deleteDisk }
+	public var pendingKernelDelete: PendingKernelDelete? { prompts.current?.kind.deleteKernel }
+	// The Stop menu's Shut Down… (⌘.) and Force Stop… (⌥⌘.) ask first (P26).
+	public var pendingStop: PendingStop? { prompts.current?.kind.stop }
 	// One copy-or-reference question for every disk file of one drop, paste or pick.
 	public struct PendingDiskAdd: Identifiable {
 		public let id = UUID()
@@ -116,18 +114,6 @@ public final class VMListViewModel: ObservableObject {
 		public let path: String
 		public let fileName: String
 	}
-	@Published public var pendingVMDelete: VMInfo?
-	// Disk-add questions queue: a second drop asked while one shows waits for its own (P17).
-	@Published private var diskAddQueue = PresentationQueue<PendingDiskAdd>()
-	public var pendingDiskAdd: PendingDiskAdd? { diskAddQueue.current }
-	public var isDiskAddPresented: Bool {
-		get { pendingDiskAdd != nil }
-		set {
-			if !newValue, diskAddQueue.dismiss() { presentNext { $0.diskAddQueue.advance() } }
-		}
-	}
-	@Published public var pendingDiskDelete: PendingDiskDelete?
-	@Published public var pendingKernelDelete: PendingKernelDelete?
 	@Published public var pendingKernelClear: PendingKernelClear?   // +KernelSettings.swift
 	@Published public var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
 	@Published public internal(set) var copyInFlight = false
@@ -140,9 +126,6 @@ public final class VMListViewModel: ObservableObject {
 	// File ▸ New VM… asks the main window's toolbar picker to open on its template page;
 	// the picker clears it as it opens (VMIndicatorCluster).
 	@Published public var newVMChooserRequested = false
-	// The Stop menu's Shut Down… (⌘.) and Force Stop… (⌥⌘.) ask first (P26); non-nil
-	// presents the question on the main window.
-	@Published public var pendingStop: PendingStop?
 	@Published public internal(set) var safeSaveInFlight = false
 
 	// MARK: Toasts (VMListViewModel+Toasts.swift)
@@ -366,18 +349,6 @@ public final class VMListViewModel: ObservableObject {
 		if let id = prompts.current?.id { prompts.dismiss(id) }
 	}
 
-	// A dismissed alert or dialog animates out; the next one is presented after that, not
-	// inside it.
-	static var representDelay: Duration { PromptCenter.representDelay }
-
-	private func presentNext(_ step: @escaping @MainActor (VMListViewModel) -> Void) {
-		Task { [weak self] in
-			try? await Task.sleep(for: Self.representDelay)
-			guard let self else { return }
-			step(self)
-		}
-	}
-
 	public func present(_ error: Error, while action: String) {
 		present(message: Self.message(for: error), while: action)
 	}
@@ -407,9 +378,10 @@ public final class VMListViewModel: ObservableObject {
 		refuse(Self.message(for: error), while: action, to: refused)
 	}
 
+	// A second drop asked while one shows waits for its own (P17).
 	public func askDiskAdd(vm: String, urls: [URL]) {
 		guard !urls.isEmpty else { return }
-		diskAddQueue.enqueue(PendingDiskAdd(vm: vm, urls: urls))
+		prompts.ask(.diskAdd(PendingDiskAdd(vm: vm, urls: urls)))
 	}
 
 	// MARK: - Install phases
