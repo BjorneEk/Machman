@@ -686,9 +686,10 @@ extension VMListViewModel {
 
 	// MARK: - macOS install
 
-	public func startInstall(_ name: String, source: InstallSource) {
+	// `diskID`: one of the VM's disks the switch sheet's user picked to install onto (D32).
+	public func startInstall(_ name: String, source: InstallSource, diskID: String? = nil) {
 		perform("Starting the macOS install") {
-			try await $0.startMacInstall(vm: name, source: source)
+			try await $0.startMacInstall(vm: name, source: source, diskID: diskID)
 		}
 	}
 

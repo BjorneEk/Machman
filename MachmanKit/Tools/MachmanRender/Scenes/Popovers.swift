@@ -237,6 +237,14 @@ enum PopoverScenes {
 		) { ctx in
 			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm("Debian")))
 		},
+		// D32 (K4): the switch asks where to install; a disk picked shows what that erases, and
+		// one smaller than a new disk carries the warning (K15).
+		RenderScene(
+			"sheet.mac-switch.disks", "MacSwitchSheet with several disks, the small one picked",
+			vms: { [Samples.linuxBeforeMacSwitch()] }
+		) { ctx in
+			AnyView(MacSwitchSheet(viewModel: ctx.viewModel, vm: ctx.vm, pick: "storage:data"))
+		},
 		// H45: Install macOS… on a Mac whose install failed is a retry, not a switch.
 		RenderScene(
 			"sheet.mac-switch.retry", "MacSwitchSheet for a Mac whose install failed",

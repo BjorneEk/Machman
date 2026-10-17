@@ -61,6 +61,19 @@ extension Samples {
 		return vm
 	}
 
+	// A Linux guest before a switch to macOS (D32): a roomy owned system disk, the small
+	// "data" disk, a referenced image and its installer ISO — every row the switch sheet offers
+	// or leaves out.
+	public static func linuxBeforeMacSwitch(_ name: String = "Alpine") -> VMInfo {
+		var vm = linuxTwoDisks(name)
+		vm.disks[0].sizeBytes = 80 << 30
+		let image = "/Users/demo/VM Images/ubuntu-24.04-arm64.img"
+		vm.disks.append(DiskInfo(
+			id: "url:" + URL(fileURLWithPath: image).absoluteString, type: .image, name: nil,
+			path: image, sizeBytes: 20 << 30, owned: false))
+		return vm
+	}
+
 	// A Linux (EFI) guest carrying a Mac trackpad, gated the way the daemon gates it: a
 	// guest-type limit, not a host one.
 	public static func linuxWithTrackpad(_ name: String = "Debian") -> VMInfo {
