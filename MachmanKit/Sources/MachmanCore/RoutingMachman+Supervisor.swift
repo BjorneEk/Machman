@@ -171,18 +171,23 @@ extension RoutingMachman {
 	}
 
 	// The one wait loop of the host table (Q36): looks at `done` every `interval` until it
-	// holds or `timeout` has passed on ContinuousClock, and says which. `done` looks first,
+	// holds or `timeout` has passed on the router's clock, and says which. `done` looks first,
 	// so a wait that is already over costs nothing; it may throw to end the wait early.
 	func poll(
 		every interval: Duration, for timeout: Duration, until done: () async throws -> Bool
 	) async rethrows -> Bool {
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: timeout)
+		let expired = expiry(after: timeout)
 		while true {
 			if try await done() { return true }
-			guard clock.now < deadline else { return false }
-			try? await Task.sleep(for: interval)
+			guard !expired() else { return false }
+			try? await clock.sleep(for: interval)
 		}
+	}
+
+	// A deadline `duration` from now on the router's clock: true once it has passed (Q40).
+	func expiry(after duration: Duration) -> @Sendable () -> Bool {
+		let clock = self.clock
+		return expiryOf(clock, after: duration)
 	}
 
 	func waitForHostGone(id: UUID, timeout: Duration) async -> Bool {
@@ -344,4 +349,11 @@ extension RoutingMachman {
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))
 		registry.events.emit(.listChanged)
 	}
+}
+
+// The router's clock opened to its concrete type, whose instants compare.
+private func expiryOf<C: Clock<Duration>>(_ clock: C, after duration: Duration)
+	-> @Sendable () -> Bool {
+	let end = clock.now.advanced(by: duration)
+	return { clock.now >= end }
 }

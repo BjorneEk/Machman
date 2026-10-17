@@ -18,7 +18,7 @@ extension RoutingMachman {
 			// Tight: spawnHost retries this in a loop and adoption runs it per socket while
 			// the server parks requests — a vmhost that accepts but never answers hello must
 			// fail fast, not add 30 s per attempt.
-			helloDeadline: helloDeadline,
+			helloDeadline: helloDeadline, clock: clock,
 			onDisconnect: { [weak self] in
 				Task { @MainActor [weak self] in
 					self?.hostDisconnected(id: hostID)
@@ -32,15 +32,13 @@ extension RoutingMachman {
 	// listed as not responding until it answers again or exits.
 	private func hostDisconnected(id: UUID) {
 		guard let host = host(withID: id), host.reconnectTask == nil else { return }
-		let clock = ContinuousClock()
-		let exitBy = clock.now.advanced(by: hostExitGrace)
+		let pastGrace = expiry(after: hostExitGrace)
 		host.reconnectTask = Task { [weak self] in
 			while !Task.isCancelled {
-				guard let settled = await self?.settleStep(id: id, pastGrace: clock.now >= exitBy),
-					!settled else { return }
-				let pause = clock.now < exitBy
-					? Duration.milliseconds(50) : (self?.recoveryInterval ?? .seconds(2))
-				try? await Task.sleep(for: pause)
+				guard let settled = await self?.settleStep(id: id, pastGrace: pastGrace()),
+					!settled, let self else { return }
+				let pause = pastGrace() ? self.recoveryInterval : Duration.milliseconds(50)
+				try? await self.clock.sleep(for: pause)
 			}
 		}
 	}
@@ -168,7 +166,7 @@ extension RoutingMachman {
 						: "\(name)'s vmhost answers again")
 					self.registry.events.emit(.listChanged)
 				}
-				try? await Task.sleep(for: self.recoveryInterval)
+				try? await self.clock.sleep(for: self.recoveryInterval)
 			}
 		}
 	}
@@ -202,8 +200,8 @@ extension RoutingMachman {
 		let id = host.identity.id
 		host.recoveryTask = Task { [weak self] in
 			while !Task.isCancelled {
-				guard let interval = self?.recoveryInterval else { return }
-				try? await Task.sleep(for: interval)
+				guard let interval = self?.recoveryInterval, let clock = self?.clock else { return }
+				try? await clock.sleep(for: interval)
 				guard !Task.isCancelled, let self, let host = self.host(withID: id),
 					host.unresponsive else { return }
 				_ = await self.probe(host)

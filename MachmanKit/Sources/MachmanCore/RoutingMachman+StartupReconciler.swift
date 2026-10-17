@@ -101,8 +101,8 @@ extension RoutingMachman {
 	private func askAgain(_ path: String) {
 		guard orphanQuestions[path] == nil else { return }
 		orphanQuestions[path] = Task { [weak self] in
-			while let interval = self?.adoptionRetryInterval {
-				try? await Task.sleep(for: interval)
+			while let interval = self?.adoptionRetryInterval, let clock = self?.clock {
+				try? await clock.sleep(for: interval)
 				guard let self, !Task.isCancelled, UDSListener.isLive(path: path),
 					!self.isClaimed(socket: path) else { break }
 				switch await self.whomItServes(path) {
@@ -128,7 +128,8 @@ extension RoutingMachman {
 	private func whomItServes(_ path: String) async -> HelloAnswer {
 		if let ask = whomItServesForTesting { return await ask(path) }
 		guard let client = try? await RemoteMachman(
-			socketPath: path, clientName: "machman-agent-router", helloDeadline: helloDeadline)
+			socketPath: path, clientName: "machman-agent-router", helloDeadline: helloDeadline,
+			clock: clock)
 		else { return .silent }
 		await client.disconnect()
 		return client.hello.host.map(HelloAnswer.served) ?? .unsaid

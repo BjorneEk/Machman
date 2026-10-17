@@ -82,6 +82,10 @@ public final class RoutingMachman: MachmanControlling {
 	// How long a vmhost may take to answer a force stop (E36): the quit path's bound, and
 	// inside a client's own 30 s for the call.
 	var forceStopDeadline: Duration = .seconds(15)
+	// What every deadline above, the host table's waits and its retry timers run on (Q40): a
+	// test passes a clock it moves by hand and checks which deadline fired, never how long a
+	// call took. The vmhost connections' call deadlines run on it too.
+	var clock: any Clock<Duration> = ContinuousClock()
 	// Whether a vmhost process still exists (E8). A seam: an in-process test host's peer is
 	// the test itself, so a test that ends a host says so here.
 	var isProcessAlive: (Int32) -> Bool = SafeRun.defaultPidAlive

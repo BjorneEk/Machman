@@ -4,7 +4,8 @@
 //
 //  Q36: the host supervisor waited in five hand-rolled loops on two clocks — Date deadlines
 //  in the quit path's stop-all, a counted 40 × 250 ms loop in the spawn, ContinuousClock in
-//  the rest. They share one poll on ContinuousClock now.
+//  the rest. They share one poll now. Q40: that poll, and every retry timer and grace of the
+//  host table, runs on the router's clock — ContinuousClock, or a test's that it moves by hand.
 //
 
 import Testing
@@ -67,10 +68,32 @@ struct RoutingPollTests {
 		#expect(looks == 2)
 	}
 
+	@Test("Q40: poll gives up only once the router's clock passes its timeout")
+	@MainActor func pollGivesUpOnTheRoutersClock() async throws {
+		let routing = try makeRouting()
+		let clock = TestClock()
+		routing.clock = clock
+		var looks = 0
+		let wait = Task { @MainActor in
+			await routing.poll(every: .milliseconds(100), for: .milliseconds(250)) {
+				looks += 1
+				return false
+			}
+		}
+		#expect(await eventually { clock.armed == [.milliseconds(100)] })
+		clock.advance(by: .milliseconds(100))
+		#expect(await eventually { looks == 2 && clock.armed == [.milliseconds(100)] })
+		clock.advance(by: .milliseconds(100))
+		#expect(await eventually { looks == 3 && clock.armed == [.milliseconds(100)] })
+		clock.advance(by: .milliseconds(100))   // 300 ms: past its 250
+		#expect(await wait.value == false)
+		#expect(looks == 4)
+	}
+
 	@Test(
 		"""
-		Q36: the host supervisor's waits poll on ContinuousClock, never a Date deadline or a \
-		counted loop
+		Q36: the host supervisor's waits share one poll, never a Date deadline or a counted \
+		loop
 		""")
 	func theHostSupervisorsWaitsPollOnOneClock() throws {
 		let files = [
@@ -80,5 +103,16 @@ struct RoutingPollTests {
 		#expect(dated.isEmpty, "wait with poll(every:for:until:): \(dated)")
 		let counted = try SourceScan.hits(#"for _ in 0\.\.<"#, in: files)
 		#expect(counted.isEmpty, "wait with poll(every:for:until:): \(counted)")
+	}
+
+	// Q40: a wait or timer of the host table on a clock of its own is one a test can't move:
+	// its check could only measure wall time, which load stretches.
+	@Test("Q40: the host supervisor's waits and retry timers sleep on the router's clock")
+	func theHostSupervisorsTimersSleepOnTheRoutersClock() throws {
+		let files = [
+			"Supervisor", "Spawn", "Liveness", "Adoption", "StartupReconciler",
+		].map { "MachmanKit/Sources/MachmanCore/RoutingMachman+\($0).swift" }
+		let own = try SourceScan.hits(#"Task\.sleep\(|ContinuousClock\(\)"#, in: files)
+		#expect(own.isEmpty, "sleep and measure on the router's clock: \(own)")
 	}
 }

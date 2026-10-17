@@ -74,8 +74,8 @@ extension RoutingMachman {
 	private func retryAdoption(of name: String) {
 		guard adoptionRetries[name] == nil else { return }
 		adoptionRetries[name] = Task { [weak self] in
-			while let interval = self?.adoptionRetryInterval {
-				try? await Task.sleep(for: interval)
+			while let interval = self?.adoptionRetryInterval, let clock = self?.clock {
+				try? await clock.sleep(for: interval)
 				guard let self, !Task.isCancelled, self.unadoptable.contains(name) else { break }
 				guard UDSListener.isLive(path: self.hostSocketPath(for: name)) else {
 					self.unadoptable.remove(name)
