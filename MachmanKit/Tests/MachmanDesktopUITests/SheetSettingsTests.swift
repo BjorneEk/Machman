@@ -178,7 +178,7 @@ struct SheetSettingsTests {
 		// Irreversible and multi-GB, so Return presses nothing (C21). SwiftUI's buttons are
 		// no NSButtons here and expose no key equivalent, so the sheet's source says it.
 		let source = try RepoFiles.text("MachmanKit/Sources/MachmanDesktopUI/Inspector/"
-			+ "InspectorView.swift")
+			+ "MacSwitchSheet.swift")
 		let sheet = try #require(source.range(of: "struct MacSwitchSheet")
 			.map { String(source[$0.lowerBound...]) })
 		let body = sheet.components(separatedBy: "\n}\n").first ?? sheet
