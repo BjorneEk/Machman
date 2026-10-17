@@ -170,6 +170,23 @@ extension VMListViewModel {
 		return torn
 	}
 
+	// The tear-off the tree and the canvas ask for: a tab already torn off has its window
+	// focused (`open` is the caller's openWindow, a view action; torn windows dedupe by
+	// value); any other tab is torn off and its window opened a turn later, once SwiftUI has
+	// removed the canvas mount — opened inline, the window would adopt the terminal while the
+	// canvas's mount still lives, and that mount's last update would take it back.
+	public func tearOffAndOpen(
+		_ tab: VMPaneTab, vm: String, open: @escaping @MainActor (TornTab) -> Void
+	) {
+		let torn = TornTab(vm: vm, tab: tab)
+		guard !tornTabs.open.contains(torn) else {
+			open(torn)
+			return
+		}
+		let payload = tearOff(tab, vm: vm)
+		DispatchQueue.main.async { open(payload) }
+	}
+
 	// A tab's row goes with it, so the inspector stops showing a tab that closed. Every
 	// path that takes a tab off a canvas (close, tear-off, torn-window close) reports here.
 	public func tabClosed(_ tab: VMPaneTab, vm: String) {

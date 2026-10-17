@@ -152,16 +152,10 @@ extension TreeContext {
 	}
 
 	// Move a tab out of the canvas into its own window (or focus the window it already
-	// has). The controller is deliberately NOT torn down — the window adopts it — and the
-	// window is opened a turn later so the canvas mount is gone first (SerialTerminalHost
-	// hands the terminal to the newest mount).
+	// has). The controller is deliberately NOT torn down — the window adopts it
+	// (tearOffAndOpen).
 	func detach(_ tab: VMPaneTab) {
-		if isTorn(tab) {
-			openWindow(id: "torn-tab", value: TornTab(vm: vm.name, tab: tab))
-			return
-		}
-		let payload = viewModel.tearOff(tab, vm: vm.name)
-		DispatchQueue.main.async { openWindow(id: "torn-tab", value: payload) }
+		viewModel.tearOffAndOpen(tab, vm: vm.name) { openWindow(id: "torn-tab", value: $0) }
 	}
 
 	func mutateCanvas(_ change: (inout CanvasState) -> Void) {
