@@ -55,7 +55,7 @@ struct RenameFieldTests {
 			alpine, diskID: "storage:system", draft: ".x", refused: { refusals.append($0) }))
 		#expect(!h.viewModel.submitMountTag(
 			alpine, mountID: mountID, draft: "GuestSetup", refused: { refusals.append($0) }))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(h.viewModel.presentedError == nil)
 		#expect(refusals.isEmpty)
 		#expect(!h.stub.calls.contains("renameVM"))
@@ -71,7 +71,7 @@ struct RenameFieldTests {
 			alpine, draft: " Alpine ", reverted: { reverts += 1 },
 			refused: { _ in }))
 		#expect(reverts == 1)
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameVM"))
 	}
 
@@ -129,7 +129,7 @@ struct RenameFieldTests {
 			debian, draft: "Debian 2", refused: { _ in }))
 		#expect(!h.viewModel.submitDiskRename(
 			debian, diskID: "storage:system", draft: "root", refused: { _ in }))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameVM"))
 		#expect(!h.stub.calls.contains("renameDisk"))
 	}

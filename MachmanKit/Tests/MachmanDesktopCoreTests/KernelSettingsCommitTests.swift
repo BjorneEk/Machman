@@ -45,7 +45,7 @@ struct KernelSettingsCommitTests {
 		// The line served back, an unchanged one sends nothing.
 		#expect(await eventually { h.viewModel.vms[0].boot.kernel?.commandLine == line })
 		h.viewModel.setKernelCommandLine("Kernel Lab", line)
-		try await Task.sleep(for: .milliseconds(100))
+		#expect(await h.settled())
 		#expect(h.stub.kernelSettingsSent.count == 3)
 	}
 
@@ -90,7 +90,7 @@ struct KernelSettingsCommitTests {
 		h.stub.emit(.listChanged)
 		#expect(await eventually { !h.viewModel.vms.contains { $0.name == "Kernel Lab" } })
 		h.viewModel.setKernelCommandLine("Kernel Lab", "console=hvc0 quiet")
-		try await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("updateKernelSettings"), "\(h.stub.calls)")
 		#expect(h.viewModel.presentedError == nil, "\(h.viewModel.presentedError?.title ?? "")")
 	}

@@ -376,7 +376,7 @@ struct ActionRunnerTests {
 			let h = await DesktopHarness.make(c.vms)
 			c.run(h.viewModel)
 			#expect(await eventually { h.stub.calls.contains(c.method) }, "\(c.method)")
-			try await Task.sleep(for: .milliseconds(100))
+			#expect(await h.settled(), "\(c.method)")
 			#expect(h.viewModel.toasts.isEmpty, "\(c.method): \(h.viewModel.toasts.map(\.message))")
 			#expect(h.viewModel.presentedError == nil, "\(c.method)")
 		}
@@ -478,7 +478,7 @@ struct ActionRunnerTests {
 		other?.addDisk("Alpine", .storage(name: "data", sizeBytes: 8 << 30))
 		other = nil
 		#expect(gone == nil)
-		try await Task.sleep(for: .milliseconds(200))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("openWindow"))
 		#expect(!h.stub.calls.contains("addDisk"))
 	}
