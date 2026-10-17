@@ -11,17 +11,10 @@ import Foundation
 import MachmanAPI
 
 extension VMConfig {
-	// The backing file's size, through a link when the entry names one (D23).
+	// The backing file's size, through a link when the entry names one (D23); nil for a newer
+	// Machman's entry (D38).
 	func getDiskSize(disk: VMDisk) -> UInt64? {
-		let url = switch disk.kind {
-			case .fromUrl(let url):
-				url
-			case .storage(let name, _):
-				localURL(file: "\(name).raw")
-			case .iso(let url):
-				url
-		}
-		return fileSize(atPath: url.path)
+		attachedFile(of: disk).flatMap(fileSize(atPath:))
 	}
 
 	// Removes the disk from the config; for .storage also deletes the backing image file.
@@ -67,8 +60,8 @@ extension VMConfig {
 	// first one's id, so neither can be addressed alone (removing one removed both), and a
 	// start attached the file twice, writable, past the shared-disk guard's per-file sets.
 	public func addDisk(disk: VMDisk) throws {
-		let file = attachedFile(of: disk)
-		if disks.contains(where: { isSameFile(attachedFile(of: $0), file) }) {
+		if let file = attachedFile(of: disk),
+			disks.contains(where: { attachedFile(of: $0).map { isSameFile($0, file) } ?? false }) {
 			throw MachmanError(
 				code: .alreadyExists,
 				message: "\(name) already uses “\((file as NSString).lastPathComponent)”")

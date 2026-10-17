@@ -90,12 +90,56 @@ struct VMDiskCodableTests {
 			"""
 			try Data(config.utf8).write(to: URL(fileURLWithPath: "\(dir)/config"))
 			let loaded = try? VMConfig.load(name: "newer-disk")
-			// Fails until the open bug D38 (one undecodable disk entry hides the whole VM) is
-			// fixed.
 			#expect(loaded != nil)
-			// Fails until the open bug D38 (one undecodable disk entry hides the whole VM) is
-			// fixed: the entry is kept for the Machman that wrote it.
+			// The entry is kept for the Machman that wrote it.
 			#expect(loaded?.disks.count == 2)
+		}
+	}
+
+	private static let newerDiskConfig = """
+		{"name":"newer-disk","memorySize":2048,"cpuCount":2,"created":100000,
+		"macAddress":"aa:bb:cc:dd:ee:02",
+		"disks":[{"kind":{"storage":{"_0":"system","_1":0}}},
+		{"kind":{"nvme":{"_0":"fast","_1":512}},"safe":false}]}
+		"""
+
+	// D38 (review 4): the entry a newer Machman wrote lists by what it is, refuses to start
+	// while it is enabled — a disabled disk isn't attached, so the VM then starts without it —
+	// and every save writes it back as that Machman wrote it.
+	@Test("D38: a newer disk kind lists, refuses to start while enabled and saves back as read")
+	@MainActor func aNewerDiskKindIsKeptAsRead() throws {
+		try VMTestDir.withRedirectedDir {
+			let dir = "\(machmanVMDir)/newer-disk"
+			try FileManager.default.createDirectory(
+				atPath: dir, withIntermediateDirectories: true)
+			let file = URL(fileURLWithPath: "\(dir)/config")
+			try Data(Self.newerDiskConfig.utf8).write(to: file)
+			let registry = VMRegistry()
+			let vm = try #require(registry.vm(named: "newer-disk"))
+			let listed = LocalMachman(registry: registry).info(for: vm).disks
+			#expect(listed.map(\.type) == [.storage, .unknown])
+			#expect(listed.last?.name == VMDisk.newerKindName)
+			#expect(listed.last?.path == nil && listed.last?.safe == false)
+			let refused = try #require(throws: MachmanError.self) {
+				try vm.config.requireStartable()
+			}
+			#expect(refused.code == .invalidState)
+
+			try vm.config.setCPUCount(1)
+			func newerEntry(_ data: Data) throws -> NSDictionary? {
+				let config = try JSONSerialization.jsonObject(with: data) as? NSDictionary
+				return (config?["disks"] as? NSArray)?.lastObject as? NSDictionary
+			}
+			let written = try newerEntry(Data(contentsOf: file))
+			#expect(written != nil)
+			#expect(written == (try newerEntry(Data(Self.newerDiskConfig.utf8))))
+
+			let id = try #require(listed.last?.id)
+			try vm.config.setEnabled(disks: [id: false], mounts: [:], console: [:], uart: [:])
+			try vm.config.requireStartable()
+			let reloaded = try VMConfig.load(name: "newer-disk")
+			#expect(reloaded.disks.last?.enabled == false)
+			#expect(reloaded.disks.last?.id == id)
 		}
 	}
 

@@ -86,10 +86,9 @@ final class MacInstaller {
 	}
 
 	func install(source: Source) async throws {
-		// An install replaces the boot mode, so never one a newer Machman wrote (C11).
-		if case .unknown = config.boot {
-			throw BootConfig.newerModeRefusal
-		}
+		// An install replaces the boot mode, so never one a newer Machman wrote (C11), and it
+		// boots the VM, so never with a disk one added still enabled (D38).
+		try config.requireStartable()
 		// An install restores over the system disk and rewrites the platform identity and
 		// aux storage (which now overwrites, E24): never on a Mac that is installed. The UI
 		// only offers it before that; this guards every other caller.

@@ -82,10 +82,9 @@ final class InstallSession {
 			throw MachmanError(
 				code: .invalidState, message: "macOS is already installing on \(config.name)")
 		}
-		// Refused here, before any phase changes; MacInstaller guards its other callers (C11).
-		if case .unknown = config.boot {
-			throw BootConfig.newerModeRefusal
-		}
+		// Refused here, before any phase changes or a download; MacInstaller guards its other
+		// callers (C11, D38).
+		try config.requireStartable()
 		guard !isVMRunning() else {
 			// Two live VZ VMs would contend for the same disk images.
 			phase = InstallPhase(kind: .failed, message: "Stop the VM before installing macOS")

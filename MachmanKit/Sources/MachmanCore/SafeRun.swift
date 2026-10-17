@@ -55,7 +55,7 @@ enum SafeRun {
 			switch disk.kind {
 			case .storage, .fromUrl:
 				policies[disk.id] = disk.safe ? .clone : .reference
-			case .iso:
+			case .iso, .unknown:
 				policies[disk.id] = .reference
 			}
 		}

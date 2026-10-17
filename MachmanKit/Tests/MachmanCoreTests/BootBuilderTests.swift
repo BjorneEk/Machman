@@ -63,7 +63,7 @@ struct BootBuilderTests {
 			let cfg = try VMConfig(name: "blank", memorySize: 2048, cpuCount: 2)
 			try cfg.setKernelBoot(enabled: true)
 			let checks: [() throws -> Void] = [
-				cfg.requireStartableBoot, { _ = try cfg.makeBootLoader() },
+				cfg.requireStartable, { _ = try cfg.makeBootLoader() },
 			]
 			for check in checks {
 				let error = try #require(throws: MachmanError.self) { try check() }
@@ -89,7 +89,7 @@ struct BootBuilderTests {
 		try VMTestDir.withRedirectedDir {
 			let (cfg, kernel) = try kernelBoot(initrd: "/nowhere/initrd.img")
 			defer { try? FileManager.default.removeItem(atPath: kernel) }
-			try cfg.requireStartableBoot()
+			try cfg.requireStartable()
 			let error = try #require(throws: VirtualMachineError.self) {
 				_ = try cfg.makeBootLoader()
 			}

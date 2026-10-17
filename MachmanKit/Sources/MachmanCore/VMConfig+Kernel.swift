@@ -105,7 +105,7 @@ extension VMConfig {
 				if let path = moved(url.path) {
 					disks[index].kind = .fromUrl(URL(fileURLWithPath: path))
 				}
-			case .storage, .fromUrl:
+			case .storage, .fromUrl, .unknown:
 				break
 			}
 		}

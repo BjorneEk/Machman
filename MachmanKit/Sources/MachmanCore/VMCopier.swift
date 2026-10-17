@@ -189,10 +189,11 @@ enum VMCopier {
 				takenNames.insert(name)
 				externalClones.append((url.path, "\(name).raw", size))
 				disks.append(disk.withKind(.storage(name, size)))
-			case (.fromUrl, _), (.iso, _):
+			case (.fromUrl, _), (.iso, _), (.unknown, _):
 				// Referenced entries carry verbatim; the file stays put. An OWNED iso
 				// (imported/promoted into the dir) travels with the sidecar walk, and
-				// rewriteOwnedPaths (step 4) re-points its entry at the copy.
+				// rewriteOwnedPaths (step 4) re-points its entry at the copy. A newer
+				// Machman's entry carries as read (D38).
 				disks.append(disk)
 			}
 		}

@@ -35,7 +35,7 @@ extension RoutingMachman {
 		}
 		// A boot mode a newer Machman wrote never boots here (C11): refused before any vmhost
 		// is launched for it.
-		try vm.config.requireStartableBoot()
+		try vm.config.requireStartable()
 		guard !registry.isInstalling(vm) else {
 			throw MachmanError(
 				code: .invalidState,

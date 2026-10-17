@@ -15,7 +15,7 @@ enum BootConfig: Equatable {
 	case linuxKernel(LinuxKernelBoot)   // direct kernel boot, no EFI variable store
 	case macOS(MacOSBoot)               // Apple-silicon macOS guest; locked once installed
 	// A boot mode a newer Machman wrote (D26), kept as read: a save writes it back, and this
-	// build never starts it or replaces it (VMConfig.requireStartableBoot, validateTransition,
+	// build never starts it or replaces it (VMConfig.requireStartable, validateTransition,
 	// the macOS installer).
 	case unknown(JSONValue)
 }

@@ -76,6 +76,12 @@ extension LocalMachman {
 					sizeBytes: config.getDiskSize(disk: disk), safe: disk.safe,
 					owned: url.path.hasPrefix(config.vmDirPath() + "/"),
 					enabled: enabledFlag(disk.enabled))
+			case .unknown:
+				// A newer Machman's entry (D38): listed by what it is — this build knows nothing
+				// of its file, and promote, rename and grow don't apply.
+				return DiskInfo(
+					id: disk.id, type: .unknown, name: VMDisk.newerKindName, path: nil,
+					sizeBytes: nil, safe: disk.safe, enabled: enabledFlag(disk.enabled))
 			}
 		}
 		let mounts = Self.mountInfos(for: config)

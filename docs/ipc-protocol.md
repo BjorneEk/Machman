@@ -121,7 +121,7 @@ keep working — nothing is rejected at load.
 | `vm.kernel.delete` | `{name, path}` | `VMInfo` (removes an owned kernel file — `path` must name one of the VM's listed owned files once `..` is resolved, else `notFound` — and clears any field referencing it; a draft left holding nothing while kernel boot is off goes) |
 | `vm.setStartPolicy` | `{name, policy: {windowed, safe, autostart}}` | `{}` (`autostart && safe` → invalidArgument; autostart toggling installs/removes the VM's launchd agent; refused with `invalidState` while a safe run is hosted, and turning autostart on is refused with `invalidState` while another VM that starts at login shares one of its writable disk files or its MAC, as their configs on disk say) |
 | `vm.setSafety` | `{name, disks?: {id: bool}, mounts?: {id: bool}}` | `{}` (unknown id → notFound, nothing applies; while a safe run is hosted this edits the discardable shadow config) |
-| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (the client applies the VM's `startPolicy` to `options` — see DTOs; `macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached — a disk switched off on a running VM stays attached until it stops — which `force` does not override and which is checked before the MAC, so a plain start meets it first; `invalidState` when a newer Machman set the VM's boot mode (`boot.mode` `"unknown"`); `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
+| `vm.start` | `{name, options?: {openWindow, force, safe}}` | `{}` (the client applies the VM's `startPolicy` to `options` — see DTOs; `macConflict` when a running VM already uses this VM's MAC, or one still starting with it — the earlier start wins — and `force: true` overrides; `invalidState` when a running or starting VM has one of this VM's writable disk files attached — a disk switched off on a running VM stays attached until it stops — which `force` does not override and which is checked before the MAC, so a plain start meets it first; `invalidState` when a newer Machman set the VM's boot mode (`boot.mode` `"unknown"`) or added one of its enabled disks (`type` `"unknown"`); `safe: true` runs a discardable shadow copy — see Safe runs below; a vmhost left over from an earlier start takes the start or refuses it — see Per-VM host processes) |
 | `vm.stop` | `{name, mode: "soft"\|"force"}` | `{}` (`soft` asks the guest via requestStop, and answers `invalidState` at once while the VM lists `unresponsive`; a vmhost that doesn't answer a `force` stop within 15 s is listed `unresponsive` and the stop answers `timeout` ("… isn’t answering, so it didn’t stop") — a plain stop never ends a vmhost process — except a `force` stop of a VM whose start runs a vmhost already, which ends that vmhost and the start answers `cancelled` ("The start was canceled"); a VM still preparing a safe run is canceled instead, see Safe runs) |
 | `vm.process.end` | `{name}` | `{}` (ends the process of the VM's vmhost, so the VM stops at once — sent only after the user confirmed it, for a VM listed `unresponsive` or whose `force` stop answered `timeout`; `invalidState` while its vmhost answers ("… is answering again — use Force Stop"), while it is stopped, or when no vmhost process can be found to end; while it is starting it ends the start's vmhost, answering or not, and the start answers `cancelled`; a warning `log` event follows; an older daemon answers -32601, and the desktop and agent then send a plain `force` stop instead) |
 | `vm.safeSave` | `{name, newName}` | `VMInfo` (promotes a RUNNING safe-run shadow to a real VM without interrupting the guest: the original flips to stopped, the new VM is running non-safe with fresh MAC/machine identity effective next boot; the disks the run wrote directly (the original's unsafe storage disks it attached, whatever their flags say now) move into the new VM's folder and the original keeps them as references; refused unless the VM is safe-hosted, or when newName is taken or breaks the name rules; `invalidState` when the library sits on another volume than its safe runs; like `vm.copy`, the saved VM forgets the last guest-setup run and serves the installer at its next boot, when its SSH keypair is re-minted) |
@@ -156,7 +156,7 @@ keep working — nothing is rejected at load.
 ## DTOs (abridged)
 
 `VMInfo`: `{name, state, created, lastRan?, cpuCount, memoryBytes, macAddress?, disks:
-[{id, type: "storage"|"image"|"iso", name?, path?, sizeBytes?, safe, owned?, enabled?}],
+[{id, type: "storage"|"image"|"iso"|"unknown", name?, path?, sizeBytes?, safe, owned?, enabled?}],
 mounts: [{id, path, tag, safe, enabled?, kind?, automounted?, automountedAt?}],
 boot: {mode: "efi"|"linuxKernel"|"macOS"|"unknown", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
@@ -289,8 +289,11 @@ Machman's) is kept as written through its saves and logs like resetOnBoot there.
 
 `disks[].owned?` is true when the backing file lives inside (and travels with) the VM's
 directory — imports/promotes create owned disks; absent means an older daemon.
-`disks[].path` is populated for every type — for `storage` it is the server-resolved absolute
-path of the backing image (clients must not derive library paths). `safe` flags are the
+`disks[].path` is populated for every known type — for `storage` it is the server-resolved
+absolute path of the backing image (clients must not derive library paths). `type` `"unknown"`
+is a disk entry a newer Machman wrote: it has no path or size, it is saved back as written,
+`vm.disk.remove` drops only the entry, and a start is refused with `invalidState` while it is
+enabled (a disabled one isn't attached, so the VM starts without it). `safe` flags are the
 safe-mode policy (clone-vs-attach for disks, omit-vs-mount for mounts); `safeRun` appears only
 while a safe run impersonates the VM.
 

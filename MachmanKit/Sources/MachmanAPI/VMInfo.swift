@@ -120,12 +120,13 @@ public struct VMInfo: Codable, Sendable, Equatable, Identifiable {
 }
 
 // Tolerant decode (1.0.8): an unrecognized future type degrades to .unknown instead of
-// failing the whole vm.list decode. The daemon rejects .unknown in requests.
+// failing the whole vm.list decode. The daemon rejects .unknown in requests, and lists a disk
+// entry a newer Machman wrote as .unknown (D38).
 public enum DiskType: String, Codable, Sendable, Equatable {
 	case storage   // a named raw image created and stored inside the VM directory
 	case image     // an existing disk image referenced by path
 	case iso       // a read-only installer/live image attached as USB mass storage
-	case unknown   // decode fallback only; never encode it
+	case unknown   // a type this build doesn't know, or a newer Machman's disk (D38)
 
 	public init(from decoder: Decoder) throws {
 		let raw = try decoder.singleValueContainer().decode(String.self)

@@ -20,7 +20,7 @@ extension VMConfig {
 		var paths = disks.compactMap { disk -> String? in
 			switch disk.kind {
 			case .fromUrl(let url), .iso(let url): return url.path
-			case .storage: return nil
+			case .storage, .unknown: return nil
 			}
 		}
 		if let kernel = kernelSettings {
@@ -47,28 +47,31 @@ extension VMConfig {
 			switch disk.kind {
 			case .storage(let name, _): return configFilePath(file: "\(name).raw")
 			case .fromUrl(let url): return url.path
-			case .iso: return nil
+			case .iso, .unknown: return nil
 			}
 		}.map { ($0 as NSString).standardizingPath })
 	}
 
-	// The file a disk entry attaches: its storage raw, image or iso.
-	func attachedFile(of disk: VMDisk) -> String {
+	// The file a disk entry attaches: its storage raw, image or iso; nil for a newer Machman's
+	// entry, whose file this build can't know (D38).
+	func attachedFile(of disk: VMDisk) -> String? {
 		switch disk.kind {
 		case .storage(let name, _): return configFilePath(file: "\(name).raw")
 		case .fromUrl(let url), .iso(let url): return url.path
+		case .unknown: return nil
 		}
 	}
 
 	// The file a disk entry owns — what deleteDisk deletes: a storage raw, or an iso inside
-	// the VM's folder. nil for a reference, whose removal only disconnects it.
+	// the VM's folder. nil for a reference, whose removal only disconnects it, and for a newer
+	// Machman's entry (D38): removing it drops only the entry.
 	func ownedFile(of disk: VMDisk) -> String? {
 		switch disk.kind {
 		case .storage(let name, _):
 			return configFilePath(file: "\(name).raw")
 		case .iso(let url) where url.path.hasPrefix(vmDirPath() + "/"):
 			return url.path
-		case .iso, .fromUrl:
+		case .iso, .fromUrl, .unknown:
 			return nil
 		}
 	}

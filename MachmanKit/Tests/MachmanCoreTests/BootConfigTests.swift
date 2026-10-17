@@ -149,7 +149,7 @@ struct BootConfigTests {
 			let config = try VMConfig.load(name: "newer")
 			let refusal = "A newer version of Machman set this VM\u{2019}s boot mode"
 			for start in [
-				{ try config.requireStartableBoot() },
+				{ try config.requireStartable() },
 				{ _ = try config.makeVZVirtualMachineConfiguration() },
 				{ _ = try config.makePlatform() },
 				{ _ = try config.makeBootLoader() },

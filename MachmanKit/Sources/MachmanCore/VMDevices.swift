@@ -35,15 +35,20 @@ extension VMConfig {
 
 	// MARK: - Boot-mode-aware builders
 
-	// A start's first check (C11): a boot mode a newer Machman wrote never boots here — this
-	// build can't know what it needs. Neither does kernel boot with no kernel chosen (D37): it
-	// is refused with what to do. The assembly below runs it before anything else, and the
-	// router runs it before any vmhost is launched.
-	func requireStartableBoot() throws {
+	// A start's first check (C11, D38): a boot mode a newer Machman wrote never boots here —
+	// this build can't know what it needs — nor does a disk entry one wrote while it is
+	// enabled (a disabled one isn't attached, so the VM then starts without it). Neither does
+	// kernel boot with no kernel chosen (D37): it is refused with what to do. The assembly
+	// below runs it before anything else, and the router runs it before any vmhost is launched.
+	func requireStartable() throws {
 		if case .unknown = boot { throw BootConfig.newerModeRefusal }
 		if case .linuxKernel(let kernel) = boot, kernel.kernelPath.isEmpty {
 			throw noKernelRefusal
 		}
+		let newerDisk = disks.contains {
+			if $0.enabled, case .unknown = $0.kind { return true } else { return false }
+		}
+		if newerDisk { throw VMDisk.newerKindRefusal }
 	}
 
 	// The empty draft kernel boot starts from failed as "Kernel image not found: " (D37).
@@ -157,7 +162,7 @@ extension VMConfig {
 		let width = device.displayWidthPixels ?? fallback.width
 		let height = device.displayHeightPixels ?? fallback.height
 		switch boot {
-		case .efi, .linuxKernel, .unknown:   // .unknown never starts (requireStartableBoot)
+		case .efi, .linuxKernel, .unknown:   // .unknown never starts (requireStartable)
 			let graphics = VZVirtioGraphicsDeviceConfiguration()
 			graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(
 				widthInPixels: width, heightInPixels: height)]
@@ -177,7 +182,7 @@ extension VMConfig {
 	func keyboards(present: Bool) -> [VZKeyboardConfiguration] {
 		guard present else { return [] }
 		switch boot {
-		case .efi, .linuxKernel, .unknown:   // .unknown never starts (requireStartableBoot)
+		case .efi, .linuxKernel, .unknown:   // .unknown never starts (requireStartable)
 			return [VZUSBKeyboardConfiguration()]
 		case .macOS:
 			return [VZMacKeyboardConfiguration()]
@@ -348,7 +353,7 @@ extension VMConfig {
 	// The configuration before VZ validates it (which takes the virtualization entitlement, so
 	// the headless tests stop here).
 	func assembleVZConfiguration(attachSerial: Bool, lab: LabEnvironment?) throws -> BuiltVM {
-		try requireStartableBoot()
+		try requireStartable()
 		let resolved = resolvedDevices()
 		let policy = LabDevicePolicy.current(lab: lab)
 		var byKind = resolved.attach
@@ -580,6 +585,8 @@ extension VMConfig {
 				return try self.diskDeviceConfig(diskUrl: self.localURL(file: "\(name).raw"))
 			case .fromUrl(let url):
 				return try self.diskDeviceConfig(diskUrl: url)
+			case .unknown:
+				throw VMDisk.newerKindRefusal   // never reached: requireStartable refuses first
 			}
 		}
 	}

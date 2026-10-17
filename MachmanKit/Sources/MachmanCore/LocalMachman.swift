@@ -196,6 +196,8 @@ public final class LocalMachman: MachmanControlling {
 				policies[disk.id] = (included?.contains(disk.id) ?? true) ? .reference : .omit
 			case .iso:
 				policies[disk.id] = .reference   // read-only references always travel
+			case .unknown:
+				policies[disk.id] = .reference   // a newer Machman's entry carries as read (D38)
 			}
 		}
 		let guestKind: VMCopyRequest.GuestKind = {

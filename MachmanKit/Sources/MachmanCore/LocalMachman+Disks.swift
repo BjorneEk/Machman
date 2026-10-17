@@ -80,6 +80,9 @@ extension LocalMachman {
 			sourcePath = url.path
 		case .fromUrl(let url):
 			sourcePath = url.path
+		case .unknown:
+			throw MachmanError(
+				code: .invalidState, message: "A disk a newer Machman added can’t be promoted")
 		}
 		let promoted = try await copyIntoVM(
 			vm, name: name, sourcePath: sourcePath, kind: OperationInfo.Kind.promoteDisk)

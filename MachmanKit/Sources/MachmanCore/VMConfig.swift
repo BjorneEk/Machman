@@ -71,12 +71,43 @@ struct HostMountPoint: Codable, Identifiable {
 }
 
 // The old persisted disk enum, byte-identical on disk (positional {"storage":{"_0":…,"_1":…}}).
-// NEVER add associated values to it — synthesized enum coding uses positional keys, so any
-// change silently breaks every config on disk. New per-disk fields go on VMDisk.
-enum VMDiskKind: Codable, Equatable {
+// NEVER add associated values to its known cases — their coding is the compiler's positional
+// one (Known below), so any change silently breaks every config on disk. New per-disk fields
+// go on VMDisk.
+enum VMDiskKind: Equatable {
 	case storage(String, UInt64)
 	case fromUrl(URL)
 	case iso(URL)
+	// A disk entry a newer Machman wrote (D38), kept whole as read — BootConfig.unknown's
+	// pattern: it lists, a save writes it back, and the VM doesn't start while it is enabled
+	// (VMConfig.requireStartable). Only VMDisk's decoder makes one.
+	case unknown(JSONValue)
+}
+
+extension VMDiskKind: Codable {
+	// The three known shapes, coded by the compiler exactly as before .unknown existed.
+	private enum Known: Codable {
+		case storage(String, UInt64)
+		case fromUrl(URL)
+		case iso(URL)
+	}
+
+	init(from decoder: any Decoder) throws {
+		switch try Known(from: decoder) {
+		case .storage(let name, let size): self = .storage(name, size)
+		case .fromUrl(let url): self = .fromUrl(url)
+		case .iso(let url): self = .iso(url)
+		}
+	}
+
+	func encode(to encoder: any Encoder) throws {
+		switch self {
+		case .storage(let name, let size): try Known.storage(name, size).encode(to: encoder)
+		case .fromUrl(let url): try Known.fromUrl(url).encode(to: encoder)
+		case .iso(let url): try Known.iso(url).encode(to: encoder)
+		case .unknown(let entry): try entry.encode(to: encoder)
+		}
+	}
 }
 
 struct VMDisk: Codable, Identifiable, Equatable {
@@ -105,7 +136,19 @@ struct VMDisk: Codable, Identifiable, Equatable {
 		case .storage(let name, _): return "storage:\(name)"
 		case .fromUrl(let url): return "url:\(url.absoluteString)"
 		case .iso(let url): return "iso:\(url.absoluteString)"
+		case .unknown(let entry): return "unknown:" + (entry["kind"] ?? entry).canonicalText
 		}
+	}
+
+	// How a newer Machman's disk lists (D38): what it is, never its raw entry.
+	static let newerKindName = "Disk from a newer Machman"
+
+	// What refuses to start a VM while a newer Machman's disk is enabled (D38).
+	static var newerKindRefusal: MachmanError {
+		MachmanError(
+			code: .invalidState,
+			message: "A newer version of Machman added one of this VM’s disks — disable it to "
+				+ "start without it")
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -116,25 +159,67 @@ struct VMDisk: Codable, Identifiable, Equatable {
 
 	// Fallback decode: a keyed container WITH a "kind" key is the new shape; anything else is
 	// the legacy bare enum, decoded directly (the legacy payload is also a keyed container —
-	// its only key is the case name — so contains(.kind) is the discriminator). Encode is
-	// always-new: configs migrate on their next save.
+	// its only key is the case name — so contains(.kind) is the discriminator). An entry
+	// neither reads as is kept whole (D38): one disk this build doesn't know never hides the
+	// VM. Encode is always-new: configs migrate on their next save.
 	init(from decoder: any Decoder) throws {
-		if let c = try? decoder.container(keyedBy: CodingKeys.self), c.contains(.kind) {
-			self.kind = try c.decode(VMDiskKind.self, forKey: .kind)
-			self.safe = try c.decodeIfPresent(Bool.self, forKey: .safe) ?? true
-			self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
-		} else {
-			self.kind = try VMDiskKind(from: decoder)
-			self.safe = true
-			self.enabled = true
+		do {
+			if let c = try? decoder.container(keyedBy: CodingKeys.self), c.contains(.kind) {
+				self.kind = try c.decode(VMDiskKind.self, forKey: .kind)
+				self.safe = (try? c.decodeIfPresent(Bool.self, forKey: .safe)) ?? true
+				self.enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+			} else {
+				self.kind = try VMDiskKind(from: decoder)
+				self.safe = true
+				self.enabled = true
+			}
+		} catch {
+			let entry = try JSONValue(from: decoder)
+			self.kind = .unknown(entry)
+			self.safe = entry["safe"]?.boolValue ?? true
+			self.enabled = entry["enabled"]?.boolValue ?? true
 		}
 	}
 
 	func encode(to encoder: any Encoder) throws {
+		if case .unknown(var entry) = kind {
+			// As read, but with the flags this build can change (the inspector's toggles):
+			// written where the entry has them or where they left the default.
+			entry.setFlag("safe", safe, writing: entry["safe"] != nil || !safe)
+			entry.setFlag("enabled", enabled, writing: entry["enabled"] != nil || !enabled)
+			try entry.encode(to: encoder)
+			return
+		}
 		var c = encoder.container(keyedBy: CodingKeys.self)
 		try c.encode(kind, forKey: .kind)
 		try c.encode(safe, forKey: .safe)
 		try c.encode(enabled, forKey: .enabled)
+	}
+}
+
+// What VMDisk reads of an entry it keeps whole.
+private extension JSONValue {
+	subscript(key: String) -> JSONValue? {
+		if case .object(let members) = self { return members[key] }
+		return nil
+	}
+
+	var boolValue: Bool? {
+		if case .bool(let value) = self { return value }
+		return nil
+	}
+
+	mutating func setFlag(_ key: String, _ value: Bool, writing: Bool) {
+		guard writing, case .object(var members) = self else { return }
+		members[key] = .bool(value)
+		self = .object(members)
+	}
+
+	// Sorted keys: the same entry always yields the same text (a stable disk id).
+	var canonicalText: String {
+		let encoder = JSONEncoder()
+		encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+		return (try? encoder.encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? "?"
 	}
 }
 
