@@ -107,8 +107,9 @@ enum KernelStore {
 	// a disk import's staging so the daemon's startup sweep (DiskImport.sweepStaleStaging)
 	// takes whatever a crash leaves there, and that folder then becomes the tag dir in one
 	// exclusive rename. A throw, kill or full disk mid-copy never leaves a truncated file under
-	// the tag, and of two imports into one tag only one lands (K13). `transfer` is the copy's
-	// test seam; the default is the clone-first engine disk imports use.
+	// the tag, and of two imports into one tag only one lands (K13). Like every new file in a VM
+	// folder (D40), the file is owner-only and so is the folder that becomes its tag dir.
+	// `transfer` is the copy's test seam; the default is the clone-first engine disk imports use.
 	static func promote(
 		role: KernelRole, sourcePath: String, kernelsDir: String, tag: String,
 		transfer: ((String, String) throws -> Void)? = nil
@@ -125,13 +126,16 @@ enum KernelStore {
 		let staging = (kernelsDir as NSString).deletingLastPathComponent + "/"
 			+ DiskImport.stagingPrefix + UUID().uuidString
 		do {
-			try fm.createDirectory(atPath: staging, withIntermediateDirectories: true)
+			try fm.createDirectory(
+				atPath: staging, withIntermediateDirectories: true,
+				attributes: [.posixPermissions: 0o700])
 			let staged = staging + "/" + basename
 			if let transfer {
 				try transfer(sourcePath, staged)
 			} else {
 				try FileTransfer.copy(src: sourcePath, dst: staged)
 			}
+			try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staged)
 			excludeFromBackup(path: staged)   // owned now; the attribute rides the rename
 			try fm.createDirectory(atPath: roleDir, withIntermediateDirectories: true)
 			try place(staging, at: tagDir, tag: trimmed)

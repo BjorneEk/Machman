@@ -317,6 +317,26 @@ struct KernelStoreTests {
 		#expect(KernelStore.ownedFiles(kernelsDir: kernels).isEmpty)
 	}
 
+	// D40's mode rule for kernel files: like a disk import's file, a promoted kernel is
+	// owner-only, and so is the tag dir it lands in (K5: new files only).
+	@Test("D39: a promoted kernel file and its tag dir are owner-only")
+	func aPromotedKernelIsOwnerOnly() throws {
+		let (dir, kernels, source) = try storeDir()
+		defer {
+			try? FileManager.default.removeItem(atPath: dir)
+			try? FileManager.default.removeItem(atPath: source)
+		}
+		try FileManager.default.setAttributes(
+			[.posixPermissions: 0o644], ofItemAtPath: source)
+		let dest = try KernelStore.promote(
+			role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1")
+		func mode(_ path: String) throws -> Int? {
+			try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
+		}
+		#expect(try mode(dest) == 0o600)
+		#expect(try mode(kernels + "/kernel/v1") == 0o700)
+	}
+
 	// Kernel-import claims don't exclude each other: an import that lands first takes the tag,
 	// and the one placed after it is refused (K13), leaving nothing behind. A tag dir left
 	// holding only Finder's .DS_Store is no kernel file and is taken.
