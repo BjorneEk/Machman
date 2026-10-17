@@ -35,7 +35,15 @@ public struct StatusIcon: View {
 				}
 			}
 			.accessibilityElement(children: .ignore)
-			.accessibilityLabel(state.displayLabel)
+			.accessibilityLabel(spoken)
+	}
+
+	// What the glyph and badge tell apart, in words.
+	private var spoken: String {
+		guard state.isRunning else { return state.displayLabel }
+		let mode = windowOpen ? "window open" : "headless"
+		return [state.displayLabel, mode, safeRun ? "safe run" : nil]
+			.compactMap { $0 }.joined(separator: ", ")
 	}
 
 	private var symbol: String {

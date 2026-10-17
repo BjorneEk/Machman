@@ -60,9 +60,12 @@ struct AccessibilityLabelTests {
 		let tree = try await OffscreenHost.withHost(HStack {
 			StatusIcon(state: .stopped, windowOpen: false)
 			StatusIcon(state: .running, windowOpen: true)
+			StatusIcon(state: .running, windowOpen: false, safeRun: true)
 		}) { $0.snapshot() }
 		#expect(tree.find(label: "Stopped") != nil, "\(tree.dump())")
-		#expect(tree.find(label: "Running") != nil)
+		// What the glyph tells apart, VoiceOver says too.
+		#expect(tree.find(label: "Running, window open") != nil, "\(tree.dump())")
+		#expect(tree.find(label: "Running, headless, safe run") != nil)
 		#expect(tree.all.allSatisfy { $0.label?.lowercased().contains("pause") != true })
 	}
 
