@@ -85,8 +85,46 @@ struct TreeSectionsTests {
 		vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 		vm.boot.ownedKernels = nil
 		#expect(vm.boot.mode == .efi)
-		// Fails until the open bug N3 (an empty kernel draft keeps the parked sections) is fixed.
 		#expect(!vm.showsKernelSections)
+	}
+
+	// K1: a command line is something kept, so a draft holding only one keeps both sections,
+	// parked and without rows (the Kernel inspector shows the line); whitespace is nothing.
+	@Test("N3: a parked draft holding only a command line keeps both sections, parked")
+	func aCommandLineKeepsTheParkedSections() {
+		var vm = Samples.kernelParkedCommandLineOnly()
+		#expect(vm.showsKernelSections && vm.kernelSectionParked)
+		#expect(vm.kernelDraft == KernelDraftContents(
+			hasFiles: false, hasCommandLine: true, missingKernel: true))
+		#expect(vm.kernelTreeEntries(role: .kernel).isEmpty)
+		#expect(vm.kernelTreeEntries(role: .initramfs).isEmpty)
+		#expect(TreeSection.isVisible(.kernel, rows: 0, filtering: false))
+		#expect(TreeSection.isVisible(.initramfs, rows: 0, filtering: false))
+		vm.boot.kernel?.commandLine = " \n "
+		#expect(!vm.showsKernelSections)
+	}
+
+	// D31 (K3): a switch to macOS keeps the kernel files and draft; they show parked, as the
+	// VM's own files (never as external references).
+	@Test("D31: a macOS VM with kernel files shows them parked")
+	func aMacOSVMShowsItsKernelFilesParked() {
+		let vm = Samples.macOSWithKernelFiles()
+		#expect(vm.showsKernelSections && vm.kernelSectionParked)
+		#expect(vm.kernelTreeEntries(role: .kernel).map(\.owned) == [true, true])
+		#expect(vm.kernelTreeEntries(role: .initramfs).map(\.owned) == [true])
+		#expect(!vm.kernelBootMissingKernel)
+		#expect(!Samples.macOS().showsKernelSections)
+	}
+
+	// T28: the tree's badge and the Kernel inspector each wrote the rule; now one predicate
+	// holds it — only kernel boot without a kernel, never a parked draft without one.
+	@Test("T28: the tree's and the inspector's no-kernel warning read one rule")
+	func oneNoKernelRule() {
+		#expect(Samples.kernelBootEmpty().kernelBootMissingKernel)
+		#expect(!Samples.kernelBoot().kernelBootMissingKernel)
+		#expect(Samples.kernelParkedCommandLineOnly().kernelDraft.missingKernel)
+		#expect(!Samples.kernelParkedCommandLineOnly().kernelBootMissingKernel)
+		#expect(!Samples.linux().kernelBootMissingKernel)
 	}
 
 	@Test func serialPortsListConsolesThenUARTs() {

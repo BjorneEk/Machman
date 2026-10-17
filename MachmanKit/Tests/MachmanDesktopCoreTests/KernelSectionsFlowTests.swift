@@ -29,4 +29,20 @@ struct KernelSectionsFlowTests {
 		#expect(await eventually { debian()?.boot.mode == .efi })
 		#expect(debian()?.showsKernelSections == false)
 	}
+
+	// K1: a command line set while kernel boot was on is kept for the next kernel boot, and
+	// with it the sections, parked.
+	@Test("N3: a command line kept from kernel boot keeps the sections, parked")
+	func aKeptCommandLineKeepsTheSections() async {
+		let h = await DesktopHarness.make()
+		func debian() -> VMInfo? { h.viewModel.vms.first { $0.name == "Debian" } }
+		#expect(await h.viewModel.setKernelBoot("Debian", enabled: true))
+		#expect(await eventually { debian()?.boot.mode == .linuxKernel })
+		h.viewModel.setKernelCommandLine("Debian", "console=hvc0")
+		#expect(await eventually { debian()?.boot.kernel?.commandLine == "console=hvc0" })
+		#expect(await h.viewModel.setKernelBoot("Debian", enabled: false))
+		#expect(await eventually { debian()?.boot.mode == .efi })
+		#expect(debian()?.showsKernelSections == true)
+		#expect(debian()?.kernelSectionParked == true)
+	}
 }

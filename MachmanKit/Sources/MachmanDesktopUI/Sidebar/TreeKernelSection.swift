@@ -21,13 +21,9 @@ struct TreeKernelSection: View {
 		}
 	}
 
-	// The sections show once kernel boot is (or was) configured (VMInfo.showsKernelSections:
-	// parked, dimmed, while kernel boot is off); their rows are VMInfo.kernelTreeEntries.
-
-	// The VM cannot start kernel boot without a kernel path.
-	private var missingKernelWarning: Bool {
-		ctx.vm.boot.mode == .linuxKernel && (ctx.vm.boot.kernel?.kernelPath ?? "").isEmpty
-	}
+	// The sections show while kernel boot is on, or while the draft holds something
+	// (VMInfo.showsKernelSections: parked, dimmed, in any other boot mode); their rows are
+	// VMInfo.kernelTreeEntries.
 
 	@ViewBuilder
 	private func kernelGroup(role: KernelRole) -> some View {
@@ -63,7 +59,7 @@ struct TreeKernelSection: View {
 					.disabled(!ctx.pasteboard.snapshot.canPaste(into: .kernel(role)))
 			},
 			accessory: {
-				if role == .kernel && missingKernelWarning {
+				if role == .kernel && ctx.vm.kernelBootMissingKernel {
 					TreeBadge.warning("No kernel selected — the VM cannot start")
 				}
 			}

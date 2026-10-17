@@ -42,7 +42,7 @@ struct KernelParentInspector: View {
 							.tag(String?.some(activePath))
 					}
 				}
-				if vm.boot.mode == .linuxKernel && activePath == nil {
+				if vm.kernelBootMissingKernel {
 					Label("No kernel selected — the VM cannot start",
 						systemImage: MachmanSymbols.warning)
 						.font(.caption)

@@ -55,6 +55,27 @@ extension Samples {
 		return vm
 	}
 
+	// Back to EFI with only a command line kept from kernel boot (K1): Kernel and Initramfs
+	// show parked, with no rows.
+	public static func kernelParkedCommandLineOnly(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name)
+		vm.boot.mode = .efi
+		vm.boot.kernel = KernelSettings(
+			kernelPath: "", initrdPath: nil, commandLine: "console=hvc0 root=/dev/vda2")
+		vm.boot.ownedKernels = nil
+		return vm
+	}
+
+	// A macOS VM that was a kernel-boot guest before its switch: the kernel files and draft
+	// stay, listed (K3, D31), so its Kernel and Initramfs sections show parked.
+	public static func macOSWithKernelFiles(_ name: String = "Sequoia") -> VMInfo {
+		var vm = macOS(name)
+		let before = kernelBoot(name)
+		vm.boot.kernel = before.boot.kernel
+		vm.boot.ownedKernels = before.boot.ownedKernels
+		return vm
+	}
+
 	// A Blank-template guest: its system disk and the implied devices, nothing else — no
 	// mounts, no serial ports, no Guest Setup (N1's empty sections).
 	public static func bareLinux(_ name: String = "Bare") -> VMInfo {

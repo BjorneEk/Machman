@@ -85,7 +85,6 @@ struct TreeSelectionPruneTests {
 			vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 			vm.boot.ownedKernels = []
 		}
-		// Fails until the open bug N3 (an empty kernel draft keeps the parked sections) is fixed.
 		#expect(await eventually { h.viewModel.treeSelection == [.disk("storage:system")] })
 	}
 

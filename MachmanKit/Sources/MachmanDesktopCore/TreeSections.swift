@@ -8,7 +8,8 @@
 //  tree: its Add From Disk…, drops and paste; Kernel also carries the no-kernel warning).
 //  Disks, Mounts, Serial, Installers and Devices are all added from the toolbar's +, so an
 //  empty one hides. While a filter is active, a section without a matching row hides. Also
-//  here: the VM-derived rows the tree and the selection prune share.
+//  here: the VM-derived rows the tree and the selection prune share, and what the kernel
+//  draft holds, which decides whether the Kernel and Initramfs sections show at all.
 //
 
 import Foundation
@@ -52,6 +53,17 @@ public enum TreeSection: CaseIterable, Sendable {
 	}
 }
 
+// What a VM's kernel draft holds, as the tree and the Kernel inspector read it (N3, K1, T28).
+// Files are the owned ones and the draft's kernel and initramfs paths (an external reference
+// is a row too); a command line counts when it is more than whitespace (KernelSettings).
+public struct KernelDraftContents: Equatable, Sendable {
+	public let hasFiles: Bool
+	public let hasCommandLine: Bool
+	public let missingKernel: Bool   // no kernel path chosen
+
+	public var isEmpty: Bool { !hasFiles && !hasCommandLine }
+}
+
 // One row of the Kernel or Initramfs section: an owned file, or the active setting when it
 // points outside the owned set (an external reference — promotable).
 public struct KernelTreeEntry: Identifiable, Equatable, Sendable {
@@ -74,13 +86,29 @@ extension VMInfo {
 		(consolePorts ?? []) + (uartPorts ?? [])
 	}
 
-	// Kernel sections appear once kernel boot is (or was) configured — the draft survives
-	// toggling back to EFI, shown parked (dimmed) until kernel boot is on again.
+	public var kernelDraft: KernelDraftContents {
+		let draft = boot.kernel
+		return KernelDraftContents(
+			hasFiles: draft?.holdsFile == true || !(boot.ownedKernels ?? []).isEmpty,
+			hasCommandLine: draft?.holdsCommandLine == true,
+			missingKernel: (draft?.kernelPath ?? "").isEmpty)
+	}
+
+	// The Kernel and Initramfs sections: always while kernel boot is on (the tree is where
+	// its files come from), and in any other boot mode — macOS too (K3) — while the draft
+	// holds something, parked (dimmed). A draft that holds nothing shows none (N3): it once
+	// kept them for good after a single visit to Kernel Boot.
 	public var showsKernelSections: Bool {
-		boot.mode != .macOS && (boot.kernel != nil || !(boot.ownedKernels ?? []).isEmpty)
+		boot.mode == .linuxKernel || !kernelDraft.isEmpty
 	}
 
 	public var kernelSectionParked: Bool { boot.mode != .linuxKernel }
+
+	// The one "no kernel selected" rule (T28): kernel boot is on and no kernel is chosen, so
+	// the VM can't start. The tree's warning badge and the Kernel inspector both read it.
+	public var kernelBootMissingKernel: Bool {
+		boot.mode == .linuxKernel && kernelDraft.missingKernel
+	}
 
 	// Owned files of the role, plus the active settings path when it points outside the
 	// owned set.
