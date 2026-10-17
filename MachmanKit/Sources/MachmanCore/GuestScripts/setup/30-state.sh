@@ -111,6 +111,7 @@ read_state() {
 	ST_KLD_ADDED="$(state_get KLD_ADDED)"
 	ST_LEDGER="$(state_list LEDGER_)"
 	state_distrust_logins "$(state_get SCRIPT_VERSION)"
+	state_made_dirs_before_v8 "$(state_get SCRIPT_VERSION)"
 	[ -z "$ADOPT_FROM" ] || ledger_note adopted "$ADOPT_FROM"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
@@ -133,6 +134,41 @@ state_distrust_logins() {
 		ledger_note legacy-login "$_sdl_dev"
 	done
 	ST_CONSOLE_LOGINS=""
+	return 0
+}
+
+# A state from before v8 records no made-dir entries, so the directories its runs made in the
+# default layout would read as found. They are Machman's own paths, which v7's uninstall
+# removed: the default mount root and its mount folders, the share root once a run mounted
+# it, and their common parent count as made. A custom --mountpoint stays found.
+# <the state's script version>
+state_made_dirs_before_v8() {
+	case "$1" in
+	''|*[!0-9]*) ;;
+	*) [ "$1" -lt 8 ] || return 0 ;;
+	esac
+	_smd_conf="$(state_get CONFIGURED)"
+	_smd_parent=""
+	[ "${MOUNT_ROOT%/*}" != "${SHARE_ROOT%/*}" ] || _smd_parent="${MOUNT_ROOT%/*}"
+	if [ "${ST_MOUNTPOINT:-$MOUNT_ROOT}" = "$MOUNT_ROOT" ] \
+		&& { [ -n "$ST_MOUNTPOINT" ] || has_word sshfs "$_smd_conf"; }; then
+		ledger_note made-dir "$MOUNT_ROOT"
+		_smd_ifs="$IFS"
+		IFS="$(printf '\t')"
+		set -f
+		# shellcheck disable=SC2086
+		set -- $ST_AUTOMOUNT_SSHFS
+		set +f
+		IFS="$_smd_ifs"
+		for _smd_name in "$@"; do
+			[ "$_smd_name" = "@share" ] || ledger_note made-dir "$MOUNT_ROOT/$_smd_name"
+		done
+		[ -z "$_smd_parent" ] || ledger_note made-dir "$_smd_parent"
+	fi
+	if has_word vfsauto "$_smd_conf" || has_item "@share" "$ST_AUTOMOUNT_SSHFS"; then
+		ledger_note made-dir "$SHARE_ROOT"
+		[ -z "$_smd_parent" ] || ledger_note made-dir "$_smd_parent"
+	fi
 	return 0
 }
 

@@ -426,6 +426,40 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// S66: a state from before v8 has no made-dir entries, so a v8 uninstall left the default
+	// mount root a v7 run made (and a re-run called it found). In the default layout —
+	// Machman's own paths, made by v7's runs — the root, its mount folders, the share root and
+	// their parent count as made; a custom --mountpoint stays found.
+	@Test("S66: a v7 state's default mount root goes at uninstall, a custom one stays")
+	func aV7DefaultMountRootGoesAtUninstall() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(GuestScriptStateTests.stateHere + #"""
+				UI_COLS=1000
+				mount() { :; }
+				MOUNT_ROOT="$D/mnt/machman/mounts"
+				SHARE_ROOT="$D/mnt/machman/share"
+				MOUNTPOINT="$MOUNT_ROOT"
+				mkdir -p "$STATE_DIR" "$MOUNT_ROOT/docs" "$SHARE_ROOT"
+				v7() {
+					printf "SCRIPT_VERSION=7\nMARKER='%s'\nCONFIGURED='%s'\n" "$MARKER" "$1"
+					printf "AUTOMOUNT_SSHFS='docs'\nMOUNTPOINT='%s'\n" "$2"
+				}
+				v7 "vfsauto sshfs sshfsauto" "$MOUNT_ROOT" > "$STATE_FILE"
+				read_state
+				uninstall_unmount_and_prune
+				if [ -d "$D/mnt/machman" ]; then echo "default: kept"; else echo "default: gone"; fi
+				mkdir -p "$D/mnt2/docs"
+				v7 "sshfs sshfsauto" "$D/mnt2" > "$STATE_FILE"
+				LEDGER_DONE=""
+				read_state
+				uninstall_unmount_and_prune
+				[ -d "$D/mnt2/docs" ] && echo "custom: kept"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == "default: gone\ncustom: kept\n", "\(shell): \(r.out)")
+		}
+	}
+
 	@Test func theMountPointIsReadyOnlyWhenItIs() async throws {
 		for shell in GuestScriptHarness.shells {
 			let r = try await GuestScriptHarness.run("""
