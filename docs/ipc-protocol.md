@@ -428,6 +428,11 @@ the key and installs macOS on a new first disk instead of the disk the user pick
 Hence the floor bump; `DiskInfo` type `"unknown"` for a newer Machman's disk, the
 unreadable-folder warning and `machman.hello`'s `host` are additive.
 
+**1.0.14 compatibility note**: a VM's config gained `setup.script`, the Guest Setup script it is
+pinned to (an older daemon or vmhost drops the key on its next config rewrite and serves its own
+build's script, so the pin silently moves). Hence the floor bump; `vm.setup.pin`,
+`host.setupScripts.import` and the `GuestSetupInfo` script fields are additive.
+
 ## Safe runs (invisible on the wire except `safeRun`)
 
 `vm.start {safe: true}` clones the VM into a hidden shadow (safe disks → discardable

@@ -201,7 +201,9 @@ final class DaemonConnection: ObservableObject {
 	// older vmhost (E22) — whose floor is the daemon's own version.
 	// 1.0.13: vm.install.start gained diskID (D32) — an older daemon drops it and installs
 	// macOS on a new first disk instead of the disk the user picked to erase.
-	static let oldestCompatibleDaemonVersion = "1.0.13"
+	// 1.0.14: a VM's config gained setup.script, the Guest Setup script it is pinned to (S67)
+	// — an older daemon drops it on its next config rewrite, so the pin silently moves.
+	static let oldestCompatibleDaemonVersion = "1.0.14"
 
 	// The embedded agent, the one Replace starts in an older one's place (the id check
 	// guards against a half-built bundle).
