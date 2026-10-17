@@ -303,4 +303,13 @@ public final class TerminalSessions: ObservableObject {
 			sshMeta[old] = nil
 		}
 	}
+
+	// The VM and tab a live controller serves: what File ▸ Save Terminal… names its file
+	// after (H63). Nil for one no tab holds any more.
+	public func tab(of controller: any TerminalController) -> (vm: String, tab: VMPaneTab)? {
+		for (vm, tabs) in live {
+			if let tab = tabs.first(where: { $0.value === controller })?.key { return (vm, tab) }
+		}
+		return nil
+	}
 }

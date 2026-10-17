@@ -3,12 +3,35 @@
 //  MachmanDesktopUI
 //
 //  File → Save Terminal: the save panel half of the view model's terminal state. The menu
-//  saves the key window's terminal (CommandTarget), a torn window's included.
+//  saves the key window's terminal (CommandTarget), a torn window's included. The panel is a
+//  sheet on that window, named for the VM and tab (H63) — never the app-modal runModal.
 //
 
 import AppKit
 import UniformTypeIdentifiers
 import MachmanDesktopCore
+
+// Who answers Save Terminal's question: a save sheet on the key window, or a test's answer.
+// The answer is the chosen URL, nil for Cancel, delivered on the main actor.
+struct SavePanels {
+	let save: @MainActor (SavePanelRequest, @escaping @MainActor (URL?) -> Void) -> Void
+
+	static let system = SavePanels { request, answer in
+		let panel = NSSavePanel()
+		panel.nameFieldStringValue = request.name
+		panel.allowedContentTypes = request.contentTypes
+		let done: (NSApplication.ModalResponse) -> Void = { response in
+			let url = response == .OK ? panel.url : nil
+			DispatchQueue.main.async { answer(url) }
+		}
+		// The window whose menu asked; with none key, a panel of its own (never modal).
+		if let window = NSApp.keyWindow {
+			panel.beginSheetModal(for: window, completionHandler: done)
+		} else {
+			panel.begin(completionHandler: done)
+		}
+	}
+}
 
 extension VMListViewModel {
 	// Save the main canvas's active terminal transcript.
@@ -21,11 +44,14 @@ extension VMListViewModel {
 	// transcript (up to 8 MiB) is taken here, the write to a possibly slow or network volume
 	// happens off the main thread (P11).
 	public func saveTerminalTranscript(of terminal: any TerminalController) {
-		let panel = NSSavePanel()
-		panel.nameFieldStringValue = "terminal.log"
-		panel.allowedContentTypes = [.plainText]
-		guard panel.runModal() == .OK, let url = panel.url else { return }
-		writeTerminalTranscript(terminal.transcript(), to: url)
+		saveTerminalTranscript(of: terminal, panels: .system)
+	}
+
+	func saveTerminalTranscript(of terminal: any TerminalController, panels: SavePanels) {
+		panels.save(transcriptSaveRequest(for: terminal)) { [weak self] url in
+			guard let self, let url else { return }
+			self.writeTerminalTranscript(terminal.transcript(), to: url)
+		}
 	}
 
 	// The panel's answer written out: off the main thread, a failure as the save's alert.
