@@ -237,11 +237,9 @@ extension VMListViewModel {
 
 	// MARK: - Engine warnings
 
-	// The engine logs these in its own process too, but that process is auto-launched —
-	// relaying through the client's logger keeps engine warnings visible from the app
-	// the user actually runs.
+	// An engine log event, relayed: a warning or error toasts and goes in the Activity list.
+	// It is not written to the log here — the process that emitted it did, once (E69).
 	func announceEngineLog(vm: String?, level: LogLevel, message: String) {
-		// Not written to the log here: the process that emitted it did (E69).
 		if level == .warning || level == .error {
 			// Keyed by its text: a warning repeated while its toast shows restarts that
 			// toast instead of stacking another copy (P15).
