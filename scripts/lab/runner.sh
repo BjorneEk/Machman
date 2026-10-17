@@ -75,6 +75,13 @@ lab_runner_find() {
 		"$(xcrun --show-sdk-path 2>/dev/null)"
 }
 
+# lab_test_fallback_log: where the swift test fallback keeps its output while it reads it, in the
+# run's sandbox (MACHMAN_LAB_RUN, a shard's own; else lab.sh's root), which the sweep removes
+# should a run be interrupted.
+lab_test_fallback_log() {
+	echo "${MACHMAN_LAB_RUN:-${root:?no lab run sandbox}}/report/swift-test-fallback.log"
+}
+
 # lab_test <events file or ""> <filter>: the tests the filter keeps, in one test process, its
 # output on stdout; lab_test --list: every test's id, a line each. The built bundle runs through
 # SwiftPM's testing helper, as swift test runs it, but without SwiftPM, whose build database a
@@ -97,7 +104,8 @@ lab_test() {
 			swift test list --skip-build --disable-xctest --package-path "$pkg"
 		else
 			# SwiftPM answers a filter that matched no test with a warning and exit 0.
-			log="$(mktemp /tmp/mml-test.XXXXXX)"
+			log="$(lab_test_fallback_log)"
+			mkdir -p "${log%/*}"
 			sandbox_awake swift test --skip-build --disable-xctest --package-path "$pkg" \
 				"${args[@]}" 2>&1 | tee "$log"
 			st=${PIPESTATUS[0]}
@@ -384,7 +392,8 @@ lab_selfcheck_runner() {
 	rc=0
 	(
 		export MACHMAN_SUITE_ID="com.gustaffranzen.Machman.test-$t" \
-			MACHMAN_DATA_DIR="$sc/$t/data" CFFIXED_USER_HOME="$sc/$t/home"
+			MACHMAN_DATA_DIR="$sc/$t/data" CFFIXED_USER_HOME="$sc/$t/home" \
+			MACHMAN_LAB_RUN="$sc/$t"
 		LAB_TEST_HELPER=""
 		lab_test "" 'MachmanLabTests\.NoSuchSuiteQ27/'
 	) > "$sc/$t.log" 2>&1 || rc=$?
@@ -392,6 +401,14 @@ lab_selfcheck_runner() {
 		echo "ok   $check"
 	else
 		echo "FAIL $check: exit $rc: $(tail -n 1 "$sc/$t.log")"
+		failures=$((failures + 1))
+	fi
+	check="Q27: the swift test fallback keeps its log in the run's sandbox, which the sweep removes"
+	why="$(MACHMAN_LAB_RUN=/tmp/mml.q27s lab_test_fallback_log)"
+	if [[ "$why" == /tmp/mml.q27s/report/* && ! -e "$sc/$t/report/${why##*/}" ]]; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: ${why:-no path}"
 		failures=$((failures + 1))
 	fi
 	rm -rf "$sc"
