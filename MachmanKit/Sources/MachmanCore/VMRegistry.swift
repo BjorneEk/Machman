@@ -577,8 +577,8 @@ public final class VMRegistry {
 	// was missing just lapsed. A folder that went stays gone.
 	private func listIfReadable(_ name: String, library: String) {
 		let config = "\(library)/\(name)/config"
-		guard restrictedName == nil, vms[name] == nil, FileManager.default.fileExists(atPath: config)
-		else { return }
+		guard restrictedName == nil, vms[name] == nil,
+			FileManager.default.fileExists(atPath: config) else { return }
 		do {
 			_ = try adoptFromDisk(name: name, library: library)
 		} catch {
