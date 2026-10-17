@@ -61,7 +61,9 @@ extension VMListViewModel {
 
 extension VMListViewModel {
 	// The nodes of `selection` whose entity still exists on `vm` (visibility aside: a row
-	// a filter hides keeps its selection). Groups stay while their section can show.
+	// a filter hides keeps its selection). A group stays while its section shows without a
+	// filter, by the rule the tree draws it with (T28): one whose last row went hides, and
+	// its selection goes with it.
 	public static func liveNodes(
 		_ selection: Set<SidebarNode>, in vm: VMInfo, openSessions: [SSHSessionRef]
 	) -> Set<SidebarNode> {
@@ -69,14 +71,12 @@ extension VMListViewModel {
 			switch node {
 			case .vmRoot:
 				return true
-			case .group("SSH"):
-				return vm.ssh?.configured == true
-			case .group("Kernel"):
-				return vm.showsKernelSections
-			case .group("Serial"):
-				return !vm.allSerialPorts.isEmpty
-			case .group:
-				return true
+			case .group(let title):
+				guard let section = TreeSection(title: title) else { return true }
+				guard let rows = vm.treeRows(section, openSessions: openSessions.count) else {
+					return false
+				}
+				return TreeSection.isVisible(section, rows: rows, filtering: false)
 			case .disk(let id):
 				return vm.disks.contains { $0.id == id }
 			case .mount(let id):

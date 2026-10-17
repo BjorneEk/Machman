@@ -51,6 +51,12 @@ public enum TreeSection: CaseIterable, Sendable {
 	public static func folds(rows: Int, previewing: Bool) -> Bool {
 		rows > 0 || previewing
 	}
+
+	// The section a group label names, or nil for a title no section has.
+	public init?(title: String) {
+		guard let section = Self.allCases.first(where: { $0.title == title }) else { return nil }
+		self = section
+	}
 }
 
 // What a VM's kernel draft holds, as the tree and the Kernel inspector read it (N3, K1, T28).
@@ -103,6 +109,24 @@ extension VMInfo {
 	}
 
 	public var kernelSectionParked: Bool { boot.mode != .linuxKernel }
+
+	// The rows a section lists on this VM before any filter, or nil while the section can't
+	// show at all (SSH not set up, the kernel sections while showsKernelSections is false):
+	// what the sections' views start from, for the selection prune (T28). `openSessions`
+	// counts the SSH section's rows.
+	public func treeRows(_ section: TreeSection, openSessions: Int) -> Int? {
+		switch section {
+		case .disks: return disks.count
+		case .mounts: return mounts.count
+		case .serial: return allSerialPorts.count
+		case .ssh: return ssh?.configured == true ? openSessions : nil
+		case .installers: return (devices ?? []).filter(\.kind.isInstaller).count
+		case .devices: return (devices ?? []).filter { !$0.kind.isInstaller }.count
+		case .kernel, .initramfs:
+			guard showsKernelSections else { return nil }
+			return kernelTreeEntries(role: section == .kernel ? .kernel : .initramfs).count
+		}
+	}
 
 	// The one "no kernel selected" rule (T28): kernel boot is on and no kernel is chosen, so
 	// the VM can't start. The tree's warning badge and the Kernel inspector both read it.

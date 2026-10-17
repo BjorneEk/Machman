@@ -88,6 +88,39 @@ struct TreeSelectionPruneTests {
 		#expect(await eventually { h.viewModel.treeSelection == [.disk("storage:system")] })
 	}
 
+	// T28: only SSH, Serial and Kernel groups were pruned; a selected Mounts (Disks, Devices,
+	// Installers) group whose last row went kept its selection after its section hid, and
+	// the inspector fell back to the VM's with nothing highlighted in the tree.
+	@Test("T28: a selected Mounts group goes with its last mount")
+	func aGroupGoesWithItsLastRow() async {
+		let h = await selecting("Debian")
+		h.viewModel.treeSelection = [.group("Mounts"), .disk("storage:system")]
+		change(h, "Debian") { $0.mounts = [] }
+		#expect(await eventually { h.viewModel.treeSelection == [.disk("storage:system")] })
+	}
+
+	// Every group by one rule: kept exactly while its section shows unfiltered.
+	@Test("T28: a group's selection lasts as long as its section shows")
+	func everyGroupFollowsItsSection() {
+		let groups = Set(TreeSection.allCases.map { SidebarNode.group($0.title) })
+		var vm = Samples.linux()
+		#expect(VMListViewModel.liveNodes(groups, in: vm, openSessions: []) == [
+			.group("Disks"), .group("Mounts"), .group("Serial"), .group("SSH"),
+			.group("Installers"), .group("Devices"),
+		])
+		vm.disks = []
+		vm.mounts = []
+		vm.consolePorts = []
+		vm.devices = []
+		vm.ssh = nil
+		vm.boot = Samples.kernelParkedCommandLineOnly().boot
+		#expect(VMListViewModel.liveNodes(groups, in: vm, openSessions: []) == [
+			.group("Kernel"), .group("Initramfs"),
+		])
+		#expect(VMListViewModel.liveNodes([.group("Elsewhere")], in: vm, openSessions: [])
+			== [.group("Elsewhere")])
+	}
+
 	@Test func pruningIgnoresOtherVMs() async {
 		let h = await selecting("Debian")
 		h.viewModel.treeSelection = [.disk("storage:system"), .serial(
