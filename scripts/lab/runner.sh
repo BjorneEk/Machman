@@ -144,11 +144,28 @@ lab_stop_follower() {
 	FOLLOWPID=""
 }
 
+# The runner's self-check knobs: each makes a pass misbehave on purpose (lab_selfcheck_runner).
+LAB_SELFCHECK_KNOBS=(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE)
+
+# lab_selfcheck_knobs <self-check pass 0|1>: outside a self-check pass (lab_run's, harness tier
+# only) every knob is dropped, said once: a leftover export must never fail a real run.
+lab_selfcheck_knobs() {
+	local knob
+	((${1:-0})) && return 0
+	for knob in "${LAB_SELFCHECK_KNOBS[@]}"; do
+		if [[ -n "${!knob:-}" ]]; then
+			echo "lab: ignored $knob (it acts in a self-check pass only)"
+			unset "$knob"
+		fi
+	done
+	return 0
+}
+
 # lab_plan: a parallel run's plan (report/plan/): the lab's tests listed in the first shard's
 # sandbox (the test guard wants one), the suites the filter keeps shared out longest first by
 # plan.py, the exclusive ones apart, each placed at its declaration; jobs drops to the number of
 # shared suites (1: serial). lab.sh --self-check's injected pass adds a suite whose filter
-# matches no test (MACHMAN_LAB_SELFCHECK_EMPTY_SUITE).
+# matches no test (MACHMAN_LAB_SELFCHECK_EMPTY_SUITE, a knob only a self-check pass keeps).
 lab_plan() {
 	local plan="$root/report/plan" shared
 	mkdir -p "$plan"
@@ -292,6 +309,18 @@ lab_selfcheck_runner() {
 		failures=$((failures + 1))
 	fi
 	rm -rf "$sc"
+	check="Q27: a self-check knob left in the environment is dropped outside a self-check pass"
+	out="$(export MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1; lab_selfcheck_knobs 0
+		echo "left=${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}")"
+	why="$(export MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1; lab_selfcheck_knobs 1
+		echo "left=${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}")"
+	local said="lab: ignored MACHMAN_LAB_SELFCHECK_EMPTY_SUITE (it acts in a self-check pass only)"
+	if [[ "$out" == "$said"$'\n'"left=" && "$why" == "left=1" ]]; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: outside: $out; inside: $why"
+		failures=$((failures + 1))
+	fi
 	check="Q27: a parallel run with a planned suite that runs nothing fails and names it"
 	out="$(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1 "$repo/scripts/lab.sh" --harness --no-build \
 		--plain --jobs 2 --filter 'LabHarnessTests/tiersParse' 2>&1)"

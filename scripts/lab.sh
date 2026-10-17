@@ -340,6 +340,7 @@ lab_run() {
 	local tiers="$1" seams=0 xcb filt hw ts breaches=0 warns=0 report inject=()
 	local teststatus="${3:-0}" watchstatus=0 need_slot=0 selfcheck="${2:-0}"
 	sandbox_refuse_main_checkout "$repo" || exit 64
+	lab_selfcheck_knobs "$selfcheck"
 	if [[ -n "$jobs" && ! "$jobs" =~ ^[1-9][0-9]?$ ]]; then
 		echo "lab.sh: --jobs takes a number from 1 to 99, not '$jobs'" >&2
 		exit 64
