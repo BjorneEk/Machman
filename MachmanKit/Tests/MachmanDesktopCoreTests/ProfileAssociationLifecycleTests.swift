@@ -115,4 +115,19 @@ struct ProfileAssociationLifecycleTests {
 		#expect(await settled { console.liveApplies })
 		#expect(console.liveApplies == 0)
 	}
+
+	// A port set back to the default holds no state, so its VM's recorded date goes with it:
+	// a date kept for nothing would make the name pairable as a rename forever (T34).
+	@Test("T34: a name whose last port profile went back to the default records no date")
+	func aResetProfileLeavesNoDate() async throws {
+		let h = await DesktopHarness.make()
+		let ref = SerialPortRef(kind: .console, index: 0)
+		let custom = h.profiles.addProfile()
+		h.profiles.associate(vm: "Alpine", ref: ref, to: custom.id)
+		await h.store.reload()
+		#expect(h.profiles.ownerDates["Alpine"] != nil)
+		h.profiles.associate(vm: "Alpine", ref: ref, to: h.profiles.defaultProfile.id)
+		await h.store.reload()
+		#expect(h.profiles.ownerDates["Alpine"] == nil)
+	}
 }
