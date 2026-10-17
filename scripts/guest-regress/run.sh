@@ -218,8 +218,10 @@ EOF
 	printf 'sshfs\tprojects\t/Users/g/Projects\nsshfs\tdocs\t/Users/g/My Docs\n' \
 		> "$P/GuestSetup/mounts.list"
 	cp "$HERE/lib.sh" "$HERE"/suites/*.sh "$P/regress/"
-	# The file-edit helpers on their own, for suites that drive them directly.
-	cp "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/setup/05-lib.sh" "$P/regress/"
+	# The file-edit helpers on their own (and the output they report through), for suites
+	# that drive them directly.
+	cp "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/setup/05-lib.sh" \
+		"$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/setup/07-files.sh" "$P/regress/"
 }
 
 backend_docker() {

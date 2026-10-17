@@ -155,6 +155,7 @@ victim /etc/machman-victim-swap
 cat > /tmp/swap.sh <<EOF
 set -eu
 . /mnt/machman/share/regress/05-lib.sh
+. /mnt/machman/share/regress/07-files.sh
 MARKER='$NEW'
 od() {
 	rm -f /home/swp/.ssh/config && ln -s /etc/machman-victim-swap /home/swp/.ssh/config

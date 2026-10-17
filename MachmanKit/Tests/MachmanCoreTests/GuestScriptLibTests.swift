@@ -2,7 +2,7 @@
 //  GuestScriptLibTests.swift
 //  MachmanTests
 //
-//  The guest setup script's file-edit helpers (05-lib), run for real over scratch files
+//  The guest setup script's file-edit helpers (07-files), run for real over scratch files
 //  under every local POSIX shell. Root runs them over files other users own (~/.ssh, the
 //  sshfs mount root, the report drop-box), so a link standing where a target or a temp
 //  name goes is never written through, a file keeps its mode, and a file that is not ours
@@ -22,17 +22,21 @@ struct GuestScriptLibTests {
 		.filter { FileManager.default.isExecutableFile(atPath: $0) }
 
 	private static let marker = "machman-0123456789ab"
+	private static let library = ["05-lib", "06-menus", "07-files"]
 
-	// Sources 05-lib under `shell` in a fresh scratch directory ($D, also the working
-	// directory) with MARKER set, then runs `body`; returns its exit status and output.
+	// Sources the library (05-lib, 06-menus, 07-files) under `shell` in a fresh scratch
+	// directory ($D, also the working directory) with MARKER set, then runs `body`; returns
+	// its exit status and output.
 	private func run(
 		_ body: String, under shell: String
 	) async throws -> (status: Int32, out: String) {
 		let dir = TestEnvironment.scratchURL
 			.appendingPathComponent("guestlib-\(UUID().uuidString)", isDirectory: true)
 		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-		let lib = try #require(GuestSetupScript.parts.first { $0.name == "05-lib" })
-		let script = "set -eu\n" + String(decoding: lib.bytes, as: UTF8.self)
+		let lib = GuestSetupScript.parts.filter { Self.library.contains($0.name) }
+		try #require(lib.count == Self.library.count)
+		let script = "set -eu\n"
+			+ lib.map { String(decoding: $0.bytes, as: UTF8.self) }.joined(separator: "\n")
 			+ "\nMARKER=\(Self.marker)\nD='\(dir.path)'\ncd \"$D\"\n" + body + "\n"
 		let url = dir.appendingPathComponent("probe.sh")
 		try script.write(to: url, atomically: true, encoding: .utf8)

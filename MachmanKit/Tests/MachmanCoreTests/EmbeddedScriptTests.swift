@@ -60,6 +60,18 @@ struct EmbeddedScriptTests {
 		#expect(modules == GuestSetupScript.parts.map(\.name))
 	}
 
+	// Q38: a module past about 800 lines carries more than one concern — the library held the
+	// terminal UI and the link-safe file edits, the console module the ownership model and
+	// every init's mechanics — and each review re-read both halves. The Swift sources' bar
+	// (FileLengthLintTests) holds for the guest modules too.
+	@Test("Q38: no guest-setup module grows past 800 lines")
+	func noModuleGrowsPastTheLimit() {
+		for part in GuestSetupScript.parts {
+			let lines = part.bytes.reduce(0) { $1 == 0x0A ? $0 + 1 : $0 }
+			#expect(lines <= 800, "\(part.name) is \(lines) lines: split it by concern")
+		}
+	}
+
 	// Guests run this under dash, busybox ash, FreeBSD sh, OpenBSD ksh and bash-as-sh.
 	// We cannot install those here, but three local parsers with different heritage
 	// (bash in POSIX mode, and ksh93, which is strict where bash is forgiving) catch the
