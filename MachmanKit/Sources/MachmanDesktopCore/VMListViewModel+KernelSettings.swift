@@ -180,8 +180,8 @@ extension VMListViewModel {
 	}
 
 	public func requestClearKernelSettings(_ vm: VMInfo) {
-		pendingKernelClear = PendingKernelClear(
-			vm: vm.name, fileCount: vm.boot.ownedKernels?.count ?? 0)
+		let pending = PendingKernelClear(vm: vm.name, fileCount: vm.boot.ownedKernels?.count ?? 0)
+		prompts.ask(.clearKernel(pending)) { $0.clearKernel?.vm == $1.clearKernel?.vm }
 	}
 
 	// What an older Machman Agent's -32601 for vm.kernel.clear becomes: what to do.

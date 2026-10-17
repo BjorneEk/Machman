@@ -119,7 +119,7 @@ private struct QuestionAlert: ViewModifier {
 				Button(choice.title, role: choice.role?.buttonRole) { choice.perform() }
 			}
 		} message: { shown in
-			Text(shown.message)
+			if let message = shown.message { Text(message) }
 		}
 	}
 }
@@ -137,7 +137,7 @@ private struct QuestionDialog: ViewModifier {
 				Button(choice.title, role: choice.role?.buttonRole) { choice.perform() }
 			}
 		} message: { shown in
-			Text(shown.message)
+			if let message = shown.message { Text(message) }
 		}
 	}
 }

@@ -59,6 +59,7 @@ public struct Prompt: Identifiable {
 		case deleteVM(VMInfo)
 		case deleteDisk(VMListViewModel.PendingDiskDelete)
 		case deleteKernel(VMListViewModel.PendingKernelDelete)
+		case clearKernel(VMListViewModel.PendingKernelClear)
 		case diskAdd(VMListViewModel.PendingDiskAdd)
 		case tabClose(PendingTabClose)
 	}
@@ -75,7 +76,7 @@ public struct Prompt: Identifiable {
 		switch kind {
 		case .error, .forceStart, .endProcess:
 			return .keyWindow
-		case .stop, .deleteVM, .deleteDisk, .deleteKernel, .diskAdd:
+		case .stop, .deleteVM, .deleteDisk, .deleteKernel, .clearKernel, .diskAdd:
 			return .window(.main)
 		case .tabClose(let pending):
 			return .window(pending.window.map { .torn($0) } ?? .main)
@@ -87,7 +88,7 @@ public struct Prompt: Identifiable {
 		switch kind {
 		case .error, .forceStart, .endProcess:
 			return .alert
-		case .stop, .deleteVM, .deleteDisk, .deleteKernel, .diskAdd, .tabClose:
+		case .stop, .deleteVM, .deleteDisk, .deleteKernel, .clearKernel, .diskAdd, .tabClose:
 			return .dialog
 		}
 	}
@@ -160,6 +161,15 @@ public struct Prompt: Identifiable {
 					},
 					Choice("Cancel", role: .cancel),
 				])
+		case .clearKernel(let pending):
+			return PromptContent(
+				style: style, title: pending.title, message: pending.message,
+				choices: [
+					Choice("Remove", role: .destructive) { [weak viewModel] in
+						viewModel?.clearKernelSettings(pending.vm)
+					},
+					Choice("Cancel", role: .cancel),
+				])
 		case .diskAdd(let pending):
 			return PromptContent(
 				style: style, title: pending.title, message: pending.message,
@@ -225,6 +235,11 @@ extension Prompt.Kind {
 		return nil
 	}
 
+	public var clearKernel: VMListViewModel.PendingKernelClear? {
+		if case .clearKernel(let pending) = self { return pending }
+		return nil
+	}
+
 	public var diskAdd: VMListViewModel.PendingDiskAdd? {
 		if case .diskAdd(let pending) = self { return pending }
 		return nil
@@ -263,11 +278,12 @@ public struct PromptContent {
 
 	public let style: Style
 	public let title: String
-	public let message: String
+	// nil: the title says it all (a question with nothing more to explain).
+	public let message: String?
 	// Empty: the alert's own OK.
 	public let choices: [Choice]
 
-	init(style: Style, title: String, message: String, choices: [Choice] = []) {
+	init(style: Style, title: String, message: String?, choices: [Choice] = []) {
 		self.style = style
 		self.title = title
 		self.message = message

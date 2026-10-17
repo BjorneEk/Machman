@@ -107,4 +107,18 @@ struct PromptCenterTests {
 		h.viewModel.isErrorPresented = false
 		#expect(await eventually { h.viewModel.pendingVMDelete?.name == "Alpine" })
 	}
+
+	// r4-1a's Remove Kernel Settings… question (H54, K2) landed as a slot of its own; it
+	// queues in the prompt center like every other question.
+	@Test("Q31: Remove Kernel Settings waits its turn behind a showing alert")
+	func theKernelClearQuestionQueues() async throws {
+		let h = await DesktopHarness.make([Samples.kernelParked()])
+		let lab = try #require(h.viewModel.vms.first { $0.name == "Kernel Lab" })
+		h.viewModel.present(message: "no", while: "Doing A")
+		h.viewModel.requestClearKernelSettings(lab)
+		#expect(h.viewModel.pendingKernelClear?.vm == nil)
+		h.viewModel.isErrorPresented = false
+		#expect(await eventually { h.viewModel.pendingKernelClear?.vm == "Kernel Lab" })
+	}
 }
+

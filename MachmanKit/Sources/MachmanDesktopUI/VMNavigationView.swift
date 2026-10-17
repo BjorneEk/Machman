@@ -136,8 +136,6 @@ public struct VMNavigationView: View {
 				// An offset, not padding: the corner must never weigh on the window's floor.
 				.offset(x: viewModel.showInfoPanel ? -inspectorWidth : 0)
 		}
-		// Remove Kernel Settings…'s question, the one not in the prompt center yet.
-		.modifier(ConfirmationDialogs(viewModel: viewModel))
 		// The menu commands act on the key window (P22): this one is the main window,
 		// and ⌥⌘0 toggles its inspector.
 		.focusedSceneValue(\.machmanWindow, .main)
@@ -194,38 +192,6 @@ public struct VMNavigationView: View {
 	private var daemonFooter: some View {
 		AgentFooter(
 			version: daemonVersion, running: viewModel.vms.filter { $0.state.isRunning }.count)
-	}
-}
-
-// The window's one confirmation dialog not yet in the prompt center: Remove Kernel
-// Settings… (H54, K2). Every other question shows through WindowPrompts.
-private struct ConfirmationDialogs: ViewModifier {
-	@ObservedObject var viewModel: VMListViewModel
-
-	func body(content: Content) -> some View {
-		content
-			// Remove Kernel Settings… on a parked kernel draft asks once (H54, K2).
-			.confirmationDialog(
-				viewModel.pendingKernelClear?.title ?? "",
-				isPresented: presenting($viewModel.pendingKernelClear),
-				presenting: viewModel.pendingKernelClear
-			) { pending in
-				Button("Remove", role: .destructive) {
-					viewModel.clearKernelSettings(pending.vm)
-				}
-				Button("Cancel", role: .cancel) {}
-			} message: { pending in
-				if let message = pending.message {
-					Text(message)
-				}
-			}
-	}
-
-	// isPresented bridge for item-backed confirmationDialogs (dismiss clears the item).
-	private func presenting<T>(_ item: Binding<T?>) -> Binding<Bool> {
-		Binding(
-			get: { item.wrappedValue != nil },
-			set: { if !$0 { item.wrappedValue = nil } })
 	}
 }
 

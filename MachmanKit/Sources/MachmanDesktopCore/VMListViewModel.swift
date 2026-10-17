@@ -83,6 +83,8 @@ public final class VMListViewModel: ObservableObject {
 	public var pendingVMDelete: VMInfo? { prompts.current?.kind.deleteVM }
 	public var pendingDiskDelete: PendingDiskDelete? { prompts.current?.kind.deleteDisk }
 	public var pendingKernelDelete: PendingKernelDelete? { prompts.current?.kind.deleteKernel }
+	// Remove Kernel Settings… asks first (H54, K2; +KernelSettings.swift).
+	public var pendingKernelClear: PendingKernelClear? { prompts.current?.kind.clearKernel }
 	// The Stop menu's Shut Down… (⌘.) and Force Stop… (⌥⌘.) ask first (P26).
 	public var pendingStop: PendingStop? { prompts.current?.kind.stop }
 	// One copy-or-reference question for every disk file of one drop, paste or pick.
@@ -115,7 +117,6 @@ public final class VMListViewModel: ObservableObject {
 		public let path: String
 		public let fileName: String
 	}
-	@Published public var pendingKernelClear: PendingKernelClear?   // +KernelSettings.swift
 	@Published public var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
 	@Published public internal(set) var copyInFlight = false
 	// vm.state flips to .starting only when the vmhost's first event lands — 0.5–2 s after

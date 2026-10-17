@@ -82,7 +82,8 @@ struct AlertWordingTests {
 		let disk = try #require(debian.disks.first { $0.owned == true })
 		func reads(_ kind: Prompt.Kind) -> [String] {
 			let content = Prompt(kind: kind).content(for: h.viewModel)
-			return [content.title, content.message] + content.choices.map { choice in
+			return [content.title] + (content.message.map { [$0] } ?? []) + content.choices.map {
+				choice in
 				switch choice.role {
 				case .destructive?: return "\(choice.title) (destructive)"
 				case .cancel?: return "\(choice.title) (cancel)"
@@ -116,6 +117,15 @@ struct AlertWordingTests {
 			"Copy a.raw into Debian (an independent copy that travels with the VM), or "
 				+ "reference the original in place?",
 			"Copy into VM", "Reference", "Cancel (cancel)",
+		])
+		#expect(reads(.clearKernel(.init(vm: "Kernel Lab", fileCount: 3))) == [
+			"Remove Kernel Lab\u{2019}s kernel settings and its 3 kernel files?",
+			"The files belong to Kernel Lab and are removed from its directory.",
+			"Remove (destructive)", "Cancel (cancel)",
+		])
+		#expect(reads(.clearKernel(.init(vm: "Kernel Lab", fileCount: 0))) == [
+			"Remove Kernel Lab\u{2019}s kernel settings?", "Remove (destructive)",
+			"Cancel (cancel)",
 		])
 		#expect(reads(.forceStart(PendingForceStart(
 			name: "Debian", headless: false, safe: false, message: "MAC in use"))) == [
