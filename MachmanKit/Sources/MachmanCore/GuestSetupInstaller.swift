@@ -226,11 +226,25 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 		return (payload, report)
 	}
 
+	// The script a VM's payload carries (S67): its pinned entry's, checked against the digest
+	// it was stored under — or this build's while it has no pin, or one the store can't serve.
+	static func servedScript(
+		for config: VMConfig, store: GuestSetupStore = .current
+	) -> GuestSetupStore.Script {
+		if let id = config.setup?.script, id != store.builtIn.entry.id,
+			let entry = store.entry(id: id), let data = store.script(id: id) {
+			return GuestSetupStore.Script(data: data, entry: entry)
+		}
+		return store.builtIn
+	}
+
 	// Writes <vmdir>/share/GuestSetup/ (script 0755 + machman.env + mounts.list + public
 	// keys) and the empty writable <vmdir>/share/GuestReport/; returns both. Regenerated
 	// at every assembly that SERVES (VMConfig.servesSetupPayload).
 	@discardableResult
-	static func writePayload(for config: VMConfig) throws -> (payload: URL, report: URL) {
+	static func writePayload(
+		for config: VMConfig, store: GuestSetupStore = .current
+	) throws -> (payload: URL, report: URL) {
 		let marker = try SSHSetupInstaller.marker(for: config)
 		// Cache the marker for reset-time cleanup (creates the ssh state on first use).
 		if config.ssh?.marker != marker {
@@ -240,7 +254,13 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			try config.saveVMConfig()
 		}
 		let (_, report) = try ensurePayloadDirectories(for: config)
-		let payload = try GuestInstallerWriter.write(Self.self, for: config)
+		let script = servedScript(for: config, store: store)
+		// This build's script goes into the store as it is first served, so a later build
+		// still serves it to the VMs it was served to.
+		if script.entry.id == store.builtIn.entry.id {
+			store.ensureBuiltIn()
+		}
+		let payload = try GuestInstallerWriter.write(Self.self, for: config, script: script.data)
 		// The alias (and so the pin's key) can have changed while the VM was stopped.
 		SSHSetupInstaller.writeKnownHosts(for: config)
 		return (payload, report)

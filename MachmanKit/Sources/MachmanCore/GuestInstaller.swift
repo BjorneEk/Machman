@@ -99,6 +99,7 @@ protocol GuestInstallerPayload {
 	// The directory name under the VM AND the name the guest sees inside the share.
 	static var directoryName: String { get }
 	static var scriptName: String { get }
+	// This build's own script; what a VM serves can be another one it is pinned to (S67).
 	static var script: EmbeddedScript { get }
 	// Everything per-VM the script needs, written as `machman.env` (shell-quoted).
 	static func environment(for config: VMConfig) throws -> [String: String]
@@ -160,18 +161,19 @@ enum GuestInstallerWriter {
 
 	static let checksumKey = "SETUP_CKSUM"
 
-	// Writes (and rewrites) a payload directory. Called at every VM assembly, so it is
-	// idempotent and always leaves the current content — never a merge of old and new.
+	// Writes (and rewrites) a payload directory with `script`, the bytes the VM serves (its
+	// pinned one, S67). Called at every VM assembly, so it is idempotent and always leaves the
+	// current content — never a merge of old and new.
 	@discardableResult
 	static func write<P: GuestInstallerPayload>(
-		_ payload: P.Type, for config: VMConfig
+		_ payload: P.Type, for config: VMConfig, script: Data
 	) throws -> URL {
 		let fm = FileManager.default
 		let dir = payloadDirectory(named: P.directoryName, for: config)
 		try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 		removeLegacyPayload(named: P.directoryName, for: config)
 		let files = files(
-			script: Data(P.script.text.utf8), scriptName: P.scriptName,
+			script: script, scriptName: P.scriptName,
 			environment: try P.environment(for: config), extras: try P.extraFiles(for: config))
 		for (name, data) in files {
 			let url = dir.appendingPathComponent(name)

@@ -39,6 +39,9 @@ struct GuestSetupConfig: Codable, Equatable {
 	// until a report says the copy renewed the identity its disk carries — also when the
 	// source's guest never ran Guest Setup. Host-only, never on the wire.
 	var copyOf: String?
+	// The Guest Setup script this VM serves: a GuestSetupStore entry id (S67). An app update
+	// never moves it; nil serves this build's script.
+	var script: String?
 
 	init() {}
 
@@ -61,6 +64,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		case automounts
 		case reinstallRequested
 		case copyOf
+		case script
 	}
 
 	// Tolerant decode: every field optional-or-defaulted so future additions round-trip.
@@ -86,6 +90,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		self.reinstallRequested =
 			try c.decodeIfPresent(Bool.self, forKey: .reinstallRequested)
 		self.copyOf = try c.decodeIfPresent(String.self, forKey: .copyOf)
+		self.script = try c.decodeIfPresent(String.self, forKey: .script)
 	}
 }
 
@@ -105,14 +110,12 @@ extension VMConfig {
 	// The drop-box is wiped too, so a stale report cannot re-teach what was just forgotten;
 	// it regenerates empty at the next assembly while the device stays attached.
 	func resetSetup() throws {
-		// A copy that never reported stays one: its first run still renews its identity.
-		let copyOf = setup?.copyOf
-		setup = nil
-		if let copyOf {
-			var state = GuestSetupConfig()
-			state.copyOf = copyOf
-			setup = state
-		}
+		// A copy that never reported stays one: its first run still renews its identity. The
+		// script the VM serves is the user's choice, not the report's (S67).
+		var kept = GuestSetupConfig()
+		kept.copyOf = setup?.copyOf
+		kept.script = setup?.script
+		setup = kept == GuestSetupConfig() ? nil : kept
 		// Forgetting the guest includes the device names it reported for the ports.
 		for index in consolePorts.indices { consolePorts[index].guestName = nil }
 		for index in uartPorts.indices { uartPorts[index].guestName = nil }

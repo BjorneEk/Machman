@@ -758,6 +758,24 @@ struct VMCopierTests {
 		#expect(shadow.setup?.copyOf == nil)
 	}
 
+	// S67: the script a VM serves is the user's choice, not the source's run: a copy keeps it.
+	@Test("S67: a copy keeps its source's Guest Setup pin")
+	func aCopyKeepsThePin() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let src = try makeSourceVM(in: library)
+		let config = try loadConfig(src)
+		var setup = GuestSetupConfig()
+		setup.installed = true
+		setup.script = "custom-0123456789ab"
+		config.setup = setup
+		try JSONEncoder().encode(config).write(to: URL(fileURLWithPath: src + "/config"))
+		let copied = try loadConfig(try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup")))
+		#expect(copied.setup?.script == "custom-0123456789ab")
+		#expect(copied.setup?.installed == nil)   // a fresh identity all the same
+	}
+
 	// The shadow IS the VM: its ssh state and pin travel verbatim.
 	@Test func shadowCarriesSSHVerbatim() throws {
 		let library = try makeLibrary()

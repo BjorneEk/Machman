@@ -45,8 +45,13 @@ struct GuestSetupStore {
 		let entry: Entry
 
 		init(data: Data, kind: String = Kind.build, addedAt: Date? = nil) {
+			self.init(
+				data: data, entry: GuestSetupStore.describe(data, kind: kind, addedAt: addedAt))
+		}
+
+		init(data: Data, entry: Entry) {
 			self.data = data
-			self.entry = GuestSetupStore.describe(data, kind: kind, addedAt: addedAt)
+			self.entry = entry
 		}
 	}
 
