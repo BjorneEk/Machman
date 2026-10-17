@@ -262,6 +262,21 @@ private struct ConfirmationDialogs: ViewModifier {
 			} message: { pending in
 				Text("The file belongs to \(pending.vm) and is removed from its directory.")
 			}
+			// Remove Kernel Settings… on a parked kernel draft asks once (H54, K2).
+			.confirmationDialog(
+				viewModel.pendingKernelClear?.title ?? "",
+				isPresented: presenting($viewModel.pendingKernelClear),
+				presenting: viewModel.pendingKernelClear
+			) { pending in
+				Button("Remove", role: .destructive) {
+					viewModel.clearKernelSettings(pending.vm)
+				}
+				Button("Cancel", role: .cancel) {}
+			} message: { pending in
+				if let message = pending.message {
+					Text(message)
+				}
+			}
 			// Stop ▸ Shut Down… / Force Stop… (⌘. / ⌥⌘.) ask first (P26).
 			.confirmationDialog(
 				viewModel.pendingStop?.title ?? "",

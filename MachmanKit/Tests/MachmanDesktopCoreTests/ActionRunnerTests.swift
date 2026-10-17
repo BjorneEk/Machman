@@ -184,6 +184,10 @@ struct ActionRunnerTests {
 			Case("deleteKernelFile", "Deleting a kernel file failed") {
 				$0.deleteKernel("Kernel Lab", path: kernel)
 			},
+			Case(
+				"clearKernelSettings", "Removing kernel settings failed",
+				vms: [Samples.kernelParked()]
+			) { $0.clearKernelSettings("Kernel Lab") },
 			Case("setSerialLogging", "Updating serial logging failed") {
 				$0.setSerialLogging(
 					"Alpine", kind: .console, index: 0, config: SerialLogConfig())
@@ -302,6 +306,9 @@ struct ActionRunnerTests {
 			},
 			Case("renameKernelFile", "Renamed to \(q("6.13"))") {
 				$0.renameKernelTag("Kernel Lab", path: kernel, tag: "6.13")
+			},
+			Case("clearKernelSettings", "Removed kernel settings", vms: [Samples.kernelParked()]) {
+				$0.clearKernelSettings("Kernel Lab")
 			},
 		]
 	}

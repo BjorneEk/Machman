@@ -699,6 +699,21 @@ enum WindowScenes {
 		) { ctx in
 			tree(ctx)
 		},
+		// K1: only a command line kept: both sections parked, no rows.
+		RenderScene(
+			"sidebar.tree.kernel-parked-cmdline",
+			"VMDeviceTreeView, only a command line kept after kernel boot",
+			widths: [270], height: 900, vms: { [Samples.kernelParkedCommandLineOnly()] }
+		) { ctx in
+			tree(ctx)
+		},
+		// K3: a macOS VM keeps the kernel files of its kernel-boot past, parked.
+		RenderScene(
+			"sidebar.tree.kernel-macos", "VMDeviceTreeView, a macOS VM with kernel files kept",
+			widths: [270], height: 900, vms: { [Samples.macOSWithKernelFiles()] }
+		) { ctx in
+			tree(ctx)
+		},
 		// N2: a section that stays empty is a leaf row — SSH with no session open, Kernel and
 		// Initramfs before their first file — and gains its chevron with a row or a drag.
 		RenderScene(

@@ -144,6 +144,7 @@ public final class VMListViewModel: ObservableObject {
 	}
 	@Published public var pendingDiskDelete: PendingDiskDelete?
 	@Published public var pendingKernelDelete: PendingKernelDelete?
+	@Published public var pendingKernelClear: PendingKernelClear?   // +KernelSettings.swift
 	@Published public var copyRequest: VMInfo?          // non-nil presents CopyVMSheet
 	@Published public internal(set) var copyInFlight = false
 	// vm.state flips to .starting only when the vmhost's first event lands — 0.5–2 s after

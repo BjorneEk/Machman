@@ -118,6 +118,12 @@ extension VMInfo {
 
 	public static let kernelParkedReason = "Used when the bootloader is Kernel Boot"
 
+	// Remove Kernel Settings… (H54, K2): offered on parked sections — never while kernel boot
+	// reads the draft, nor in a boot mode a newer Machman wrote (C11).
+	public var offersKernelClear: Bool {
+		showsKernelSections && kernelSectionParked && boot.mode != .unknown
+	}
+
 	// The rows a section lists on this VM before any filter, or nil while the section can't
 	// show at all (SSH not set up, the kernel sections while showsKernelSections is false):
 	// what the sections' views start from, for the selection prune (T28). `openSessions`

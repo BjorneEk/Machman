@@ -24,6 +24,7 @@ public enum StoppedOnly: CaseIterable, Sendable {
 	case renameDisk
 	case changeSerialPorts
 	case renameKernelFile
+	case clearKernelSettings
 	case installMacOS
 
 	// One short sentence, the inspectors' existing wording.
@@ -39,6 +40,7 @@ public enum StoppedOnly: CaseIterable, Sendable {
 		case .renameDisk: return "Stop the VM to rename its disks"
 		case .changeSerialPorts: return "Stop the VM to add or remove serial ports"
 		case .renameKernelFile: return "Stop the VM to rename its kernel files"
+		case .clearKernelSettings: return "Stop the VM to remove its kernel settings"
 		case .installMacOS: return "Stop the VM to install macOS"
 		}
 	}

@@ -150,4 +150,54 @@ extension VMListViewModel {
 				overrideEnabled: overrideEnabled)
 		}
 	}
+
+	// MARK: - Removing a parked kernel draft (H54, K2)
+
+	// The one question Remove Kernel Settings… asks, naming the VM and how many of its own
+	// kernel files go (an external reference is only dropped, never deleted).
+	public struct PendingKernelClear: Identifiable {
+		public let id = UUID()
+		public let vm: String
+		public let fileCount: Int
+
+		public var title: String {
+			switch fileCount {
+			case 0: return "Remove \(vm)’s kernel settings?"
+			case 1: return "Remove \(vm)’s kernel settings and its kernel file?"
+			default: return "Remove \(vm)’s kernel settings and its \(fileCount) kernel files?"
+			}
+		}
+
+		// The kernel-delete question's sentence; nothing to say without files.
+		public var message: String? {
+			fileCount == 0
+				? nil : "The files belong to \(vm) and are removed from its directory."
+		}
+	}
+
+	public func requestClearKernelSettings(_ vm: VMInfo) {
+		pendingKernelClear = PendingKernelClear(
+			vm: vm.name, fileCount: vm.boot.ownedKernels?.count ?? 0)
+	}
+
+	// What an older Machman Agent's -32601 for vm.kernel.clear becomes: what to do.
+	public static let kernelClearNeedsNewerAgent = "The running Machman Agent is too old to "
+		+ "remove kernel settings — quit it from its menu-bar item to update it"
+
+	// The draft, the VM's kernel files and their overrides in one daemon call, in the VM's
+	// write queue; the reloaded list hides the sections, and the selection prune follows.
+	public func clearKernelSettings(_ name: String) {
+		enqueueKernelWrite(name) { model in
+			let cleared: VMInfo? = await model.attempt("Removing kernel settings") { api in
+				do {
+					return try await api.clearKernelSettings(vm: name)
+				} catch let error as MachmanError where error.code == .unsupported {
+					throw MachmanError(code: .unsupported, message: Self.kernelClearNeedsNewerAgent)
+				}
+			}
+			guard cleared != nil else { return false }
+			model.pushToast(symbol: MachmanSymbols.kernelFile, message: "Removed kernel settings")
+			return true
+		}
+	}
 }

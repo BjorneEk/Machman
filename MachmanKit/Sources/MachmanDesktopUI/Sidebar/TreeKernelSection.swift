@@ -50,14 +50,7 @@ struct TreeKernelSection: View {
 			icon: {
 				role == .kernel ? TreeIcon.tux : TreeIcon(symbol: MachmanSymbols.initramfs)
 			},
-			menu: {
-				Button("Add from Disk…") {
-					AddFlows.chooseKernelFile(
-						viewModel: ctx.viewModel, vm: ctx.vm.name, role: role)
-				}
-				Button("Paste") { ctx.paste(into: .kernel(role)) }
-					.disabled(!ctx.pasteboard.snapshot.canPaste(into: .kernel(role)))
-			},
+			menu: { ctx.kernelGroupMenu(role: role) },
 			accessory: {
 				if role == .kernel && ctx.vm.kernelBootMissingKernel {
 					TreeBadge.warning("No kernel selected — the VM cannot start")
@@ -105,5 +98,26 @@ struct TreeKernelSection: View {
 				icon: role == .kernel ? MachmanSymbols.kernelFile : MachmanSymbols.initramfs)
 		}
 		.onDrop(of: [.fileURL], delegate: ctx.dropDelegate(.kernel(role)))
+	}
+}
+
+extension TreeContext {
+	// A kernel group label's menu: its add paths, and on the parked Kernel label Remove Kernel
+	// Settings… (H54, K2), which asks once and then removes the draft, the VM's kernel files
+	// and their overrides in one step.
+	@ViewBuilder
+	func kernelGroupMenu(role: KernelRole) -> some View {
+		Button("Add from Disk…") {
+			AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
+		}
+		Button("Paste") { paste(into: .kernel(role)) }
+			.disabled(!pasteboard.snapshot.canPaste(into: .kernel(role)))
+		if role == .kernel && vm.offersKernelClear {
+			Divider()
+			Button("Remove Kernel Settings…", role: .destructive) {
+				viewModel.requestClearKernelSettings(vm)
+			}
+			.stopFirst(vm, .clearKernelSettings)
+		}
 	}
 }

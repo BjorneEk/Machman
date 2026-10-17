@@ -83,6 +83,13 @@ extension Samples {
 		return vm
 	}
 
+	// A parked kernel draft on a running VM: Remove Kernel Settings… waits for it to stop.
+	public static func kernelParkedRunning(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name, state: .running)
+		vm.boot.mode = .efi
+		return vm
+	}
+
 	// A Blank-template guest: its system disk and the implied devices, nothing else — no
 	// mounts, no serial ports, no Guest Setup (N1's empty sections).
 	public static func bareLinux(_ name: String = "Bare") -> VMInfo {

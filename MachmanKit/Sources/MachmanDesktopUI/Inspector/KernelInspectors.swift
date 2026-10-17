@@ -68,6 +68,24 @@ struct KernelParentInspector: View {
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
+			if vm.offersKernelClear {
+				removeSection
+			}
+		}
+	}
+
+	// Remove Kernel Settings… (H54, K2) ends a parked draft: the question, then one call.
+	private var removeSection: some View {
+		let refusal = vm.refusal(.clearKernelSettings)
+		return Section {
+			HStack {
+				Spacer()
+				Button("Remove Kernel Settings…", role: .destructive) {
+					viewModel.requestClearKernelSettings(vm)
+				}
+				.disabled(refusal != nil)
+				.help(refusal ?? "Deletes the VM’s kernel files and clears its kernel settings")
+			}
 		}
 	}
 

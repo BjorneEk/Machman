@@ -3,7 +3,8 @@
 //  MachmanDesktopUITests
 //
 //  The device tree's Kernel section and the Kernel inspector while kernel boot is off: a
-//  parked section says why it is dimmed (H55). Read only: nothing is pressed.
+//  parked section says why it is dimmed (H55), and the parked Kernel label and inspector offer
+//  Remove Kernel Settings… (H54, K2). Read only: nothing is pressed.
 //
 
 import SwiftUI
@@ -55,5 +56,56 @@ struct KernelSectionUITests {
 		#expect(parked.find(text: Self.reason + ".") != nil, "\(parked.dump())")
 		let booting = try await kernelInspector(h, "Booting")
 		#expect(booting.find(text: Self.reason + ".") == nil)
+	}
+
+	private func menuTitles(
+		_ h: UIHarness, _ vm: String, _ role: KernelRole
+	) async throws -> [AXSnapshot] {
+		let tree = try await h.snapshot(TreeMenuProbe(harness: h, vm: h.vm(vm)) {
+			AnyView($0.kernelGroupMenu(role: role))
+		})
+		return tree.findAll { $0.role == "AXButton" }
+	}
+
+	// H54 (K2): the parked Kernel label's menu offers the one way out; the Initramfs label and a
+	// kernel-booting VM's Kernel label don't.
+	@Test("H54: only the parked Kernel label's menu offers Remove Kernel Settings…")
+	func onlyTheParkedKernelMenuOffersRemove() async throws {
+		let h = await UIHarness.make([
+			Samples.kernelParked(), Samples.kernelBoot("Booting"),
+			Samples.kernelParkedRunning("Running"),
+		])
+		let remove = "Remove Kernel Settings\u{2026}"
+		let parked = try await menuTitles(h, "Kernel Lab", .kernel)
+		#expect(parked.compactMap(\.text) == ["Add from Disk\u{2026}", "Paste", remove])
+		#expect(parked.last?.isEnabled == true)
+		let initramfs = try await menuTitles(h, "Kernel Lab", .initramfs)
+		#expect(!initramfs.compactMap(\.text).contains(remove))
+		let booting = try await menuTitles(h, "Booting", .kernel)
+		#expect(!booting.compactMap(\.text).contains(remove))
+		// A running VM's offers it dimmed, with the reason.
+		let running = try await menuTitles(h, "Running", .kernel)
+		let item = try #require(running.first { $0.text == remove })
+		#expect(!item.isEnabled)
+		#expect(item.help == "Stop the VM to remove its kernel settings")
+	}
+
+	@Test("H54: the parked Kernel inspector ends with Remove Kernel Settings…")
+	func theParkedInspectorOffersRemove() async throws {
+		let h = await UIHarness.make([
+			Samples.kernelParked(), Samples.kernelBoot("Booting"),
+			Samples.kernelParkedRunning("Running"),
+		])
+		let remove = "Remove Kernel Settings\u{2026}"
+		let parked = try await kernelInspector(h, "Kernel Lab")
+		let button = try #require(parked.find(role: "AXButton", text: remove), "\(parked.dump())")
+		#expect(button.isEnabled)
+		#expect(button.help == "Deletes the VM’s kernel files and clears its kernel settings")
+		let booting = try await kernelInspector(h, "Booting")
+		#expect(booting.find(role: "AXButton", text: remove) == nil)
+		let running = try await kernelInspector(h, "Running")
+		let dimmed = try #require(running.find(role: "AXButton", text: remove))
+		#expect(!dimmed.isEnabled)
+		#expect(dimmed.help == "Stop the VM to remove its kernel settings")
 	}
 }
