@@ -144,11 +144,36 @@ struct NewStorageDiskTests {
 					continue   // a refused switch keeps the user's disks
 				}
 				let target = vm.disks.first
-				// Fails until the open bug D32 (a switch to macOS installs over the VM's own
-				// disk) is fixed.
 				#expect(target.map { !before.contains($0) } == true,
 					"\(vm.name) would install macOS onto \(String(describing: target?.id))")
 			}
+		}
+	}
+
+	// D32 (review 4): the reuse rule belongs to a retry — a Mac whose install failed (or a copy
+	// of one) installs again onto its own first disk, switched on if it was off; a retry whose
+	// first disk can't hold macOS gets a new one first instead.
+	@Test("D32: a retry of a failed macOS install reuses its own first disk")
+	func aRetryReusesItsOwnFirstDisk() throws {
+		try VMTestDir.withRedirectedDir {
+			let failed = MacOSBoot(
+				installState: .failed("x"), minimumCPUCount: 2, minimumMemorySize: 1 << 30)
+			let mac = try makeVM("retry")
+			try mac.addNewStorageDisk(name: "macos", size: mib)
+			try mac.addNewStorageDisk(name: "data", size: mib)
+			try mac.setEnabled(
+				disks: ["storage:macos": false], mounts: [:], console: [:], uart: [:])
+			mac.boot = .macOS(failed)
+			try mac.ensureMacSystemDisk(minimumSize: mib)
+			#expect(mac.disks.map(\.id) == ["storage:macos", "storage:data"])
+			#expect(mac.disks.first?.enabled == true)
+
+			let isoFirst = try makeVM("iso-first")
+			try isoFirst.addIsoDisk(isoUrl: URL(fileURLWithPath: "/isos/installer.iso"))
+			isoFirst.boot = .macOS(failed)
+			try isoFirst.ensureMacSystemDisk(minimumSize: mib)
+			#expect(isoFirst.disks.map(\.id).first == "storage:disk")
+			#expect(isoFirst.disks.count == 2)
 		}
 	}
 

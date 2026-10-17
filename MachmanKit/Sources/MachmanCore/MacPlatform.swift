@@ -81,20 +81,35 @@ extension VMConfig {
 			options: Self.macAuxStorageCreationOptions)
 	}
 
-	// macOS needs a sizable system disk to restore onto; reuse an existing storage disk if
-	// present. Otherwise "disk", or "disk-2", "disk-3"… when an orphan image (a .raw no
-	// config entry names) already holds the name — creation never replaces a file.
+	// The disk a macOS install restores onto (D32): VZ restores onto the first disk the VM
+	// attaches. A retry — the VM is in macOS mode already: a failed or canceled install, or a
+	// copy of an unfinished Mac — reuses its own first disk when that one can hold macOS,
+	// switched on if it was off. Anything else (a switch from EFI or kernel boot, the mac
+	// template) gets a NEW first disk, and the VM's other disks stay after it (K4): "disk", or
+	// "disk-2", "disk-3"… when an orphan image (a .raw no config entry names) already holds
+	// the name — creation never replaces a file.
 	func ensureMacSystemDisk(minimumSize: UInt64 = 64 * 1024 * 1024 * 1024) throws {
-		let hasStorage = disks.contains {
-			if case .storage = $0.kind { return true } else { return false }
+		if case .macOS = boot, let first = disks.first, Self.canHoldMacOS(first) {
+			if !first.enabled {
+				disks[0].enabled = true
+				try saveVMConfig()
+			}
+			return
 		}
-		if hasStorage { return }
 		var name = "disk"
 		var n = 2
 		while FileManager.default.fileExists(atPath: configFilePath(file: "\(name).raw")) {
 			name = "disk-\(n)"
 			n += 1
 		}
-		try addNewStorageDisk(name: name, size: minimumSize)
+		try addNewStorageDisk(name: name, size: minimumSize, first: true)
+	}
+
+	// A disk macOS can be restored onto: a writable one this build knows.
+	static func canHoldMacOS(_ disk: VMDisk) -> Bool {
+		switch disk.kind {
+		case .storage, .fromUrl: return true
+		case .iso, .unknown: return false
+		}
 	}
 }

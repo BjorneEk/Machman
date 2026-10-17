@@ -59,14 +59,15 @@ extension VMConfig {
 	// One entry per file (D34): a second entry for a file the VM already attaches shares the
 	// first one's id, so neither can be addressed alone (removing one removed both), and a
 	// start attached the file twice, writable, past the shared-disk guard's per-file sets.
-	public func addDisk(disk: VMDisk) throws {
+	// `index`: where the entry goes, else last.
+	public func addDisk(disk: VMDisk, at index: Int? = nil) throws {
 		if let file = attachedFile(of: disk),
 			disks.contains(where: { attachedFile(of: $0).map { isSameFile($0, file) } ?? false }) {
 			throw MachmanError(
 				code: .alreadyExists,
 				message: "\(name) already uses “\((file as NSString).lastPathComponent)”")
 		}
-		disks.append(disk)
+		disks.insert(disk, at: index ?? disks.endIndex)
 		try saveVMConfig()
 	}
 
@@ -76,8 +77,9 @@ extension VMConfig {
 
 	// A new owned image, <name>.raw. The name follows the disk-name rule and must be new to
 	// this VM — in its config and in its folder: creating over an existing file would wipe
-	// that disk, even under a running VM (D15).
-	public func addNewStorageDisk(name raw: String, size: UInt64) throws {
+	// that disk, even under a running VM (D15). `first`: the entry goes before the others (a
+	// macOS system disk, D32), in the same save.
+	public func addNewStorageDisk(name raw: String, size: UInt64, first: Bool = false) throws {
 		let name = try NameRule.diskName.normalized(raw)
 		try Self.validateRawSize(size)
 		let taken = disks.contains {
@@ -93,7 +95,7 @@ extension VMConfig {
 		try Self.createDiskImage(atPath: path, size: size, name: name)
 		excludeFromBackup(path: path)
 		do {
-			try addDisk(disk: VMDisk(kind: .storage(name, size)))
+			try addDisk(disk: VMDisk(kind: .storage(name, size)), at: first ? 0 : nil)
 		} catch {
 			disks.removeAll { $0.id == "storage:\(name)" }
 			try? FileManager.default.removeItem(atPath: path)
