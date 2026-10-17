@@ -73,6 +73,28 @@ struct CanvasStateTests {
 		#expect(canvas.activeTab == .config)
 	}
 
+	@Test("H67: Split Right needs other tabs in the pane, and lands right of that pane")
+	func splitRightStaysBesideItsPane() {
+		var canvas = CanvasState()
+		canvas.open(.config)
+		#expect(!canvas.canSplitRight(.config))   // a lone tab: the same layout again
+		canvas.splitRight(.config)
+		#expect(canvas.panes.count == 1)
+		#expect(canvas.panes[0].tabs == [.config])
+
+		canvas.open(.terminal(hvc0))
+		canvas.open(.terminal(hvc1))
+		canvas.split(.terminal(hvc1))              // the drop zone's edge split
+		let right = canvas.panes[1].id
+		#expect(canvas.canSplitRight(.terminal(hvc0)))
+		#expect(!canvas.canSplitRight(.terminal(hvc1)))   // alone in its pane
+		canvas.splitRight(.terminal(hvc0))
+		#expect(canvas.panes.map(\.tabs) == [[.config], [.terminal(hvc0)], [.terminal(hvc1)]])
+		#expect(canvas.panes[2].id == right)
+		#expect(canvas.activeTab == .terminal(hvc0))
+		#expect(!canvas.canSplitRight(.config))   // the cap: three panes
+	}
+
 	@Test func moveUsesDragStyleIndices() {
 		var canvas = CanvasState()
 		canvas.open(.config)

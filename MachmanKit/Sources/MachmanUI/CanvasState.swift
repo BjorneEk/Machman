@@ -265,6 +265,27 @@ public struct CanvasState: Equatable, Sendable, Codable {
 		resetFractions()
 	}
 
+	// The tab menu's Split Right (H67): only while the tab's pane keeps other tabs (a lone
+	// tab's split leaves the same layout) and a pane is left to add.
+	public func canSplitRight(_ tab: VMPaneTab) -> Bool {
+		guard panes.count < Self.maxPanes, let holder = pane(holding: tab),
+			let i = index(of: holder) else { return false }
+		return panes[i].tabs.count > 1
+	}
+
+	// Split Right: the tab moves into a new pane just right of its own, never to the canvas
+	// edge — from a left pane that reordered the panes instead of splitting (H67).
+	public mutating func splitRight(_ tab: VMPaneTab) {
+		guard canSplitRight(tab), let from = pane(holding: tab), let fromIdx = index(of: from)
+			else { return }
+		panes[fromIdx].close(tab)
+		let pane = CanvasPane(tabs: [tab])
+		panes.insert(pane, at: fromIdx + 1)
+		activePaneID = pane.id
+		collapseEmptyPanes()
+		resetFractions()
+	}
+
 	public mutating func setFraction(_ value: Double, at index: Int) {
 		guard fractions.indices.contains(index), fractions.indices.contains(index + 1)
 			else { return }
