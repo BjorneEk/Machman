@@ -37,7 +37,7 @@ struct THGuestSetupCaptionTests {
 			inspector, width: 420, height: 1100
 		) { hosted -> (AXSnapshot, AXSnapshot, Bool) in
 			let before = hosted.snapshot()
-			let pressed = Self.press(label: "FreeBSD / OpenBSD", under: hosted.host)
+			let pressed = AXPress.press(label: "FreeBSD / OpenBSD", under: hosted.host)
 			await hosted.settle()
 			return (before, hosted.snapshot(), pressed)
 		}
@@ -48,30 +48,5 @@ struct THGuestSetupCaptionTests {
 		let texts = expanded.all.compactMap(\.text)
 		let at = try #require(texts.firstIndex(of: Self.caption), "\(expanded.dump())")
 		#expect(texts[(at + 1)...].first { $0.contains("install.sh") } == run)
-	}
-
-	// Presses the live element labelled `label` (SwiftUI's nodes answer the NSAccessibility
-	// getters without conforming: every selector is checked before it is sent).
-	private static func press(label: String, under root: NSObject) -> Bool {
-		var queue: [NSObject] = [root]
-		var seen = 0
-		while !queue.isEmpty, seen < AXSnapshot.maxNodes {
-			let node = queue.removeFirst()
-			seen += 1
-			let name = ["accessibilityLabel", "accessibilityTitle"].compactMap { getter in
-				node.responds(to: NSSelectorFromString(getter))
-					? node.value(forKey: getter) as? String : nil
-			}
-			let press = NSSelectorFromString("accessibilityPerformPress")
-			if name.contains(label), node.responds(to: press) {
-				_ = node.perform(press)
-				return true
-			}
-			if node.responds(to: NSSelectorFromString("accessibilityChildren")),
-				let kids = node.value(forKey: "accessibilityChildren") as? [Any] {
-				queue += kids.compactMap { $0 as? NSObject }
-			}
-		}
-		return false
 	}
 }

@@ -27,7 +27,7 @@ struct EmptyLibraryTests {
 			NoVMSidebar(viewModel: h.viewModel), width: 260
 		) { hosted in
 			let tree = hosted.snapshot()
-			let pressed = Self.press(label: "New VM\u{2026}", under: hosted.host)
+			let pressed = AXPress.press(label: "New VM\u{2026}", under: hosted.host)
 			await hosted.settle()
 			return (tree, pressed)
 		}
@@ -44,30 +44,5 @@ struct EmptyLibraryTests {
 			width: 600, height: 400)
 		#expect(detail.find(text: "No VMs yet") != nil, "\(detail.dump())")
 		#expect(detail.find(text: "Select a VM") == nil)
-	}
-
-	// Presses the live element labelled `label` (THGuestSetupCaptionTests' walk: SwiftUI's
-	// nodes answer the NSAccessibility getters without conforming, so each is checked first).
-	private static func press(label: String, under root: NSObject) -> Bool {
-		var queue: [NSObject] = [root]
-		var seen = 0
-		while !queue.isEmpty, seen < AXSnapshot.maxNodes {
-			let node = queue.removeFirst()
-			seen += 1
-			let name = ["accessibilityLabel", "accessibilityTitle"].compactMap { getter in
-				node.responds(to: NSSelectorFromString(getter))
-					? node.value(forKey: getter) as? String : nil
-			}
-			let press = NSSelectorFromString("accessibilityPerformPress")
-			if name.contains(label), node.responds(to: press) {
-				_ = node.perform(press)
-				return true
-			}
-			if node.responds(to: NSSelectorFromString("accessibilityChildren")),
-				let kids = node.value(forKey: "accessibilityChildren") as? [Any] {
-				queue += kids.compactMap { $0 as? NSObject }
-			}
-		}
-		return false
 	}
 }
