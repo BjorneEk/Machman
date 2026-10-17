@@ -136,6 +136,36 @@ struct SocketFollowsSaveTests {
 		}
 	}
 
+	// Review F21 (E70): a safe run's vmhost held the real VM's folder open for the rest of its
+	// life, so after Save as New VM a silent one could be placed by the original's folder too.
+	// The save lets go of it: the vmhost serves the saved VM's folder alone from then on.
+	@Test("E70: a safe run saved as a new VM no longer holds the real VM's folder open")
+	@MainActor func aSavedSafeRunLetsGoOfTheRealFolder() throws {
+		let dir = try scratchDir()
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let real = TestEnvironment.scratch + "real-\(UUID().uuidString)"
+		try FileManager.default.createDirectory(atPath: real, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: real) }
+		try VMTestDir.withRedirectedDir {
+			let host = try SafeRunFixture.make()
+			defer { host.removeLibrary() }
+			let server = MachmanServer(
+				api: LocalMachman(registry: host.registry), socketPath: dir + "/custom.sock",
+				daemonVersion: "test")
+			try startServing(server)
+			defer { server.stop() }
+			let realFolder = VMFolderPath(real)
+			VMHostBootstrap.followPromotions(
+				of: host.registry, server: server, launchedOn: dir + "/custom.sock",
+				releasing: realFolder)
+			#expect(VMHostProcess.folders(of: getpid()).contains { $0.isFolder(at: real) })
+
+			_ = try host.registry.promoteRestrictedVM(to: "kept")
+			#expect(realFolder.current == nil)
+			#expect(!VMHostProcess.folders(of: getpid()).contains { $0.isFolder(at: real) })
+		}
+	}
+
 	// A host launched elsewhere (not on a name-derived path) is not anyone's to move.
 	@Test @MainActor func aHostLaunchedOnAnotherPathStaysThere() throws {
 		let dir = try scratchDir()

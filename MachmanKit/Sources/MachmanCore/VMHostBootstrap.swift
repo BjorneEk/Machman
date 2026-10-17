@@ -18,13 +18,17 @@ public enum VMHostBootstrap {
 	// socket, where daemons and launch agents look for a VM's host (E27) — on the original's,
 	// a daemon restart adopted the run as the original. Only a host launched on such a path
 	// moves (every daemon spawn and launch agent uses one); a failed move keeps the run on
-	// the original's socket, and adoption still finds it by asking whom it serves.
+	// the original's socket, and adoption still finds it by asking whom it serves. A safe
+	// run's hold on the real VM's folder goes with the save (review F21): a silent vmhost is
+	// placed by the folders it holds open (E70), and the original is no longer its VM.
 	@MainActor
 	static func followPromotions(
-		of registry: VMRegistry, server: MachmanServer, launchedOn socketPath: String
+		of registry: VMRegistry, server: MachmanServer, launchedOn socketPath: String,
+		releasing realFolder: VMFolderPath? = nil
 	) {
 		let dir = (socketPath as NSString).deletingLastPathComponent
 		registry.onPromoted = { [weak server] from, to in
+			realFolder?.release()
 			guard let server,
 				socketPath == MachmanPaths.vmSocketPath(vm: from, runtimeDir: dir) else { return }
 			do {
@@ -79,16 +83,18 @@ public enum VMHostBootstrap {
 		let api = LocalMachman(registry: registry)
 		let server = MachmanServer(
 			api: api, socketPath: socketPath, daemonVersion: "\(daemonVersion)-vmhost")
+		let realFolder = library.map { VMFolderPath($0 + "/" + vmName) }
 		server.helloHost = helloHost(
 			registry: registry, vmName: vmName, folder: VMFolderPath(vm.config.vmDirPath()),
-			realFolder: library.map { VMFolderPath($0 + "/" + vmName) })
+			realFolder: realFolder)
 		do {
 			try server.start()
 		} catch {
 			MachmanLogger.log(.passiveError, "cannot serve \(socketPath): \(error)")
 			exit(65)
 		}
-		followPromotions(of: registry, server: server, launchedOn: socketPath)
+		followPromotions(
+			of: registry, server: server, launchedOn: socketPath, releasing: realFolder)
 
 		// The delegate follows the registry's CURRENT name — safeSave promotion renames the
 		// VM mid-run, and quit/stop must act on the live name, not the launch capture.
