@@ -117,6 +117,28 @@ struct GuestSetupStoreTests {
 		#expect(store.script(id: kept.id) == nil)
 	}
 
+	// F27: a writer that died between its staging directory and the rename left it there for
+	// good. The next add takes away one a few minutes old; a younger one may be another
+	// process's write in progress.
+	@Test("S67: an add removes a staging directory a dead writer left, and keeps a fresh one")
+	func anAddSweepsOldStaging() throws {
+		let root = Self.root()
+		let fm = FileManager.default
+		try fm.createDirectory(at: root, withIntermediateDirectories: true)
+		let old = root.appendingPathComponent(".staging-\(UUID().uuidString)")
+		let fresh = root.appendingPathComponent(".staging-\(UUID().uuidString)")
+		for dir in [old, fresh] {
+			try fm.createDirectory(at: dir, withIntermediateDirectories: false)
+			try Data("partial".utf8).write(
+				to: dir.appendingPathComponent(GuestSetupStore.scriptName))
+		}
+		try fm.setAttributes(
+			[.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: old.path)
+		let entry = try GuestSetupStore(root: root).add(
+			Self.script(8, "echo swept"), kind: GuestSetupStore.Kind.custom)
+		#expect(Self.listing(root) == [fresh.lastPathComponent, entry.id].sorted())
+	}
+
 	@Test("S67: the latest is the newest build entry, never a custom one")
 	func theLatestIsTheNewestBuild() throws {
 		let root = Self.root()

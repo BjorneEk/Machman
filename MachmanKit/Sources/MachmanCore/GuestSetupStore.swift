@@ -278,6 +278,7 @@ struct GuestSetupStore {
 			throw MachmanError(
 				code: .invalidArgument, message: "A Guest Setup script is at most 1 MB")
 		}
+		sweepStaging()
 		let sha = Self.digest(data)
 		if let known = stored().first(where: { $0.sha256 == sha }) { return known }
 		var entry = Self.describe(data, kind: kind, addedAt: date)
@@ -303,12 +304,28 @@ struct GuestSetupStore {
 		}
 	}
 
+	private static let stagingPrefix = ".staging-"
+
+	// A writer that died between its staging directory and the rename left it behind: one a
+	// few minutes old goes; a younger one may be another process's write in progress.
+	private func sweepStaging(olderThan age: TimeInterval = 5 * 60) {
+		let fm = FileManager.default
+		let cutoff = Date().addingTimeInterval(-age)
+		let names = (try? fm.contentsOfDirectory(atPath: root.path)) ?? []
+		for name in names where name.hasPrefix(Self.stagingPrefix) {
+			let dir = root.appendingPathComponent(name)
+			guard let modified = (try? fm.attributesOfItem(atPath: dir.path))?[.modificationDate]
+				as? Date, modified < cutoff else { continue }
+			try? fm.removeItem(at: dir)
+		}
+	}
+
 	private func write(_ entry: Entry, script: Data) throws {
 		let fm = FileManager.default
 		try fm.createDirectory(
 			at: root, withIntermediateDirectories: true,
 			attributes: [.posixPermissions: 0o700])
-		let staging = root.appendingPathComponent(".staging-\(UUID().uuidString)")
+		let staging = root.appendingPathComponent(Self.stagingPrefix + UUID().uuidString)
 		defer { try? fm.removeItem(at: staging) }
 		try fm.createDirectory(at: staging, withIntermediateDirectories: false,
 			attributes: [.posixPermissions: 0o700])
