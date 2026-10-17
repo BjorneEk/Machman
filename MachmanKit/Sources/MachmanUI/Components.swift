@@ -281,27 +281,34 @@ extension View {
 // MARK: - Add tile ----------------------------------------------------------------------------
 
 // Icon-first tile for the "+" add popover. `badge` overlays a small plus for glyphs that
-// have no `.badge.plus` variant of their own. Dims when disabled (a capability-gated
-// tile); the tooltip then carries the reason.
+// have no `.badge.plus` variant of their own. VoiceOver reads its `name` ("New Disk…"): the
+// caption alone ("New") is cut off from its section's header (H57). A `disabledReason` (a
+// stop-first or capability gate) dims it and takes the tooltip from `tooltip`.
 public struct AddTile: View {
 	@Environment(\.isEnabled) private var enabled
+	private let name: String
 	private let symbol: String
 	private let caption: String
 	private let tooltip: String
+	private let disabledReason: String?
 	private let badge: Bool
 	private let action: () -> Void
 	@State private var hovering = false
 
 	public init(
-		symbol: String, caption: String, tooltip: String, badge: Bool = false,
-		action: @escaping () -> Void
+		_ name: String, symbol: String, caption: String, tooltip: String,
+		disabledReason: String? = nil, badge: Bool = false, action: @escaping () -> Void
 	) {
+		self.name = name
 		self.symbol = symbol
 		self.caption = caption
 		self.tooltip = tooltip
+		self.disabledReason = disabledReason
 		self.badge = badge
 		self.action = action
 	}
+
+	private var offered: Bool { enabled && disabledReason == nil }
 
 	public var body: some View {
 		Button(action: action) {
@@ -329,9 +336,12 @@ public struct AddTile: View {
 			.contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 		}
 		.buttonStyle(.plain)
-		.opacity(enabled ? 1 : MachmanColors.disabledOpacity)
-		.onHover { hovering = enabled && $0 }
-		.help(tooltip)
+		.disabled(disabledReason != nil)
+		.opacity(offered ? 1 : MachmanColors.disabledOpacity)
+		.onHover { hovering = offered && $0 }
+		// On macOS the tooltip is the accessibility help VoiceOver reads after the name.
+		.help(disabledReason ?? tooltip)
+		.accessibilityLabel(name)
 	}
 }
 

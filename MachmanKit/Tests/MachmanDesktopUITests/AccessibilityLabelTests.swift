@@ -145,6 +145,55 @@ struct AccessibilityLabelTests {
 		#expect(badge.find(text: "EFI") != nil)
 	}
 
+	@Test("H57: a running VM's add tiles and disk trash read their action, with the reason as help")
+	func dimmedActionsKeepTheirNames() async throws {
+		let h = await UIHarness.make([Samples.linux("Debian", state: .running)])
+		let debian = h.vm("Debian")
+		let tiles = try await h.snapshot(AddPopover(viewModel: h.viewModel, vm: debian))
+		let console = try #require(tiles.find(label: "Add Console"), "\(tiles.dump())")
+		#expect(console.help == StoppedOnly.changeSerialPorts.stopFirst)
+		#expect(!console.isEnabled)
+		let newDisk = try #require(tiles.find(label: "New Disk\u{2026}"), "\(tiles.dump())")
+		#expect(newDisk.help == "New Disk\u{2026} (owned image in the VM directory)")
+		#expect(newDisk.isEnabled)
+		// A tile's caption alone, cut off from its section's header, names nothing.
+		for caption in ["New", "Existing", "Folder", "Console", "UART"] {
+			#expect(tiles.find(label: caption) == nil, "\(caption): \(tiles.dump())")
+		}
+
+		let iso = "iso:file:///Users/demo/Downloads/debian-13-arm64-netinst.iso"
+		for (node, symbol, name, reason) in [
+			(SidebarNode.disk("storage:system"), MachmanSymbols.delete, "Delete disk\u{2026}",
+				StoppedOnly.removeDisk),
+			(.disk(iso), MachmanSymbols.delete, "Remove disk \u{2014} the file stays", .removeDisk),
+			(.disk(iso), MachmanSymbols.promoteDisk,
+				"Promote to owned \u{2014} copies the image into the VM directory", .promoteDisk),
+			(.device(.network), MachmanSymbols.regenerate, "Regenerate MAC address\u{2026}",
+				.regenerateMAC),
+		] {
+			h.viewModel.treeSelection = [node]
+			let tree = try await h.snapshot(
+				InspectorView(
+					viewModel: h.viewModel, sessions: h.terminals, profiles: h.profiles,
+					vm: debian),
+				width: 320, height: 820)
+			let button = try #require(
+				tree.all.first { $0.role == "AXButton" && $0.identifier == symbol },
+				"\(node): \(tree.dump())")
+			#expect(button.label == name, "\(node)")
+			#expect(button.help == reason.stopFirst, "\(node)")
+			#expect(!button.isEnabled, "\(node)")
+		}
+
+		// The SSH group's + on a stopped VM: its name, and why it waits.
+		let s = await UIHarness.make([Samples.linux("Alpine")])
+		let ssh = try await s.snapshot(
+			TreeSectionProbe(harness: s, vm: s.vm("Alpine")) { AnyView(TreeSSHSection(ctx: $0)) })
+		let add = try #require(ssh.find(label: "New SSH session tab"), "\(ssh.dump())")
+		#expect(add.help == "Sessions need the VM running and answering on port 22")
+		#expect(!add.isEnabled)
+	}
+
 	private static func tab(_ title: String, selected: Bool) -> some View {
 		CanvasTabItem(
 			title: title, symbol: MachmanSymbols.tabConfig, isTerminal: !selected,

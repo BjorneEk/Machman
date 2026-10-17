@@ -100,12 +100,10 @@ struct TreeSSHSection: View {
 					?? "SSH did not answer — try again",
 				font: .caption, flat: true) { ctx.viewModel.refreshSSH(ctx.vm.name) }
 		} else {
-			IconButton(symbol: MachmanSymbols.add,
-				tooltip: sshSessionReady
-					? "New SSH session tab"
-					: "Sessions need the VM running and answering on port 22",
+			IconButton(symbol: MachmanSymbols.add, name: "New SSH session tab",
+				disabledReason: sshSessionReady
+					? nil : "Sessions need the VM running and answering on port 22",
 				font: .caption, flat: true) { openSSHSession() }
-				.disabled(!sshSessionReady)
 		}
 	}
 

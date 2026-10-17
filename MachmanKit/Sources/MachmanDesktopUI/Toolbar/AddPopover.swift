@@ -80,11 +80,12 @@ struct AddPopover: View {
 		let missing = missingKinds
 		return VStack(alignment: .leading, spacing: 8) {
 			section("Disk") {
-				AddTile(symbol: MachmanSymbols.addDiskNew, caption: "New",
+				AddTile("New Disk…", symbol: MachmanSymbols.addDiskNew, caption: "New",
 					tooltip: "New Disk… (owned image in the VM directory)") {
 					withAnimation(.snappy(duration: 0.18)) { addingNewDisk = true }
 				}
-				AddTile(symbol: MachmanSymbols.addDiskExisting, caption: "Existing",
+				AddTile("Add Existing Disk…", symbol: MachmanSymbols.addDiskExisting,
+					caption: "Existing",
 					tooltip: "Add Existing Disk… (copy in or reference an image)") {
 					dismiss()
 					AddFlows.chooseExistingDisk(viewModel: viewModel, vm: vm.name)
@@ -92,7 +93,7 @@ struct AddPopover: View {
 			}
 			Divider()
 			section("Mount") {
-				AddTile(symbol: MachmanSymbols.addMount, caption: "Folder",
+				AddTile("Add Mount Folder…", symbol: MachmanSymbols.addMount, caption: "Folder",
 					tooltip: "Add Mount Folder… (shared via virtiofs)") {
 					dismiss()
 					AddFlows.chooseMountFolder(viewModel: viewModel, vm: vm.name)
@@ -101,20 +102,19 @@ struct AddPopover: View {
 			Divider()
 			section("Serial") {
 				// The daemon refuses port changes while the VM runs (P14).
-				AddTile(symbol: MachmanSymbols.serialConsole, caption: "Console",
-					tooltip: vm.refusal(.changeSerialPorts) ?? "Add Console (virtio)",
-					badge: true) {
+				AddTile("Add Console", symbol: MachmanSymbols.serialConsole, caption: "Console",
+					tooltip: "Add Console (virtio)",
+					disabledReason: vm.refusal(.changeSerialPorts), badge: true) {
 					viewModel.addConsolePort(vm.name)
 					dismiss()
 				}
-				.disabled(vm.refusal(.changeSerialPorts) != nil)
 				uartTile
 			}
 			if hasInstallerTiles {
 				Divider()
 				section("Installers") {
 					// The guest-setup payload served over the share — its own section.
-					AddTile(symbol: MachmanSymbols.deviceGuestSetup,
+					AddTile("Add Guest Setup", symbol: MachmanSymbols.deviceGuestSetup,
 						caption: "Guest Setup",
 						tooltip: "Add Guest Setup — one script that sets up console "
 							+ "logins, SSH, and boot automounts from inside the guest") {
@@ -129,7 +129,7 @@ struct AddPopover: View {
 					sectionHeader("Devices")
 					LazyVGrid(columns: columns, alignment: .leading, spacing: 2) {
 						ForEach(missing, id: \.self) { kind in
-							AddTile(symbol: kind.displaySymbol,
+							AddTile("Add \(kind.displayLabel)", symbol: kind.displaySymbol,
 								caption: kind.displayLabel,
 								tooltip: "Add \(kind.displayLabel)") {
 								viewModel.addDevice(vm.name, kind: kind)
@@ -147,12 +147,12 @@ struct AddPopover: View {
 		// The host gate explains first: stopping the VM wouldn't help there.
 		let gate = viewModel.capabilities?.uartUnavailable
 		let refusal = vm.refusal(.changeSerialPorts)
-		return AddTile(symbol: MachmanSymbols.serialUart, caption: "UART",
-			tooltip: gate?.message ?? refusal ?? "Add UART (PL011)", badge: true) {
+		return AddTile("Add UART", symbol: MachmanSymbols.serialUart, caption: "UART",
+			tooltip: "Add UART (PL011)", disabledReason: gate?.message ?? refusal,
+			badge: true) {
 			viewModel.addUartPort(vm.name)
 			dismiss()
 		}
-		.disabled(gate != nil || refusal != nil)
 	}
 
 	private func attached(_ kind: DeviceKind) -> Bool {

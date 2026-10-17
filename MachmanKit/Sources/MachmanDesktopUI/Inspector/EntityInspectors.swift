@@ -73,22 +73,21 @@ struct DiskInspector: View {
 						if disk.owned == false {
 							IconButton(
 								symbol: MachmanSymbols.promoteDisk,
-								tooltip: vm.refusal(.promoteDisk)
-									?? "Promote to owned — copies the image into the "
-									+ "VM directory"
+								name: "Promote to owned — copies the image into the VM "
+									+ "directory",
+								disabledReason: vm.refusal(.promoteDisk)
 							) {
 								viewModel.promoteDisk(vm.name, diskID: diskID)
 							}
-							.disabled(vm.refusal(.promoteDisk) != nil)
 						}
 						IconButton(
 							symbol: MachmanSymbols.delete,
-							tooltip: vm.refusal(.removeDisk) ?? (disk.owned == true
-								? "Delete disk…" : "Remove disk — the file stays")
+							name: disk.owned == true
+								? "Delete disk…" : "Remove disk — the file stays",
+							disabledReason: vm.refusal(.removeDisk)
 						) {
 							remove(disk)
 						}
-						.disabled(vm.refusal(.removeDisk) != nil)
 						Spacer()
 					}
 				}

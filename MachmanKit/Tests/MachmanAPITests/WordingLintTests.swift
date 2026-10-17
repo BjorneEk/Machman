@@ -29,7 +29,8 @@ struct WordingLintTests {
 		for file in RepoFiles.files(under: Self.surfaces, extension: "swift") {
 			let source = try String(contentsOf: file, encoding: .utf8)
 			let path = RepoFiles.relativePath(file)
-			for marker in [".help(", "tooltip: "] {
+			// An icon button's or add tile's name and disabled reason are tooltips too (H57).
+			for marker in [".help(", "tooltip: ", "IconButton(", "AddTile("] {
 				for (line, text) in SwiftCallStrings.arguments(of: marker, in: source)
 				where Self.says(text) {
 					read += 1

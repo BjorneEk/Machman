@@ -325,12 +325,12 @@ struct NetworkInspector: View {
 							// is unknown, with the reason to wait.
 							IconButton(
 								symbol: MachmanSymbols.regenerate,
-								tooltip: vm.refusal(.regenerateMAC) ?? "Regenerate MAC address…",
+								name: "Regenerate MAC address…",
+								disabledReason: vm.refusal(.regenerateMAC),
 								font: .callout, flat: true
 							) {
 								regenConfirm = true
 							}
-							.disabled(vm.refusal(.regenerateMAC) != nil)
 						}
 					}
 				}
