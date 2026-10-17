@@ -369,10 +369,10 @@ EOF
 
 # The uninstall's grubby arm: the arguments a run added go from the entries they went into,
 # and an entry's console= arguments grubby's add replaced come back — only into that entry,
-# and only while the console= arguments it has now are its old ones (the last one is
-# /dev/console, so one added since makes the order the user's call: named, never cleared). A
-# record from before v8 names no arguments: the device's goes, and console=tty0 — maybe the
-# entries' own — stays, named.
+# while its kernel is still installed, and only while the console= arguments it has now are
+# its old ones (the last one is /dev/console, so one added since makes the order the user's
+# call: named, never cleared). A record from before v8 names no arguments: the device's
+# goes, and console=tty0 — maybe the entries' own — stays, named.
 kernelconsole_uninstall_grubby() {
 	if [ -n "$(ledger_values grubby-device)" ]; then
 		kernelconsole_take_back
@@ -389,6 +389,12 @@ kernelconsole_uninstall_grubby() {
 		[ -n "$_kug_line" ] || continue
 		_kug_k="${_kug_line%% *}"
 		_kug_had="${_kug_line#* }"
+		# An entry whose kernel went since (a kernel update removed it) has nothing to restore.
+		if ! printf '%s\n' "$_kug_entries" | awk -v k="$_kug_k" '$1 == k { f = 1 } END { exit !f }'
+		then
+			verbose kernel-console "$_kug_k is no longer installed — nothing to put back there"
+			continue
+		fi
 		_kug_now="$(kernelconsole_entry_args "$_kug_entries" "$_kug_k")"
 		_kug_now="$(kernelconsole_consoles_in "$_kug_now")"
 		_kug_missing="$(kernelconsole_without "$_kug_had" "$_kug_now")"

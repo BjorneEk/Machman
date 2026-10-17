@@ -15,12 +15,14 @@ import Foundation
 struct GuestScriptKernelConsoleTests {
 
 	// Boot entries as files in $GRUBBY_DIR (line 1 the kernel, line 2 its arguments), edited
-	// the way BLS grubby edits them; --update-kernel takes ALL or one entry's kernel.
-	// entry <file> <kernel> <arguments> makes one; args <file> prints its arguments.
+	// the way BLS grubby edits them; --update-kernel takes ALL or one entry's kernel. Every
+	// call is logged to $GRUBBY_DIR.log. entry <file> <kernel> <arguments> makes one; args
+	// <file> prints its arguments.
 	static let grubby = #"""
 		mkdir -p "$D/bin" "$D/entries"
 		cat > "$D/bin/grubby" <<'SH'
 		#!/bin/sh
+		printf '%s\n' "$*" >> "$GRUBBY_DIR.log"
 		target=ALL
 		for a in "$@"; do
 			case "$a" in --update-kernel=*) target="${a#--update-kernel=}" ;; esac
@@ -38,6 +40,7 @@ struct GuestScriptKernelConsoleTests {
 			}' "$1" > "$1.t" && mv "$1.t" "$1"
 		}
 		n=0
+		hit=0
 		for f in "$GRUBBY_DIR"/*; do
 			kernel="$(sed -n 1p "$f")"
 			for a in "$@"; do
@@ -46,6 +49,7 @@ struct GuestScriptKernelConsoleTests {
 			done
 			n=$((n + 1))
 			[ "$target" = ALL ] || [ "$target" = "$kernel" ] || continue
+			hit=1
 			for a in "$@"; do
 				case "$a" in
 				--args=*)
@@ -58,6 +62,8 @@ struct GuestScriptKernelConsoleTests {
 				esac
 			done
 		done
+		# As grubby does, a kernel no entry boots is an error.
+		[ "$target" = ALL ] || [ "$hit" = 1 ] || { echo "no such kernel: $target" >&2; exit 1; }
 		SH
 		chmod 755 "$D/bin/grubby"
 		PATH="$D/bin:$PATH"
@@ -234,6 +240,40 @@ struct GuestScriptKernelConsoleTests {
 				'grubby-had /boot/vmlinuz-6.9 console=ttyS0,115200 console=tty0'
 				[ok] put back console=ttyS0,115200 in the boot entry for /boot/vmlinuz-6.9
 				uninstalled: ro quiet console=ttyS0,115200 console=tty0
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// S60: the restore walked the records, not the entries: a record whose kernel was removed
+	// since setup (routine after kernel updates) passed the "set since" check with nothing to
+	// compare, its grubby call on the gone kernel failed, and the uninstall ended partial. Such
+	// a record is passed over: there is nothing left to put back.
+	@Test("S60: the uninstall passes over a record whose kernel is no longer installed")
+	func aGoneKernelsRecordIsPassedOver() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(
+				GuestScriptStateTests.stateHere + Self.grubby + #"""
+				UI_COLS=1000
+				OS=Linux
+				BOOTLOADER=grubby
+				CONSOLE_DEVICES="hvc0 hvc1"
+				entry 0 /boot/vmlinuz-6.9 "ro quiet console=hvc0 console=tty0"
+				ST_KERNEL_CONSOLE=hvc0
+				ST_KERNEL_CONSOLE_METHOD=grubby
+				ST_LEDGER="grubby-device hvc0
+				grubby-entry /boot/vmlinuz-6.9
+				grubby-entry /boot/vmlinuz-6.8.5
+				grubby-arg /boot/vmlinuz-6.9 console=hvc0
+				grubby-had /boot/vmlinuz-6.8.5 console=ttyS0,115200"
+				kernelconsole_uninstall
+				echo "kept=$UNINSTALL_KEPT 0: $(args 0)"
+				grep -c 'vmlinuz-6.8.5' "$GRUBBY_DIR.log" || true
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				kept=0 0: ro quiet console=tty0
+				0
 
 				""", "\(shell): \(r.out)")
 		}
