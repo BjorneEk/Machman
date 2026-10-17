@@ -210,7 +210,8 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("(external)"))
 		// Uninstall removes marker-matched artifacts but never disables sshd, and every
 		// edit goes through the link-safe helpers: no fixed temp name is left to plant.
-		#expect(s.contains(#"drop_lines "$_su_ak" "$MARKER""#))
+		#expect(s.contains(#"for _su_m in "$MARKER" $(ledger_values adopted); do"#))
+		#expect(s.contains(#"drop_lines "$_su_ak" "$_su_m""#))
 		#expect(!s.contains(".machman-tmp"))
 		#expect(s.contains("--uninstall [--user <name>]"))
 		// The report lands in the writable sibling, addressed payload-relatively (the
