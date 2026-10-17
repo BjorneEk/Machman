@@ -54,6 +54,30 @@ struct RoutingDisconnectTests {
 		return (server, socketPath, shadowRoot)
 	}
 
+	// Review F19 (Q40): the reconnect loop kept the router across every pause it slept on the
+	// router's clock, so a host dropped on a test's un-advanced clock kept the router alive for
+	// good. It sleeps with the router released, as the other loops do.
+	@Test("Q40: a reconnect loop asleep on the router's clock doesn't keep the router alive")
+	@MainActor func aSleepingReconnectLoopReleasesTheRouter() async throws {
+		var routing: RoutingMachman? = try makeRouting()
+		let clock = TestClock()
+		routing?.clock = clock
+		routing?.isProcessAlive = { _ in true }   // the host lives on, its socket dark
+		let (server, _, shadowRoot) = try await safeHost(try #require(routing))
+		defer {
+			server.stop()
+			try? FileManager.default.removeItem(atPath: shadowRoot)
+		}
+		#expect(await eventually { clock.armed.isEmpty })   // the subscription's deadline
+
+		server.stop()   // its connection drops: the loop looks, then pauses within the grace
+		#expect(await eventually { clock.armed == [.milliseconds(50)] }, "armed \(clock.armed)")
+		weak var released = routing
+		routing = nil
+		#expect(await eventually { released == nil })
+		clock.advance(by: .seconds(60))   // wakes the loop, which finds no router and ends
+	}
+
 	@Test @MainActor func aDroppedConnectionToALiveHostReconnects() async throws {
 		let routing = try makeRouting()
 		routing.isProcessAlive = { _ in true }

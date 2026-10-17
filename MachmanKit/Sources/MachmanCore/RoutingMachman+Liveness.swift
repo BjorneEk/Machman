@@ -36,9 +36,10 @@ extension RoutingMachman {
 		host.reconnectTask = Task { [weak self] in
 			while !Task.isCancelled {
 				guard let settled = await self?.settleStep(id: id, pastGrace: pastGrace()),
-					!settled, let self else { return }
-				let pause = pastGrace() ? self.recoveryInterval : Duration.milliseconds(50)
-				try? await self.clock.sleep(for: pause)
+					!settled, let interval = self?.recoveryInterval, let clock = self?.clock
+				else { return }
+				// Asleep with the router released, as the other loops sleep.
+				try? await clock.sleep(for: pastGrace() ? interval : .milliseconds(50))
 			}
 		}
 	}
