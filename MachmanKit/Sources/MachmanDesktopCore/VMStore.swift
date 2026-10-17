@@ -155,7 +155,8 @@ public final class VMStore: ObservableObject {
 	// space) refresh explicitly through VMListViewModel.refreshFreeSpace (P44).
 	public func refreshCapabilities() async {
 		guard let api else { return }
-		if let caps = try? await api.hostCapabilities() {
+		// Only a change publishes: the Grow field asks on every disk it shows.
+		if let caps = try? await api.hostCapabilities(), caps != capabilities {
 			capabilities = caps
 		}
 	}

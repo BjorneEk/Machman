@@ -9,6 +9,7 @@
 
 import Testing
 import Foundation
+import Combine
 import MachmanAPI
 import MachmanFixtures
 import MachmanTestSupport
@@ -86,5 +87,21 @@ struct NewDiskFormTests {
 		#expect(h.viewModel.newDiskProblem(on: debian, name: "data", sizeText: "64")
 			== "Only 10 GB is free")
 		#expect(h.viewModel.growDiskProblem("64", disk: system) == "Only 10 GB is free")
+	}
+
+	// The Grow field refreshes on every disk it shows: unchanged figures must not invalidate
+	// the window each time (the view model forwards the store's changes).
+	@Test("P44: a free-space refresh with unchanged figures publishes nothing")
+	func anUnchangedRefreshStaysQuiet() async throws {
+		let h = await harness()
+		var published = 0
+		let watch = h.store.objectWillChange.sink { published += 1 }
+		defer { watch.cancel() }
+		await h.viewModel.refreshFreeSpace()
+		await h.viewModel.refreshFreeSpace()
+		#expect(published == 0)
+		h.stub.capabilities.freeDiskBytes += 1 << 30
+		await h.viewModel.refreshFreeSpace()
+		#expect(published == 1)
 	}
 }
