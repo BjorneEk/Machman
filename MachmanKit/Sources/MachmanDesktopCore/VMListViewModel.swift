@@ -17,30 +17,6 @@ import Combine
 import MachmanUI
 import MachmanAPI
 
-// One user-facing failure: title = what the user was doing, message = why it failed.
-public struct PresentedError: Identifiable {
-	public let id = UUID()
-	public let title: String
-	public let message: String
-}
-
-// A Force Stop that can't reach a VM whose vmhost doesn't answer, held so the alert can end
-// its process instead — only after this second, explicit question (C9).
-public struct PendingEndProcess: Identifiable {
-	public let id = UUID()
-	public let vm: String
-	public var prompt: EndProcessPrompt { .forVM(vm) }
-}
-
-// A start refused with macConflict, held so the alert can retry it with force.
-public struct PendingForceStart: Identifiable {
-	public let id = UUID()
-	public let name: String
-	public let headless: Bool
-	public let safe: Bool
-	public let message: String
-}
-
 @MainActor
 public final class VMListViewModel: ObservableObject {
 	public let api: MachmanControlling
@@ -79,26 +55,34 @@ public final class VMListViewModel: ObservableObject {
 	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
 	// toggle and by the sidebar's "Properties" action.
 	@Published public var showInfoPanel = false
-	// Failures queue: the alert shows one at a time, in arrival order (P15).
-	@Published private var errorQueue = PresentationQueue<PresentedError>()
-	public var presentedError: PresentedError? { errorQueue.current }
-	// Binding surface for .alert(isPresented:presenting:) — a dismissal retires the shown
-	// error and presents the next waiting one.
+	// Every alert and question, one at a time in arrival order (PR25; failures since P15),
+	// shown by the window that is key when it arrives. Its own observable: only the windows'
+	// presenters watch it. What shows is read below for code and tests.
+	public let prompts = PromptCenter()
+	public var presentedError: PresentedError? {
+		if case .error(let error)? = prompts.current?.kind { return error }
+		return nil
+	}
+	// Setting false is a dismissal: the next prompt waiting shows after it.
 	public var isErrorPresented: Bool {
 		get { presentedError != nil }
-		set {
-			if !newValue, errorQueue.dismiss() { presentNext { $0.errorQueue.advance() } }
-		}
+		set { if !newValue, presentedError != nil { dismissCurrentPrompt() } }
 	}
-	@Published public var pendingForceStart: PendingForceStart?
+	public var pendingForceStart: PendingForceStart? {
+		if case .forceStart(let pending)? = prompts.current?.kind { return pending }
+		return nil
+	}
 	public var isForceStartPresented: Bool {
 		get { pendingForceStart != nil }
-		set { if !newValue { pendingForceStart = nil } }
+		set { if !newValue, pendingForceStart != nil { dismissCurrentPrompt() } }
 	}
-	@Published public var pendingEndProcess: PendingEndProcess?
+	public var pendingEndProcess: PendingEndProcess? {
+		if case .endProcess(let pending)? = prompts.current?.kind { return pending }
+		return nil
+	}
 	public var isEndProcessPresented: Bool {
 		get { pendingEndProcess != nil }
-		set { if !newValue { pendingEndProcess = nil } }
+		set { if !newValue, pendingEndProcess != nil { dismissCurrentPrompt() } }
 	}
 	// Pending destructive/choice confirmations, presented as confirmationDialogs by
 	// VMNavigationView (the HIG successor to the old modal NSAlerts).
@@ -361,22 +345,30 @@ public final class VMListViewModel: ObservableObject {
 	// dismissed unread.
 	public func present(message: String, while action: String) {
 		MachmanLogger.log(.interactionError, "\(action) failed: \(message)")
-		errorQueue.enqueue(
-			PresentedError(title: "\(action) failed", message: message),
-			duplicate: { $0.title == $1.title && $0.message == $1.message })
+		presentError(PresentedError(title: "\(action) failed", message: message))
 	}
 
 	// An alert whose title is the whole story, not "<action> failed".
 	public func present(title: String, message: String) {
 		MachmanLogger.log(.interactionError, "\(title): \(message)")
-		errorQueue.enqueue(
-			PresentedError(title: title, message: message),
-			duplicate: { $0.title == $1.title && $0.message == $1.message })
+		presentError(PresentedError(title: title, message: message))
+	}
+
+	// The same failure showing or waiting already is not asked again.
+	private func presentError(_ error: PresentedError) {
+		prompts.ask(.error(error)) { shown, new in
+			guard case .error(let a) = shown, case .error(let b) = new else { return false }
+			return a.title == b.title && a.message == b.message
+		}
+	}
+
+	func dismissCurrentPrompt() {
+		if let id = prompts.current?.id { prompts.dismiss(id) }
 	}
 
 	// A dismissed alert or dialog animates out; the next one is presented after that, not
 	// inside it.
-	static let representDelay: Duration = .milliseconds(350)
+	static var representDelay: Duration { PromptCenter.representDelay }
 
 	private func presentNext(_ step: @escaping @MainActor (VMListViewModel) -> Void) {
 		Task { [weak self] in

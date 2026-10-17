@@ -165,7 +165,7 @@ struct TGSafeSaveTests {
 		#expect(pending.safe)
 		#expect(model.presentedError == nil)
 		model.startVM(pending.name, headless: pending.headless, force: true, safe: pending.safe)
-		model.pendingForceStart = nil
+		model.isForceStartPresented = false   // the alert's dismissal
 		try #require(await desktop.waitFor(vm.name, .running))
 		try vm.fileHostPid(try await vm.hostPID())
 		// Its console tab is a new session that shows its own boot, not the saved run.

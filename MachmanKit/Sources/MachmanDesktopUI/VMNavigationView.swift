@@ -112,22 +112,9 @@ public struct VMNavigationView: View {
 		// through column open/close animations (the capsule strip's clear ScrollView at the
 		// top edge otherwise re-triggers the scroll-edge effect).
 		.toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-		// Failures show in the window key when they arrive (H40): this one or a torn one.
-		.modifier(WindowErrorAlert(viewModel: viewModel, window: .main))
-		.alert(
-			"MAC address conflict",
-			isPresented: $viewModel.isForceStartPresented,
-			presenting: viewModel.pendingForceStart
-		) { pending in
-			Button("Start Anyway") {
-				viewModel.startVM(
-					pending.name, headless: pending.headless, force: true,
-					safe: pending.safe)
-			}
-			Button("Cancel", role: .cancel) {}
-		} message: { pending in
-			Text(pending.message)
-		}
+		// Failures and the start/stop follow-up questions show in the window key when
+		// they arrive (H40, K8): this one or a torn one.
+		.modifier(WindowPrompts(viewModel: viewModel, window: .main))
 		.sheet(item: $viewModel.copyRequest) { vm in
 			CopyVMSheet(vm: vm, viewModel: viewModel)
 		}
@@ -289,20 +276,6 @@ private struct ConfirmationDialogs: ViewModifier {
 				Button("Cancel", role: .cancel) {}
 			} message: { pending in
 				Text(pending.message)
-			}
-			// A Force Stop that can't reach a VM's vmhost asks once more before its process
-			// ends (C9).
-			.alert(
-				viewModel.pendingEndProcess?.prompt.title ?? "",
-				isPresented: $viewModel.isEndProcessPresented,
-				presenting: viewModel.pendingEndProcess
-			) { pending in
-				Button(pending.prompt.confirm, role: .destructive) {
-					viewModel.endProcess(pending.vm)
-				}
-				Button(pending.prompt.cancel, role: .cancel) {}
-			} message: { pending in
-				Text(pending.prompt.message)
 			}
 	}
 

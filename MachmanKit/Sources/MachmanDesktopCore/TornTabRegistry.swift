@@ -46,8 +46,6 @@ public final class TornTabRegistry: ObservableObject {
 	public var mainWindowOpen: Bool { mainWindowMounts > 0 }
 	private var mainWindowMounts = 0
 	public var reopenedMainForDock: Set<TornTab> = []
-	// Which window shows the current error alert (H40): the main one or a torn one.
-	public var errorClaim = ErrorWindowClaim()
 
 	public func mainWindowAppeared() {
 		mainWindowMounts += 1

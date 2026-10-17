@@ -44,8 +44,8 @@ extension VMListViewModel {
 				if error.code == .cancelled { return true }
 				// Not a dead end: the same start succeeds with force, so offer it.
 				guard error.code == .macConflict else { return false }
-				model.pendingForceStart = PendingForceStart(
-					name: name, headless: headless, safe: safe, message: error.message)
+				model.askFollowUp(.forceStart(PendingForceStart(
+					name: name, headless: headless, safe: safe, message: error.message)))
 				return true
 			}
 		) {
@@ -70,7 +70,7 @@ extension VMListViewModel {
 	// named: a default would make a bare stopVM(name) cut a guest's power (Q8).
 	public func stopVM(_ name: String, mode: StopMode) {
 		if mode == .force, vms.first(where: { $0.name == name })?.isUnresponsive == true {
-			pendingEndProcess = PendingEndProcess(vm: name)
+			askFollowUp(.endProcess(PendingEndProcess(vm: name)))
 			return
 		}
 		let action = mode == .soft ? "Shutting down" : "Force stopping"
@@ -78,10 +78,22 @@ extension VMListViewModel {
 			"\(action) \u{201C}\(name)\u{201D}",
 			recover: { model, error in
 				guard mode == .force, error.code == .timeout else { return false }
-				model.pendingEndProcess = PendingEndProcess(vm: name)
+				model.askFollowUp(.endProcess(PendingEndProcess(vm: name)))
 				return true
 			}
 		) { try await $0.stop(vm: name, mode: mode) }
+	}
+
+	// A start's MAC question or a force stop's End Process question: queued behind whatever
+	// shows (Q31), in the window key when it arrives (T31), asked once per VM.
+	private func askFollowUp(_ question: Prompt.Kind) {
+		prompts.ask(question) { shown, new in
+			switch (shown, new) {
+			case (.forceStart(let a), .forceStart(let b)): return a.name == b.name
+			case (.endProcess(let a), .endProcess(let b)): return a.vm == b.vm
+			default: return false
+			}
+		}
 	}
 
 	public func endProcess(_ name: String) {
