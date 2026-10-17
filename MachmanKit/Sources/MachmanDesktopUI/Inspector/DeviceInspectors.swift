@@ -466,7 +466,7 @@ struct NetworkAddressSection: View {
 							.foregroundStyle(.secondary)
 					}
 					if vm.state.isRunning {
-						IconButton(symbol: MachmanSymbols.regenerate,
+						IconButton(symbol: MachmanSymbols.rediscoverAddress,
 							tooltip: "Re-run address discovery", font: .callout,
 							flat: true) {
 							viewModel.refreshSSH(vm.name)

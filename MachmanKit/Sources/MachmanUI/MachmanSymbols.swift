@@ -37,8 +37,10 @@ public enum MachmanSymbols {
 	public static let info = "info.circle"
 	// Opens a setup-guide sheet (the console Setup Guide button).
 	public static let help = "questionmark.circle"
-	// Do it again: a new MAC address, address discovery, an SSH retry.
+	// Do it again: a new MAC address, an SSH retry.
 	public static let regenerate = "arrow.clockwise"
+	// Look for the guest's address again — harmless, unlike a new MAC beside it (H59).
+	public static let rediscoverAddress = "antenna.radiowaves.left.and.right"
 
 	// MARK: - Boot config
 	public static let bootMacTab = "apple.logo"
