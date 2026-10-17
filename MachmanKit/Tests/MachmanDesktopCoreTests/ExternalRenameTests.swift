@@ -89,16 +89,19 @@ struct ExternalRenameTests {
 	// the connection's first list, even while its original is away.
 	@Test("T34: a VM listed beside its original before a relaunch takes none of its state")
 	func aTwinListedBeforeARelaunchTakesNothing() async throws {
-		let dir = TestEnvironment.scratchURL.appendingPathComponent(UUID().uuidString)
-		let canvases = CanvasStateStore(fileURL: dir.appendingPathComponent("Canvas.json"))
+		let url = TestEnvironment.scratchURL.appendingPathComponent(UUID().uuidString)
+			.appendingPathComponent("Canvas.json")
 		let library = Self.library()
 		let alpine = try #require(library.first { $0.name == "Alpine" })
 		var twin = alpine
 		twin.name = "Alpine copy"
 		var canvas = CanvasState()
 		canvas.open(Self.console)
-		canvases.setCanvas(canvas, for: "Alpine")
-		canvases.listed(library + [twin])   // the last session listed both
+		let lastSession = CanvasStateStore(fileURL: url, saveDelay: .zero)
+		lastSession.setCanvas(canvas, for: "Alpine")
+		lastSession.listed(library + [twin])   // the last session listed both
+		lastSession.flush()
+		let canvases = CanvasStateStore(fileURL: url)   // the relaunch reads it from disk
 		let stub = StubMachman.serving(library.filter { $0.name != "Alpine" } + [twin])
 		let store = VMStore()
 		store.attach(api: stub)

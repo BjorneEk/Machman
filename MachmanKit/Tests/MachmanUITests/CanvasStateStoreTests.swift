@@ -3,6 +3,7 @@ import Foundation
 import MachmanTestSupport
 import MachmanAPI
 import MachmanUI
+import MachmanFixtures
 
 // Persistence of per-VM canvas layouts: round-trip through a fresh store, rename/remove
 // migration, and reconcile writing back the pruned layout.
@@ -81,6 +82,22 @@ struct CanvasStateStoreTests {
 
 		let reloaded = CanvasStateStore(fileURL: url)
 		#expect(reloaded.canvases.isEmpty)
+	}
+
+	// The last list's names outlive a relaunch (T34); a file from before has none and
+	// reads as no list kept, not as an empty one.
+	@Test("T34: the last list's names survive a reload, and a file without them reads none")
+	func listedNamesSurviveAReload() throws {
+		let url = tempURL()
+		defer { try? FileManager.default.removeItem(at: url) }
+		let store = CanvasStateStore(fileURL: url)
+		#expect(store.listedNames == nil)
+		store.listed(Samples.library())
+		store.flush()
+		let reloaded = CanvasStateStore(fileURL: url)
+		#expect(reloaded.listedNames == Set(Samples.library().map(\.name)))
+		try #"{"canvases":{}}"#.write(to: url, atomically: true, encoding: .utf8)
+		#expect(CanvasStateStore(fileURL: url).listedNames == nil)
 	}
 
 	@Test func reconcilePrunesAndPersists() throws {
