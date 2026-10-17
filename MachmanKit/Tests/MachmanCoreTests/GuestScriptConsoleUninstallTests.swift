@@ -105,8 +105,8 @@ struct GuestScriptConsoleUninstallTests {
 				CONSOLE_DEVICES="hvc0 hvc1 hvc2"
 				state_paths() { STATE_DIR="$D/state"; STATE_FILE="$STATE_DIR/state.env"; }
 				mkdir -p "$D/state"
-				printf "MARKER='%s'\nCONSOLE_LOGINS='hvc1'\nKLD_ADDED='fusefs'\n" \
-					machman-ffffffffffff > "$D/state/state.env"
+				printf "SCRIPT_VERSION=7\nMARKER='%s'\n" machman-ffffffffffff > "$D/state/state.env"
+				printf "CONSOLE_LOGINS='hvc1'\nKLD_ADDED='fusefs'\n" >> "$D/state/state.env"
 				systemctl() {
 					printf '%s\n' "$*" >> "$D/systemctl.log"
 					case "$1 $2" in
@@ -131,6 +131,67 @@ struct GuestScriptConsoleUninstallTests {
 				CONSOLE_LOGINS='hvc1'
 				KLD_ADDED='fusefs'
 				   hvc2 keeps its login (set up outside Machman).
+				disable --now serial-getty@hvc1.service
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// S62: before v7 a run recorded every enabled systemd login it selected — an image's
+	// own too — so a v6 state's uninstall disabled the image's login. Nothing tells the two
+	// apart now, so a state from before v7 claims no systemd login: each it listed stays on
+	// at the uninstall and is named with its revert, also once a later run rewrote the state
+	// (the ledger keeps them); a v7 state's logins go as before.
+	@Test("S62: a v6 state's systemd logins stay on at uninstall, named, while a v7 state's go")
+	func preV7SystemdLoginsAreNamedNotDisabled() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(GuestScriptStateTests.stateHere + #"""
+				UI_COLS=1000
+				INIT=systemd
+				GETTY_MECH=systemd
+				CONSOLE_DEVICES="hvc0 hvc1"
+				mkdir -p "$STATE_DIR"
+				systemctl() {
+					printf '%s\n' "$*" >> "$D/systemctl.log"
+					[ "$1" = is-enabled ] && echo enabled
+					return 0
+				}
+				console_session_device() { :; }
+				disabled() { grep -v is-enabled "$D/systemctl.log" || echo "nothing disabled"; }
+				state() { printf "SCRIPT_VERSION=%s\nMARKER='%s'\nCONSOLE_LOGINS='%s'\n" \
+					"$1" "$MARKER" "$2" > "$STATE_FILE"; }
+				state 6 "hvc0 hvc1"
+				read_state
+				console_uninstall
+				disabled
+				echo ---
+				SELECTED_FEATURES=ssh
+				write_state ssh
+				LEDGER_DONE=""
+				read_state
+				: > "$D/systemctl.log"
+				console_uninstall
+				disabled
+				echo ---
+				state 7 hvc1
+				LEDGER_DONE=""
+				read_state
+				: > "$D/systemctl.log"
+				console_uninstall
+				disabled
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			let kept = "keeps its login (an older Machman's record of it is not trusted) -"
+			#expect(r.out == """
+				   hvc0 \(kept) 'systemctl disable --now serial-getty@hvc0' removes it.
+				   hvc1 \(kept) 'systemctl disable --now serial-getty@hvc1' removes it.
+				nothing disabled
+				---
+				   hvc0 \(kept) 'systemctl disable --now serial-getty@hvc0' removes it.
+				   hvc1 \(kept) 'systemctl disable --now serial-getty@hvc1' removes it.
+				nothing disabled
+				---
+				   hvc0 keeps its login (set up outside Machman).
 				disable --now serial-getty@hvc1.service
 
 				""", "\(shell): \(r.out)")

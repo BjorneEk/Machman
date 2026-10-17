@@ -80,6 +80,7 @@ read_state() {
 		case "$INIT" in
 		systemd|runit) ST_CONSOLE_LOGINS="$(state_get CONSOLE_LOGINS)" ;;
 		esac
+		state_distrust_logins "$(state_get SCRIPT_VERSION)"
 		ST_KLD_ADDED="$(state_get KLD_ADDED)"
 		return 0
 	fi
@@ -103,10 +104,28 @@ read_state() {
 	ST_ERR_LINES="$(state_list ERROR_)"
 	ST_NOTE_LINES="$(state_list NOTE_)"
 	ST_LEDGER="$(state_list LEDGER_)"
+	state_distrust_logins "$ST_SCRIPT_VERSION"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
 	# version writing state at all (v2 left only marker-tagged artifacts), so there is
 	# nothing to migrate yet — v2 artifacts are simply re-detected feature by feature.
+	return 0
+}
+
+# Before v7 a run recorded every enabled systemd login it selected as its own — an image's
+# too — and nothing tells them apart now: Machman's systemctl enable and an image's preset
+# leave the same link. Such a record names no login as Machman's; each stays a legacy-login
+# entry, which the uninstall names instead of disabling. <the state's script version>
+state_distrust_logins() {
+	[ "$INIT" = systemd ] || return 0
+	case "$1" in
+	''|*[!0-9]*) ;;
+	*) [ "$1" -lt 7 ] || return 0 ;;
+	esac
+	for _sdl_dev in $ST_CONSOLE_LOGINS; do
+		ledger_note legacy-login "$_sdl_dev"
+	done
+	ST_CONSOLE_LOGINS=""
 	return 0
 }
 

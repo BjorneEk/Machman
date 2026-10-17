@@ -464,7 +464,12 @@ console_session_kept() {
 
 # A login set up outside Machman stays on: the uninstall undoes only what a run did. <dev>
 console_kept_outside() {
-	note "$1 keeps its login (set up outside Machman)."
+	if ledger_has legacy-login "$1"; then
+		_cko_off="'systemctl disable --now serial-getty@$1' removes it"
+		note "$1 keeps its login (an older Machman's record of it is not trusted) — $_cko_off."
+	else
+		note "$1 keeps its login (set up outside Machman)."
+	fi
 	return 0
 }
 
