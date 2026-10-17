@@ -46,16 +46,24 @@ public struct StatusDot: View {
 	}
 }
 
-private struct PulsingRing: View {
+struct PulsingRing: View {
 	let color: Color
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var on = false
 
+	// Reduce Motion gets a steady ring: up to four of these pulse at once during a start (H66).
+	static func look(reduceMotion: Bool, on: Bool) -> (opacity: Double, animation: Animation?) {
+		if reduceMotion { return (0.6, nil) }
+		return (on ? 0.15 : 0.9, .easeInOut(duration: 0.7).repeatForever(autoreverses: true))
+	}
+
 	var body: some View {
+		let look = Self.look(reduceMotion: reduceMotion, on: on)
 		Circle()
 			.stroke(color.opacity(0.5), lineWidth: 1.5)
 			.scaleEffect(1.7)
-			.opacity(on ? 0.15 : 0.9)
-			.animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: on)
+			.opacity(look.opacity)
+			.animation(look.animation, value: on)
 			.onAppear { on = true }
 	}
 }
