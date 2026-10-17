@@ -33,6 +33,11 @@ struct GuestSetupStore {
 		var addedAt: Date?        // nil only for this build's script before it is stored
 		var vm: String?           // the VM it was imported for or captured from
 		var label: String?        // an imported script's file name
+
+		// The script's size in bytes: the cksum's second field.
+		var byteCount: Int? {
+			cksum.split(separator: " ").last.flatMap { Int($0) }
+		}
 	}
 
 	// A script with its entry, as a build serves it before (or without) the disk.
@@ -194,13 +199,15 @@ struct GuestSetupStore {
 	}
 
 	// One entry as stored, or nil — said once — when its description or script is missing,
-	// or the script no longer has the digest the entry was stored under.
+	// or the script isn't the file and size it was stored as. A listing reads no script: the
+	// digest is checked where the bytes are used, at serve and pin (script(id:)).
 	private func readEntry(_ name: String) -> Entry? {
 		let dir = root.appendingPathComponent(name)
+		var info = stat()
 		guard let data = try? Data(contentsOf: dir.appendingPathComponent(Self.entryName)),
 			let entry = try? JSONDecoder().decode(Entry.self, from: data), entry.id == name,
-			let script = Self.readScript(at: dir.appendingPathComponent(Self.scriptName)),
-			Self.digest(script) == entry.sha256
+			lstat(dir.appendingPathComponent(Self.scriptName).path, &info) == 0,
+			(info.st_mode & S_IFMT) == S_IFREG, Int(info.st_size) == entry.byteCount
 		else {
 			Self.lock.lock()
 			let first = Self.reported.insert(dir.path).inserted
@@ -248,11 +255,17 @@ struct GuestSetupStore {
 				code: .ioFailure,
 				message: "Couldn’t read “\(name)”: \(MachmanError.userMessage(for: error))")
 		}
-		guard !data.isEmpty, data.count <= maxScriptBytes, !data.contains(0),
-			String(data: data, encoding: .utf8) != nil else {
+		guard isText(data) else {
 			throw MachmanError(code: .invalidArgument, message: "“\(name)” isn’t a text file")
 		}
 		return data
+	}
+
+	// What the store takes as a script, imported or captured: UTF-8 text within the size cap,
+	// with no NUL byte.
+	static func isText(_ data: Data) -> Bool {
+		!data.isEmpty && data.count <= maxScriptBytes && !data.contains(0)
+			&& String(data: data, encoding: .utf8) != nil
 	}
 
 	// Keeps a script, once per content: a script already stored (or this build's) answers

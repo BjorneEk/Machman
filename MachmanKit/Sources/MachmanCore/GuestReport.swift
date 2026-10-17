@@ -265,20 +265,31 @@ struct GuestReport {
 
 	// S67: the script a run of a changed copy left beside the report goes into the Guest
 	// Setup store as changed on this VM, dated by the report — when it is the script the
-	// report names and the store doesn't hold it yet. The host never runs it; another VM
-	// serves it only when picked there.
+	// report names, text as an import would take, and the store doesn't hold it yet. One per
+	// VM per served start (F25): the store never deletes, so a guest must not be able to fill
+	// it. The host never runs it; another VM serves it only when picked there.
 	func keepChangedScript(
-		vm name: String, at date: Date, store: GuestSetupStore = .current
+		for config: VMConfig, at date: Date, store: GuestSetupStore = .current
 	) -> Bool {
 		guard let script = droppedScript, let cksum = values["SCRIPT_CKSUM"],
-			POSIXChecksum.cksum(script) == cksum, store.matching(cksum: cksum).isEmpty
+			POSIXChecksum.cksum(script) == cksum, GuestSetupStore.isText(script),
+			store.matching(cksum: cksum).isEmpty
 		else { return false }
+		let dir = config.vmDirPath()
+		guard ChangedScriptCapture.isArmed(vmDir: dir) else {
+			if ChangedScriptCapture.firstIgnored(vmDir: dir) {
+				MachmanLogger.log(.log, "\(config.name): ignored a changed Guest Setup script — "
+					+ "Machman keeps one per served start")
+			}
+			return false
+		}
 		do {
-			try store.add(script, kind: GuestSetupStore.Kind.changed, vm: name, at: date)
+			try store.add(script, kind: GuestSetupStore.Kind.changed, vm: config.name, at: date)
+			ChangedScriptCapture.useUp(vmDir: dir)
 			return true
 		} catch {
 			MachmanLogger.log(.log,
-				"\(name): couldn’t keep the Guest Setup script it changed — "
+				"\(config.name): couldn’t keep the Guest Setup script it changed — "
 					+ MachmanError.userMessage(for: error))
 			return false
 		}
@@ -302,7 +313,7 @@ struct GuestReport {
 		}
 		var changes = Changes()
 		// A newly kept script changes what the VM's setup info says it ran.
-		changes.setup = keepChangedScript(vm: config.name, at: stampedAt)
+		changes.setup = keepChangedScript(for: config, at: stampedAt)
 		var state = config.ssh ?? SSHConfig()
 		let beforeSSH = state
 		if values["UNINSTALLED"] == "1" {
@@ -472,5 +483,40 @@ struct GuestReport {
 			SSHSetupInstaller.writeKnownHosts(for: config)
 		}
 		return changes
+	}
+}
+
+// One captured script per VM per served start (F25): a served payload write arms the VM's
+// folder, and a kept capture uses the arm up. No guest can cause a served start, so no guest
+// can fill the store; a drop past the first in a run is ignored, said once.
+enum ChangedScriptCapture {
+	private static let lock = NSLock()
+	private static var armed: Set<String> = []
+	private static var told: Set<String> = []
+
+	static func arm(vmDir: String) {
+		lock.lock()
+		defer { lock.unlock() }
+		armed.insert(vmDir)
+		told.remove(vmDir)
+	}
+
+	static func isArmed(vmDir: String) -> Bool {
+		lock.lock()
+		defer { lock.unlock() }
+		return armed.contains(vmDir)
+	}
+
+	static func useUp(vmDir: String) {
+		lock.lock()
+		defer { lock.unlock() }
+		armed.remove(vmDir)
+	}
+
+	// Whether this is the first drop ignored since the VM's last served start.
+	static func firstIgnored(vmDir: String) -> Bool {
+		lock.lock()
+		defer { lock.unlock() }
+		return told.insert(vmDir).inserted
 	}
 }

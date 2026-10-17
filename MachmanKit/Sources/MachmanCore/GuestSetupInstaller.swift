@@ -281,6 +281,8 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			try config.saveVMConfig()
 		}
 		let payload = try GuestInstallerWriter.write(Self.self, for: config, script: script.data)
+		// A served start lets the guest's run leave one changed script for the store (F25).
+		ChangedScriptCapture.arm(vmDir: config.vmDirPath())
 		// The alias (and so the pin's key) can have changed while the VM was stopped.
 		SSHSetupInstaller.writeKnownHosts(for: config)
 		return (payload, report)

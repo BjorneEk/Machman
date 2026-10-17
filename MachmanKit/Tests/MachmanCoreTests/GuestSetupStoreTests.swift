@@ -96,6 +96,27 @@ struct GuestSetupStoreTests {
 		#expect(store.script(id: entry.id) == nil)
 	}
 
+	// F25: every add moved the root's mtime and the next listing — in the daemon and every
+	// vmhost — read and hashed every stored script again. A listing reads no script's bytes
+	// now; serving and pinning still check the digest.
+	@Test("S67: a listing reads no script's bytes, and serving still checks them")
+	func aListingReadsNoScript() throws {
+		let root = Self.root()
+		let store = GuestSetupStore(root: root)
+		let kept = try store.add(Self.script(8, "echo kept"), kind: GuestSetupStore.Kind.custom)
+		let file = root.appendingPathComponent(kept.id)
+			.appendingPathComponent(GuestSetupStore.scriptName)
+		try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.path)
+		defer {
+			try? FileManager.default.setAttributes(
+				[.posixPermissions: 0o600], ofItemAtPath: file.path)
+		}
+		// Another add moves the root's mtime: the next listing reads the root again.
+		try store.add(Self.script(8, "echo next"), kind: GuestSetupStore.Kind.custom)
+		#expect(store.entry(id: kept.id) == kept)
+		#expect(store.script(id: kept.id) == nil)
+	}
+
 	@Test("S67: the latest is the newest build entry, never a custom one")
 	func theLatestIsTheNewestBuild() throws {
 		let root = Self.root()

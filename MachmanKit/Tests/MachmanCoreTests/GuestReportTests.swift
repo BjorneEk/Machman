@@ -609,6 +609,7 @@ struct GuestReportTests {
 			let registry = VMRegistry()
 			let vm = try registry.create()
 			try vm.config.addDevice(GuestDevice(kind: .guestSetup))
+			_ = try GuestSetupInstaller.writePayload(for: vm.config)   // its served start
 			let changed = Self.script("echo changed in the guest")
 			let path = try Self.dropBox(
 				GuestSetupInstaller.reportDirectoryURL(for: vm.config), script: changed,
@@ -632,6 +633,7 @@ struct GuestReportTests {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "drop")
 			let vm = try VMConfig(name: "drop", memorySize: 1 << 30, cpuCount: 2)
+			_ = try GuestSetupInstaller.writePayload(for: vm)   // its served start
 			let box = GuestSetupInstaller.reportDirectoryURL(for: vm)
 			let changed = Self.script("echo changed in the guest")
 			let other = Self.script("echo another copy")
@@ -674,5 +676,61 @@ struct GuestReportTests {
 		try Data(repeating: 0x23, count: GuestSetupStore.maxScriptBytes + 1).write(to: drop)
 		#expect(try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
 			.droppedScript == nil)
+	}
+
+	// F25: every report with a dropped script and its cksum added an entry of up to 1 MB,
+	// never deleted — a guest could fill the store. A served start, which no guest can cause,
+	// lets its VM keep one changed script; further drops in that run are ignored, and only the
+	// next served start lets it keep another. Nothing stored is deleted.
+	@Test("S67: one served start keeps at most one changed script, whatever the guest drops")
+	@MainActor func oneChangedScriptPerServedStart() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "many")
+			let vm = try VMConfig(name: "many", memorySize: 1 << 30, cpuCount: 2)
+			let box = GuestSetupInstaller.reportDirectoryURL(for: vm)
+			func drop(_ script: Data) throws {
+				let path = try Self.dropBox(box, script: script, cksum: POSIXChecksum.cksum(script))
+				_ = try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
+					.apply(to: vm, stampedAt: Date())
+			}
+			func kept() -> Int {
+				GuestSetupStore.current.entries().filter {
+					$0.kind == GuestSetupStore.Kind.changed
+				}.count
+			}
+			try drop(Self.script("echo before any served start"))
+			#expect(kept() == 0)
+			_ = try GuestSetupInstaller.writePayload(for: vm)
+			for body in ["echo first", "echo second", "echo third"] {
+				try drop(Self.script(body))
+			}
+			#expect(kept() == 1)
+			_ = try GuestSetupInstaller.writePayload(for: vm)
+			try drop(Self.script("echo after the next served start"))
+			#expect(kept() == 2)
+		}
+	}
+
+	// F25: a capture took any bytes; it now takes what an import takes — text, no NUL.
+	@Test("S67: a dropped binary blob is never kept")
+	@MainActor func aBinaryDropIsNeverKept() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "blob")
+			let vm = try VMConfig(name: "blob", memorySize: 1 << 30, cpuCount: 2)
+			_ = try GuestSetupInstaller.writePayload(for: vm)
+			let box = GuestSetupInstaller.reportDirectoryURL(for: vm)
+			let blob = Data([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x00, 0x00, 0x2a])
+			let path = try Self.dropBox(box, script: blob, cksum: POSIXChecksum.cksum(blob))
+			let report = try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
+			#expect(report.droppedScript == blob)
+			_ = try report.apply(to: vm, stampedAt: Date())
+			#expect(GuestSetupStore.current.matching(cksum: POSIXChecksum.cksum(blob)).isEmpty)
+			// The refused blob didn't use up the start's one capture.
+			let text = Self.script("echo a text copy")
+			let next = try Self.dropBox(box, script: text, cksum: POSIXChecksum.cksum(text))
+			_ = try #require(GuestReport.poll(atPath: next, since: nil) { nil }?.report)
+				.apply(to: vm, stampedAt: Date())
+			#expect(GuestSetupStore.current.matching(cksum: POSIXChecksum.cksum(text)).count == 1)
+		}
 	}
 }

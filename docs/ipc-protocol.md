@@ -267,7 +267,7 @@ updates the guest. `scripts`, `servedScript` and `installedScript` (additive, wh
 Setup is attached) are the host's store of Guest Setup scripts: every script a VM can serve
 (`kind` `build` — a Machman build's own, its `id` `v<N>-<digest>` —, `custom` — imported
 with `host.setupScripts.import`, its `label` the file name — or `changed` — a copy a guest
-changed and ran; `vm` is the VM it was imported for or captured from, `latest` marks the
+changed and ran, kept at most once per VM per served start; `vm` is the VM it was imported for or captured from, `latest` marks the
 newest build's), the `id` this VM serves (its pin, `vm.setup.pin`; this build's while it has
 none), and the `id` whose script cksum the last report named (absent when the report named
 none or one the store doesn't hold). Treat an unknown `kind` as `custom`.
