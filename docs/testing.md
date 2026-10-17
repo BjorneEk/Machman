@@ -36,8 +36,9 @@ scripts/lab.sh … --jobs N                # at most N shards side by side (defa
 scripts/lab.sh --doctor | --self-check   # tools, fixtures, seams | the lab's own audits proven
 ```
 
-`test.sh` runs two `swift test` passes in one sandbox (the hosted MachmanDesktopUITests on their
-own, so main-actor-heavy view tests never starve timing-sensitive engine tests) and keeps the
+`test.sh` runs three `swift test` passes in one sandbox (the engine suites, then
+MachmanDesktopCoreTests and the hosted MachmanDesktopUITests each on their own, so main-actor-heavy
+tests never starve timing-sensitive ones; a run with `--filter` stays one pass) and keeps the
 Mac awake for the run (`caffeinate -i -s`), as `lab.sh` does: a maintenance sleep mid-run reads
 as dozens of timeouts. An L1 test's blocking work — a subprocess the engine spawns, a fork, a
 file sync, megabytes of test data — runs in `onOwnThread { }` (Q43): a thread of its own, never
