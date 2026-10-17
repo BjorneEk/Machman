@@ -89,6 +89,19 @@ struct SettledTests {
 		#expect(await eventually(timeout: .milliseconds(300)) { progress.steps == 3 })
 	}
 
+	// WaitBudget's other half: a wait only ever lasts longer — a condition that never holds
+	// still fails once the wait has had its turns, unloaded and after a held main thread.
+	@Test(
+		"""
+		Q41: eventually still gives up on a condition that never holds, after a held main \
+		thread too
+		""")
+	func eventuallyStillGivesUp() async {
+		#expect(!(await eventually(timeout: .milliseconds(300)) { false }))
+		holdTheMainThread(1, thenStep: 0, into: Progress())
+		#expect(!(await eventually(timeout: .milliseconds(300)) { false }))
+	}
+
 	@Test("Q41: settled outlasts a main thread held past its deadline")
 	func settledOutlastsAHeldMainThread() async {
 		let progress = Progress()
