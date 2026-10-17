@@ -159,7 +159,7 @@ lab_stop_helpers() {
 
 # lab_jobs_auto <tiers>: the shards a run gets unless --jobs says: 1 without L2/L3 tests; else a
 # core each with two left over, and 5 GB of memory each past the first 8 GB (two lab guests of
-# at most 2 GB, plus the shard's agent, vmhosts and swift test), at most 8.
+# at most 2 GB, plus the shard's agent, vmhosts and test process), at most 8.
 lab_jobs_auto() {
 	case "$1" in *l2* | *l3*) ;; *) echo 1; return 0 ;; esac
 	local cores mem n
@@ -347,7 +347,7 @@ lab_run() {
 	((selfcheck)) && jobs=1
 	[[ -z "$jobs" ]] && jobs="$(lab_jobs_auto "$tiers")"
 	if ((jobs > 1)) && ! lab_progress_ok; then
-		echo "lab: one shard (a parallel run needs python3 and swift test's event stream)"
+		echo "lab: one shard (a parallel run needs python3 and Swift Testing's event stream)"
 		jobs=1
 	fi
 	if [[ -n "$out" ]]; then
@@ -376,6 +376,13 @@ lab_run() {
 			fi
 		fi
 		swift build --build-tests --package-path "$pkg"
+	fi
+	# What runs the tests (lab_test): the built bundle through SwiftPM's testing helper, or one
+	# swift test process when that can't be found.
+	lab_runner_find
+	if [[ -z "$LAB_TEST_HELPER" ]]; then
+		echo "lab: one shard, through swift test ($LAB_RUNNER_WHY)"
+		jobs=1
 	fi
 	if ((!selfcheck)); then
 		products="$(lab_products_dir)"
@@ -476,8 +483,8 @@ lab_run() {
 	[[ -n "$filter" ]] && filt="MachmanLabTests\\..*($filter)"
 	# In the background and waited for, so an interrupt reaches the trap at once. The Mac stays
 	# awake for it (sandbox_awake): a console wait timed out across a maintenance sleep.
-	# swift test holds its output back while it writes to a pipe or file, so the terminal shows
-	# progress.py's lines, read live from the event stream, the lab log and the consoles.
+	# The test process holds its output back while it writes to a pipe or file, so the terminal
+	# shows progress.py's lines, read live from the event stream, the lab log and the consoles.
 	rm -f "$root/report/test-status" "$root/report/progress.stop"
 	if ((jobs > 1)); then
 		lab_run_shards
@@ -527,7 +534,7 @@ lab_run() {
 	echo "lab: audits: $breaches breaches, $warns warnings"
 	if ((teststatus)); then
 		if ((jobs > 1)); then echo "lab: tests FAILED ($ts)"
-		else echo "lab: tests FAILED (swift test exit $ts)"; fi
+		else echo "lab: tests FAILED (test exit $ts)"; fi
 	else
 		echo "lab: tests passed"
 	fi
@@ -720,6 +727,9 @@ case "$mode" in
 selfcheck)
 	sandbox_refuse_main_checkout "$repo" || exit 64
 	tiers_mode=harness
+	# The test bundle first: the runner's self-check runs it (the armed pass then skips the build).
+	if ((build)); then swift build --build-tests --package-path "$pkg"; fi
+	build=0
 	# The script self-checks run BEFORE the audits arm: the audit self-check provokes
 	# breaches on purpose (a window), which an armed audit would rightly report.
 	scriptfail=0
@@ -729,6 +739,7 @@ selfcheck)
 	"$repo/scripts/lab/audit/selfcheck.sh" || scriptfail=1
 	python3 "$repo/scripts/lab/progress.py" --self-check || scriptfail=1
 	python3 "$repo/scripts/lab/plan.py" --self-check || scriptfail=1
+	lab_selfcheck_runner || scriptfail=1
 	lab_selfcheck_audits || scriptfail=1
 	((scriptfail)) && echo "lab: a script self-check FAILED"
 	lab_run harness 1 "$scriptfail"

@@ -41,8 +41,8 @@ own, so main-actor-heavy view tests never starve timing-sensitive engine tests) 
 Mac awake for the run (`caffeinate -i -s`), as `lab.sh` does: a maintenance sleep mid-run reads
 as dozens of timeouts.
 
-`lab.sh` prints its progress live, read from Swift Testing's event stream (`swift test` holds
-its own output back while it writes to a file), and names each test by what it does (the
+`lab.sh` prints its progress live, read from Swift Testing's event stream (the test process
+holds its own output back while it writes to a file), and names each test by what it does (the
 `<id>: ` its name starts with is left out). On a terminal the running test sits in a block of
 fixed height at the bottom (cursor hidden) with its elapsed time and the step its harness is
 in; `-v` (the lab log) and `-vv` (the guest consoles too) fill it with a window of its output:
@@ -63,7 +63,10 @@ left over and 5 GB of memory each past the first 8 GB, at most 8): each shard is
 its own (suite token, agent, lab sshd, log), the suites are shared out longest first by the
 times of earlier runs (`<cache>/suite-times.json`), and the suites in
 `scripts/lab/exclusive-suites.txt` (machine-wide state, timing) run alone after them. One audit
-watches every shard; on a terminal each shard has its own window in the block.
+watches every shard; on a terminal each shard has its own window in the block. Every test
+process runs the one built test bundle through SwiftPM's testing helper, never through
+`swift test`, whose build database a shard beside it can hold locked (shards once lost whole
+suites to it); without the helper the run falls back to one `swift test` process and says why.
 
 `lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
 a sandbox (`/tmp/mml.<4-char token>`, suite `com.gustaffranzen.Machman.test-<token>`, a fake
