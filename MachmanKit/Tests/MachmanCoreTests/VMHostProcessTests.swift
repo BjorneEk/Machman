@@ -87,8 +87,24 @@ struct VMHostProcessTests {
 		defer { try? FileManager.default.removeItem(atPath: renamed) }
 
 		let held = VMHostProcess.folders(of: getpid())
-		#expect(held.contains { isSameFile($0, renamed) })
-		#expect(!held.contains { $0.hasSuffix((folder as NSString).lastPathComponent) })
+		#expect(held.contains { $0.isFolder(at: renamed) })
+		#expect(!held.contains { $0.isFolder(at: folder) })
+	}
+
+	// Review F22: a deleted folder still reports its last path, and a match that fell back to
+	// comparing paths took a new folder made at that path for the held one.
+	@Test("E70: a held folder that was deleted never counts as a new folder at its path")
+	func aDeletedHeldFolderIsNotANewFolderAtItsPath() throws {
+		let folder = TestEnvironment.scratch + "gone-\(UUID().uuidString)"
+		try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+		let fd = open(folder, O_EVTONLY | O_DIRECTORY | O_CLOEXEC)
+		try #require(fd >= 0)
+		defer { close(fd) }
+		try FileManager.default.removeItem(atPath: folder)
+		try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: folder) }
+
+		#expect(!VMHostProcess.folders(of: getpid()).contains { $0.isFolder(at: folder) })
 	}
 
 	@Test("E70: the vmhost listening at a socket path is found before its queue is full")

@@ -166,7 +166,7 @@ public final class RoutingMachman: MachmanControlling {
 	// The directories the vmhost holding the listener at a socket has open (E70): a vmhost
 	// that doesn't say whom it serves is placed by its VM's folder. A seam: an in-process test
 	// host is this process.
-	var foldersHeldAtSocket: (String) -> [String] = { path in
+	var foldersHeldAtSocket: (String) -> [VMHostProcess.HeldFolder] = { path in
 		VMHostProcess.listener(at: path).map(VMHostProcess.folders(of:)) ?? []
 	}
 	// Unclaimed vmhost sockets that didn't answer hello yet, asked again on the adoption timer

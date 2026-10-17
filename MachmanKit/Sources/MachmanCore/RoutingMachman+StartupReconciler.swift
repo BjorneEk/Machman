@@ -92,7 +92,7 @@ extension RoutingMachman {
 		let library = libraryDir()
 		let held = foldersHeldAtSocket(path)
 		let entries = registry.list().map(\.name).filter { name in
-			held.contains { isSameFile($0, library + "/" + name) }
+			held.contains { $0.isFolder(at: library + "/" + name) }
 		}
 		var placed = false
 		for entry in entries where place(entry, at: path) {

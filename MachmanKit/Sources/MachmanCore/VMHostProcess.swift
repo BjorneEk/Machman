@@ -51,19 +51,49 @@ enum VMHostProcess {
 		holdsListener(pid, boundAt: names, full: true)
 	}
 
-	// The directories `pid` holds open, by the path each names now (a descriptor follows a
-	// rename or a move). A vmhost holds its VM's folder open for its whole run — the folder its
-	// hello says it serves (VMFolderPath) — and a safe run's, the real VM's folder too (E70).
-	static func folders(of pid: pid_t) -> [String] {
+	// A directory a process holds open: the path it names now (a descriptor follows a rename
+	// or a move) and what it is. A deleted folder still reports its last path, where a new
+	// folder may stand since — so a held folder is told by its identity, never its path (E70).
+	struct HeldFolder: Equatable, Sendable {
+		let path: String
+		let device: UInt32
+		let inode: UInt64
+
+		init(path: String, device: UInt32, inode: UInt64) {
+			self.path = path
+			self.device = device
+			self.inode = inode
+		}
+
+		// The folder at `path` now; nil when there is none.
+		init?(at path: String) {
+			var info = stat()
+			guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { return nil }
+			self.init(path: path, device: UInt32(bitPattern: info.st_dev), inode: info.st_ino)
+		}
+
+		// Whether this is the folder at `other` now, by identity alone.
+		func isFolder(at other: String) -> Bool {
+			HeldFolder(at: other).map { $0.device == device && $0.inode == inode } ?? false
+		}
+	}
+
+	// The directories `pid` holds open. A vmhost holds its VM's folder open for its whole run —
+	// the folder its hello says it serves (VMFolderPath) — and a safe run's, the real VM's
+	// folder too (E70).
+	static func folders(of pid: pid_t) -> [HeldFolder] {
 		descriptors(of: pid).filter { $0.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) }
-			.compactMap { fd -> String? in
+			.compactMap { fd -> HeldFolder? in
 				var info = vnode_fdinfowithpath()
 				let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
-				guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, size) == size,
-					info.pvip.vip_vi.vi_stat.vst_mode & S_IFMT == S_IFDIR else { return nil }
-				return withUnsafeBytes(of: info.pvip.vip_path) {
+				guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, size) == size
+				else { return nil }
+				let held = info.pvip.vip_vi.vi_stat
+				guard held.vst_mode & S_IFMT == S_IFDIR else { return nil }
+				let path = withUnsafeBytes(of: info.pvip.vip_path) {
 					String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
 				}
+				return HeldFolder(path: path, device: held.vst_dev, inode: held.vst_ino)
 			}
 	}
 

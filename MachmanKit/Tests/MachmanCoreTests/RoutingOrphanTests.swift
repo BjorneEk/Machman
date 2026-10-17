@@ -244,9 +244,9 @@ struct RoutingOrphanTests {
 		defer { host.shutdown() }
 		rig.routing.adoptionRetryInterval = .seconds(60)   // no retry inside the test
 		rig.routing.whomItServesForTesting = { _ in .silent }
-		rig.routing.foldersHeldAtSocket = { path in
-			path == orphanSocket ? [NSTemporaryDirectory(), rig.library + "/beta"] : []
-		}
+		let held = [NSTemporaryDirectory(), rig.library + "/beta"]
+			.compactMap(VMHostProcess.HeldFolder.init(at:))
+		rig.routing.foldersHeldAtSocket = { path in path == orphanSocket ? held : [] }
 
 		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
 		#expect(rig.routing.orphanSockets == ["beta": orphanSocket])   // before: none
