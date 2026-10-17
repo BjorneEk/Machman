@@ -57,6 +57,14 @@ extension VMListViewModel {
 		return entry
 	}
 
+	// MARK: - Free space
+
+	// The free-space figure is fetched once per connection: every form that judges a size by
+	// it refreshes it as it appears — Duplicate…, the New Disk page and the Grow field (P44).
+	public func refreshFreeSpace() async {
+		await store.refreshCapabilities()
+	}
+
 	// MARK: - Disk grow
 
 	// Why the Grow-to field can't grow `disk` to its text, or nil. Nothing typed is nil too:

@@ -68,4 +68,23 @@ struct NewDiskFormTests {
 		#expect(h.viewModel.newDiskProblem(on: debian, name: "data", sizeText: "1")
 			== "Only 500 MB is free")
 	}
+
+	@Test("P44: New Disk and Grow judge free space from a figure refreshed as they appear")
+	func freeSpaceFollowsARefresh() async throws {
+		let h = await harness()
+		h.stub.capabilities.freeDiskBytes = 400 << 30
+		await h.viewModel.refreshFreeSpace()
+		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
+		let system = try #require(debian.disks.first { $0.id == "storage:system" })
+		#expect(h.viewModel.newDiskProblem(on: debian, name: "data", sizeText: "64") == nil)
+		#expect(h.viewModel.growDiskProblem("64", disk: system) == nil)
+
+		// Tens of GB imported elsewhere since: the next refresh says so.
+		h.stub.capabilities.freeDiskBytes = 10 << 30
+		#expect(h.viewModel.newDiskProblem(on: debian, name: "data", sizeText: "64") == nil)
+		await h.viewModel.refreshFreeSpace()
+		#expect(h.viewModel.newDiskProblem(on: debian, name: "data", sizeText: "64")
+			== "Only 10 GB is free")
+		#expect(h.viewModel.growDiskProblem("64", disk: system) == "Only 10 GB is free")
+	}
 }

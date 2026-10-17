@@ -254,5 +254,7 @@ private struct NewDiskForm: View {
 			}
 			.padding(10)
 		}
+		// "Up to" and the cap judge today's free space, not the connection's (P44).
+		.task { await viewModel.refreshFreeSpace() }
 	}
 }

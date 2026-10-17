@@ -72,6 +72,26 @@ struct SheetSettingsTests {
 		#expect(!mac.all.contains { $0.help?.contains("Guest Setup") == true }, "\(mac.dump())")
 	}
 
+	@Test("P44: the New Disk page and the Grow field refresh the free space as they appear")
+	func sizeFormsRefreshTheFreeSpace() async throws {
+		let h = await UIHarness.make([Samples.linux("Alpine")], select: "Alpine")
+		let asked = { h.stub.calls.filter { $0 == "hostCapabilities" }.count }
+		_ = await eventually { h.viewModel.capabilities != nil }   // the connection's own ask
+		let before = asked()
+		_ = try await h.snapshot(
+			AddPopover(viewModel: h.viewModel, vm: h.vm("Alpine"), newDisk: true))
+		#expect(await eventually { asked() > before }, "\(h.stub.calls)")
+
+		let opened = asked()
+		h.viewModel.treeSelection = [.disk("storage:system")]
+		_ = try await h.snapshot(
+			InspectorView(
+				viewModel: h.viewModel, sessions: h.terminals, profiles: h.profiles,
+				vm: h.vm("Alpine")),
+			width: 320, height: 820)
+		#expect(await eventually { asked() > opened }, "\(h.stub.calls)")
+	}
+
 	@Test("W3-35: the picker's row menu and both Back chevrons read their tooltips")
 	func pickerControlsReadTheirTooltips() async throws {
 		let h = await UIHarness.make()

@@ -309,10 +309,9 @@ extension VMListViewModel {
 	}
 
 	public func requestCopy(_ vm: VMInfo) {
-		// The sheet's space hint reads capabilities.freeDiskBytes, fetched once at connect —
-		// refresh so the figure isn't sessions old.
+		// The sheet's space hint reads the free space: refresh it (P44).
 		Task { [weak self] in
-			await self?.store.refreshCapabilities()
+			await self?.refreshFreeSpace()
 		}
 		copyRequest = vm
 	}

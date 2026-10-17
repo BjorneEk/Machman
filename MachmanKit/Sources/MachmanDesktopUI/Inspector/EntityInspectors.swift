@@ -162,6 +162,8 @@ struct DiskInspector: View {
 		}
 		.disabled(vm.refusal(.resizeDisk) != nil)
 		.help(vm.refusal(.resizeDisk) ?? "Disks only grow, and a bare number means GB")
+		// The cap judges today's free space, not the connection's (P44).
+		.task(id: diskID) { await viewModel.refreshFreeSpace() }
 	}
 
 	private func grow() {

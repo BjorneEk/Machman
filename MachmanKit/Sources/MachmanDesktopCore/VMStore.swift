@@ -151,8 +151,8 @@ public final class VMStore: ObservableObject {
 		}
 	}
 
-	// Capabilities are fetched once per connection; sheets showing live figures (free disk
-	// space) refresh explicitly so the number isn't sessions old.
+	// Capabilities are fetched once per connection; forms showing live figures (free disk
+	// space) refresh explicitly through VMListViewModel.refreshFreeSpace (P44).
 	public func refreshCapabilities() async {
 		guard let api else { return }
 		if let caps = try? await api.hostCapabilities() {
