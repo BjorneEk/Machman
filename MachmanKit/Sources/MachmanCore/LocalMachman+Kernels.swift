@@ -22,11 +22,12 @@ extension LocalMachman {
 		registry.events.emit(.listChanged)
 	}
 
+	// An empty initramfs path from the wire is stored as none (D37).
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		let vm = try lookup(name)
 		try vm.config.updateKernelSettings(LinuxKernelBoot(
 			kernelPath: settings.kernelPath,
-			initialRamdiskPath: settings.initrdPath,
+			initialRamdiskPath: settings.initrdPath.flatMap { $0.isEmpty ? nil : $0 },
 			commandLine: settings.commandLine))
 		registry.events.emit(.listChanged)
 	}

@@ -299,4 +299,28 @@ struct RoutingPendingStartTests {
 		#expect(located == 0)   // before: the start went on to locate a vmhost to launch
 		#expect(routing.pendingStarts.isEmpty)
 	}
+
+	// D37: kernel boot with no kernel chosen is refused with what to do before a vmhost is
+	// looked for — one launched for it only failed in turn, on an empty path.
+	@Test("D37: kernel boot with no kernel is refused before a vmhost is looked for") @MainActor
+	func noKernelIsRefusedBeforeASpawn() async throws {
+		let routing = try makeRouting(names: ["pending-nokernel"])
+		let vm = try #require(routing.registry.vm(named: "pending-nokernel"))
+		vm.config.boot = .linuxKernel(
+			LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: ""))
+		var located = 0
+		routing.locateVMHost = {
+			located += 1
+			return nil
+		}
+		do {
+			try await routing.start(vm: "pending-nokernel", options: StartOptions())
+			Issue.record("expected the no-kernel refusal")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message == "Choose a kernel for pending-nokernel before starting it")
+		}
+		#expect(located == 0)
+		#expect(routing.pendingStarts.isEmpty)
+	}
 }

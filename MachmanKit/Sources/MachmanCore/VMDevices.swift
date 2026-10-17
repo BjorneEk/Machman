@@ -36,10 +36,20 @@ extension VMConfig {
 	// MARK: - Boot-mode-aware builders
 
 	// A start's first check (C11): a boot mode a newer Machman wrote never boots here — this
-	// build can't know what it needs. The assembly below runs it before anything else, and a
-	// caller can run it before any start work at all.
+	// build can't know what it needs. Neither does kernel boot with no kernel chosen (D37): it
+	// is refused with what to do. The assembly below runs it before anything else, and the
+	// router runs it before any vmhost is launched.
 	func requireStartableBoot() throws {
 		if case .unknown = boot { throw BootConfig.newerModeRefusal }
+		if case .linuxKernel(let kernel) = boot, kernel.kernelPath.isEmpty {
+			throw noKernelRefusal
+		}
+	}
+
+	// The empty draft kernel boot starts from failed as "Kernel image not found: " (D37).
+	var noKernelRefusal: MachmanError {
+		MachmanError(
+			code: .invalidState, message: "Choose a kernel for \(name) before starting it")
 	}
 
 	func makePlatform() throws -> VZPlatformConfiguration {
@@ -66,11 +76,17 @@ extension VMConfig {
 			loader.variableStore = try getEFIVariableStore()
 			return loader
 		case .linuxKernel(let k):
+			guard !k.kernelPath.isEmpty else { throw noKernelRefusal }
 			guard FileManager.default.fileExists(atPath: k.kernelPath) else {
 				throw VirtualMachineError.critical("Kernel image not found: \(k.kernelPath)")
 			}
 			let loader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: k.kernelPath))
-			if let initrd = k.initialRamdiskPath {
+			// The initramfs is checked like the kernel — a moved one surfaced as VZ's generic
+			// start error — and "" names none: it read as the working directory (D37).
+			if let initrd = k.initialRamdiskPath, !initrd.isEmpty {
+				guard FileManager.default.fileExists(atPath: initrd) else {
+					throw VirtualMachineError.critical("Initramfs not found: \(initrd)")
+				}
 				loader.initialRamdiskURL = URL(fileURLWithPath: initrd)
 			}
 			loader.commandLine = effectiveKernelCommandLine(for: k)
