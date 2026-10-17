@@ -44,21 +44,30 @@ public enum AddFlows {
 	}
 
 	// Shared Finder-drop / paste routing: folders become virtiofs mounts, files go through
-	// one copy-or-reference question.
+	// one copy-or-reference question. True when there is something to route: the drop is
+	// taken at once, and its items are told apart off the main thread — a stat on a sleeping
+	// network volume must not freeze the window (P45) — then routed back on it.
 	public static func handleFileURLs(
-		_ urls: [URL], viewModel: VMListViewModel, vm: String
+		_ urls: [URL], viewModel: VMListViewModel, vm: String,
+		isDirectory: @escaping @Sendable (URL) -> Bool = { TreeDropValidator.isDirectory($0) }
 	) -> Bool {
 		guard !urls.isEmpty else { return false }
-		var files: [URL] = []
-		for url in urls {
-			if TreeDropValidator.isDirectory(url) {
-				viewModel.addMount(vm, path: url.path, tag: url.lastPathComponent)
-			} else {
-				files.append(url)
+		Task { [weak viewModel] in
+			let folders = await Task.detached(priority: .userInitiated) {
+				Set(Set(urls).filter(isDirectory))
+			}.value
+			guard let viewModel else { return }
+			var files: [URL] = []
+			for url in urls {
+				if folders.contains(url) {
+					viewModel.addMount(vm, path: url.path, tag: url.lastPathComponent)
+				} else {
+					files.append(url)
+				}
 			}
-		}
-		if !files.isEmpty {
-			askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, urls: files)
+			if !files.isEmpty {
+				askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, urls: files)
+			}
 		}
 		return true
 	}

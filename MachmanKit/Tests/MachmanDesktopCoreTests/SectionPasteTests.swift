@@ -70,8 +70,11 @@ struct SectionPasteTests {
 	}
 
 	@Test func withoutEntitiesASectionTakesTheFilesThatFitIt() async {
+		// The files are judged off the main thread (P45): the question comes a moment later.
 		let disks = await paste(.disks, files: files)
-		#expect(disks.viewModel.pendingDiskAdd?.urls.map(\.path) == ["/Users/demo/x.iso"])
+		#expect(await eventually {
+			disks.viewModel.pendingDiskAdd?.urls.map(\.path) == ["/Users/demo/x.iso"]
+		})
 		#expect(!disks.stub.calls.contains("addMount"))
 
 		let mounts = await paste(.mounts, files: files)

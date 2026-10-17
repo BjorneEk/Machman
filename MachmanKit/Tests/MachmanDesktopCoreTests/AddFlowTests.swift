@@ -34,6 +34,7 @@ struct AddFlowTests {
 		let h = await DesktopHarness.make()
 		let file = try Self.files(["\(UUID()).iso"])[0]
 		#expect(AddFlows.handleFileURLs([file], viewModel: h.viewModel, vm: "Debian"))
+		#expect(await eventually { h.viewModel.pendingDiskAdd != nil })   // judged off main (P45)
 		let pending = try #require(h.viewModel.pendingDiskAdd)
 		#expect(pending.urls == [file])
 		#expect(pending.title == "Add \u{201C}\(file.lastPathComponent)\u{201D}?")
@@ -54,6 +55,7 @@ struct AddFlowTests {
 		let h = await DesktopHarness.make()
 		let files = try Self.files(["a.raw", "b.raw", "c.iso"])
 		#expect(AddFlows.handleFileURLs(files, viewModel: h.viewModel, vm: "Debian"))
+		#expect(await eventually { h.viewModel.pendingDiskAdd != nil })
 		let pending = try #require(h.viewModel.pendingDiskAdd)
 		#expect(pending.urls == files)
 		#expect(pending.title == "Copy or reference these 3 files?")
@@ -69,6 +71,7 @@ struct AddFlowTests {
 		let h = await DesktopHarness.make()
 		let files = try Self.files(["a.raw", "b.raw", "c.iso"])
 		_ = AddFlows.handleFileURLs(files, viewModel: h.viewModel, vm: "Debian")
+		#expect(await eventually { h.viewModel.pendingDiskAdd != nil })
 		let pending = try #require(h.viewModel.pendingDiskAdd)
 		AddFlows.addDiskReferences(viewModel: h.viewModel, pending)
 		#expect(await eventually { h.stub.addedDisks.count == 3 })

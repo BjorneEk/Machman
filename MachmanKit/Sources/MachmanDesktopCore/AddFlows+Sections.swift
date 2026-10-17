@@ -48,11 +48,12 @@ extension AddFlows {
 	}
 
 	// Paste into one section: copied entities of its own kind when the clipboard holds
-	// any, otherwise the pasteboard's files that fit it (the drop rules).
+	// any, otherwise the pasteboard's files that fit it (the drop rules), judged off the main
+	// thread as a drag's are (P45).
 	public static func paste(
 		into section: TreeDragPreview.Section, entities: [EntityClipboard], fileURLs: [URL],
 		vm: String, viewModel: VMListViewModel,
-		isDirectory: (URL) -> Bool = TreeDropValidator.isDirectory
+		isDirectory: @escaping @Sendable (URL) -> Bool = { TreeDropValidator.isDirectory($0) }
 	) {
 		let kind = EntityClipboard.Kind(section: section)
 		let matching = entities.filter { $0.kind == kind }
@@ -60,8 +61,12 @@ extension AddFlows {
 			EntityClipboard.paste(matching, into: vm, viewModel: viewModel)
 			return
 		}
-		let files = TreeDropValidator.fitting(
-			section: section, urls: fileURLs, isDirectory: isDirectory)
-		add(files, to: section, vm: vm, viewModel: viewModel)
+		guard !fileURLs.isEmpty else { return }
+		Task { [weak viewModel] in
+			let fits = await TreeDragPreview.resolved(
+				section: section, urls: fileURLs, isDirectory: isDirectory)
+			guard let viewModel else { return }
+			add(fits.adds, to: section, vm: vm, viewModel: viewModel)
+		}
 	}
 }
