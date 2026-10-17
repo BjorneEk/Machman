@@ -299,8 +299,23 @@ enum InspectorScenes {
 		},
 		inspector("guest-setup", "GuestSetupInspector", node: .device(.guestSetup)),
 		inspector(
-			"guest-setup.update-available", "GuestSetupInspector, report from script v3",
+			"guest-setup.pinned-older",
+			"GuestSetupInspector, set up by an earlier script it is still pinned to",
 			vms: { [Samples.olderSetupScript("Debian")] }, node: .device(.guestSetup)),
+		inspector(
+			"guest-setup.custom-installed",
+			"GuestSetupInspector, a guest that ran the custom script it serves",
+			vms: { [Samples.customSetupInstalled("Debian")] }, node: .device(.guestSetup)),
+		inspector(
+			"guest-setup.changed", "GuestSetupInspector, a guest that ran a copy it changed",
+			vms: { [Samples.changedSetupInstalled("Alpine")] }, select: "Alpine",
+			node: .device(.guestSetup)),
+		inspector(
+			"guest-setup.older-agent", "GuestSetupInspector, from an older Machman Agent",
+			vms: { [Samples.olderAgentSetup("Debian")] }, node: .device(.guestSetup)),
+		inspector(
+			"guest-setup.not-installed", "GuestSetupInspector, no report yet",
+			vms: { [Samples.setupNotInstalled("Debian")] }, node: .device(.guestSetup)),
 		inspector(
 			"guest-setup.notes", "GuestSetupInspector, a clean run with notes",
 			vms: { [Samples.setupNotes("Debian")] }, node: .device(.guestSetup)),

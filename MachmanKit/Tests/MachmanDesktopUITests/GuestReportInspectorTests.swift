@@ -42,7 +42,7 @@ struct GuestReportInspectorTests {
 	@Test("S6b: a failed setup run reads Last run failed with its error")
 	func aFailedRunReadsFailed() async throws {
 		let tree = try await setup(Samples.failedSetupRun())
-		#expect(reads(tree, "Last run failed"), "\(tree.dump())")
+		#expect(reads(tree, "v3, last run failed"), "\(tree.dump())")
 		#expect(reads(tree, "Errors (1)"))
 		// A failed run keeps the installer served: its commands come back.
 		#expect(reads(tree, "Linux"))
@@ -67,11 +67,39 @@ struct GuestReportInspectorTests {
 		#expect(reads(none, "No report yet \u{2014} run the installer in the guest."))
 
 		let partial = try await setup(Samples.partialSetupRun())
-		#expect(reads(partial, "Installed, with gaps"), "\(partial.dump())")
+		#expect(reads(partial, "v3, with gaps"), "\(partial.dump())")
 		#expect(reads(partial, "Debian 13, systemd"))   // the OS by name, not its id (W6)
-		#expect(reads(partial, "v3"))
 		#expect(reads(partial, "Errors (1)"))
 		#expect(!reads(partial, "No report yet \u{2014} run the installer in the guest."))
+	}
+
+	// S67 (the user's decision): two version rows — Installed, what the guest ran, and Serves,
+	// the menu over the store — and no Script row offering an update.
+	@Test("S67: Guest Setup shows Installed and Serves, with no Script row or update hint")
+	func theTwoVersionRows() async throws {
+		let pinned = try await setup(Samples.olderSetupScript())
+		let installed = try #require(pinned.find(text: "Installed"), "\(pinned.dump())")
+		#expect(pinned.find(role: "AXStaticText", text: "v2") != nil, "\(pinned.dump())")
+		#expect(pinned.find(text: "Serves") != nil)
+		let menu = try #require(
+			pinned.all.first { $0.help == "The Guest Setup script this VM’s share serves" },
+			"\(pinned.dump())")
+		#expect(menu.role == "AXMenuButton" && menu.text == "v2" && menu.isEnabled)
+		for gone in ["Install status", "Script"] {
+			#expect(pinned.find(text: gone) == nil, "\(gone) is still shown")
+		}
+		#expect(!pinned.all.contains { $0.text?.contains("re-run to update") == true })
+		#expect(installed.frame.map { $0.minY < (menu.frame?.minY ?? 0) } ?? true)
+
+		let custom = try await setup(Samples.customSetupInstalled())
+		#expect(custom.find(role: "AXStaticText", text: "Custom") != nil, "\(custom.dump())")
+		#expect(custom.find(
+			role: "AXMenuButton", text: "\u{201C}install-patched.sh\u{201D}") != nil,
+			"\(custom.dump())")
+		// An older Machman Agent: the version it ships, no menu.
+		let older = try await setup(Samples.olderAgentSetup())
+		#expect(older.find(text: "Serves") != nil && older.find(text: "v3") != nil)
+		#expect(!older.all.contains { $0.role == "AXMenuButton" }, "\(older.dump())")
 	}
 
 	@Test("G12: an installed setup folds behind its checkmark until reinstall")

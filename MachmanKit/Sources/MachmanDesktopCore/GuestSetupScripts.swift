@@ -46,9 +46,13 @@ public enum GuestSetupScripts {
 
 	// MARK: - Serves
 
-	// The menu's own title: what the VM serves, short. nil from an older Machman Agent.
+	// The menu's own title: what the VM serves, short enough for the narrowest inspector — a
+	// custom script by its file name alone. nil from an older Machman Agent.
 	public static func serves(_ setup: GuestSetupInfo?) -> String? {
 		guard setup?.scripts != nil, let entry = servedEntry(setup) else { return nil }
+		if entry.kind == GuestSetupScriptKind.custom, let label = entry.label {
+			return "\u{201C}\(label)\u{201D}"
+		}
 		return shortTitle(entry)
 	}
 

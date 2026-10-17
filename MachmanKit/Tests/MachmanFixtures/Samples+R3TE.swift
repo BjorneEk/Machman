@@ -60,7 +60,9 @@ extension Samples {
 	// A Linux guest with Guest Setup attached that never ran in the guest: no report.
 	public static func setupNotInstalled(_ name: String = "Debian") -> VMInfo {
 		var vm = linux(name)
-		vm.setup = GuestSetupInfo(installed: false, currentScriptVersion: 3)
+		vm.setup = GuestSetupInfo(
+			installed: false, currentScriptVersion: 3, scripts: setupScripts(),
+			servedScript: setupScriptLatest.id)
 		vm.ssh = nil
 		return vm
 	}

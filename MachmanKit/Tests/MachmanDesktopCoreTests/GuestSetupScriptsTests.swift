@@ -75,7 +75,7 @@ struct GuestSetupScriptsTests {
 				+ Self.stored(Samples.setupScriptCustom),
 		])
 		#expect(choices.filter(\.isServed).map(\.id) == [Samples.setupScriptCustom.id])
-		#expect(GuestSetupScripts.serves(setup) == "Custom \u{201C}install-patched.sh\u{201D}")
+		#expect(GuestSetupScripts.serves(setup) == "\u{201C}install-patched.sh\u{201D}")
 		#expect(GuestSetupScripts.serves(Self.setup(installed: nil)) == "v3 — latest")
 		#expect(GuestSetupScripts.serves(Self.setup(
 			installed: nil, served: Samples.setupScriptChanged.id)) == "Changed on Alpine")

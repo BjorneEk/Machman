@@ -27,4 +27,29 @@ extension Samples {
 	public static func setupScripts() -> [GuestSetupScriptInfo] {
 		[setupScriptLatest, setupScriptOlder, setupScriptCustom, setupScriptChanged]
 	}
+
+	// A guest that ran the script imported for it, which it still serves.
+	public static func customSetupInstalled(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name, state: .running)
+		vm.setup?.installedScript = setupScriptCustom.id
+		vm.setup?.servedScript = setupScriptCustom.id
+		return vm
+	}
+
+	// A guest that ran a copy it changed, kept in the store as changed on it; the VM still
+	// serves the latest build's script.
+	public static func changedSetupInstalled(_ name: String = "Alpine") -> VMInfo {
+		var vm = linux(name, state: .running)
+		vm.setup?.installedScript = setupScriptChanged.id
+		return vm
+	}
+
+	// The setup an older Machman Agent sends: no store, only the version it ships.
+	public static func olderAgentSetup(_ name: String = "Debian") -> VMInfo {
+		var vm = linux(name, state: .running)
+		vm.setup?.scripts = nil
+		vm.setup?.servedScript = nil
+		vm.setup?.installedScript = nil
+		return vm
+	}
 }

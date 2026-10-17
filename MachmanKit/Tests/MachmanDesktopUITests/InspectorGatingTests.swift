@@ -187,6 +187,16 @@ struct InspectorGatingTests {
 		#expect(!(try control(tree, labelled: "Allow reinstall or update").isEnabled))
 	}
 
+	// S67: picking a script changes what the VM serves, a setting: locked with the rest.
+	@Test("S67: an outdated VM's Serves menu stays locked")
+	func anOutdatedVMsServesMenuIsLocked() async throws {
+		let h = await UIHarness.make(Samples.libraryWithOutdatedSetupReport())
+		let tree = try await inspector(h, "Debian", .device(.guestSetup))
+		let menu = try #require(tree.all.first { $0.role == "AXMenuButton" }, "\(tree.dump())")
+		#expect(menu.help == "The Guest Setup script this VM’s share serves")
+		#expect(!menu.isEnabled, "\(tree.dump())")
+	}
+
 	@Test("H40: a torn configuration window's inspector shows the restart banner and locks")
 	func aTornInspectorLocksLikeTheMainOne() async throws {
 		let h = await UIHarness.make(Samples.libraryWithOutdatedHost())

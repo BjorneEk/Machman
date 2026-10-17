@@ -69,4 +69,28 @@ struct OpenPanelFlowTests {
 		// type that still filters by the extension where none does.
 		#expect(asked.last?.contentTypes.map(\.preferredFilenameExtension) == ["ipsw"])
 	}
+
+	// S67: Use Custom Script… in the Serves menu — a script file joins the store and the VM
+	// serves it; Cancel sends nothing.
+	@Test("S67: Use Custom Script asks for a script and pins what it imports")
+	func useCustomScriptAsksThenImports() async throws {
+		let h = await UIHarness.make([Samples.linux("Debian", state: .running)])
+		var asked: [OpenPanelRequest] = []
+		GuestSetupServesRow.chooseCustomScript(
+			viewModel: h.viewModel, vm: "Debian", panels: Self.answering(nil) { asked.append($0) })
+		#expect(asked == [.customSetupScript(vm: "Debian")])
+		#expect(asked.first?.message == "Choose a Guest Setup script to serve to Debian")
+		#expect(asked.first?.prompt == "Use" && asked.first?.pick == .file)
+		#expect(asked.first?.contentTypes == [.shellScript, .plainText])
+		#expect(!h.stub.calls.contains("importSetupScript"), "Cancel imported: \(h.stub.calls)")
+
+		let script = URL(fileURLWithPath: "/Users/demo/Scripts/install-mine.sh")
+		GuestSetupServesRow.chooseCustomScript(
+			viewModel: h.viewModel, vm: "Debian", panels: Self.answering(script))
+		#expect(await eventually {
+			h.stub.vms["Debian"]?.setup?.servedScript
+				== h.stub.vms["Debian"]?.setup?.scripts?.first { $0.label == "install-mine.sh" }?.id
+		}, "\(h.stub.calls)")
+		#expect(h.stub.setupScriptImports.map(\.path) == [script.path])
+	}
 }

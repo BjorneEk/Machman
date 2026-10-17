@@ -2,10 +2,11 @@
 //  GuestSetupInspector.swift
 //  MachmanDesktopUI
 //
-//  The unified installer's home (1.0.7): status from the guest's report (detected OS,
-//  last run + script version, the errors and notes popdowns), the per-feature list, and
-//  the setup commands per boot mode — auto-collapsed behind a checkmark once installed,
-//  with an Allow-reinstall toggle to bring them back. Inspector text rule: nothing longer
+//  The unified installer's home (1.0.7): status from the guest's report (the script it ran
+//  and the one the VM serves, GuestSetupScriptRows (S67); the detected OS, the last run, the
+//  errors and notes popdowns), the per-feature list, and the setup commands per boot mode —
+//  auto-collapsed behind a checkmark once installed, with an Allow-reinstall toggle to bring
+//  them back. Inspector text rule: nothing longer
 //  than one sentence — details live in the Setup Guide sheet, never here. The report's and
 //  the commands' disclosures change nothing, so they stay live under a settings lock (H62).
 //
@@ -63,7 +64,8 @@ struct GuestSetupInspector: View {
 
 	private var statusSection: some View {
 		Section("Status") {
-			LabeledContent("Install status") { statusLabel }
+			GuestSetupInstalledRow(setup: setup)
+			GuestSetupServesRow(viewModel: viewModel, vm: vm)
 			// While setup is (re)installable the row says what a run will find — the
 			// share already automounted (and how) or merely available. Installed and
 			// collapsed, the ephemeral-payload lifecycle line returns.
@@ -96,18 +98,6 @@ struct GuestSetupInspector: View {
 				if let at = setup.lastReportAt {
 					LabeledContent("Last run") {
 						Text(at.formatted(date: .abbreviated, time: .shortened))
-					}
-				}
-				if let version = setup.scriptVersion {
-					LabeledContent("Script") {
-						HStack(spacing: 5) {
-							Text("v\(version)")
-							if let current = setup.currentScriptVersion, current > version {
-								Text("v\(current) available — re-run to update")
-									.font(.caption)
-									.foregroundStyle(MachmanColors.warning)
-							}
-						}
 					}
 				}
 				if let transport = setup.lastTransport {
@@ -144,26 +134,6 @@ struct GuestSetupInspector: View {
 			return MountKind.sshfs
 		}
 		return nil
-	}
-
-	private var statusLabel: some View {
-		HStack(spacing: 5) {
-			switch (installed, setup?.lastRunStatus) {
-			case (false, _):
-				Text("Not installed").foregroundStyle(.secondary)
-			case (true, GuestRunStatus.partial):
-				Image(systemName: MachmanSymbols.warning)
-					.foregroundStyle(MachmanColors.warning)
-				Text("Installed, with gaps")
-			case (true, GuestRunStatus.failed):
-				Image(systemName: MachmanSymbols.warning)
-					.foregroundStyle(MachmanColors.warning)
-				Text("Last run failed")
-			default:
-				Label("Installed", systemImage: MachmanSymbols.activeEntry)
-					.foregroundStyle(MachmanColors.stateRunning)
-			}
-		}
 	}
 
 	@ViewBuilder
