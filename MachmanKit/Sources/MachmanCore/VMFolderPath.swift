@@ -22,11 +22,15 @@ final class VMFolderPath: @unchecked Sendable {
 
 	var current: String? {
 		guard fd >= 0 else { return nil }
-		// A deleted folder still answers its last path; fstat says it is gone.
-		var info = stat()
-		guard fstat(fd, &info) == 0, info.st_nlink > 0 else { return nil }
 		var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
 		guard fcntl(fd, F_GETPATH, &buffer) == 0 else { return nil }
-		return String(cString: buffer)
+		let path = String(cString: buffer)
+		// A deleted folder still answers its last path, and its link count can lag: the path
+		// counts only while it still names this folder.
+		var held = stat()
+		var named = stat()
+		guard fstat(fd, &held) == 0, stat(path, &named) == 0,
+			held.st_dev == named.st_dev, held.st_ino == named.st_ino else { return nil }
+		return path
 	}
 }
