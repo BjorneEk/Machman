@@ -160,7 +160,7 @@ public final class RoutingMachman: MachmanControlling {
 	// folders in a scratch library of their own.
 	var libraryDir: () -> String = { machmanVMDir }
 	// Unclaimed vmhost sockets that didn't say whom they serve yet, asked again on the
-	// adoption timer (F23); and the ask itself, a seam for tests (nil: hello on the socket).
+	// adoption timer (review F23); and the ask itself, a seam for tests (nil: hello on the socket).
 	var orphanQuestions: [String: Task<Void, Never>] = [:]
 	var whomItServesForTesting: ((String) async -> RPCResults.Hello.Host?)?
 

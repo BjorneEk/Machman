@@ -69,7 +69,7 @@ struct VMHostHelloTests {
 
 	// What VMHostBootstrap serves: the VM's current name and data folder, and a safe run's
 	// shadow until it is saved as a new VM (the name changes then) — whose folder, for the
-	// agent, is the real VM's (F23), and the shadow's own once it is saved.
+	// agent, is the real VM's (review F23), and the shadow's own once it is saved.
 	@Test("E11: a vmhost's hello follows its VM's name and says whether it serves a shadow")
 	@MainActor func theHelloFollowsTheVMsNameAndShadow() throws {
 		try VMTestDir.withRedirectedDir {
@@ -87,7 +87,7 @@ struct VMHostHelloTests {
 		}
 	}
 
-	@Test("F23: a safe run's vmhost says the real VM's folder is the one it serves")
+	@Test("E11: a safe run's vmhost says the real VM's folder is the one it serves")
 	@MainActor func aSafeRunsHelloNamesTheRealFolder() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "alpha")

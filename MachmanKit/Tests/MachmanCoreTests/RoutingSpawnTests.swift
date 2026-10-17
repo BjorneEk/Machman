@@ -185,9 +185,9 @@ struct RoutingSpawnTests {
 		#expect(rig.routing.hostedNames.isEmpty)
 	}
 
-	// F25: a Start Safe that loses the spawn to a launch agent's unsafe vmhost was answered as
+	// E62: a Start Safe that loses the spawn to a launch agent's unsafe vmhost was answered as
 	// a success while the VM ran unsafe. It is refused, and the vmhost stays adopted.
-	@Test("F25: a safe start answered by another, unsafe vmhost refuses and leaves it adopted")
+	@Test("E62: a safe start answered by another, unsafe vmhost refuses and leaves it adopted")
 	@MainActor func aSafeStartAnsweredByAnUnsafeVMHostRefuses() async throws {
 		let rig = try Self.makeRig("safe-held")
 		let (stub, server) = try Self.stubHost(rig.socketPath, state: .running)

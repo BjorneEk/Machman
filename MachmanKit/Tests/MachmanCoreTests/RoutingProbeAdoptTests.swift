@@ -276,9 +276,9 @@ struct RoutingProbeAdoptTests {
 		}
 	}
 
-	// F25, the probe-adopt route: a Start Safe that finds the VM running unsafe on its socket
+	// E62, the probe-adopt route: a Start Safe that finds the VM running unsafe on its socket
 	// is refused rather than answered as a success; the vmhost stays adopted.
-	@Test("F25: a safe start meeting a running unsafe vmhost on its socket refuses")
+	@Test("E62: a safe start meeting a running unsafe vmhost on its socket refuses")
 	@MainActor func aSafeStartMeetingARunningUnsafeVMHostRefuses() async throws {
 		let routing = try makeRouting()
 		let socketPath = TestEnvironment.socketPath("mm-safe-probe")

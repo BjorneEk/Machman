@@ -129,8 +129,8 @@ extension RoutingMachman {
 			// …and one that fails after saying so says stopped, before start()'s listChanged
 			// (review F14): a client that follows states — a desktop's preview loop, which
 			// starting began — kept polling a VM that never ran. Starting to stopped toasts
-			// nothing. Not when the start failed on a vmhost that runs the VM (F25): its list
-			// says running.
+			// nothing. Not when the start failed on a vmhost that runs the VM (review F25): its
+			// list says running.
 			if hosted[name]?.lastState?.isRunning != true {
 				registry.events.emit(.stateChanged(vm: name, state: .stopped))
 			}
@@ -494,8 +494,8 @@ extension RoutingMachman {
 		if host.lastAnswer?.state.isRunning == true {
 			// A run can't become safe after the fact: a Start Safe that meets the VM running
 			// unsafe — a launch agent's vmhost, found on its socket or beating the spawn to it
-			// (E62) — is refused, never answered as if the VM ran safe (F25). The host stays
-			// adopted: it runs the VM.
+			// (E62) — is refused, never answered as if the VM ran safe (review F25). The host
+			// stays adopted: it runs the VM.
 			if options.safe, !host.identity.isSafe {
 				throw MachmanError(
 					code: .invalidState,

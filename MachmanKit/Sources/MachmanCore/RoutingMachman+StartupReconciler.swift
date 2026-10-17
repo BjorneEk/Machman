@@ -56,7 +56,7 @@ extension RoutingMachman {
 	// is asked whom it serves (hello), all at once: one serving an entry's folder makes that
 	// entry Not responding until it exits (a Start is refused, End Process ends it); any other
 	// is logged and left running. One that doesn't answer in time (a stalled main actor) is
-	// asked again on the adoption timer until it answers or its socket goes dark (F23). A
+	// asked again on the adoption timer until it answers or its socket goes dark (review F23). A
 	// vmhost from before hello said so can't be placed.
 	func identifyOrphanedHosts(in dir: String) async {
 		let entries = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
@@ -112,7 +112,7 @@ extension RoutingMachman {
 
 	// Places a vmhost that serves `served` on a socket that isn't its VM's (E11): the library
 	// entry whose folder it serves answers through it until it exits. A safe run's vmhost
-	// names the real VM's folder, whose unsafe disks its run has attached (F23).
+	// names the real VM's folder, whose unsafe disks its run has attached (review F23).
 	func noteOrphan(_ served: RPCResults.Hello.Host, at path: String) {
 		let library = libraryDir()
 		let entry = served.vmDir.flatMap { folder in

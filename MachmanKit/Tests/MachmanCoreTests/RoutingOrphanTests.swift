@@ -189,12 +189,12 @@ struct RoutingOrphanTests {
 		}
 	}
 
-	// F23: a vmhost that missed its hello deadline at startup (a stalled main actor) was
+	// E11: a vmhost that missed its hello deadline at startup (a stalled main actor) was
 	// logged and never asked again, so its renamed entry listed stopped and a Start booted a
 	// second VZ on the same disks. It is asked again on the adoption timer until it answers.
 	@Test(
 		"""
-		F23: an orphan that misses its first hello is placed when it answers a later one, and \
+		E11: an orphan that misses its first hello is placed when it answers a later one, and \
 		its entry refuses a Start
 		""")
 	@MainActor func anOrphanThatMissesItsFirstHelloIsPlacedLater() async throws {
@@ -219,10 +219,10 @@ struct RoutingOrphanTests {
 		try await expectHeldByOrphan(rig, "beta")
 	}
 
-	// F23: a safe run's vmhost whose VM folder was renamed while the agent was away answered
+	// E11: a safe run's vmhost whose VM folder was renamed while the agent was away answered
 	// as a shadow, which the sweep dropped: its entry listed stopped while the run had its
 	// unsafe disks attached. A shadow says the real VM's folder, and is placed by it.
-	@Test("F23: a safe run's orphaned vmhost holds its renamed entry, which refuses a Start")
+	@Test("E11: a safe run's orphaned vmhost holds its renamed entry, which refuses a Start")
 	@MainActor func aSafeRunsOrphanHoldsItsEntry() async throws {
 		let rig = try makeRig(["beta"])
 		let (_, server) = try orphan(

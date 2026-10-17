@@ -184,7 +184,7 @@ public enum VMHostBootstrap {
 	// serves that VM's folder (E11). The VM's current name and the data folder follow a Save
 	// as New VM (the shadow is then the saved VM, in the library); the folder follows a rename
 	// in Finder too. A safe run (`realFolder`, the VM's own folder in the library) names that
-	// folder, whose unsafe disks it attached, until it is saved as a new VM (F23).
+	// folder, whose unsafe disks it attached, until it is saved as a new VM (review F23).
 	@MainActor
 	static func helloHost(
 		registry: VMRegistry, vmName: String, folder: VMFolderPath, realFolder: VMFolderPath?
