@@ -147,18 +147,35 @@ enum KernelStore {
 	}
 
 	// The staged folder becomes the tag dir, never over one: a tag dir that holds a kernel file
-	// refuses (K13); one left empty — its last file deleted beside Finder's .DS_Store — is
-	// cleared and taken.
+	// refuses (K13); one left with only hidden files — its last file deleted beside Finder's
+	// .DS_Store or a FUSE mount's .fuse_hidden file — is cleared and taken.
 	private static func place(_ staging: String, at tagDir: String, tag: String) throws {
 		for _ in 0..<2 {
 			if try DiskImport.placeExclusively(staging, at: tagDir) { return }
 			guard !holdsKernelFile(tagDir) else { throw tagTaken(tag) }
-			if (try? FileManager.default.contentsOfDirectory(atPath: tagDir)) == [".DS_Store"] {
-				try? FileManager.default.removeItem(atPath: tagDir + "/.DS_Store")
-			}
+			dropHiddenLeftovers(tagDir)
 			_ = removeEmptyDirectory(tagDir)
 		}
 		throw tagTaken(tag)
+	}
+
+	// Hidden files are never kernel files (isKernelFile): Finder's .DS_Store, a FUSE mount's
+	// .fuse_hidden files (AppleDouble "._" files never show in a listing — Foundation hides
+	// them — and go with the dir). A dir holding only such files loses them so it can go (D30,
+	// F22); one holding anything else — a hidden folder included — keeps all of it.
+	private static func dropHiddenLeftovers(_ dir: String) {
+		let fm = FileManager.default
+		guard let entries = try? fm.contentsOfDirectory(atPath: dir), !entries.isEmpty,
+			entries.allSatisfy({ name in
+				var isDirectory: ObjCBool = false
+				return name.hasPrefix(".")
+					&& fm.fileExists(atPath: dir + "/" + name, isDirectory: &isDirectory)
+					&& !isDirectory.boolValue
+			})
+		else { return }
+		for entry in entries {
+			try? fm.removeItem(atPath: dir + "/" + entry)
+		}
 	}
 
 	// Move an owned file to a new tag: <role>/<oldTag>/<file> → <role>/<newTag>/<file>,
@@ -233,10 +250,8 @@ enum KernelStore {
 		// something; legacy-layout files (no role level) just make fewer hops.
 		var dir = (path as NSString).deletingLastPathComponent
 		while dir.hasPrefix(kernelsDir) {
-			// Finder's .DS_Store is not the user's: it doesn't keep an emptied dir alive (D30).
-			if (try? fm.contentsOfDirectory(atPath: dir)) == [".DS_Store"] {
-				try? fm.removeItem(atPath: dir + "/.DS_Store")
-			}
+			// Hidden files are not the user's: they don't keep an emptied dir alive (D30, F22).
+			dropHiddenLeftovers(dir)
 			guard removeEmptyDirectory(dir) else { break }
 			if dir == kernelsDir { break }
 			dir = (dir as NSString).deletingLastPathComponent

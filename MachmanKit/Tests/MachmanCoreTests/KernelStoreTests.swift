@@ -402,4 +402,43 @@ struct KernelStoreTests {
 		#expect(try KernelStore.rename(path: other, kernelsDir: otherKernels, newTag: "next")
 			== otherKernels + "/kernel/next/vmlinuz")
 	}
+
+	// F22: only a tag dir holding exactly Finder's .DS_Store was cleared; any other hidden
+	// leftover beside it (a FUSE mount's .fuse_hidden file; AppleDouble "._" files never list)
+	// kept the dir, and the import was refused with "“v1” already holds a kernel file" for a
+	// tag the tree lists nothing under. Any dir left with only hidden files is cleared now — at
+	// an import's placement and a delete's walk-up.
+	@Test("F22: a tag dir left with only hidden files takes the import and goes with a delete")
+	func hiddenLeftoversNeverHoldATag() throws {
+		let (dir, kernels, source) = try storeDir()
+		defer {
+			try? FileManager.default.removeItem(atPath: dir)
+			try? FileManager.default.removeItem(atPath: source)
+		}
+		let tagDir = kernels + "/kernel/v1"
+		try FileManager.default.createDirectory(atPath: tagDir, withIntermediateDirectories: true)
+		let fuse = ".fuse_hidden0000000a00000001"
+		for junk in [".DS_Store", "._.DS_Store", fuse] {
+			try Data("x".utf8).write(to: URL(fileURLWithPath: tagDir + "/" + junk))
+		}
+		let dest = try KernelStore.promote(
+			role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1")
+		#expect(KernelStore.ownedFiles(kernelsDir: kernels).map(\.path) == [dest])
+
+		// Leftovers beside the last file don't keep the emptied tag, role and kernels dirs.
+		for junk in [fuse, "._" + (dest as NSString).lastPathComponent] {
+			try Data("x".utf8).write(to: URL(fileURLWithPath: tagDir + "/" + junk))
+		}
+		try KernelStore.delete(path: dest, kernelsDir: kernels)
+		#expect(!FileManager.default.fileExists(atPath: kernels))
+
+		// A hidden folder is not a leftover: the tag stays taken by it, untouched.
+		try FileManager.default.createDirectory(
+			atPath: tagDir + "/.keep", withIntermediateDirectories: true)
+		#expect(throws: MachmanError.self) {
+			try KernelStore.promote(
+				role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1")
+		}
+		#expect(FileManager.default.fileExists(atPath: tagDir + "/.keep"))
+	}
 }
