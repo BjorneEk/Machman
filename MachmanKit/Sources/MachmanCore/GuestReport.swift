@@ -13,6 +13,8 @@
 //  stamps the ingestion time. Two halves: the SSH keys the v2 script already wrote
 //  (applied into config.ssh, byte-compatible), and the v3 setup sections
 //  (FEATURE_/CONSOLE_/AUTOMOUNT_/ERROR_/NOTE_) applied into config.setup as a whole snapshot.
+//  A copy the guest changed and ran (--changed) leaves itself beside the report, and the
+//  Guest Setup store keeps it as changed on this VM (S67).
 //
 
 import Foundation
@@ -23,6 +25,12 @@ struct GuestReport {
 	// Found by the host beside the report, never one of its claims: the DHCP client id of the
 	// lease that holds the address the guest reported (E56).
 	var leaseClientID: String?
+	// …and the script a run of a changed copy left beside it (S67), read only when the report
+	// names its script's cksum.
+	var droppedScript: Data?
+
+	// The name a changed copy takes in the drop-box (the script's SCRIPT_DROP).
+	static let scriptDropName = "install.sh"
 
 	// Which halves an apply() actually moved — the caller emits per-half events.
 	struct Changes {
@@ -79,14 +87,27 @@ struct GuestReport {
 			GuestValueRule.isAddress(ip), let table = leases() {
 			report?.leaseClientID = SSHDiscovery.clientID(holding: ip, inLeasesText: table)
 		}
+		if report?.values["SCRIPT_CKSUM"] != nil {
+			let drop = (path as NSString).deletingLastPathComponent + "/" + scriptDropName
+			report?.droppedScript = readBounded(
+				atPath: drop, maxBytes: GuestSetupStore.maxScriptBytes)
+		}
 		return Found(mtime: mtime, report: report)
 	}
 
-	// The drop-box is guest-writable, so the name is trusted for nothing: a regular file
+	static func read(atPath path: String) -> GuestReport? {
+		readBounded(atPath: path, maxBytes: maxBytes)
+			.map { parse(String(decoding: $0, as: UTF8.self)) }
+	}
+
+	// The drop-box is guest-writable, so a name in it is trusted for nothing: a regular file
 	// within the cap by lstat, opened without following a link (O_NOFOLLOW) or waiting on a
 	// FIFO's writer (O_NONBLOCK), checked again on the descriptor, and never read past
 	// maxBytes + 1 — a file swapped or grown after the checks still cannot make it read more.
-	static func read(atPath path: String) -> GuestReport? {
+	static func readBounded(atPath path: String, maxBytes: Int) -> Data? {
+		func isReadable(_ info: stat) -> Bool {
+			(info.st_mode & S_IFMT) == S_IFREG && info.st_size > 0 && info.st_size <= maxBytes
+		}
 		var info = stat()
 		guard lstat(path, &info) == 0, isReadable(info) else { return nil }
 		let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
@@ -108,11 +129,7 @@ struct GuestReport {
 			}
 		}
 		guard filled > 0, filled <= maxBytes else { return nil }
-		return parse(String(decoding: data.prefix(filled), as: UTF8.self))
-	}
-
-	private static func isReadable(_ info: stat) -> Bool {
-		(info.st_mode & S_IFMT) == S_IFREG && info.st_size > 0 && info.st_size <= maxBytes
+		return data.prefix(filled)
 	}
 
 	static func parse(_ text: String) -> GuestReport {
@@ -246,6 +263,27 @@ struct GuestReport {
 		return value
 	}
 
+	// S67: the script a run of a changed copy left beside the report goes into the Guest
+	// Setup store as changed on this VM, dated by the report — when it is the script the
+	// report names and the store doesn't hold it yet. The host never runs it; another VM
+	// serves it only when picked there.
+	func keepChangedScript(
+		vm name: String, at date: Date, store: GuestSetupStore = .current
+	) -> Bool {
+		guard let script = droppedScript, let cksum = values["SCRIPT_CKSUM"],
+			POSIXChecksum.cksum(script) == cksum, store.matching(cksum: cksum).isEmpty
+		else { return false }
+		do {
+			try store.add(script, kind: GuestSetupStore.Kind.changed, vm: name, at: date)
+			return true
+		} catch {
+			MachmanLogger.log(.log,
+				"\(name): couldn’t keep the Guest Setup script it changed — "
+					+ MachmanError.userMessage(for: error))
+			return false
+		}
+	}
+
 	// Fold the report into the persisted state. Caller saves-and-emits per changed half;
 	// .any false = nothing changed (identical report re-read).
 	@discardableResult
@@ -263,6 +301,8 @@ struct GuestReport {
 			return Changes()
 		}
 		var changes = Changes()
+		// A newly kept script changes what the VM's setup info says it ran.
+		changes.setup = keepChangedScript(vm: config.name, at: stampedAt)
 		var state = config.ssh ?? SSHConfig()
 		let beforeSSH = state
 		if values["UNINSTALLED"] == "1" {

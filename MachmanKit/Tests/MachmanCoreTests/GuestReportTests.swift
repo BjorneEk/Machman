@@ -576,4 +576,103 @@ struct GuestReportTests {
 			#expect(!fm.fileExists(atPath: path))
 		}
 	}
+
+	// MARK: - S67: a changed copy's script
+
+	// A drop-box holding `script` beside a report naming `cksum` (nil: none).
+	private static func dropBox(
+		_ dir: URL, script: Data, cksum: String?
+	) throws -> String {
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		try script.write(to: dir.appendingPathComponent(GuestReport.scriptDropName))
+		let path = dir.appendingPathComponent(GuestSetupInstallerInfo.reportName).path
+		let line = cksum.map { "SCRIPT_CKSUM=\($0)\n" } ?? ""
+		try "SCRIPT_VERSION=8\nSTATUS=ok\n\(line)".write(
+			toFile: path, atomically: true, encoding: .utf8)
+		return path
+	}
+
+	private static func script(_ body: String) -> Data {
+		Data("#!/bin/sh\nSCRIPT_VERSION=8\n\(body)\n".utf8)
+	}
+
+	// A copy the guest changed and ran (--changed) left itself beside its report: the store
+	// keeps it as changed on that VM, dated by the report, and the VM's setup names it as the
+	// script the guest ran.
+	@Test(
+		"""
+		S67: a report whose script matches nothing keeps the dropped script as changed on its \
+		VM
+		""")
+	@MainActor func aChangedScriptIsKept() throws {
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			try vm.config.addDevice(GuestDevice(kind: .guestSetup))
+			let changed = Self.script("echo changed in the guest")
+			let path = try Self.dropBox(
+				GuestSetupInstaller.reportDirectoryURL(for: vm.config), script: changed,
+				cksum: POSIXChecksum.cksum(changed))
+			let report = try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
+			#expect(report.droppedScript == changed)
+			let at = Date(timeIntervalSince1970: 1_800_000_000)
+			#expect(try report.apply(to: vm.config, stampedAt: at).setup)
+			let kept = try #require(
+				GuestSetupStore.current.matching(cksum: POSIXChecksum.cksum(changed)).first)
+			#expect(kept.kind == GuestSetupStore.Kind.changed && kept.id.hasPrefix("changed-"))
+			#expect(kept.vm == vm.config.name && kept.addedAt == at)
+			#expect(GuestSetupStore.current.script(id: kept.id) == changed)
+			#expect(LocalMachman(registry: registry).info(for: vm).setup?.installedScript
+				== kept.id)
+		}
+	}
+
+	@Test("S67: a dropped script that isn't the one the report names is not kept")
+	@MainActor func anUnnamedScriptIsNotKept() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "drop")
+			let vm = try VMConfig(name: "drop", memorySize: 1 << 30, cpuCount: 2)
+			let box = GuestSetupInstaller.reportDirectoryURL(for: vm)
+			let changed = Self.script("echo changed in the guest")
+			let other = Self.script("echo another copy")
+			let store = GuestSetupStore.current
+			func kept() -> [GuestSetupStore.Entry] {
+				store.entries().filter { $0.kind == GuestSetupStore.Kind.changed }
+			}
+			// The report names another script than the one beside it.
+			var path = try Self.dropBox(box, script: changed, cksum: POSIXChecksum.cksum(other))
+			_ = try GuestReport.poll(atPath: path, since: nil) { nil }?.report?
+				.apply(to: vm, stampedAt: Date())
+			#expect(kept().isEmpty)
+			// A report naming no cksum leaves the drop-box's script unread.
+			path = try Self.dropBox(box, script: changed, cksum: nil)
+			let bare = try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
+			#expect(bare.droppedScript == nil)
+			// A script the store already holds stays the entry it is.
+			let custom = try store.add(changed, kind: GuestSetupStore.Kind.custom, vm: "Debian")
+			path = try Self.dropBox(box, script: changed, cksum: custom.cksum)
+			_ = try GuestReport.poll(atPath: path, since: nil) { nil }?.report?
+				.apply(to: vm, stampedAt: Date())
+			#expect(kept().isEmpty)
+			#expect(store.matching(cksum: custom.cksum) == [custom])
+		}
+	}
+
+	@Test("S67: a dropped script behind a link or over 1 MB is never read")
+	func aLinkedOrHugeDropIsNeverRead() throws {
+		let dir = TestEnvironment.scratchURL.appendingPathComponent("drop-\(UUID().uuidString)")
+		let target = Self.script("echo elsewhere")
+		let path = try Self.dropBox(dir, script: Data(), cksum: POSIXChecksum.cksum(target))
+		let drop = dir.appendingPathComponent(GuestReport.scriptDropName)
+		let elsewhere = dir.appendingPathComponent("elsewhere.sh")
+		try target.write(to: elsewhere)
+		try FileManager.default.removeItem(at: drop)
+		try FileManager.default.createSymbolicLink(at: drop, withDestinationURL: elsewhere)
+		#expect(try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
+			.droppedScript == nil)
+		try FileManager.default.removeItem(at: drop)
+		try Data(repeating: 0x23, count: GuestSetupStore.maxScriptBytes + 1).write(to: drop)
+		#expect(try #require(GuestReport.poll(atPath: path, since: nil) { nil }?.report)
+			.droppedScript == nil)
+	}
 }
