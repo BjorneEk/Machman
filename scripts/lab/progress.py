@@ -28,7 +28,8 @@ no test is a failure line at its place, with its exit status (ROOT's report/suit
 the error its output (a shard's report/runs/<suite>.log) gave (Q27).
 Writes report/progress.log (level 2, plain, whatever --level is) and report/test-times.tsv.
 Stops when FILE exists and the inputs are drained; exit 0 when the run's summary came, 2 when
-it never did (the test process crashed or was killed).
+it never did (the test process crashed or was killed), 3 when a planned suite reported no test
+(whatever its process's exit status: lab.sh fails the run on it, Q27).
 """
 import collections
 import glob
@@ -750,6 +751,8 @@ class Follower:
             f.write("seconds\tstatus\ttest\n")
             for _, name, status, seconds in sorted(self.results, key=lambda r: -r[3]):
                 f.write("%.1f\t%s\t%s\n" % (seconds, status, name))
+        if empty:
+            return 3
         if self.parallel:
             return 2 if unfinished else 0
         return 0 if self.summary is not None else 2
@@ -1162,12 +1165,14 @@ def self_check():
             "database \"x/build.db\": database is locked",
             "error: no tests found; create a target in the 'Tests' directory"])
         os.makedirs(b + "/report/events", exist_ok=True)
-        write(a + "/report/suite-runs.tsv", ["LongTests\t0\t0\t11", "GoneTests\t1\t1\t6"])
-        write(base + "/suites", ["LongTests\tLong.swift:3\t1", "GoneTests\tGone.swift:12\t2"])
+        write(a + "/report/suite-runs.tsv", [
+            "LongTests\t0\t0\t11", "GoneTests\t1\t1\t6", "QuietTests\t1\t0\t2"])
+        write(base + "/suites", ["LongTests\tLong.swift:3\t1", "GoneTests\tGone.swift:12\t2",
+                                 "QuietTests\tQuiet.swift:7\t1"])
         open(base + "/stop", "w").close()
         plain = io.StringIO()
-        follow(a, 0, base + "/stop", interval=0.05, out=plain, tty=False, shards=[b],
-               planned=3, suites=base + "/suites")
+        status = follow(a, 0, base + "/stop", interval=0.05, out=plain, tty=False, shards=[b],
+                        planned=4, suites=base + "/suites")
         text = plain.getvalue()
         line = next((l for l in text.splitlines() if "GoneTests ran no tests" in l), "")
         check("a planned suite with no result is a ✘ line at its place, saying why (Q27)",
@@ -1179,6 +1184,9 @@ def self_check():
         check("a run with a suite that reported nothing fails (Q27)",
               "Test run with 1 test in 1 suite failed after" in text
               and "LongTests ran no tests" not in text)
+        check("a suite whose process exited 0 without a result is named, and progress exits 3 "
+              "(Q27)", "✘ Quiet.swift:7: QuietTests ran no tests — test exit 0" in text
+              and status == 3)
 
     # One row two suites run (one per guest OS), and a parameterized test failing with one
     # of its arguments: each line says which.

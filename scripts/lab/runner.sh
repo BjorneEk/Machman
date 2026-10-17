@@ -60,7 +60,8 @@ lab_test() {
 		args=(--list-tests)
 	else
 		args=(--no-parallel --filter "$2")
-		[[ -n "$1" ]] && args+=(--event-stream-output-path "$1" --event-stream-version 0)
+		[[ -n "$1" && -z "${MACHMAN_LAB_SELFCHECK_NO_EVENTS:-}" ]] &&
+			args+=(--event-stream-output-path "$1" --event-stream-version 0)
 	fi
 	if [[ -z "$LAB_TEST_HELPER" ]]; then
 		if [[ "$1" == --list ]]; then
@@ -145,7 +146,9 @@ lab_stop_follower() {
 }
 
 # The runner's self-check knobs: each makes a pass misbehave on purpose (lab_selfcheck_runner).
-LAB_SELFCHECK_KNOBS=(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE)
+# MACHMAN_LAB_SELFCHECK_NO_EVENTS: lab_test leaves out the event stream, as a helper ignoring
+# its path would.
+LAB_SELFCHECK_KNOBS=(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE MACHMAN_LAB_SELFCHECK_NO_EVENTS)
 
 # lab_selfcheck_knobs <self-check pass 0|1>: outside a self-check pass (lab_run's, harness tier
 # only) every knob is dropped, said once: a leftover export must never fail a real run.
@@ -217,6 +220,12 @@ lab_run_shards() {
 	((ts != 0)) && teststatus=1
 	ts="$ts of $(wc -l < "$root/report/suite-runs.tsv" | tr -d ' ') suites failed"
 	lab_stop_follower
+	# A planned suite that reported no test (progress.py exits 3) fails the run whatever its
+	# process's exit status said.
+	if ((LAB_FOLLOWSTATUS == 3)); then
+		teststatus=1
+		ts="$ts; a planned suite ran no tests"
+	fi
 	# A suite whose process died (not exit 0 or 1, nor 69: progress.py named a suite that ran
 	# no tests): where its words are.
 	awk -F '\t' '$3 > 1 && $3 != 69 { print $1, $2, $3 }' "$root/report/suite-runs.tsv" |
@@ -325,9 +334,24 @@ lab_selfcheck_runner() {
 	out="$(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1 "$repo/scripts/lab.sh" --harness --no-build \
 		--plain --jobs 2 --filter 'LabHarnessTests/tiersParse' 2>&1)"
 	rc=$?
-	if [[ $rc == 1 ]] && grep -qxF "lab: tests FAILED (1 of 2 suites failed)" <<<"$out" &&
+	local failed="lab: tests FAILED (1 of 2 suites failed; a planned suite ran no tests)"
+	if [[ $rc == 1 ]] && grep -qxF "$failed" <<<"$out" &&
 		grep -q "✘ Q27EmptySuite.swift:1: Q27EmptySuite ran no tests — test exit 69" <<<"$out" &&
 		grep -q "Test run with 1 test in 1 suite failed" <<<"$out" &&
+		grep -qxF "lab: audits: 0 breaches, 0 warnings" <<<"$out"; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: exit $rc: $(grep -E '^lab|✘|Test run' <<<"$out" | tr '\n' ' ')"
+		failures=$((failures + 1))
+	fi
+	check="Q27: a parallel run whose suites exit 0 but report nothing fails"
+	out="$(MACHMAN_LAB_SELFCHECK_NO_EVENTS=1 "$repo/scripts/lab.sh" --harness --no-build \
+		--plain --jobs 2 \
+		--filter 'LabHarnessTests/tiersParse|LabStartFailureTests/onlyEngineFailures' 2>&1)"
+	rc=$?
+	failed="lab: tests FAILED (0 of 2 suites failed; a planned suite ran no tests)"
+	if [[ $rc == 1 ]] && grep -qxF "$failed" <<<"$out" &&
+		grep -q "LabHarnessTests ran no tests — test exit 0" <<<"$out" &&
 		grep -qxF "lab: audits: 0 breaches, 0 warnings" <<<"$out"; then
 		echo "ok   $check"
 	else
