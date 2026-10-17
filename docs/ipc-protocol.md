@@ -409,8 +409,11 @@ own version. Hence the floor bump; the other 1.0.12 changes above are additive.
 clones, unsafe disks → the real files, ISOs referenced, safe mounts omitted; every entry
 keeps its enabled flag, so a disabled disk stays unattached) and runs the
 shadow AS the VM: name, events, socket, and window are all the real VM's, and the shadow is
-deleted on stop (a clean stop copies last-ran and total-runtime back). The ONLY wire
-evidence is `VMInfo.safeRun: true` while the run lives. `vm.setSafety` during a safe run
+deleted on stop (a clean stop copies last-ran and total-runtime back). A safe start that
+finds the VM already running unsafe (a vmhost on its socket, or one that took the socket
+first) answers `invalidState` ("… is already running — stop it to start it safe") and leaves
+that vmhost serving the VM. The ONLY wire evidence is `VMInfo.safeRun: true` while the run
+lives. `vm.setSafety` during a safe run
 edits the discardable shadow; `vm.setStartPolicy` is refused. `vm.safeSave` turns the
 running shadow into a real VM (see the method table). The disks the run attached directly
 (switching one off mid-run does not detach it) move into the saved VM's folder as its own;

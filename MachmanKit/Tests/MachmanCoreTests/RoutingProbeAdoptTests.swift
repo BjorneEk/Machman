@@ -275,4 +275,28 @@ struct RoutingProbeAdoptTests {
 			#expect(!FileManager.default.fileExists(atPath: ipsw))
 		}
 	}
+
+	// F25, the probe-adopt route: a Start Safe that finds the VM running unsafe on its socket
+	// is refused rather than answered as a success; the vmhost stays adopted.
+	@Test("F25: a safe start meeting a running unsafe vmhost on its socket refuses")
+	@MainActor func aSafeStartMeetingARunningUnsafeVMHostRefuses() async throws {
+		let routing = try makeRouting()
+		let socketPath = TestEnvironment.socketPath("mm-safe-probe")
+		let stub = StubMachman()
+		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
+		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+		try startServing(server)
+		defer { server.stop() }
+
+		do {
+			_ = try await routing.probeAdoptAndStart(
+				name: "alpha", socketPath: socketPath, options: StartOptions(safe: true))
+			Issue.record("a safe start was answered while the VM runs unsafe")
+		} catch let error as MachmanError {
+			#expect(error.message
+				== "alpha is already running \u{2014} stop it to start it safe")
+		}
+		#expect(routing.hostForTesting("alpha") != nil)
+		#expect(stub.starts.isEmpty)
+	}
 }

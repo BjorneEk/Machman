@@ -129,8 +129,11 @@ extension RoutingMachman {
 			// …and one that fails after saying so says stopped, before start()'s listChanged
 			// (review F14): a client that follows states — a desktop's preview loop, which
 			// starting began — kept polling a VM that never ran. Starting to stopped toasts
-			// nothing.
-			registry.events.emit(.stateChanged(vm: name, state: .stopped))
+			// nothing. Not when the start failed on a vmhost that runs the VM (F25): its list
+			// says running.
+			if hosted[name]?.lastState?.isRunning != true {
+				registry.events.emit(.stateChanged(vm: name, state: .stopped))
+			}
 			throw error
 		}
 	}
@@ -489,9 +492,14 @@ extension RoutingMachman {
 			return false
 		}
 		if host.lastAnswer?.state.isRunning == true {
-			if options.safe {
-				MachmanLogger.log(.passiveWarning,
-					"safe start requested for \(name), but a live vmhost already owns it")
+			// A run can't become safe after the fact: a Start Safe that meets the VM running
+			// unsafe — a launch agent's vmhost, found on its socket or beating the spawn to it
+			// (E62) — is refused, never answered as if the VM ran safe (F25). The host stays
+			// adopted: it runs the VM.
+			if options.safe, !host.identity.isSafe {
+				throw MachmanError(
+					code: .invalidState,
+					message: "\(name) is already running \u{2014} stop it to start it safe")
 			}
 		} else {
 			guard !options.safe else {

@@ -184,4 +184,35 @@ struct RoutingSpawnTests {
 		#expect(FileManager.default.fileExists(atPath: rig.socketPath))
 		#expect(rig.routing.hostedNames.isEmpty)
 	}
+
+	// F25: a Start Safe that loses the spawn to a launch agent's unsafe vmhost was answered as
+	// a success while the VM ran unsafe. It is refused, and the vmhost stays adopted.
+	@Test("F25: a safe start answered by another, unsafe vmhost refuses and leaves it adopted")
+	@MainActor func aSafeStartAnsweredByAnUnsafeVMHostRefuses() async throws {
+		let rig = try Self.makeRig("safe-held")
+		let (stub, server) = try Self.stubHost(rig.socketPath, state: .running)
+		defer { server.stop() }
+		let safeDir = TestEnvironment.scratch + "safe-\(UUID().uuidString)"
+		defer { try? FileManager.default.removeItem(atPath: safeDir) }
+		rig.routing.safeRunsDir = { safeDir }
+		rig.routing.copyShadow = { _ in }   // the shadow build, at once
+		let ours = StandInVMHostApp(pid: Self.notThisProcess)
+		rig.routing.launchVMHost = { _, _ in
+			try startServing(server)   // the other vmhost, bound first
+			return ours
+		}
+
+		do {
+			try await rig.routing.start(
+				vm: "alpha", options: StartOptions(openWindow: false, safe: true))
+			Issue.record("a safe start was answered while the VM runs unsafe")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message
+				== "alpha is already running \u{2014} stop it to start it safe")
+		}
+		#expect(rig.routing.hostForTesting("alpha")?.identity.isSafe == false)
+		#expect(!stub.calls.contains("start"))
+		#expect(((try? FileManager.default.contentsOfDirectory(atPath: safeDir)) ?? []).isEmpty)
+	}
 }
