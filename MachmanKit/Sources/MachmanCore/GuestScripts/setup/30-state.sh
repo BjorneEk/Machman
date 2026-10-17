@@ -66,7 +66,15 @@ state_list() {
 
 read_state() {
 	state_paths
-	[ -r "$STATE_FILE" ] || return 0
+	if [ ! -r "$STATE_FILE" ]; then
+		# Machman made this VM as a copy of another, whose guest never ran Guest Setup: its
+		# first run renews the identity the copy's disk carries, as a cloned state's does.
+		if [ -n "$COPY_OF" ]; then
+			note "this VM is a copy of another Machman VM — treating it as new"
+			CLONED=1
+		fi
+		return 0
+	fi
 	# A cloned guest carries the source VM's state; its records describe artifacts
 	# tagged with the source's marker, which the ownership probes treat as foreign.
 	# Start fresh instead of trusting them. (Pre-marker v3 states pass as ours.) What

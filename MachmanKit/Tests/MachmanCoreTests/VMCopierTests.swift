@@ -735,6 +735,29 @@ struct VMCopierTests {
 		#expect(!shadow.servesSetupPayload)
 	}
 
+	// S57: a fresh copy remembers its source by the source's marker (from its identity file),
+	// which its payloads pass on as COPY_OF; a source that never started has no identity to
+	// name, and a shadow, which IS its VM, is no copy.
+	@Test("S57: a fresh copy remembers its source's marker, and a shadow is no copy")
+	func freshCopyRemembersItsSource() throws {
+		let library = try makeLibrary()
+		defer { try? FileManager.default.removeItem(atPath: library) }
+		let never = try makeSourceVM(in: library, name: "never")
+		#expect(try loadConfig(try VMCopier.copy(VMCopyRequest(
+			sourceDir: never, destinationParent: library, newName: "never copy"))).setup == nil)
+		let src = try makeSourceVM(
+			in: library, extraFiles: ["vm_identifier": Data("identity".utf8)])
+		let marker = try #require(SSHSetupInstaller.existingMarker(inVMDir: src))
+		let copied = try loadConfig(try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "dup")))
+		#expect(copied.setup?.copyOf == marker)
+		#expect(copied.servesSetupPayload)
+		let shadow = try loadConfig(try VMCopier.copy(VMCopyRequest(
+			sourceDir: src, destinationParent: library, newName: "shadow",
+			regenerateMAC: false, identity: .impersonate)))
+		#expect(shadow.setup?.copyOf == nil)
+	}
+
 	// The shadow IS the VM: its ssh state and pin travel verbatim.
 	@Test func shadowCarriesSSHVerbatim() throws {
 		let library = try makeLibrary()

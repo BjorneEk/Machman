@@ -38,6 +38,9 @@ fi
 # Set only by the boot-time copy's own machman.env (report_copy_install): where its
 # reports go — the share's drop-box — and that it may only report.
 BOOT_REPORT_DIR=""
+# Set only in a copy's payloads until the copy first reports: the VM it was copied from (its
+# marker) — a copy of a guest that never ran Guest Setup has no state to say so itself.
+COPY_OF=""
 # VM_NAME, MARKER, REPORT_DIR_NAME, MOUNT_ROOT, SHARE_ROOT, SHARE_TAG, SHARE_HOST_PATH,
 # BOOT_MODE, CONSOLE_COUNT, UART_COUNT, HOST_USER, HOST_NAME, HOST_LOCAL
 . "$PAYLOAD_DIR/machman.env"

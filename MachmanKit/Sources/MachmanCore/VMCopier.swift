@@ -278,6 +278,14 @@ enum VMCopier {
 			// Decision 12: the copy serves the installer at its first boot, like a new guest
 			// — its script will say "looks cloned … treating it as new" (C14).
 			config.setup?.resetForFreshIdentity()
+			// S57: its payloads tell its script it is a copy (COPY_OF), so the first run
+			// renews the identity the disk carries even where the source never ran Guest
+			// Setup and left no state to show it. A source that never started has none.
+			if let source = SSHSetupInstaller.existingMarker(inVMDir: src) {
+				var state = config.setup ?? GuestSetupConfig()
+				state.copyOf = source
+				config.setup = state
+			}
 			// C10: a Mac whose install never finished copies as one that needs installing,
 			// in its own words. "installing" would claim an install ran in the COPY's
 			// directory (read back as "interrupted"), and a carried failure reason would

@@ -30,10 +30,19 @@ enum SSHSetupInstaller {
 	// Read-only lookup for the daemon (which must never write a hosted VM's dir): nil
 	// until an identity file exists — and one always does once a payload was written.
 	static func existingMarker(for config: VMConfig) -> String? {
+		existingMarker(identity: config.vmIdentifierPath(), macIdentity: config.macMachineIdPath())
+	}
+
+	// The same, read from a VM directory that need not be the library's (a copy's source).
+	static func existingMarker(inVMDir dir: String) -> String? {
+		existingMarker(identity: dir + "/vm_identifier", macIdentity: dir + "/mac_machine_id")
+	}
+
+	private static func existingMarker(identity: String, macIdentity: String) -> String? {
 		let fm = FileManager.default
-		var data = fm.contents(atPath: config.vmIdentifierPath())
+		var data = fm.contents(atPath: identity)
 		if data?.isEmpty != false {
-			data = fm.contents(atPath: config.macMachineIdPath())
+			data = fm.contents(atPath: macIdentity)
 		}
 		guard let bytes = data, !bytes.isEmpty else { return nil }
 		let hex = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }

@@ -29,6 +29,7 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 	static var script: EmbeddedScript { GuestSetupScript.assembled }
 
 	// Facts about the host and this VM the guest-side half needs (sourced by the script).
+	// COPY_OF only in a copy's payloads, until the copy first reports.
 	static func environment(for config: VMConfig) throws -> [String: String] {
 		let localHost = SCDynamicStoreCopyLocalHostName(nil) as String?
 		let bootMode: String = {
@@ -38,7 +39,11 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			default: return "efi"
 			}
 		}()
-		return [
+		var copy: [String: String] = [:]
+		if let source = config.setup?.copyOf, config.setup?.lastReportAt == nil {
+			copy["COPY_OF"] = source
+		}
+		return copy.merging([
 			"VM_NAME": config.name,
 			"MARKER": try SSHSetupInstaller.marker(for: config),
 			"REPORT_DIR_NAME": reportDirectoryName,
@@ -56,7 +61,7 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 			// resolves names and can block on DNS on this start path.
 			"HOST_NAME": SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "",
 			"HOST_LOCAL": localHost.map { $0 + ".local" } ?? "",
-		]
+		]) { $1 }
 	}
 
 	// Public keys only, in both directions (the SSHSetupInstaller reasoning), plus the

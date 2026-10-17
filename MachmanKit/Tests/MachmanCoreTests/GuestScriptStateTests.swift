@@ -353,6 +353,44 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S57: a copy of a guest that never ran Guest Setup has no state, so nothing told its run
+	// it was a copy and it kept its source's machine id. Machman now says so (COPY_OF, until
+	// the copy first reports): with no state of its own the run renews the copy's identity,
+	// while a state with this VM's marker — the copy's own first run was here — wins.
+	@Test("S57: COPY_OF without a state of the guest's own renews a copy's machine id")
+	func copyOfRenewsANeverSetUpCopy() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS=Linux
+				mkdir -p "$D/id"
+				MACHINE_ID_FILE="$D/id/machine-id"
+				DHCPCD_ID_FILES="$D/id/none"
+				old=0123456789abcdef0123456789abcdef
+				printf '%s\n' "$old" > "$MACHINE_ID_FILE"
+				read_state
+				echo "no copy: [$(identity_to_renew)]"
+				COPY_OF=machman-5a3cecafe000
+				read_state
+				identity_act
+				[ "$(cat "$MACHINE_ID_FILE")" = "$old" ] || echo "a new machine id"
+				write_state ""
+				CLONED=0
+				read_state
+				echo "its own state: [$(identity_to_renew)]"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				no copy: []
+				   this VM is a copy of another Machman VM - treating it as new
+				[ok] gave this copy a machine id of its own
+				a new machine id
+				its own state: []
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// Review F8 (S55, script half): a copy keeps its source's SSH host keys, so a client
 	// that mixed the two VMs up (an address, a client id) logged into the source with no
 	// warning. A copy's run makes each host key anew (a link stays, named, and a type

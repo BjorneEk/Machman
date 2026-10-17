@@ -283,6 +283,28 @@ struct GuestSetupInstallerTests {
 		}
 	}
 
+	// S57: a copy of a guest that never ran Guest Setup had no state to show it was a copy, so
+	// it kept its source's machine id and DHCP identity. The copy's payloads say so (COPY_OF,
+	// its source's marker) until the copy first reports; a VM that is no copy gets none.
+	@Test("S57: a copy's payload says it is a copy until its first report") @MainActor
+	func copiesSayTheyAreCopiesUntilTheirFirstReport() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "copied")
+			let vm = try VMConfig(name: "copied", memorySize: 1 << 30, cpuCount: 2)
+			#expect(try GuestSetupInstaller.environment(for: vm)["COPY_OF"] == nil)
+			var setup = GuestSetupConfig()
+			setup.copyOf = "machman-5a3cecafe000"
+			vm.setup = setup
+			#expect(try GuestSetupInstaller.environment(for: vm)["COPY_OF"]
+				== "machman-5a3cecafe000")
+			// vm.setup.reset forgets the report, never that the VM is a copy.
+			try vm.resetSetup()
+			#expect(vm.setup?.copyOf == "machman-5a3cecafe000")
+			vm.setup?.lastReportAt = Date()
+			#expect(try GuestSetupInstaller.environment(for: vm)["COPY_OF"] == nil)
+		}
+	}
+
 	// A cloned guest disk (and a copied VM directory) carries the SOURCE's marker on
 	// every machman artifact; each layer treats that as stale and replaces it.
 	@Test func scriptHandlesClonedGuests() {

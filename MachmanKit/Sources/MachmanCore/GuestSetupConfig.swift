@@ -34,6 +34,10 @@ struct GuestSetupConfig: Codable, Equatable {
 	// The user asked for a reinstall/update: serve the installer again (vm.setup.serve).
 	// nil = false; only meaningful once installed — fresh guests always serve.
 	var reinstallRequested: Bool?
+	// A fresh copy's source, by its marker (vm.copy): the copy's payloads say so (COPY_OF)
+	// until its first report, so its first run renews the identity its disk carries — also
+	// when the source's guest never ran Guest Setup. Host-only, never on the wire.
+	var copyOf: String?
 
 	init() {}
 
@@ -54,6 +58,7 @@ struct GuestSetupConfig: Codable, Equatable {
 		case consoles
 		case automounts
 		case reinstallRequested
+		case copyOf
 	}
 
 	// Tolerant decode: every field optional-or-defaulted so future additions round-trip.
@@ -77,6 +82,7 @@ struct GuestSetupConfig: Codable, Equatable {
 			try c.decodeIfPresent([GuestAutomountInfo].self, forKey: .automounts) ?? []
 		self.reinstallRequested =
 			try c.decodeIfPresent(Bool.self, forKey: .reinstallRequested)
+		self.copyOf = try c.decodeIfPresent(String.self, forKey: .copyOf)
 	}
 }
 
@@ -96,7 +102,14 @@ extension VMConfig {
 	// The drop-box is wiped too, so a stale report cannot re-teach what was just forgotten;
 	// it regenerates empty at the next assembly while the device stays attached.
 	func resetSetup() throws {
+		// A copy that never reported stays one: its first run still renews its identity.
+		let copyOf = setup?.copyOf
 		setup = nil
+		if let copyOf {
+			var state = GuestSetupConfig()
+			state.copyOf = copyOf
+			setup = state
+		}
 		// Forgetting the guest includes the device names it reported for the ports.
 		for index in consolePorts.indices { consolePorts[index].guestName = nil }
 		for index in uartPorts.indices { uartPorts[index].guestName = nil }

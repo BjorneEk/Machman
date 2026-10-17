@@ -229,4 +229,44 @@ struct THCloneTests {
 			}
 		}
 	}
+
+	// S57: S55's renewal ran only where the copy's state was another VM's, so a duplicate
+	// of a guest that never ran Guest Setup kept its source's machine id and leased its
+	// source's address. Machman now tells the copy's payload it is a copy (COPY_OF, until the
+	// copy first reports): its first run renews the id, and after a restart the copy leases
+	// an address of its own.
+	@Test("S57: a duplicate of a never-set-up guest leases its own address after its first setup")
+	func neverSetUpDuplicateLeasesItsOwnAddress() async throws {
+		var options = THGuestOptions()
+		options.name = "deb bare"
+		try await TH.withGuest(.debian, options) { g in
+			let source = try #require(g as? THVZGuest)
+			let sourceID = try await g.check("cat /etc/machine-id")
+			let sourceAddress = try await THClones.address(source)
+			try await g.check("test ! -e /var/lib/machman/state.env")
+			try await g.check("sync")
+			try await source.vm.forceQuit()
+			let copy = try await source.sibling(try await source.vm.copy(as: "deb bare copy"))
+			do {
+				let env = try String(
+					contentsOfFile: copy.vm.payloadDir + "/machman.env", encoding: .utf8)
+				#expect(env.contains("COPY_OF='machman-"), "\(env)")
+				let run = try await copy.install("-y --ssh --user lab")
+				#expect(run.status == 0, "\(run.output)")
+				#expect(THPlan(run.output)["identity"]?.contains("a new machine id") == true,
+					"\(run.output)")
+				let copyID = try await copy.check("cat /etc/machine-id")
+				#expect(copyID.count == 32 && copyID != sourceID,
+					"source \(sourceID), copy \(copyID)")
+				try await copy.restartFromHost()
+				let copyAddress = try await THClones.address(copy)
+				#expect(copyAddress != sourceAddress,
+					"the copy leases its source's \(sourceAddress) (machine id \(copyID))")
+				await copy.shutdown()
+			} catch {
+				await copy.shutdown()
+				throw error
+			}
+		}
+	}
 }
