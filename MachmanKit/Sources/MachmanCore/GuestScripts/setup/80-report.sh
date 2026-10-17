@@ -239,6 +239,7 @@ write_report() {
 
 REPORT_COPY=""             # the boot-time copy, once report_copy_install wrote it
 RC_LOCAL=/etc/rc.local     # the shared boot file the rc.local hooks keep their blocks in
+OPENRC_LOCAL_D=/etc/local.d   # the scripts openrc's local service runs at boot
 
 # --at-boot: the hooks start it early (in the background, so boot never waits on it).
 # It waits until the share's drop-box is writable and the guest has a default route —
@@ -304,7 +305,7 @@ report_hook_install() {
 			printf '[ -r %s ] || exit 0\n' "$_rh_copy"
 			printf '/bin/sh %s --at-boot -q >/dev/null 2>&1 &' "$_rh_copy"
 		)" || return 0
-		have rc-update && rc-update add local default >/dev/null 2>&1
+		openrc_local_enable || true
 		;;
 	inittab|sysv|runit|openbsd-rc|netbsd-rc)
 		# /etc/local.d is openrc's mechanism — nothing executes it under these inits.
@@ -458,6 +459,32 @@ rc_local_ready() {
 	ledger_note rc-local exec
 	report_note "$1" \
 		"/etc/rc.local was not executable — re-enabled (Machman's boot hook lives there)"
+	return 0
+}
+
+# openrc runs /etc/local.d/*.start only while its local service is in the default
+# runlevel: enabled for a boot hook where it is not, recorded (openrc-local), so the
+# uninstall takes back only what a run added. 1 when it could not be enabled.
+openrc_local_enable() {
+	have rc-update || return 1
+	[ -z "$(rc-update show default 2>/dev/null | awk '$1 == "local"')" ] || return 0
+	run "enabling the local boot scripts" rc-update add local default || return 1
+	[ "$DRY_RUN" -eq 1 ] || ledger_note openrc-local
+	return 0
+}
+
+# The uninstall's last word on the local service, once Machman's scripts are out of
+# /etc/local.d: disabled when a run enabled it and no other boot script needs it, else
+# kept and named.
+openrc_local_revert() {
+	ledger_has openrc-local && have rc-update || return 0
+	for _olr_f in "$OPENRC_LOCAL_D"/*.start; do
+		[ -e "$_olr_f" ] || continue
+		_olr_kept="the local service stays in the default runlevel (other boot scripts use it)"
+		note "$_olr_kept — 'rc-update del local default' reverts it."
+		return 0
+	done
+	run "disabling the local boot scripts" rc-update del local default || true
 	return 0
 }
 

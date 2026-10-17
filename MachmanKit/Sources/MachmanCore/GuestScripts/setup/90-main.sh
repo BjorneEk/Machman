@@ -138,6 +138,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
 	strip_block /etc/fstab || uninstall_kept
 	report_hook_uninstall
 	rc_local_revert
+	openrc_local_revert
 	write_report uninstalled
 	uninstall_unmount_and_prune
 	remove_state

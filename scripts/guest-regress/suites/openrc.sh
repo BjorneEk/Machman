@@ -4,12 +4,14 @@
 # CHECKS: CLONE_NOTE CLONE_SWEPT CLONE_REVERSE REPORT_SSH SSHFS_SPACE SSHFS_BOOT_OPTS
 # CHECKS: IDEMPOTENT_ALPINE HOOK_INSTALLED FSTAB_VERIFY_ALPINE REPORT_ONLY_CLEAN HOOK_REMOVED
 # CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL LOOKALIKE_KEPT BOOT_MODE
+# CHECKS: OPENRC_LOCAL_REVERTED
 . /mnt/machman/share/regress/lib.sh
 # Machman markers are always 12 hex chars — the sweep matches exactly that shape.
 OLD=machman-0ddc105e9999
 BOOT=/etc/local.d/machman-sshfs.start
 
 mkuser reg
+local_before="$(rc-update show default 2>/dev/null | awk '$1 == "local"')"
 mkdir -p /home/reg/.ssh /var/lib/machman
 # The user's own key whose comment merely contains machman- (S39) is never swept.
 printf '%s\n%s\n%s\n' "ssh-rsa USERSOWNKEY user@laptop" \
@@ -118,4 +120,8 @@ if ! grep -q machman /etc/fstab 2>/dev/null; then R FSTAB_CLEAN pass; else
 	R FSTAB_CLEAN fail; grep machman /etc/fstab; fi
 if [ ! -f /var/lib/machman/state.env ]; then R STATE_REMOVED_ALPINE pass; else
 	R STATE_REMOVED_ALPINE fail; fi
+# S63: the local service the run enabled for its hooks goes with them; one that was on stays.
+local_after="$(rc-update show default 2>/dev/null | awk '$1 == "local"')"
+if [ "$local_after" = "$local_before" ]; then R OPENRC_LOCAL_REVERTED pass; else
+	R OPENRC_LOCAL_REVERTED "fail (before [$local_before], after [$local_after])"; fi
 exit 0

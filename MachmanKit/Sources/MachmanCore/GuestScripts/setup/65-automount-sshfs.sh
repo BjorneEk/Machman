@@ -314,7 +314,7 @@ EOF
 				"Add the sshfs lines to it yourself."
 			return 0
 		fi
-		run "enabling the local boot scripts" rc-update add local default || true
+		openrc_local_enable || true
 		ok "sshfs folders mount at boot ($SSHFS_BOOT_SCRIPT)"
 		;;
 	*)

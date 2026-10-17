@@ -305,4 +305,63 @@ struct GuestScriptReportTests {
 				""", "\(shell): \(r.out)")
 		}
 	}
+
+	// S63: the boot hooks enabled openrc's local service (it runs /etc/local.d/*.start) and
+	// the uninstall left it on, undisclosed. A run that adds it records so; the uninstall
+	// takes it back when no other boot script is left there, else names it with its revert,
+	// and one the guest had enabled is never recorded nor touched.
+	@Test(
+		"""
+		S63: the uninstall drops the local service only when a run added it and no other \
+		boot script uses it
+		""")
+	func uninstallDropsTheLocalServiceARunAdded() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				UI_COLS=1000
+				OPENRC_LOCAL_D="$D/local.d"
+				mkdir -p "$OPENRC_LOCAL_D" "$D/bin"
+				: > "$D/runlevel"
+				cat > "$D/bin/rc-update" <<SH
+				#!/bin/sh
+				case "\$1" in
+				show) cat "$D/runlevel" ;;
+				add) printf '      %s | %s\n' "\$2" "\$3" >> "$D/runlevel" ;;
+				del) grep -v " \$2 " "$D/runlevel" > "$D/rl.tmp"; mv "$D/rl.tmp" "$D/runlevel" ;;
+				esac
+				SH
+				chmod 755 "$D/bin/rc-update"
+				PATH="$D/bin:$PATH"
+				openrc_local_enable
+				cat "$D/runlevel"
+				openrc_local_revert
+				echo "after: [$(cat "$D/runlevel")]"
+				echo ---
+				openrc_local_enable
+				: > "$OPENRC_LOCAL_D/mine.start"
+				openrc_local_revert
+				cat "$D/runlevel"
+				echo ---
+				LEDGER_DONE=""
+				rm "$OPENRC_LOCAL_D/mine.start"
+				openrc_local_enable
+				ledger_has openrc-local || echo "found: not recorded"
+				openrc_local_revert
+				cat "$D/runlevel"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				      local | default
+				after: []
+				---
+				   the local service stays in the default runlevel (other boot scripts use it) \
+				- 'rc-update del local default' reverts it.
+				      local | default
+				---
+				found: not recorded
+				      local | default
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }
