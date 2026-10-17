@@ -171,9 +171,6 @@ public final class VMListViewModel: ObservableObject {
 	// Every store of client state keyed by VM name (PR24), walked in one place:
 	// migrateClientState for a rename or a safe save, listRefreshed for VMs that left.
 	var keyedState: [any VMKeyedState] = []
-	// The names the last landed list showed (nil until one has, per connection): a rename
-	// made elsewhere is a name a list brings in place of one it drops (T34).
-	private var lastListed: Set<String>?
 
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
@@ -297,15 +294,15 @@ public final class VMListViewModel: ObservableObject {
 			select(name: first.name)
 		}
 		pendingMigrations = pendingMigrations.filter { !names.contains($0.value) }
-		lastListed = names
 	}
 
 	// Renames made elsewhere (another desktop, a script, Finder while the agent was away,
-	// T34), by the created dates the stores recorded. A target is a name this list brought,
-	// or a listed name whose recorded date isn't its VM's (that state is stale); a source is
-	// a name this list dropped — any absent name on a connection's first list — or such a
-	// listed name. Names of this desktop's own moves still in flight are neither: a list
-	// from before the move still shows the old name.
+	// T34), by the created dates the stores recorded. A target is a name this list brought
+	// — against the last list, kept across launches by the canvas store — or a listed name
+	// whose recorded date isn't its VM's (that state is stale); a source is a name this list
+	// dropped (any absent name before any list was kept) or such a listed name. Names of this
+	// desktop's own moves still in flight are neither: a list from before the move still
+	// shows the old name.
 	private func externalRenames(in list: [VMInfo], names: Set<String>)
 		-> [(from: String, to: String)] {
 		var dates: [String: Date] = [:]
@@ -315,9 +312,9 @@ public final class VMListViewModel: ObservableObject {
 			dates[vm.name].flatMap { VMOwnerDates.sameVM($0, vm.created) ? nil : vm.name }
 		})
 		let moving = Set(pendingMigrations.keys).union(pendingMigrations.values)
-		let dropped = lastListed.map { $0.subtracting(names) }
-			?? Set(dates.keys).subtracting(names)
-		let arrived = names.subtracting(lastListed ?? [])
+		let previous = canvases.listedNames
+		let dropped = previous.map { $0.subtracting(names) } ?? Set(dates.keys).subtracting(names)
+		let arrived = names.subtracting(previous ?? [])
 		return VMOwnerDates.renames(
 			in: list, dates: dates, sources: dropped.union(stale).subtracting(moving),
 			targets: arrived.union(stale).subtracting(moving))

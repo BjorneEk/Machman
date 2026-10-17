@@ -24,6 +24,10 @@ public final class CanvasStateStore: ObservableObject {
 	@Published public private(set) var canvases: [String: CanvasState]
 	// Which VM each saved layout belongs to (a file from before learns it from a list).
 	private var created: VMOwnerDates
+	// The names the last landed list showed, kept across launches: a rename made elsewhere
+	// is a name a list brings in place of one it drops (T34). nil until a list has landed
+	// (a file from before T34).
+	public private(set) var listedNames: Set<String>?
 
 	private let file: PersistedJSONFile<PersistedState>
 
@@ -44,6 +48,7 @@ public final class CanvasStateStore: ObservableObject {
 		let state = file.load()
 		self.canvases = state?.canvases ?? [:]
 		self.created = VMOwnerDates(state?.created ?? [:])
+		self.listedNames = state?.listed.map(Set.init)
 	}
 
 	// The canvas to show for a VM — a fresh single-pane layout when none was saved.
@@ -86,17 +91,21 @@ public final class CanvasStateStore: ObservableObject {
 		// Snapshot on the main actor (cheap value copy); the file encodes + writes off it.
 		// SSH tabs are stripped: sessions are ephemeral, only layout persists.
 		file.save(PersistedState(
-			canvases: canvases.mapValues { $0.strippingEphemeralTabs() }, created: created.dates))
+			canvases: canvases.mapValues { $0.strippingEphemeralTabs() }, created: created.dates,
+			listed: listedNames.map { $0.sorted() }))
 	}
 
 	private struct PersistedState: Codable, Sendable {
 		var canvases: [String: CanvasState]
 		// Each layout's VM by its created date (T33); an older file has none, and reads so.
 		var created: [String: Date]
+		// The last list's names (T34); absent in a file from before.
+		var listed: [String]?
 
-		init(canvases: [String: CanvasState], created: [String: Date]) {
+		init(canvases: [String: CanvasState], created: [String: Date], listed: [String]?) {
 			self.canvases = canvases
 			self.created = created
+			self.listed = listed
 		}
 
 		// One VM's broken layout (or date) costs only itself.
@@ -104,6 +113,7 @@ public final class CanvasStateStore: ObservableObject {
 			let c = try decoder.container(keyedBy: CodingKeys.self)
 			canvases = c.decodeTolerantDictionary(of: CanvasState.self, forKey: .canvases)
 			created = c.decodeTolerantDictionary(of: Date.self, forKey: .created)
+			listed = try? c.decodeIfPresent([String].self, forKey: .listed)
 		}
 	}
 }
@@ -134,7 +144,10 @@ extension CanvasStateStore: VMKeyedState {
 	public func listed(_ vms: [VMInfo]) {
 		let (stale, changed) = created.reconcile(vms, owners: Set(canvases.keys))
 		for vm in stale { canvases[vm] = nil }
-		if changed { save() }
+		let names = Set(vms.map(\.name))
+		let moved = listedNames != names
+		listedNames = names
+		if changed || moved { save() }
 	}
 
 	public var ownerDates: [String: Date] { created.dates }

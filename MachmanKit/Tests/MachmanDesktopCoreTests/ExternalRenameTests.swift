@@ -85,6 +85,35 @@ struct ExternalRenameTests {
 		_ = viewModel
 	}
 
+	// A twin listed before the desktop relaunched (or the agent restarted) is no arrival on
+	// the connection's first list, even while its original is away.
+	@Test("T34: a VM listed beside its original before a relaunch takes none of its state")
+	func aTwinListedBeforeARelaunchTakesNothing() async throws {
+		let dir = TestEnvironment.scratchURL.appendingPathComponent(UUID().uuidString)
+		let canvases = CanvasStateStore(fileURL: dir.appendingPathComponent("Canvas.json"))
+		let library = Self.library()
+		let alpine = try #require(library.first { $0.name == "Alpine" })
+		var twin = alpine
+		twin.name = "Alpine copy"
+		var canvas = CanvasState()
+		canvas.open(Self.console)
+		canvases.setCanvas(canvas, for: "Alpine")
+		canvases.listed(library + [twin])   // the last session listed both
+		let stub = StubMachman.serving(library.filter { $0.name != "Alpine" } + [twin])
+		let store = VMStore()
+		store.attach(api: stub)
+		let operations = OperationsStore()
+		operations.attach(api: stub)
+		let viewModel = VMListViewModel(
+			api: stub, store: store, operations: operations,
+			terminals: TerminalSessions { FakeTerminalController(profile: $0) },
+			previews: PreviewService(store: store), canvases: canvases,
+			tornTabs: TornTabRegistry())
+		#expect(await eventually { viewModel.selectedName != nil })
+		#expect(canvases.canvases["Alpine copy"] == nil)
+		#expect(canvases.canvases["Alpine"] == canvas)
+	}
+
 	// A name taken by a renamed VM between two lists, whose old VM (deleted elsewhere) left
 	// a terminal behind: that dead session ends rather than lingering under the name.
 	@Test("T34: a rename onto a name whose old VM left a terminal disconnects that terminal")
