@@ -47,13 +47,18 @@ struct DaemonVersionCheckTests {
 	}
 
 	// E32: the question used to be a modal inside a main-actor job, which held every other
-	// one — the list behind it froze.
+	// one — the list behind it froze. The fake agent answers the capabilities too, and the
+	// state goes once the store's first load is over (Q43): an agent that didn't left the
+	// store re-listing on its retry timer, and its list, still saying running, could put the
+	// state back before a look under a held main thread saw it stopped.
 	@Test("W4-21b: Not Now keeps the old agent, and its list updates while the question is open")
 	func notNowKeepsTheAgent() async throws {
 		let rig = try VersionRig()
 		defer { rig.close() }
 		let listed = Samples.linux("Debian", state: .running)
-		rig.daemon.otherwise = .agent(version: Self.old, [.vmList: .json([listed])])
+		rig.daemon.otherwise = .agent(version: Self.old, [
+			.vmList: .json([listed]), .hostCapabilities: .json(Samples.capabilities),
+		])
 		let gate = ReplyGate()
 		rig.answer = { _ in
 			await gate.wait()
@@ -64,7 +69,9 @@ struct DaemonVersionCheckTests {
 		let session = try #require(rig.current)
 		let store = VMStore()
 		store.attach(api: session)
-		#expect(await eventually { store.vms.first?.state == .running })
+		#expect(await eventually {
+			store.vms.first?.state == .running && store.capabilities != nil
+		})
 		rig.daemon.send(.stateChanged(vm: "Debian", state: .stopped))
 		#expect(await eventually { store.vms.first?.state == .stopped })
 		gate.open()
