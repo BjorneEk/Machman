@@ -53,9 +53,9 @@ lab_runner_find() {
 # Without the helper (lab_runner_resolve), swift test runs it. The helper's environment is set on
 # it, not inherited: the system strips DYLD_* from what passes through caffeinate, which keeps
 # the Mac awake while it runs (sandbox_awake). Exit status: 0 passed, 1 failed, 69 no test
-# matched the filter, else the process died.
+# matched the filter (swift test's warning for it is read as 69 too), else the process died.
 lab_test() {
-	local args=() pid st lib="$LAB_TEST_PLATFORM/Library"
+	local args=() pid st log lib="$LAB_TEST_PLATFORM/Library"
 	if [[ "$1" == --list ]]; then
 		args=(--list-tests)
 	else
@@ -67,8 +67,14 @@ lab_test() {
 		if [[ "$1" == --list ]]; then
 			swift test list --skip-build --disable-xctest --package-path "$pkg"
 		else
+			# SwiftPM answers a filter that matched no test with a warning and exit 0.
+			log="$(mktemp /tmp/mml-test.XXXXXX)"
 			sandbox_awake swift test --skip-build --disable-xctest --package-path "$pkg" \
-				"${args[@]}"
+				"${args[@]}" 2>&1 | tee "$log"
+			st=${PIPESTATUS[0]}
+			if ((st == 0)) && grep -qF "No matching test cases were run" "$log"; then st=69; fi
+			rm -f "$log"
+			return "$st"
 		fi
 		return
 	fi
@@ -315,6 +321,22 @@ lab_selfcheck_runner() {
 		echo "ok   $check"
 	else
 		echo "FAIL $check: $why"
+		failures=$((failures + 1))
+	fi
+	check="Q27: through swift test, a filter that matches no test fails as through the helper"
+	t="selfq27f"
+	mkdir -p "$sc/$t/data" "$sc/$t/home"
+	rc=0
+	(
+		export MACHMAN_SUITE_ID="com.gustaffranzen.Machman.test-$t" \
+			MACHMAN_DATA_DIR="$sc/$t/data" CFFIXED_USER_HOME="$sc/$t/home"
+		LAB_TEST_HELPER=""
+		lab_test "" 'MachmanLabTests\.NoSuchSuiteQ27/'
+	) > "$sc/$t.log" 2>&1 || rc=$?
+	if [[ $rc == 69 ]]; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: exit $rc: $(tail -n 1 "$sc/$t.log")"
 		failures=$((failures + 1))
 	fi
 	rm -rf "$sc"
