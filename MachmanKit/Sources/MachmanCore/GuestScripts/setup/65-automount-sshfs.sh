@@ -139,6 +139,11 @@ fstab_escape() {
 # fstab words for mount(8)/systemd — a raw sshfs command hands them to libfuse, which
 # refuses the whole mount ("fuse: unknown option", measured) — the fstab path appends
 # them itself. BatchMode keeps a failed key auth from waiting on a prompt at boot.
+# A host folder is the guest user's (allow_other, their uid/gid) under default_permissions:
+# the guest kernel checks each file's mode, so the other accounts get only what the folder
+# shows them, never the Mac user's rights. The share (@share) — this VM's own copy of Guest
+# Setup and the report drop-box — is root's alone (no allow_other), as the guide's mount by
+# hand is: only root changes the copy root runs (S65). sshfsauto_options [name]
 sshfsauto_options() {
 	_so_opts="reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,BatchMode=yes"
 	_so_opts="$_so_opts,IdentityFile=$HOME_DIR/.ssh/machman_host"
@@ -148,7 +153,9 @@ sshfsauto_options() {
 	else
 		_so_opts="$_so_opts,StrictHostKeyChecking=accept-new"
 	fi
-	_so_opts="$_so_opts,allow_other,uid=$(id -u "$U"),gid=$(id -g "$U")"
+	if [ "${1:-}" != "@share" ]; then
+		_so_opts="$_so_opts,allow_other,default_permissions,uid=$(id -u "$U"),gid=$(id -g "$U")"
+	fi
 	printf '%s' "$_so_opts"
 }
 
@@ -183,7 +190,6 @@ sshfsauto_act() {
 			| tr '\n' ',' | sed 's/,/, /g')"
 		return 0
 	fi
-	_sa_opts="$(sshfsauto_options)"
 	_sa_tab="$(printf '\t')"
 	# The boot scripts run with the init's PATH — FreeBSD's rc has no /usr/local/bin,
 	# where sshfs lives — so the resolved absolute path is embedded at install time.
@@ -209,6 +215,7 @@ sshfsauto_act() {
 		}
 		_sa_what="$R_MOUNT_WHAT"
 		_sa_where="$R_MOUNT_WHERE"
+		_sa_opts="$(sshfsauto_options "$_sa_name")"
 		# The mount root is the user's: a link there was planted, and root never follows
 		# one (no mkdir through it, chown -h).
 		if [ -L "$_sa_where" ]; then

@@ -146,6 +146,31 @@ struct THBSDGuideTests {
 		}
 	}
 
+	// S65 (K6): on a guest without virtiofs the share — this VM's copy of Guest Setup, which
+	// root runs — rode the boot's sshfs mount with allow_other, so every guest account could
+	// swap install.sh. The boot mount is root's alone now: root reads the copy, an
+	// unprivileged account can't even reach it.
+	@Test("S65: after the boot mount no unprivileged FreeBSD account reaches the share's installer")
+	func theShareIsRootsAloneAfterBoot() async throws {
+		try await TH.withGuest(.freebsd15, THBSDGuide.options) { guest in
+			let g = try #require(guest as? THBSDGuest)
+			for line in try await THBSDGuide.steps(g, .doas).prefix(2) {
+				try await g.check(line, user: "lab")
+			}
+			let run = try await g.install(
+				"-y --two-way --automount-sshfs", user: "lab", escalation: .doas)
+			#expect(run.status == 0, "\(run.output)")
+			try await g.approveReverse()
+			g.dropBootstrapKeys()
+			try await g.reboot(remount: false)
+			#expect(!(try await THBSDGuide.shareMount(g)).isEmpty, "the share mounts at boot")
+			#expect(try await g.sh("test -r \(TH.installerPath)").status == 0, "root reads it")
+			let lab = try await g.sh(
+				"test -w \(TH.installerPath) || test -r \(TH.installerPath)", user: "lab")
+			#expect(lab.status != 0, "an unprivileged account reaches the copy: \(lab.output)")
+		}
+	}
+
 	@Test("CX1: the BSD guide's approved share mount works for a root guest user")
 	func approvedMountForRoot() async throws {
 		try await TH.withGuest(.freebsd15) { guest in

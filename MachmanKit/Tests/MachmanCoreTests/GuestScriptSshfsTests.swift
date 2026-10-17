@@ -301,7 +301,8 @@ struct GuestScriptSshfsTests {
 	// without default_permissions FUSE checks no mode in the guest, so every guest account
 	// writes the share — Guest Setup's install.sh, which an admin then runs with sudo — and
 	// every host folder, with the Mac user's rights. The read-only payload virtiofs gives is
-	// gone on exactly the guests (the BSDs) that take the sshfs path.
+	// gone on exactly the guests (the BSDs) that take the sshfs path. Agreed design (K6): a
+	// host folder keeps allow_other under default_permissions; the share is root's alone.
 	@Test("S65: boot-time sshfs mounts let the guest kernel check each file's mode")
 	func bootMountsCheckModesInTheGuest() async throws {
 		for shell in GuestScriptHarness.shells {
@@ -309,14 +310,18 @@ struct GuestScriptSshfsTests {
 				HOME_DIR="$D/home"
 				U="$(id -un)"
 				sshfsauto_options
+				echo
+				sshfsauto_options @share
 				""", under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
-			let options = r.out.trimmingCharacters(in: .newlines).split(separator: ",")
-				.map(String.init)
-			#expect(options.contains("allow_other"), "\(shell): \(r.out)")
-			// Fails until the open bug S65 (sshfs mounts let every guest account write as the
-			// Mac user) is fixed.
-			#expect(options.contains("default_permissions"), "\(shell): \(r.out)")
+			let lines = r.out.split(separator: "\n")
+				.map { $0.split(separator: ",").map(String.init) }
+			let folder = lines.first ?? [], share = lines.dropFirst().first ?? []
+			#expect(folder.contains("allow_other"), "\(shell): \(r.out)")
+			#expect(folder.contains("default_permissions"), "\(shell): \(r.out)")
+			#expect(share.contains("BatchMode=yes"), "\(shell): \(r.out)")
+			#expect(!share.contains("allow_other") && !share.contains { $0.hasPrefix("uid=") },
+				"the share is root's alone — \(shell): \(r.out)")
 		}
 	}
 

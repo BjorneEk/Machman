@@ -3,7 +3,7 @@
 # installed; after a reboot the sshfs automount is armed, and the share's nofail line (QEMU
 # has no virtiofs device to answer it) does not hold the boot.
 # CHECKS: VFS_KEEPS_SSHFS SSHFS_RECORD_KEPT AUTOMOUNT_ARMED GLOB_TAG SPACED_NAME
-# CHECKS: SHARE_PATH_REPORT_ONLY
+# CHECKS: SHARE_PATH_REPORT_ONLY SSHFS_MODES_CHECKED
 # BOOT-CHECKS: AUTOMOUNT_ARMED_AT_BOOT AUTOMOUNT_BOOT_NOT_BLOCKED AUTOMOUNT_DISARMED
 . /mnt/machman/share/regress/lib.sh
 
@@ -38,6 +38,12 @@ mkuser reg
 $SH "$S" -y --user reg --two-way --automount-virtiofs --automount-sshfs --no-install \
 	--no-service >/tmp/run1.log 2>&1
 [ "$(block | grep -c fuse.sshfs)" = 2 ] || R VFS_KEEPS_SSHFS "uncalibrated"
+# S65: a host folder's mount lets the guest kernel check each file's mode.
+if [ "$(block | grep fuse.sshfs | grep -c 'allow_other,default_permissions,uid=')" = 2 ]; then
+	R SSHFS_MODES_CHECKED pass
+else
+	R SSHFS_MODES_CHECKED fail; block
+fi
 # S14: the automounts are armed now where systemd-escape names their units, and the run
 # claims mounting only for those (the script folds its lines: read them back unfolded; and
 # spells its dashes in ASCII where the locale isn't UTF-8, as in a container).
