@@ -185,15 +185,11 @@ enum VMCopier {
 				takenNames.insert(name)
 				externalClones.append((url.path, "\(name).raw", size))
 				disks.append(disk.withKind(.storage(name, size)))
-			case (.iso(let url), _) where url.path.hasPrefix(src + "/"):
-				// An OWNED iso (imported/promoted into the dir) travels with the sidecar
-				// walk — its entry must follow the directory or the copy points back at
-				// the source. fromUrl references deliberately keep pointing at the source.
-				let relative = String(url.path.dropFirst(src.count + 1))
-				let final = request.destinationParent + "/" + request.newName
-				disks.append(disk.withKind(.iso(URL(fileURLWithPath: final + "/" + relative))))
 			case (.fromUrl, _), (.iso, _):
-				disks.append(disk)   // referenced entries carry verbatim; the file stays put
+				// Referenced entries carry verbatim; the file stays put. An OWNED iso
+				// (imported/promoted into the dir) travels with the sidecar walk, and
+				// rewriteOwnedPaths (step 4) re-points its entry at the copy.
+				disks.append(disk)
 			}
 		}
 		// 2. Sidecars: everything else travels except the skip list and .raw files not chosen
@@ -246,10 +242,11 @@ enum VMCopier {
 		if let included = request.includedMountIDs {
 			config.mountPoints.removeAll { !included.contains($0.id.uuidString) }
 		}
-		// Owned kernel/initramfs references are absolute — re-point them at the copies the
-		// sidecar walk brought along, or the new VM keeps booting the SOURCE's files (and
-		// dies with them). Both identities: a shadow must be self-contained too, so that
-		// promotion only ever re-points within its own directory.
+		// Owned paths are absolute — re-point the kernel, the initramfs and owned isos at the
+		// copies the sidecar walk brought along, or the new VM keeps booting the SOURCE's
+		// files (and dies with them). Both identities: a shadow must be self-contained too, so
+		// that promotion only ever re-points within its own directory. fromUrl references
+		// keep pointing at the source (the .copied rule).
 		config.rewriteOwnedPaths(
 			fromDir: src, toDir: request.destinationParent + "/" + request.newName, .copied)
 		if request.regenerateMAC {
