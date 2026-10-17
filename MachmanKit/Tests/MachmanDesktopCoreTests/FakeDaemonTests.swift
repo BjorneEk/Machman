@@ -164,18 +164,18 @@ struct FakeDaemonTests {
 		let client = try RawClient(daemon.socketPath)
 		defer { client.close() }
 		#expect(await daemon.waitForConnections(1))
-		DispatchQueue.main.async { Thread.sleep(forTimeInterval: 0.4) }   // another test's hold
+		DispatchQueue.main.async { Thread.sleep(forTimeInterval: 0.15) }   // another test's hold
 		Task { @MainActor in
 			client.send(#"{"jsonrpc":"2.0","id":1,"method":"vm.list"}"#)   // queued behind it
 		}
-		#expect(await daemon.waitForRequest("vm.list", timeout: .milliseconds(100)))
+		#expect(await daemon.waitForRequest("vm.list", timeout: .milliseconds(50)))
 	}
 
 	@Test("Q43: a fake daemon's wait still gives up on a request that never comes")
 	@MainActor func aWaitStillGivesUp() async throws {
 		let daemon = try FakeDaemon()
 		defer { daemon.close() }
-		#expect(!(await daemon.waitForRequest("vm.list", timeout: .milliseconds(100))))
-		#expect(!(await daemon.waitForConnections(1, timeout: .milliseconds(100))))
+		#expect(!(await daemon.waitForRequest("vm.list", timeout: .milliseconds(50))))
+		#expect(!(await daemon.waitForConnections(1, timeout: .milliseconds(50))))
 	}
 }
