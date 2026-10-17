@@ -15,6 +15,8 @@ public final class MachmanServer {
 	private let api: MachmanControlling
 	private var socketPath: String   // var: relocate(to:)
 	private let daemonVersion: String
+	// What a vmhost says about itself in hello (PR21): set by VMHostBootstrap, nil in the agent.
+	var helloHost: (() -> RPCResults.Hello.Host?)?
 	private let acceptQueue = DispatchQueue(label: "machman.server.accept")
 	private var listener: UDSListener?
 	// Keyed by a per-accept counter, never by descriptor: a closed descriptor's number is
@@ -177,7 +179,8 @@ public final class MachmanServer {
 			switch method {
 			case .hello:
 				reply(client, id, RPCResults.Hello(
-					apiVersion: MachmanProtocol.apiVersion, daemonVersion: daemonVersion))
+					apiVersion: MachmanProtocol.apiVersion, daemonVersion: daemonVersion,
+					host: helloHost?()))
 			case .hostCapabilities:
 				reply(client, id, try await api.hostCapabilities())
 			case .vmList:

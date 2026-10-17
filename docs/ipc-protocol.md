@@ -94,7 +94,7 @@ keep working — nothing is rejected at load.
 
 | Method | Params | Result |
 |---|---|---|
-| `machman.hello` | `{client}` | `{apiVersion, daemonVersion}` |
+| `machman.hello` | `{client}` | `{apiVersion, daemonVersion, host?}` (`host` only from a vmhost, see Per-VM host processes) |
 | `host.capabilities` | — | `{maxCPUCount, minMemoryBytes, maxMemoryBytes, freeDiskBytes, uartUnavailable?, nestedVirtualizationSupported?, rosettaAvailability?, hostDisplayWidthPixels?, hostDisplayHeightPixels?, maxSerialPorts?}` (the optional tail is 1.0.4+) |
 | `vm.list` | — | `[VMInfo]` |
 | `vm.get` | `{name}` | `VMInfo` |
@@ -434,6 +434,10 @@ per-VM operations to it and passes its events on as sent. The hash is of the VM'
 `vm.safeSave` the run answers on the saved VM's path. A vmhost answers `machman.hello` with its
 own bundle version plus `-vmhost` (1.0.12+; earlier ones echoed the spawning daemon's version,
 or `dev` when a launch agent started them); one older than the daemon lists `outdatedHost`.
+A vmhost's hello also says whom it serves (an older one sends no `host`): `host: {pid, vm,
+dataDir, vmDir?, shadow}` — its process, the VM by its current name, its data folder (the
+library, or a safe run's run root), the VM's folder where it is now (it follows a rename or a
+move of the folder; absent once deleted), and whether it serves a safe run's shadow.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
 daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them. A dropped

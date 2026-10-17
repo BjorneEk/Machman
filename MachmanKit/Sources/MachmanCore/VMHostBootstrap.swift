@@ -77,6 +77,9 @@ public enum VMHostBootstrap {
 		let api = LocalMachman(registry: registry)
 		let server = MachmanServer(
 			api: api, socketPath: socketPath, daemonVersion: "\(daemonVersion)-vmhost")
+		server.helloHost = helloHost(
+			registry: registry, vmName: vmName, folder: VMFolderPath(vm.config.vmDirPath()),
+			isShadow: library != nil)
 		do {
 			try server.start()
 		} catch {
@@ -175,6 +178,22 @@ public enum VMHostBootstrap {
 
 		app.run()
 		exitHost(0, server: server)
+	}
+
+	// Whom this vmhost serves, for hello (PR21): the agent adopts a vmhost as a VM only when it
+	// serves that VM's folder (E11). The VM's current name and the data folder follow a Save
+	// as New VM (the shadow is then the saved VM, in the library); the folder follows a rename
+	// in Finder too.
+	@MainActor
+	static func helloHost(
+		registry: VMRegistry, vmName: String, folder: VMFolderPath, isShadow: Bool
+	) -> () -> RPCResults.Hello.Host? {
+		{ [weak registry] in
+			let current = registry?.restrictedName ?? vmName
+			return RPCResults.Hello.Host(
+				pid: getpid(), vm: current, dataDir: machmanVMDir, vmDir: folder.current,
+				shadow: isShadow && current == vmName)
+		}
 	}
 
 	@MainActor

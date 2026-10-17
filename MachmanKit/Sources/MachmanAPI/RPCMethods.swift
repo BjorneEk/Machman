@@ -510,10 +510,33 @@ public enum RPCResults {
 	public struct Hello: Codable, Equatable, Sendable {
 		public var apiVersion: Int
 		public var daemonVersion: String
+		// A vmhost's own word on whom it serves (PR21); the agent sends none.
+		public var host: Host?
 
-		public init(apiVersion: Int, daemonVersion: String) {
+		public init(apiVersion: Int, daemonVersion: String, host: Host? = nil) {
 			self.apiVersion = apiVersion
 			self.daemonVersion = daemonVersion
+			self.host = host
+		}
+
+		// The vmhost answering: its process, the VM it serves by its current name, its data
+		// folder (the library, or a safe run's run root), its VM folder where that is now —
+		// it follows a rename or a move of the folder; nil once deleted — and whether it
+		// serves a safe run's shadow copy.
+		public struct Host: Codable, Equatable, Sendable {
+			public var pid: Int32
+			public var vm: String
+			public var dataDir: String
+			public var vmDir: String?
+			public var shadow: Bool
+
+			public init(pid: Int32, vm: String, dataDir: String, vmDir: String?, shadow: Bool) {
+				self.pid = pid
+				self.vm = vm
+				self.dataDir = dataDir
+				self.vmDir = vmDir
+				self.shadow = shadow
+			}
 		}
 	}
 
