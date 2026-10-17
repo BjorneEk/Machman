@@ -334,7 +334,13 @@ ledger_save() {
 		else
 			printf 'STATE_VERSION=%s\n' "$STATE_VERSION"
 			printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
-			state_line MARKER "$MARKER"
+			# A copy's first state names its source until write_state: a run stopped before
+			# the identity is renewed must leave the re-run reading a copy (S57).
+			if [ "$CLONED" -eq 1 ] && [ -n "$COPY_OF" ]; then
+				state_line MARKER "$COPY_OF"
+			else
+				state_line MARKER "$MARKER"
+			fi
 		fi
 		state_lines LEDGER_ "$(ledger_entries)"
 	} > "$_lsv_tmp"
@@ -434,6 +440,7 @@ DHCPCD_ID_FILES="/var/lib/dhcpcd/duid /var/lib/dhcpcd/secret /var/db/dhcpcd/duid
 /var/db/dhcpcd/secret /etc/dhcpcd.duid /etc/dhcpcd.secret"
 SSH_HOST_KEY_DIR=/etc/ssh
 IDENTITY_RENEWED=0         # the machine id or DHCP client id: the address follows at boot
+COPY_RENEWED=0             # this run renewed a copy's identity: the report says so (COPY)
 
 # What a copy renews: any of "machine-id", "dhcpcd" and "ssh-keys", or nothing (no copy,
 # nothing to renew); "ssh-key-links" when host keys it keeps are links.
@@ -548,6 +555,8 @@ identity_act() {
 			note "$_ia_link is a link, so it stays and this copy serves its source's host key until you replace it."
 		done
 	fi
+	# Machman tells a copy it is one (COPY_OF) until a report says this happened.
+	[ "$CLONED" -eq 0 ] || COPY_RENEWED=1
 	return 0
 }
 

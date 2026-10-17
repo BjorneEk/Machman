@@ -513,6 +513,50 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S57: a copy with no state of its own knew it was one only from COPY_OF, and the run's
+	// first ledger save, right after Proceed, wrote a state with this VM's marker: a run
+	// stopped before it renewed the identity left a state that won over COPY_OF, and the
+	// re-run kept the source's machine id. That first state now carries the source's marker,
+	// so a re-run still reads a copy — even once the host stopped saying so — and the run that
+	// renews the identity reports it (COPY=renewed), which is when the host stops.
+	@Test("S57: a copy's run stopped before it renews its identity still renews it when run again")
+	func aStoppedCopyRunStillRenewsItsIdentity() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS=Linux
+				mkdir -p "$D/id"
+				MACHINE_ID_FILE="$D/id/machine-id"
+				DHCPCD_ID_FILES="$D/id/none"
+				old=0123456789abcdef0123456789abcdef
+				printf '%s\n' "$old" > "$MACHINE_ID_FILE"
+				COPY_OF=machman-5a3cecafe000
+				read_state >/dev/null
+				PREFLIGHT_DONE=1
+				ledger_save
+				sed -n 's/^MARKER=//p' "$STATE_FILE"
+				PREFLIGHT_DONE=0
+				CLONED=0
+				COPY_OF=""
+				LEDGER_DONE=""
+				read_state
+				identity_act
+				[ "$(cat "$MACHINE_ID_FILE")" = "$old" ] || echo "a new machine id"
+				write_report
+				grep '^COPY=' "$D/GuestReport/report.env"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				'machman-5a3cecafe000'
+				   this guest looks cloned from another Machman VM - treating it as new
+				[ok] gave this copy a machine id of its own
+				a new machine id
+				COPY=renewed
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// Review F8 (S55, script half): a copy keeps its source's SSH host keys, so a client
 	// that mixed the two VMs up (an address, a client id) logged into the source with no
 	// warning. A copy's run makes each host key anew (a link stays, named, and a type

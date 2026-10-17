@@ -287,9 +287,10 @@ struct GuestSetupInstallerTests {
 
 	// S57: a copy of a guest that never ran Guest Setup had no state to show it was a copy, so
 	// it kept its source's machine id and DHCP identity. The copy's payloads say so (COPY_OF,
-	// its source's marker) until the copy first reports; a VM that is no copy gets none.
-	@Test("S57: a copy's payload says it is a copy until its first report") @MainActor
-	func copiesSayTheyAreCopiesUntilTheirFirstReport() throws {
+	// its source's marker) until a report says the copy renewed its identity — a failed
+	// first run's report doesn't; a VM that is no copy gets none.
+	@Test("S57: a copy's payload says it is a copy until a report says it renewed its identity")
+	@MainActor func copiesSayTheyAreCopiesUntilTheyRenewed() throws {
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "copied")
 			let vm = try VMConfig(name: "copied", memorySize: 1 << 30, cpuCount: 2)
@@ -302,7 +303,14 @@ struct GuestSetupInstallerTests {
 			// vm.setup.reset forgets the report, never that the VM is a copy.
 			try vm.resetSetup()
 			#expect(vm.setup?.copyOf == "machman-5a3cecafe000")
-			vm.setup?.lastReportAt = Date()
+			_ = try GuestReport.parse("SCRIPT_VERSION=8\nSTATUS=failed\nNOTE=stopped")
+				.apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.lastReportAt != nil)
+			#expect(try GuestSetupInstaller.environment(for: vm)["COPY_OF"]
+				== "machman-5a3cecafe000")
+			_ = try GuestReport.parse("SCRIPT_VERSION=8\nSTATUS=ok\nCOPY=renewed")
+				.apply(to: vm, stampedAt: Date())
+			#expect(vm.setup?.copyOf == nil)
 			#expect(try GuestSetupInstaller.environment(for: vm)["COPY_OF"] == nil)
 		}
 	}

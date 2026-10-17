@@ -36,8 +36,8 @@ struct GuestSetupConfig: Codable, Equatable {
 	// nil = false; only meaningful once installed — fresh guests always serve.
 	var reinstallRequested: Bool?
 	// A fresh copy's source, by its marker (vm.copy): the copy's payloads say so (COPY_OF)
-	// until its first report, so its first run renews the identity its disk carries — also
-	// when the source's guest never ran Guest Setup. Host-only, never on the wire.
+	// until a report says the copy renewed the identity its disk carries — also when the
+	// source's guest never ran Guest Setup. Host-only, never on the wire.
 	var copyOf: String?
 
 	init() {}
