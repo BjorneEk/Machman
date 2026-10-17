@@ -379,4 +379,34 @@ struct GuestScriptReportTests {
 			#expect(r.out == "SCRIPT_CKSUM=<its cksum>\n", "\(shell): \(r.out)")
 		}
 	}
+
+	// S67: a copy run as it is (--changed) leaves itself beside its report, where Machman keeps
+	// it as a script changed on this VM; a real run of an unchanged copy takes a stale one
+	// away, and a report-only run (the boot hook) leaves the drop-box's script alone.
+	@Test(
+		"""
+		S67: a run of a changed copy leaves its script beside the report, and an unchanged \
+		run leaves none
+		""")
+	func aChangedRunLeavesItsScript() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(#"""
+				SETUP_CKSUM="0 0"
+				WANT_CHANGED=1
+				payload_check 2>/dev/null
+				write_report
+				cmp -s "$PAYLOAD_DIR/${0##*/}" "$D/GuestReport/install.sh" && echo "changed: left"
+				PAYLOAD_CHANGED=0
+				REPORT_ONLY=1
+				write_report
+				[ -f "$D/GuestReport/install.sh" ] && echo "report-only: kept"
+				REPORT_ONLY=0
+				write_report
+				[ -f "$D/GuestReport/install.sh" ] || echo "unchanged: taken away"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == "changed: left\nreport-only: kept\nunchanged: taken away\n",
+				"\(shell): \(r.out)")
+		}
+	}
 }

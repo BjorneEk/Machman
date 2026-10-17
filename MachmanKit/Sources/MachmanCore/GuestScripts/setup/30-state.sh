@@ -676,7 +676,11 @@ our_block_in() {
 # an edit in the guest, or one left from an older serve — and stops before acting unless
 # told to run it as it is. It is a change detector, not a lock: a swap made on purpose can
 # drop this check too; only root reaches the copy on the sshfs share (its boot mount has
-# no allow_other). Machman writes a fresh copy at the VM's next start.
+# no allow_other). Machman writes a fresh copy at the VM's next start. A copy run as it is
+# leaves itself beside its report (PAYLOAD_CHANGED, write_report), so Machman can keep it
+# as a script changed on this VM (S67).
+PAYLOAD_CHANGED=0
+
 payload_check() {
 	[ -n "$SETUP_CKSUM" ] && [ -z "$BOOT_REPORT_DIR" ] || return 0
 	if ! have cksum; then
@@ -693,6 +697,7 @@ payload_check() {
 	_pc_what="this copy of Guest Setup changed after Machman served it"
 	if [ "$WANT_CHANGED" -eq 1 ]; then
 		warn "$_pc_what — running it as it is (--changed)."
+		PAYLOAD_CHANGED=1
 	elif [ "$DRY_RUN" -eq 1 ]; then
 		warn "$_pc_what — a real run stops here (or pass --changed)."
 	else

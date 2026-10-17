@@ -6,11 +6,15 @@
 # v4, v6 and v7 no keys, v5 NOTE_ lines, v8 SCRIPT_CKSUM (the running script's cksum) and
 # COPY=renewed (this run renewed a copy's identity). An AUTOMOUNT_ row is TAB-separated
 # only when its mount name has a space, and NOTE_ lines carry what the run noted without
-# failing (an older daemon drops them).
+# failing (an older daemon drops them). A copy run as it is (--changed) puts itself beside
+# the report as install.sh first, which Machman keeps as a script changed on this VM; a
+# real run of an unchanged copy takes a stale one away.
 
 # Set for real by 90-main; defaulted here so the failure trap can report from any phase.
 FEATURES="${FEATURES:-}"
 SELECTED_FEATURES=""
+# The name a changed copy of this script takes beside the report, where Machman looks.
+SCRIPT_DROP=install.sh
 
 # The wire vocabulary for feature ids (GuestFeature in MachmanAPI).
 wire_id() {
@@ -220,7 +224,14 @@ write_report() {
 		:
 	} > "$_wr_tmp"
 	# Whoever mounted the share (the sshfs bootstrap, a macOS guest's user) can write the
-	# drop-box: the report goes in by write_file, never through a planted name.
+	# drop-box: the report goes in by write_file, never through a planted name. The changed
+	# script goes in before it, so it is there when Machman reads the report.
+	if [ "$PAYLOAD_CHANGED" -eq 1 ]; then
+		write_file "$REPORT_DIR/$SCRIPT_DROP" < "$PAYLOAD_DIR/${0##*/}" \
+			|| warn "could not leave the changed script for Machman: $R_ERROR"
+	elif [ "${REPORT_ONLY:-0}" -ne 1 ]; then
+		rm -f "$REPORT_DIR/$SCRIPT_DROP"
+	fi
 	if ! write_file "$REPORT_DIR/report.env" < "$_wr_tmp"; then
 		rm -f "$_wr_tmp"
 		warn "could not write Machman's report: $R_ERROR"

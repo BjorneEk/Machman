@@ -3,7 +3,7 @@
 # owner and mode. Every victim is a root-owned file or directory under /etc.
 # CHECKS: SSH_TMP_LINK SSH_UNMARKED_KEPT SSH_CONFIG_KEPT UNINSTALL_KEPT_LINK
 # CHECKS: AUTHKEYS_TMP_LINK AUTHKEYS_KEPT SSH_DIR_LINK AUTHKEYS_LINK REVERSE_KEY_LINK
-# CHECKS: KNOWN_HOSTS_LINK MOUNT_DIR_LINK REPORT_TMP_LINK EDIT_LINK_SWAP
+# CHECKS: KNOWN_HOSTS_LINK MOUNT_DIR_LINK REPORT_TMP_LINK EDIT_LINK_SWAP SCRIPT_DROP_LINK
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -170,5 +170,18 @@ if intact /etc/machman-victim-swap && [ -L /home/swp/.ssh/config ] \
 	R EDIT_LINK_SWAP pass
 else
 	R EDIT_LINK_SWAP fail; printf '%s\n' "$swap_out"; ls -ln /home/swp/.ssh
+fi
+
+# A copy run as it is (--changed) leaves itself beside its report for Machman (S67): a link
+# planted at that name is replaced, never written through. Last: the run uninstalls.
+victim /etc/machman-victim-drop
+ln -s /etc/machman-victim-drop /mnt/machman/share/GuestReport/install.sh
+printf "SETUP_CKSUM='0 0'\n" >> /mnt/machman/share/GuestSetup/machman.env
+$SH "$S" -y --changed --uninstall >/tmp/drop.log 2>&1
+if intact /etc/machman-victim-drop && [ ! -L /mnt/machman/share/GuestReport/install.sh ] \
+	&& cmp -s "$S" /mnt/machman/share/GuestReport/install.sh; then
+	R SCRIPT_DROP_LINK pass
+else
+	R SCRIPT_DROP_LINK fail; tail -n 8 /tmp/drop.log; ls -ln /mnt/machman/share/GuestReport
 fi
 exit 0
