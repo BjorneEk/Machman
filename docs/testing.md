@@ -42,7 +42,10 @@ tests never starve timing-sensitive ones; a run with `--filter` stays one pass) 
 Mac awake for the run (`caffeinate -i -s`), as `lab.sh` does: a maintenance sleep mid-run reads
 as dozens of timeouts. An L1 test's blocking work — a subprocess the engine spawns, a fork, a
 file sync, megabytes of test data — runs in `onOwnThread { }` (Q43): a thread of its own, never
-the main actor or the cooperative pool, as part of the test.
+the main actor or the cooperative pool, as part of the test. To see where the main thread goes
+under load, run `MM_WATCHDOG=1 scripts/test.sh > <log> 2>&1` beside other full runs and then
+`python3 -I -B scripts/test-watchdog/attribute.py <log>`: the test guard's watchdog samples the
+main thread whenever it misses a 300 ms ping — a measurement, never a check.
 
 `lab.sh` prints its progress live, read from Swift Testing's event stream (the test process
 holds its own output back while it writes to a file), and names each test by what it does (the
