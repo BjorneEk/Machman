@@ -142,13 +142,16 @@ final class SocketLoopRig {
 		self.helloDeadline = helloDeadline
 		let daemon = self.daemon
 		let recorder = self.recorder
+		// Weak, not unowned: a test that times out frees the rig while the loop still retries,
+		// and an unowned read then aborts the whole test process (wave r4w1).
 		loop = ConnectionLoop(
 			policy: .fast(maxAttempts: 5),
-			connect: { [unowned self] onDrop in
-				try await daemon.remote(helloDeadline: self.helloDeadline, onDrop: onDrop)
+			connect: { [weak self] onDrop in
+				guard let self else { throw CancellationError() }
+				return try await daemon.remote(helloDeadline: self.helloDeadline, onDrop: onDrop)
 			},
-			launchDaemon: { [unowned self] in
-				launches += 1
+			launchDaemon: { [weak self] in
+				self?.launches += 1
 				if listenOnLaunch { try? daemon.listen() }
 			},
 			attach: { session, interrupted in
