@@ -85,6 +85,28 @@ struct ExternalRenameTests {
 		_ = viewModel
 	}
 
+	// A name taken by a renamed VM between two lists, whose old VM (deleted elsewhere) left
+	// a terminal behind: that dead session ends rather than lingering under the name.
+	@Test("T34: a rename onto a name whose old VM left a terminal disconnects that terminal")
+	func aRenameOntoAnOldNameEndsItsTerminal() async throws {
+		let h = await DesktopHarness.make(Self.library())
+		h.open(.config, vm: "Debian")
+		h.open(Self.console, vm: "Alpine")
+		let socket = try #require(
+			h.viewModel.vms.first { $0.name == "Debian" }?.consolePorts?.first?.socketPath)
+		h.terminals.ensureController(
+			vm: "Debian", ref: Self.ref, socketPath: socket, profile: h.profiles.defaultProfile)
+		#expect(await eventually { h.terminals.controller(vm: "Debian", ref: Self.ref) != nil })
+		let old = try #require(
+			h.terminals.controller(vm: "Debian", ref: Self.ref) as? FakeTerminalController)
+		await h.store.reload()
+		h.stub.vms["Debian"] = nil
+		try Self.rename(h, "Alpine", to: "Debian")
+		await h.store.reload()
+		#expect(old.disconnects > 0)
+		#expect(h.terminals.controller(vm: "Debian", ref: Self.ref) == nil)
+	}
+
 	// A different VM arriving while another is away is no rename.
 	@Test("T34: a new VM arriving while another is away takes none of its state")
 	func aNewVMIsNoRename() async throws {

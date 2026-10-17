@@ -307,6 +307,13 @@ extension TerminalSessions: VMKeyedState {
 	// Migrate a VM's controllers on rename, so open terminals survive it. (A live SSH
 	// process is unaffected by the rename; its argv already resolved.)
 	public func renameVM(from old: String, to new: String) {
+		// Whatever the new name still holds is another VM's dead sessions (a rename made
+		// elsewhere onto a deleted VM's name, T34): end them before the moved ones land.
+		if old != new, let stale = live.removeValue(forKey: new) {
+			stale.values.forEach { $0.disconnect() }
+			appliedLive[new] = nil
+			sshMeta[new] = nil
+		}
 		if let c = live[old] {
 			live[new] = c
 			live[old] = nil
