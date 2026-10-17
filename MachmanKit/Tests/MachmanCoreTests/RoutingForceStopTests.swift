@@ -230,4 +230,76 @@ struct RoutingForceStopTests {
 		#expect(left == ["alpha"])
 		#expect(clock.now - started < .seconds(9))   // not the 10 s drain on top
 	}
+
+	// E66 (K12): Shut Down All asked the vmhosts one at a time, each wedged one adding its
+	// deadline, then waited the whole grace while one remained, and force stopped them one at
+	// a time again. Every host is asked at once now; one that misses its shut down's deadline
+	// is listed as not responding and skips the force pass; the grace ends once only such
+	// hosts remain; and Shut Down All & Quit ends them like a confirmed End Process.
+	@Test(
+		"""
+		E66: Shut Down All asks every vmhost at once and ends the ones still not answering \
+		after the grace
+		""")
+	@MainActor func shutDownAllAsksAtOnceAndEndsTheUnanswering() async throws {
+		let names = ["alpha", "beta"]
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			for name in names {
+				try VMConfig.createNewVMDirectory(name: name)
+				try VMConfig(name: name, memorySize: 2048, cpuCount: 2).saveVMConfig()
+			}
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }   // a test never finds (or launches) a real vmhost
+		}
+		routing.hostProbeDeadline = .seconds(10)
+		routing.forceStopDeadline = .seconds(6)
+		var stubs: [String: StubMachman] = [:]
+		var servers: [String: MachmanServer] = [:]
+		for name in names {
+			let stub = StubMachman()
+			stub.vms[name] = StubMachman.makeInfo(name, state: .running)
+			stub.stalled = ["stop", "vm"]
+			let socketPath = TestEnvironment.socketPath("mm-quit-\(name)")
+			let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
+			try startServing(server)
+			let identity = RoutingMachman.HostIdentity(
+				id: UUID(), name: name, socketPath: socketPath)
+			routing.adopt(
+				identity: identity, client: try await routing.connectHost(identity: identity))
+			stubs[name] = stub
+			servers[name] = server
+		}
+		defer {
+			for stub in stubs.values { stub.stalled = [] }
+			for server in servers.values { server.stop() }
+		}
+		let heard = Heard()
+		routing.isProcessAlive = { _ in false }   // a stub host's exit: its server stops
+		routing.endHost = { host in
+			heard.ended.append(host.identity.name)
+			servers[host.identity.name]?.stop()
+			return true
+		}
+
+		let clock = ContinuousClock()
+		let started = clock.now
+		let quit = Task { @MainActor in
+			await routing.stopAllHosted(
+				softFirst: true, graceSeconds: 30, endingUnanswered: true)
+		}
+		// Both asked while each still parks its answer: one at a time, the second would wait
+		// out the first's 6 s.
+		#expect(await eventually(timeout: .seconds(4)) {
+			stubs.values.allSatisfy { $0.calls.contains("stop") }
+		})
+		let left = await quit.value
+		#expect(left.isEmpty)
+		#expect(Set(heard.ended) == Set(names))
+		// One deadline, not the whole grace (before: 6 + 6 + 30 + 6 + 6 s).
+		#expect(clock.now - started < .seconds(25))
+		// The force pass skipped the hosts that missed their shut down: one stop each.
+		#expect(stubs.values.allSatisfy { $0.calls.filter { $0 == "stop" }.count == 1 })
+		#expect(routing.hostedNames.isEmpty)
+	}
 }

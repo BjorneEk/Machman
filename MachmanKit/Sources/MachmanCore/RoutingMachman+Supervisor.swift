@@ -75,43 +75,82 @@ extension RoutingMachman {
 	}
 
 	// Stop every hosted VM (quit path): optionally ask guests first, then force stragglers,
-	// and wait for the hosts to drain. Every per-host stop is bounded: a vmhost that stopped
-	// answering fails its call after the deadline, is logged, and is LEFT RUNNING (the quit
-	// prompt's leave-VMs-running semantics; the next daemon re-adopts it) — one wedged host
-	// must never make the daemon unquittable by stalling the terminate reply (E5). Returns
-	// the VMs whose force stop failed and still run, for the caller to offer ending their
-	// processes (C9); the drain doesn't wait for them.
+	// and wait for the hosts to drain. Every host is asked at once and every stop is bounded
+	// (E66): a vmhost that stopped answering costs the quit one deadline, never one per host,
+	// and must never make the daemon unquittable by stalling the terminate reply (E5). One
+	// that misses its shut down's deadline is listed as not responding and skips the force
+	// pass (it would only cost another deadline), and the grace ends once only hosts that
+	// failed or don't answer remain. Those are LEFT RUNNING (the next daemon re-adopts them)
+	// and returned, for the caller to offer ending their processes (C9) — or, with
+	// `endingUnanswered` (Shut Down All & Quit, K12), ended here like a confirmed End Process,
+	// returning only the ones that could not be. The drain doesn't wait for them.
 	@discardableResult
-	public func stopAllHosted(softFirst: Bool, graceSeconds: Double) async -> [String] {
+	public func stopAllHosted(
+		softFirst: Bool, graceSeconds: Double, endingUnanswered: Bool = false
+	) async -> [String] {
+		let deadline = forceStopDeadline
+		// The hosts that missed a stop's deadline in this pass.
+		var unanswered: Set<String> = []
 		if softFirst {
-			for (name, host) in hosted {
-				guard hosted[name] != nil else { continue }   // exited during the loop
+			let refused = await fanOut(to: hosted, skippingUnresponsive: true) {
+				name, host -> Error? in
 				do {
-					try await host.client.stop(vm: name, mode: .soft, deadline: forceStopDeadline)
+					try await host.client.stop(vm: name, mode: .soft, deadline: deadline)
+					return nil
 				} catch {
-					MachmanLogger.log(.passiveError,
-						"quit: soft stop of \(name) failed (\(error)) — leaving it running")
+					return error
 				}
 			}
-			_ = await poll(every: .milliseconds(500), for: .seconds(graceSeconds)) {
-				hosted.isEmpty
-			}
-		}
-		var failed: Set<String> = []
-		for (name, host) in hosted {
-			guard hosted[name] != nil else { continue }
-			do {
-				try await stopHosted(host, name: name, mode: .force)
-			} catch {
+			var failed: Set<String> = []
+			for (name, error) in refused {
+				guard let error else { continue }
 				failed.insert(name)
 				MachmanLogger.log(.passiveError,
-					"quit: force stop of \(name) failed (\(error)) — leaving it running")
+					"quit: shut down of \(name) failed (\(error))")
+				if (error as? MachmanError)?.code == .timeout, let host = hosted[name] {
+					unanswered.insert(name)
+					markUnresponsive(host, reason: "missed its shut down deadline")
+				}
 			}
+			_ = await poll(every: .milliseconds(250), for: .seconds(graceSeconds)) {
+				hosted.allSatisfy { failed.contains($0.key) || $0.value.unresponsive }
+			}
+		}
+		let forced = await fanOut(
+			to: hosted.filter { !unanswered.contains($0.key) }, skippingUnresponsive: false
+		) { name, host -> Error? in
+			do {
+				try await self.stopHosted(host, name: name, mode: .force)
+				return nil
+			} catch {
+				return error
+			}
+		}
+		var failed = unanswered
+		for (name, error) in forced {
+			guard let error else { continue }
+			failed.insert(name)
+			MachmanLogger.log(.passiveError,
+				"quit: force stop of \(name) failed (\(error)) — leaving it running")
 		}
 		_ = await poll(every: .milliseconds(250), for: .seconds(10)) {
 			Set(hosted.keys).subtracting(failed).isEmpty
 		}
-		return failed.filter { hosted[$0] != nil }.sorted()
+		let left = hosted.filter { failed.contains($0.key) }
+		guard endingUnanswered else { return left.keys.sorted() }
+		// Only the ones that don't answer: a host that refused its stop is still answering.
+		let unanswering = left.filter { unanswered.contains($0.key) || $0.value.unresponsive }
+		let ended = await fanOut(to: unanswering, skippingUnresponsive: false) { name, host in
+			do {
+				try await self.endUnresponsiveHost(host, name: name)
+				return true
+			} catch {
+				MachmanLogger.log(.passiveError,
+					"quit: couldn't end \(name)'s vmhost (\(error)) — leaving it running")
+				return false
+			}
+		}
+		return left.keys.filter { ended[$0] != true }.sorted()
 	}
 
 	// Asks every host at once (PR23): one main-actor Task per host, each suspending inside its

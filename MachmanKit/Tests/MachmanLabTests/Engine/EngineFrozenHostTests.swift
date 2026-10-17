@@ -4,7 +4,8 @@
 //
 //  L2 — a frozen vmhost (SIGSTOP) as the agent's menu and quit see it: across an agent
 //  restart its VM is unknown, offers stops and no starts (V11, P37), and the agent's Force
-//  Stop and Force Stop All & Quit ask before they end its process (E36), and however often its
+//  Stop and Force Stop All & Quit ask before they end its process (E36), Shut Down All & Quit
+//  ends it without asking once its shut down missed its deadline (E66), and however often its
 //  VM is listed it never lists stopped (E61). Prompts are answered from the scope's answers
 //  file and logged; the menu items come through the lab control socket under the menu's own
 //  enabled rule.
@@ -199,6 +200,29 @@ struct EngineFrozenHostTests {
 					TFProcess.killLabApp(host)
 					#expect(await LabProcesses.waitForExit(host, timeout: .seconds(15)))
 				}
+				TFVM.forget(agent, vm.name)
+			}
+		}
+	}
+
+	// E66 (K12): Shut Down All & Quit waited the whole grace on a frozen vmhost, force stopped
+	// it, then asked whether to end it. It ends it now without asking, once its shut down
+	// missed its deadline and nothing else is shutting down.
+	@Test("E66: Shut Down All & Quit ends a frozen vmhost without asking again")
+	func shutDownAllEndsFrozen() async throws {
+		let options = LabAgent.Options(answers: ["agent.vmsStillRunning": "Shut Down All & Quit"])
+		try await Lab.withAgent(options) { agent in
+			try await agent.withVM(LabVMSpec(name: "frozen-shut-down", boot: .alpine())) { vm in
+				let host = try await vm.hostPID()
+				try #require(TFProcess.stop(host))
+				defer { TFProcess.resume(host) }
+				let mark = LabLog.mark()
+				let exited = try await TFAgents.quit(
+					agent, reason: "userQuit", timeout: .seconds(60))
+				#expect(exited)
+				#expect(await LabProcesses.waitForExit(host, timeout: .seconds(20)))
+				#expect(LabLog.count(
+					SeamProbe.promptLine("agent.endProcessOnQuit", ".*"), after: mark) == 0)
 				TFVM.forget(agent, vm.name)
 			}
 		}

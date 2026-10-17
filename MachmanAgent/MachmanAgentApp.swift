@@ -335,10 +335,13 @@ final class MachmanAgentDelegate: NSObject, NSApplicationDelegate {
 
 	private func stopAllAndQuit(_ app: NSApplication, soft: Bool) {
 		Task { @MainActor in
-			let left = await Daemon.api.stopAllHosted(softFirst: soft, graceSeconds: 30)
-			// VMs whose vmhost didn't answer the force stop: end their processes only when
+			// Shut Down All ends the VMs whose vmhost still doesn't answer after the grace, as
+			// a confirmed End Process would (K12): the choice already asked to stop them all.
+			let left = await Daemon.api.stopAllHosted(
+				softFirst: soft, graceSeconds: 30, endingUnanswered: soft)
+			// Force Stop All: VMs whose vmhost didn't answer the force stop are ended only when
 			// asked a second time (C9); otherwise they keep running, as with a plain quit.
-			if !left.isEmpty, await MainRunLoopCallout.run({
+			if !soft, !left.isEmpty, await MainRunLoopCallout.run({
 				EndProcessPrompt.forQuit(leaving: left).runInFront()
 			}) {
 				for name in left {
