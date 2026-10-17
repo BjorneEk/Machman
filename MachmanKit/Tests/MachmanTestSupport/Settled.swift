@@ -22,7 +22,7 @@ public func settled<Snapshot: Equatable>(
 	quietRounds: Int = 10, timeout: Duration = .seconds(10),
 	_ snapshot: @MainActor () -> Snapshot
 ) async -> Bool {
-	var budget = WaitBudget(timeout)
+	var budget = WaitBudget(timeout, turn: .milliseconds(5))
 	var last = snapshot()
 	var quiet = 0
 	while quiet < quietRounds {

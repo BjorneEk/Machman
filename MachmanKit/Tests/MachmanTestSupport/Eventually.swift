@@ -16,7 +16,7 @@ import Foundation
 public func eventually(
 	timeout: Duration = .seconds(10), _ condition: @MainActor () -> Bool
 ) async -> Bool {
-	var budget = WaitBudget(timeout)
+	var budget = WaitBudget(timeout, turn: .milliseconds(20))
 	while !condition() {
 		guard budget.lasts() else { return false }
 		try? await Task.sleep(for: .milliseconds(10))

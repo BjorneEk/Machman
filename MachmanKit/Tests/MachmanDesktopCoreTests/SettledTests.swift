@@ -85,15 +85,15 @@ struct SettledTests {
 	@Test("Q41: eventually outlasts a main thread held past its deadline")
 	func eventuallyOutlastsAHeldMainThread() async {
 		let progress = Progress()
-		holdTheMainThread(0.5, thenStep: 3, into: progress)
-		#expect(await eventually(timeout: .milliseconds(100)) { progress.steps == 3 })
+		holdTheMainThread(1, thenStep: 3, into: progress)
+		#expect(await eventually(timeout: .milliseconds(300)) { progress.steps == 3 })
 	}
 
 	@Test("Q41: settled outlasts a main thread held past its deadline")
 	func settledOutlastsAHeldMainThread() async {
 		let progress = Progress()
-		holdTheMainThread(0.5, thenStep: 3, into: progress)
-		#expect(await settled(timeout: .milliseconds(100)) { progress.steps })
+		holdTheMainThread(1, thenStep: 3, into: progress)
+		#expect(await settled(timeout: .milliseconds(300)) { progress.steps })
 		#expect(progress.steps == 3)
 	}
 }
