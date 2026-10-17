@@ -5,7 +5,8 @@
 //  The fake agent's own proof, against the real client (RemoteMachman over a real socket):
 //  scripted hello versions, a stalled hello timing out, a drop mid-call recorded as an
 //  interrupted call, an event reaching the stream, scripts taken per connection, and a
-//  stopped listener reading as an agent that isn't running.
+//  stopped listener reading as an agent that isn't running. Q43: its waits count turns, not
+//  the wall clock, so a main thread another test holds never runs one out.
 //
 
 import Foundation
@@ -14,6 +15,42 @@ import MachmanAPI
 import MachmanClient
 import MachmanTestSupport
 @testable import MachmanDesktopCore
+
+// A bare client on the fake agent's socket: what it writes is a request, sent on the
+// calling thread.
+private final class RawClient {
+	private let fd: Int32
+
+	init(_ path: String) throws {
+		fd = socket(AF_UNIX, SOCK_STREAM, 0)
+		var address = sockaddr_un()
+		address.sun_family = sa_family_t(AF_UNIX)
+		let capacity = MemoryLayout.size(ofValue: address.sun_path)
+		withUnsafeMutablePointer(to: &address.sun_path) {
+			$0.withMemoryRebound(to: CChar.self, capacity: capacity) { dst in
+				_ = path.withCString { strlcpy(dst, $0, capacity) }
+			}
+		}
+		let connected = withUnsafePointer(to: &address) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+			}
+		}
+		guard connected else {
+			Darwin.close(fd)
+			throw POSIXError(.ECONNREFUSED)
+		}
+	}
+
+	func send(_ line: String) {
+		let bytes = Array((line + "\n").utf8)
+		_ = bytes.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+	}
+
+	func close() {
+		Darwin.close(fd)
+	}
+}
 
 // L1: a scripted fake agent socket in the run's scratch space (no real agent).
 struct FakeDaemonTests {
@@ -116,5 +153,29 @@ struct FakeDaemonTests {
 			#expect(problem.kind == .unreachable)
 			#expect(problem.detail == "It isn\u{2019}t running.")
 		}
+	}
+
+	// Q43: the wait gave up on a wall clock: under load another test held the main thread,
+	// and the client's request — main-thread work — had had no turn before the deadline.
+	@Test("Q43: a fake daemon's wait outlasts a main thread held past its deadline")
+	@MainActor func aWaitOutlastsAHeldMainThread() async throws {
+		let daemon = try FakeDaemon()
+		defer { daemon.close() }
+		let client = try RawClient(daemon.socketPath)
+		defer { client.close() }
+		#expect(await daemon.waitForConnections(1))
+		DispatchQueue.main.async { Thread.sleep(forTimeInterval: 0.4) }   // another test's hold
+		Task { @MainActor in
+			client.send(#"{"jsonrpc":"2.0","id":1,"method":"vm.list"}"#)   // queued behind it
+		}
+		#expect(await daemon.waitForRequest("vm.list", timeout: .milliseconds(100)))
+	}
+
+	@Test("Q43: a fake daemon's wait still gives up on a request that never comes")
+	@MainActor func aWaitStillGivesUp() async throws {
+		let daemon = try FakeDaemon()
+		defer { daemon.close() }
+		#expect(!(await daemon.waitForRequest("vm.list", timeout: .milliseconds(100))))
+		#expect(!(await daemon.waitForConnections(1, timeout: .milliseconds(100))))
 	}
 }

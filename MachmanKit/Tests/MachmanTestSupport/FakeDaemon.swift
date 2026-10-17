@@ -68,7 +68,6 @@ public final class FakeDaemon: @unchecked Sendable {
 	private var connections: [Int: Connection] = [:]
 	private var accepted = 0
 	private var recorded: [Request] = []
-	private var waiters: [UUID: Waiter] = [:]
 
 	// The scripts the next connections take, in order; then `otherwise`. Both can change at
 	// any time and apply to connections accepted later.
@@ -97,9 +96,6 @@ public final class FakeDaemon: @unchecked Sendable {
 
 	deinit {
 		close()
-		for waiter in waiters.values {
-			waiter.continuation.resume(returning: false)
-		}
 	}
 
 	// MARK: - Listening
@@ -261,7 +257,6 @@ public final class FakeDaemon: @unchecked Sendable {
 			connections[accepted] = connection
 			return connection
 		}
-		settleWaiters()
 		Thread.detachNewThread { [weak self] in
 			connection.run { self?.handle($0, on: connection) }
 			guard let self else { return }
@@ -278,7 +273,6 @@ public final class FakeDaemon: @unchecked Sendable {
 			connection: connection.number, id: rawID as? Int, method: method,
 			params: Self.json(object["params"], sorted: true))
 		lock.withLock { recorded.append(request) }
-		settleWaiters()
 		// A notification (no id) is never answered.
 		guard let rawID, !(rawID is NSNull), let id = Self.json(rawID, sorted: false) else {
 			return
@@ -333,55 +327,23 @@ public final class FakeDaemon: @unchecked Sendable {
 
 	// MARK: - Waiting
 
-	private struct Waiter {
-		let done: () -> Bool   // read under the lock
-		let continuation: CheckedContinuation<Bool, Never>
-	}
-
-	// True once `count` requests for `method` have arrived; false at the timeout.
+	// True once `count` requests for `method` have arrived; false once the wait has had its
+	// turns (eventually's WaitBudget, Q43). A request comes from the client's work, which
+	// needs the main thread: a stretch another test held it counts as one turn, never as the
+	// whole timeout, as the wall clock these waits ran on did.
+	@MainActor
 	public func waitForRequest(
 		_ method: String, count: Int = 1, timeout: Duration = .seconds(10)
 	) async -> Bool {
-		await wait(timeout: timeout) { [unowned self] in
-			recorded.count(where: { $0.method == method }) >= count
+		await eventually(timeout: timeout) {
+			self.requests.count(where: { $0.method == method }) >= count
 		}
 	}
 
-	// True once `n` connections were accepted in all; false at the timeout.
+	// True once `n` connections were accepted in all; false once the wait has had its turns.
+	@MainActor
 	public func waitForConnections(_ n: Int, timeout: Duration = .seconds(10)) async -> Bool {
-		await wait(timeout: timeout) { [unowned self] in accepted >= n }
-	}
-
-	private func wait(timeout: Duration, until done: @escaping () -> Bool) async -> Bool {
-		let id = UUID()
-		return await withCheckedContinuation { continuation in
-			let now = lock.withLock { () -> Bool in
-				if done() { return true }
-				waiters[id] = Waiter(done: done, continuation: continuation)
-				return false
-			}
-			if now {
-				continuation.resume(returning: true)
-				return
-			}
-			let (seconds, attoseconds) = timeout.components
-			let wait = Double(seconds) + Double(attoseconds) / 1e18
-			DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [weak self] in
-				guard let self else { return }
-				let expired = lock.withLock { self.waiters.removeValue(forKey: id) }
-				expired?.continuation.resume(returning: false)
-			}
-		}
-	}
-
-	private func settleWaiters() {
-		let ready = lock.withLock { () -> [Waiter] in
-			let ids = waiters.filter { $0.value.done() }.map(\.key)
-			return ids.compactMap { waiters.removeValue(forKey: $0) }
-		}
-		for waiter in ready {
-			waiter.continuation.resume(returning: true)
-		}
+		await eventually(timeout: timeout) { self.connectionCount >= n }
 	}
 
 	// MARK: - JSON
