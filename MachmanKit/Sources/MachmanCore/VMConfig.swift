@@ -47,7 +47,11 @@ struct HostMountPoint: Codable, Identifiable {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
 		self.path = try container.decode(String.self, forKey: .path)
-		self.tag = try container.decode(String.self, forKey: .tag)
+		// A hand-edited mount without a tag still loads (D38), tagged as the add flow tags a
+		// new mount of that folder; tags are validated at entry, never at load.
+		self.tag = try container.decodeIfPresent(String.self, forKey: .tag)
+			?? NameRule.mountTag.suggestion(
+				from: URL(fileURLWithPath: path).lastPathComponent, fallback: "share")
 		self.safe = try container.decodeIfPresent(Bool.self, forKey: .safe) ?? true
 		self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
 		self.kind = try container.decodeIfPresent(String.self, forKey: .kind)
@@ -325,6 +329,12 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		if config.migrateLegacyInstallerDevices() {
 			needsSave = true
 		}
+		// A config without a created date (D38) takes its folder's, once.
+		if config.created == .distantPast {
+			let folder = try? FileManager.default.attributesOfItem(atPath: "\(library)/\(name)")
+			config.created = folder?[.creationDate] as? Foundation.Date ?? Foundation.Date()
+			needsSave = true
+		}
 		if needsSave {
 			try config.saveVMConfig(atDir: "\(library)/\(name)")
 		}
@@ -369,13 +379,16 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Explicit Codable so new fields can default when absent from older config files on disk.
 	// Every persisted field appears in four places — its stored property, CodingKeys,
 	// init(from:) and encode(to:) — keep all four in lockstep when adding a field.
-	// (load(name:) is a plain decode and needs nothing.)
+	// (load(name:) is a plain decode and needs nothing.) A config without a name or a created
+	// date still loads (D38): every reader names the VM after its folder, and load() fills a
+	// missing date from the folder's.
 	required init(from decoder: any Decoder) throws {
 		let c = try decoder.container(keyedBy: CodingKeys.self)
-		self.name = try c.decode(String.self, forKey: .name)
+		self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
 		self.memorySize = try c.decode(UInt64.self, forKey: .memorySize)
 		self.cpuCount = try c.decode(Int.self, forKey: .cpuCount)
-		self.created = try c.decode(Foundation.Date.self, forKey: .created)
+		self.created = try c.decodeIfPresent(Foundation.Date.self, forKey: .created)
+			?? .distantPast
 		self.lastRan = try c.decodeIfPresent(Foundation.Date.self, forKey: .lastRan)
 		self.mountPoints = try c.decodeIfPresent([HostMountPoint].self, forKey: .mountPoints) ?? []
 		self.disks = try c.decodeIfPresent([VMDisk].self, forKey: .disks) ?? []

@@ -143,6 +143,35 @@ struct VMDiskCodableTests {
 		}
 	}
 
+	// D38 (review 4): a hand-edited config without "name" or "created", a mount without its
+	// "tag" or kernel settings without a "commandLine" failed the whole decode, and the VM
+	// vanished from every client. Each gap now loads as what an empty value means.
+	@Test("D38: a config without a name or created date, a tagless mount or a bare kernel loads")
+	func handEditedGapsStillLoad() throws {
+		try VMTestDir.withRedirectedDir {
+			let dir = "\(machmanVMDir)/hand-edited"
+			try FileManager.default.createDirectory(
+				atPath: dir, withIntermediateDirectories: true)
+			let config = """
+			{"memorySize":2048,"cpuCount":2,"macAddress":"aa:bb:cc:dd:ee:03",
+			"mountPoints":[{"path":"/Users/x/My Share"}],
+			"kernelSettings":{"kernelPath":"/k/vmlinuz"},
+			"boot":{"linuxKernel":{"_0":{"kernelPath":"/k/vmlinuz"}}}}
+			"""
+			try Data(config.utf8).write(to: URL(fileURLWithPath: "\(dir)/config"))
+			let loaded = try VMConfig.load(name: "hand-edited")
+			#expect(loaded.name == "hand-edited")
+			#expect(loaded.created != .distantPast)
+			#expect(loaded.mountPoints.first?.tag == "My Share")
+			let kernel = LinuxKernelBoot(
+				kernelPath: "/k/vmlinuz", initialRamdiskPath: nil, commandLine: "")
+			#expect(loaded.kernelSettings == kernel)
+			#expect(loaded.boot == .linuxKernel(kernel))
+			// The created date was filled once and saved: the next load reads the same one.
+			#expect(try VMConfig.load(name: "hand-edited").created == loaded.created)
+		}
+	}
+
 	@Test func mountKindDefaultsPinsAndPreservesUnknowns() throws {
 		// Legacy mounts (no kind) decode as virtiofs.
 		let legacy = try JSONDecoder().decode(HostMountPoint.self,

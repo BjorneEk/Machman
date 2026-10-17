@@ -26,6 +26,24 @@ struct LinuxKernelBoot: Codable, Equatable {
 	var commandLine: String             // e.g. "console=hvc0 root=/dev/vda1 rw"
 }
 
+// Lenient decode (D38): kernel settings without a command line, or without a kernel yet, still
+// load — "" is what an empty field and clearKernelReference write. The encode stays the
+// compiler's, so the shape on disk is unchanged.
+extension LinuxKernelBoot {
+	private enum CodingKeys: String, CodingKey {
+		case kernelPath
+		case initialRamdiskPath
+		case commandLine
+	}
+
+	init(from decoder: any Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		kernelPath = try c.decodeIfPresent(String.self, forKey: .kernelPath) ?? ""
+		initialRamdiskPath = try c.decodeIfPresent(String.self, forKey: .initialRamdiskPath)
+		commandLine = try c.decodeIfPresent(String.self, forKey: .commandLine) ?? ""
+	}
+}
+
 struct MacOSBoot: Codable, Equatable {
 	var installState: MacInstallState
 	var minimumCPUCount: Int
