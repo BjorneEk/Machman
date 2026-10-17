@@ -277,6 +277,54 @@ struct SSHDiscoveryTests {
 			== SSHDiscovery.Answer(address: "192.168.64.17", source: "arp"))
 	}
 
+	// C32: bootpd keeps a MAC-keyed lease after the guest's DHCP client moved to a client id
+	// (an installer's client, then networkd), so it never goes away; vmnet may since have
+	// given its address to another VM. Expired, it answers only while no other client's live
+	// lease holds that address — the ARP step's rule.
+	@Test("C32: an expired MAC lease on an address another client holds loses to the client id")
+	func anExpiredMACLeaseUnderAnotherLiveLeaseLoses() throws {
+		let net = try vmnet()
+		let ownID = "ff,4:5:6"
+		let mac = """
+			{
+				ip_address=192.168.64.17
+				hw_address=1,5e:2c:7a:10:44:1
+				identifier=1,5e:2c:7a:10:44:1
+				lease=0x66aa0001
+			}
+			"""
+		let own = """
+			{
+				ip_address=192.168.64.21
+				hw_address=\(ownID)
+				identifier=\(ownID)
+				lease=0x66ab0002
+			}
+			"""
+		let other = """
+			{
+				ip_address=192.168.64.17
+				hw_address=ff,1:2:3
+				identifier=ff,1:2:3
+				lease=0x66ab0001
+			}
+			"""
+		let later = Date(timeIntervalSince1970: TimeInterval(0x66ab0000))
+		func answer(_ entries: String..., at now: Date = later) -> SSHDiscovery.Answer? {
+			SSHDiscovery.discover(
+				mac: vmMAC, leasesText: entries.joined(separator: "\n"), arpText: "",
+				hints: SSHDiscovery.Hints(clientID: ownID), interfaces: net, now: now)
+		}
+		#expect(answer(mac, other, own)
+			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
+		// Expired, but nobody else holds the address: still the guest's last word.
+		#expect(answer(mac) == SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
+		// Live, it answers first.
+		let earlier = Date(timeIntervalSince1970: TimeInterval(0x66aa0000))
+		#expect(answer(mac, own, at: earlier)
+			== SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
+	}
+
 	@Test("E56: the MAC's lease and the ARP table still answer first")
 	func macSourcesComeFirst() throws {
 		let net = try vmnet()
