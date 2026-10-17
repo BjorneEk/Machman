@@ -601,9 +601,6 @@ extension VMListViewModel {
 
 	// MARK: - Enabled flags
 
-	// Batch enable/disable everything in the tree selection that carries the flag
-	// (multi-select context menus + the multi-selection inspector), in one vm.setEnabled:
-	// one config write, all or nothing (devices ride it since 1.0.12).
 	// The selected rows that carry an enabled flag: disks, mounts, serial ports and the VM's
 	// devices — never kernel files, SSH sessions or groups (H61). Only what still exists
 	// (T15): a stale selection must not send gone ids. The batch actions send these and
@@ -635,6 +632,9 @@ extension VMListViewModel {
 		}
 	}
 
+	// Batch enable/disable everything in the tree selection that carries the flag
+	// (multi-select context menus + the multi-selection inspector), in one vm.setEnabled:
+	// one config write, all or nothing (devices ride it since 1.0.12).
 	public func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
 		var disks: [String: Bool] = [:]
 		var mounts: [String: Bool] = [:]
