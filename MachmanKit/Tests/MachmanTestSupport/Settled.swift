@@ -15,18 +15,18 @@
 import Foundation
 
 // True once `snapshot` held still for `quietRounds` rounds; false if it was still changing
-// at `timeout` (the work never settled), so the call site's #expect reports it.
+// at `timeout` (the work never settled), so the call site's #expect reports it. The timeout
+// counts the time the rounds were given (WaitBudget, Q41).
 @MainActor
 public func settled<Snapshot: Equatable>(
 	quietRounds: Int = 10, timeout: Duration = .seconds(10),
 	_ snapshot: @MainActor () -> Snapshot
 ) async -> Bool {
-	let clock = ContinuousClock()
-	let deadline = clock.now.advanced(by: timeout)
+	var budget = WaitBudget(timeout)
 	var last = snapshot()
 	var quiet = 0
 	while quiet < quietRounds {
-		guard clock.now < deadline else { return false }
+		guard budget.lasts() else { return false }
 		await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
 		await Task.detached {}.value
 		let now = snapshot()

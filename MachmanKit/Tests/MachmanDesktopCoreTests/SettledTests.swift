@@ -5,7 +5,8 @@
 //  Q34: negative checks ("nothing was sent") waited a fixed 50–600 ms, which proves nothing
 //  on a loaded machine. settled() waits until the work an action set off has run out; these
 //  are its own checks — it sees work that leaves the main actor and comes back, and it says
-//  so when the work never settles.
+//  so when the work never settles. Q41: a main thread another test holds for seconds no longer
+//  runs out a wait (settled's or eventually's) that had no turn meanwhile.
 //
 
 import Testing
@@ -18,6 +19,30 @@ import MachmanTestSupport
 // Leaves the main actor for the global executor, as a call through a nonisolated
 // requirement does.
 private func hopOffTheMainActor() async {}
+
+// What a check reads after the main thread was held (Q41).
+@MainActor
+private final class Progress {
+	var steps = 0
+}
+
+// Holds the main thread for `seconds` from a job already queued on it, as another test's
+// synchronous subprocess does, then takes `steps` turns through the global executor, counting
+// each one into `progress`.
+@MainActor
+private func holdTheMainThread(_ seconds: Double, thenStep steps: Int, into progress: Progress) {
+	DispatchQueue.main.async {
+		Thread.sleep(forTimeInterval: seconds)
+		MainActor.assumeIsolated {
+			Task { @MainActor in
+				for _ in 0..<steps {
+					await hopOffTheMainActor()
+					progress.steps += 1
+				}
+			}
+		}
+	}
+}
 
 // L1: the test helper itself.
 @MainActor
@@ -52,5 +77,23 @@ struct SettledTests {
 		#expect(await h.settled())
 		#expect(h.stub.calls.contains("start"))
 		#expect(h.viewModel.presentedError?.message == "no")
+	}
+
+	// Q41: under full load another test held this process's main thread for seconds, and a
+	// wait whose deadline passed meanwhile gave up at its next look, though the work it
+	// waited for had not had one turn yet.
+	@Test("Q41: eventually outlasts a main thread held past its deadline")
+	func eventuallyOutlastsAHeldMainThread() async {
+		let progress = Progress()
+		holdTheMainThread(0.5, thenStep: 3, into: progress)
+		#expect(await eventually(timeout: .milliseconds(100)) { progress.steps == 3 })
+	}
+
+	@Test("Q41: settled outlasts a main thread held past its deadline")
+	func settledOutlastsAHeldMainThread() async {
+		let progress = Progress()
+		holdTheMainThread(0.5, thenStep: 3, into: progress)
+		#expect(await settled(timeout: .milliseconds(100)) { progress.steps })
+		#expect(progress.steps == 3)
 	}
 }
