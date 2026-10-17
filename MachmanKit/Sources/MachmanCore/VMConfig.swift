@@ -9,6 +9,9 @@
 //  VMRuntime, never persisted. A legacy "state" key in old config files is ignored on load
 //  and dropped on the next save.
 //
+//  Beside it: VMConfig+Disks, +Kernel and +Serial (the edits by area), GuestDevices (the device
+//  list and enabled flags), and VMDevices (the VZ configuration built from a config).
+//
 
 import Foundation
 import Virtualization
@@ -202,9 +205,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	// Guest-setup installer state (1.0.7). nil until first used; encoded only when present.
 	var setup: GuestSetupConfig?
 
-	// The framework caps a VM at 10 virtio serial-port devices; console + uart share that budget.
-	static let maxSerialPorts = 10
-
 	init (name: String, memorySize: UInt64, cpuCount: Int) throws {
 		self.name = name
 		self.memorySize = memorySize
@@ -360,58 +360,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return configFilePath(file: "config")
 	}
 
-	// The backing file's size, through a link when the entry names one (D23).
-	func getDiskSize(disk: VMDisk) -> UInt64? {
-		let url = switch disk.kind {
-			case .fromUrl(let url):
-				url
-			case .storage(let name, _):
-				localURL(file: "\(name).raw")
-			case .iso(let url):
-				url
-		}
-		return fileSize(atPath: url.path)
-	}
-
-	// Removes the disk from the config; for .storage also deletes the backing image file.
-	// Destructive — confirmation is the caller's job. Ownership = residency: storage raws
-	// and isos living INSIDE the VM dir (imported/promoted) are deleted with their entry;
-	// external files are only disconnected. The config saves first (D22): a failed save
-	// keeps the entry and its file. Once it saved, the disk IS removed — an owned file that
-	// won't delete stays behind as an orphan, returned for the caller to report, never
-	// thrown (review F3: the removal happened).
-	@discardableResult
-	func deleteDisk(disk: VMDisk) throws -> String? {
-		let before = disks
-		disks.removeAll { $0 == disk }
-		do {
-			try saveVMConfig()
-		} catch {
-			disks = before
-			throw error
-		}
-		guard let file = ownedFile(of: disk), FileManager.default.fileExists(atPath: file)
-		else { return nil }
-		do {
-			try FileManager.default.removeItem(atPath: file)
-			return nil
-		} catch {
-			MachmanLogger.log(.passiveError,
-				"\(name): removed the disk, but \(file) couldn’t be deleted: \(error)")
-			return file
-		}
-	}
-
-	// Swap a disk entry in place (vm.disk.promote): position and the entry's flags (safe,
-	// enabled) stay; only the kind changes.
-	func replaceDisk(id: String, kind: VMDiskKind) throws {
-		guard let index = disks.firstIndex(where: { $0.id == id }) else {
-			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
-		}
-		disks[index] = disks[index].withKind(kind)
-		try saveVMConfig()
-	}
-
 	func vmDirPath() -> String {
 		"\(machmanVMDir)/\(self.name)"
 	}
@@ -478,95 +426,31 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
-	// One entry per file (D34): a second entry for a file the VM already attaches shares the
-	// first one's id, so neither can be addressed alone (removing one removed both), and a
-	// start attached the file twice, writable, past the shared-disk guard's per-file sets.
-	public func addDisk(disk: VMDisk) throws {
-		let file = attachedFile(of: disk)
-		if disks.contains(where: { isSameFile(attachedFile(of: $0), file) }) {
-			throw MachmanError(
-				code: .alreadyExists,
-				message: "\(name) already uses “\((file as NSString).lastPathComponent)”")
+	// Change how a mount reaches the guest (1.0.7). Value/boot-mode validation is the
+	// caller's (LocalMachman.validateMountKind — only it can name the error well).
+	func setMountKind(id: String, kind: String) throws {
+		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
-		disks.append(disk)
+		guard mountPoints[index].kind != kind else { return }
+		mountPoints[index].kind = kind
 		try saveVMConfig()
 	}
 
-	public func addIsoDisk(isoUrl: URL) throws {
-		try addDisk(disk: VMDisk(kind: .iso(isoUrl)))
-	}
-
-	// A new owned image, <name>.raw. The name follows the disk-name rule and must be new to
-	// this VM — in its config and in its folder: creating over an existing file would wipe
-	// that disk, even under a running VM (D15).
-	public func addNewStorageDisk(name raw: String, size: UInt64) throws {
-		let name = try NameRule.diskName.normalized(raw)
-		try Self.validateRawSize(size)
-		let taken = disks.contains {
-			if case .storage(let existing, _) = $0.kind { return existing == name }
-			return false
+	// Change a mount's guest tag (what the guest passes to mount -t virtiofs).
+	func setMountTag(id: String, tag: String) throws {
+		guard let index = mountPoints.firstIndex(where: { $0.id.uuidString == id }) else {
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
 		}
-		guard !taken else {
+		let trimmed = try VMConfig.normalizedShareTag(tag)
+		guard mountPoints[index].tag != trimmed else { return }
+		guard !mountPoints.contains(where: { $0.tag == trimmed }) else {
 			throw MachmanError(
 				code: .alreadyExists,
-				message: "This VM already has a disk named \u{201C}\(name)\u{201D}")
+				message: "This VM already has a mount tagged \u{201C}\(trimmed)\u{201D}")
 		}
-		let path = configFilePath(file: "\(name).raw")
-		try Self.createDiskImage(atPath: path, size: size, name: name)
-		excludeFromBackup(path: path)
-		do {
-			try addDisk(disk: VMDisk(kind: .storage(name, size)))
-		} catch {
-			disks.removeAll { $0.id == "storage:\(name)" }
-			try? FileManager.default.removeItem(atPath: path)
-			throw error
-		}
-	}
-
-	// One size rule for every raw this engine sizes, new or grown (D24): VZ attaches raw
-	// images in whole 512-byte sectors only — anything else fails the next start with
-	// "Couldn’t attach x.raw" — and ftruncate takes an off_t.
-	static func validateRawSize(_ size: UInt64) throws {
-		guard size > 0, size % 512 == 0, size <= UInt64(Int64.max) else {
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "A disk’s size must be a positive multiple of 512 bytes")
-		}
-	}
-
-	// O_EXCL: the image is created or the call fails — an existing file is never replaced.
-	// Sparse: ftruncate allocates nothing.
-	static func createDiskImage(atPath path: String, size: UInt64, name: String) throws {
-		let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
-		guard fd >= 0 else {
-			let code = errno
-			if code == EEXIST {
-				throw MachmanError(
-					code: .alreadyExists,
-					message: "A file named \u{201C}\(name).raw\u{201D} is already in the "
-						+ "VM’s folder")
-			}
-			throw MachmanError(
-				code: .ioFailure,
-				message: "Couldn’t create \(name).raw: \(String(cString: strerror(code)))")
-		}
-		defer { close(fd) }
-		guard ftruncate(fd, off_t(size)) == 0 else {
-			let code = errno
-			unlink(path)
-			throw MachmanError(
-				code: .ioFailure,
-				message: "Couldn’t size \(name).raw: \(String(cString: strerror(code)))")
-		}
-	}
-
-	// Keep VM disks out of Time Machine. Only images the VM owns are touched: a .fromUrl or .iso
-	// disk belongs to the user, who may well want it backed up.
-	func excludeDiskImagesFromBackup() {
-		for disk in disks {
-			guard case .storage(let name, _) = disk.kind else { continue }
-			excludeFromBackup(path: configFilePath(file: "\(name).raw"))
-		}
+		mountPoints[index].tag = trimmed
+		try saveVMConfig()
 	}
 
 	static func computeMaxCPUCount() -> Int {
@@ -665,93 +549,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		try saveVMConfig()
 	}
 
-	// MARK: - Serial ports (console + uart)
-
-	private func ensureSerialCapacity() throws {
-		guard consolePorts.count + uartPorts.count < Self.maxSerialPorts else {
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "A VM can have at most \(Self.maxSerialPorts) serial ports")
-		}
-	}
-
-	func addConsolePort() throws {
-		try ensureSerialCapacity()
-		consolePorts.append(SerialPort())
-		try saveVMConfig()
-	}
-
-	func removeLastConsolePort() throws {
-		guard !consolePorts.isEmpty else {
-			throw MachmanError(code: .invalidArgument, message: "\(name) has no console ports")
-		}
-		consolePorts.removeLast()
-		try saveVMConfig()
-		removeSerialLog(kind: .console, index: consolePorts.count)
-	}
-
-	func addUartPort() throws {
-		try ensureSerialCapacity()
-		uartPorts.append(SerialPort())
-		try saveVMConfig()
-	}
-
-	func removeLastUartPort() throws {
-		guard !uartPorts.isEmpty else {
-			throw MachmanError(code: .invalidArgument, message: "\(name) has no UART ports")
-		}
-		uartPorts.removeLast()
-		try saveVMConfig()
-		removeSerialLog(kind: .uart, index: uartPorts.count)
-	}
-
-	// The per-port log file, derived one way for every consumer: the bridge writes it, the
-	// registry reports it, and port removal deletes it.
-	func serialLogURL(kind: SerialPortKind, index: Int) -> URL {
-		localURL(file: "serial-\(kind.rawValue)\(index).log")
-	}
-
-	// Ports only remove from the end, so the dropped index is exactly the new count — its
-	// log dies with it, and a port added later at the same index starts fresh. Best-effort:
-	// removal happens while the VM is stopped (add/remove refuse while hosted), so nothing
-	// holds the file open, but a failed unlink must not fail the config edit.
-	private func removeSerialLog(kind: SerialPortKind, index: Int) {
-		try? FileManager.default.removeItem(at: serialLogURL(kind: kind, index: index))
-	}
-
-	// The largest serial log cap vm.serial.setLogging accepts (E23): a trim reads up to twice the
-	// cap into the vmhost's memory, and a cap of 2^63 or more overflowed the bridge. 0 and nil
-	// both mean no cap.
-	static let serialLogMaxBytesLimit: UInt64 = 1 << 30
-
-	func setSerialLogging(kind: SerialPortKind, index: Int, config: SerialLogConfig) throws {
-		let ports: ReferenceWritableKeyPath<VMConfig, [SerialPort]>
-		switch kind {
-		case .console:
-			guard consolePorts.indices.contains(index) else {
-				throw MachmanError(code: .notFound, message: "\(name) has no console port \(index)")
-			}
-			ports = \.consolePorts
-		case .uart:
-			guard uartPorts.indices.contains(index) else {
-				throw MachmanError(code: .notFound, message: "\(name) has no UART port \(index)")
-			}
-			ports = \.uartPorts
-		case .unknown:
-			throw MachmanError(code: .invalidArgument, message: "Unknown serial port kind")
-		}
-		// Checked as a cap enters: a larger one the port already holds (written by a script)
-		// keeps working, and clients send it back unchanged with every other logging edit.
-		if let cap = config.maxBytes, cap > Self.serialLogMaxBytesLimit,
-			cap != self[keyPath: ports][index].logging.maxBytes {
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "A serial log can be capped at 1 GB at most")
-		}
-		self[keyPath: ports][index].logging = config
-		try saveVMConfig()
-	}
-
 	func setCPUCount(_ newValue: Int) throws {
 		self.cpuCount = newValue
 		try saveVMConfig()
@@ -760,119 +557,6 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 	func setMemorySize(_ newValue: UInt64) throws {
 		self.memorySize = newValue
 		try saveVMConfig()
-	}
-
-	var isKernelBoot: Bool {
-		if case .linuxKernel = boot { return true }
-		return false
-	}
-
-	// The kernel-boot checkbox: on -> boot from the persisted kernel draft, off -> EFI.
-	// The draft (`kernelSettings`) survives toggling off so the fields keep their values.
-	func setKernelBoot(enabled: Bool) throws {
-		let settings = kernelSettings
-			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
-		let newBoot: BootConfig = enabled ? .linuxKernel(settings) : .efi
-		try BootConfig.validateTransition(from: boot, to: newBoot)
-		if enabled {
-			kernelSettings = settings
-		}
-		boot = newBoot
-		try saveVMConfig()
-	}
-
-	// Writes the draft and, when kernel boot is active, keeps the live payload in sync.
-	func updateKernelSettings(_ settings: LinuxKernelBoot) throws {
-		applyKernelSettings(settings)
-		try saveVMConfig()
-	}
-
-	// The one way kernel settings change (D21): the draft, and the live boot payload while
-	// kernel boot is on — a start reads boot (makeBootLoader), so an edit that missed it
-	// would boot the old files. No save; callers batch it into theirs.
-	func applyKernelSettings(_ settings: LinuxKernelBoot) {
-		kernelSettings = settings
-		if isKernelBoot { boot = .linuxKernel(settings) }
-	}
-
-	// Owned kernel/initramfs files (copies living under <vm>/kernels).
-	func kernelsDirPath() -> String { configFilePath(file: "kernels") }
-	func ownedKernelFiles() -> [OwnedKernelFile] {
-		KernelStore.ownedFiles(
-			kernelsDir: kernelsDirPath(),
-			kernelPath: kernelSettings?.kernelPath,
-			initrdPath: kernelSettings?.initialRamdiskPath)
-	}
-
-	// The command line a kernel boot reads (D28): the active kernel file's own override while
-	// it is on, else the VM's. The one rule for the boot and for any effective line served.
-	func effectiveKernelCommandLine(for boot: LinuxKernelBoot) -> String {
-		guard let file = ownedKernelFiles().first(where: {
-			$0.role == .kernel && $0.path == boot.kernelPath
-		}), let override = kernelOverrides[Self.kernelOverrideKey(for: file)], override.enabled
-		else { return boot.commandLine }
-		return override.commandLine
-	}
-
-	// How the VM directory changed: moved (rename, promotion — the files are now only at
-	// the new place) or copied (vm.copy, safe-run shadowing — the source keeps its files).
-	enum OwnedPathChange {
-		case moved
-		case copied
-	}
-
-	// Owned paths are absolute and embed the VM directory, so every operation that moves or
-	// copies that directory must re-point them, or the config keeps using the old location's
-	// files (C1, C12): the kernel and initramfs, owned (imported) isos, and — on a move only —
-	// fromUrl entries naming a file inside the folder. A copy keeps its fromUrl references on
-	// the source's files: that is VMCopier's reference rule, and a safe-run shadow's unsafe
-	// disks MUST keep naming the real files. External paths (never under the old directory)
-	// stay put. Mounts are never touched. No save — callers batch it into theirs.
-	func rewriteOwnedPaths(
-		fromDir oldDir: String, toDir newDir: String, _ change: OwnedPathChange
-	) {
-		func moved(_ path: String?) -> String? {
-			guard let path, path.hasPrefix(oldDir + "/") else { return nil }
-			return newDir + String(path.dropFirst(oldDir.count))
-		}
-		for index in disks.indices {
-			switch disks[index].kind {
-			case .iso(let url):
-				if let path = moved(url.path) {
-					disks[index].kind = .iso(URL(fileURLWithPath: path))   // flags stay
-				}
-			case .fromUrl(let url) where change == .moved:
-				if let path = moved(url.path) {
-					disks[index].kind = .fromUrl(URL(fileURLWithPath: path))
-				}
-			case .storage, .fromUrl:
-				break
-			}
-		}
-		guard var settings = kernelSettings else { return }
-		var changed = false
-		if let path = moved(settings.kernelPath) {
-			settings.kernelPath = path
-			changed = true
-		}
-		if let path = moved(settings.initialRamdiskPath) {
-			settings.initialRamdiskPath = path
-			changed = true
-		}
-		guard changed else { return }
-		applyKernelSettings(settings)
-	}
-
-	// After deleting an owned kernel file, clear any kernel field that pointed at it.
-	func clearKernelReference(to path: String) throws {
-		guard var settings = kernelSettings else { return }
-		var changed = false
-		if settings.kernelPath == path { settings.kernelPath = ""; changed = true }
-		if settings.initialRamdiskPath == path { settings.initialRamdiskPath = nil; changed = true }
-		if changed {
-			applyKernelSettings(settings)
-			try saveVMConfig()
-		}
 	}
 
 	static func deleteVMDirectory(name: String) throws {
