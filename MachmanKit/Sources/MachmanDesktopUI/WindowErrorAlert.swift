@@ -60,53 +60,22 @@ struct WindowErrorAlert: ViewModifier {
 	}
 }
 
-// Tells its view whether the window holding it is key, now and at every change. Takes no
-// part in layout or hit testing (WindowCloseWatcher's shape).
-private struct KeyWindowWatcher: NSViewRepresentable {
+// Tells its view whether the window holding it is key, now and at every change (a
+// WindowWatcher configuration).
+private struct KeyWindowWatcher: View {
 	let changed: (Bool) -> Void
 
-	func makeNSView(context: Context) -> WatcherView {
-		let view = WatcherView()
-		view.changed = changed
-		return view
-	}
-
-	func updateNSView(_ view: WatcherView, context: Context) {
-		view.changed = changed
-	}
-
-	static func dismantleNSView(_ view: WatcherView, coordinator: ()) {
-		view.stopWatching()
-	}
-
-	final class WatcherView: NSView {
-		var changed: ((Bool) -> Void)?
-		private var observers: [NSObjectProtocol] = []
-
-		override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-		override func viewDidMoveToWindow() {
-			super.viewDidMoveToWindow()
-			stopWatching()
-			guard let window else { return }
-			for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-				observers.append(NotificationCenter.default.addObserver(
-					forName: name, object: window, queue: .main
-				) { [weak self] _ in
-					MainActor.assumeIsolated { self?.report() }
-				})
-			}
+	var body: some View {
+		WindowWatcher(handler: changed) { view, window in
 			// Not inside the view update that moved this view.
-			DispatchQueue.main.async { [weak self] in self?.report() }
-		}
-
-		private func report() {
-			changed?(window?.isKeyWindow ?? false)
-		}
-
-		func stopWatching() {
-			observers.forEach(NotificationCenter.default.removeObserver)
-			observers = []
+			DispatchQueue.main.async { [weak view] in
+				view?.handler(view?.window?.isKeyWindow ?? false)
+			}
+			return window.observe(
+				[NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification]
+			) { [weak view] _ in
+				view?.handler(view?.window?.isKeyWindow ?? false)
+			}
 		}
 	}
 }
