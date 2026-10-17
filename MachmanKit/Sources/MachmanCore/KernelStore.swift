@@ -103,28 +103,58 @@ enum KernelStore {
 	}
 
 	// Copy sourcePath into <kernelsDir>/<role>/<tag>/<basename> and return the new owned path.
+	// Staged (D39): the copy lands in a hidden folder at the VM folder's top level, named like
+	// a disk import's staging so the daemon's startup sweep (DiskImport.sweepStaleStaging)
+	// takes whatever a crash leaves there, and that folder then becomes the tag dir in one
+	// exclusive rename. A throw, kill or full disk mid-copy never leaves a truncated file under
+	// the tag, and of two imports into one tag only one lands (K13). `transfer` is the copy's
+	// test seam; the default is the clone-first engine disk imports use.
 	static func promote(
-		role: KernelRole, sourcePath: String, kernelsDir: String, tag: String
+		role: KernelRole, sourcePath: String, kernelsDir: String, tag: String,
+		transfer: ((String, String) throws -> Void)? = nil
 	) throws -> String {
 		let fm = FileManager.default
 		guard fm.fileExists(atPath: sourcePath) else {
 			throw MachmanError(code: .notFound, message: "No file at \(sourcePath)")
 		}
 		let trimmed = try NameRule.kernelTag.normalized(tag)
-		let tagDir = kernelsDir + "/" + role.rawValue + "/" + trimmed
+		let roleDir = kernelsDir + "/" + role.rawValue
+		let tagDir = roleDir + "/" + trimmed
 		guard !holdsKernelFile(tagDir) else { throw tagTaken(trimmed) }
 		let basename = (sourcePath as NSString).lastPathComponent
-		let dest = tagDir + "/" + basename
-		guard !fm.fileExists(atPath: dest) else {
-			throw MachmanError(
-				code: .alreadyExists,
-				message: "\u{201C}\(trimmed)\u{201D} already holds a file named "
-					+ "\u{201C}\(basename)\u{201D}")
+		let staging = (kernelsDir as NSString).deletingLastPathComponent + "/"
+			+ DiskImport.stagingPrefix + UUID().uuidString
+		do {
+			try fm.createDirectory(atPath: staging, withIntermediateDirectories: true)
+			let staged = staging + "/" + basename
+			if let transfer {
+				try transfer(sourcePath, staged)
+			} else {
+				try FileTransfer.copy(src: sourcePath, dst: staged)
+			}
+			excludeFromBackup(path: staged)   // owned now; the attribute rides the rename
+			try fm.createDirectory(atPath: roleDir, withIntermediateDirectories: true)
+			try place(staging, at: tagDir, tag: trimmed)
+		} catch {
+			try? fm.removeItem(atPath: staging)
+			throw error
 		}
-		try fm.createDirectory(atPath: tagDir, withIntermediateDirectories: true)
-		try fm.copyItem(atPath: sourcePath, toPath: dest)
-		excludeFromBackup(path: dest)
-		return dest
+		return tagDir + "/" + basename
+	}
+
+	// The staged folder becomes the tag dir, never over one: a tag dir that holds a kernel file
+	// refuses (K13); one left empty — its last file deleted beside Finder's .DS_Store — is
+	// cleared and taken.
+	private static func place(_ staging: String, at tagDir: String, tag: String) throws {
+		for _ in 0..<2 {
+			if try DiskImport.placeExclusively(staging, at: tagDir) { return }
+			guard !holdsKernelFile(tagDir) else { throw tagTaken(tag) }
+			if (try? FileManager.default.contentsOfDirectory(atPath: tagDir)) == [".DS_Store"] {
+				try? FileManager.default.removeItem(atPath: tagDir + "/.DS_Store")
+			}
+			_ = removeEmptyDirectory(tagDir)
+		}
+		throw tagTaken(tag)
 	}
 
 	// Move an owned file to a new tag: <role>/<oldTag>/<file> → <role>/<newTag>/<file>,

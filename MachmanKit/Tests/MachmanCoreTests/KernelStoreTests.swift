@@ -249,4 +249,102 @@ struct KernelStoreTests {
 		_ = try KernelStore.promote(
 			role: .initramfs, sourcePath: second, kernelsDir: kernels, tag: "vmlinuz-6.1")
 	}
+
+	// D39 (review 4): a kernel import copied straight to <role>/<tag>/<file>, so a crash, a kill
+	// or a full disk mid-copy left a truncated file the VM listed as its own kernel. The copy
+	// is staged now, and the tag dir appears only once it is whole.
+	private struct Interrupted: Error {}
+
+	private func storeDir() throws -> (dir: String, kernels: String, source: String) {
+		let dir = TestEnvironment.scratch + "d39-\(UUID().uuidString)"
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		let source = dir + "-vmlinuz"
+		try Data(repeating: 0x4B, count: 64 << 10).write(to: URL(fileURLWithPath: source))
+		return (dir, dir + "/kernels", source)
+	}
+
+	private func staging(in dir: String) -> [String] {
+		((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
+			.filter { $0.hasPrefix(DiskImport.stagingPrefix) }
+	}
+
+	@Test("D39: a kernel import that fails mid-copy leaves nothing under its tag")
+	func aFailedCopyLeavesNoFile() throws {
+		let (dir, kernels, source) = try storeDir()
+		defer {
+			try? FileManager.default.removeItem(atPath: dir)
+			try? FileManager.default.removeItem(atPath: source)
+		}
+		#expect(throws: Interrupted.self) {
+			try KernelStore.promote(
+				role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1"
+			) { _, staged in
+				try Data(count: 4096).write(to: URL(fileURLWithPath: staged))
+				throw Interrupted()
+			}
+		}
+		#expect(!FileManager.default.fileExists(atPath: kernels + "/kernel/v1"))
+		#expect(KernelStore.ownedFiles(kernelsDir: kernels).isEmpty)
+		#expect(staging(in: dir).isEmpty)
+		let dest = try KernelStore.promote(
+			role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1")
+		#expect(try Data(contentsOf: URL(fileURLWithPath: dest))
+			== Data(contentsOf: URL(fileURLWithPath: source)))
+	}
+
+	// A crash mid-copy leaves the staged folder: it sits where the daemon's startup sweep of
+	// the VM folder removes it (the sweep run from inside the copy stands in for the restart).
+	@Test("D39: an interrupted kernel import's staging goes with the startup sweep")
+	func theSweepTakesAnInterruptedImport() throws {
+		let (dir, kernels, source) = try storeDir()
+		defer {
+			try? FileManager.default.removeItem(atPath: dir)
+			try? FileManager.default.removeItem(atPath: source)
+		}
+		var swept: [String]?
+		#expect(throws: Interrupted.self) {
+			try KernelStore.promote(
+				role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1"
+			) { _, staged in
+				try Data(count: 4096).write(to: URL(fileURLWithPath: staged))
+				let before = staging(in: dir)
+				DiskImport.sweepStaleStaging(vmDir: dir)
+				swept = before.filter { !staging(in: dir).contains($0) }
+				throw Interrupted()
+			}
+		}
+		#expect(swept?.count == 1)
+		#expect(KernelStore.ownedFiles(kernelsDir: kernels).isEmpty)
+	}
+
+	// Kernel-import claims don't exclude each other: an import that lands first takes the tag,
+	// and the one placed after it is refused (K13), leaving nothing behind. A tag dir left
+	// holding only Finder's .DS_Store is no kernel file and is taken.
+	@Test("D39: two imports placed into one tag land one file")
+	func twoImportsIntoOneTagLandOne() throws {
+		let (dir, kernels, source) = try storeDir()
+		defer {
+			try? FileManager.default.removeItem(atPath: dir)
+			try? FileManager.default.removeItem(atPath: source)
+		}
+		try FileManager.default.createDirectory(
+			atPath: kernels + "/kernel/v1", withIntermediateDirectories: true)
+		try Data().write(to: URL(fileURLWithPath: kernels + "/kernel/v1/.DS_Store"))
+		let other = dir + "/Image"
+		try Data("other".utf8).write(to: URL(fileURLWithPath: other))
+		var landed: String?
+		let error = try #require(throws: MachmanError.self) {
+			try KernelStore.promote(
+				role: .kernel, sourcePath: source, kernelsDir: kernels, tag: "v1"
+			) { src, staged in
+				try FileManager.default.copyItem(atPath: src, toPath: staged)
+				landed = try KernelStore.promote(
+					role: .kernel, sourcePath: other, kernelsDir: kernels, tag: "v1")
+			}
+		}
+		#expect(error.message == "\u{201C}v1\u{201D} already holds a kernel file")
+		#expect(landed == kernels + "/kernel/v1/Image")
+		#expect(KernelStore.ownedFiles(kernelsDir: kernels).map(\.fileName) == ["Image"])
+		#expect(staging(in: dir).isEmpty)
+	}
 }
