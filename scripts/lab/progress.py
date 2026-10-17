@@ -501,7 +501,11 @@ class Follower:
                 at += " [%s]" % case
             symbol = messages[0].get("symbol") if messages else ""
             glyph = "~" if known else ("!" if symbol == "warning" else "✘")
-            text = CARD.sub("", " ".join(m["text"] for m in messages if m.get("text")))
+            texts = [m["text"] for m in messages if m.get("text")]
+            # An issue recorded with only a comment: Swift Testing's placeholder, then the comment.
+            if len(texts) > 1 and texts[0] == "Issue recorded":
+                texts = texts[1:]
+            text = CARD.sub("", " ".join(texts))
             title = CARD.sub("", next((m.get("text", "") for m in messages[1:]
                                       if m.get("symbol") == "details"), ""))
             if test_id is not None:
@@ -1229,6 +1233,44 @@ def self_check():
         check("a parameterized test's issue and its failed line name the argument",
               "Mounts.swift:83 [debian]: Expectation failed: booted" in text
               and "automounts mount at boot (Mounts.swift:83 [debian])" in text)
+
+    # Event stream 6.3 (Q42): a warning (a retry the harness rode over) arrives as an issue of
+    # severity "warning"; an issue recorded with only a comment is Swift Testing's "Issue
+    # recorded" followed by the comment.
+    with tempfile.TemporaryDirectory() as root:
+        t0 = time.time() - 60
+        w1, c1 = "Mod.Suite/warns()/File.swift:10:3", "Mod.Suite/fails()/File.swift:20:3"
+
+        def issue(line, severity):
+            return {"isKnown": False, "severity": severity, "isFailure": severity == "error",
+                    "sourceLocation": {"fileID": "Mod/Retry.swift", "line": line}}
+
+        write(root + "/report/events.jsonl", [
+            test("R1: a retry warns", "warns()"), test("R2: a comment fails", "fails()", 20),
+            event("runStarted", t0),
+            event("testStarted", t0 + 1, w1),
+            event("issueRecorded", t0 + 2, w1, [("warning", "Issue recorded"),
+                                                ("details", "retried once: a stop settled")],
+                  issue=issue(12, "warning")),
+            event("testEnded", t0 + 3, w1, [("pass", "passed with 1 warning")]),
+            event("testStarted", t0 + 4, c1),
+            event("issueRecorded", t0 + 5, c1, [("fail", "Issue recorded"),
+                                                ("details", "no console")],
+                  issue=issue(22, "error")),
+            event("testEnded", t0 + 6, c1, [("fail", "failed")]),
+            event("runEnded", t0 + 7, messages=[
+                ("fail", "Test run with 2 tests in 1 suite failed after 7 seconds with 2 issues "
+                 "(including 1 warning).")]),
+        ])
+        open(root + "/stop-now", "w").close()
+        buf = io.StringIO()
+        follow(root, 0, root + "/stop-now", interval=0.05, out=buf, tty=False)
+        text = buf.getvalue()
+        check("Q42: an issue recorded with only a comment reads that comment, a warning never "
+              "failing its test",
+              "! Retry.swift:12: retried once: a stop settled\n" in text
+              and "✔ 1/2 a retry warns · " in text
+              and "✘ Retry.swift:22: no console\n" in text and "Issue recorded" not in text)
 
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
