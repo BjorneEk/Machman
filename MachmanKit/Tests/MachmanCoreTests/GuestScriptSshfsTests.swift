@@ -396,6 +396,36 @@ struct GuestScriptSshfsTests {
 		}
 	}
 
+	// S66: the uninstall's unmount pass rmdir'd every mount folder and the share root, made or
+	// found, so a folder that was there before setup — /srv/www under --mountpoint /srv, a
+	// mount named "www" — went with it. Only what a run made goes now; a found one stays.
+	@Test("S66: a mount folder that was there stays at uninstall while one setup made goes")
+	func uninstallKeepsAFoundMountFolder() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(GuestScriptStateTests.stateHere + #"""
+				UI_COLS=1000
+				mount() { :; }
+				mkdir -p "$D/srv/www" "$D/share"
+				SHARE_ROOT="$D/share"
+				make_dir "$D/srv/made"
+				ST_MOUNTPOINT="$D/srv"
+				ST_AUTOMOUNT_SSHFS="www${T}made${T}@share"
+				uninstall_unmount_and_prune
+				for dir in srv srv/www srv/made share; do
+					if [ -d "$D/$dir" ]; then echo "$dir: kept"; else echo "$dir: gone"; fi
+				done
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				srv: kept
+				srv/www: kept
+				srv/made: gone
+				share: kept
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	@Test func theMountPointIsReadyOnlyWhenItIs() async throws {
 		for shell in GuestScriptHarness.shells {
 			let r = try await GuestScriptHarness.run("""

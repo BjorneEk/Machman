@@ -33,8 +33,8 @@ feature_selected() {
 	has_word "$1" "$SELECTED_FEATURES"
 }
 
-# Unmount one machman mount if it is mounted (best-effort, reported), then remove its
-# now-emptied directory — rmdir only, so a dir holding anything stays.
+# Unmount one machman mount if it is mounted (best-effort, reported). Its directory is
+# left to prune_made_dirs: it goes only if a run made it, and only once empty.
 uninstall_release_dir() {
 	[ -d "$1" ] || return 0
 	if mount 2>/dev/null | grep -qF " $1 "; then
@@ -44,7 +44,6 @@ uninstall_release_dir() {
 			warn "could not unmount $1 — unmount it yourself (its boot entry is gone)."
 		fi
 	fi
-	rmdir "$1" 2>/dev/null || true
 	return 0
 }
 
