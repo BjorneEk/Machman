@@ -370,7 +370,7 @@ struct KernelStoreTests {
 
 	// D35 by the rename path: a re-tag into a tag that held another file put two kernels under
 	// one tag the same way an import did. Refused with the same sentence; a file of the other
-	// role under that tag doesn't count.
+	// role under that tag doesn't count, and neither does another VM's (tags are per VM).
 	@Test("D35: re-tagging into a tag that holds another kernel file is refused")
 	func aRetagIntoATakenTagIsRefused() throws {
 		let dir = TestEnvironment.scratch + "d35r-\(UUID().uuidString)"
@@ -395,5 +395,11 @@ struct KernelStoreTests {
 		#expect(FileManager.default.fileExists(atPath: next))
 		#expect(try KernelStore.rename(path: stable, kernelsDir: kernels, newTag: "lts")
 			== kernels + "/kernel/lts/vmlinuz")
+		// Tags are per VM: another VM's kernel takes a tag this one holds ("next").
+		let otherKernels = dir + "/other-vm/kernels"
+		let other = try KernelStore.promote(
+			role: .kernel, sourcePath: first, kernelsDir: otherKernels, tag: "6.12")
+		#expect(try KernelStore.rename(path: other, kernelsDir: otherKernels, newTag: "next")
+			== otherKernels + "/kernel/next/vmlinuz")
 	}
 }
