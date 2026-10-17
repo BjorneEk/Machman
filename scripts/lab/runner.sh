@@ -37,9 +37,10 @@ lab_runner_resolve() {
 # lab_runner_toolchain <swift on PATH> <developer dir>: the swift that builds the test bundle
 # (PATH's; the /usr/bin shim resolved as it resolves, through xcrun) as LAB_TEST_SWIFT. Fails,
 # with LAB_RUNNER_WHY, when it isn't the selected Xcode's: its own helper would load that
-# Xcode's Testing frameworks into a bundle another toolchain built.
+# Xcode's Testing frameworks into a bundle another toolchain built. Both are compared by their
+# real paths (an Xcode linked as /Applications/Xcode.app is common).
 lab_runner_toolchain() {
-	local swift="$1"
+	local swift="$1" dev=""
 	LAB_TEST_SWIFT=""
 	[[ "$swift" == /usr/bin/swift ]] && swift="$(xcrun --find swift 2>/dev/null)"
 	if [[ -z "$swift" ]]; then
@@ -48,7 +49,8 @@ lab_runner_toolchain() {
 	fi
 	# Its directory's real path (swift itself links to swift-frontend in the same place).
 	swift="$(cd "${swift%/*}" 2>/dev/null && pwd -P || echo "${swift%/*}")/${swift##*/}"
-	if [[ -z "$2" || "$swift" != "$2"/* ]]; then
+	[[ -n "$2" ]] && dev="$(cd "$2" 2>/dev/null && pwd -P || echo "$2")"
+	if [[ -z "$dev" || "$swift" != "$dev"/* ]]; then
 		LAB_RUNNER_WHY="swift at $swift isn't the selected Xcode's (${2:-none})"
 		return 1
 	fi
@@ -360,6 +362,20 @@ lab_selfcheck_runner() {
 		echo "ok   $check"
 	else
 		echo "FAIL $check: helper $LAB_TEST_HELPER, swift ${LAB_TEST_SWIFT:-?}; elsewhere: $why"
+		failures=$((failures + 1))
+	fi
+	check="Q27: a selected Xcode reached through a symlink is still the build toolchain"
+	local dev
+	dev="$(cd "$(xcode-select -p 2>/dev/null)" 2>/dev/null && pwd -P)"
+	ln -s "$dev" "$sc/linked-developer"
+	why="$(lab_runner_toolchain "$sc/linked-developer/${LAB_TEST_SWIFT#"$dev"/}" \
+		"$sc/linked-developer"
+		echo "$? ${LAB_TEST_SWIFT:-}${LAB_RUNNER_WHY:+ / $LAB_RUNNER_WHY}")"
+	if [[ -n "$dev" && -n "$LAB_TEST_SWIFT" && "$LAB_TEST_SWIFT" == "$dev"/* &&
+		"$why" == "0 $LAB_TEST_SWIFT" ]]; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: developer dir ${dev:-?}, swift ${LAB_TEST_SWIFT:-?}: $why"
 		failures=$((failures + 1))
 	fi
 	check="Q27: through swift test, a filter that matches no test fails as through the helper"
