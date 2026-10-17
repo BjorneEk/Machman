@@ -51,6 +51,13 @@ extension VMInfo {
 		!(devices ?? []).contains { $0.kind == .guestSetup }
 	}
 
+	// The remove APIs pop the highest index of a kind, so only that port offers Remove — in
+	// the tree's menu and in the port's inspector alike (H58).
+	public func offersRemove(_ ref: SerialPortRef) -> Bool {
+		let peers = ref.kind == .console ? (consolePorts ?? []) : (uartPorts ?? [])
+		return ref.index == peers.map(\.index).max()
+	}
+
 	// Why the daemon would refuse the action now, or nil when it is offered. A starting,
 	// stopping or paused VM is hosted too, and one whose vmhost stopped answering may still
 	// be (the daemon refuses while it can't tell). Unknown is busy as well (P37): Machman

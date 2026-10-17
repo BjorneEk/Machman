@@ -56,6 +56,21 @@ struct MenuRulesTests {
 		#expect(!disabled.canAddGuestSetup)
 	}
 
+	// The remove APIs pop a kind's highest index: the tree's menu and the port's inspector
+	// offer Remove there only.
+	@Test("H58: only a kind's highest port offers Remove")
+	func onlyTheLastPortOffersRemove() {
+		let four = Samples.linuxConsolesReported()
+		#expect((0..<4).map { four.offersRemove(SerialPortRef(kind: .console, index: $0)) }
+			== [false, false, false, true])
+		let lab = Samples.kernelBoot()
+		#expect(lab.offersRemove(SerialPortRef(kind: .console, index: 0)))
+		#expect(lab.offersRemove(SerialPortRef(kind: .uart, index: 0)))
+		// A port the VM doesn't have offers nothing.
+		#expect(!lab.offersRemove(SerialPortRef(kind: .uart, index: 1)))
+		#expect(!Samples.macOS().offersRemove(SerialPortRef(kind: .console, index: 0)))
+	}
+
 	@Test("Q30: the Installers group shows only once Guest Setup is attached, nothing to add")
 	func theInstallersGroupHasNothingToAdd() {
 		var disabled = Samples.linux("Debian")

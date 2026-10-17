@@ -139,8 +139,8 @@ extension TreeContext {
 				viewModel.setEnabled(vm.name, uart: change)
 			}
 		}
-		// The remove APIs pop the highest index of a kind, so only that port offers Remove.
-		if isLastOfKind(port) {
+		// Only a kind's last port offers Remove (VMMenuRules), as in the port's inspector.
+		if vm.offersRemove(ref) {
 			Button("Remove", role: .destructive) {
 				if port.kind == .console {
 					viewModel.removeConsolePort(vm.name)
@@ -150,11 +150,6 @@ extension TreeContext {
 			}
 			.stopFirst(vm, .changeSerialPorts)
 		}
-	}
-
-	private func isLastOfKind(_ port: SerialPortInfo) -> Bool {
-		let peers = port.kind == .console ? (vm.consolePorts ?? []) : (vm.uartPorts ?? [])
-		return port.index == peers.map(\.index).max()
 	}
 
 	@ViewBuilder

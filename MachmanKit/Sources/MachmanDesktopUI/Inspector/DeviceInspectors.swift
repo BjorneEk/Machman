@@ -6,7 +6,8 @@
 //  carry settings (riding vm.device.update); every other kind gets DeviceInfoInspector —
 //  what the device IS (Mac/Generic variant + the VZ class, for a docs lookup) and Remove.
 //  Everything SSH lives in SSHInspector.swift; the two shared sections here
-//  (DeviceImplementationSection, DeviceRemoveRow) close every device inspector.
+//  (DeviceImplementationSection, DeviceRemoveRow: Enabled and Remove) close every device
+//  inspector.
 //
 
 import SwiftUI
@@ -126,14 +127,21 @@ struct DeviceImplementationSection: View {
 	}
 }
 
-// Shared trailing row: remove the device (next-boot effect, like every device change).
+// Shared trailing section: the device's Enabled toggle — the tree menu's Disable, here
+// too (H58) — and Remove; both take effect at the next boot, like every device change.
 struct DeviceRemoveRow: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 	let kind: DeviceKind
 
+	private var device: DeviceInfo? { vm.devices?.first { $0.kind == kind } }
+
 	var body: some View {
 		Section {
+			Toggle("Enabled", isOn: Binding(
+				get: { device?.enabled ?? true },
+				set: { viewModel.setEnabled(vm.name, devices: [kind.rawValue: $0]) }))
+				.help("Disabled devices are left out at the next start")
 			HStack {
 				IconButton(
 					symbol: MachmanSymbols.delete,

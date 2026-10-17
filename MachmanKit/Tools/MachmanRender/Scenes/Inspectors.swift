@@ -390,5 +390,16 @@ enum InspectorScenes {
 				viewModel: ctx.viewModel, sessions: ctx.terminals, profiles: ctx.profiles,
 				vm: ctx.vm))
 		},
+		// H58: a port's and a device's Enabled toggle off, and a console that isn't its
+		// kind's last (no Remove).
+		inspector(
+			"serial.disabled", "SerialInspector, a console disabled before the start",
+			vms: { [Samples.disabledConsole()] }, node: .serial(console)),
+		inspector(
+			"serial.first-of-four", "SerialInspector, the first of four consoles (no Remove)",
+			vms: { [Samples.linuxConsolesReported()] }, node: .serial(console)),
+		inspector(
+			"device.graphics.disabled", "GraphicsInspector, a disabled display",
+			vms: { [Samples.linuxNoDisplay(state: .stopped)] }, node: .device(.graphics)),
 	]
 }

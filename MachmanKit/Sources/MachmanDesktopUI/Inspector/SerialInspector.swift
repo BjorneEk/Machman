@@ -5,8 +5,9 @@
 //  The serial-port inspector (1.0.4 UI), absorbing the old TerminalInfoPanel: host
 //  unavailability (a gated uart leads with the reason), terminal profile with New/Edit and
 //  the Reload hint when startup-only settings drifted, the data-plane socket, per-port file
-//  logging, guest device names by boot mode (+ the console Setup Guide sheet), and — for
-//  uarts — the probed platform info.
+//  logging, guest device names by boot mode (+ the console Setup Guide sheet), for uarts
+//  the probed platform info, and last the port's Enabled toggle and, on a kind's last port,
+//  Remove — what the tree's menu offers (H58).
 //
 
 import SwiftUI
@@ -45,6 +46,7 @@ struct SerialInspector: View {
 			if kind == .uart, port?.mmioBase != nil || port?.irq != nil {
 				platformSection
 			}
+			portSection
 		}
 		.sheet(isPresented: $showSetupGuide) {
 			GuestSetupHelpSheet(vm: vm).liveWhileSettingsLocked()
@@ -265,6 +267,46 @@ struct SerialInspector: View {
 				}
 			}
 		}
+	}
+
+	// MARK: - The port itself
+
+	// The tree's Enable/Disable and Remove, here too (H58): Remove only on a kind's last
+	// port (the remove APIs pop the highest index), stop-first as in the menu.
+	private var portSection: some View {
+		Section {
+			Toggle("Enabled", isOn: enabledBinding)
+				.help("Disabled ports are not attached at the next start")
+			if vm.offersRemove(ref) {
+				HStack {
+					IconButton(
+						symbol: MachmanSymbols.delete,
+						name: kind == .console ? "Remove console port" : "Remove UART port",
+						disabledReason: vm.refusal(.changeSerialPorts)
+					) {
+						if kind == .console {
+							viewModel.removeConsolePort(vm.name)
+						} else {
+							viewModel.removeUartPort(vm.name)
+						}
+					}
+					Spacer()
+				}
+			}
+		}
+	}
+
+	private var enabledBinding: Binding<Bool> {
+		Binding(
+			get: { port?.isEnabled ?? true },
+			set: { value in
+				let change = [String(index): value]
+				if kind == .console {
+					viewModel.setEnabled(vm.name, console: change)
+				} else {
+					viewModel.setEnabled(vm.name, uart: change)
+				}
+			})
 	}
 
 	// Only the caption cases remain: kernel-boot consoles (beside their Setup Guide button)
