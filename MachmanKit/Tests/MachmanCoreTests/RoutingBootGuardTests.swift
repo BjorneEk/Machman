@@ -44,6 +44,11 @@ private final class SilentHost: @unchecked Sendable {
 	}
 }
 
+@MainActor
+private final class Flag {
+	var raised = false
+}
+
 struct RoutingBootGuardTests {
 	private struct Rig {
 		let routing: RoutingMachman
@@ -124,21 +129,28 @@ struct RoutingBootGuardTests {
 	}
 
 	// Review F8: a vmhost that never answers hello, already marked unadoptable, was asked
-	// again by every start of any other VM — its hello deadline, under the start claim.
-	@Test @MainActor func aKnownUnadoptableHostCostsAStartNothing() async throws {
+	// again by every start of any other VM — its hello deadline, under the start claim. Q40:
+	// a wall-clock bound on the start failed under load though the start never waited; on a
+	// TestClock the start ends with nothing ever armed — the hello it asked would be.
+	@Test("E37: a vmhost already known unadoptable costs a start no hello")
+	@MainActor func aKnownUnadoptableHostCostsAStartNothing() async throws {
 		let rig = try makeRig(shareDisk: false)
-		// A hello the start would wait out is far longer than anything the start itself costs
-		// under load (an 8.9 s spawn path was seen at load 80 against the old 5 s bound).
-		rig.routing.helloDeadline = .seconds(60)
+		let clock = TestClock()
+		rig.routing.clock = clock
 		let silent = try SilentHost(path: rig.betaSocket)
 		defer { silent.close() }
 		rig.routing.unadoptable.insert("beta")   // an earlier adoption failed
 
-		let clock = ContinuousClock()
-		let started = clock.now
-		let error = try await refusal(rig.routing, force: false)
+		let done = Flag()
+		let start = Task { @MainActor in
+			defer { done.raised = true }
+			return try await refusal(rig.routing, force: false)
+		}
+		#expect(await eventually { done.raised || !clock.armed.isEmpty })
+		#expect(clock.everArmed.isEmpty, "the start waited on \(clock.everArmed)")
+		clock.advance(by: clock.armed.max() ?? .zero)   // a start that waited goes on
+		let error = try await start.value
 		#expect(error.message.contains("reinstall Machman"))   // on to the spawn
-		#expect(clock.now - started < .seconds(30))   // before: the 60 s hello first
 		#expect(rig.routing.adoptionAttempts == 0)
 	}
 

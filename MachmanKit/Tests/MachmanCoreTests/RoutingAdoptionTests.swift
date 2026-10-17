@@ -121,22 +121,27 @@ struct RoutingAdoptionTests {
 		#expect(alpha?.state == .running)
 	}
 
-	@Test @MainActor func aVMHostThatNeverAnswersListsAsNotResponding() async throws {
+	// Q40: this waited for the list to say so on an 8 s wall clock, which load outran. The
+	// router runs on a TestClock: the adoption's hello is armed at its 200 ms deadline (an
+	// adoption on the 10 s default would arm that), and one advance past it fails the adoption.
+	@Test("E21: a vmhost that never answers hello lists not responding once its hello deadline passes")
+	@MainActor func aVMHostThatNeverAnswersListsAsNotResponding() async throws {
 		let (routing, socketPath) = try makeRouting(
 			helloDeadline: .milliseconds(200), probeDeadline: .milliseconds(300))
+		let clock = TestClock()
+		routing.clock = clock
 		let host = try HungHost(path: socketPath)
 		defer { host.close() }
 
-		var alpha: VMInfo?
-		// The loop ends at the first list that says so; the bound only has to stay under the
-		// 10 s default hello deadline, which an adoption ignoring the 200 ms one would wait out.
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: .seconds(8))
-		while clock.now < deadline {
-			alpha = try await routing.listVMs().first { $0.name == "alpha" }
-			if alpha?.unresponsive == true { break }
-			try await Task.sleep(for: .milliseconds(50))
-		}
+		let first = try await routing.listVMs().first { $0.name == "alpha" }
+		#expect(first?.state == .unknown)   // its adoption has only begun
+		#expect(first?.unresponsive == nil)
+		#expect(await eventually { !clock.armed.isEmpty })
+		let armed = clock.armed
+		#expect(armed == [.milliseconds(200)])
+		clock.advance(by: armed.max() ?? .milliseconds(200))
+		#expect(await eventually { routing.unadoptable == ["alpha"] })
+		let alpha = try await routing.listVMs().first { $0.name == "alpha" }
 		#expect(alpha?.unresponsive == true)
 		#expect(alpha?.state == .unknown)
 		#expect(routing.hostedNames.isEmpty)
