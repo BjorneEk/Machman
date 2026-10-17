@@ -6,7 +6,8 @@
 //  vmhost in turn with the 30 s default deadline, and a VM whose host didn't answer was
 //  left out — its alias and pinned key vanished from ~/.ssh while the guest was fine. The
 //  hosts are asked at once now, each bounded like a list probe, and a host that misses
-//  the deadline keeps its VM's entry from the daemon's copy.
+//  the deadline keeps its VM's entry from the daemon's copy. Q40: the stall check runs on a
+//  TestClock — under load the answering host itself missed a 1 s wall-clock deadline.
 //
 
 import Testing
@@ -36,7 +37,7 @@ struct RoutingSSHFilesTests {
 	// The daemon's copy of each VM knows the alias "<name>-before.machman", its vmhost
 	// answers "<name>-now.machman".
 	private func makeRig(
-		_ names: [String], stalled: Set<String>, deadline: Duration
+		_ names: [String], stalled: Set<String>, deadline: Duration, clock: TestClock? = nil
 	) async throws -> Rig {
 		let sshDir = TestEnvironment.scratchURL
 			.appendingPathComponent("machman-routing-ssh-\(UUID().uuidString)")
@@ -59,6 +60,7 @@ struct RoutingSSHFilesTests {
 			routing.locateVMHost = { nil }
 		}
 		routing.hostProbeDeadline = deadline
+		if let clock { routing.clock = clock }
 		var stubs: [String: StubMachman] = [:]
 		var servers: [MachmanServer] = []
 		for name in names {
@@ -78,6 +80,8 @@ struct RoutingSSHFilesTests {
 			let client = try await routing.connectHost(identity: identity)
 			routing.adopt(identity: identity, client: client)
 		}
+		// Each adoption's event subscription is a call with a deadline: it ends with its reply.
+		if let clock { #expect(await eventually { clock.armed.isEmpty }) }
 		return Rig(routing: routing, sshDir: sshDir, stubs: stubs, servers: servers)
 	}
 
@@ -90,12 +94,21 @@ struct RoutingSSHFilesTests {
 		try? FileManager.default.removeItem(at: rig.sshDir)
 	}
 
-	@Test func aStalledHostKeepsItsVM() async throws {
+	@Test("C22: a stalled vmhost keeps its VM's ~/.ssh entry once its probe deadline passes")
+	func aStalledHostKeepsItsVM() async throws {
+		let clock = TestClock()
 		let rig = try await makeRig(
-			["alpha", "beta"], stalled: ["beta"], deadline: .seconds(1))
+			["alpha", "beta"], stalled: ["beta"], deadline: .seconds(1), clock: clock)
 
+		let armedBefore = clock.everArmed.count
 		rig.routing.scheduleSSHHostConfigWrite()
-		await rig.routing.sshFiles?.settled()
+		let written = Task { @MainActor in await rig.routing.sshFiles?.settled() }
+		// Both asked at once: alpha's deadline ends with its answer, beta's is what is left.
+		#expect(await eventually {
+			clock.everArmed.count >= armedBefore + 2 && clock.armed == [.seconds(1)]
+		}, "armed \(clock.armed)")
+		clock.advance(by: (clock.armed + [.seconds(1)]).max() ?? .zero)
+		await written.cancellableValue()
 
 		#expect(rig.managed.contains(#"Host "alpha-now.machman""#))     // its vmhost's answer
 		#expect(rig.managed.contains(#"Host "beta-before.machman""#))   // kept, from the copy
@@ -107,7 +120,9 @@ struct RoutingSSHFilesTests {
 	// config — the write ran after the reply (A1b met it). The reply now waits for it.
 	@Test("C30: vm.ssh.set replies once ~/.ssh/machman/config lists the VM's alias")
 	func setSSHRepliesAfterTheWrite() async throws {
-		let rig = try await makeRig(["alpha"], stalled: [], deadline: .seconds(5))
+		// On a TestClock nothing advances: the answer can't miss its deadline however slow.
+		let rig = try await makeRig(
+			["alpha"], stalled: [], deadline: .seconds(5), clock: TestClock())
 		_ = try await rig.routing.setSSH(
 			vm: "alpha", integrationEnabled: true, reverseApproved: nil, alias: nil)
 		#expect(rig.managed.contains(#"Host "alpha-now.machman""#))
@@ -115,10 +130,13 @@ struct RoutingSSHFilesTests {
 	}
 
 	// Both stalled hosts are asked before either ask could have run out: asked in turn, the
-	// second would wait out the first's 30 s deadline. Released, both answer fresh.
-	@Test func theHostsAreAskedAtOnce() async throws {
+	// second would wait out the first's deadline — on a TestClock nothing advances, so the
+	// second would never be asked. Released, both answer fresh.
+	@Test("C22: the vmhosts are asked for ~/.ssh at once")
+	func theHostsAreAskedAtOnce() async throws {
 		let rig = try await makeRig(
-			["alpha", "beta", "gamma"], stalled: ["beta", "gamma"], deadline: .seconds(30))
+			["alpha", "beta", "gamma"], stalled: ["beta", "gamma"], deadline: .seconds(30),
+			clock: TestClock())
 		let beta = try #require(rig.stubs["beta"])
 		let gamma = try #require(rig.stubs["gamma"])
 
