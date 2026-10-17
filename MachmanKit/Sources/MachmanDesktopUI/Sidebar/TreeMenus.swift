@@ -181,9 +181,13 @@ extension TreeContext {
 		}
 	}
 
+	// A macOS VM's kernel files offer only what removes them (D31): no pick, re-tag or promote.
 	@ViewBuilder
 	func kernelEntryMenu(_ file: KernelTreeEntry, role: KernelRole) -> some View {
-		if file.active {
+		let removeOnly = vm.kernelSectionsRemoveOnly
+		if removeOnly {
+			EmptyView()
+		} else if file.active {
 			Button("Deselect") { setActiveKernelPath(nil, role: role) }
 		} else {
 			Button("Select") { setActiveKernelPath(file.id, role: role) }
@@ -193,13 +197,13 @@ extension TreeContext {
 				kind: role == .kernel ? .kernel : .initramfs, path: file.id))
 		}
 		Button("Show in Finder") { Finder.reveal(file.id) }
-		if file.owned {
+		if file.owned && !removeOnly {
 			Button("Rename") {
 				renamingNode = role == .kernel ? .kernel(file.id) : .initramfs(file.id)
 			}
 			.stopFirst(vm, .renameKernelFile)
 		}
-		if !file.owned {
+		if !file.owned && !removeOnly {
 			Button("Promote to Owned") {
 				viewModel.promoteKernel(
 					vm.name, role: role, sourcePath: file.id,

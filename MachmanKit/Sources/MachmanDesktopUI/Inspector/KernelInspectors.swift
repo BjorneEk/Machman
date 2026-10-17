@@ -50,6 +50,8 @@ struct KernelParentInspector: View {
 							.tag(String?.some(activePath))
 					}
 				}
+				// A macOS VM keeps its kernel draft only to remove it (D31).
+				.disabled(vm.kernelSectionsRemoveOnly)
 				if vm.kernelBootMissingKernel {
 					Label("No kernel selected — the VM cannot start",
 						systemImage: MachmanSymbols.warning)
@@ -63,6 +65,7 @@ struct KernelParentInspector: View {
 				CmdlineEditor(
 					initial: vm.boot.kernel?.commandLine ?? "",
 					commit: { [name = vm.name] in viewModel.setKernelCommandLine(name, $0) })
+					.disabled(vm.kernelSectionsRemoveOnly)
 				Text("Passed to the kernel at boot unless the active kernel has its own "
 					+ "override.")
 					.font(.caption)
@@ -125,7 +128,8 @@ struct KernelEntryInspector: View {
 						.font(.caption)
 						.foregroundStyle(.secondary)
 				}
-				.disabled(entry.file == nil)   // external references carry no override
+				// External references carry no override; a macOS VM's files only go (D31).
+				.disabled(entry.file == nil || vm.kernelSectionsRemoveOnly)
 				KernelFileActionsSection(viewModel: viewModel, vm: vm, entry: entry)
 			}
 		} else {
@@ -195,7 +199,7 @@ private struct KernelFileInfoSection: View {
 
 	var body: some View {
 		Section(entry.role == .kernel ? "Kernel file" : "Initramfs file") {
-			if entry.owned {
+			if entry.owned && !vm.kernelSectionsRemoveOnly {
 				tagField
 			} else {
 				LabeledContent("Tag", value: entry.label)
@@ -254,7 +258,7 @@ private struct KernelFileActionsSection: View {
 	var body: some View {
 		Section {
 			HStack(spacing: 6) {
-				if !entry.owned {
+				if !entry.owned && !vm.kernelSectionsRemoveOnly {
 					IconButton(
 						symbol: MachmanSymbols.promoteDisk,
 						tooltip: "Promote to owned — copies the file into the VM directory"
@@ -263,14 +267,16 @@ private struct KernelFileActionsSection: View {
 							vm.name, role: entry.role, sourcePath: entry.path,
 							tag: KernelTag.suggested(forFile: entry.path))
 					}
-				} else {
+				} else if entry.owned {
 					IconButton(symbol: MachmanSymbols.delete, tooltip: "Delete file…") {
 						viewModel.requestDeleteKernel(
 							vm.name, path: entry.path, fileName: entry.fileName)
 					}
 				}
 				Spacer()
-				if entry.active {
+				if vm.kernelSectionsRemoveOnly {
+					EmptyView()
+				} else if entry.active {
 					Button("Deselect") {
 						viewModel.setActiveKernelFile(vm, role: entry.role, path: nil)
 					}

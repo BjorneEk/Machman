@@ -97,7 +97,10 @@ struct TreeKernelSection: View {
 				in: .kernel(role),
 				icon: role == .kernel ? MachmanSymbols.kernelFile : MachmanSymbols.initramfs)
 		}
-		.onDrop(of: [.fileURL], delegate: ctx.dropDelegate(.kernel(role)))
+		// A macOS VM's sections take nothing new (D31).
+		.onDrop(
+			of: ctx.vm.kernelSectionsRemoveOnly ? [] : [.fileURL],
+			delegate: ctx.dropDelegate(.kernel(role)))
 	}
 }
 
@@ -107,13 +110,15 @@ extension TreeContext {
 	// and their overrides in one step.
 	@ViewBuilder
 	func kernelGroupMenu(role: KernelRole) -> some View {
-		Button("Add from Disk…") {
-			AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
+		if !vm.kernelSectionsRemoveOnly {
+			Button("Add from Disk…") {
+				AddFlows.chooseKernelFile(viewModel: viewModel, vm: vm.name, role: role)
+			}
+			Button("Paste") { paste(into: .kernel(role)) }
+				.disabled(!pasteboard.snapshot.canPaste(into: .kernel(role)))
 		}
-		Button("Paste") { paste(into: .kernel(role)) }
-			.disabled(!pasteboard.snapshot.canPaste(into: .kernel(role)))
 		if role == .kernel && vm.offersKernelClear {
-			Divider()
+			if !vm.kernelSectionsRemoveOnly { Divider() }
 			Button("Remove Kernel Settings…", role: .destructive) {
 				viewModel.requestClearKernelSettings(vm)
 			}

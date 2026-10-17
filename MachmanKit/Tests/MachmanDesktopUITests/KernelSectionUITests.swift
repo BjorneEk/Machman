@@ -108,4 +108,30 @@ struct KernelSectionUITests {
 		#expect(!dimmed.isEnabled)
 		#expect(dimmed.help == "Stop the VM to remove its kernel settings")
 	}
+
+	// D31 (removal only): a macOS VM never boots a kernel, so the kernel files kept from before
+	// its switch offer only what removes them — no adds, paste, picks, re-tags or promotes.
+	@Test("D31: a macOS VM's kernel menus and inspectors offer removal only")
+	func aMacOSVMOffersRemovalOnly() async throws {
+		let h = await UIHarness.make([Samples.macOSWithKernelFiles()])
+		let mac = h.vm("Sequoia")
+		let kernel = try await menuTitles(h, "Sequoia", .kernel)
+		#expect(kernel.compactMap(\.text) == ["Remove Kernel Settings\u{2026}"])
+		let initramfs = try await menuTitles(h, "Sequoia", .initramfs)
+		#expect(initramfs.isEmpty)
+		let file = try #require(mac.kernelTreeEntries(role: .kernel).first)
+		let entry = try await h.snapshot(TreeMenuProbe(harness: h, vm: mac) {
+			AnyView($0.kernelEntryMenu(file, role: .kernel))
+		})
+		#expect(entry.findAll { $0.role == "AXButton" }.compactMap(\.text)
+			== ["Copy", "Show in Finder", "Delete\u{2026}"])
+		let inspector = try await h.snapshot(
+			KernelEntryInspector(viewModel: h.viewModel, vm: mac, path: file.id)
+				.formStyle(.grouped),
+			width: 320, height: 700)
+		for gone in ["Select", "Deselect"] {
+			#expect(inspector.find(role: "AXButton", text: gone) == nil, "\(inspector.dump())")
+		}
+		#expect(inspector.findAll { $0.role == "AXTextField" }.isEmpty)
+	}
 }

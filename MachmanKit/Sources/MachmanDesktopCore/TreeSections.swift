@@ -118,6 +118,11 @@ extension VMInfo {
 
 	public static let kernelParkedReason = "Used when the bootloader is Kernel Boot"
 
+	// A macOS VM never boots a kernel: its kernel sections, kept from before its switch (K3),
+	// offer only what removes them — Delete…, Remove Kernel Settings…, Copy and Show in
+	// Finder; no adds, paste, drops, picks, re-tags or promotes (D31).
+	public var kernelSectionsRemoveOnly: Bool { boot.mode == .macOS }
+
 	// Remove Kernel Settings… (H54, K2): offered on parked sections — never while kernel boot
 	// reads the draft, nor in a boot mode a newer Machman wrote (C11).
 	public var offersKernelClear: Bool {
