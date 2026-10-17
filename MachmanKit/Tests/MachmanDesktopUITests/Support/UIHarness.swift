@@ -56,6 +56,14 @@ final class UIHarness {
 		return harness
 	}
 
+	// What a reconnect makes (DaemonConnection.attach): a fresh view model over the same
+	// app-scoped stores.
+	func reconnectedViewModel() -> VMListViewModel {
+		VMListViewModel(
+			api: stub, store: store, operations: operations, terminals: terminals,
+			previews: previews, canvases: canvases, tornTabs: tornTabs, profiles: profiles)
+	}
+
 	func vm(_ name: String) -> VMInfo {
 		guard let vm = viewModel.vms.first(where: { $0.name == name }) else {
 			preconditionFailure("UIHarness serves no VM named \(name)")

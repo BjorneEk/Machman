@@ -22,8 +22,9 @@ struct MachmanDesktopApp: App {
 	@StateObject var connection: DaemonConnection
 	// App-scoped (survives daemon reconnects): terminal profiles + per-socket associations.
 	@StateObject var profiles: TerminalProfileStore
-	// The selected VM (the sidebar's selection). Serial ports open as tabs, they are not selected.
-	@State var selection: String? = nil
+	// The main window's state beside each connection's view model (T32): the selected VM (the
+	// sidebar's selection), its tree rows and whether the inspector is open.
+	@State var mainWindow = MainWindowState()
 	@StateObject private var themeStore = ThemeStore()
 	// Whether text input has focus: Delete VM… (⌘⌫) is off then.
 	@StateObject private var textEditing = TextEditingMonitor()
@@ -53,7 +54,7 @@ struct MachmanDesktopApp: App {
 			ThemedRoot(store: themeStore) {
 				if let viewModel = connection.viewModel {
 					VMNavigationView(
-						viewModel: viewModel, selection: $selection, profiles: profiles,
+						viewModel: viewModel, windowState: $mainWindow, profiles: profiles,
 						daemonVersion: connectedDaemonVersion)
 						.id(ObjectIdentifier(viewModel))   // remount per (re)connection
 						// A settings file set aside at launch is announced once.
@@ -73,7 +74,7 @@ struct MachmanDesktopApp: App {
 		.commands {
 			MachmanCommands(
 				connection: connection, menu: connection.menu, textEditing: textEditing,
-				selection: $selection)
+				selection: $mainWindow.selection)
 		}
 		// Torn-off canvas tabs: one window per (vm, tab) value; Codable payload restores
 		// them across relaunches. The terminal reparents from the app-scoped sessions.

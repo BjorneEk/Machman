@@ -28,7 +28,8 @@ struct WindowFloorTests {
 
 	private func window(_ h: UIHarness, _ name: String) -> some View {
 		VMNavigationView(
-			viewModel: h.viewModel, selection: .constant(name), profiles: h.profiles)
+			viewModel: h.viewModel, windowState: .constant(MainWindowState(selection: name)),
+			profiles: h.profiles)
 	}
 
 	// The window's size (nil: its fitting size, the floor) and its tree, toolbar included.

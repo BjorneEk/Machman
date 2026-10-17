@@ -58,7 +58,8 @@ enum WindowScenes {
 	static func mainWindow(_ ctx: SceneContext, inspector: Bool) -> AnyView {
 		ctx.viewModel.showInfoPanel = inspector
 		return AnyView(VMNavigationView(
-			viewModel: ctx.viewModel, selection: .constant(ctx.vm.name),
+			viewModel: ctx.viewModel,
+			windowState: .constant(MainWindowState(selection: ctx.vm.name)),
 			profiles: ctx.profiles, daemonVersion: "1.0.10", pasteboard: ctx.pasteboard))
 	}
 
@@ -196,7 +197,7 @@ enum WindowScenes {
 		) { ctx in
 			ctx.viewModel.showInfoPanel = true
 			return AnyView(VMNavigationView(
-				viewModel: ctx.viewModel, selection: .constant(nil),
+				viewModel: ctx.viewModel, windowState: .constant(MainWindowState()),
 				profiles: ctx.profiles, daemonVersion: "1.0.10", pasteboard: ctx.pasteboard))
 		},
 		RenderScene(

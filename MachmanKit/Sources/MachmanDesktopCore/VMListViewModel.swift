@@ -33,7 +33,8 @@ public final class VMListViewModel: ObservableObject {
 	public let previews: PreviewService
 	public var previewImages: PreviewStore { previews.images }
 	@Published public var selectedName: String? = nil
-	// The sidebar tree's selection (window UI state); drives the inspector's target.
+	// The sidebar tree's selection (window state, kept across reconnects by MainWindowState);
+	// drives the inspector's target.
 	@Published public var treeSelection: Set<SidebarNode> = []
 	// Live terminal controllers (app-scoped, injected): transcripts persist across VM
 	// navigation AND daemon reconnects; a controller lives as long as its tab is open.
@@ -44,8 +45,8 @@ public final class VMListViewModel: ObservableObject {
 	public let tornTabs: TornTabRegistry
 	// Tests: whether a connected session's close asks, in place of the stored preference.
 	var sshCloseAskOverride: Bool?
-	// Window-level: whether the right-hand terminal info pop-out is open. Set by the container's
-	// toggle and by the sidebar's "Properties" action.
+	// Whether the main window's inspector column is open: its toolbar toggle, ⌥⌘0 and the
+	// tree's Properties set it. Window state, kept across reconnects by MainWindowState.
 	@Published public var showInfoPanel = false
 	// Every alert and question, one at a time in arrival order (PR25; failures since P15,
 	// disk adds since P17, session closes since H42): each shows in its window — the key one

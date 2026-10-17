@@ -17,18 +17,19 @@ public struct VMNavigationView: View {
 	// What the tree's Paste items read: nil is the app's watch over the general pasteboard;
 	// renders pass an inert one so a scene never reads the user's pasteboard (Q21).
 	private let pasteboard: PasteboardWatch?
-	@Binding private var selection: String?
+	// The window's state that outlives this connection's view model (T32): the app keeps it.
+	@Binding private var windowState: MainWindowState
 	// The inspector column's live width (it is resizable): the corner's toasts and cards move
 	// left by it while the inspector shows (H44).
 	@State private var inspectorWidth: CGFloat = 0
 
 	public init(
-		viewModel: VMListViewModel, selection: Binding<String?>,
+		viewModel: VMListViewModel, windowState: Binding<MainWindowState>,
 		profiles: TerminalProfileStore, daemonVersion: String? = nil,
 		pasteboard: PasteboardWatch? = nil
 	) {
 		_viewModel = StateObject(wrappedValue: viewModel)
-		self._selection = selection
+		self._windowState = windowState
 		self.profiles = profiles
 		self.daemonVersion = daemonVersion
 		self.pasteboard = pasteboard
@@ -37,7 +38,7 @@ public struct VMNavigationView: View {
 	public var body: some View {
 		NavigationSplitView {
 			// The sidebar is the SELECTED VM's device tree (1.0.4 UI); switching VMs is the
-			// toolbar picker's job. `selection` (app-scoped) only mirrors the view model so
+			// toolbar picker's job. `windowState` (app-scoped) only mirrors the view model so
 			// it survives daemon reconnects.
 			Group {
 				if let vm = viewModel.selected {
@@ -49,21 +50,26 @@ public struct VMNavigationView: View {
 					NoVMSidebar(viewModel: viewModel)
 				}
 			}
-			// Mirror the view model's selection into the window-scoped binding (rename,
-			// delete, picker) so a daemon reconnect can restore it.
+			// Mirror the view model's window state into the app-scoped binding — the VM
+			// (rename, delete, picker), the tree's rows, the inspector — so a daemon
+			// reconnect can restore it.
 			.onChange(of: viewModel.selectedName) {
-				if selection != viewModel.selectedName {
-					selection = viewModel.selectedName
+				if windowState.selection != viewModel.selectedName {
+					windowState.selection = viewModel.selectedName
 				}
 			}
+			.onChange(of: viewModel.treeSelection) {
+				windowState.treeSelection = viewModel.treeSelection
+			}
+			.onChange(of: viewModel.showInfoPanel) {
+				windowState.inspectorShown = viewModel.showInfoPanel
+			}
 			// After a daemon reconnect the view model is fresh but the window kept its
-			// selection — restore it. Deferred: select() publishes mid-view-update
-			// otherwise.
+			// state — restore it. Deferred: select() publishes mid-view-update otherwise.
 			.onAppear {
-				guard let sel = selection, viewModel.selectedName == nil else { return }
+				let state = windowState
 				DispatchQueue.main.async { [weak viewModel] in
-					guard let viewModel, viewModel.selectedName == nil else { return }
-					viewModel.select(name: sel)
+					if let viewModel { state.restore(into: viewModel) }
 				}
 			}
 			.safeAreaInset(edge: .bottom, spacing: 0) {
