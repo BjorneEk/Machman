@@ -81,10 +81,13 @@ struct TreeKernelSection: View {
 							.help(file.id)
 					}
 					Spacer()
+					// Promote isn't offered on a macOS VM (D31): its badge doesn't suggest it.
 					if !file.owned {
 						TreeBadge(
 							symbol: MachmanSymbols.externalReference,
-							help: "External file — promote to copy it into the VM")
+							help: removeOnly
+								? "External file"
+								: "External file — promote to copy it into the VM")
 					}
 					if active {
 						TreeBadge(

@@ -160,4 +160,25 @@ struct KernelSectionUITests {
 		#expect(entry.find(text: "Active") == nil, "\(entry.dump())")
 		#expect(entry.find(text: "Status") == nil)
 	}
+
+	// D31: a macOS VM's external kernel reference said "promote to copy it into the VM", an
+	// action its removal-only sections don't offer; an EFI VM's still says it.
+	@Test("D31: a macOS VM's external kernel file has no promote in its badge")
+	func aMacOSExternalBadgeOffersNoPromote() async throws {
+		let external = "/Users/demo/Downloads/vmlinuz"
+		var mac = Samples.macOSWithKernelFiles()
+		mac.boot.kernel?.kernelPath = external
+		var efi = Samples.kernelParked()
+		efi.boot.kernel?.kernelPath = external
+		let h = await UIHarness.make([mac, efi])
+		let macSection = try await section(h, "Sequoia")
+		#expect(
+			macSection.findAll { $0.help == "External file" }.count == 1, "\(macSection.dump())")
+		let promoting = macSection.findAll { ($0.help ?? "").contains("promote") }
+		#expect(promoting.isEmpty)
+		let efiSection = try await section(h, "Kernel Lab")
+		#expect(efiSection.findAll {
+			$0.help == "External file \u{2014} promote to copy it into the VM"
+		}.count == 1)
+	}
 }
