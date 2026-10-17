@@ -94,4 +94,52 @@ struct KernelSettingsCommitTests {
 		#expect(!h.stub.calls.contains("updateKernelSettings"), "\(h.stub.calls)")
 		#expect(h.viewModel.presentedError == nil, "\(h.viewModel.presentedError?.title ?? "")")
 	}
+
+	// P43: a promote, re-tag or delete changes the kernel settings daemon-side too (the new
+	// file becomes active, the moved or removed path is rewritten) but ran beside the queue,
+	// so a command-line commit asked right after it — built before its list landed — put the
+	// old kernel path back: a just-added kernel deselected, a moved or deleted file's dead path
+	// active again. Here no list lands until both are asked.
+	enum FileOp: String, CaseIterable, CustomStringConvertible {
+		case promote, retag, delete
+		var description: String { rawValue }
+	}
+
+	@Test(
+		"P43: a command-line commit after a promote, re-tag or delete keeps what it did",
+		arguments: FileOp.allCases)
+	func aCommitAfterAFileOpKeepsIt(_ op: FileOp) async throws {
+		let h = await DesktopHarness.make([Samples.kernelBoot()])
+		let dir = "\(Samples.vmsRoot)/Kernel Lab/kernels"
+		let active = try #require(h.viewModel.vms[0].boot.kernel?.kernelPath)
+		let line = "console=hvc0 root=/dev/vda2 quiet"
+		let gate = ReplyGate()
+		h.stub.pause = { method in
+			if method == "listVMs" { await gate.wait() }
+		}
+		let method: String
+		let kept: String
+		switch op {
+		case .promote:
+			h.viewModel.promoteKernel(
+				"Kernel Lab", role: .kernel, sourcePath: "/Users/demo/vmlinuz-6.13", tag: "6.13")
+			method = "promoteKernelFile"
+			kept = "/vm/Kernel Lab/kernels/kernel/6.13/vmlinuz-6.13"
+		case .retag:
+			h.viewModel.renameKernelTag("Kernel Lab", path: active, tag: "6.13")
+			method = "renameKernelFile"
+			kept = "\(dir)/kernel/6.13/vmlinuz"
+		case .delete:
+			h.viewModel.deleteKernel("Kernel Lab", path: active)
+			method = "deleteKernelFile"
+			kept = ""
+		}
+		h.viewModel.setKernelCommandLine("Kernel Lab", line)
+		#expect(await eventually { h.stub.calls.contains(method) })
+		gate.open()
+		#expect(await eventually { h.stub.kernelSettingsSent.count == 1 })
+		let sent = try #require(h.stub.kernelSettingsSent.last?.settings)
+		#expect(sent.kernelPath == kept, "the commit undid the \(op)")
+		#expect(sent.commandLine == line)
+	}
 }

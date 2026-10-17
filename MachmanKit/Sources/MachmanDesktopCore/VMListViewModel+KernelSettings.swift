@@ -9,7 +9,9 @@
 //  reverted a pick made while the editor's debounce waited, and even the served copy lags
 //  each write by its reply, the agent's listChanged and the next fetch (review F8). So each
 //  write is a change, applied to the settings served once the writes before it on that VM
-//  have landed and been listed, one at a time, in the order they were asked.
+//  have landed and been listed, one at a time, in the order they were asked. A promote,
+//  re-tag or delete changes the settings daemon-side too (the file it adds becomes active,
+//  the path it moves or removes is rewritten), so it takes its turn in the same queue (P43).
 //
 
 import Foundation
@@ -49,21 +51,34 @@ extension VMListViewModel {
 		_ name: String, fallback: VMInfo? = nil,
 		_ change: @escaping @MainActor (inout KernelSettings) -> Void
 	) {
-		let previous = kernelWrites[name]
-		kernelWrites[name] = Task { [weak self] in
-			await previous?.value
-			guard let self, let vm = vms.first(where: { $0.name == name }) ?? fallback
-			else { return }
+		enqueueKernelWrite(name) { model in
+			guard let vm = model.vms.first(where: { $0.name == name }) ?? fallback else {
+				return false
+			}
 			// Empty only for a VM with no kernel settings yet.
 			let served = vm.boot.kernel
 				?? KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 			var settings = served
 			change(&settings)
-			guard settings != served else { return }
-			let sent: Void? = await attempt("Saving kernel settings") {
+			guard settings != served else { return false }
+			let sent: Void? = await model.attempt("Saving kernel settings") {
 				try await $0.updateKernelSettings(vm: name, settings)
 			}
-			if sent != nil { await store.reload() }
+			return sent != nil
+		}
+	}
+
+	// The VM's kernel writes, one at a time in the order asked: `write` runs once the one
+	// before it has landed, and one that went through (true) reloads the list before the next
+	// starts, so every write starts from what was served after the last.
+	private func enqueueKernelWrite(
+		_ name: String, _ write: @escaping @MainActor (VMListViewModel) async -> Bool
+	) {
+		let previous = kernelWrites[name]
+		kernelWrites[name] = Task { [weak self] in
+			await previous?.value
+			guard let self, await write(self) else { return }
+			await store.reload()
 		}
 	}
 
@@ -74,19 +89,20 @@ extension VMListViewModel {
 	}
 
 	// The file's path changes with its tag — repoint a selection that was on the old path.
-	// `refused` takes a refusal to the field instead of an alert.
+	// `refused` takes a refusal to the field instead of an alert. In the VM's write queue.
 	public func renameKernelTag(
 		_ name: String, path: String, tag: String,
 		refused: (@MainActor (String) -> Void)? = nil
 	) {
 		let fileName = (path as NSString).lastPathComponent
-		perform("Renaming a kernel file", refused: refused) {
-			try await $0.renameKernelFile(vm: name, path: path, tag: tag)
-		} then: { model, updated in
+		enqueueKernelWrite(name) { model in
+			guard let updated = await model.attempt("Renaming a kernel file", refused: refused, {
+				try await $0.renameKernelFile(vm: name, path: path, tag: tag)
+			}) else { return false }
 			// Said only once the reply holds the file under its new tag.
 			guard let file = updated.boot.ownedKernels?.first(where: {
 				$0.tag == tag && $0.fileName == fileName
-			}) else { return }
+			}) else { return true }
 			let old: SidebarNode = file.role == .kernel ? .kernel(path) : .initramfs(path)
 			if model.treeSelection == [old] {
 				model.treeSelection = [file.role == .kernel
@@ -95,17 +111,27 @@ extension VMListViewModel {
 			model.pushToast(
 				symbol: MachmanSymbols.rename,
 				message: ToastWording.renamed(to: tag))
+			return true
 		}
 	}
 
+	// The copied file becomes the role's active one daemon-side. In the VM's write queue.
 	public func promoteKernel(_ name: String, role: KernelRole, sourcePath: String, tag: String) {
-		perform("Promoting a kernel file") {
-			try await $0.promoteKernelFile(vm: name, role: role, sourcePath: sourcePath, tag: tag)
+		enqueueKernelWrite(name) { model in
+			await model.attempt("Promoting a kernel file") {
+				try await $0.promoteKernelFile(
+					vm: name, role: role, sourcePath: sourcePath, tag: tag)
+			} != nil
 		}
 	}
 
+	// A field naming the file is cleared daemon-side. In the VM's write queue.
 	public func deleteKernel(_ name: String, path: String) {
-		perform("Deleting a kernel file") { try await $0.deleteKernelFile(vm: name, path: path) }
+		enqueueKernelWrite(name) { model in
+			await model.attempt("Deleting a kernel file") {
+				try await $0.deleteKernelFile(vm: name, path: path)
+			} != nil
+		}
 	}
 
 	public func setKernelBoot(_ name: String, enabled: Bool) async -> Bool {
