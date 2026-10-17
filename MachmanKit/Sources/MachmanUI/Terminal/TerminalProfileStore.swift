@@ -176,6 +176,8 @@ public final class TerminalProfileStore: ObservableObject {
 		if changed || moved { save() }
 	}
 
+	public var ownerDates: [String: Date] { created.dates }
+
 	// The VM names holding associations.
 	private var owners: Set<String> {
 		Set(associations.keys.compactMap { Self.vm(ofKey: $0).map(String.init) })
@@ -245,11 +247,8 @@ extension TerminalProfileStore: VMKeyedState {
 
 	// A VM of a name with associations: the one they belong to, whose created date is
 	// recorded the first time a list shows it — or a new VM under that name, which starts on
-	// the default (T29). Associations whose VM shows up under another name follow it (T34).
+	// the default (T29). (A rename made elsewhere reaches here as renameVM first, T34.)
 	public func listed(_ vms: [VMInfo]) {
-		for rename in created.renames(in: vms, owners: owners) {
-			associate(rename.from, as: rename.to, move: true)
-		}
 		let (stale, changed) = created.reconcile(vms, owners: owners)
 		for vm in stale { drop(vm) }
 		if changed { save() }

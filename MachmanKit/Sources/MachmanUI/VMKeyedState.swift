@@ -29,12 +29,16 @@ public protocol VMKeyedState: AnyObject {
 	// A list landed: each listed VM as the agent reports it (its created date tells it from a
 	// new VM under the same name).
 	func listed(_ vms: [VMInfo])
+	// The created date recorded for each name this store keeps state under, for a store that
+	// outlives absence; the view model finds renames made elsewhere by them (T34).
+	var ownerDates: [String: Date] { get }
 }
 
 extension VMKeyedState {
 	// A store that forgets on absence needs neither: the deleted VM leaves the next list.
 	public func vmDeleted(_ vm: String) {}
 	public func listed(_ vms: [VMInfo]) {}
+	public var ownerDates: [String: Date] { [:] }
 }
 
 // Which VM a name's kept state belongs to, for a store that outlives absence: each name's
@@ -67,20 +71,21 @@ public struct VMOwnerDates: Equatable, Sendable {
 	}
 
 	// Renames made elsewhere (another desktop, a script, Finder while the agent was away, T34):
-	// a listed name holding no state whose created date is the recorded date of exactly one
-	// owner the list doesn't show is that owner, renamed. A date two listed VMs share (a
-	// folder duplicated in Finder keeps its config) proves nothing and moves nothing. The
-	// store moves the state, then reconciles as usual.
-	public func renames(in vms: [VMInfo], owners: Set<String>) -> [(from: String, to: String)] {
-		let listed = Set(vms.map(\.name))
-		let away = owners.subtracting(listed).compactMap { name in dates[name].map { (name, $0) } }
-		var taken: Set<String> = []
+	// a target — a listed VM whose name records no date or another date — whose created date
+	// is the recorded date of exactly one source is that source, renamed. A date two listed
+	// VMs share (a folder duplicated in Finder keeps its config) proves nothing and pairs
+	// nothing. The caller says which names may be targets and sources.
+	public static func renames(
+		in vms: [VMInfo], dates: [String: Date], sources: Set<String>, targets: Set<String>
+	) -> [(from: String, to: String)] {
 		var pairs: [(from: String, to: String)] = []
-		for vm in vms where !owners.contains(vm.name) {
-			guard vms.filter({ Self.sameVM($0.created, vm.created) }).count == 1 else { continue }
-			let matches = away.filter { Self.sameVM($0.1, vm.created) && !taken.contains($0.0) }
-			guard matches.count == 1, let old = matches.first?.0 else { continue }
-			taken.insert(old)
+		for vm in vms where targets.contains(vm.name) {
+			if let own = dates[vm.name], sameVM(own, vm.created) { continue }
+			guard vms.filter({ sameVM($0.created, vm.created) }).count == 1 else { continue }
+			let matches = sources.filter { name in
+				name != vm.name && dates[name].map { sameVM($0, vm.created) } == true
+			}
+			guard matches.count == 1, let old = matches.first else { continue }
 			pairs.append((from: old, to: vm.name))
 		}
 		return pairs
@@ -98,7 +103,7 @@ public struct VMOwnerDates: Equatable, Sendable {
 	}
 
 	// The same VM, as far as a created date says (a millisecond for the encoders' rounding).
-	private static func sameVM(_ a: Date, _ b: Date) -> Bool {
+	public static func sameVM(_ a: Date, _ b: Date) -> Bool {
 		abs(a.timeIntervalSince(b)) < 0.001
 	}
 }
