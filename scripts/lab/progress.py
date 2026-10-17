@@ -116,6 +116,13 @@ def elide(lines, height, where=""):
     return list(lines[:2]) + [gap(len(lines) - 2 - tail, where)] + list(lines[-tail:])
 
 
+def some(names, shown=3):
+    """The distinct names in order, at most `shown` of them and how many more there are."""
+    distinct = list(dict.fromkeys(names))
+    more = len(distinct) - shown
+    return ", ".join(distinct[:shown]) + (" and %d more" % more if more > 0 else "")
+
+
 def fit(text, width):
     text = CONTROLS.sub("", text.expandtabs(4))
     return text if len(text) <= width else text[:max(1, width - 1)] + "…"
@@ -751,13 +758,20 @@ class Follower:
                 "%s (%s)" % (r[1], ", ".join(
                     at for known, at in self.issues.get(r[0], []) if not known) or "?")
                 for r in failed), "result"))
-        # Each warning once more (a retry the harness rode over, a kept start failure): one that
-        # starts to recur reads as what it may be, a product bug, at the end of a long run.
-        warned = ["%s — %s: %s" % (self.name(test_id), at, fit(text.split("\n", 1)[0], 160))
-                  for test_id, items in self.details.items()
-                  for glyph, at, text, _ in items if glyph == "!"]
+        # The warnings once more (a retry the harness rode over, a kept start failure), a line
+        # per place and message with how often and in which tests: one that starts to recur
+        # reads as what it may be, a product bug, and never pushes the others out of the list.
+        warned = {}
+        for test_id, items in self.details.items():
+            for glyph, at, text, _ in items:
+                if glyph == "!":
+                    first = fit(text.split("\n", 1)[0], 160)
+                    warned.setdefault((at, first), []).append(self.name(test_id))
         if warned:
-            out.append((now, 0, "lab: warnings\n" + "\n".join(warned), "result"))
+            out.append((now, 0, "lab: warnings\n" + "\n".join(
+                "%s: %s%s (%s)" % (at, first, " ×%d" % len(tests) if len(tests) > 1 else "",
+                                   some(tests))
+                for (at, first), tests in warned.items()), "result"))
         self.emit(out, now)
         with open(os.path.join(self.root, "report", "test-times.tsv"), "w") as f:
             f.write("seconds\tstatus\ttest\n")
@@ -1280,8 +1294,41 @@ def self_check():
               and "✔ 1/2 a retry warns · " in text
               and "✘ Retry.swift:22: no console\n" in text and "Issue recorded" not in text)
         check("Q42: a run's warnings are listed once more at its end",
-              "lab: warnings\n" + " " * 13 + "a retry warns — Retry.swift:12: retried once: a stop "
-              "settled\n" in text and text.count("Retry.swift:12") == 2)
+              "lab: warnings\n" + " " * 13 + "Retry.swift:12: retried once: a stop settled "
+              "(a retry warns)\n" in text and text.count("Retry.swift:12") == 2)
+
+    # A retry that recurs (Q42): its place and message once, how often and in which tests, so a
+    # warning elsewhere stays in the end list (a line per warning ran past the 12 lines a record
+    # keeps in plain output and progress.log).
+    with tempfile.TemporaryDirectory() as root:
+        t0 = time.time() - 60
+        records, events = [], [event("runStarted", t0)]
+        for i in range(14):
+            test_id = "Mod.Suite/t%d()/File.swift:%d:3" % (i, i + 1)
+            records.append(test("R%d: test %d" % (i, i), "t%d()" % i, i + 1))
+            events += [
+                event("testStarted", t0 + i, test_id),
+                event("issueRecorded", t0 + i + 0.1, test_id, [
+                    ("warning", "Issue recorded"),
+                    ("details", "a change was refused while a stop settled")], issue={
+                        "isKnown": False, "severity": "warning", "isFailure": False,
+                        "sourceLocation": {"fileID": "Mod/LabVM.swift",
+                                           "line": 209 if i < 13 else 300}}),
+                event("testEnded", t0 + i + 0.2, test_id, [("pass", "passed with 1 warning")])]
+        events.append(event("runEnded", t0 + 30, messages=[("pass", "Test run passed.")]))
+        write(root + "/report/events.jsonl", records + events)
+        open(root + "/stop-now", "w").close()
+        buf = io.StringIO()
+        follow(root, 0, root + "/stop-now", interval=0.05, out=buf, tty=False)
+        text = buf.getvalue()
+        with open(root + "/report/progress.log") as f:
+            log = f.read()
+        check("Q42: a run's warnings stay listed at its end when one recurs",
+              "\n" + " " * 13 + "LabVM.swift:209: a change was refused while a stop settled ×13 "
+              "(test 0, test 1, test 2 and 10 more)\n" in text
+              and "\n" + " " * 13 + "LabVM.swift:300: a change was refused while a stop settled "
+              "(test 13)\n" in text
+              and "more lines" not in text and "more lines" not in log)
 
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
