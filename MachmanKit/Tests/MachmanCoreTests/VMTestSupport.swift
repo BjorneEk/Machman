@@ -38,6 +38,15 @@ enum VMTestDir {
 		}
 		return try body()
 	}
+
+	// withRedirectedDir on the own thread (Q43), for a body that needs no actor: the
+	// ssh-keygen, checksums and file writes in it never hold the main thread. The redirect
+	// itself stays synchronous there.
+	static func withRedirectedDirOnOwnThread<T>(
+		_ body: @Sendable () throws -> T
+	) async throws -> T {
+		try await onOwnThread { try withRedirectedDir(body) }
+	}
 }
 
 // Starts a test server, and when its socket path is already served (Q7: the floor test once

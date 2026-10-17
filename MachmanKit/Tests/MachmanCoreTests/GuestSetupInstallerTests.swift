@@ -263,8 +263,8 @@ struct GuestSetupInstallerTests {
 	// E29: the Mac's name for the guest's "ssh mac" line comes from the dynamic store —
 	// the computer name, no lookup — never Host.current(), which can block on DNS on a
 	// VM's start path. (Both agree here: this pins the source, the grep pins the rest.)
-	@Test @MainActor func hostNameComesFromTheDynamicStore() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func hostNameComesFromTheDynamicStore() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "hostname")
 			let vm = try VMConfig(name: "hostname", memorySize: 1 << 30, cpuCount: 2)
 			let computerName = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? ""
@@ -273,8 +273,8 @@ struct GuestSetupInstallerTests {
 	}
 
 	// S27: macOS guests mount the share at "My Shared Files", not the Linux share root.
-	@Test @MainActor func macOSGuestsGetTheirShareRoot() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func macOSGuestsGetTheirShareRoot() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sharemac")
 			let vm = try VMConfig(name: "sharemac", memorySize: 1 << 30, cpuCount: 2)
 			#expect(try GuestSetupInstaller.environment(for: vm)["SHARE_ROOT"] == GuestPaths.share)
@@ -290,8 +290,8 @@ struct GuestSetupInstallerTests {
 	// its source's marker) until a report says the copy renewed its identity — a failed
 	// first run's report doesn't; a VM that is no copy gets none.
 	@Test("S57: a copy's payload says it is a copy until a report says it renewed its identity")
-	@MainActor func copiesSayTheyAreCopiesUntilTheyRenewed() throws {
-		try VMTestDir.withRedirectedDir {
+	func copiesSayTheyAreCopiesUntilTheyRenewed() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "copied")
 			let vm = try VMConfig(name: "copied", memorySize: 1 << 30, cpuCount: 2)
 			#expect(try GuestSetupInstaller.environment(for: vm)["COPY_OF"] == nil)
@@ -327,8 +327,8 @@ struct GuestSetupInstallerTests {
 		#expect(s.contains("ssh-keygen -A >/dev/null 2>&1"))
 	}
 
-	@Test @MainActor func copiedKeypairIsReminted() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func copiedKeypairIsReminted() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "clonekey")
 			let vm = try VMConfig(name: "clonekey", memorySize: 1 << 30, cpuCount: 2)
 			let first = try SSHSetupInstaller.ensureKeypair(
@@ -347,8 +347,8 @@ struct GuestSetupInstallerTests {
 		}
 	}
 
-	@Test @MainActor func payloadWritesKeysScriptMountsAndReportDir() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func payloadWritesKeysScriptMountsAndReportDir() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "setuppay")
 			let vm = try VMConfig(name: "setuppay", memorySize: 1 << 30, cpuCount: 2)
 			try vm.addMountPoint(HostMountPoint(
@@ -449,8 +449,8 @@ struct GuestSetupInstallerTests {
 	// Serving is a question of CONTENT: the two reserved dirs are registered whatever
 	// the state, so a non-serving start mounts an empty pair and toggling on later
 	// fills in place with no device changes.
-	@Test @MainActor func nonServingStartsMountEmptyDirectories() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func nonServingStartsMountEmptyDirectories() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "serving")
 			let vm = try VMConfig(name: "serving", memorySize: 1 << 30, cpuCount: 2)
 			let fm = FileManager.default
@@ -479,8 +479,8 @@ struct GuestSetupInstallerTests {
 	// machman.env, which its fstab or rc.local embeds: that path is a link in the library
 	// keyed by the VM's marker, which a rename keeps, so after a rename it still reaches the
 	// VM's share. A link whose VM directory is gone is swept at the next start.
-	@Test @MainActor func sharePathSurvivesARename() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func sharePathSurvivesARename() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "before")
 			let vm = try VMConfig(name: "before", memorySize: 1 << 30, cpuCount: 2)
 			let fm = FileManager.default
@@ -515,8 +515,9 @@ struct GuestSetupInstallerTests {
 	// payload's other files in name order — the order the guest's payload_check cats them in
 	// — and it is exactly what the system's own cksum prints for those bytes.
 	@Test("S65: machman.env carries the cksum the guest's own cksum computes")
-	@MainActor func theEnvironmentCarriesTheGuestsCksum() async throws {
-		let (dir, names, cksum): (URL, [String], String?) = try VMTestDir.withRedirectedDir {
+	func theEnvironmentCarriesTheGuestsCksum() async throws {
+		let (dir, names, cksum): (URL, [String], String?) =
+			try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "cksum")
 			let vm = try VMConfig(name: "cksum", memorySize: 1 << 30, cpuCount: 2)
 			try vm.addMountPoint(HostMountPoint(
@@ -552,8 +553,8 @@ struct GuestSetupInstallerTests {
 	// S32: a run that failed after touching the guest (the exit trap's report) is a report
 	// on file, but the installer stays served until a run gets through — the user's next
 	// step is a re-run. A partial run is through: it stops serving like an ok one.
-	@Test @MainActor func aFailedRunKeepsTheInstallerServed() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func aFailedRunKeepsTheInstallerServed() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "failedrun")
 			let vm = try VMConfig(name: "failedrun", memorySize: 1 << 30, cpuCount: 2)
 			#expect(vm.servesSetupPayload)
@@ -606,8 +607,8 @@ struct GuestSetupInstallerTests {
 	}
 
 	// The reserved share names — current AND superseded — are refused as user mount tags.
-	@Test @MainActor func reservedShareNamesAreRefusedAsTags() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func reservedShareNamesAreRefusedAsTags() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "setuptags")
 			let vm = try VMConfig(name: "setuptags", memorySize: 1 << 30, cpuCount: 2)
 			for reserved in ReservedShareNames.all {

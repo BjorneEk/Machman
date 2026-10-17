@@ -13,8 +13,8 @@ import MachmanAPI
 
 struct SSHConfigTests {
 
-	@Test @MainActor func sshStateRoundTripsThroughDisk() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func sshStateRoundTripsThroughDisk() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sshvm")
 			let vm = try VMConfig(name: "sshvm", memorySize: 1 << 30, cpuCount: 2)
 			// A fresh config carries no ssh key at all (conditional encode).
@@ -30,8 +30,8 @@ struct SSHConfigTests {
 	}
 
 	// The 1.0.6 additions survive a save/load cycle — the three-site lockstep guard.
-	@Test @MainActor func newFieldsRoundTripThroughDisk() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func newFieldsRoundTripThroughDisk() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sshfields")
 			let vm = try VMConfig(name: "sshfields", memorySize: 1 << 30, cpuCount: 2)
 			var state = SSHConfig()
@@ -54,8 +54,8 @@ struct SSHConfigTests {
 	// E56: the client id a guest's lease is kept under is this machine's, like the lease:
 	// it survives a save, and a copy (or a promoted safe run) forgets it.
 	@Test("E56: the guest's DHCP client id round-trips and a copy forgets it")
-	@MainActor func dhcpClientIDIsKeptButNotCopied() throws {
-		try VMTestDir.withRedirectedDir {
+	func dhcpClientIDIsKeptButNotCopied() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sshclientid")
 			let vm = try VMConfig(name: "sshclientid", memorySize: 1 << 30, cpuCount: 2)
 			var state = SSHConfig()
@@ -72,8 +72,8 @@ struct SSHConfigTests {
 
 	// The alias becomes an ssh_config Host pattern, so what it may contain is not a matter
 	// of taste: a glob would capture unrelated hosts.
-	@Test @MainActor func aliasIsValidatedAndResettable() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func aliasIsValidatedAndResettable() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sshalias")
 			let vm = try VMConfig(name: "sshalias", memorySize: 1 << 30, cpuCount: 2)
 			#expect(vm.effectiveSSHAlias == "sshalias.machman")
@@ -97,8 +97,8 @@ struct SSHConfigTests {
 		}
 	}
 
-	@Test @MainActor func reverseApprovalNeedsAReportedKey() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func reverseApprovalNeedsAReportedKey() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sshrev")
 			let vm = try VMConfig(name: "sshrev", memorySize: 1 << 30, cpuCount: 2)
 			// Approving with no reported key is refused — nothing to install.
@@ -125,8 +125,8 @@ struct SSHConfigTests {
 		}
 	}
 
-	@Test @MainActor func resetForgetsStateAndFiles() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func resetForgetsStateAndFiles() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			try VMConfig.createNewVMDirectory(name: "sshreset")
 			let vm = try VMConfig(name: "sshreset", memorySize: 1 << 30, cpuCount: 2)
 			try vm.setSSH(integrationEnabled: true, reverseApproved: nil, alias: nil)
@@ -184,8 +184,8 @@ struct SSHConfigTests {
 		try? String(contentsOfFile: SSHSetupInstaller.knownHostsPath(for: vm), encoding: .utf8)
 	}
 
-	@Test @MainActor func aRenameRePinsUnderTheNewAlias() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func aRenameRePinsUnderTheNewAlias() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			let vm = try pinnedVM("before")
 			#expect(pin(vm) == "before.machman ssh-ed25519 AAAAHOST\n")
 
@@ -196,8 +196,8 @@ struct SSHConfigTests {
 
 	// A pin left by an older build — an unmapped alias, or a rename before this fix — heals
 	// at the VM's next save (every start saves).
-	@Test @MainActor func aStalePinHealsAtTheNextSave() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func aStalePinHealsAtTheNextSave() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			let vm = try pinnedVM("Debian copy")
 			try "Debian copy.machman ssh-ed25519 AAAAHOST\n".write(
 				toFile: SSHSetupInstaller.knownHostsPath(for: vm), atomically: true,
@@ -208,8 +208,8 @@ struct SSHConfigTests {
 		}
 	}
 
-	@Test @MainActor func aSaveNeverCreatesAPin() throws {
-		try VMTestDir.withRedirectedDir {
+	@Test func aSaveNeverCreatesAPin() async throws {
+		try await VMTestDir.withRedirectedDirOnOwnThread {
 			let vm = try pinnedVM("nopin")
 			try FileManager.default.removeItem(atPath: SSHSetupInstaller.knownHostsPath(for: vm))
 
