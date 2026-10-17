@@ -56,9 +56,11 @@ extension RoutingMachman {
 	// is asked whom it serves (hello), all at once: one serving an entry's folder makes that
 	// entry Not responding until it exits (a Start is refused, End Process ends it); any other
 	// is logged and left running. One that doesn't answer in time (a stalled main actor) is
-	// asked again on the adoption timer until it answers or its socket goes dark (review F23).
-	// A vmhost from before hello said so can't be placed: it is logged once and not asked again
-	// (review F29) — every ask is a connect and a hello.
+	// placed by the VM folder its process holds open — the one its hello would name (E70: until
+	// it answered, its entry listed stopped and a Start went ahead beside it); one whose folder
+	// can't be read is asked again on the adoption timer until it answers or its socket goes
+	// dark (review F23). A vmhost from before hello said so can't be placed: it is logged once
+	// and not asked again (review F29) — every ask is a connect and a hello.
 	func identifyOrphanedHosts(in dir: String) async {
 		let entries = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
 		let known = Set(registry.list().map { socketPathForVM($0.name) })
@@ -74,12 +76,33 @@ extension RoutingMachman {
 			case .unsaid:
 				noteTooOldToSay(path)
 			case .silent:
+				guard !placeByHeldFolder(path) else { continue }
 				MachmanLogger.log(.passiveWarning,
 					"a vmhost answers on \(path), for no VM in the library, and didn't say whom "
 						+ "it serves — asking it again")
 				askAgain(path)
 			}
 		}
+	}
+
+	// A vmhost on an unclaimed socket that didn't say whom it serves (E70), placed by the
+	// folders its process holds open: every entry whose folder is one of them answers through
+	// that socket until it exits, as if it had said so. False when none is (nothing changes).
+	private func placeByHeldFolder(_ path: String) -> Bool {
+		let library = libraryDir()
+		let held = foldersHeldAtSocket(path)
+		let entries = registry.list().map(\.name).filter { name in
+			held.contains { isSameFile($0, library + "/" + name) }
+		}
+		var placed = false
+		for entry in entries where place(entry, at: path) {
+			placed = true
+			MachmanLogger.log(.passiveWarning,
+				"\(entry) still runs on another name's socket (\(path)), whose vmhost didn't say "
+					+ "whom it serves but holds \(entry)'s folder open: its folder was renamed "
+					+ "while it ran")
+		}
+		return placed
 	}
 
 	// What a vmhost on an unclaimed socket said when asked whom it serves (E11).
@@ -111,7 +134,7 @@ extension RoutingMachman {
 				case .unsaid:
 					self.noteTooOldToSay(path)
 				case .silent:
-					continue
+					guard self.placeByHeldFolder(path) else { continue }
 				}
 				break
 			}
@@ -150,13 +173,20 @@ extension RoutingMachman {
 					+ "leaving it running")
 			return
 		}
-		guard hosted[entry] == nil, orphanSockets[entry] == nil,
-			!UDSListener.isLive(path: socketPathForVM(entry)) else { return }
-		orphanSockets[entry] = path
+		guard place(entry, at: path) else { return }
 		MachmanLogger.log(.passiveWarning,
 			"\(entry) still runs as \(served.vm) (pid \(served.pid)) on that name's socket: "
 				+ "its folder was renamed while it ran")
+	}
+
+	// The library entry `entry` answers through the vmhost on `path` from now on, unless it
+	// is hosted, placed already or its own socket answers. True when it was placed.
+	private func place(_ entry: String, at path: String) -> Bool {
+		guard hosted[entry] == nil, orphanSockets[entry] == nil,
+			!UDSListener.isLive(path: socketPathForVM(entry)) else { return false }
+		orphanSockets[entry] = path
 		registry.events.emit(.listChanged)
+		return true
 	}
 
 	// A late adoption's half of the startup sweep: the run root whose marker names this VM

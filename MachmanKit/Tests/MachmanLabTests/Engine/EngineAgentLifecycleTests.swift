@@ -306,4 +306,52 @@ struct EngineAgentLifecycleTests {
 			}
 		}
 	}
+
+	// E70: the same rename, with the vmhost frozen (SIGSTOP) before the agent came back: it
+	// never says whom it serves, so its renamed entry listed stopped until it did, and a Start
+	// went ahead beside it. The agent places it by the VM folder its process holds open.
+	@Test(
+		"""
+		E70: a frozen vmhost whose folder was renamed while Machman Agent was away holds its \
+		renamed VM
+		""")
+	func aFrozenVMHostWhoseFolderWasRenamedHoldsIt() async throws {
+		try await Lab.withAgent { agent in
+			try await agent.withVM(LabVMSpec(name: "frozen-renamed", boot: .alpine())) { vm in
+				let host = try await vm.hostPID()
+				try agent.setAnswers(["agent.vmsStillRunning": "Quit, Leave VMs Running"])
+				guard try await TFAgents.quit(agent, reason: "userQuit", timeout: .seconds(30))
+				else {
+					throw TFError.precondition("the agent stayed after Quit, Leave VMs Running")
+				}
+				try agent.setAnswers([:])
+				let renamed = "frozen-later"
+				try FileManager.default.moveItem(
+					atPath: TG.vmDir(agent.scope, vm.name), toPath: TG.vmDir(agent.scope, renamed))
+				try #require(TFProcess.stop(host))
+				defer { TFProcess.resume(host) }
+				try await agent.relaunch()
+
+				let listed = try await TFWait.vm(
+					agent.api, renamed, "not responding", timeout: .seconds(60)
+				) {
+					$0.isUnresponsive
+				}
+				#expect(listed.state == .unknown)
+				await #expect(throws: MachmanError.self) {
+					try await agent.api.start(vm: renamed, options: StartOptions(openWindow: false))
+				}
+				#expect(!FileManager.default.fileExists(
+					atPath: MachmanPaths.vmSocketPath(vm: renamed)))   // no second vmhost
+
+				try await agent.api.endProcess(vm: renamed)
+				#expect(await LabProcesses.waitForExit(host, timeout: .seconds(20)))
+				try await TFWait.vm(agent.api, renamed, "stopped", timeout: .seconds(20)) {
+					$0.state == .stopped
+				}
+				TFVM.forget(agent, vm.name)
+				try? await agent.api.deleteVM(named: renamed)
+			}
+		}
+	}
 }

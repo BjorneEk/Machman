@@ -457,10 +457,11 @@ library, or a safe run's run root), the VM's folder where it is now (it follows 
 move of the folder; absent once deleted; for a safe run's shadow, the real VM's folder), and
 whether it serves a safe run's shadow. MachmanAgent adopts a vmhost as a VM only when it
 serves that VM's folder, and at startup asks every vmhost socket no VM accounts for whom it
-serves — one that doesn't answer in time is asked again every 5 s until it does or exits: one
-whose VM's folder was renamed while it ran makes the renamed VM list `unknown` and
-`unresponsive` until it exits (a start is refused, `vm.process.end` ends it); `vm.rename` to a
-name whose vmhost socket still answers is refused.
+serves — one that doesn't answer in time is placed by the VM folder its process holds open,
+or else asked again every 5 s until it does or exits: one whose VM's folder was renamed while
+it ran makes the renamed VM list `unknown` and `unresponsive` until it exits (a start is
+refused, `vm.process.end` ends it); `vm.rename` to a name whose vmhost socket still answers is
+refused.
 Clients never need to know: the public socket remains the single entry point and nothing about
 the protocol changes. Consequences you can observe: one VM crashing cannot take others (or the
 daemon) down, and vmhosts outlive daemon restarts — a new MachmanAgent re-adopts them. A dropped

@@ -72,4 +72,33 @@ struct VMHostProcessTests {
 		#expect(UDSListener.isLive(path: path))
 		#expect(UDSListener.holderPID(path: path) == getpid())
 	}
+
+	// E70: what a silent vmhost serves, read without asking it: every vmhost holds its VM's
+	// folder open, and the descriptor names the folder where it is now.
+	@Test("E70: the folders a process holds open are read from outside it, where they are now")
+	func theFoldersAProcessHoldsOpenAreRead() throws {
+		let folder = TestEnvironment.scratch + "held-\(UUID().uuidString)"
+		try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+		let fd = open(folder, O_EVTONLY | O_DIRECTORY | O_CLOEXEC)
+		try #require(fd >= 0)
+		defer { close(fd) }
+		let renamed = folder + "-renamed"
+		try FileManager.default.moveItem(atPath: folder, toPath: renamed)
+		defer { try? FileManager.default.removeItem(atPath: renamed) }
+
+		let held = VMHostProcess.folders(of: getpid())
+		#expect(held.contains { isSameFile($0, renamed) })
+		#expect(!held.contains { $0.hasSuffix((folder as NSString).lastPathComponent) })
+	}
+
+	@Test("E70: the vmhost listening at a socket path is found before its queue is full")
+	func theListenerAtAPathIsFoundBeforeItsQueueIsFull() throws {
+		let path = TestEnvironment.socketPath("mm-held")
+		let host = try FrozenHost(path: path, backlog: 8)
+		defer { host.close() }
+		VMHostProcess.TestHook.setServing(path, getpid())   // this process plays the vmhost
+		defer { VMHostProcess.TestHook.setServing(path, nil) }
+		#expect(VMHostProcess.listener(at: path) == getpid())
+		#expect(VMHostProcess.serving(socketPath: path) == nil)   // a connect still gets in
+	}
 }

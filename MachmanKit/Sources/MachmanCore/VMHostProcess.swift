@@ -5,7 +5,8 @@
 //  This user's MachmanVMHost processes, seen from outside: by their executable, and by the
 //  listening sockets they hold. The answer when a socket can't give one (E61): a vmhost that
 //  never accepts — frozen, SIGSTOPped — keeps every probe's connection in its accept queue for
-//  good, and once the queue is full a connect is refused as if nothing served the path.
+//  good, and once the queue is full a connect is refused as if nothing served the path. And
+//  the VM folders a vmhost holds open (E70): what a silent one serves, read without asking it.
 //
 
 import Foundation
@@ -27,31 +28,70 @@ enum VMHostProcess {
 	// saved as a new VM serves another path from then on, and a leftover file at the path it was
 	// launched on read live while it ran — End Process there ended it (review F17).
 	static func serving(socketPath path: String) -> pid_t? {
+		listener(at: path, full: true)
+	}
+
+	// The live vmhost, other than this process, holding the listener for the socket at `path`
+	// (told as `serving` tells it), whatever its queue holds — found without connecting, so a
+	// vmhost that never accepts gains no connection from the look (E70).
+	static func listener(at path: String) -> pid_t? {
+		listener(at: path, full: false)
+	}
+
+	private static func listener(at path: String, full: Bool) -> pid_t? {
 		let names = Set([path, BoundSocket.stagingPath(for: path)].map(canonical))
 		let candidates = TestHook.serving(path).map { [$0] }
 			?? userPIDs().filter { $0 != getpid() && isVMHost($0) }
-		return candidates.first { holdsFullListener($0, boundAt: names) }
+		return candidates.first { holdsListener($0, boundAt: names, full: full) }
 	}
 
 	// Whether `pid` holds a listening unix socket bound at one of `names` whose accept queue is
 	// full: what refuses a connect while it never accepts.
 	static func holdsFullListener(_ pid: pid_t, boundAt names: Set<String>) -> Bool {
+		holdsListener(pid, boundAt: names, full: true)
+	}
+
+	// The directories `pid` holds open, by the path each names now (a descriptor follows a
+	// rename or a move). A vmhost holds its VM's folder open for its whole run — the folder its
+	// hello says it serves (VMFolderPath) — and a safe run's, the real VM's folder too (E70).
+	static func folders(of pid: pid_t) -> [String] {
+		descriptors(of: pid).filter { $0.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) }
+			.compactMap { fd -> String? in
+				var info = vnode_fdinfowithpath()
+				let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
+				guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, size) == size,
+					info.pvip.vip_vi.vi_stat.vst_mode & S_IFMT == S_IFDIR else { return nil }
+				return withUnsafeBytes(of: info.pvip.vip_path) {
+					String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
+				}
+			}
+	}
+
+	// Every descriptor `pid` holds.
+	private static func descriptors(of pid: pid_t) -> [proc_fdinfo] {
 		let entry = MemoryLayout<proc_fdinfo>.stride
 		let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
-		guard bytes > 0 else { return false }
+		guard bytes > 0 else { return [] }
 		// Room for descriptors opened between the two calls.
 		var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / entry + 16)
 		let filled = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, Int32(fds.count * entry))
-		guard filled > 0 else { return false }
-		for fd in fds.prefix(Int(filled) / entry)
-		where fd.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
+		guard filled > 0 else { return [] }
+		return Array(fds.prefix(Int(filled) / entry))
+	}
+
+	// Whether `pid` holds a listening unix socket bound at one of `names` — with `full`, one
+	// whose accept queue is full.
+	private static func holdsListener(_ pid: pid_t, boundAt names: Set<String>, full: Bool)
+		-> Bool {
+		for fd in descriptors(of: pid) where fd.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
 			var info = socket_fdinfo()
 			let size = Int32(MemoryLayout<socket_fdinfo>.size)
 			guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDSOCKETINFO, &info, size) == size
 			else { continue }
 			let socket = info.psi
 			guard socket.soi_family == AF_UNIX, Int32(socket.soi_options) & SO_ACCEPTCONN != 0,
-				socket.soi_qlimit > 0, socket.soi_qlen >= socket.soi_qlimit else { continue }
+				!full || (socket.soi_qlimit > 0 && socket.soi_qlen >= socket.soi_qlimit)
+			else { continue }
 			let bound = withUnsafeBytes(of: socket.soi_proto.pri_un.unsi_addr.ua_sun.sun_path) {
 				String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
 			}

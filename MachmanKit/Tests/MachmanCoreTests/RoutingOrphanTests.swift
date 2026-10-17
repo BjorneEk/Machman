@@ -210,6 +210,78 @@ struct RoutingOrphanTests {
 		try await expectHeldByOrphan(rig, "beta")
 	}
 
+	// A listener that accepts and hangs up at once: live, and its hello always fails, as a
+	// vmhost's whose main actor is stalled. Shut down once (a second shutdown never returns).
+	private final class SilentHost {
+		private let listener: UDSListener
+		private var down = false
+
+		init(path: String) throws {
+			listener = try UDSListener(path: path, queue: DispatchQueue(label: "mm-e70")) {
+				close($0)
+			}
+		}
+
+		func shutdown() {
+			guard !down else { return }
+			down = true
+			listener.shutdown()
+		}
+	}
+
+	// E70: a vmhost that missed its hello at startup had no orphan mapping until it answered,
+	// so its renamed entry listed stopped and a Start went ahead beside it for the stall's
+	// length. It is placed by the VM folder its process holds open — what its hello would say.
+	@Test(
+		"""
+		E70: a vmhost that never answers hello holds the VM whose folder it has open: Not \
+		responding, Start refused, End Process ends it
+		""")
+	@MainActor func aSilentVMHostIsPlacedByTheFolderItHoldsOpen() async throws {
+		let rig = try makeRig(["beta", "gamma"])   // alpha's folder, renamed beta while it ran
+		let orphanSocket = rig.runtime + "/vm-alpha.sock"
+		let host = try SilentHost(path: orphanSocket)
+		defer { host.shutdown() }
+		rig.routing.adoptionRetryInterval = .seconds(60)   // no retry inside the test
+		rig.routing.whomItServesForTesting = { _ in .silent }
+		rig.routing.foldersHeldAtSocket = { path in
+			path == orphanSocket ? [NSTemporaryDirectory(), rig.library + "/beta"] : []
+		}
+
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(rig.routing.orphanSockets == ["beta": orphanSocket])   // before: none
+		#expect(rig.routing.orphanQuestions.isEmpty)   // placed: not asked again
+		try await expectHeldByOrphan(rig, "beta")   // before: stopped, and a spawn
+		#expect(try await rig.routing.vm(named: "gamma").state == .stopped)
+
+		var ended: [String] = []
+		rig.routing.endSocketHolder = { path in
+			ended.append(path)
+			host.shutdown()
+			return true
+		}
+		try await rig.routing.endProcess(vm: "beta")
+		#expect(ended == [orphanSocket])
+		#expect(try await rig.routing.vm(named: "beta").state == .stopped)
+	}
+
+	@Test("E70: a silent vmhost whose folder can't be read is asked again, as before")
+	@MainActor func aSilentVMHostWhoseFolderCantBeReadIsAskedAgain() async throws {
+		let rig = try makeRig(["beta"])
+		let orphanSocket = rig.runtime + "/vm-alpha.sock"
+		let host = try SilentHost(path: orphanSocket)
+		defer { host.shutdown() }
+		rig.routing.adoptionRetryInterval = .seconds(60)
+		rig.routing.whomItServesForTesting = { _ in .silent }
+		rig.routing.foldersHeldAtSocket = { _ in [] }
+
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(rig.routing.orphanSockets.isEmpty)
+		#expect(rig.routing.orphanQuestions[orphanSocket] != nil)
+		#expect(try await rig.routing.vm(named: "beta").state == .stopped)
+		rig.routing.orphanQuestions[orphanSocket]?.cancel()
+	}
+
 	// E11: a safe run's vmhost whose VM folder was renamed while the agent was away answered
 	// as a shadow, which the sweep dropped: its entry listed stopped while the run had its
 	// unsafe disks attached. A shadow says the real VM's folder, and is placed by it.

@@ -163,6 +163,12 @@ public final class RoutingMachman: MachmanControlling {
 	// The library a vmhost's folder is matched in (E11). A seam: routing tests keep their VMs'
 	// folders in a scratch library of their own.
 	var libraryDir: () -> String = { machmanVMDir }
+	// The directories the vmhost holding the listener at a socket has open (E70): a vmhost
+	// that doesn't say whom it serves is placed by its VM's folder. A seam: an in-process test
+	// host is this process.
+	var foldersHeldAtSocket: (String) -> [String] = { path in
+		VMHostProcess.listener(at: path).map(VMHostProcess.folders(of:)) ?? []
+	}
 	// Unclaimed vmhost sockets that didn't answer hello yet, asked again on the adoption timer
 	// (review F23); and the ask itself, a seam for tests (nil: hello on the socket).
 	var orphanQuestions: [String: Task<Void, Never>] = [:]
