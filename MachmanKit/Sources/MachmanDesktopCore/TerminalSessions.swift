@@ -271,21 +271,20 @@ public final class TerminalSessions: ObservableObject {
 	// Drop every controller (and session name) of VMs that no longer exist. Per-port
 	// pruning is the canvas reconcile's job — it reports removed refs into drop.
 	public func reconcile(vms: [VMInfo]) {
-		reconcile(keeping: Set(vms.map(\.name)))
+		forgetVMs(except: Set(vms.map(\.name)))
 	}
 
-	// The same, by name: `names` are the VMs whose controllers stay.
-	public func reconcile(keeping names: Set<String>) {
-		for vm in Array(live.keys) where !names.contains(vm) {
-			live[vm]?.values.forEach { $0.disconnect() }
-			live[vm] = nil
-			appliedLive[vm] = nil
+	// The VM and tab a live controller serves: what File ▸ Save Terminal… names its file
+	// after (H63). Nil for one no tab holds any more.
+	public func tab(of controller: any TerminalController) -> (vm: String, tab: VMPaneTab)? {
+		for (vm, tabs) in live {
+			if let tab = tabs.first(where: { $0.value === controller })?.key { return (vm, tab) }
 		}
-		for vm in Array(sshMeta.keys) where !names.contains(vm) {
-			sshMeta[vm] = nil
-		}
+		return nil
 	}
+}
 
+extension TerminalSessions: VMKeyedState {
 	// Migrate a VM's controllers on rename, so open terminals survive it. (A live SSH
 	// process is unaffected by the rename; its argv already resolved.)
 	public func renameVM(from old: String, to new: String) {
@@ -303,12 +302,20 @@ public final class TerminalSessions: ObservableObject {
 		}
 	}
 
-	// The VM and tab a live controller serves: what File ▸ Save Terminal… names its file
-	// after (H63). Nil for one no tab holds any more.
-	public func tab(of controller: any TerminalController) -> (vm: String, tab: VMPaneTab)? {
-		for (vm, tabs) in live {
-			if let tab = tabs.first(where: { $0.value === controller })?.key { return (vm, tab) }
+	// The terminals are the run's: Save as New VM takes them to the saved VM.
+	public func copyVM(from old: String, to new: String) {
+		renameVM(from: old, to: new)
+	}
+
+	// `kept` are the VMs whose controllers stay.
+	public func forgetVMs(except kept: Set<String>) {
+		for vm in Array(live.keys) where !kept.contains(vm) {
+			live[vm]?.values.forEach { $0.disconnect() }
+			live[vm] = nil
+			appliedLive[vm] = nil
 		}
-		return nil
+		for vm in Array(sshMeta.keys) where !kept.contains(vm) {
+			sshMeta[vm] = nil
+		}
 	}
 }

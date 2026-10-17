@@ -12,6 +12,12 @@ import Foundation
 import MachmanUI
 import MachmanAPI
 
+// How a VM's name moved, for the client state keyed by it (migrateClientState).
+enum VMNameChange {
+	case renamed
+	case savedAsNew
+}
+
 extension VMListViewModel {
 	// MARK: - VM
 
@@ -147,20 +153,24 @@ extension VMListViewModel {
 		) { try await $0.renameVM(named: oldName, to: newName) }
 		let unmoved = renamesInFlight.removeValue(forKey: oldName) != nil
 		guard renamed != nil else { return false }
-		if unmoved { migrateClientState(from: oldName, to: newName) }
+		if unmoved { migrateClientState(from: oldName, to: newName, .renamed) }
 		await reload()
 		select(name: newName)
 		return true
 	}
 
-	// A VM's client-side state follows it to a new name: live terminals and ssh sessions,
-	// the canvas layout and the last preview frame. Its torn windows can't re-key their
-	// birth payload: the refresh that shows the new name orders them to reopen under it
-	// (reconcileTornTabs, T3), and the selection follows there too.
-	func migrateClientState(from old: String, to new: String) {
-		terminals.renameVM(from: old, to: new)
-		canvases.renameVM(from: old, to: new)
-		previews.renameVM(from: old, to: new)
+	// A VM's client-side state follows it to a new name (PR24): every VM-keyed store moves
+	// it for a rename, and for Save as New VM takes it along with the run or copies it, as
+	// the store says. Its torn windows can't re-key their birth payload: the refresh that
+	// shows the new name orders them to reopen under it (reconcileTornTabs, T3), and the
+	// selection follows there too.
+	func migrateClientState(from old: String, to new: String, _ change: VMNameChange) {
+		for state in keyedState {
+			switch change {
+			case .renamed: state.renameVM(from: old, to: new)
+			case .savedAsNew: state.copyVM(from: old, to: new)
+			}
+		}
 		pendingMigrations[old] = new
 	}
 
@@ -269,7 +279,7 @@ extension VMListViewModel {
 			// the original, stopped), so its terminals, sessions, layout, torn windows and
 			// last frame go with it — as a rename's do. The original starts fresh and
 			// connects anew when it is started (T17).
-			model.migrateClientState(from: name, to: saved.name)
+			model.migrateClientState(from: name, to: saved.name, .savedAsNew)
 			model.safeSaveInFlight = false
 			model.safeSaveRequest = nil        // item binding dismisses the sheet
 		} refreshed: { model, saved in

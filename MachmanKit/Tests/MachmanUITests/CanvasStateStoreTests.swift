@@ -72,7 +72,7 @@ struct CanvasStateStoreTests {
 		store.renameVM(from: "old", to: "new")
 		#expect(store.canvases["old"] == nil)
 		#expect(store.canvas(for: "new") == canvas)
-		store.removeVM("new")
+		store.forgetVMs(except: ["other"])
 		store.flush()
 
 		let reloaded = CanvasStateStore(fileURL: url)

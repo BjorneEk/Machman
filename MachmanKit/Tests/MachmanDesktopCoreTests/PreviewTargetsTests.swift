@@ -102,10 +102,12 @@ struct PreviewTargetsTests {
 
 	// MARK: - Frames of VMs that left (P40)
 
-	// Debian runs and is shown: its first poll lands a frame.
+	// Debian runs and is shown: its first poll lands a frame. The view model's own service:
+	// it walks its VM-keyed stores when VMs leave or move (PR24).
 	private func debianWithAFrame(_ h: DesktopHarness) async -> PreviewService {
 		h.stub.previewPayload = Samples.previewPNG()
-		let previews = previews(h)
+		let previews = h.previews
+		previews.attach(api: h.stub)
 		previews.setVisible(["Debian"])
 		#expect(await eventually { previews.images.images["Debian"] != nil })
 		previews.setVisible([])
@@ -133,7 +135,7 @@ struct PreviewTargetsTests {
 	func aRenamedVMKeepsItsFrame() async throws {
 		let h = await DesktopHarness.make()
 		let previews = await debianWithAFrame(h)
-		previews.renameVM(from: "Debian", to: "Debian 2")
+		h.viewModel.migrateClientState(from: "Debian", to: "Debian 2", .renamed)   // the reply
 		h.stub.emit(.stateChanged(vm: "Alpine", state: .running))
 		#expect(await eventually { h.store.vms.first { $0.name == "Alpine" }?.state == .running })
 		try await Task.sleep(for: .milliseconds(50))   // the prune runs a turn after the list

@@ -7,7 +7,7 @@
 //  re-run discovery's answer (F4) — a first sighting never toasts, only a change does. Off
 //  the event stream: the engine's warnings. Off the connection: the list-stale status toast
 //  (P13), the actions a lost connection cut off (P12) and the settings files set aside at
-//  launch (P19). The diff memory sits in the class body (VMListViewModel.swift).
+//  launch (P19). The diff memory is ListAnnouncerMemory, at the bottom of this file.
 //
 
 import Foundation
@@ -51,8 +51,6 @@ extension VMListViewModel {
 				break
 			}
 		}
-		let names = Set(list.map(\.name))
-		knownStates = knownStates.filter { names.contains($0.key) }
 	}
 
 	// What the SSH half of a VM looked like last time, so only MOVEMENT is reported.
@@ -194,10 +192,10 @@ extension VMListViewModel {
 					severity: .warning)
 			}
 		}
-		// A VM that stopped or vanished has no pending SSH wait to report on.
+		// A VM that stopped or vanished has no pending SSH wait to report on (the memory of a
+		// vanished one goes with the other VM-keyed state, after this diff).
 		let names = Set(list.map(\.name))
 		for name in knownSSH.keys where !names.contains(name) {
-			knownSSH[name] = nil
 			dismissToast(key: Self.sshWaitToastKey(name))
 		}
 		for vm in list where !vm.state.isRunning {
@@ -309,5 +307,29 @@ extension VMListViewModel {
 				message: "Couldn’t read your \(file.what) — the old file is kept as "
 					+ file.backup.lastPathComponent)
 		}
+	}
+}
+
+// What the announcer last saw per VM, keyed by name like the rest of the client state
+// (PR24): a rename moves it, and Save as New VM copies it — the saved VM goes on from what
+// the run looked like and the original keeps its own, so the toasts read as before.
+@MainActor
+final class ListAnnouncerMemory: VMKeyedState {
+	var states: [String: VMState] = [:]
+	var ssh: [String: VMListViewModel.SSHSnapshot] = [:]
+
+	func renameVM(from old: String, to new: String) {
+		states[new] = states.removeValue(forKey: old) ?? states[new]
+		ssh[new] = ssh.removeValue(forKey: old) ?? ssh[new]
+	}
+
+	func copyVM(from old: String, to new: String) {
+		if let state = states[old] { states[new] = state }
+		if let snapshot = ssh[old] { ssh[new] = snapshot }
+	}
+
+	func forgetVMs(except kept: Set<String>) {
+		states = states.filter { kept.contains($0.key) }
+		ssh = ssh.filter { kept.contains($0.key) }
 	}
 }

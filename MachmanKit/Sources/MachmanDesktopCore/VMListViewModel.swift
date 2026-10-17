@@ -170,9 +170,17 @@ public final class VMListViewModel: ObservableObject {
 	// MARK: List announcer (VMListViewModel+ListAnnouncer.swift)
 
 	// Last state seen per VM, for outcome toasts: diffing the store's list catches changes
-	// that arrive via reload (no discrete event) and dedupes doubled events.
-	var knownStates: [String: VMState] = [:]
-	var knownSSH: [String: SSHSnapshot] = [:]
+	// that arrive via reload (no discrete event) and dedupes doubled events. VM-keyed state,
+	// so it follows renames and safe saves like the rest (PR24).
+	let announcerMemory = ListAnnouncerMemory()
+	var knownStates: [String: VMState] {
+		get { announcerMemory.states }
+		set { announcerMemory.states = newValue }
+	}
+	var knownSSH: [String: SSHSnapshot] {
+		get { announcerMemory.ssh }
+		set { announcerMemory.ssh = newValue }
+	}
 	// Re-run Address Discovery / Check Connection (F4): the VMs waiting on an answer (each
 	// with its timeout) and those that heard one, so even "nothing changed" is said.
 	var rediscovering: [String: Task<Void, Never>] = [:]
@@ -191,6 +199,9 @@ public final class VMListViewModel: ObservableObject {
 	var pendingMigrations: [String: String] = [:]
 	// Each VM's last kernel-settings write: the next one waits for it (+KernelSettings.swift).
 	var kernelWrites: [String: Task<Void, Never>] = [:]
+	// Every store of client state keyed by VM name (PR24), walked in one place:
+	// migrateClientState for a rename or a safe save, listRefreshed for VMs that left.
+	var keyedState: [any VMKeyedState] = []
 
 	private var eventTask: Task<Void, Never>?
 	private var storeForwarder: AnyCancellable?
@@ -215,6 +226,7 @@ public final class VMListViewModel: ObservableObject {
 		self.previews = previews
 		self.canvases = canvases
 		self.tornTabs = tornTabs ?? .shared
+		keyedState = [terminals, canvases, previews, operations, announcerMemory]
 		// The list is what views read through this object: forward its changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()
@@ -267,18 +279,10 @@ public final class VMListViewModel: ObservableObject {
 		// below would take the old name for a VM gone (T16).
 		for (old, new) in renamesInFlight where names.contains(new) && !names.contains(old) {
 			renamesInFlight[old] = nil
-			migrateClientState(from: old, to: new)
+			migrateClientState(from: old, to: new, .renamed)
 		}
-		// State moved to a name no list has shown yet stays: this list may have been fetched,
-		// or a row of it patched, before the move.
-		let kept = names.union(pendingMigrations.values)
-		// Terminals + canvas layouts follow the list: drop controllers of gone VMs, forget
-		// their layouts, and close tabs whose port vanished (tearing down the controller and
-		// deselecting the port's row, as every close does).
-		terminals.reconcile(keeping: kept)
-		for vmName in Array(canvases.canvases.keys) where !kept.contains(vmName) {
-			canvases.removeVM(vmName)
-		}
+		// Tabs whose port vanished close (tearing down the controller and deselecting the
+		// port's row, as every close does).
 		for vm in list {
 			let ports = (vm.consolePorts ?? []) + (vm.uartPorts ?? [])
 			let refs = Set(ports.map { SerialPortRef($0) })
@@ -295,6 +299,13 @@ public final class VMListViewModel: ObservableObject {
 		reconcileTornTabs(list: list)
 		operationsStore.primeInstallPhases(for: list)
 		announce(list)
+		// Every VM-keyed store forgets the VMs that left — once the announcer has diffed this
+		// list against what it last saw. State moved to a name no list has shown yet stays:
+		// this list may have been fetched, or a row of it patched, before the move.
+		let kept = names.union(pendingMigrations.values)
+		for state in keyedState {
+			state.forgetVMs(except: kept)
+		}
 		// The sidebar shows the selected VM's device tree, so something should always be
 		// selected while VMs exist (launch, post-delete) — and a selection whose VM is gone
 		// falls over to the first. A selection whose state moved to a new name follows it.

@@ -73,12 +73,6 @@ public final class CanvasStateStore: ObservableObject {
 		save()
 	}
 
-	// Forget a deleted VM's layout.
-	public func removeVM(_ vm: String) {
-		guard canvases.removeValue(forKey: vm) != nil else { return }
-		save()
-	}
-
 	// MARK: - Internals
 
 	private func save() {
@@ -99,6 +93,21 @@ public final class CanvasStateStore: ObservableObject {
 			let c = try decoder.container(keyedBy: CodingKeys.self)
 			canvases = c.decodeTolerantDictionary(of: CanvasState.self, forKey: .canvases)
 		}
+	}
+}
+
+// The layout is the run's: Save as New VM takes it to the saved VM, as a rename does.
+extension CanvasStateStore: VMKeyedState {
+	public func copyVM(from old: String, to new: String) {
+		renameVM(from: old, to: new)
+	}
+
+	// Forget the layouts of deleted VMs.
+	public func forgetVMs(except kept: Set<String>) {
+		let gone = canvases.keys.filter { !kept.contains($0) }
+		guard !gone.isEmpty else { return }
+		for vm in gone { canvases[vm] = nil }
+		save()
 	}
 }
 

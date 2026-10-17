@@ -10,7 +10,8 @@
 //  stateChanged (keyed off the event's state so a not-yet-patched row can't stall it), starts
 //  a shown VM's loop when a list reload shows it running, and keeps the last frame across
 //  reconnects — DaemonConnection re-attaches it per connection. A VM that leaves the list
-//  takes its frame along (P40), so a new VM under its name never shows the old screen.
+//  takes its frame along (P40, VMKeyedState), so a new VM under its name never shows the old
+//  screen.
 //  Frames decode off the main actor (Q5): only the finished image is handed to the store.
 //
 
@@ -40,9 +41,6 @@ public final class PreviewService: ObservableObject {
 	private var focused = true
 	private let interval: Double = 4
 	private let decode: FrameDecoder
-	// Names a rename moved a frame to, kept until a list shows them: the rename's reply can
-	// land before the list that carries the new name.
-	private var renamedIn: Set<String> = []
 
 	// `tornTabs`: the registry whose open Configuration windows also get frames; nil polls
 	// the selection only. `decode`: tests see where frames decode.
@@ -60,7 +58,6 @@ public final class PreviewService: ObservableObject {
 		// late, a list fetched after a reconnect, a selection the list itself made. $vms
 		// emits on willSet and the selection may follow the same list, so look a turn later.
 		listSink = store.$vms.receive(on: DispatchQueue.main).sink { [weak self] _ in
-			self?.pruneFrames()
 			self?.startMissedLoops()
 		}
 	}
@@ -120,24 +117,6 @@ public final class PreviewService: ObservableObject {
 		restartAll()
 	}
 
-	// Keep the last frame under the new name so the preview doesn't blank on rename.
-	public func renameVM(from old: String, to new: String) {
-		if let image = images.images.removeValue(forKey: old) {
-			images.images[new] = image
-			renamedIn.insert(new)
-		}
-	}
-
-	// Frames of VMs the list no longer holds go, and with them the NSImages they kept alive.
-	private func pruneFrames() {
-		let names = Set(store.vms.map(\.name))
-		renamedIn.subtract(names)
-		let gone = images.images.keys.filter { !names.contains($0) && !renamedIn.contains($0) }
-		for name in gone {
-			images.images[name] = nil
-		}
-	}
-
 	// Restart is the one entry point: cancel, then recreate only if the VM should be polled.
 	private func restart(_ name: String, latestState: VMState? = nil) {
 		tasks[name]?.cancel()
@@ -178,6 +157,27 @@ public final class PreviewService: ObservableObject {
 	private func restartAll() {
 		for name in visible.union(tasks.keys) {
 			restart(name)
+		}
+	}
+}
+
+extension PreviewService: VMKeyedState {
+	// Keep the last frame under the new name so the preview doesn't blank on rename.
+	public func renameVM(from old: String, to new: String) {
+		if let image = images.images.removeValue(forKey: old) {
+			images.images[new] = image
+		}
+	}
+
+	// The frame is the run's screen: Save as New VM shows it under the saved VM.
+	public func copyVM(from old: String, to new: String) {
+		renameVM(from: old, to: new)
+	}
+
+	// Frames of VMs gone from the list go, and with them the NSImages they kept alive.
+	public func forgetVMs(except kept: Set<String>) {
+		for name in images.images.keys where !kept.contains(name) {
+			images.images[name] = nil
 		}
 	}
 }

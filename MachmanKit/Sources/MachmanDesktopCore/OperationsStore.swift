@@ -12,7 +12,7 @@
 //  operation also lands in the activity list once (PR5), which this store owns so it
 //  outlives reconnects like the store itself. Install phases are the session's: each attach
 //  starts them over (the next agent may run no install the last one reported), and a VM that
-//  leaves the list takes its phase along (F11).
+//  leaves the list takes its phase along (F11, VMKeyedState).
 //
 
 import Foundation
@@ -85,12 +85,8 @@ public final class OperationsStore: ObservableObject {
 	// Prime phases for VMs the daemon reports mid-install: only a live install session
 	// serves real progress; every other macInstallState derives its phase client-side
 	// (VMListViewModel.installPhase(for:)) without a fetch — so no per-VM N+1 on reload.
-	// Names that left the list lose their phase: a new VM under that name starts clean.
 	public func primeInstallPhases(for vms: [VMInfo]) {
 		listed = Set(vms.map(\.name))
-		for name in installPhases.keys where !listed.contains(name) {
-			installPhases[name] = nil
-		}
 		guard let api else { return }
 		for vm in vms where vm.boot.macInstallState?.kind == .installing
 			&& installPhases[vm.name] == nil && !phasePrimesInFlight.contains(vm.name) {
@@ -172,6 +168,23 @@ public final class OperationsStore: ObservableObject {
 			}
 		default:
 			break
+		}
+	}
+}
+
+extension OperationsStore: VMKeyedState {
+	public func renameVM(from old: String, to new: String) {
+		if let phase = installPhases.removeValue(forKey: old) { installPhases[new] = phase }
+	}
+
+	public func copyVM(from old: String, to new: String) {
+		renameVM(from: old, to: new)
+	}
+
+	// Names that left the list lose their phase: a new VM under that name starts clean.
+	public func forgetVMs(except kept: Set<String>) {
+		for name in installPhases.keys where !kept.contains(name) {
+			installPhases[name] = nil
 		}
 	}
 }
