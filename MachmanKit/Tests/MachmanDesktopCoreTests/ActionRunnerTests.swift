@@ -164,6 +164,12 @@ struct ActionRunnerTests {
 			Case("setSetupServed", "Changing the reinstall setting failed") {
 				$0.setSetupServed("Alpine", serve: true)
 			},
+			Case("setSetupScript", "Changing the served script failed") {
+				$0.setSetupScript("Alpine", id: Samples.setupScriptOlder.id)
+			},
+			Case("importSetupScript", "Adding the Guest Setup script failed") {
+				$0.useCustomSetupScript("Alpine", path: "/Users/demo/patched.sh")
+			},
 			Case("setEnabled", "Updating enabled state failed") {
 				$0.setEnabled("Alpine", disks: ["storage:system": false])
 			},
@@ -291,6 +297,9 @@ struct ActionRunnerTests {
 			},
 			Case("resetSSH", "SSH state reset for Alpine") { $0.resetSSH("Alpine") },
 			Case("resetSetup", "Guest setup state reset for Alpine") { $0.resetSetup("Alpine") },
+			Case("importSetupScript", "Added Guest Setup script \(q("patched.sh"))") {
+				$0.useCustomSetupScript("Alpine", path: "/Users/demo/patched.sh")
+			},
 			Case("addConsolePort", "Added console port") { $0.addConsolePort("Alpine") },
 			Case("removeConsolePort", "Removed console port") { $0.removeConsolePort("Alpine") },
 			Case("addUartPort", "Added UART port") { $0.addUartPort("Alpine") },
@@ -347,6 +356,9 @@ struct ActionRunnerTests {
 			Case("setSSH", "") { $0.setSSHIntegration("Alpine", enabled: false) },
 			Case("setSSH", "") { $0.setSSHAlias("Alpine", alias: "box") },
 			Case("setSetupServed", "") { $0.setSetupServed("Alpine", serve: true) },
+			Case("setSetupScript", "") {
+				$0.setSetupScript("Alpine", id: Samples.setupScriptOlder.id)
+			},
 			Case("setEnabled", "") { $0.setEnabled("Alpine", disks: ["storage:system": false]) },
 			Case("promoteKernelFile", "") {
 				$0.promoteKernel(

@@ -53,6 +53,13 @@ public struct OpenPanelRequest: Equatable, Sendable {
 			prompt: "Add")
 	}
 
+	// Use Custom Script… in the Guest Setup inspector (S67): a shell script, or any text file.
+	public static func customSetupScript(vm: String) -> OpenPanelRequest {
+		OpenPanelRequest(
+			pick: .file, contentTypes: [.shellScript, .plainText],
+			message: "Choose a Guest Setup script to serve to \(vm)", prompt: "Use")
+	}
+
 	// The New Mac flow's and the Install macOS sheet's restore image. Typed by its extension:
 	// the declared com.apple.itunes.ipsw where the Mac has it, else a dynamic type that
 	// still filters by the extension.

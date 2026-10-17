@@ -86,7 +86,9 @@ public enum Samples {
 			setup: GuestSetupInfo(
 				installed: true, guestOS: "debian", guestOSFamily: "debian",
 				guestOSVersion: "13", guestInit: "systemd", lastReportAt: epoch,
-				scriptVersion: 3, currentScriptVersion: 3, lastRunStatus: "ok"))
+				scriptVersion: 3, currentScriptVersion: 3, lastRunStatus: "ok",
+				scripts: setupScripts(), servedScript: setupScriptLatest.id,
+				installedScript: setupScriptLatest.id))
 	}
 
 	// A macOS guest: installed, the mac device set (trackpad included), macOS floors.

@@ -668,22 +668,6 @@ extension VMListViewModel {
 		) { try await $0.resetSSH(vm: name) }
 	}
 
-	public func resetSetup(_ name: String) {
-		perform(
-			"Resetting guest setup state",
-			toast: ActionToast(
-				symbol: MachmanSymbols.deviceGuestSetup,
-				message: "Guest setup state reset for \(name)")
-		) { try await $0.resetSetup(vm: name) }
-	}
-
-	// The Allow-reinstall toggle made real: serving on demand, clean share otherwise.
-	public func setSetupServed(_ name: String, serve: Bool) {
-		perform("Changing the reinstall setting") {
-			try await $0.setSetupServed(vm: name, serve: serve)
-		}
-	}
-
 	// MARK: - macOS install
 
 	// `diskID`: one of the VM's disks the switch sheet's user picked to install onto (D32).
