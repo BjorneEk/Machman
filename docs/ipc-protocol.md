@@ -505,7 +505,10 @@ running while it lives and listens on the VM's socket, even once that socket ref
 connections.
 `vm.start` adopts every such vmhost first (one whose adoption already failed is not asked
 again), so its MAC and shared-disk checks see their VMs; one that can't be adopted counts with
-its config's MAC and every disk it may have attached.
+its config's MAC and every disk it may have attached. A VM sharing one of its writable disk
+files (or, without `force`, its MAC) whose run is over — its vmhost exiting after the stop — is
+waited out for up to 3 s before those checks, then "… is still shutting down — try again in a
+moment".
 
 While a copy writes into a VM's folder or reads it whole — `vm.disk.import`, `vm.disk.promote`,
 `vm.kernel.promote` (whether the daemon or the VM's vmhost does the copy), `vm.copy` of it —

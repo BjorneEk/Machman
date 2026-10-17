@@ -38,6 +38,15 @@ enum BootGuard {
 		// whose flag can't tell (a host's disabled entry it may have started with).
 		var attached: Set<String> = []
 		var mayHaveAttached: Set<String> = []
+
+		// Whether the guard weighs this one against `candidate`: a writable disk file it has or
+		// may have attached, or (`mac`) the MAC. A start waits out such a VM whose run is over
+		// before it asks (E71).
+		func shares(with candidate: Candidate, mac: Bool) -> Bool {
+			guard name != candidate.name else { return false }
+			if !candidate.disks.isDisjoint(with: attached.union(mayHaveAttached)) { return true }
+			return mac && candidate.mac != nil && self.mac == candidate.mac
+		}
 	}
 
 	// `force` overrides it: lost networking recovers.

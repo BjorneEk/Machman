@@ -113,10 +113,7 @@ extension RoutingMachman {
 			try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options) {
 			return
 		}
-		// The disk guard first, as BootGuard.refusal orders them (E55): force never overrides
-		// it, so a MAC conflict met first offered a Start Anyway that could never work.
-		try checkSharedDisks(name: name)
-		try checkMACConflict(name: name, mac: vm.config.macAddress, options: options)
+		try await checkBootGuards(name: name, mac: vm.config.macAddress, options: options)
 		// The start goes ahead: say so now, not at hostStarted (V14). A client that follows
 		// events only — the agent menu, another desktop — would show a safe run's minutes-long
 		// preparation as stopped, with Stop (its cancel, C14) off. vm.list says starting
@@ -213,6 +210,30 @@ extension RoutingMachman {
 		registry.events.emit(.listChanged)
 	}
 
+	// The start guards over what runs now. A VM whose run is over stays hosted until the router
+	// hears its vmhost exit — the death watch or the dropped connection, a moment after the VM
+	// lists stopped — and counted as running: a start right after a sharer's force stop, its
+	// vmhost already gone, was refused "<B> is running with <disk> attached" (E71). Each sharer
+	// whose run is over is waited out first, as a start waits out its own VM's (waitOutExit);
+	// one that overstays is still shutting down. Then the disk guard, as BootGuard.refusal
+	// orders them (E55): force never overrides it, so a MAC conflict met first offered a Start
+	// Anyway that could never work.
+	private func checkBootGuards(
+		name: String, mac: String?, options: StartOptions
+	) async throws {
+		let disks = registry.vm(named: name)?.config.writableDiskFiles ?? []
+		let candidate = BootGuard.Candidate(name: name, mac: mac, disks: disks)
+		let leaving = hosted.filter { other, host in
+			host.exitingAfterRun
+				&& bootGuardOther(other, host).shares(with: candidate, mac: !options.force)
+		}
+		for (other, host) in leaving.sorted(by: { $0.key < $1.key }) {
+			try await waitOutExit(of: host, name: other)
+		}
+		try checkSharedDisks(name: name)
+		try checkMACConflict(name: name, mac: mac, options: options)
+	}
+
 	// The router is the only place that sees every live MAC: running hosts, and starts still
 	// in their spawn window (nothing hosted yet). Among starts the earlier reservation wins,
 	// so two same-MAC starts never both fail. Applies to safe runs too — the shadow
@@ -263,19 +284,7 @@ extension RoutingMachman {
 	// ever over-refuses. A vmhost that couldn't be adopted counts with the config's MAC and
 	// every entry it may have attached.
 	func bootGuardOthers() -> [BootGuard.Other] {
-		var others: [BootGuard.Other] = []
-		for (name, host) in hosted {
-			var other = BootGuard.Other(name: name, role: .running, mac: host.identity.macInUse)
-			if let config = registry.vm(named: name)?.config {
-				if let unattached = host.unattachedDisks {
-					other.attached = config.everyWritableDiskFile.subtracting(unattached)
-				} else {
-					other.attached = config.writableDiskFiles
-					other.mayHaveAttached = config.unattachedDiskFiles
-				}
-			}
-			others.append(other)
-		}
+		var others = hosted.map { name, host in bootGuardOther(name, host) }
 		let macs = pendingStartMACs
 		for name in pendingStarts {
 			let order = macs[name]?.order ?? Int.max
@@ -293,6 +302,20 @@ extension RoutingMachman {
 				mayHaveAttached: vm.config.everyWritableDiskFile))
 		}
 		return others
+	}
+
+	// A hosted VM as the boot guard sees it (above): running, with what its start attached.
+	private func bootGuardOther(_ name: String, _ host: HostedVM) -> BootGuard.Other {
+		var other = BootGuard.Other(name: name, role: .running, mac: host.identity.macInUse)
+		if let config = registry.vm(named: name)?.config {
+			if let unattached = host.unattachedDisks {
+				other.attached = config.everyWritableDiskFile.subtracting(unattached)
+			} else {
+				other.attached = config.writableDiskFiles
+				other.mayHaveAttached = config.unattachedDiskFiles
+			}
+		}
+		return other
 	}
 
 	// A safe run: clone the VM into a shadow run root (per-disk/mount safe flags decide
@@ -508,8 +531,7 @@ extension RoutingMachman {
 					message: "\(name) is still prepared from an earlier start — start it "
 						+ "normally, or wait up to 3 minutes to start it safe")
 			}
-			try checkSharedDisks(name: name)   // before the MAC guard, as a fresh start (E55)
-			try checkMACConflict(name: name, mac: mac, options: options)
+			try await checkBootGuards(name: name, mac: mac, options: options)   // as a fresh start
 		}
 		var forwarded = options
 		forwarded.safe = false

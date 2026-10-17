@@ -54,8 +54,6 @@ struct EngineSharedDiskTests {
 				swap(&running, &next)
 			}
 			try await running.forceStop()
-			// Fails until the open bug E71 (a start right after a disk sharer's force stop is
-			// refused as if that VM still ran) is fixed.
 			#expect(refused.isEmpty, "\(refused.count) of \(turns) starts refused: \(refused)")
 		}
 	}
@@ -81,8 +79,6 @@ struct EngineSharedDiskTests {
 				swap(&running, &next)
 			}
 			try await running.forceStop()
-			// Fails until the open bug E71 (a start right after a disk sharer's force stop is
-			// refused as if that VM still ran) is fixed.
 			#expect(refused.isEmpty, "\(refused.count) of \(turns) starts refused: \(refused)")
 		}
 	}
