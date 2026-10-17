@@ -9,6 +9,7 @@
 import Darwin
 import Foundation
 import MachmanAPI
+import MachmanClient
 import MachmanFixtures
 import MachmanTestSupport
 import Testing
@@ -114,6 +115,17 @@ struct LabStartFailureTests {
 		#expect(notes.first?.contains(kept) == true, "\(notes)")
 		#expect(notes.first?.contains("The storage device attachment is invalid.") == true)
 		#expect(notes.first?.contains("write-locked") == true, "\(notes)")
+	}
+
+	@Test("Q28: a lost connection or any other error but the engine's is never kept")
+	func onlyEngineErrorsCount() {
+		#expect(!TFStartFailure.isEngineFailure(RPCConnection.ConnectionError.disconnected))
+		#expect(!TFStartFailure.isEngineFailure(
+			RPCConnection.ConnectionError.connectFailed("/x.sock", ECONNREFUSED)))
+		#expect(!TFStartFailure.isEngineFailure(LabError.specInvalid("no")))
+		#expect(!TFStartFailure.isEngineFailure(NSError(domain: NSPOSIXErrorDomain, code: 5)))
+		#expect(TFStartFailure.isEngineFailure(NSError(domain: "VZErrorDomain", code: 2)))
+		#expect(TFStartFailure.isEngineFailure(MachmanError(code: .ioFailure, message: "i")))
 	}
 
 	@Test("Q28: a record's name carries its test process, so a later one of a VM so named stays")

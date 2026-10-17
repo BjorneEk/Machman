@@ -122,7 +122,12 @@ struct TGAutostartTests {
 				try await jobs.bootstrap(plist)
 				// Raw connects only: a list now would adopt the host before the start (F12).
 				#expect(await TG.waitForSocket(vm.socketPath, timeout: .seconds(30)))
-				try await agent.api.start(vm: vm.name, options: StartOptions(openWindow: false))
+				do {
+					try await agent.api.start(vm: vm.name, options: StartOptions(openWindow: false))
+				} catch {
+					await TFStartFailure.record(vm: vm.name, api: agent.api, error: error)
+					throw error
+				}
 				try await vm.waitForState(.running, timeout: .seconds(60))
 				let host = try await vm.hostPID()
 				try vm.fileHostPid(host)

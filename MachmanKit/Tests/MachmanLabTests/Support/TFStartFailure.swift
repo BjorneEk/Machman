@@ -51,14 +51,16 @@ enum TFStartFailure {
 
 	/// Whether a start's error is worth a record: the engine or Virtualization failed it. A
 	/// guard's refusal (a MAC or disk conflict, a busy, missing or misconfigured VM) is what rows
-	/// like TGVM.startError expect, and says why on its own.
+	/// like TGVM.startError expect, and says why on its own; a lost connection (an agent dying
+	/// mid-start) or the harness's own error says nothing about the VM's disks.
 	static func isEngineFailure(_ error: Error) -> Bool {
-		if error is CancellationError { return false }
-		guard let error = error as? MachmanError else { return true }
-		switch error.code {
-		case .internalError, .virtualizationFailure, .ioFailure: return true
-		default: return false
+		if let error = error as? MachmanError {
+			switch error.code {
+			case .internalError, .virtualizationFailure, .ioFailure: return true
+			default: return false
+			}
 		}
+		return (error as NSError).domain == "VZErrorDomain"
 	}
 
 	/// `vm`'s failed start, kept when it failed in the engine: its config and the other VMs as

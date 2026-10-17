@@ -77,7 +77,12 @@ struct TGSafeStartTests {
 		case .desktopStart, .desktopStartHeadless:
 			try await desktopStart(vm, headless: path == .desktopStartHeadless, desktop: desktop)
 		case .wire:
-			try await agent.api.start(vm: vm.name, options: try await vm.info().startOptions())
+			do {
+				try await agent.api.start(vm: vm.name, options: try await vm.info().startOptions())
+			} catch {
+				await TFStartFailure.record(vm: vm.name, api: agent.api, error: error)
+				throw error
+			}
 		}
 	}
 

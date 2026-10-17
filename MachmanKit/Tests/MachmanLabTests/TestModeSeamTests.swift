@@ -384,7 +384,12 @@ enum SeamProbe {
 	static func startWindowed(_ vm: LabVM, on agent: LabAgent) async throws {
 		let running = LabProcesses.liveGuestCount()
 		if running >= 2 { throw LabError.guestCap(running: running) }
-		try await agent.api.start(vm: vm.name, options: StartOptions(openWindow: true))
+		do {
+			try await agent.api.start(vm: vm.name, options: StartOptions(openWindow: true))
+		} catch {
+			await TFStartFailure.record(vm: vm.name, api: agent.api, error: error)
+			throw error
+		}
 		try await vm.waitForState(.running, timeout: .seconds(90))
 		try LabProcesses.writePid(
 			try await vm.hostPID(), kind: "vmhost", name: "\(agent.scope.id)-\(vm.name)")
