@@ -6,7 +6,7 @@
 //  AddFlows (MachmanDesktopCore): existing-disk (permissive picker + copy-or-reference
 //  question), mount folder, kernel/initramfs file, and the macOS restore image a new Mac VM
 //  installs from. Every picker asks through OpenPanels (Q21): NSOpenPanel in the app, an
-//  answer of its own in a test.
+//  answer of its own in a test; each says what it is for and names its button (H63).
 //
 
 import AppKit
@@ -23,6 +23,8 @@ struct OpenPanels {
 		panel.canChooseFiles = request.pick == .file
 		panel.canChooseDirectories = request.pick == .folder
 		panel.allowsMultipleSelection = false
+		panel.message = request.message
+		panel.prompt = request.prompt
 		if !request.contentTypes.isEmpty {
 			panel.allowedContentTypes = request.contentTypes
 		}
@@ -38,7 +40,7 @@ extension AddFlows {
 	static func chooseExistingDisk(
 		viewModel: VMListViewModel, vm: String, panels: OpenPanels = .system
 	) {
-		panels.choose(OpenPanelRequest(pick: .file, contentTypes: [.diskImage, .data])) { url in
+		panels.choose(.existingDisk(vm: vm)) { url in
 			guard let url else { return }
 			askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, url: url)
 		}
@@ -55,7 +57,7 @@ extension AddFlows {
 	static func chooseMountFolder(
 		viewModel: VMListViewModel, vm: String, panels: OpenPanels = .system
 	) {
-		panels.choose(OpenPanelRequest(pick: .folder)) { url in
+		panels.choose(.mountFolder(vm: vm)) { url in
 			guard let url else { return }
 			viewModel.addMount(vm, path: url.path, tag: url.lastPathComponent)
 		}
@@ -66,7 +68,7 @@ extension AddFlows {
 	static func chooseKernelFile(
 		viewModel: VMListViewModel, vm: String, role: KernelRole, panels: OpenPanels = .system
 	) {
-		panels.choose(OpenPanelRequest(pick: .file)) { url in
+		panels.choose(.kernelFile(role, vm: vm)) { url in
 			guard let url else { return }
 			viewModel.promoteKernel(
 				vm, role: role, sourcePath: url.path,
@@ -74,12 +76,12 @@ extension AddFlows {
 		}
 	}
 
-	// Pick a macOS restore image (IPSW), unfiltered: the New Mac flow's and the Install macOS
+	// Pick a macOS restore image (.ipsw only): the New Mac flow's and the Install macOS
 	// sheet's one picker. Cancel calls nothing, so nothing is created or installed.
 	static func chooseRestoreImage(
 		panels: OpenPanels = .system, _ chosen: @escaping @MainActor (String) -> Void
 	) {
-		panels.choose(OpenPanelRequest(pick: .file)) { url in
+		panels.choose(.restoreImage) { url in
 			guard let url else { return }
 			chosen(url.path)
 		}
