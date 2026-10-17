@@ -146,7 +146,13 @@ enum DiskImport {
 				try FileTransfer.copy(
 					src: src, dst: staging, progress: progress, isCancelled: isCancelled)
 			}
-			excludeFromBackup(path: staging)   // owned now; the attribute rides the rename
+			// Owned now: owner-only like every disk Machman makes (D40) — a clone carried the
+			// source's mode — and out of Time Machine. Both ride the rename.
+			if chmod(staging, 0o600) != 0 {
+				MachmanLogger.log(.passiveWarning,
+					"couldn’t make \(staging) owner-only: \(String(cString: strerror(errno)))")
+			}
+			excludeFromBackup(path: staging)
 			for _ in 0..<maxPlacementAttempts {
 				let fileName = name()
 				if try placeExclusively(staging, at: vmDir + "/" + fileName) {

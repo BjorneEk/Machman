@@ -146,7 +146,7 @@ public final class VMRegistry {
 
 	private func scan() {
 		// First run against a fresh library: the directory simply doesn't exist yet.
-		ensureDirectory(machmanVMDir)
+		try? VMConfig.ensureLibrary()
 		let folderURL = URL(fileURLWithPath: machmanVMDir)
 		do {
 			let contents = try FileManager.default.contentsOfDirectory(

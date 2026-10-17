@@ -120,9 +120,9 @@ extension VMConfig {
 	}
 
 	// O_EXCL: the image is created or the call fails — an existing file is never replaced.
-	// Sparse: ftruncate allocates nothing.
+	// Sparse: ftruncate allocates nothing. Owner-only, like every disk Machman makes (D40).
 	static func createDiskImage(atPath path: String, size: UInt64, name: String) throws {
-		let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
+		let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
 		guard fd >= 0 else {
 			let code = errno
 			if code == EEXIST {

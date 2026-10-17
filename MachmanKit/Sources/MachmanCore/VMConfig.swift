@@ -377,17 +377,28 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		"\(machmanVMDir)/\(self.name)"
 	}
 
-	// .atomic writes to a sibling temp file and renames. Without it a force quit or power loss
-	// mid-write leaves a truncated config, which the registry scan cannot parse — and a VM that
-	// cannot be parsed silently disappears from the app. `dir`: the folder to save in, for a
-	// config loaded from an explicit library (load, rewrite); else configPath()'s.
+	// `dir`: the folder to save in, for a config loaded from an explicit library (load,
+	// rewrite); else configPath()'s.
 	func saveVMConfig(atDir dir: String? = nil) throws {
 		persistResolvedDefaultAlias()
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .prettyPrinted
-		let data = try encoder.encode(self)
 		let path = dir.map { $0 + "/config" } ?? configPath()
+		try Self.writeConfigFile(try encoder.encode(self), toPath: path)
+	}
+
+	// Every config file is written here. .atomic writes to a sibling temp file and renames:
+	// without it a force quit or power loss mid-write leaves a truncated config, which the
+	// registry scan cannot parse — and a VM that cannot be parsed disappears from the app. A
+	// NEW config is owner-only (D40); the atomic replace keeps an existing file's mode, so a
+	// VM made before keeps its own (K5).
+	static func writeConfigFile(_ data: Data, toPath path: String) throws {
+		let isNew = !FileManager.default.fileExists(atPath: path)
 		try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+		if isNew, chmod(path, 0o600) != 0 {
+			MachmanLogger.log(.passiveWarning,
+				"couldn’t make \(path) owner-only: \(String(cString: strerror(errno)))")
+		}
 	}
 
 	func markRan() throws {
@@ -490,14 +501,22 @@ class VMConfig: Codable, Identifiable, ObservableObject {
 		return realMemorySize
 	}
 
-	// A new VM's folder, made exclusively: false when something already has the name — a
-	// folder the registry skipped (its config didn't decode, and is still the user's) or a
-	// stray file. Only the library itself is made on the way.
+	// The VM library, owner-only when Machman makes it (D40): moved with MachmanDataDir to
+	// /Users/Shared or another volume, nothing else keeps other accounts out of the guests'
+	// disks. A library that exists keeps its mode (K5: only what is new is tightened).
+	static func ensureLibrary() throws {
+		try FileManager.default.createDirectory(
+			atPath: machmanVMDir, withIntermediateDirectories: true,
+			attributes: [.posixPermissions: 0o700])
+	}
+
+	// A new VM's folder, made exclusively and owner-only (D40): false when something already
+	// has the name — a folder the registry skipped (its config didn't decode, and is still the
+	// user's) or a stray file. Only the library itself is made on the way.
 	@discardableResult
 	static func createNewVMDirectory(name: String) throws -> Bool {
-		try FileManager.default.createDirectory(
-			atPath: machmanVMDir, withIntermediateDirectories: true, attributes: nil)
-		guard mkdir("\(machmanVMDir)/\(name)", 0o755) == 0 else {
+		try ensureLibrary()
+		guard mkdir("\(machmanVMDir)/\(name)", 0o700) == 0 else {
 			let code = errno
 			if code == EEXIST { return false }
 			throw MachmanError(

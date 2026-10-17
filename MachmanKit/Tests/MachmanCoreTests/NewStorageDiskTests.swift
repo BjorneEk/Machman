@@ -229,11 +229,60 @@ struct NewStorageDiskTests {
 			}
 			let folder = try mode(vm.configFilePath(file: ""))
 			let disk = try mode(vm.configFilePath(file: "system.raw"))
-			// Fails until the open bug D40 (VM folders and disks are world-readable) is fixed.
 			#expect(folder & 0o077 == 0, "folder \(String(folder, radix: 8))")
-			// Fails until the open bug D40 (VM folders and disks are world-readable) is fixed.
 			#expect(disk & 0o077 == 0, "disk \(String(disk, radix: 8))")
 		}
+	}
+
+	// D40 (review 4), with K5: everything Machman makes for a new VM is owner-only — its
+	// config, a disk copied in, a copy's folder and config, and the library itself when
+	// Machman creates it — while a VM made before keeps the modes it has.
+	@Test("D40: a new VM's config, an imported disk, a copy and a new library are owner-only")
+	func everythingNewIsPrivate() throws {
+		try VMTestDir.withRedirectedDir {
+			#expect(!FileManager.default.fileExists(atPath: machmanVMDir))
+			let vm = try makeVM("fresh")
+			#expect(try posixMode(machmanVMDir) == 0o700)
+			#expect(try posixMode(vm.configPath()) == 0o600)
+			let source = TestEnvironment.scratch + "d40-\(UUID().uuidString).raw"
+			try Data(count: Int(mib)).write(to: URL(fileURLWithPath: source))
+			chmod(source, 0o644)
+			defer { try? FileManager.default.removeItem(atPath: source) }
+			let imported = try DiskImport.importFile(
+				src: source, vmDir: vm.vmDirPath(), takenStorageNames: [])
+			try vm.addDisk(disk: imported)
+			guard case .storage(let name, _) = imported.kind else {
+				Issue.record("an imported raw is an owned storage disk")
+				return
+			}
+			#expect(try posixMode(vm.configFilePath(file: "\(name).raw")) == 0o600)
+			let copy = try VMCopier.copy(VMCopyRequest(
+				sourceDir: vm.vmDirPath(), destinationParent: machmanVMDir, newName: "copy"))
+			#expect(try posixMode(copy) == 0o700)
+			#expect(try posixMode(copy + "/config") == 0o600)
+		}
+	}
+
+	@Test("D40: a VM made before keeps its folder's and config's modes")
+	func olderModesStay() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("older")
+			chmod(machmanVMDir, 0o755)
+			chmod(vm.vmDirPath(), 0o755)
+			chmod(vm.configPath(), 0o644)
+			try vm.setCPUCount(1)   // a save over the config that is there
+			_ = VMRegistry()        // a scan of the library that is there
+			try vm.addNewStorageDisk(name: "data", size: mib)
+			#expect(try posixMode(machmanVMDir) == 0o755)
+			#expect(try posixMode(vm.vmDirPath()) == 0o755)
+			#expect(try posixMode(vm.configPath()) == 0o644)
+			#expect(try posixMode(vm.configFilePath(file: "data.raw")) == 0o600)   // a new disk
+		}
+	}
+
+	private func posixMode(_ path: String) throws -> Int {
+		let attributes = try FileManager.default.attributesOfItem(atPath: path)
+		return (attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1
 	}
 
 	@Test func importNamesFollowTheRule() {

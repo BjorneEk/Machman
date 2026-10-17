@@ -127,7 +127,11 @@ enum VMCopier {
 		}
 		let staging = request.destinationParent + "/" + stagingPrefix + UUID().uuidString
 		do {
-			try fm.createDirectory(atPath: staging, withIntermediateDirectories: true)
+			// The copy is a new VM folder: owner-only, as VMConfig.createNewVMDirectory makes
+			// one (D40). The files that travel keep their modes inside it.
+			try fm.createDirectory(
+				atPath: staging, withIntermediateDirectories: true,
+				attributes: [.posixPermissions: 0o700])
 			try populate(staging: staging, src: src, config: config, request: request)
 			try fm.moveItem(atPath: staging, toPath: dst)
 		} catch {
@@ -297,8 +301,7 @@ enum VMCopier {
 		config.startPolicy.autostart = false
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .prettyPrinted
-		try (try encoder.encode(config))
-			.write(to: URL(fileURLWithPath: staging + "/config"), options: .atomic)
+		try VMConfig.writeConfigFile(try encoder.encode(config), toPath: staging + "/config")
 	}
 
 	// "ubuntu-cloud.img" → "ubuntu-cloud", uniquified with -2, -3… against taken names.
