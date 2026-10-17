@@ -213,7 +213,16 @@ public final class StubMachman: MachmanControlling {
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {
 		try gate()
-		return try get(name)
+		let vm = try get(name)
+		try Self.refuseKernelEdits(vm)
+		return vm
+	}
+	// Like the engine (LocalMachman.refuseKernelEdits, F20): a macOS VM's kernel files only go.
+	private static func refuseKernelEdits(_ vm: VMInfo) throws {
+		guard vm.boot.mode == .macOS else { return }
+		throw MachmanError(
+			code: .invalidState,
+			message: "\(vm.name) is a macOS VM — its kernel files can only be removed")
 	}
 	public func resizeDisk(
 		vm name: String, diskID: String, sizeBytes: UInt64
@@ -312,6 +321,7 @@ public final class StubMachman: MachmanControlling {
 	) async throws -> VMInfo {
 		try gate()
 		var vm = try get(name)
+		try Self.refuseKernelEdits(vm)
 		guard let index = vm.boot.ownedKernels?.firstIndex(where: { $0.path == path }),
 			var file = vm.boot.ownedKernels?[index]
 		else {
@@ -489,6 +499,7 @@ public final class StubMachman: MachmanControlling {
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		try gate()
 		var vm = try get(name)
+		try Self.refuseKernelEdits(vm)
 		kernelSettingsSent.append((name, settings))
 		vm.boot.kernel = Self.draft(settings, on: vm)
 		vms[name] = vm
@@ -499,6 +510,7 @@ public final class StubMachman: MachmanControlling {
 	) async throws -> VMInfo {
 		try gate()
 		var vm = try get(name)
+		try Self.refuseKernelEdits(vm)
 		// Like the engine (KernelStore.promote, D35): a tag names one kernel file.
 		if (vm.boot.ownedKernels ?? []).contains(where: { $0.role == role && $0.tag == tag }) {
 			throw MachmanError(

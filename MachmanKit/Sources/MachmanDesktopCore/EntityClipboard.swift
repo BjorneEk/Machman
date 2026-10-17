@@ -10,6 +10,7 @@
 
 import Foundation
 import MachmanAPI
+import MachmanUI
 
 public struct EntityClipboard: Codable {
 	public enum Kind: String, Codable {
@@ -36,16 +37,22 @@ public struct EntityClipboard: Codable {
 	private var defaultTag: String { KernelTag.suggested(forFile: path) }
 
 	// Paste entities into a VM through the same funnels as the picker and drop entry points;
-	// the disks among them share one copy-or-reference question.
+	// the disks among them share one copy-or-reference question. A macOS VM takes no kernel
+	// file (its kernel sections only remove, D31): those are skipped, and a toast says so —
+	// the tree's background Paste and Edit ▸ Paste both land here (F20).
 	@MainActor
 	public static func paste(
 		_ items: [EntityClipboard], into vm: String, viewModel: VMListViewModel
 	) {
+		let removeOnly = viewModel.vms.first { $0.name == vm }?.kernelSectionsRemoveOnly == true
 		var disks: [URL] = []
+		var skipped = 0
 		for item in items {
 			switch item.kind {
 			case .disk:
 				disks.append(URL(fileURLWithPath: item.path))
+			case .kernel where removeOnly, .initramfs where removeOnly:
+				skipped += 1
 			case .kernel:
 				viewModel.promoteKernel(
 					vm, role: .kernel, sourcePath: item.path, tag: item.defaultTag)
@@ -59,5 +66,14 @@ public struct EntityClipboard: Codable {
 		if !disks.isEmpty {
 			AddFlows.askDiskReferenceOrCopy(viewModel: viewModel, vm: vm, urls: disks)
 		}
+		if skipped > 0 {
+			viewModel.pushToast(
+				symbol: MachmanSymbols.info, message: skippedKernels(skipped, vm: vm))
+		}
+	}
+
+	public static func skippedKernels(_ count: Int, vm: String) -> String {
+		let files = count == 1 ? "a kernel file" : "\(count) kernel files"
+		return "Skipped \(files) — \(vm) is a macOS VM"
 	}
 }

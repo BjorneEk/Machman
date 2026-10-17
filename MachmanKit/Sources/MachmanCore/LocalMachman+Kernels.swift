@@ -10,6 +10,16 @@ import Foundation
 import MachmanAPI
 
 extension LocalMachman {
+	// A macOS VM never boots a kernel: the kernel files and draft it kept from before its
+	// switch (K3) can only go — delete and vm.kernel.clear — never be added, picked, re-tagged
+	// or given an override (D31, F20), whichever client asks.
+	private func refuseKernelEdits(_ vm: VirtualMachine) throws {
+		guard case .macOS = vm.config.boot else { return }
+		throw MachmanError(
+			code: .invalidState,
+			message: "\(vm.config.name) is a macOS VM — its kernel files can only be removed")
+	}
+
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
 		let vm = try lookup(name)
 		do {
@@ -25,6 +35,7 @@ extension LocalMachman {
 	// An empty initramfs path from the wire is stored as none (D37).
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
 		let vm = try lookup(name)
+		try refuseKernelEdits(vm)
 		try vm.config.updateKernelSettings(LinuxKernelBoot(
 			kernelPath: settings.kernelPath,
 			initialRamdiskPath: settings.initrdPath.flatMap { $0.isEmpty ? nil : $0 },
@@ -39,6 +50,7 @@ extension LocalMachman {
 			throw MachmanError(code: .invalidArgument, message: "Unknown kernel role")
 		}
 		let vm = try lookup(name)
+		try refuseKernelEdits(vm)
 		let kernelsDir = vm.config.kernelsDirPath()
 		// Copies can be tens of MiB — detach so the main actor doesn't freeze. Indeterminate
 		// operation (KernelStore reports no byte progress); previously fully silent.
@@ -73,6 +85,7 @@ extension LocalMachman {
 	public func renameKernelFile(vm name: String, path: String, tag: String)
 		async throws -> VMInfo {
 		let vm = try lookup(name)
+		try refuseKernelEdits(vm)
 		guard !vm.state.isRunning else {
 			throw MachmanError(
 				code: .invalidState, message: "Stop \(name) before renaming its kernel files")
@@ -116,6 +129,7 @@ extension LocalMachman {
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {
 		let vm = try lookup(name)
+		try refuseKernelEdits(vm)
 		try vm.config.setKernelOverride(
 			forFileAt: path, commandLine: commandLine, enabled: overrideEnabled)
 		registry.events.emit(.listChanged)

@@ -119,4 +119,67 @@ struct KernelClearTests {
 			== "Choose another bootloader for Booting before removing its kernel settings")
 		await client.disconnect()
 	}
+
+	// F20 (D31): the agent took kernel adds, picks, re-tags and overrides for a macOS VM, whose
+	// kept kernel files can only go — every client but the desktop could still add them. Each is
+	// refused with one sentence now, on the stub as in the engine (delete and vm.kernel.clear
+	// stay: "D31: a macOS VM keeps and lists its kernel files and draft", "D31: removing a
+	// macOS VM's kernel settings keeps it macOS").
+	@Test("F20: a macOS VM refuses kernel adds, picks, re-tags and overrides")
+	@MainActor
+	func aMacOSVMRefusesKernelEdits() async throws {
+		var engine: LocalMachman?
+		var name = ""
+		var owned = ""
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			name = vm.config.name
+			let src = TestEnvironment.scratch + "mac-edit-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			owned = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: vm.config.kernelsDirPath(),
+				tag: "6.12")
+			vm.config.boot = .macOS(
+				MacOSBoot(installState: .installed, minimumCPUCount: 4, minimumMemorySize: 8))
+			try vm.config.saveVMConfig()
+			engine = LocalMachman(registry: registry)
+		}
+		var mac = Samples.macOSWithKernelFiles(name)
+		mac.boot.ownedKernels?[0].path = owned
+		let stub = StubMachman.serving([mac])
+		let refusal = "\(name) is a macOS VM \u{2014} its kernel files can only be removed"
+		// Every refusal comes before the call touches a file.
+		let apis: [any MachmanControlling] = [try #require(engine), stub]
+		for api in apis {
+			let ops: [(String, () async throws -> Void)] = [
+				("promote", {
+					_ = try await api.promoteKernelFile(
+						vm: name, role: .kernel, sourcePath: "/nowhere/vmlinuz", tag: "6.13")
+				}),
+				("re-tag", {
+					_ = try await api.renameKernelFile(vm: name, path: owned, tag: "6.13")
+				}),
+				("settings", {
+					let settings = KernelSettings(
+						kernelPath: owned, initrdPath: nil, commandLine: "")
+					try await api.updateKernelSettings(vm: name, settings)
+				}),
+				("override", {
+					_ = try await api.setKernelOverride(
+						vm: name, path: owned, commandLine: "quiet", overrideEnabled: true)
+				}),
+			]
+			for (label, op) in ops {
+				do {
+					try await op()
+					Issue.record("\(label) went through on a macOS VM (\(type(of: api)))")
+				} catch let error as MachmanError {
+					#expect(error.code == .invalidState, "\(label): \(error.code)")
+					#expect(error.message == refusal, "\(label) (\(type(of: api)))")
+				}
+			}
+		}
+	}
 }
