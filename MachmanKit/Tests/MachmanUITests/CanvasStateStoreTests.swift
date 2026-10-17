@@ -61,7 +61,9 @@ struct CanvasStateStoreTests {
 		#expect(!raw.contains(#""kind" : "ssh""#) && !raw.contains(#""kind":"ssh""#))
 	}
 
-	@Test func renameMigratesAndRemoveForgets() throws {
+	// Absence from one list forgets nothing; this desktop's delete does (T33).
+	@Test("T33: a rename moves a layout, a list without it keeps it, and a delete forgets it")
+	func renameMigratesAndDeleteForgets() throws {
 		let url = tempURL()
 		defer { try? FileManager.default.removeItem(at: url) }
 		var canvas = CanvasState()
@@ -73,6 +75,8 @@ struct CanvasStateStoreTests {
 		#expect(store.canvases["old"] == nil)
 		#expect(store.canvas(for: "new") == canvas)
 		store.forgetVMs(except: ["other"])
+		#expect(store.canvas(for: "new") == canvas)
+		store.vmDeleted("new")
 		store.flush()
 
 		let reloaded = CanvasStateStore(fileURL: url)

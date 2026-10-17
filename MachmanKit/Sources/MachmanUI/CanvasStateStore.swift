@@ -10,7 +10,9 @@
 //  tolerantly (one broken layout costs only that VM's) and set aside as a .bak, never
 //  overwritten, when it can't be read at all; flush() writes what is pending (termination,
 //  tests). The live terminal controllers behind the tabs stay in the app target
-//  (TerminalSessions); this stores only the value layout.
+//  (TerminalSessions); this stores only the value layout. A layout outlives its VM's absence
+//  from a list and goes with the VM itself — deleted here, or a new VM under its name, told
+//  apart by the created date recorded beside it (T33, the port profiles' rule).
 //
 
 import Foundation
@@ -20,6 +22,8 @@ import MachmanAPI
 public final class CanvasStateStore: ObservableObject {
 	// Saved layouts by VM name. Only VMs whose canvas was ever changed have an entry.
 	@Published public private(set) var canvases: [String: CanvasState]
+	// Which VM each saved layout belongs to (a file from before learns it from a list).
+	private var created: VMOwnerDates
 
 	private let file: PersistedJSONFile<PersistedState>
 
@@ -37,7 +41,9 @@ public final class CanvasStateStore: ObservableObject {
 			url: fileURL, label: "CanvasStateStore",
 			queueLabel: "com.gustaffranzen.Machman.canvasLayouts.save", saveDelay: saveDelay)
 		self.file = file
-		self.canvases = file.load()?.canvases ?? [:]
+		let state = file.load()
+		self.canvases = state?.canvases ?? [:]
+		self.created = VMOwnerDates(state?.created ?? [:])
 	}
 
 	// The canvas to show for a VM — a fresh single-pane layout when none was saved.
@@ -70,6 +76,7 @@ public final class CanvasStateStore: ObservableObject {
 	public func renameVM(from old: String, to new: String) {
 		guard let canvas = canvases.removeValue(forKey: old) else { return }
 		canvases[new] = canvas
+		created.move(from: old, to: new)
 		save()
 	}
 
@@ -78,36 +85,62 @@ public final class CanvasStateStore: ObservableObject {
 	private func save() {
 		// Snapshot on the main actor (cheap value copy); the file encodes + writes off it.
 		// SSH tabs are stripped: sessions are ephemeral, only layout persists.
-		file.save(PersistedState(canvases: canvases.mapValues { $0.strippingEphemeralTabs() }))
+		file.save(PersistedState(
+			canvases: canvases.mapValues { $0.strippingEphemeralTabs() }, created: created.dates))
 	}
 
 	private struct PersistedState: Codable, Sendable {
 		var canvases: [String: CanvasState]
+		// Each layout's VM by its created date (T33); an older file has none, and reads so.
+		var created: [String: Date]
 
-		init(canvases: [String: CanvasState]) {
+		init(canvases: [String: CanvasState], created: [String: Date]) {
 			self.canvases = canvases
+			self.created = created
 		}
 
-		// One VM's broken layout costs only that layout.
+		// One VM's broken layout (or date) costs only itself.
 		init(from decoder: Decoder) throws {
 			let c = try decoder.container(keyedBy: CodingKeys.self)
 			canvases = c.decodeTolerantDictionary(of: CanvasState.self, forKey: .canvases)
+			created = c.decodeTolerantDictionary(of: Date.self, forKey: .created)
 		}
 	}
 }
 
-// The layout is the run's: Save as New VM takes it to the saved VM, as a rename does.
+// The layout is the run's: Save as New VM takes it to the saved VM, as a rename does — but
+// the saved VM is a new one, so its date comes from the next list and the original's goes.
 extension CanvasStateStore: VMKeyedState {
 	public func copyVM(from old: String, to new: String) {
-		renameVM(from: old, to: new)
+		guard let canvas = canvases.removeValue(forKey: old) else { return }
+		canvases[new] = canvas
+		created.forget(old)
+		created.forget(new)
+		save()
 	}
 
-	// Forget the layouts of deleted VMs.
-	public func forgetVMs(except kept: Set<String>) {
-		let gone = canvases.keys.filter { !kept.contains($0) }
-		guard !gone.isEmpty else { return }
-		for vm in gone { canvases[vm] = nil }
-		save()
+	// Not on absence: a VM missing from one list (an external library asleep, a config that
+	// briefly failed to load) finds its layout again when it is back (T33).
+	public func forgetVMs(except kept: Set<String>) {}
+
+	// Deleted here: its layout goes.
+	public func vmDeleted(_ vm: String) {
+		if drop(vm) { save() }
+	}
+
+	// A listed VM under a name with a layout: the one it belongs to, whose created date is
+	// recorded the first time a list shows it — or a new VM, which starts on a fresh layout.
+	public func listed(_ vms: [VMInfo]) {
+		let (stale, changed) = created.reconcile(vms, owners: Set(canvases.keys))
+		for vm in stale { canvases[vm] = nil }
+		if changed { save() }
+	}
+
+	// Forget `vm`'s layout and its date; true when there was something to forget.
+	@discardableResult
+	private func drop(_ vm: String) -> Bool {
+		let hadCanvas = canvases.removeValue(forKey: vm) != nil
+		return created.forget(vm) || hadCanvas
 	}
 }
 
