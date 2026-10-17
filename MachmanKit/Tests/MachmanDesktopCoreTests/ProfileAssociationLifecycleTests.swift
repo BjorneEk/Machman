@@ -31,6 +31,21 @@ struct ProfileAssociationLifecycleTests {
 		#expect(h.profiles.associatedID(vm: "Alpine", ref: ref) == h.profiles.defaultProfile.id)
 	}
 
+	// The name field's rename takes the port profiles along through the VM-keyed state; no
+	// view hands the profile store in any more.
+	@Test("T29: a VM renamed from its name field keeps its port profiles")
+	func aRenameKeepsThePortProfiles() async throws {
+		let h = await DesktopHarness.make()
+		let ref = SerialPortRef(kind: .console, index: 0)
+		let custom = h.profiles.addProfile()
+		h.profiles.associate(vm: "Alpine", ref: ref, to: custom.id)
+		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
+		#expect(h.viewModel.submitRename(alpine, draft: "Alpine 2"))
+		#expect(await eventually { h.viewModel.hasVM("Alpine 2") })
+		#expect(h.profiles.associatedID(vm: "Alpine 2", ref: ref) == custom.id)
+		#expect(h.profiles.associatedID(vm: "Alpine", ref: ref) == h.profiles.defaultProfile.id)
+	}
+
 	// Save as New VM moved the run's console to the saved name but left its profile behind:
 	// the inspector showed Default, and the next edit of the default profile restyled it.
 	@Test("T29: Save as New VM keeps the moved console on its custom profile")

@@ -139,7 +139,7 @@ extension TreeContext {
 
 	func commitRename(_ node: SidebarNode, to draft: String) {
 		endRename(node)
-		viewModel.submitTreeRename(node, draft: draft, on: vm, profiles: profiles)
+		viewModel.submitTreeRename(node, draft: draft, on: vm)
 	}
 
 	// Ends `node`'s rename only: a field losing focus to another row's rename leaves that one.

@@ -352,7 +352,7 @@ struct VMInspector: View {
 			TextField("Name", text: $draftName)
 				.onSubmit {
 					viewModel.submitRename(
-						vm, draft: draftName, profiles: profiles,
+						vm, draft: draftName,
 						reverted: { draftName = vm.name }, refused: { renameRefusal = $0 })
 				}
 				.stopFirst(vm, .renameVM)

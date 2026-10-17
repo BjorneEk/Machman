@@ -50,7 +50,7 @@ struct RenameFieldTests {
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
 		var refusals: [String] = []
 		#expect(!h.viewModel.submitRename(
-			alpine, draft: "a/b", profiles: h.profiles, refused: { refusals.append($0) }))
+			alpine, draft: "a/b", refused: { refusals.append($0) }))
 		#expect(!h.viewModel.submitDiskRename(
 			alpine, diskID: "storage:system", draft: ".x", refused: { refusals.append($0) }))
 		#expect(!h.viewModel.submitMountTag(
@@ -68,7 +68,7 @@ struct RenameFieldTests {
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
 		var reverts = 0
 		#expect(!h.viewModel.submitRename(
-			alpine, draft: " Alpine ", profiles: h.profiles, reverted: { reverts += 1 },
+			alpine, draft: " Alpine ", reverted: { reverts += 1 },
 			refused: { _ in }))
 		#expect(reverts == 1)
 		try await Task.sleep(for: .milliseconds(50))
@@ -83,7 +83,7 @@ struct RenameFieldTests {
 		var reverts = 0
 		h.stub.fail("renameVM", with: MachmanError(code: .invalidState, message: busy))
 		#expect(h.viewModel.submitRename(
-			alpine, draft: "Alpine 2", profiles: h.profiles, reverted: { reverts += 1 },
+			alpine, draft: "Alpine 2", reverted: { reverts += 1 },
 			refused: { got = $0 }))
 		#expect(await eventually { got == busy })
 		#expect(await eventually { reverts == 1 })
@@ -118,7 +118,7 @@ struct RenameFieldTests {
 			h.stub.vms["Alpine"]?.mounts.first?.tag == "code"
 		})
 		#expect(h.viewModel.submitRename(
-			alpine, draft: "Alpine 2", profiles: h.profiles, refused: { _ in }))
+			alpine, draft: "Alpine 2", refused: { _ in }))
 		#expect(await eventually { h.viewModel.selectedName == "Alpine 2" })
 	}
 
@@ -126,7 +126,7 @@ struct RenameFieldTests {
 		let h = await DesktopHarness.make()
 		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
 		#expect(!h.viewModel.submitRename(
-			debian, draft: "Debian 2", profiles: h.profiles, refused: { _ in }))
+			debian, draft: "Debian 2", refused: { _ in }))
 		#expect(!h.viewModel.submitDiskRename(
 			debian, diskID: "storage:system", draft: "root", refused: { _ in }))
 		try await Task.sleep(for: .milliseconds(50))

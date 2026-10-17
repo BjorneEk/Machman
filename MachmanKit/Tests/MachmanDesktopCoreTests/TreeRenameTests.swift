@@ -27,7 +27,7 @@ struct TreeRenameTests {
 	private func submit(
 		_ h: DesktopHarness, _ node: SidebarNode, _ draft: String, on vm: VMInfo
 	) -> Bool {
-		h.viewModel.submitTreeRename(node, draft: draft, on: vm, profiles: h.profiles)
+		h.viewModel.submitTreeRename(node, draft: draft, on: vm)
 	}
 
 	@Test func anUnchangedDiskNameSendsNothing() async throws {

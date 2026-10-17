@@ -176,13 +176,12 @@ extension VMListViewModel {
 
 	// The one rename flow (tree rename-in-place + the VM inspector's name field): trimmed,
 	// checked against the VM-name rule and the list before the daemon sees it, migrating
-	// terminal/canvas/preview/profile state on success. `reverted` runs when the typed name
+	// the VM-keyed client state on success (rename). `reverted` runs when the typed name
 	// is not applied (blank, unchanged, refused here or by the daemon), so a field can drop
 	// it instead of showing a name the VM doesn't have. `refused` (last, so a trailing
 	// closure still means `reverted`) takes a refusal to the field instead of an alert.
 	public func requestRename(
-		_ vm: VMInfo, to typed: String, profiles: TerminalProfileStore,
-		reverted: @escaping @MainActor () -> Void = {},
+		_ vm: VMInfo, to typed: String, reverted: @escaping @MainActor () -> Void = {},
 		refused: (@MainActor (String) -> Void)? = nil
 	) {
 		let old = vm.name
@@ -199,7 +198,6 @@ extension VMListViewModel {
 		Task { [weak self] in
 			guard let self = self else { return }
 			if await self.rename(from: old, to: newName, refused: refused) {
-				profiles.renameVM(from: old, to: newName)
 				self.log(message: "Renamed \(old) to \(newName)")
 				self.pushToast(
 					symbol: MachmanSymbols.rename,

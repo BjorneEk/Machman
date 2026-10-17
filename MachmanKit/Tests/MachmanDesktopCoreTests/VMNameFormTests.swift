@@ -50,7 +50,7 @@ struct VMNameFormTests {
 	@Test func renameRefusesAnInvalidNameBeforeTheDaemon() async throws {
 		let h = await DesktopHarness.make()
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
-		h.viewModel.requestRename(alpine, to: "a/b", profiles: h.profiles)
+		h.viewModel.requestRename(alpine, to: "a/b")
 		#expect(h.viewModel.presentedError?.message
 			== "A VM name can’t contain \u{201C}/\u{201D}")
 		#expect(h.viewModel.presentedError?.title == "Renaming \u{201C}Alpine\u{201D} failed")
@@ -64,12 +64,12 @@ struct VMNameFormTests {
 		let h = await DesktopHarness.make()
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
 		var reverts = 0
-		h.viewModel.requestRename(alpine, to: "a/b", profiles: h.profiles) { reverts += 1 }
+		h.viewModel.requestRename(alpine, to: "a/b") { reverts += 1 }
 		#expect(reverts == 1)
-		h.viewModel.requestRename(alpine, to: " Alpine ", profiles: h.profiles) { reverts += 1 }
+		h.viewModel.requestRename(alpine, to: " Alpine ") { reverts += 1 }
 		#expect(reverts == 2)
 		h.stub.fail("renameVM", with: MachmanError(code: .invalidState, message: "busy"))
-		h.viewModel.requestRename(alpine, to: "Alpine 2", profiles: h.profiles) { reverts += 1 }
+		h.viewModel.requestRename(alpine, to: "Alpine 2") { reverts += 1 }
 		#expect(await eventually { reverts == 3 })
 		#expect(h.stub.vms["Alpine 2"] == nil)
 	}
@@ -78,7 +78,7 @@ struct VMNameFormTests {
 		let h = await DesktopHarness.make()
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
 		var reverts = 0
-		h.viewModel.requestRename(alpine, to: "Alpine 2", profiles: h.profiles) { reverts += 1 }
+		h.viewModel.requestRename(alpine, to: "Alpine 2") { reverts += 1 }
 		#expect(await eventually { h.viewModel.selectedName == "Alpine 2" })
 		try await Task.sleep(for: .milliseconds(50))
 		#expect(reverts == 0)
@@ -87,7 +87,7 @@ struct VMNameFormTests {
 	@Test func renameTrimsTheName() async throws {
 		let h = await DesktopHarness.make()
 		let alpine = try #require(h.viewModel.vms.first { $0.name == "Alpine" })
-		h.viewModel.requestRename(alpine, to: "  Alpine 2 ", profiles: h.profiles)
+		h.viewModel.requestRename(alpine, to: "  Alpine 2 ")
 		#expect(await eventually { h.viewModel.selectedName == "Alpine 2" })
 		#expect(h.stub.vms["Alpine 2"] != nil)
 		#expect(h.stub.vms["  Alpine 2 "] == nil)

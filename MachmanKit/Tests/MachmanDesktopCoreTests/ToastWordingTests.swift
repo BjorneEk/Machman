@@ -38,7 +38,7 @@ struct ToastWordingTests {
 		#expect(await toasted(h, "Renamed to \u{201C}6.13\u{201D}"))
 
 		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
-		h.viewModel.requestRename(debian, to: "Debian 2", profiles: h.profiles)
+		h.viewModel.requestRename(debian, to: "Debian 2")
 		#expect(await toasted(h, "Renamed to \u{201C}Debian 2\u{201D}"))
 	}
 

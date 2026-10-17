@@ -26,8 +26,7 @@ extension VMListViewModel {
 	// draft has a problem or the VM must stop first; an unchanged name just reverts.
 	@discardableResult
 	public func submitRename(
-		_ vm: VMInfo, draft: String, profiles: TerminalProfileStore,
-		reverted: @escaping @MainActor () -> Void = {},
+		_ vm: VMInfo, draft: String, reverted: @escaping @MainActor () -> Void = {},
 		refused: (@MainActor (String) -> Void)? = nil
 	) -> Bool {
 		guard vm.refusal(.renameVM) == nil, vmRenameProblem(draft, for: vm) == nil else {
@@ -37,7 +36,7 @@ extension VMListViewModel {
 			reverted()
 			return false
 		}
-		requestRename(vm, to: draft, profiles: profiles, reverted: reverted, refused: refused)
+		requestRename(vm, to: draft, reverted: reverted, refused: refused)
 		return true
 	}
 
@@ -157,12 +156,10 @@ extension VMListViewModel {
 	// The tree field's Return: what the inspector field sends — trimmed, never an unchanged
 	// name or a draft with a problem. False when nothing went out.
 	@discardableResult
-	public func submitTreeRename(
-		_ node: SidebarNode, draft: String, on vm: VMInfo, profiles: TerminalProfileStore
-	) -> Bool {
+	public func submitTreeRename(_ node: SidebarNode, draft: String, on vm: VMInfo) -> Bool {
 		switch node {
 		case .vmRoot:
-			return submitRename(vm, draft: draft, profiles: profiles)
+			return submitRename(vm, draft: draft)
 		case .disk(let id):
 			return submitDiskRename(vm, diskID: id, draft: draft)
 		case .kernel(let path), .initramfs(let path):
