@@ -5,7 +5,7 @@
 //  A10: the daemon passes a vmhost's events on by the line the vmhost sent, so an event type
 //  or field this daemon does not know (a newer vmhost) reaches clients whole — re-encoding a
 //  decoded `.unknown` used to cut it down to {"type": …}. Events the daemon makes itself still
-//  go out encoded.
+//  go out encoded. E69: a vmhost's log events are written to the log in the vmhost only.
 //
 
 import Testing
@@ -154,6 +154,54 @@ struct EventPassthroughTests {
 		// The adoption's own listChanged is the daemon's, not the vmhost's: still encoded.
 		#expect(await eventually { received.sawListChanged })
 	}
+
+	// E69: a vmhost writes its log events to the unified log itself. The agent passed each on
+	// and wrote it again, and the desktop a third time, so every VM warning read three times.
+	@Test("E69: a vmhost's log line reaches the agent's clients without a second log write")
+	@MainActor func aVMHostsLogLineIsPassedOnNotWrittenAgain() async throws {
+		let peer = try RawVMHostPeer()
+		defer { peer.close() }
+		var routing: RoutingMachman!
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "alpha")
+			try VMConfig(name: "alpha", memorySize: 2048, cpuCount: 2).saveVMConfig()
+			routing = RoutingMachman(registry: VMRegistry(), daemonVersion: "test")
+			routing.locateVMHost = { nil }
+		}
+		routing.socketPathForVM = { _ in peer.socketPath }
+		let written = Written()
+		routing.registry.events.logSink = { _, line in written.lines.append(line) }
+		let heard = Heard()
+		let stream = await routing.events()
+		let reader = Task { @MainActor in
+			for await event in stream { heard.events.append(event) }
+		}
+		defer { reader.cancel() }
+		let identity = RoutingMachman.HostIdentity(
+			id: UUID(), name: "alpha", socketPath: peer.socketPath)
+		routing.adopt(identity: identity, client: try await routing.connectHost(identity: identity))
+		#expect(await eventually { peer.isSubscribed })
+
+		let warning = VMEvent.log(vm: "alpha", level: .warning, message: "alpha started headless")
+		let params = String(decoding: try MachmanWire.encoder().encode(warning), as: UTF8.self)
+		peer.push(#"{"jsonrpc":"2.0","method":"event","params":"# + params + "}")
+		#expect(await eventually { heard.events.contains(warning) })
+		#expect(!written.lines.contains { $0.contains("started headless") })
+
+		// What the agent says itself is still written, once.
+		routing.registry.events.emit(.log(vm: "alpha", level: .warning, message: "its own line"))
+		#expect(written.lines.filter { $0.contains("its own line") } == ["(alpha) its own line"])
+	}
+}
+
+@MainActor
+private final class Written {
+	var lines: [String] = []
+}
+
+@MainActor
+private final class Heard {
+	var events: [VMEvent] = []
 }
 
 @MainActor

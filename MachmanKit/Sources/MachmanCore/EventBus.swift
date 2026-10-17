@@ -46,15 +46,20 @@ final class EventBus {
 		}
 	}
 
+	// Where a log event is written: the unified log. A seam for tests.
+	var logSink: (MachmanLogType, String) -> Void = { MachmanLogger.log($0, $1) }
+
 	func emit(_ event: VMEvent) {
 		emit(event, line: nil)
 	}
 
 	// `line`: the notification a vmhost sent this event in, passed on to clients as is.
-	func emit(_ event: VMEvent, line: Data?) {
-		// The logger is the one guaranteed sink for log lines; route them exactly once, here.
-		if case .log(let vm, let level, let message) = event {
-			MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
+	// `logs`: the logger is the one guaranteed sink for log lines, written once, by the bus of
+	// the process the line comes from. A vmhost's event passed on here was written in its
+	// vmhost: the router passes it on with `logs: false` (E69).
+	func emit(_ event: VMEvent, line: Data?, logs: Bool = true) {
+		if logs, case .log(let vm, let level, let message) = event {
+			logSink(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
 		}
 		for continuation in continuations.values {
 			continuation.yield(event)

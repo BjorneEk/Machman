@@ -243,7 +243,7 @@ extension VMListViewModel {
 	// relaying through the client's logger keeps engine warnings visible from the app
 	// the user actually runs.
 	func announceEngineLog(vm: String?, level: LogLevel, message: String) {
-		MachmanLogger.log(level.logType, "\(vm.map { "(\($0)) " } ?? "")\(message)")
+		// Not written to the log here: the process that emitted it did (E69).
 		if level == .warning || level == .error {
 			// Keyed by its text: a warning repeated while its toast shows restarts that
 			// toast instead of stacking another copy (P15).

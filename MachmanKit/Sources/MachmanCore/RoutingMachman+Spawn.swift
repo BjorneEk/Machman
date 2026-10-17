@@ -177,7 +177,8 @@ extension RoutingMachman {
 					// Report ingestion may have changed users/keys the managed file pins.
 					self.scheduleSSHHostConfigWrite()
 				}
-				self.registry.events.emit(event, line: forwarded.line)
+				// Written to the log in its vmhost: passed on, not written again (E69).
+				self.registry.events.emit(event, line: forwarded.line, logs: false)
 			}
 		}
 	}

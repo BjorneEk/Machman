@@ -67,8 +67,8 @@ public enum MachmanLogger {
 	}
 }
 
-// Wire log events map onto the passive logger types (used by EventBus's guaranteed sink and
-// by the desktop's relay of received .log events).
+// Wire log events map onto the passive logger types (used by EventBus's guaranteed sink, in
+// the process that emits the event).
 public extension LogLevel {
 	var logType: MachmanLogType {
 		switch self {
