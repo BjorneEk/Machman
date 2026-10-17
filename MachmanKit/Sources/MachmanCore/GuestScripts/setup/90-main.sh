@@ -308,6 +308,8 @@ fi
 ask_yes_no "Proceed?" y
 [ "$R_YES" = 1 ] || die 3 "cancelled — nothing was changed."
 PREFLIGHT_DONE=1
+# From here the ledger reaches the state as it changes (what reading it noted, too).
+ledger_save
 say ""
 
 # ------------------------------------------------------------------------------- act ----

@@ -262,7 +262,7 @@ ledger_note() {
 	ledger_has "$1" "${2:-}" && return 0
 	LEDGER_DONE="${LEDGER_DONE:+$LEDGER_DONE
 }$_ln_entry"
-	return 0
+	ledger_save
 }
 
 # ledger_has <kind> [value] — the entry, matched whole, is in the ledger.
@@ -279,6 +279,31 @@ ledger_values() {
 ledger_forget() {
 	LEDGER_FORGOT="${LEDGER_FORGOT:+$LEDGER_FORGOT
 }$1${2:+ $2}"
+	ledger_save
+}
+
+# A run that stops partway must not lose what it did — the kernel console's record above
+# all, or the re-run takes the boot arguments for the entries' own. Once a run acts
+# (PREFLIGHT_DONE), every change to the ledger reaches the state at once: its other keys as
+# the last run left them, or a minimal state on a first run; write_state writes it whole at
+# the end. Best-effort: a state that can't be written is write_state's to report.
+ledger_save() {
+	[ "$PREFLIGHT_DONE" -eq 1 ] && [ "$DRY_RUN" -eq 0 ] || return 0
+	[ -n "$STATE_FILE" ] || state_paths
+	mkdir -p "$STATE_DIR" 2>/dev/null || return 0
+	_lsv_tmp="$(mktemp)" || return 0
+	{
+		if regular_file "$STATE_FILE"; then
+			grep -v '^LEDGER_[0-9]*=' "$STATE_FILE" || true
+		else
+			printf 'STATE_VERSION=%s\n' "$STATE_VERSION"
+			printf 'SCRIPT_VERSION=%s\n' "$SCRIPT_VERSION"
+			state_line MARKER "$MARKER"
+		fi
+		state_lines LEDGER_ "$(ledger_entries)"
+	} > "$_lsv_tmp"
+	write_file -m 600 "$STATE_FILE" < "$_lsv_tmp" || true
+	rm -f "$_lsv_tmp"
 	return 0
 }
 

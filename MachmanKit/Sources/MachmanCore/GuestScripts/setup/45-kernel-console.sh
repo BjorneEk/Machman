@@ -454,11 +454,14 @@ kernelconsole_name_unrecorded() {
 
 kernelconsole_uninstall() {
 	linux_guest || return 0
-	if [ -z "${ST_KERNEL_CONSOLE_METHOD:-}" ]; then
+	# A run that stopped after its act left no method in the state, but its ledger says.
+	_kcu_method="${ST_KERNEL_CONSOLE_METHOD:-}"
+	[ -n "$_kcu_method" ] || [ -z "$(ledger_values grubby-device)" ] || _kcu_method=grubby
+	if [ -z "$_kcu_method" ]; then
 		kernelconsole_name_unrecorded
 	fi
 	_kcu_dev="${ST_KERNEL_CONSOLE:-$(kernelconsole_pending_device)}"
-	case "${ST_KERNEL_CONSOLE_METHOD:-}" in
+	case "$_kcu_method" in
 	grubby)
 		kernelconsole_uninstall_grubby "$_kcu_dev"
 		;;

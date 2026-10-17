@@ -196,4 +196,46 @@ struct GuestScriptKernelConsoleTests {
 				""", "\(shell): \(r.out)")
 		}
 	}
+
+	// S60: the ledger reached the state only at the run's end, so a run that stopped after its
+	// kernel-console act lost its record — the re-run found the arguments and called them the
+	// entries' own, and the uninstall left console=hvc0 in and console=ttyS0 out for good. Once
+	// a run acts, every ledger entry reaches the state as it is made, and the uninstall takes
+	// the grubby path from the record alone.
+	@Test("S60: a run that stops after its kernel-console act keeps its record for the uninstall")
+	func aStoppedRunKeepsItsKernelConsoleRecord() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(
+				GuestScriptStateTests.stateHere + Self.grubby + #"""
+				UI_COLS=1000
+				OS=Linux
+				BOOTLOADER=grubby
+				CONSOLE_DEVICES="hvc0 hvc1"
+				SELECTED_FEATURES=kernelconsole
+				entry 0 /boot/vmlinuz-6.9 "ro console=ttyS0,115200 console=tty0 quiet"
+				PREFLIGHT_DONE=1
+				KC_DEVICE=hvc0
+				kernelconsole_act >/dev/null
+				echo "set: $(args 0)"
+				sed -n 's/^LEDGER_[0-9]*=//p' "$STATE_FILE"
+				PREFLIGHT_DONE=0
+				LEDGER_DONE=""
+				ST_LEDGER=""
+				read_state
+				kernelconsole_uninstall
+				echo "uninstalled: $(args 0)"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				set: ro quiet console=hvc0 console=tty0
+				'grubby-device hvc0'
+				'grubby-entry /boot/vmlinuz-6.9'
+				'grubby-arg /boot/vmlinuz-6.9 console=hvc0'
+				'grubby-had /boot/vmlinuz-6.9 console=ttyS0,115200 console=tty0'
+				[ok] put back console=ttyS0,115200 in the boot entry for /boot/vmlinuz-6.9
+				uninstalled: ro quiet console=ttyS0,115200 console=tty0
+
+				""", "\(shell): \(r.out)")
+		}
+	}
 }
