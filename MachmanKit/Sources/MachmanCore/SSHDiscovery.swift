@@ -318,19 +318,18 @@ enum SSHDiscovery {
 
 	// MARK: - Orchestration
 
-	// The MAC's lease first, ARP as fallback (needs recent guest traffic) — each unless
-	// another client holds a live lease on that address. bootpd keeps a MAC-keyed lease for
-	// good once the guest's DHCP client moved to a client id, so a newer lease under the
-	// client id the VM learned wins over it, and vmnet may have given its address to another
-	// VM since (C32); the Mac keeps an ARP entry about 20 minutes, so a
-	// copy that held its source's address in its last run still finds it under its own MAC
-	// after the reboot that gave it a lease of its own (review F12). A guest whose DHCP
-	// client sends a client id has no lease under its MAC (E56): next the lease kept under the
-	// client id the VM's config learned, then the address the guest reported — taken only on
-	// a subnet this Mac is on, and never while another client holds a live lease on it (a
-	// static address, or one whose id was not learned yet). Neither hint takes an address
-	// another running VM answers (`taken`): a copy's config can hold its source's client id
-	// until its own report teaches its own (review F8), and the source's answer wins.
+	// The MAC's lease first, ARP as fallback (needs recent guest traffic), the lease under the
+	// client id the VM learned next — each unless another client holds a live lease on that
+	// address. bootpd keeps a MAC-keyed lease for good once the guest's DHCP client moved to a
+	// client id, so a newer lease under the learned id wins over it, and vmnet may have given
+	// either address to another VM since (C32); the Mac keeps an ARP entry about 20 minutes, so a
+	// copy that held its source's address in its last run still finds it under its own MAC after
+	// the reboot that gave it a lease of its own (review F12). A guest whose DHCP client sends a
+	// client id has no lease under its MAC (E56): the client-id lease, then the address the guest
+	// reported — taken only on a subnet this Mac is on, and never while another client holds a
+	// live lease on it (a static address, or one whose id was not learned yet). Neither hint takes
+	// an address another running VM answers (`taken`): a copy's config can hold its source's
+	// client id until its own report teaches its own (review F8), and the source's answer wins.
 	// Deliberately NO liveness gate: the address is a fact of the running VM whether or not
 	// anything listens on it yet (a guest without sshd still has an IP worth showing) — ssh
 	// reachability is the connection's own business. The cost is that a stale lease can win
@@ -344,7 +343,8 @@ enum SSHDiscovery {
 		if let lease = lease(for: mac, in: table),
 			!heldByAnother(lease.ip, mac: mac, clientID: hints.clientID, in: table, at: now) {
 			if let id = hints.clientID, let own = Self.lease(forClientID: id, in: table),
-				own.expiry > lease.expiry, !taken.contains(own.ip) {
+				own.expiry > lease.expiry, !taken.contains(own.ip),
+				!heldByAnother(own.ip, mac: mac, clientID: id, in: table, at: now) {
 				return Answer(address: own.ip, source: "dhcp")
 			}
 			return Answer(address: lease.ip, source: "dhcp")
@@ -354,7 +354,7 @@ enum SSHDiscovery {
 			return Answer(address: ip, source: "arp")
 		}
 		if let id = hints.clientID, let ip = leaseIP(forClientID: id, in: table),
-			!taken.contains(ip) {
+			!taken.contains(ip), !heldByAnother(ip, mac: mac, clientID: id, in: table, at: now) {
 			return Answer(address: ip, source: "dhcp")
 		}
 		// A lease of this VM's would have answered above: a live one on the reported address

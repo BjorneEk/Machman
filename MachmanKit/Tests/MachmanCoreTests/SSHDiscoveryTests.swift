@@ -309,6 +309,23 @@ struct SSHDiscoveryTests {
 				lease=0x66ab0001
 			}
 			"""
+		// The VM's own lease after a long stop: expired, and its address handed to another.
+		let ownRunOut = """
+			{
+				ip_address=192.168.64.21
+				hw_address=\(ownID)
+				identifier=\(ownID)
+				lease=0x66aa5000
+			}
+			"""
+		let otherOnOwn = """
+			{
+				ip_address=192.168.64.21
+				hw_address=ff,7:8:9
+				identifier=ff,7:8:9
+				lease=0x66ab0005
+			}
+			"""
 		let later = Date(timeIntervalSince1970: TimeInterval(0x66ab0000))
 		func answer(
 			_ entries: String..., at now: Date = later, taken: Set<String> = []
@@ -325,6 +342,10 @@ struct SSHDiscoveryTests {
 		#expect(answer(mac, own) == SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
 		#expect(answer(mac, own, at: earlier)
 			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
+		// Nor while another client's live lease holds it: never another guest's address.
+		#expect(answer(mac, ownRunOut, otherOnOwn)
+			== SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
+		#expect(answer(ownRunOut, otherOnOwn) == nil)
 		// Unless another running VM answers that address.
 		#expect(answer(mac, own, taken: ["192.168.64.21"])
 			== SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
