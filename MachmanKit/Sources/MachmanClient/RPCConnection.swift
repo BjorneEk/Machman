@@ -106,6 +106,8 @@ public actor RPCConnection {
 	}
 
 	private nonisolated let socket: SocketLifetime
+	// What a call's deadline runs on: the wall clock, or a test's clock (Q40).
+	private nonisolated let clock: any Clock<Duration>
 	// The pid on the other end of the socket, captured once at connect. The daemon's
 	// safe-run sweep matches it against shadow markers — exact peer identity with no wire
 	// change. nil only if the getsockopt fails.
@@ -129,10 +131,11 @@ public actor RPCConnection {
 
 	public init(
 		socketPath: String, sendTimeout: Duration = RPCConnection.defaultSendTimeout,
+		clock: any Clock<Duration> = ContinuousClock(),
 		onDisconnect: @escaping @Sendable () -> Void = {}
 	) throws {
 		try self.init(
-			socketPath: socketPath, sendTimeout: sendTimeout, readerHook: nil,
+			socketPath: socketPath, sendTimeout: sendTimeout, clock: clock, readerHook: nil,
 			onDisconnect: onDisconnect)
 	}
 
@@ -141,10 +144,12 @@ public actor RPCConnection {
 	// onConnected: it gets the connected socket before the reader starts, while nothing can
 	// have closed it yet — a host that hangs up at once has it torn down right after.
 	init(
-		socketPath: String, sendTimeout: Duration, readerHook: (@Sendable () -> Void)?,
+		socketPath: String, sendTimeout: Duration,
+		clock: any Clock<Duration> = ContinuousClock(), readerHook: (@Sendable () -> Void)?,
 		onConnected: ((Int32) -> Void)? = nil, onDisconnect: @escaping @Sendable () -> Void
 	) throws {
 		self.onDisconnect = onDisconnect
+		self.clock = clock
 
 		var addr = sockaddr_un()
 		addr.sun_family = sa_family_t(AF_UNIX)
@@ -260,8 +265,8 @@ public actor RPCConnection {
 		// state). If the reply arrives later, dispatch drops it as an unknown id.
 		return try await withTaskCancellationHandler {
 			try await withCheckedThrowingContinuation { continuation in
-				let timer = Task { [weak self] in
-					try? await Task.sleep(for: deadline)
+				let timer = Task { [weak self, clock] in
+					try? await clock.sleep(for: deadline)
 					guard !Task.isCancelled else { return }
 					await self?.expire(id: id, method: method, deadline: deadline)
 				}

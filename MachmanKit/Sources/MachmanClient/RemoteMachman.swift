@@ -40,7 +40,8 @@ public final class RemoteMachman: MachmanControlling {
 
 	// Connects, performs the hello handshake, and refuses on api-version mismatch.
 	// helloDeadline: the daemon's spawn/adopt retry loops pass a tight bound so a vmhost
-	// that accepts but never answers cannot wedge them (E5).
+	// that accepts but never answers cannot wedge them (E5). clock: what the hello's and every
+	// call's deadline run on (the router's, which a test moves by hand — Q40).
 	// onDisconnect fires only for a connection this init returned: a hello that failed,
 	// timed out, was cancelled or was refused reports no drop — the caller's catch has it,
 	// and a reconnect loop must not hear the same failure twice (P1).
@@ -48,11 +49,12 @@ public final class RemoteMachman: MachmanControlling {
 		socketPath: String = MachmanPaths.daemonSocketPath(),
 		clientName: String,
 		helloDeadline: Duration = RPCConnection.defaultCallDeadline,
+		clock: any Clock<Duration> = ContinuousClock(),
 		onDisconnect: @escaping @Sendable () -> Void = {}
 	) async throws {
 		let gate = DisconnectGate(onDisconnect)
 		connection = try RPCConnection(
-			socketPath: socketPath, onDisconnect: { gate.connectionDied() })
+			socketPath: socketPath, clock: clock, onDisconnect: { gate.connectionDied() })
 		do {
 			hello = try await connection.call(
 				.hello, RPCParams.Hello(client: clientName),
