@@ -111,6 +111,19 @@ enum OverlayScenes {
 			return AnyView(NotificationOverlay(
 				viewModel: ctx.viewModel, operations: ctx.operations))
 		},
+		// Q33: two installs at once ride in VM-name order, whichever phase arrived first.
+		RenderScene(
+			"overlay.cards.two-installs", "NotificationOverlay: two macOS installs, by name",
+			widths: [420], height: 300,
+			vms: { [Samples.macOS("Tahoe"), Samples.macOS("Sequoia")] }
+		) { ctx in
+			ctx.stub.emit(.installPhaseChanged(vm: "Tahoe", phase: Samples.installingMacInstall()))
+			ctx.stub.emit(.installPhaseChanged(
+				vm: "Sequoia", phase: Samples.downloadingMacInstall()))
+			Offscreen.pump(until: { ctx.operations.installPhases.count == 2 })
+			return AnyView(NotificationOverlay(
+				viewModel: ctx.viewModel, operations: ctx.operations))
+		},
 		// F6: the engine's warning arrives as a log event; the toast wraps at its cap.
 		RenderScene(
 			"overlay.toasts.long-warning",

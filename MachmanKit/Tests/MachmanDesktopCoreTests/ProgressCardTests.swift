@@ -108,4 +108,52 @@ struct ProgressCardTests {
 			h.stub.calls.contains("cancelMacInstall")
 		})
 	}
+
+	// MARK: - The cards themselves (Q33: decided in DesktopCore, not in the overlay's body)
+
+	// Install cards came from iterating a Dictionary: two at once had no defined order.
+	@Test("Q33: two installs ride as cards in name order, after the operations")
+	func twoInstallsInNameOrder() async {
+		let h = await DesktopHarness.make([
+			Samples.macOS("Tahoe"), Samples.macOS("Sequoia"), Samples.linux("Debian"),
+		])
+		h.stub.emit(.operationChanged(op: Samples.copyOperation()))
+		h.stub.emit(.installPhaseChanged(vm: "Tahoe", phase: Samples.installingMacInstall()))
+		h.stub.emit(.installPhaseChanged(vm: "Sequoia", phase: Samples.downloadingMacInstall()))
+		#expect(await eventually { h.operations.installPhases.count == 2 })
+		#expect(await eventually { !h.operations.operations.isEmpty })
+		let cards = h.operations.progressCards(now: Samples.now)
+		#expect(cards.map(\.id) == ["op-1", "install:Sequoia", "install:Tahoe"])
+		#expect(cards[1].title == "Sequoia \u{2014} Installing macOS")
+		#expect(cards[1].phase == "Downloading macOS 15.4\u{2026}")
+		#expect(cards[1].fraction == 0.25)
+		#expect(cards[1].etaSeconds != nil)
+		#expect(cards[2].phase == "Installing macOS 15.4\u{2026}")
+		#expect(cards[2].cancellable && !cards[2].finished)
+	}
+
+	@Test("Q33: an operation's card says its bytes, Working… or its outcome")
+	func anOperationsCardSaysWhereItIs() async {
+		let h = await DesktopHarness.make()
+		var counting = Samples.copyOperation()
+		counting.completedBytes = 1 << 30
+		counting.totalBytes = 4 << 30
+		var unsized = Samples.copyOperation()
+		unsized.id = "op-unsized"
+		unsized.completedBytes = nil
+		unsized.totalBytes = nil
+		for op in [counting, unsized, Samples.finishedImport(), Samples.rosettaInstallOperation()] {
+			h.stub.emit(.operationChanged(op: op))
+		}
+		#expect(await eventually { h.operations.operations.count == 4 })
+		let cards = h.operations.progressCards(now: Samples.now)
+		#expect(cards.map(\.phase).prefix(2) == [
+			"\(ByteSize.display(1 << 30)) of \(ByteSize.display(4 << 30))", "Working\u{2026}",
+		])
+		let done = Samples.finishedImport()
+		#expect(cards[2].phase == done.outcomeText)
+		#expect(cards[2].finished)
+		#expect(!cards[3].cancellable)   // work the engine can't stop shows no ✕ (F7)
+	}
 }
+

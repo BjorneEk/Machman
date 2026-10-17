@@ -4,10 +4,11 @@
 //
 //  The bottom-right feedback corner (1.0.4 UI): status toasts (a stale VM list) and transient
 //  toasts (engine warnings) over persistent progress cards — the daemon's live operations
-//  plus running macOS installs, with ETA math from ProgressETA. A running card's ✕ cancels
-//  (op.cancel / vm.install.cancel); finished operations linger a few seconds showing their
-//  outcome, then prune from the store, and their ✕ only dismisses them. An install's card
-//  leaves when its phase ends, saying the outcome to VoiceOver (F16).
+//  plus running macOS installs, as OperationsStore.progressCards says them (Q33, with ETA
+//  math from ProgressETA). A running card's ✕ cancels (op.cancel / vm.install.cancel);
+//  finished operations linger a few seconds showing their outcome, then prune from the
+//  store, and their ✕ only dismisses them. An install's card leaves when its phase ends,
+//  saying the outcome to VoiceOver (F16).
 //
 
 import SwiftUI
@@ -31,7 +32,7 @@ struct NotificationOverlay: View {
 	var body: some View {
 		ToastStack(
 			toasts: viewModel.statusToasts + toasts.toasts,
-			progress: cards,
+			progress: operations.progressCards(now: MachmanClock.now()),
 			dismissProgress: viewModel.closeProgressCard,
 			hoverToast: toasts.hold)
 		.onChange(of: operations.installPhases) { old, new in
@@ -39,45 +40,5 @@ struct NotificationOverlay: View {
 				announcer.post(announcement)
 			}
 		}
-	}
-
-	private var cards: [ProgressCardModel] {
-		var cards = operations.operations.map { op in
-			ProgressCardModel(
-				id: op.id,
-				title: op.displayTitle,
-				symbol: op.displaySymbol,
-				phase: phase(for: op),
-				fraction: op.fraction,
-				etaSeconds: op.etaSeconds(now: MachmanClock.now()),
-				finished: op.isFinished,
-				cancellable: op.isCancellable)
-		}
-		// Running macOS installs ride the richer install-phase flow, not OperationInfo.
-		for (vm, phase) in operations.installPhases {
-			if phase.isRunning {
-				cards.append(ProgressCardModel(
-					id: VMListViewModel.installCardPrefix + vm,
-					title: InstallPhase.cardTitle(vm: vm),
-					symbol: MachmanSymbols.bootMacTab,
-					phase: phase.displayLabel,
-					fraction: phase.progress?.fraction,
-					etaSeconds: phase.etaSeconds(now: MachmanClock.now())))
-			}
-		}
-		return cards
-	}
-
-	// MARK: - Operation mapping (title and symbol: OperationInfo+Display)
-
-	private func phase(for op: OperationInfo) -> String {
-		if let outcome = op.outcomeText { return outcome }
-		if let done = op.completedBytes, let total = op.totalBytes, total > 0 {
-			// Binary units, like every other size (decision 14).
-			let f = ByteSize.display(UInt64(clamping: done))
-			let t = ByteSize.display(UInt64(clamping: total))
-			return "\(f) of \(t)"
-		}
-		return "Working…"
 	}
 }
