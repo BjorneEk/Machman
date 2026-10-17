@@ -247,7 +247,11 @@ struct GuestScriptReportTests {
 	// outlived the uninstall, undisclosed. The ledger records both; once its blocks are out,
 	// a created file holding only that first line goes, one the guest has added to stays and
 	// is named, an exec bit a run turned on goes off — and one it found on stays on.
-	@Test("S64: the uninstall removes an rc.local setup created and turns off an exec bit it turned on")
+	@Test(
+		"""
+		S64: the uninstall removes an rc.local setup created and turns off an exec bit it \
+		turned on
+		""")
 	func uninstallRevertsTheRcLocalARunMade() async throws {
 		for shell in GuestScriptHarness.shells {
 			let r = try await GuestScriptHarness.run(#"""
@@ -269,8 +273,8 @@ struct GuestScriptReportTests {
 				cat "$RC_LOCAL"
 				echo ---
 				LEDGER_DONE=""
-				printf '#!/bin/sh\n# BEGIN machman-0ddc105e9999\nold\n# END machman-0ddc105e9999\n' \
-					> "$RC_LOCAL"
+				old=machman-0ddc105e9999
+				printf '#!/bin/sh\n# BEGIN %s\nold\n# END %s\n' "$old" "$old" > "$RC_LOCAL"
 				chmod 644 "$RC_LOCAL"
 				rc_local_ready report-refresh >/dev/null 2>&1
 				mode
