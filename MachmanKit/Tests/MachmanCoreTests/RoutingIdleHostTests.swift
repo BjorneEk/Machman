@@ -93,24 +93,34 @@ struct RoutingIdleHostTests {
 		#expect(rig.stub.starts.isEmpty)
 	}
 
-	@Test @MainActor func startRefusesAnUnansweringHost() async throws {
-		let rig = try await adoptStub(try makeRouting(probeDeadline: .seconds(1)), state: .stopped)
+	// Q40: bounded at 15 s of wall time before; on a TestClock the probe's deadline is what is
+	// armed (not a call's 30 s), and one advance past it refuses the start.
+	@Test("E12: a start refuses an adopted host that misses its probe deadline")
+	@MainActor func startRefusesAnUnansweringHost() async throws {
+		let routing = try makeRouting(probeDeadline: .seconds(1))
+		let clock = TestClock()
+		routing.clock = clock
+		let rig = try await adoptStub(routing, state: .stopped)
 		defer {
 			rig.stub.stalled = []
 			rig.server.stop()
 		}
 		rig.stub.stalled = ["vm"]
 
-		let clock = ContinuousClock()
-		let started = clock.now
-		do {
+		let start = Task { @MainActor in
 			try await rig.routing.start(vm: "alpha", options: StartOptions())
+		}
+		#expect(await eventually { !clock.armed.isEmpty })
+		let armed = clock.armed
+		#expect(armed == [.seconds(1)])
+		clock.advance(by: armed.max() ?? .seconds(1))
+		do {
+			try await start.value
 			Issue.record("expected invalidState")
 		} catch let error as MachmanError {
 			#expect(error.code == .invalidState)
 			#expect(error.message.contains("not responding"))
 		}
-		#expect(clock.now - started < .seconds(15))   // the probe's deadline, not a call's 30 s
 		#expect(rig.stub.starts.isEmpty)
 	}
 

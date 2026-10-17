@@ -7,6 +7,8 @@
 //  The forwarded force stop is bounded now; a host that misses it is listed as not
 //  responding and the stop answers `timeout`, the clients' cue to offer ending its process
 //  (C9: only after a second, explicit confirmation). A stub vmhost "wedges" by parking stop.
+//  Q40: the checks that bounded wall time run on a TestClock — which deadline is armed, and
+//  that one advance past it ends the call.
 //
 
 import Testing
@@ -23,6 +25,18 @@ private final class Heard {
 	var ended: [String] = []
 }
 
+// Waits until `expected.count` sleepers are armed on `clock`, checks they are `expected` (the
+// deadlines under test, armed together), then moves time past them.
+@MainActor
+private func passArmed(_ clock: TestClock, _ expected: [Duration]) async {
+	#expect(await eventually { clock.armed.count >= expected.count })
+	let armed = clock.armed
+	#expect(armed == expected)
+	clock.advance(by: armed.max() ?? .zero)
+}
+
+// A check that waits on a deadline nothing moves past would hang: the limit ends it.
+@Suite(.timeLimit(.minutes(1)))
 struct RoutingForceStopTests {
 	private struct Rig {
 		let routing: RoutingMachman
@@ -33,7 +47,7 @@ struct RoutingForceStopTests {
 	// alpha, running in an adopted stub host. The force stop's bound is short: these tests
 	// want it to run out, and it can only expire.
 	@MainActor
-	private func makeRig() async throws -> Rig {
+	private func makeRig(clock: TestClock? = nil) async throws -> Rig {
 		var routing: RoutingMachman!
 		try VMTestDir.withRedirectedDir {
 			try VMConfig.createNewVMDirectory(name: "alpha")
@@ -43,6 +57,7 @@ struct RoutingForceStopTests {
 		}
 		routing.hostProbeDeadline = .seconds(10)
 		routing.forceStopDeadline = .seconds(1)
+		if let clock { routing.clock = clock }
 		let socketPath = TestEnvironment.socketPath("mm-force")
 		let stub = StubMachman()
 		stub.vms["alpha"] = StubMachman.makeInfo("alpha", state: .running)
@@ -60,8 +75,10 @@ struct RoutingForceStopTests {
 		rig.server.stop()
 	}
 
-	@Test @MainActor func aForceStopTheHostMissesAnswersTimeout() async throws {
-		let rig = try await makeRig()
+	@Test("E36: a force stop the vmhost misses answers timeout after the force stop's deadline")
+	@MainActor func aForceStopTheHostMissesAnswersTimeout() async throws {
+		let clock = TestClock()
+		let rig = try await makeRig(clock: clock)
 		defer { finish(rig) }
 		rig.stub.stalled = ["stop"]
 		rig.routing.endHost = { _ in
@@ -69,16 +86,15 @@ struct RoutingForceStopTests {
 			return false
 		}
 
-		let clock = ContinuousClock()
-		let started = clock.now
+		let stop = Task { @MainActor in try await rig.routing.stop(vm: "alpha", mode: .force) }
+		await passArmed(clock, [rig.routing.forceStopDeadline])   // before: the call's 30 s
 		do {
-			try await rig.routing.stop(vm: "alpha", mode: .force)
+			try await stop.value
 			Issue.record("a wedged host's force stop went through")
 		} catch let error as MachmanError {
 			#expect(error.code == .timeout)
 			#expect(error.message == "alpha isn\u{2019}t answering, so it didn\u{2019}t stop")
 		}
-		#expect(clock.now - started < .seconds(10))   // before: the call's 30 s
 		#expect(rig.routing.hostForTesting("alpha")?.unresponsive == true)
 		#expect(rig.routing.hostedNames == ["alpha"])   // listed, never ended here
 	}
@@ -219,16 +235,19 @@ struct RoutingForceStopTests {
 	}
 
 	// "Force Stop All & Quit" says which VMs it couldn't stop, and doesn't wait on them.
-	@Test @MainActor func stopAllNamesTheHostsLeftRunning() async throws {
-		let rig = try await makeRig()
+	@Test("E36: Force Stop All names the hosts it left running and doesn't wait on them")
+	@MainActor func stopAllNamesTheHostsLeftRunning() async throws {
+		let clock = TestClock()
+		let rig = try await makeRig(clock: clock)
 		defer { finish(rig) }
 		rig.stub.stalled = ["stop"]
 
-		let clock = ContinuousClock()
-		let started = clock.now
-		let left = await rig.routing.stopAllHosted(softFirst: false, graceSeconds: 0)
-		#expect(left == ["alpha"])
-		#expect(clock.now - started < .seconds(9))   // not the 10 s drain on top
+		let quit = Task { @MainActor in
+			await rig.routing.stopAllHosted(softFirst: false, graceSeconds: 0)
+		}
+		await passArmed(clock, [rig.routing.forceStopDeadline])
+		#expect(await quit.value == ["alpha"])
+		#expect(!clock.everArmed.contains(.milliseconds(250)))   // no drain wait on top
 	}
 
 	// E66 (K12): Shut Down All asked the vmhosts one at a time, each wedged one adding its
@@ -254,6 +273,8 @@ struct RoutingForceStopTests {
 		}
 		routing.hostProbeDeadline = .seconds(10)
 		routing.forceStopDeadline = .seconds(6)
+		let clock = TestClock()
+		routing.clock = clock
 		var stubs: [String: StubMachman] = [:]
 		var servers: [String: MachmanServer] = [:]
 		for name in names {
@@ -282,22 +303,22 @@ struct RoutingForceStopTests {
 			return true
 		}
 
-		let clock = ContinuousClock()
-		let started = clock.now
 		let quit = Task { @MainActor in
 			await routing.stopAllHosted(
 				softFirst: true, graceSeconds: 30, endingUnanswered: true)
 		}
-		// Both asked while each still parks its answer: one at a time, the second would wait
-		// out the first's 6 s.
-		#expect(await eventually(timeout: .seconds(4)) {
-			stubs.values.allSatisfy { $0.calls.contains("stop") }
-		})
+		// Both asked while each still parks its answer: both shut downs' deadlines are armed
+		// before either fires (one at a time, the second is asked after the first's 6 s).
+		await passArmed(clock, [.seconds(6), .seconds(6)])
+		// Ended like a confirmed End Process; the waits for each to go see it gone.
+		#expect(await eventually { routing.hostedNames.isEmpty })
+		clock.advance(by: .milliseconds(50))
 		let left = await quit.value
 		#expect(left.isEmpty)
 		#expect(Set(heard.ended) == Set(names))
-		// One deadline, not the whole grace (before: 6 + 6 + 30 + 6 + 6 s).
-		#expect(clock.now - started < .seconds(25))
+		// One deadline, not the whole grace (before: 6 + 6 + 30 + 6 + 6 s): no 250 ms grace or
+		// drain look ever waited.
+		#expect(!clock.everArmed.contains(.milliseconds(250)))
 		// The force pass skipped the hosts that missed their shut down: one stop each.
 		#expect(stubs.values.allSatisfy { $0.calls.filter { $0 == "stop" }.count == 1 })
 		#expect(routing.hostedNames.isEmpty)

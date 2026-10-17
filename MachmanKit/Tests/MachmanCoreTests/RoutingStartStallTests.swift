@@ -30,9 +30,11 @@ struct RoutingStartStallTests {
 	// alpha's start, spawned and forwarded to a stub vmhost that parks `stalled`.
 	@MainActor
 	private func stalledStart(
-		_ tag: String, stalled: Set<String>, probeDeadline: Duration = .seconds(10)
+		_ tag: String, stalled: Set<String>, probeDeadline: Duration = .seconds(10),
+		clock: TestClock? = nil
 	) async throws -> Stalled {
 		let rig = try RoutingSpawnTests.makeRig(tag)
+		if let clock { rig.routing.clock = clock }
 		rig.routing.hostProbeDeadline = probeDeadline
 		rig.routing.recoveryInterval = .milliseconds(200)
 		let (stub, server) = try RoutingSpawnTests.stubHost(rig.socketPath)
@@ -84,32 +86,35 @@ struct RoutingStartStallTests {
 		#expect(try await stalled.routing.vm(named: "alpha").state == .stopped)
 	}
 
+	// Q40: this listed the VM in a 20 s wall-clock loop until it read not responding. On a
+	// TestClock the starting watch's ask is armed at the probe deadline, and one advance past
+	// it lists the VM Not responding.
 	@Test("E64: a start whose vmhost stops answering lists Not responding, and End Process ends it")
 	@MainActor func aStalledStartListsNotRespondingAndEndProcessEndsIt() async throws {
+		let clock = TestClock()
 		let stalled = try await stalledStart(
-			"stall-end", stalled: ["start", "vm"], probeDeadline: .seconds(2))
+			"stall-end", stalled: ["start", "vm"], probeDeadline: .seconds(2), clock: clock)
 		defer {
 			stalled.stub.stalled = []
 			stalled.server.stop()
 		}
-		var listed: VMInfo?
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: .seconds(20))
-		while clock.now < deadline {
-			let info = try await stalled.routing.vm(named: "alpha")
-			if info.isUnresponsive {
-				listed = info
-				break
-			}
-			try await Task.sleep(for: .milliseconds(100))
-		}
-		#expect(listed?.state == .starting)
-		#expect(listed?.isUnresponsive == true)
+		// Armed besides it: the forwarded start's own (slow-class) deadline.
+		#expect(await eventually { clock.armed.contains(.seconds(2)) })
+		clock.advance(by: .seconds(2))
+		#expect(await eventually {
+			stalled.routing.startsInFlight["alpha"]?.host?.unresponsive == true
+		})
+		let listed = try await stalled.routing.vm(named: "alpha")
+		#expect(listed.state == .starting)
+		#expect(listed.isUnresponsive)
 
-		// Before: "alpha is starting — try again once it is running".
-		try await stalled.routing.endProcess(vm: "alpha")
-		#expect(stalled.app.ended == 1)
+		// Before: "alpha is starting — try again once it is running". Its reply waits for the
+		// start to end; the wait looks again on the clock.
+		let ending = Task { @MainActor in try await stalled.routing.endProcess(vm: "alpha") }
 		await expectCanceled(stalled.start)
+		clock.advance(by: .milliseconds(50))
+		try await ending.value
+		#expect(stalled.app.ended == 1)
 		#expect(stalled.routing.pendingStarts.isEmpty)
 	}
 }

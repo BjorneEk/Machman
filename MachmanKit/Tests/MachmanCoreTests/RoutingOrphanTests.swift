@@ -85,18 +85,8 @@ struct RoutingOrphanTests {
 		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
 		#expect(rig.routing.orphanSockets == ["beta": orphanSocket])
 		// Before: listed stopped. Its vmhost can't be adopted as beta (it serves alpha).
-		var listed: VMInfo?
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: .seconds(20))
-		while clock.now < deadline {
-			let info = try await rig.routing.vm(named: "beta")
-			if info.isUnresponsive {
-				listed = info
-				break
-			}
-			try await Task.sleep(for: .milliseconds(100))
-		}
-		#expect(listed?.state == .unknown)
+		let listed = try await notResponding(rig, "beta")
+		#expect(listed.state == .unknown)
 
 		// Before: a second vmhost was spawned on beta's disks.
 		do {
@@ -165,22 +155,23 @@ struct RoutingOrphanTests {
 		#expect(rig.routing.hostForTesting("beta") == nil)
 	}
 
+	// `entry` as listed once the adoption a first listing sets off has failed: its vmhost
+	// serves another name (Q40: a wait for that failure, never a wall-clock listing loop).
+	@MainActor
+	private func notResponding(_ rig: Rig, _ entry: String) async throws -> VMInfo {
+		_ = try await rig.routing.vm(named: entry)
+		#expect(await eventually { rig.routing.unadoptable.contains(entry) })
+		let listed = try await rig.routing.vm(named: entry)
+		#expect(listed.isUnresponsive)
+		return listed
+	}
+
 	// The entry an orphan answers for lists Not responding (its vmhost serves another name)
 	// and refuses a Start without spawning.
 	@MainActor
 	private func expectHeldByOrphan(_ rig: Rig, _ entry: String) async throws {
-		var listed: VMInfo?
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: .seconds(20))
-		while clock.now < deadline {
-			let info = try await rig.routing.vm(named: entry)
-			if info.isUnresponsive {
-				listed = info
-				break
-			}
-			try await Task.sleep(for: .milliseconds(100))
-		}
-		#expect(listed?.state == .unknown)
+		let listed = try await notResponding(rig, entry)
+		#expect(listed.state == .unknown)
 		do {
 			try await rig.routing.start(vm: entry, options: StartOptions(openWindow: false))
 			Issue.record("a start went through while the orphan runs \(entry)")
