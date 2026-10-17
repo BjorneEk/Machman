@@ -230,43 +230,96 @@ kernelconsole_act() {
 	return 0
 }
 
-# grubby keeps no file of ours: what a run did to the boot entries is in the ledger. The
-# arguments the entries carry, one per line, each once (grubby --info prints them per entry).
+# grubby keeps no file of ours: what a run did to the boot entries is in the ledger, entry
+# by entry, each named by its kernel (what --update-kernel takes). The arguments the entries
+# carry, one per line, each once.
 kernelconsole_grubby_args() {
 	grubby --info=ALL 2>/dev/null | sed -n 's/^args=//p' | tr -d '"' | tr ' ' '\n' \
 		| awk 'NF && !seen[$0]++'
 }
 
-# Their console= arguments, in order, on one line.
-kernelconsole_grubby_consoles() {
-	kernelconsole_grubby_args | grep '^console=' | tr '\n' ' ' | sed 's/ $//'
+# The entries, one per line: "<kernel> <its arguments>".
+kernelconsole_grubby_entries() {
+	grubby --info=ALL 2>/dev/null | awk '
+		function flush() { if (k != "") print k " " a; k = ""; a = "" }
+		/^index=/ { flush() }
+		/^kernel=/ { k = substr($0, 8); gsub(/"/, "", k) }
+		/^args=/ { a = substr($0, 6); gsub(/"/, "", a) }
+		END { flush() }'
 }
 
-# The arguments a run added (grubby-arg entries), on one line.
+# kernelconsole_entry_args <entries> <kernel> — that entry's arguments, one per line.
+kernelconsole_entry_args() {
+	printf '%s\n' "$1" | awk -v k="$2" '$1 == k { for (i = 2; i <= NF; i++) print $i; exit }'
+}
+
+# The console= arguments among <arguments> (one per line or on one line), in order, on one.
+kernelconsole_consoles_in() {
+	printf '%s\n' "$1" | tr ' ' '\n' | grep '^console=' | tr '\n' ' ' | sed 's/ $//'
+}
+
+# kernelconsole_without <words> <words> — the first list's words the second lacks, in order.
+kernelconsole_without() {
+	_kw_out=""
+	for _kw_w in $1; do
+		has_word "$_kw_w" "$2" || _kw_out="${_kw_out:+$_kw_out }$_kw_w"
+	done
+	printf '%s' "$_kw_out"
+}
+
+# The arguments a run added, each once, on one line.
 kernelconsole_grubby_added() {
-	ledger_values grubby-arg | tr '\n' ' ' | sed 's/ $//'
+	ledger_values grubby-arg | awk '!seen[$2]++ { print $2 }' | tr '\n' ' ' | sed 's/ $//'
 }
 
-# The pair goes on every entry — only its arguments no entry had count as the run's
-# (grubby-arg). grubby's add also drops the console= arguments the entries had: their list
-# from before the first run is kept (grubby-had) so the uninstall can put it back. A re-point
-# first takes back what a run added for the old device.
+# Every argument a run added (grubby-arg "<kernel> <argument>") goes from the entry it went
+# into, one grubby call per entry. An entry made since (a kernel installed after setup copies
+# the options) loses the device argument too, never console=tty0, which may be its own; an
+# entry that was there (grubby-entry) and got nothing keeps what it has.
+kernelconsole_take_back() {
+	_ktb_entries="$(kernelconsole_grubby_entries)"
+	_ktb_devs="$(ledger_values grubby-arg | awk '$2 != "console=tty0" && !seen[$2]++ { print $2 }')"
+	while IFS= read -r _ktb_line; do
+		[ -n "$_ktb_line" ] || continue
+		_ktb_k="${_ktb_line%% *}"
+		_ktb_rm="$(ledger_values grubby-arg | awk -v k="$_ktb_k" '$1 == k { print $2 }')"
+		if [ -z "$_ktb_rm" ] && ! ledger_has grubby-entry "$_ktb_k"; then
+			_ktb_rm="$(kernelconsole_entry_args "$_ktb_entries" "$_ktb_k" \
+				| grep -xF -- "$_ktb_devs" || true)"
+		fi
+		[ -n "$_ktb_rm" ] || continue
+		run "removing the kernel console from $_ktb_k" grubby --update-kernel="$_ktb_k" \
+			--remove-args="$(printf '%s\n' "$_ktb_rm" | tr '\n' ' ' | sed 's/ $//')" || true
+	done <<EOF
+$_ktb_entries
+EOF
+	while IFS= read -r _ktb_e; do
+		[ -z "$_ktb_e" ] || ledger_forget grubby-arg "$_ktb_e"
+	done <<EOF
+$(ledger_values grubby-arg)
+EOF
+	return 0
+}
+
+# The pair goes on every entry; in each, only the arguments it lacked count as the run's
+# (grubby-arg), and the entries there at the time are noted (grubby-entry). grubby's add also
+# drops an entry's console= arguments: an entry that lost any keeps its list from before the
+# first run (grubby-had) so the uninstall can put it back. A re-point first takes back what a
+# run added for the old device.
 kernelconsole_act_grubby() {
 	_kag_old="$(kernelconsole_pending_device)"
 	[ -z "$_kag_old" ] && _kag_old="$ST_KERNEL_CONSOLE"
 	if [ -n "$_kag_old" ] && [ "$_kag_old" != "$KC_DEVICE" ]; then
-		_kag_rm="$(kernelconsole_grubby_added)"
-		# A record from before v8 names no arguments: the old device's is the one it set.
-		[ -n "$(ledger_values grubby-device)" ] || _kag_rm="console=$_kag_old"
-		if [ -n "$_kag_rm" ]; then
+		if [ -n "$(ledger_values grubby-device)" ]; then
+			kernelconsole_take_back
+		else
+			# A record from before v8 names no arguments: the old device's is the one it set.
 			run "removing the old kernel console" grubby --update-kernel=ALL \
-				--remove-args="$_kag_rm" || true
+				--remove-args="console=$_kag_old" || true
 		fi
-		for _kag_a in $_kag_rm; do ledger_forget grubby-arg "$_kag_a"; done
 		ledger_forget grubby-device "$_kag_old"
 	fi
-	_kag_before="$(kernelconsole_grubby_args)"
-	_kag_had="$(kernelconsole_grubby_consoles)"
+	_kag_before="$(kernelconsole_grubby_entries)"
 	if ! run "pointing the kernel console at $KC_DEVICE" \
 		grubby --update-kernel=ALL --args="console=$KC_DEVICE console=tty0"; then
 		step_failed kernel-console \
@@ -275,19 +328,34 @@ kernelconsole_act_grubby() {
 		return 0
 	fi
 	ledger_note grubby-device "$KC_DEVICE"
-	for _kag_a in "console=$KC_DEVICE" console=tty0; do
-		printf '%s\n' "$_kag_before" | grep -qxF -- "$_kag_a" \
-			|| ledger_note grubby-arg "$_kag_a"
-	done
+	_kag_after="$(kernelconsole_grubby_entries)"
 	_kag_lost=""
-	_kag_after="$(kernelconsole_grubby_args)"
-	for _kag_a in $_kag_had; do
-		printf '%s\n' "$_kag_after" | grep -qxF -- "$_kag_a" \
-			|| _kag_lost="${_kag_lost:+$_kag_lost }$_kag_a"
-	done
+	while IFS= read -r _kag_line; do
+		[ -n "$_kag_line" ] || continue
+		_kag_k="${_kag_line%% *}"
+		_kag_was="$(kernelconsole_entry_args "$_kag_before" "$_kag_k" | tr '\n' ' ')"
+		_kag_now="$(kernelconsole_entry_args "$_kag_after" "$_kag_k" | tr '\n' ' ')"
+		ledger_note grubby-entry "$_kag_k"
+		for _kag_a in "console=$KC_DEVICE" console=tty0; do
+			if has_word "$_kag_a" "$_kag_now" && ! has_word "$_kag_a" "$_kag_was"; then
+				ledger_note grubby-arg "$_kag_k $_kag_a"
+			fi
+		done
+		_kag_had="$(kernelconsole_consoles_in "$_kag_was")"
+		_kag_gone="$(kernelconsole_without "$_kag_had" "$_kag_now")"
+		[ -n "$_kag_gone" ] || continue
+		if ! ledger_values grubby-had | awk -v k="$_kag_k" '$1 == k { f = 1 } END { exit !f }'
+		then
+			ledger_note grubby-had "$_kag_k $_kag_had"
+		fi
+		for _kag_a in $_kag_gone; do
+			has_word "$_kag_a" "$_kag_lost" || _kag_lost="${_kag_lost:+$_kag_lost }$_kag_a"
+		done
+	done <<EOF
+$_kag_after
+EOF
 	ok "kernel messages -> $KC_DEVICE, display stays on tty0 (next boot)"
 	if [ -n "$_kag_lost" ]; then
-		[ -n "$(ledger_values grubby-had)" ] || ledger_note grubby-had "$_kag_had"
 		note "grubby replaced $_kag_lost in the boot entries — the uninstall puts it back."
 	fi
 	_kag_added="$(kernelconsole_grubby_added)"
@@ -299,16 +367,15 @@ kernelconsole_act_grubby() {
 	return 0
 }
 
-# The uninstall's grubby arm: the arguments a run added go, and the console= arguments
-# grubby's add replaced come back in their order. A record from before v8 names no
-# arguments: the device's goes, and console=tty0 — maybe the entries' own — stays, named.
+# The uninstall's grubby arm: the arguments a run added go from the entries they went into,
+# and an entry's console= arguments grubby's add replaced come back — only into that entry,
+# and only while the console= arguments it has now are its old ones (the last one is
+# /dev/console, so one added since makes the order the user's call: named, never cleared). A
+# record from before v8 names no arguments: the device's goes, and console=tty0 — maybe the
+# entries' own — stays, named.
 kernelconsole_uninstall_grubby() {
 	if [ -n "$(ledger_values grubby-device)" ]; then
-		_kug_added="$(kernelconsole_grubby_added)"
-		if [ -n "$_kug_added" ]; then
-			run "removing the kernel console" grubby --update-kernel=ALL \
-				--remove-args="$_kug_added" || true
-		fi
+		kernelconsole_take_back
 	elif [ -n "$1" ]; then
 		run "removing the kernel console" grubby --update-kernel=ALL \
 			--remove-args="console=$1" || true
@@ -317,22 +384,32 @@ kernelconsole_uninstall_grubby() {
 			note "Remove it: grubby --update-kernel=ALL --remove-args='console=tty0'"
 		fi
 	fi
-	_kug_had="$(ledger_values grubby-had | head -n 1)"
-	[ -n "$_kug_had" ] || return 0
-	_kug_now="$(kernelconsole_grubby_consoles)"
-	[ "$_kug_now" != "$_kug_had" ] || return 0
-	if [ -n "$_kug_now" ]; then
-		run "clearing the console arguments" grubby --update-kernel=ALL \
-			--remove-args="$_kug_now" || true
-	fi
-	if run "putting back the console arguments" grubby --update-kernel=ALL \
-		--args="$_kug_had"; then
-		ok "put back $_kug_had in the boot entries"
-	else
-		_kug_fix="grubby --update-kernel=ALL --args='$_kug_had'"
-		warn "could not put back $_kug_had in the boot entries — add it yourself: $_kug_fix"
-		UNINSTALL_KEPT=1
-	fi
+	_kug_entries="$(kernelconsole_grubby_entries)"
+	while IFS= read -r _kug_line; do
+		[ -n "$_kug_line" ] || continue
+		_kug_k="${_kug_line%% *}"
+		_kug_had="${_kug_line#* }"
+		_kug_now="$(kernelconsole_entry_args "$_kug_entries" "$_kug_k")"
+		_kug_now="$(kernelconsole_consoles_in "$_kug_now")"
+		_kug_missing="$(kernelconsole_without "$_kug_had" "$_kug_now")"
+		[ -n "$_kug_missing" ] || continue
+		if [ -n "$(kernelconsole_without "$_kug_now" "$_kug_had")" ]; then
+			_kug_why="it has console arguments set since, and the last console= is /dev/console"
+			note "$_kug_missing stays out of the boot entry for $_kug_k — $_kug_why."
+			_kug_fix="grubby --update-kernel=$_kug_k --args='$_kug_missing'"
+			note "Add it back where it belongs: $_kug_fix"
+		elif run "putting back the console arguments" grubby --update-kernel="$_kug_k" \
+			--args="$_kug_had"; then
+			ok "put back $_kug_missing in the boot entry for $_kug_k"
+		else
+			_kug_fix="grubby --update-kernel=$_kug_k --args='$_kug_had'"
+			_kug_what="$_kug_missing in the boot entry for $_kug_k"
+			warn "could not put back $_kug_what — add it yourself: $_kug_fix"
+			UNINSTALL_KEPT=1
+		fi
+	done <<EOF
+$(ledger_values grubby-had)
+EOF
 	return 0
 }
 

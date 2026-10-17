@@ -3,6 +3,7 @@
 # record the uninstall needs; without that record the uninstall names what it finds and
 # leaves it. The boot entry is fabricated (a container has no /boot).
 # CHECKS: KC_STATE_KEPT KC_GRUBBY_UNINSTALL KC_GRUBBY_NO_STATE KC_GRUBBY_KEEPS_PRIOR
+# CHECKS: KC_GRUBBY_PER_ENTRY
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -66,5 +67,22 @@ if [ "$(consoles "$(args)")" = "$(consoles "$before")" ] \
 else
 	R KC_GRUBBY_KEEPS_PRIOR fail; echo "before $before"; echo "during $during"; args
 	tail -n 4 /tmp/unin4.log
+fi
+
+# …and only into the entry that lost them: a rescue entry without console= arguments
+# gets none back (setup's go from it too).
+R0="/boot/loader/entries/$(cat /etc/machine-id)-0-rescue.conf"
+printf 'title Rescue\nversion 0-rescue\nlinux /vmlinuz-0-rescue\n' > "$R0"
+printf 'options root=UUID=1234 ro\n' >> "$R0"
+touch /boot/vmlinuz-0-rescue
+sed -i 's/^options .*/options root=UUID=1234 ro console=ttyS0,115200 console=tty0 quiet/' "$E"
+$SH "$S" -y --user reg --kernel-console=hvc1 --no-install --no-service >/tmp/run5.log 2>&1
+$SH "$S" --uninstall -y >/tmp/unin5.log 2>&1
+rescue="$(grubby --info=/boot/vmlinuz-0-rescue 2>/dev/null | sed -n 's/^args=//p')"
+main="$(grubby --info=/boot/vmlinuz-$K 2>/dev/null | sed -n 's/^args=//p')"
+if [ "$(consoles "$rescue")" = "" ] && [ "$(consoles "$main")" = "$(consoles "$before")" ]; then
+	R KC_GRUBBY_PER_ENTRY pass
+else
+	R KC_GRUBBY_PER_ENTRY fail; echo "rescue $rescue"; echo "main $main"; tail -n 4 /tmp/unin5.log
 fi
 exit 0

@@ -14,39 +14,57 @@ import Foundation
 
 struct GuestScriptKernelConsoleTests {
 
-	// One boot entry, its arguments in $GRUBBY_ARGS, edited the way BLS grubby edits them.
+	// Boot entries as files in $GRUBBY_DIR (line 1 the kernel, line 2 its arguments), edited
+	// the way BLS grubby edits them; --update-kernel takes ALL or one entry's kernel.
+	// entry <file> <kernel> <arguments> makes one; args <file> prints its arguments.
 	static let grubby = #"""
-		mkdir -p "$D/bin"
+		mkdir -p "$D/bin" "$D/entries"
 		cat > "$D/bin/grubby" <<'SH'
 		#!/bin/sh
-		f="$GRUBBY_ARGS"
-		# drop <key|value> <match>: the entry without its first argument that matches.
+		target=ALL
+		for a in "$@"; do
+			case "$a" in --update-kernel=*) target="${a#--update-kernel=}" ;; esac
+		done
+		# drop <file> <key|value> <match>: the entry without its first argument that matches.
 		drop() {
-			awk -v by="$1" -v m="$2" '{
+			awk -v by="$2" -v m="$3" 'NR == 1 { print; next } {
+				o = ""
 				for (i = 1; i <= NF; i++) {
 					k = $i; if (by == "key") sub(/=.*/, "", k)
 					if (!d && k == m) { d = 1; continue }
 					o = o (o ? " " : "") $i
 				}
 				print o
-			}' "$f" > "$f.t" && mv "$f.t" "$f"
+			}' "$1" > "$1.t" && mv "$1.t" "$1"
 		}
-		for a in "$@"; do
-			case "$a" in
-			--info=ALL) printf 'index=0\nargs="%s"\n' "$(cat "$f")" ;;
-			--args=*)
-				for x in ${a#--args=}; do drop key "${x%%=*}"; done
-				printf '%s %s\n' "$(cat "$f")" "${a#--args=}" | sed 's/^ //' > "$f.t"
-				mv "$f.t" "$f"
-				;;
-			--remove-args=*) for x in ${a#--remove-args=}; do drop value "$x"; done ;;
-			esac
+		n=0
+		for f in "$GRUBBY_DIR"/*; do
+			kernel="$(sed -n 1p "$f")"
+			for a in "$@"; do
+				[ "$a" != --info=ALL ] || printf 'index=%s\nkernel="%s"\nargs="%s"\n' \
+					"$n" "$kernel" "$(sed -n 2p "$f")"
+			done
+			n=$((n + 1))
+			[ "$target" = ALL ] || [ "$target" = "$kernel" ] || continue
+			for a in "$@"; do
+				case "$a" in
+				--args=*)
+					for x in ${a#--args=}; do drop "$f" key "${x%%=*}"; done
+					printf '%s\n%s\n' "$kernel" "$(sed -n 2p "$f") ${a#--args=}" \
+						| sed '2s/^ //' > "$f.t"
+					mv "$f.t" "$f"
+					;;
+				--remove-args=*) for x in ${a#--remove-args=}; do drop "$f" value "$x"; done ;;
+				esac
+			done
 		done
 		SH
 		chmod 755 "$D/bin/grubby"
 		PATH="$D/bin:$PATH"
-		GRUBBY_ARGS="$D/args"
-		export GRUBBY_ARGS
+		GRUBBY_DIR="$D/entries"
+		export GRUBBY_DIR
+		entry() { printf '%s\n%s\n' "$2" "$3" > "$GRUBBY_DIR/$1"; }
+		args() { sed -n 2p "$GRUBBY_DIR/$1"; }
 
 		"""#
 
@@ -66,7 +84,8 @@ struct GuestScriptKernelConsoleTests {
 				BOOTLOADER=grubby
 				CONSOLE_DEVICES="hvc0 hvc1"
 				SELECTED_FEATURES=kernelconsole
-				entries() { printf '%s\n' "$1" > "$GRUBBY_ARGS"; }
+				K=/boot/vmlinuz-6.9
+				entries() { entry 0 "$K" "$1"; }
 				pointed() {
 					KC_DEVICE="$1"
 					kernelconsole_act
@@ -76,18 +95,18 @@ struct GuestScriptKernelConsoleTests {
 				}
 				uninstalled() {
 					kernelconsole_uninstall
-					echo "uninstalled: $(cat "$GRUBBY_ARGS")"
+					echo "uninstalled: $(args 0)"
 				}
 				entries "ro console=tty0 quiet"
 				pointed hvc0
-				echo "set: $(cat "$GRUBBY_ARGS")"
+				echo "set: $(args 0)"
 				uninstalled
 				echo ---
 				rm -f "$STATE_FILE"
 				ST_LEDGER=""
 				entries "ro console=ttyS0,115200 console=tty0 quiet"
 				pointed hvc0
-				echo "set: $(cat "$GRUBBY_ARGS")"
+				echo "set: $(args 0)"
 				uninstalled
 				echo ---
 				rm -f "$STATE_FILE"
@@ -96,7 +115,7 @@ struct GuestScriptKernelConsoleTests {
 				entries "ro console=tty0 quiet"
 				pointed hvc0 >/dev/null
 				pointed hvc1 >/dev/null
-				echo "re-pointed: $(cat "$GRUBBY_ARGS")"
+				echo "re-pointed: $(args 0)"
 				uninstalled
 				echo ---
 				entries "ro quiet console=hvc0 console=tty0"
@@ -108,7 +127,7 @@ struct GuestScriptKernelConsoleTests {
 				} > "$STATE_FILE"
 				read_state
 				kernelconsole_uninstall
-				echo "v7 record: $(cat "$GRUBBY_ARGS")"
+				echo "v7 record: $(args 0)"
 				"""#, under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
 			#expect(r.out == """
@@ -122,7 +141,7 @@ struct GuestScriptKernelConsoleTests {
 				puts it back.
 				   Rollback: grubby --update-kernel=ALL --remove-args='console=hvc0'
 				set: ro quiet console=hvc0 console=tty0
-				[ok] put back console=ttyS0,115200 console=tty0 in the boot entries
+				[ok] put back console=ttyS0,115200 in the boot entry for /boot/vmlinuz-6.9
 				uninstalled: ro quiet console=ttyS0,115200 console=tty0
 				---
 				re-pointed: ro quiet console=hvc1 console=tty0
@@ -131,6 +150,48 @@ struct GuestScriptKernelConsoleTests {
 				   console=tty0 stays in the boot entries - no record says Machman added it.
 				   Remove it: grubby --update-kernel=ALL --remove-args='console=tty0'
 				v7 record: ro quiet console=tty0
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
+	// S60: the restore cleared every console= argument the entries held at uninstall and put
+	// the pre-setup list into every entry. Now each entry gets back only what it lost, and
+	// only while its console= arguments are its old ones: one the user added since stays and
+	// the lost one is named (the last console= is /dev/console, so the order is theirs). An
+	// entry that never had the list (a rescue entry) gains nothing and loses what setup put
+	// in it; one made since (a new kernel copying the options) loses the device argument.
+	@Test("S60: the uninstall restores per entry and keeps a console= added since setup")
+	func uninstallRestoresEachEntryOnItsOwn() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(
+				GuestScriptStateTests.stateHere + Self.grubby + #"""
+				UI_COLS=1000
+				OS=Linux
+				BOOTLOADER=grubby
+				CONSOLE_DEVICES="hvc0 hvc1"
+				SELECTED_FEATURES=kernelconsole
+				entry 0 /boot/vmlinuz-6.9 "ro console=ttyS0,115200 quiet"
+				entry 1 /boot/vmlinuz-0-rescue "ro quiet"
+				KC_DEVICE=hvc0
+				kernelconsole_act >/dev/null
+				write_state kernelconsole
+				read_state
+				LEDGER_DONE=""
+				grubby --update-kernel=/boot/vmlinuz-6.9 --args=console=ttyAMA0
+				entry 2 /boot/vmlinuz-7.0 "ro quiet console=hvc0 console=tty0"
+				kernelconsole_uninstall
+				for n in 0 1 2; do echo "$n: $(args "$n")"; done
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				   console=ttyS0,115200 stays out of the boot entry for /boot/vmlinuz-6.9 - it \
+				has console arguments set since, and the last console= is /dev/console.
+				   Add it back where it belongs: grubby --update-kernel=/boot/vmlinuz-6.9 \
+				--args='console=ttyS0,115200'
+				0: ro quiet console=ttyAMA0
+				1: ro quiet
+				2: ro quiet console=tty0
 
 				""", "\(shell): \(r.out)")
 		}
