@@ -25,6 +25,12 @@ public final class MenuBarModel: ObservableObject {
 	// Live macOS install phases by VM: an install's start emits no listChanged (P23).
 	@Published private(set) var installPhases: [String: InstallPhase.Kind] = [:]
 	private var eventTask: Task<Void, Never>?
+	// One list fetch at a time, and at most one more after it (V16), as the desktop's VMStore
+	// does: a start's burst of listChanged costs two fetches, not one each, queued behind
+	// each other. A state that changes while a fetch is out is laid over its list.
+	private var reloading: Task<Void, Never>?
+	private var reloadPending = false
+	private var patchedDuringFetch: [String: VMState]?
 	// Asks the user, a second time, whether to end a VM's process (C9). A seam: tests
 	// answer it; the agent shows the alert in front, never modal inside a main-actor job.
 	public var confirmEndProcess: @MainActor (EndProcessPrompt) async -> Bool = { prompt in
@@ -70,9 +76,13 @@ public final class MenuBarModel: ObservableObject {
 				case .stateChanged(let name, let state):
 					if let index = self.vms.firstIndex(where: { $0.name == name }) {
 						self.vms[index].state = state
+						if self.patchedDuringFetch != nil {
+							self.patchedDuringFetch?[name] = state
+							self.reloadPending = true   // the next fetch reads it again
+						}
 					}
 				case .listChanged:
-					await self.reload()
+					self.requestReload()
 				case .installPhaseChanged(let name, let phase):
 					// Progress ticks twice a second; only a new kind republishes.
 					if self.installPhases[name] != phase.kind {
@@ -91,8 +101,32 @@ public final class MenuBarModel: ObservableObject {
 	}
 
 	func reload() async {
-		if let list = try? await api.listVMs() {
-			vms = list
+		patchedDuringFetch = [:]
+		let fetched = try? await api.listVMs()
+		let patched = patchedDuringFetch ?? [:]
+		patchedDuringFetch = nil
+		guard var list = fetched else { return }
+		for (name, state) in patched {
+			if let index = list.firstIndex(where: { $0.name == name }) {
+				list[index].state = state
+			}
+		}
+		vms = list
+	}
+
+	// Event-driven refreshes: never awaited, so the event loop keeps patching rows meanwhile.
+	func requestReload() {
+		guard reloading == nil else {
+			reloadPending = true
+			return
+		}
+		reloading = Task { [weak self] in
+			repeat {
+				guard let self else { return }
+				self.reloadPending = false
+				await self.reload()
+			} while self?.reloadPending == true
+			self?.reloading = nil
 		}
 	}
 

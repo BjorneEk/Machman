@@ -211,4 +211,54 @@ struct MenuBarModelTests {
 		model.showVMsInFinder()
 		#expect(opened == [MachmanPaths.dataDir()])
 	}
+
+	@Test("V16: a burst of listChanged costs at most two more lists")
+	func aBurstOfListChangesIsCoalesced() async throws {
+		let stub = StubMachman()
+		stub.vms["Debian"] = Samples.linux("Debian")
+		let model = MenuBarModel(api: stub)
+		model.begin()
+		#expect(await eventually { model.vms.count == 1 })
+		var release: CheckedContinuation<Void, Never>?
+		stub.pause = { name in
+			guard name == "listVMs" else { return }
+			await withCheckedContinuation { release = $0 }
+		}
+		for _ in 0..<5 { stub.emit(.listChanged) }
+		// Events are read in order: once this one shows on the row, the menu has read the whole
+		// burst while the first list was still out.
+		stub.emit(.stateChanged(vm: "Debian", state: .starting))
+		#expect(await eventually { release != nil && model.vms.first?.state == .starting })
+		stub.pause = nil
+		stub.vms["Alpine"] = Samples.linux("Alpine")
+		release?.resume()
+		#expect(await eventually { model.vms.map(\.name) == ["Alpine", "Debian"] })
+		try await Task.sleep(for: .milliseconds(100))
+		// The first list, the one the burst found in flight, and one after it.
+		#expect(stub.calls.filter { $0 == "listVMs" }.count <= 3, "\(stub.calls)")
+	}
+
+	@Test("V16: a state change during a list stays over that list")
+	func aStateChangeDuringAListStays() async throws {
+		let stub = StubMachman()
+		stub.vms["Debian"] = Samples.linux("Debian")
+		let model = MenuBarModel(api: stub)
+		model.begin()
+		#expect(await eventually { model.vms.count == 1 })
+		var release: CheckedContinuation<Void, Never>?
+		stub.pause = { name in
+			guard name == "listVMs" else { return }
+			await withCheckedContinuation { release = $0 }
+		}
+		stub.emit(.listChanged)
+		#expect(await eventually { release != nil })   // that list carries Debian stopped
+		stub.pause = nil
+		stub.vms["Debian"]?.state = .running
+		stub.emit(.stateChanged(vm: "Debian", state: .running))
+		// The menu patches the row at once, not after the list in flight.
+		#expect(await eventually { model.vms.first?.state == .running })
+		release?.resume()
+		try await Task.sleep(for: .milliseconds(100))
+		#expect(model.vms.first?.state == .running)
+	}
 }
