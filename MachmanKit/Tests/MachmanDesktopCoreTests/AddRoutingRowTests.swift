@@ -59,7 +59,7 @@ struct AddRoutingRowTests {
 		#expect(pending.urls == [file])
 		#expect(pending.title == "Add \u{201C}debian.img\u{201D}?")
 		#expect(h.viewModel.isDiskAddPresented)
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(addsNothing(h), "\(h.stub.calls)")
 	}
 
@@ -123,7 +123,7 @@ struct AddRoutingRowTests {
 		#expect(preview.adds == [image])
 		AddFlows.add(preview.adds, to: .disks, vm: "Alpine", viewModel: h.viewModel)
 		#expect(h.viewModel.pendingDiskAdd?.urls == [image])
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("addMount"), "\(h.stub.calls)")
 	}
 

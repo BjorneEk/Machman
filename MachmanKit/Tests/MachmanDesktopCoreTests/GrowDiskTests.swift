@@ -83,7 +83,8 @@ struct GrowDiskTests {
 		let unanswered = try #require(stalled.viewModel.vms.first)
 		#expect(!stalled.viewModel.submitGrowDisk(
 			unanswered, diskID: "storage:system", text: "64"))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
+		#expect(await stalled.settled())
 		#expect(!h.stub.calls.contains("resizeDisk"))
 		#expect(!stalled.stub.calls.contains("resizeDisk"))
 	}

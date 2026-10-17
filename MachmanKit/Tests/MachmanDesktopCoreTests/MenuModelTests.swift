@@ -158,7 +158,7 @@ struct MenuModelTests {
 		#expect(await eventually {
 			h.viewModel.pendingStop?.title == "Force stop \u{201C}Debian\u{201D}?"
 		})
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("stop"))
 	}
 
@@ -235,7 +235,7 @@ struct MenuModelTests {
 		canvas.split(.terminal(console))
 		h.canvases.setCanvas(canvas, for: "Debian")
 		let menu = menus(h)
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await settled { menu.facts })
 		var publishes = 0
 		let watch = menu.objectWillChange.sink { publishes += 1 }
 		var op = Samples.copyOperation()
@@ -247,7 +247,7 @@ struct MenuModelTests {
 		canvas.setFraction(0.3, at: 0)
 		h.canvases.setCanvas(canvas, for: "Debian")
 		h.viewModel.pushToast(symbol: MachmanSymbols.start, message: "Debian started")
-		try await Task.sleep(for: .milliseconds(100))
+		#expect(await settled { publishes })
 		#expect(publishes == 0)
 		h.viewModel.select(name: "Alpine")
 		#expect(await eventually { publishes > 0 })

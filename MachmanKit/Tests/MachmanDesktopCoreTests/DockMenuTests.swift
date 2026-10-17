@@ -36,7 +36,7 @@ struct DockMenuTests {
 		#expect(item?.title == "Start Sequoia")
 		#expect(item?.enabled == false)
 		h.viewModel.performDockItem(vm: "Sequoia")
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(h.stub.starts.isEmpty)
 	}
 

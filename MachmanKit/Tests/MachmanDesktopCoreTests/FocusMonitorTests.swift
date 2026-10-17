@@ -34,7 +34,7 @@ struct FocusMonitorTests {
 		let probe = FocusProbe()
 		let center = NotificationCenter()
 		let watcher = monitor(probe, center)
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settled { probe.reports })
 		#expect(probe.reports == [false])
 		withExtendedLifetime(watcher) {}
 	}
@@ -47,11 +47,11 @@ struct FocusMonitorTests {
 		center.post(name: Self.name, object: nil)
 		center.post(name: Self.name, object: nil)
 		#expect(await eventually(timeout: .seconds(5)) { probe.reports == [false, true] })
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settled { probe.reports })
 		#expect(probe.reports == [false, true])
 		// No change, no report.
 		center.post(name: Self.name, object: nil)
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settled { probe.reports })
 		#expect(probe.reports == [false, true])
 		withExtendedLifetime(watcher) {}
 	}
@@ -66,7 +66,7 @@ struct FocusMonitorTests {
 		#expect(released == nil)
 		probe.focused = true
 		center.post(name: Self.name, object: nil)
-		try? await Task.sleep(for: .milliseconds(100))
+		#expect(await settled { probe.reports })
 		#expect(probe.reports == [false])
 	}
 }

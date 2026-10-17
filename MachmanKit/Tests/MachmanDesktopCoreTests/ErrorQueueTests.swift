@@ -23,9 +23,11 @@ struct ErrorQueueTests {
 		let h = await DesktopHarness.make()
 		h.viewModel.present(message: "disk busy", while: "Removing a disk")
 		h.viewModel.present(message: "disk busy", while: "Removing a disk")
+		h.viewModel.present(message: "next", while: "Doing B")
 		h.viewModel.isErrorPresented = false
-		try await Task.sleep(for: .milliseconds(600))
-		#expect(h.viewModel.presentedError == nil)
+		// The repeat never queued: the alert after the first is the other failure — an outcome
+		// to wait for, not a fixed sleep past the re-present delay (Q34).
+		#expect(await eventually { h.viewModel.presentedError?.message == "next" })
 	}
 
 	@Test func twoFailedStartsBothSurface() async {

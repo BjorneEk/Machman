@@ -47,7 +47,7 @@ struct BatchEnableTests {
 		// Two kernel files send nothing, so nothing is offered.
 		h.viewModel.treeSelection = [.kernel(kernels[0]), .kernel(kernels[1])]
 		h.viewModel.setSelectionEnabled(false, vm: lab)
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("setEnabled"))
 	}
 }

@@ -42,7 +42,7 @@ struct ListReloadTests {
 		#expect(await eventually { gate.held == 1 })   // the one after it
 		gate.open()
 		#expect(await eventually { fetches(h) == before + 2 })
-		try await Task.sleep(for: .milliseconds(100))
+		#expect(await h.settled())
 		#expect(fetches(h) == before + 2)
 	}
 
@@ -101,7 +101,7 @@ struct ListReloadTests {
 		#expect(await eventually { h.store.vms.first { $0.name == "Debian" }?.state == .stopped })
 		gate.open()
 		#expect(await eventually { fetches(h) == before + 2 })   // the fetch and its follow-up
-		try await Task.sleep(for: .milliseconds(100))
+		#expect(await h.settled())
 		watch.cancel()
 		let stopped = try #require(states.firstIndex(of: .stopped))
 		#expect(!states[stopped...].contains(.running), "\(states)")
@@ -138,7 +138,7 @@ struct ListReloadTests {
 		#expect(await eventually { h.store.asked == asked + 1 })   // the store heard it
 		gate.open()
 		#expect(await eventually { fetches(h) == before + 2 })   // the fetch and its follow-up
-		try await Task.sleep(for: .milliseconds(100))
+		#expect(await h.settled())
 		watch.cancel()
 		#expect(states.first == .running, "\(states)")
 		#expect(!states.contains(.starting), "\(states)")

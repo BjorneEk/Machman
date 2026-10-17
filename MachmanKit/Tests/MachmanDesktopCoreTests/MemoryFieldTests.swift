@@ -60,7 +60,7 @@ struct MemoryFieldTests {
 		// Alpine already has 4 GB: nothing to send.
 		#expect(h.viewModel.submitMemory(alpine, text: "4")
 			== MemoryEntry(bytes: 4 << 30, note: nil))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("setHardware"))
 	}
 }

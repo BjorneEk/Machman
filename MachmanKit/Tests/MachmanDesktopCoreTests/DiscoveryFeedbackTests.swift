@@ -51,7 +51,7 @@ struct DiscoveryFeedbackTests {
 		let reloads = h.stub.calls.filter { $0 == "listVMs" }.count
 		await h.store.reload()
 		#expect(h.stub.calls.filter { $0 == "listVMs" }.count > reloads)
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(message(h) == "Looking for Debian’s address…")
 	}
 

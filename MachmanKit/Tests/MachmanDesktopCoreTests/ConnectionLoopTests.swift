@@ -20,6 +20,13 @@ import MachmanTestSupport
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct ConnectionLoopTests {
+	// For a check that nothing more happens: the loop's work has run out (Q34) — its attempts,
+	// launches, attaches and detaches held still.
+	private func settledLoop(_ connector: FakeConnector, _ recorder: LoopRecorder) async -> Bool {
+		await settled {
+			[connector.connects, connector.launches, recorder.attached.count, recorder.detaches]
+		}
+	}
 
 	// P1: before, every failed hello also reported a drop, and the drop restarted the loop
 	// with a fresh counter and another launch — forever. Now the bound holds even then.
@@ -33,7 +40,7 @@ struct ConnectionLoopTests {
 		#expect(loop.status.problemKind == .unreachable)
 		#expect(connector.connects == 5)
 		#expect(connector.launches == 1)
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settledLoop(connector, recorder))
 		#expect(connector.connects == 5)
 		#expect(recorder.attached.isEmpty)
 		#expect(recorder.detaches == 0)
@@ -79,7 +86,7 @@ struct ConnectionLoopTests {
 		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["B"] })
 		connector.resumeParked(with: a)
 		#expect(await eventually(timeout: .seconds(5)) { a.disconnects == 1 })
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settledLoop(connector, recorder))
 		#expect(recorder.attachedNames == ["B"])
 		#expect(recorder.detaches == 0)
 		#expect(loop.status == .connected(daemonVersion: "1.0.10"))
@@ -150,7 +157,7 @@ struct ConnectionLoopTests {
 		}
 		await recorder.stopped()
 		#expect(loop.status.problemKind == .unreachable)
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settledLoop(connector, recorder))
 		#expect(connector.connects == 3)
 		#expect(recorder.detaches == 3)
 		loop.retry()
@@ -241,7 +248,7 @@ struct ConnectionLoopTests {
 		#expect(await eventually(timeout: .seconds(5)) { recorder.attachedNames == ["A"] })
 		loop.start()
 		loop.retry()
-		try? await Task.sleep(for: .milliseconds(50))
+		#expect(await settledLoop(connector, recorder))
 		#expect(connector.connects == 1)
 		#expect(recorder.attachedNames == ["A"])
 	}

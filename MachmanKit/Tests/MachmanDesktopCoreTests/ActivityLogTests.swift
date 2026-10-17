@@ -61,7 +61,7 @@ struct ActivityLogTests {
 		#expect(await eventually {
 			h.stub.calls.filter { $0 == "operations" }.count > resyncs
 		})
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(h.viewModel.activity.entries.count == 1)
 		#expect(h.viewModel.activity.entries.first?.detail == "Canceled")
 	}
