@@ -68,9 +68,9 @@ console_login_state() {
 # Is a matching line inside OUR marker block? <file> <awk ERE>
 console_line_in_block() {
 	[ -f "$1" ] || return 1
-	awk -v re="$2" -v m="$MARKER" '
-		$0 == "# BEGIN " m { inb = 1; next }
-		$0 == "# END " m { inb = 0; next }
+	awk -v re="$2" -v m="$MARKER" -v a="$ADOPT_FROM" '
+		$0 == "# BEGIN " m || (a != "" && $0 == "# BEGIN " a) { inb = 1; next }
+		$0 == "# END " m || (a != "" && $0 == "# END " a) { inb = 0; next }
 		inb && $0 ~ re { found = 1 }
 		END { exit found ? 0 : 1 }
 	' "$1"

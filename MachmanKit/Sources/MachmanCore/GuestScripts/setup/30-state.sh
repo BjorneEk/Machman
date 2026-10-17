@@ -25,6 +25,7 @@ ST_ERR_LINES=""            # it
 ST_NOTE_LINES=""
 ST_LEDGER=""               # earlier runs' created-vs-found entries, one per line
 CLONED=0                   # the state was another VM's: this guest is a copy of it
+ADOPT_FROM=""              # …and its marker, whose entries the copy takes over (adopt_act)
 
 state_paths() {
 	case "$OS_FAMILY" in
@@ -75,26 +76,28 @@ read_state() {
 		fi
 		return 0
 	fi
-	# A cloned guest carries the source VM's state; its records describe artifacts
-	# tagged with the source's marker, which the ownership probes treat as foreign.
-	# Start fresh instead of trusting them. (Pre-marker v3 states pass as ours.) What
-	# carries no marker is known only from the record, so that much stays, and the copy's
-	# first state carries it on: the systemd units and runit links its source's runs
-	# enabled, and the kld_list entries they added.
+	# A copy's disk carries its source VM's state, under the source's marker. The copy takes
+	# over what its source's runs did on this disk (S61): the records the uninstall works
+	# from — the ledger, logins, kernel console, automounts, kld_list entries — carry on into
+	# the copy's first state, and the source's marker-tagged entries become this VM's at its
+	# first run (adopt_act). The run history (configured features, last outcome) is the
+	# source's, so the copy starts as new. (Pre-marker v3 states pass as ours.)
+	ADOPT_FROM=""
 	_rs_marker="$(state_get MARKER)"
 	if [ -n "$_rs_marker" ] && [ "$_rs_marker" != "$MARKER" ]; then
 		note "this guest looks cloned from another Machman VM — treating it as new"
 		CLONED=1
-		case "$INIT" in
-		systemd|runit) ST_CONSOLE_LOGINS="$(state_get CONSOLE_LOGINS)" ;;
-		esac
-		state_distrust_logins "$(state_get SCRIPT_VERSION)"
-		ST_KLD_ADDED="$(state_get KLD_ADDED)"
-		return 0
+		ADOPT_FROM="$_rs_marker"
+	else
+		HAD_STATE=1
+		ST_SCRIPT_VERSION="$(state_get SCRIPT_VERSION)"
+		ST_CONFIGURED="$(state_get CONFIGURED)"
+		ST_LAST_STATUS="$(state_get LAST_STATUS)"
+		ST_LAST_NOTE="$(state_get LAST_NOTE)"
+		ST_LAST_FAILED_STEPS="$(state_get LAST_FAILED_STEPS)"
+		ST_ERR_LINES="$(state_list ERROR_)"
+		ST_NOTE_LINES="$(state_list NOTE_)"
 	fi
-	HAD_STATE=1
-	ST_SCRIPT_VERSION="$(state_get SCRIPT_VERSION)"
-	ST_CONFIGURED="$(state_get CONFIGURED)"
 	ST_CONSOLE_LOGINS="$(state_get CONSOLE_LOGINS)"
 	ST_KERNEL_CONSOLE="$(state_get KERNEL_CONSOLE)"
 	ST_KERNEL_CONSOLE_METHOD="$(state_get KERNEL_CONSOLE_METHOD)"
@@ -106,13 +109,9 @@ read_state() {
 	esac
 	ST_MOUNTPOINT="$(state_get MOUNTPOINT)"
 	ST_KLD_ADDED="$(state_get KLD_ADDED)"
-	ST_LAST_STATUS="$(state_get LAST_STATUS)"
-	ST_LAST_NOTE="$(state_get LAST_NOTE)"
-	ST_LAST_FAILED_STEPS="$(state_get LAST_FAILED_STEPS)"
-	ST_ERR_LINES="$(state_list ERROR_)"
-	ST_NOTE_LINES="$(state_list NOTE_)"
 	ST_LEDGER="$(state_list LEDGER_)"
-	state_distrust_logins "$ST_SCRIPT_VERSION"
+	state_distrust_logins "$(state_get SCRIPT_VERSION)"
+	[ -z "$ADOPT_FROM" ] || ledger_note adopted "$ADOPT_FROM"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
 	# version writing state at all (v2 left only marker-tagged artifacts), so there is
@@ -537,6 +536,65 @@ identity_reload_sshd() {
 	inittab|sysv) run "reloading sshd" service "$SSHD_UNIT" reload ;;
 	*) return 1 ;;
 	esac
+}
+
+# ------------------------------------------------------ a copy's source's entries ----
+
+# A copy takes over its source VM's Machman entries on this disk (S61): a line or block
+# keyed to the source's marker becomes this VM's, so the copy's runs keep it and its
+# uninstall removes it — one rule for marked entries and fixed-name files alike, never two.
+# The keys stay keyed to the source: its Mac key in authorized_keys is the source's own,
+# swept by the copy's SSH run, and the copy makes its own guest -> host keypair; the
+# uninstall removes the source's of both (the ledger's adopted entries). The files that can
+# carry a marker, one per line:
+adopt_files() {
+	printf '%s\n' /etc/fstab "$RC_LOCAL" /etc/inittab /etc/ttys "$SYSCTL_CONF" \
+		/etc/default/grub /etc/nixos/configuration.nix
+	for _af_run in "$RUNIT_SV_DIR"/machman-agetty-*/run; do
+		[ -f "$_af_run" ] && printf '%s\n' "$_af_run"
+	done
+	for _af_u in $(ssh_touched_users); do
+		_af_h="$(home_of "$_af_u")"
+		[ -n "$_af_h" ] && printf '%s\n' "$_af_h/.ssh/config"
+	done
+	return 0
+}
+
+adopt_plan() {
+	[ -n "$ADOPT_FROM" ] || return 0
+	plan_line "copy" "takes over its source VM's Machman entries"
+}
+
+# The act, first thing in a copy's run and in its uninstall: every source-keyed entry in
+# those files re-keyed to this VM's marker, each file through rewrite_file.
+adopt_act() {
+	[ -n "$ADOPT_FROM" ] && [ "$DRY_RUN" -eq 0 ] || return 0
+	_aa_done=0
+	while IFS= read -r _aa_f; do
+		regular_file "$_aa_f" && grep -qF -- "$ADOPT_FROM" "$_aa_f" 2>/dev/null || continue
+		if rewrite_file "$_aa_f" sed "s/$ADOPT_FROM/$MARKER/g"; then
+			_aa_done=$((_aa_done + 1))
+		else
+			warn "$R_ERROR — remove the lines tagged $ADOPT_FROM there yourself."
+		fi
+	done <<EOF
+$(adopt_files)
+EOF
+	[ "$_aa_done" -eq 0 ] || ok "took over the source VM's Machman entries"
+	return 0
+}
+
+# has_our_marker <file> — the file holds this VM's marker, or the adopted source's (its run
+# re-keys them, but the decisions before it already count them as this VM's).
+has_our_marker() {
+	grep -qF -- "$MARKER" "$1" 2>/dev/null && return 0
+	[ -n "$ADOPT_FROM" ] && grep -qF -- "$ADOPT_FROM" "$1" 2>/dev/null
+}
+
+# our_block_in <file> — a block of this VM's (or the adopted source's) begins there.
+our_block_in() {
+	grep -q "^# BEGIN $MARKER" "$1" 2>/dev/null && return 0
+	[ -n "$ADOPT_FROM" ] && grep -q "^# BEGIN $ADOPT_FROM" "$1" 2>/dev/null
 }
 
 # ------------------------------------------------------------------------ mounts.list ----

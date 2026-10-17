@@ -16,16 +16,15 @@ vfsauto_detect() {
 }
 
 vfsauto_configured() {
-	grep -q "^# BEGIN $MARKER" /etc/fstab 2>/dev/null \
-		&& grep -q " $SHARE_ROOT " /etc/fstab 2>/dev/null
+	our_block_in /etc/fstab && grep -q " $SHARE_ROOT " /etc/fstab 2>/dev/null
 }
 
 # A share mount in fstab that is NOT inside our marker block: someone else's entry.
 vfsauto_foreign() {
 	[ -f /etc/fstab ] || return 1
-	awk -v m="$MARKER" -v tag="$SHARE_TAG" -v root="$SHARE_ROOT" '
-		$0 == "# BEGIN " m { inb = 1; next }
-		$0 == "# END " m { inb = 0; next }
+	awk -v m="$MARKER" -v a="$ADOPT_FROM" -v tag="$SHARE_TAG" -v root="$SHARE_ROOT" '
+		$0 == "# BEGIN " m || (a != "" && $0 == "# BEGIN " a) { inb = 1; next }
+		$0 == "# END " m || (a != "" && $0 == "# END " a) { inb = 0; next }
 		inb || /^[[:space:]]*#/ || NF < 2 { next }
 		$1 == tag || $2 == root { found = 1 }
 		END { exit found ? 0 : 1 }

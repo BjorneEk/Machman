@@ -4,7 +4,7 @@
 # CHECKS: CLONE_NOTE CLONE_SWEPT CLONE_REVERSE REPORT_SSH SSHFS_SPACE SSHFS_BOOT_OPTS
 # CHECKS: IDEMPOTENT_ALPINE HOOK_INSTALLED FSTAB_VERIFY_ALPINE REPORT_ONLY_CLEAN HOOK_REMOVED
 # CHECKS: FSTAB_CLEAN STATE_REMOVED_ALPINE BOOT_HOOK_LOCAL LOOKALIKE_KEPT BOOT_MODE
-# CHECKS: OPENRC_LOCAL_REVERTED
+# CHECKS: OPENRC_LOCAL_REVERTED CLONE_ADOPTED
 . /mnt/machman/share/regress/lib.sh
 # Machman markers are always 12 hex chars — the sweep matches exactly that shape.
 OLD=machman-0ddc105e9999
@@ -21,11 +21,21 @@ printf 'ssh-ed25519 AAAA_OLDREV %s-reverse\n' "$OLD" > /home/reg/.ssh/machman_ho
 touch /home/reg/.ssh/machman_host
 printf "STATE_VERSION=1\nSCRIPT_VERSION=3\nMARKER='%s'\nCONFIGURED='ssh'\n" "$OLD" \
 	> /var/lib/machman/state.env
+# S61: the source's fstab block — the copy takes it over (one share line, never two), and
+# its uninstall removes it.
+printf '# BEGIN %s\n%s\n# END %s\n' "$OLD" "host-share /mnt/machman/oldshare virtiofs rw 0 0" \
+	"$OLD" >> /etc/fstab
 
 $SH "$S" -y --user reg --two-way --automount-sshfs --no-install --no-service \
 	>/tmp/run1.log 2>&1
 if grep -q 'treating it as new' /tmp/run1.log; then R CLONE_NOTE pass; else
 	R CLONE_NOTE fail; fi
+if ! grep -q "$OLD" /etc/fstab && grep -q "^# BEGIN $NEW\$" /etc/fstab \
+	&& [ "$(grep -c '^host-share ' /etc/fstab)" -le 1 ]; then
+	R CLONE_ADOPTED pass
+else
+	R CLONE_ADOPTED fail; cat /etc/fstab
+fi
 if [ "$(grep -c ' machman-' /home/reg/.ssh/authorized_keys)" = 1 ] \
 	&& grep -q "$NEW" /home/reg/.ssh/authorized_keys \
 	&& ! grep -q "$OLD" /home/reg/.ssh/authorized_keys \

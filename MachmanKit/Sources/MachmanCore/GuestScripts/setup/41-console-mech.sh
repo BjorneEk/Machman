@@ -76,7 +76,7 @@ console_act_inittab() {
 # The Machman-named service for <dev>, its run carrying this VM's marker.
 console_runit_own() {
 	regular_file "$RUNIT_SV_DIR/machman-agetty-$1/run" \
-		&& grep -qF "$MARKER" "$RUNIT_SV_DIR/machman-agetty-$1/run" 2>/dev/null
+		&& has_our_marker "$RUNIT_SV_DIR/machman-agetty-$1/run"
 }
 
 # An older Machman's own agetty-<dev>: a run FILE (Void's are links) it wrote for <dev>.

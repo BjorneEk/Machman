@@ -469,13 +469,16 @@ ssh_uninstall() {
 		_su_h="$(home_of "$_su_u")"
 		[ -n "$_su_h" ] || continue
 		_su_ak="$_su_h/.ssh/authorized_keys"
-		[ -f "$_su_ak" ] && grep -qF "$MARKER" "$_su_ak" 2>/dev/null || continue
-		# Owner and mode stay as the user left them.
-		if drop_lines "$_su_ak" "$MARKER"; then
-			ok "removed the Mac's key from $_su_u"
-		else
-			uninstall_kept
-		fi
+		# This VM's key, and a source's this copy took over (the copy's SSH run sweeps it,
+		# but the copy may never have run one). Owner and mode stay as the user left them.
+		for _su_m in "$MARKER" $(ledger_values adopted); do
+			[ -f "$_su_ak" ] && grep -qF "$_su_m" "$_su_ak" 2>/dev/null || continue
+			if drop_lines "$_su_ak" "$_su_m"; then
+				ok "removed the Mac's key from $_su_u"
+			else
+				uninstall_kept
+			fi
+		done
 	done
 	if [ "$OS_FAMILY" = nixos ] && [ -f /etc/nixos/configuration.nix ] \
 		&& grep -q "# $MARKER" /etc/nixos/configuration.nix; then

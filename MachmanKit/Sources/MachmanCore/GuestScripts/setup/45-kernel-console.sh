@@ -26,8 +26,10 @@ kernelconsole_detect() {
 # pending truth between the edit and the reboot that makes it active.
 kernelconsole_pending_device() {
 	[ -f /etc/default/grub ] || { printf ''; return 0; }
-	sed -n "s/.*console=\(hvc[0-9]*\) console=tty0\" # $MARKER\$/\1/p" \
-		/etc/default/grub | head -n 1
+	for _kpd_m in "$MARKER" ${ADOPT_FROM:+"$ADOPT_FROM"}; do
+		sed -n "s/.*console=\(hvc[0-9]*\) console=tty0\" # $_kpd_m\$/\1/p" \
+			/etc/default/grub | head -n 1
+	done | head -n 1
 }
 
 # active on <dev> | pending for <dev> | "" — resolved from the running kernel, then the

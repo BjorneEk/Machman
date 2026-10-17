@@ -391,6 +391,86 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// S61: a copy's state is its source's, so its uninstall removed its source's fixed-name
+	// files but left the blocks keyed to its source's marker — two rules, and Machman's
+	// entries outlived the uninstall. One rule now: the copy takes them over. Its run re-keys
+	// every source-keyed entry to its own marker and carries its source's records (the ledger
+	// here), so the uninstall's own-marker passes remove both kinds. Keys are never re-keyed
+	// (the copy's SSH run sweeps the source's Mac key and makes its own guest -> host key):
+	// the uninstall removes the source's by the ledger's adopted entry.
+	@Test("S61: a copy's uninstall removes its source's marked blocks and fixed-name files alike")
+	func aCopyTakesOverItsSourcesEntries() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				UI_COLS=1000
+				OS=Linux
+				SRC=machman-5a3cecafe000
+				RC_LOCAL="$D/rc.local"
+				SYSCTL_CONF="$D/sysctl.conf"
+				H="$D/home/.ssh"
+				mkdir -p "$STATE_DIR" "$H"
+				adopt_files() { printf '%s\n' "$D/fstab" "$RC_LOCAL" "$D/inittab" "$SYSCTL_CONF"; }
+				ssh_touched_users() { echo lab; }
+				home_of() { echo "$D/home"; }
+				block() { printf '# BEGIN %s\n%s\n# END %s\n' "$1" "$2" "$1"; }
+				block "$SRC" "host-share /mnt/machman/share virtiofs rw,nofail 0 0" > "$D/fstab"
+				{ echo '#!/bin/sh'; block "$SRC-report" "hook &"; } > "$RC_LOCAL"
+				chmod 755 "$RC_LOCAL"
+				{
+					echo "#hvc0::respawn:/sbin/getty 38400 hvc0 # $SRC-superseded"
+					block "$SRC" "hvc0::respawn:/sbin/agetty -L hvc0 115200 vt100"
+				} > "$D/inittab"
+				block "$SRC-usermount" "vfs.usermount=1" > "$SYSCTL_CONF"
+				printf 'ssh-ed25519 AAAA_MAC %s\nssh-ed25519 AAAA_MINE me@laptop\n' "$SRC" \
+					> "$H/authorized_keys"
+				printf 'ssh-ed25519 AAAA_REV %s-reverse\n' "$SRC" > "$H/machman_host.pub"
+				: > "$H/machman_host"
+				printf "SCRIPT_VERSION=7\nMARKER='%s'\nLEDGER_1='rc-local created'\n" "$SRC" \
+					> "$STATE_FILE"
+				read_state
+				adopt_plan
+				adopt_act
+				cat "$D/fstab" "$RC_LOCAL" "$D/inittab" "$SYSCTL_CONF" | grep -c "$SRC" || true
+				write_state ""
+				grep '^LEDGER_' "$STATE_FILE" | sed "s/$SRC/SRC/"
+				echo ---
+				LEDGER_DONE=""
+				read_state
+				strip_block "$D/fstab"
+				strip_block "$RC_LOCAL" "$MARKER-report"
+				strip_block "$D/inittab"
+				restore_superseded "$D/inittab"
+				strip_block "$SYSCTL_CONF" "$MARKER-usermount"
+				ssh_uninstall
+				rc_local_revert | sed "s|$D|D|g"
+				reverse_uninstall
+				echo "fstab: [$(cat "$D/fstab")]"
+				echo "sysctl.conf: [$(cat "$SYSCTL_CONF")]"
+				cat "$D/inittab" "$H/authorized_keys"
+				ls "$H"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				   this guest looks cloned from another Machman VM - treating it as new
+				  copy             takes over its source VM's Machman entries
+				[ok] took over the source VM's Machman entries
+				0
+				LEDGER_1='rc-local created'
+				LEDGER_2='adopted SRC'
+				---
+				[ok] removed the Mac's key from lab
+				[ok] removed /etc/rc.local (setup created it)
+				[ok] removed the guest -> host key from lab
+				fstab: []
+				sysctl.conf: []
+				hvc0::respawn:/sbin/getty 38400 hvc0
+				ssh-ed25519 AAAA_MINE me@laptop
+				authorized_keys
+
+				""", "\(shell): \(r.out)")
+		}
+	}
+
 	// Review F8 (S55, script half): a copy keeps its source's SSH host keys, so a client
 	// that mixed the two VMs up (an address, a client id) logged into the source with no
 	// warning. A copy's run makes each host key anew (a link stays, named, and a type

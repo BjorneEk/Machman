@@ -131,6 +131,8 @@ if [ "$UNINSTALL" -eq 1 ]; then
 		acting "would remove every line, file and service carrying $MARKER"
 		exit 0
 	fi
+	# A copy's uninstall removes what its source's runs did on this disk too.
+	adopt_act
 	for _mm_f in $FEATURES; do
 		"${_mm_f}_uninstall"
 	done
@@ -255,6 +257,7 @@ say ""
 plan_line "guest" "${OS_ID}${OS_VERSION:+ $OS_VERSION} ($OS_FAMILY), $INIT init${PM_NAME:+, $PM_NAME}"
 plan_line "payload" "$PAYLOAD_DIR (over $TRANSPORT)"
 identity_plan
+adopt_plan
 for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_plan"
 done
@@ -307,7 +310,9 @@ say ""
 
 # ------------------------------------------------------------------------------- act ----
 
-# A copy gets an identity of its own first (it takes it up at the next boot).
+# A copy takes over its source's entries and gets an identity of its own first (it takes
+# that up at the next boot).
+adopt_act
 identity_act
 for _mm_f in $FEATURES; do
 	feature_selected "$_mm_f" && "${_mm_f}_act"

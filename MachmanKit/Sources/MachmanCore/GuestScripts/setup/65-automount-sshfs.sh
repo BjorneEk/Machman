@@ -40,8 +40,7 @@ sshfsauto_menu_default() {
 
 sshfsauto_configured() {
 	[ -n "$ST_AUTOMOUNT_SSHFS" ] \
-		|| { grep -q "^# BEGIN $MARKER" /etc/fstab 2>/dev/null \
-			&& grep -q "fuse.sshfs" /etc/fstab 2>/dev/null; }
+		|| { our_block_in /etc/fstab && grep -q "fuse.sshfs" /etc/fstab 2>/dev/null; }
 }
 
 # "name<TAB>note" lines (the menus' format); the name half may itself carry spaces, so
