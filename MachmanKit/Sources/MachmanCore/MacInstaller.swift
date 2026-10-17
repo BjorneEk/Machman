@@ -85,6 +85,16 @@ final class MacInstaller {
 		self.config = config
 	}
 
+	// The downloaded image's last move, into the VM folder (D33): a rename on the library's
+	// own volume, a ~13 GB copy onto one elsewhere (the MachmanDataDir override). A seam for
+	// tests; download(from:to:) runs it off the main actor.
+	var placeDownload: @Sendable (_ holding: URL, _ local: URL) throws -> Void = { holding, local in
+		if FileManager.default.fileExists(atPath: local.path) {
+			try FileManager.default.removeItem(at: local)
+		}
+		try FileManager.default.moveItem(at: holding, to: local)
+	}
+
 	func install(source: Source) async throws {
 		// An install replaces the boot mode, so never one a newer Machman wrote (C11), and it
 		// boots the VM, so never with a disk one added still enabled (D38).
@@ -321,8 +331,9 @@ final class MacInstaller {
 
 	// Downloads with a task whose Progress is surfaced through onDownloadProgress. The system
 	// deletes the downloaded temp file when the completion handler returns, so it is moved to a
-	// holding location inside the handler.
-	private func download(from remote: URL, to local: URL) async throws {
+	// holding location inside the handler (the same volume: a rename). The last move, into the
+	// VM folder, runs detached — never on the main actor, which answers every client (D33).
+	func download(from remote: URL, to local: URL) async throws {
 		try throwIfCancelled()   // the index or Apple's lookup may have taken a while
 		let holding: URL = try await withCheckedThrowingContinuation { continuation in
 			let task = URLSession.shared.downloadTask(with: remote) { url, response, error in
@@ -354,9 +365,7 @@ final class MacInstaller {
 		}
 		// If the final move fails, don't leak the holding file (no-op after a successful move).
 		defer { try? FileManager.default.removeItem(at: holding) }
-		if FileManager.default.fileExists(atPath: local.path) {
-			try FileManager.default.removeItem(at: local)
-		}
-		try FileManager.default.moveItem(at: holding, to: local)
+		let place = placeDownload
+		try await Task.detached(priority: .utility) { try place(holding, local) }.value
 	}
 }
