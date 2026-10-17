@@ -67,6 +67,9 @@ watches every shard; on a terminal each shard has its own window in the block. E
 process runs the one built test bundle through SwiftPM's testing helper, never through
 `swift test`, whose build database a shard beside it can hold locked (shards once lost whole
 suites to it); without the helper the run falls back to one `swift test` process and says why.
+A planned suite that reports no test fails the run with a `✘ <file>.swift:<line>` line at its
+`@Suite` (its exit status and first error beside it), and a `--filter` that matches no test
+fails it too.
 
 `lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
 a sandbox (`/tmp/mml.<4-char token>`, suite `com.gustaffranzen.Machman.test-<token>`, a fake

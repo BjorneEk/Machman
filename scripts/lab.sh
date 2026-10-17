@@ -344,7 +344,8 @@ lab_run() {
 		echo "lab.sh: --jobs takes a number from 1 to 99, not '$jobs'" >&2
 		exit 64
 	fi
-	((selfcheck)) && jobs=1
+	# The self-check's passes run one shard unless --jobs says (its suite-that-runs-nothing pass).
+	((selfcheck)) && [[ -z "$jobs" ]] && jobs=1
 	[[ -z "$jobs" ]] && jobs="$(lab_jobs_auto "$tiers")"
 	if ((jobs > 1)) && ! lab_progress_ok; then
 		echo "lab: one shard (a parallel run needs python3 and Swift Testing's event stream)"
@@ -534,6 +535,7 @@ lab_run() {
 	echo "lab: audits: $breaches breaches, $warns warnings"
 	if ((teststatus)); then
 		if ((jobs > 1)); then echo "lab: tests FAILED ($ts)"
+		elif [[ "$ts" == 69 ]]; then echo "lab: tests FAILED (no test matched --filter '$filter')"
 		else echo "lab: tests FAILED (test exit $ts)"; fi
 	else
 		echo "lab: tests passed"
@@ -745,8 +747,10 @@ selfcheck)
 	lab_run harness 1 "$scriptfail"
 	;;
 run)
-	# The self-check's injected pass (lab_selfcheck_audits) needs no products, like --self-check.
-	if [[ -n "${MACHMAN_LAB_SELFCHECK_INJECT:-}" && "$(lab_tiers)" == harness ]]; then
+	# The self-check's injected passes (lab_selfcheck_audits, lab_selfcheck_runner) need no
+	# products, like --self-check.
+	if [[ -n "${MACHMAN_LAB_SELFCHECK_INJECT:-}${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}" &&
+		"$(lab_tiers)" == harness ]]; then
 		lab_run harness 1
 	fi
 	lab_run "$(lab_tiers)"

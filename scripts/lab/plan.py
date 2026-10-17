@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """lab.sh's planner for a parallel run: which suites run, in what order, which alone.
 
-  plan.py --list FILE [--filter REGEX] [--history FILE] [--exclusive FILE] --out DIR
+  plan.py --list FILE [--filter REGEX] [--history FILE] [--exclusive FILE] [--sources DIR]
+          --out DIR
   plan.py --record RUNS --history FILE
   plan.py --self-check
 
---list is `swift test list` output; the lab's tests are the MachmanLabTests.* ids, and with
---filter only those that `MachmanLabTests\\..*(REGEX)` finds, as lab.sh filters a serial run.
---out gets queue (the suites the workers share, longest first by --history; a suite with no
-history goes first, as if long), serial (the --exclusive suites, run alone after the queue),
-both as "<suite>\\t<swift test --filter regex>" lines, and planned (the test count).
+--list is the test ids, a line each (swift test list); the lab's tests are the
+MachmanLabTests.* ids, and with --filter only those that `MachmanLabTests\\..*(REGEX)` finds,
+as lab.sh filters a serial run. --out gets queue (the suites the workers share, longest first
+by --history; a suite with no history goes first, as if long), serial (the --exclusive suites,
+run alone after the queue), both as "<suite>\\t<--filter regex>" lines, planned (the test
+count) and suites ("<suite>\\t<file>.swift:<line>\\t<tests>" for every planned suite: where
+--sources declares it, so a suite that reports no test can fail at its place, Q27).
 --record merges a run's "<suite>\\t<shard>\\t<status>\\t<seconds>" lines into --history (a
-JSON object, suite -> seconds of its last run).
+JSON object, suite -> seconds of its last run); a suite that ran no tests (status past 1: no
+test matched, or the process died) leaves its time out.
 """
 import json
 import os
@@ -70,13 +74,59 @@ def plan(listing, pattern, history, alone):
     return queue, serial, len(ids)
 
 
-def write(out, queue, serial, planned):
+def counts(listing, pattern):
+    """suite -> how many of its tests the filter keeps."""
+    found = {}
+    for test in lab_ids(listing, pattern):
+        suite = test.split("/", 1)[0].split(".", 1)[1]
+        found[suite] = found.get(suite, 0) + 1
+    return found
+
+
+DECLARATION = re.compile(
+    r"^\s*(?:(?:public|internal|private|fileprivate|final)\s+)*(?:struct|class|enum|actor)\s+"
+    r"(\w+)\b")
+
+
+def place(suites, sources):
+    """suite -> "<file>.swift:<line>": the line of its @Suite attribute (where Swift Testing
+    places a suite, even one spread over several lines), else of its declaration, in a Swift
+    file under `sources`; a suite not found there is placed at "<suite>.swift:1", so a failure
+    line at it still reads as a source location."""
+    wanted, found = set(suites), {}
+    for top, _, files in os.walk(sources) if sources else ():
+        for name in sorted(files):
+            if not name.endswith(".swift"):
+                continue
+            lines = open(os.path.join(top, name), encoding="utf-8", errors="replace").readlines()
+            for i, line in enumerate(lines):
+                match = DECLARATION.match(line)
+                if not match or match.group(1) not in wanted or match.group(1) in found:
+                    continue
+                at = i
+                # Up through the attributes and their continuation lines, to a blank line, a
+                # comment or the end of what came before.
+                j = i - 1
+                while j >= 0 and lines[j].strip() and not lines[j].lstrip().startswith(
+                        ("//", "}", "import ")):
+                    if lines[j].lstrip().startswith("@Suite"):
+                        at = j
+                    j -= 1
+                found[match.group(1)] = "%s:%d" % (name, at + 1)
+    return {s: found.get(s, "%s.swift:1" % s) for s in suites}
+
+
+def write(out, queue, serial, planned, places=None, tests=None):
     os.makedirs(out, exist_ok=True)
     for name, rows in (("queue", queue), ("serial", serial)):
         with open(os.path.join(out, name), "w") as f:
             f.writelines("%s\t%s\n" % row for row in rows)
     with open(os.path.join(out, "planned"), "w") as f:
         f.write("%d\n" % planned)
+    places = places or place([s for s, _ in queue + serial], None)
+    with open(os.path.join(out, "suites"), "w") as f:
+        f.writelines("%s\t%s\t%d\n" % (s, places[s], (tests or {}).get(s, 0))
+                     for s, _ in queue + serial)
 
 
 def record(runs, history_path):
@@ -87,7 +137,7 @@ def record(runs, history_path):
         history = {}
     for line in open(runs):
         parts = line.rstrip("\n").split("\t")
-        if len(parts) == 4:
+        if len(parts) == 4 and parts[2] in ("0", "1"):
             try:
                 history[parts[0]] = float(parts[3])
             except ValueError:
@@ -140,6 +190,33 @@ def self_check():
         record(runs, hist)
         check("a run's suite times land in the history", json.load(open(hist)) == {
             "LongTests": 99.5})
+        with open(runs, "w") as f:
+            f.write("FailTests\t1\t1\t12\nGoneTests\t2\t69\t1\nDeadTests\t1\t134\t3\n")
+        record(runs, hist)
+        check("a suite that ran no tests leaves its time out of the history (Q27)",
+              json.load(open(hist)) == {"LongTests": 99.5, "FailTests": 12.0})
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "Engine"))
+        with open(os.path.join(d, "Engine", "LongTests.swift"), "w") as f:
+            f.write("import Testing\n\n// L2 — the long ones.\n@Suite(\n"
+                    "\t\"Long\", .serialized)\n@MainActor\nstruct LongTests {\n"
+                    "\t@Test func a() {}\n}\n")
+        with open(os.path.join(d, "Short.swift"), "w") as f:
+            f.write("// ShortTests: no attribute\nstruct ShortTests {\n}\n")
+        places = place(["LongTests", "ShortTests", "NewTests"], d)
+        check("a planned suite is placed at its @Suite line, else at its declaration (Q27)",
+              places.get("LongTests") == "LongTests.swift:4"
+              and places.get("ShortTests") == "Short.swift:2")
+        check("a suite the sources don't declare is placed at <suite>.swift:1 (Q27)",
+              places.get("NewTests") == "NewTests.swift:1")
+        queue, serial, planned = plan(listing, None, history, {"EngineStallTests"})
+        write(d, queue, serial, planned, place([s for s, _ in queue + serial], d),
+              counts(listing, None))
+        rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(d, "suites"))]
+        check("the plan lists every planned suite with its place and test count (Q27)",
+              ["LongTests", "LongTests.swift:4", "2"] in rows
+              and ["EngineStallTests", "EngineStallTests.swift:1", "1"] in rows
+              and len(rows) == 5)
     print("plan.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
 
@@ -161,9 +238,11 @@ def main(argv):
             history = json.load(f)
     except (OSError, ValueError):
         history = {}
-    queue, serial, planned = plan(open(arg("--list")).read(), arg("--filter"), history,
+    listing = open(arg("--list")).read()
+    queue, serial, planned = plan(listing, arg("--filter"), history,
                                   exclusive(arg("--exclusive")))
-    write(arg("--out"), queue, serial, planned)
+    write(arg("--out"), queue, serial, planned,
+          place([s for s, _ in queue + serial], arg("--sources")), counts(listing, arg("--filter")))
     return 0
 
 

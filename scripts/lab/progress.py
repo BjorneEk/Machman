@@ -4,6 +4,7 @@ transcripts, shown while the run goes. Tests are named by what they do: the "<id
 names start with is left out.
 
   progress.py --run ROOT [--level 0|1|2] [--plain] [--stop FILE] [--stall SECONDS]
+              [--shard ROOT … --planned N --suites FILE]
   progress.py --self-check
 
 On a terminal (cursor hidden) a block of fixed height sits at the bottom: the running test
@@ -19,8 +20,12 @@ running test, its step and the last console line.
            the harness's narrated waits)
   level 2  + the guest consoles, line by line
 
-Inputs (lab.sh's run dir ROOT): report/events.jsonl (swift test --event-stream-output-path,
-version 0), logs/unified.ndjson (log stream --style ndjson), transcripts/*.log, pids/*.pid.
+Inputs (lab.sh's run dir ROOT): report/events.jsonl (the test process's
+--event-stream-output-path, version 0), logs/unified.ndjson (log stream --style ndjson),
+transcripts/*.log, pids/*.pid. A parallel run (--shard, --planned) reads each shard's
+report/events/<suite>.jsonl; with --suites (plan.py's suites file) a planned suite that reported
+no test is a failure line at its place, with its exit status (ROOT's report/suite-runs.tsv) and
+the error its output (a shard's report/runs/<suite>.log) gave (Q27).
 Writes report/progress.log (level 2, plain, whatever --level is) and report/test-times.tsv.
 Stops when FILE exists and the inputs are drained; exit 0 when the run's summary came, 2 when
 it never did (the test process crashed or was killed).
@@ -245,7 +250,7 @@ class Lane:
 
 class Follower:
     def __init__(self, roots, level, out, log, stall=60.0, tty=False, size=None,
-                 planned=None):
+                 planned=None, suites=None):
         roots = [roots] if isinstance(roots, str) else list(roots)
         self.root, self.level, self.out, self.log, self.stall = roots[0], level, out, log, stall
         self.screen = Screen(out, "NO_COLOR" not in os.environ, size) if tty else None
@@ -266,6 +271,13 @@ class Follower:
         self.summary = None
         self.run_started = None
         self.printed = time.time()
+        self.reported = set()        # suites that reported a test (ended or skipped)
+        self.planned_suites = []     # (suite, place) of a parallel run's plan
+        if suites and os.path.exists(suites):
+            for row in open(suites):
+                parts = row.rstrip("\n").split("\t")
+                if len(parts) >= 2 and parts[0]:
+                    self.planned_suites.append((parts[0], parts[1]))
 
     # The test the lane being read runs, its step, its last console line and its window.
     current = property(lambda self: self.lane.current,
@@ -460,6 +472,8 @@ class Follower:
         test_id = payload.get("testID")
         messages = payload.get("messages", [])
         first = messages[0]["text"] if messages else ""
+        if kind in ("testEnded", "testSkipped") and test_id:
+            self.reported.add(test_id.split("/", 1)[0].split(".", 1)[-1])
         if kind == "runStarted" and self.parallel:
             self.run_started = self.run_started or when
         elif kind == "runStarted":
@@ -645,6 +659,28 @@ class Follower:
             self.screen.last = None
             self.screen.update([], [])
 
+    def why_empty(self, suite):
+        """Why a suite reported no test: its test process's exit status and the first error its
+        output gave (SwiftPM's "unable to attach DB" once lost whole suites, Q27)."""
+        status = None
+        runs = os.path.join(self.root, "report", "suite-runs.tsv")
+        if os.path.exists(runs):
+            for row in open(runs):
+                parts = row.rstrip("\n").split("\t")
+                if len(parts) == 4 and parts[0] == suite:
+                    status = parts[2]
+        why = "its test process left no exit status" if status is None else \
+            "test exit %s%s" % (status, " (no test matched its filter)" if status == "69" else "")
+        for lane in self.lanes:
+            log = os.path.join(lane.root, "report", "runs", suite + ".log")
+            if not os.path.exists(log):
+                continue
+            for line in open(log, errors="replace"):
+                match = re.search(r"(error: .*|MachmanTestGuard: .*|Fatal error: .*)", line)
+                if match:
+                    return "%s: %s" % (why, fit(match.group(1).strip(), 300))
+        return why
+
     def finish(self):
         now, out = time.time(), []
         unfinished = []
@@ -665,9 +701,17 @@ class Follower:
                            if not ended]
         self.lane = self.lanes[0]
         self.done = True
+        # Planned suites that reported no test: their process never got to one (Q27).
+        empty = [(s, at) for s, at in self.planned_suites if s not in self.reported]
+        unfinished = [s for s in unfinished if s not in {s for s, _ in empty}]
+        for suite, at in empty:
+            what = "%s: %s ran no tests" % (at, suite)
+            why = self.why_empty(suite)
+            out.append((now, 0, "✘ %s — %s" % (what, why), "result", {
+                "parts": ("✘", what, ""), "children": [("", why, [])]}))
         if self.parallel:
-            # One line for the whole run, as a serial run's swift test prints it.
-            failed_any = any(r[2] == "failed" for r in self.results) or unfinished
+            # One line for the whole run, as a serial run's test process prints it.
+            failed_any = any(r[2] == "failed" for r in self.results) or unfinished or empty
             ran = len(self.started) + sum(self.skipped.values())
             suites = len({test.split("/", 1)[0] for test in self.started}
                          | {r[0].split("/", 1)[0] for r in self.results})
@@ -712,13 +756,14 @@ class Follower:
 
 
 def follow(root, level, stop, stall=60.0, interval=0.5, out=None, tty=None, size=None,
-           shards=(), planned=None):
+           shards=(), planned=None, suites=None):
     out = out or sys.stdout
     if tty is None:
         tty = out.isatty() and os.environ.get("TERM", "dumb") != "dumb"
     os.makedirs(os.path.join(root, "report"), exist_ok=True)
     with open(os.path.join(root, "report", "progress.log"), "a", buffering=1) as log:
-        follower = Follower([root] + list(shards), level, out, log, stall, tty, size, planned)
+        follower = Follower([root] + list(shards), level, out, log, stall, tty, size, planned,
+                            suites)
         try:
             while True:
                 done = stop is not None and os.path.exists(stop)
@@ -1100,6 +1145,41 @@ def self_check():
               "lab: ShortTests ended without its summary" in text
               and "✘ the short one · did not finish" in text and status == 2)
 
+    # A planned suite that reported nothing: its process never got to a test (Q27).
+    with tempfile.TemporaryDirectory() as base:
+        now = time.time()
+        a, b = base + "/mml.aaaa", base + "/mml.bbbb"
+        a1 = "MachmanLabTests.LongTests/a1()/Long.swift:10:3"
+        write(a + "/report/events/LongTests.jsonl", [
+            {"kind": "test", "version": 0, "payload": {
+                "kind": "function", "id": a1, "name": "a1()", "displayName": "A1: the long one"}},
+            event("runStarted", now - 20), event("testStarted", now - 19, a1),
+            event("testEnded", now - 9, a1, [("pass", "ok")]),
+            event("runEnded", now - 8, messages=[("pass", "Test run with 1 test passed.")])])
+        write(b + "/report/runs/GoneTests.log", [
+            "Another instance of SwiftPM is already running, but this will be ignored since "
+            "`--ignore-lock` has been passederror: unable to attach DB: error: accessing build "
+            "database \"x/build.db\": database is locked",
+            "error: no tests found; create a target in the 'Tests' directory"])
+        os.makedirs(b + "/report/events", exist_ok=True)
+        write(a + "/report/suite-runs.tsv", ["LongTests\t0\t0\t11", "GoneTests\t1\t1\t6"])
+        write(base + "/suites", ["LongTests\tLong.swift:3\t1", "GoneTests\tGone.swift:12\t2"])
+        open(base + "/stop", "w").close()
+        plain = io.StringIO()
+        follow(a, 0, base + "/stop", interval=0.05, out=plain, tty=False, shards=[b],
+               planned=3, suites=base + "/suites")
+        text = plain.getvalue()
+        line = next((l for l in text.splitlines() if "GoneTests ran no tests" in l), "")
+        check("a planned suite with no result is a ✘ line at its place, saying why (Q27)",
+              "✘ Gone.swift:12: GoneTests ran no tests — test exit 1: error: unable to "
+              "attach DB" in line)
+        check("failcheck's issue pattern reads that line as Gone.swift:12 (Q27)", re.findall(
+            r"(?:recorded an issue at |[✘!] )([A-Za-z0-9_+]+\.swift):(\d+)", line)
+            == [("Gone.swift", "12")])
+        check("a run with a suite that reported nothing fails (Q27)",
+              "Test run with 1 test in 1 suite failed after" in text
+              and "LongTests ran no tests" not in text)
+
     # One row two suites run (one per guest OS), and a parameterized test failing with one
     # of its arguments: each line says which.
     with tempfile.TemporaryDirectory() as root:
@@ -1161,7 +1241,7 @@ def main(argv):
             shards.append(argv[i + 1])
             i += 2
             continue
-        if argv[i] in ("--run", "--level", "--stop", "--stall", "--planned") \
+        if argv[i] in ("--run", "--level", "--stop", "--stall", "--planned", "--suites") \
                 and i + 1 < len(argv):
             args[argv[i]] = argv[i + 1]
             i += 2
@@ -1176,7 +1256,7 @@ def main(argv):
         planned = int(args["--planned"]) if "--planned" in args else None
         return follow(args["--run"], int(args["--level"]), args.get("--stop"),
                       stall=float(args["--stall"]), tty=False if plain else None,
-                      shards=shards, planned=planned)
+                      shards=shards, planned=planned, suites=args.get("--suites"))
     except KeyboardInterrupt:
         return 130
 

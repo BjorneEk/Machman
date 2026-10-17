@@ -94,8 +94,8 @@ lab_queue_pop() {
 }
 
 # lab_worker <shard> <queue>: the shard's tests, one suite per test process (lab_test), from
-# <queue> until it is empty; each suite's shard, exit status and seconds go to
-# report/suite-runs.tsv.
+# <queue> until it is empty; each suite's output goes to report/runs/<suite>.log and the
+# shard's swift-test.log, its shard, exit status and seconds to report/suite-runs.tsv.
 lab_worker() {
 	set +e
 	local k="$1" q="$2" r line s f st t0
@@ -108,8 +108,9 @@ lab_worker() {
 		(
 			. "$r/shard.env"
 			lab_test "$r/report/events/$s.jsonl" "$f"
-		) >> "$r/report/swift-test.log" 2>&1
+		) > "$r/report/runs/$s.log" 2>&1
 		st=$?
+		cat "$r/report/runs/$s.log" >> "$r/report/swift-test.log"
 		printf '%s\t%s\t%s\t%s\n' "$s" "$k" "$st" "$((SECONDS - t0))" \
 			>> "$root/report/suite-runs.tsv"
 	done
@@ -145,7 +146,9 @@ lab_stop_follower() {
 
 # lab_plan: a parallel run's plan (report/plan/): the lab's tests listed in the first shard's
 # sandbox (the test guard wants one), the suites the filter keeps shared out longest first by
-# plan.py, the exclusive ones apart; jobs drops to the number of shared suites (1: serial).
+# plan.py, the exclusive ones apart, each placed at its declaration; jobs drops to the number of
+# shared suites (1: serial). lab.sh --self-check's injected pass adds a suite whose filter
+# matches no test (MACHMAN_LAB_SELFCHECK_EMPTY_SUITE).
 lab_plan() {
 	local plan="$root/report/plan" shared
 	mkdir -p "$plan"
@@ -157,7 +160,12 @@ lab_plan() {
 	fi
 	python3 "$repo/scripts/lab/plan.py" --list "$plan/list.txt" ${filter:+--filter "$filter"} \
 		--history "$MACHMAN_LAB_CACHE/suite-times.json" \
-		--exclusive "$repo/scripts/lab/exclusive-suites.txt" --out "$plan"
+		--exclusive "$repo/scripts/lab/exclusive-suites.txt" \
+		--sources "$pkg/Tests/MachmanLabTests" --out "$plan"
+	if [[ -n "${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}" ]]; then
+		printf '%s\t%s\n' Q27EmptySuite 'MachmanLabTests\.Q27EmptySuite/' >> "$plan/queue"
+		printf '%s\t%s\t%s\n' Q27EmptySuite Q27EmptySuite.swift:1 1 >> "$plan/suites"
+	fi
 	shared="$(wc -l < "$plan/queue" | tr -d ' ')"
 	((shared < jobs)) && jobs=$((shared > 1 ? shared : 1))
 	return 0
@@ -171,8 +179,11 @@ lab_run_shards() {
 	echo "lab: $(wc -l < "$plan/queue" | tr -d ' ') suites shared by $jobs shards," \
 		"$(wc -l < "$plan/serial" | tr -d ' ') alone after them"
 	: > "$root/report/suite-runs.tsv"
-	local follow=(--run "$root" --planned "$(cat "$plan/planned")" --level "$verbose")
-	for r in "$root" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}; do mkdir -p "$r/report/events"; done
+	local follow=(--run "$root" --planned "$(cat "$plan/planned")" --suites "$plan/suites"
+		--level "$verbose")
+	for r in "$root" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}; do
+		mkdir -p "$r/report/events" "$r/report/runs"
+	done
 	for r in ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}; do follow+=(--shard "$r"); done
 	python3 "$repo/scripts/lab/progress.py" "${follow[@]}" ${plain[@]+"${plain[@]}"} \
 		--stop "$root/report/progress.stop" &
@@ -189,12 +200,13 @@ lab_run_shards() {
 	((ts != 0)) && teststatus=1
 	ts="$ts of $(wc -l < "$root/report/suite-runs.tsv" | tr -d ' ') suites failed"
 	lab_stop_follower
-	# A suite whose process died (not exit 0 or 1): where its words are.
-	awk -F '\t' '$3 > 1 { print $1, $2, $3 }' "$root/report/suite-runs.tsv" |
+	# A suite whose process died (not exit 0 or 1, nor 69: progress.py named a suite that ran
+	# no tests): where its words are.
+	awk -F '\t' '$3 > 1 && $3 != 69 { print $1, $2, $3 }' "$root/report/suite-runs.tsv" |
 		while read -r s k st; do
 			r="$root"
 			((k > 0)) && r="${SHARD_ROOTS[$((k - 1))]}"
-			echo "lab: $s's test process exited $st — see $r/report/swift-test.log"
+			echo "lab: $s's test process exited $st — see $r/report/runs/$s.log"
 		done
 	python3 "$repo/scripts/lab/plan.py" --record "$root/report/suite-runs.tsv" \
 		--history "$history" || true
@@ -233,11 +245,12 @@ lab_run_serial() {
 
 # lab_selfcheck_runner: the runner's own checks, on the built test bundle (Q27): eight test
 # processes side by side, each in a scratch sandbox of its own, all report their test (eight
-# swift test --ignore-lock lost about one in three to SwiftPM's locked build database), and a
-# toolchain without the testing helper runs swift test instead. Prints "ok   <check>" or
-# "FAIL <check>: <why>"; returns the failure count.
+# swift test --ignore-lock lost about one in three to SwiftPM's locked build database); a
+# toolchain without the testing helper runs swift test instead; and an armed two-shard harness
+# pass with a planned suite that runs nothing fails, naming it where failcheck reads it.
+# Prints "ok   <check>" or "FAIL <check>: <why>"; returns the failure count.
 lab_selfcheck_runner() {
-	local failures=0 sc k t lost="" check why
+	local failures=0 sc k t lost="" check why out rc
 	sc="$(mktemp -d /tmp/mml-selfcheck.XXXXXX)"
 	check="Q27: eight runs of the built test bundle side by side each report their test"
 	lab_runner_find
@@ -279,5 +292,18 @@ lab_selfcheck_runner() {
 		failures=$((failures + 1))
 	fi
 	rm -rf "$sc"
+	check="Q27: a parallel run with a planned suite that runs nothing fails and names it"
+	out="$(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1 "$repo/scripts/lab.sh" --harness --no-build \
+		--plain --jobs 2 --filter 'LabHarnessTests/tiersParse' 2>&1)"
+	rc=$?
+	if [[ $rc == 1 ]] && grep -qxF "lab: tests FAILED (1 of 2 suites failed)" <<<"$out" &&
+		grep -q "✘ Q27EmptySuite.swift:1: Q27EmptySuite ran no tests — test exit 69" <<<"$out" &&
+		grep -q "Test run with 1 test in 1 suite failed" <<<"$out" &&
+		grep -qxF "lab: audits: 0 breaches, 0 warnings" <<<"$out"; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: exit $rc: $(grep -E '^lab|✘|Test run' <<<"$out" | tr '\n' ' ')"
+		failures=$((failures + 1))
+	fi
 	return "$failures"
 }
