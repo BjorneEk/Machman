@@ -226,13 +226,21 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 		return (payload, report)
 	}
 
-	// The script a VM's payload carries (S67): its pinned entry's, checked against the digest
-	// it was stored under — or this build's while it has no pin, or one the store can't serve.
+	// The entry a VM serves, as the store lists it (S67): its pin, or this build's while it
+	// has none or one the store doesn't hold.
+	static func servedEntry(
+		for config: VMConfig, store: GuestSetupStore = .current
+	) -> GuestSetupStore.Entry {
+		config.setup?.script.flatMap { store.entry(id: $0) } ?? store.builtIn.entry
+	}
+
+	// The script a VM's payload carries: its served entry's, checked against the digest it
+	// was stored under — this build's when that check fails.
 	static func servedScript(
 		for config: VMConfig, store: GuestSetupStore = .current
 	) -> GuestSetupStore.Script {
-		if let id = config.setup?.script, id != store.builtIn.entry.id,
-			let entry = store.entry(id: id), let data = store.script(id: id) {
+		let entry = servedEntry(for: config, store: store)
+		if entry.id != store.builtIn.entry.id, let data = store.script(id: entry.id) {
 			return GuestSetupStore.Script(data: data, entry: entry)
 		}
 		return store.builtIn

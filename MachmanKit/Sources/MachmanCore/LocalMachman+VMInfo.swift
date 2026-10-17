@@ -163,12 +163,15 @@ extension LocalMachman {
 				hostAddressForGuest: state.lastAddress
 					.flatMap { SSHDiscovery.hostAddress(seenFrom: $0) })
 		}
-		// The guest-setup half (1.0.7): the persisted report snapshot, plus the one
-		// server-resolved field — the script version this app ships, so clients can say
-		// "an update is available" without a second source of truth.
+		// The guest-setup half (1.0.7): the persisted report snapshot, plus the
+		// server-resolved fields — the script version this app ships, and while Guest Setup
+		// is attached the store of scripts, the one this VM serves and the one its guest
+		// reported running (S67).
+		let store = sshAttached ? GuestSetupStore.current : nil
 		let setup: GuestSetupInfo? = (config.setup
 			?? (sshAttached ? GuestSetupConfig() : nil)).map { state in
-			GuestSetupInfo(
+			let served = store.map { GuestSetupInstaller.servedEntry(for: config, store: $0).id }
+			return GuestSetupInfo(
 				installed: state.installed,
 				guestOS: state.guestOS,
 				guestOSFamily: state.guestOSFamily,
@@ -185,7 +188,12 @@ extension LocalMachman {
 				features: state.features.isEmpty ? nil : state.features,
 				consoles: state.consoles.isEmpty ? nil : state.consoles,
 				automounts: state.automounts.isEmpty ? nil : state.automounts,
-				reinstallRequested: state.reinstallRequested)
+				reinstallRequested: state.reinstallRequested,
+				scripts: store?.wireInfos(),
+				servedScript: served,
+				installedScript: served.flatMap {
+					store?.installedID(cksum: state.scriptCksum, served: $0)
+				})
 		}
 		// Unknown kinds (written by a NEWER daemon) are preserved in config but not served:
 		// this engine can't edit them, and an older client would still collide them on

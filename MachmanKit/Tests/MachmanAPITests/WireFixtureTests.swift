@@ -619,6 +619,41 @@ struct WireFixtureTests {
 		#expect(!sparse.configured)
 	}
 
+	// S67: the store of Guest Setup scripts rides GuestSetupInfo, additive: an older daemon's
+	// payload decodes without it, and a script without a kind reads as a custom one.
+	@Test(
+		"""
+		S67: GuestSetupInfo's script fields round-trip and an older payload decodes without \
+		them
+		""")
+	func guestSetupScriptFixtures() throws {
+		let stored = Date(timeIntervalSince1970: 1_700_000_000)
+		let info = GuestSetupInfo(
+			installed: true,
+			scripts: [
+				GuestSetupScriptInfo(
+					id: "v8-0123456789ab", kind: GuestSetupScriptKind.build, version: 8,
+					addedAt: stored, latest: true),
+				GuestSetupScriptInfo(
+					id: "custom-ba9876543210", kind: GuestSetupScriptKind.custom, version: 8,
+					label: "patched.sh", vm: "Debian", addedAt: stored),
+			],
+			servedScript: "custom-ba9876543210", installedScript: "v8-0123456789ab")
+		let expected = #"{"installed":true,"installedScript":"v8-0123456789ab","scripts":["#
+			+ #"{"addedAt":"2023-11-14T22:13:20Z","id":"v8-0123456789ab","kind":"build","#
+			+ #""latest":true,"version":8},{"addedAt":"2023-11-14T22:13:20Z","#
+			+ #""id":"custom-ba9876543210","kind":"custom","label":"patched.sh","version":8,"#
+			+ #""vm":"Debian"}],"servedScript":"custom-ba9876543210"}"#
+		#expect(try encode(info) == expected)
+		#expect(try decode(GuestSetupInfo.self, expected) == info)
+		let older = try decode(GuestSetupInfo.self, #"{"installed":true}"#)
+		#expect(older.scripts == nil && older.servedScript == nil && older.installedScript == nil)
+		#expect(try decode(GuestSetupScriptInfo.self, #"{"id":"x-1"}"#).kind
+			== GuestSetupScriptKind.custom)
+		#expect(try decode(GuestSetupScriptInfo.self, #"{"id":"x-1","kind":"newer"}"#).kind
+			== "newer")
+	}
+
 	@Test func vmInfoSetupRoundTrip() throws {
 		var info = VMInfo(
 			name: "Debian", state: .stopped,

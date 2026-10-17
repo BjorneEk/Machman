@@ -21,12 +21,8 @@ import MachmanAPI
 var machmanSetupScriptsDir: String = GuestSetupStore.directory(forLibrary: machmanVMDir)
 
 struct GuestSetupStore {
-	// What an entry is (Entry.kind) — plain strings, as GuestSetupScriptInfo carries them.
-	enum Kind {
-		static let build = "build"
-		static let custom = "custom"
-		static let changed = "changed"
-	}
+	// What an entry is (Entry.kind): the wire's plain strings.
+	typealias Kind = GuestSetupScriptKind
 
 	struct Entry: Codable, Equatable, Sendable {
 		var id: String
@@ -145,6 +141,25 @@ struct GuestSetupStore {
 		guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
 			info.st_size <= maxScriptBytes else { return nil }
 		return try? Data(contentsOf: url)
+	}
+
+	// MARK: - On the wire
+
+	// Every entry as GuestSetupInfo.scripts lists it, the latest marked.
+	func wireInfos() -> [GuestSetupScriptInfo] {
+		let latest = latest.id
+		return entries().map { entry in
+			GuestSetupScriptInfo(
+				id: entry.id, kind: entry.kind, version: entry.version, label: entry.label,
+				vm: entry.vm, addedAt: entry.addedAt, latest: entry.id == latest ? true : nil)
+		}
+	}
+
+	// The entry a report's script cksum names — the served one when several share it.
+	func installedID(cksum: String?, served: String) -> String? {
+		guard let cksum else { return nil }
+		let found = matching(cksum: cksum)
+		return found.first { $0.id == served }?.id ?? found.first?.id
 	}
 
 	// MARK: - The cache

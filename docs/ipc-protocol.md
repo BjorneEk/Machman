@@ -251,7 +251,8 @@ unknown `reverseState`/`reachability` strings as a state you don't recognize.
 guestInit?, lastReportAt?, scriptVersion?, currentScriptVersion?, lastRunStatus?,
 lastRunNote?, lastTransport?, errors?: [{step, message}], notes?: [{step, message}],
 features?: [{id, available, reason?, configured, detail?}], consoles?: [{device, login,
-kernelConsole?}], automounts?: [{kind, target, path}], reinstallRequested?}` — the
+kernelConsole?}], automounts?: [{kind, target, path}], reinstallRequested?, scripts?: [{id,
+kind, version?, label?, vm?, addedAt?, latest?}], servedScript?, installedScript?}` — the
 unified installer's report, absent when the installer was never used (or from an older
 daemon). `notes` (additive) are informational lines from the last run — a repair it made,
 a boot-time refresh that will not run — never failures; absent when there are none.
@@ -260,7 +261,15 @@ a boot-time refresh that will not run — never failures; absent when there are 
 render unknown ids verbatim), `login` is `active|active-auto|configured|none|missing`,
 and automount `kind` is a mount kind. `currentScriptVersion` is the script version the
 serving app ships (server-resolved) — greater than `scriptVersion` means a re-run
-updates the guest. `mounts[].kind` (1.0.7+, `"virtiofs"` when absent) says how a mount
+updates the guest. `scripts`, `servedScript` and `installedScript` (additive, while Guest
+Setup is attached) are the host's store of Guest Setup scripts: every script a VM can serve
+(`kind` `build` — a Machman build's own, its `id` `v<N>-<digest>` —, `custom` — imported
+with `host.setupScripts.import`, its `label` the file name — or `changed` — a copy a guest
+changed and ran; `vm` is the VM it was imported for or captured from, `latest` marks the
+newest build's), the `id` this VM serves (its pin, `vm.setup.pin`; this build's while it has
+none), and the `id` whose script cksum the last report named (absent when the report named
+none or one the store doesn't hold). Treat an unknown `kind` as `custom`.
+`mounts[].kind` (1.0.7+, `"virtiofs"` when absent) says how a mount
 reaches the guest; `mounts[].automounted` reflects the report (the one share automount
 covers every virtiofs mount; sshfs mounts match by tag), and `mounts[].automountedAt`
 (additive) is the guest directory it lands at. `consolePorts[].guestName` (additive) is

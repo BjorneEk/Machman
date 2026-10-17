@@ -145,6 +145,52 @@ public struct GuestAutomountInfo: Codable, Sendable, Equatable {
 	}
 }
 
+// What a stored Guest Setup script is (GuestSetupScriptInfo.kind). Plain strings (see
+// GuestFeature): a newer kind renders like a custom one.
+public enum GuestSetupScriptKind {
+	public static let build = "build"       // a Machman build's own script
+	public static let custom = "custom"     // one the user imported
+	public static let changed = "changed"   // a copy a guest changed and ran
+}
+
+// One Guest Setup script Machman keeps (S67, additive): its store id, what it is, the version
+// its SCRIPT_VERSION line says, an imported one's file name, the VM it was imported for or
+// captured from and when it was stored, and whether it is the newest build's script.
+public struct GuestSetupScriptInfo: Codable, Sendable, Equatable, Identifiable {
+	public var id: String
+	public var kind: String          // a GuestSetupScriptKind value
+	public var version: Int?
+	public var label: String?
+	public var vm: String?
+	public var addedAt: Date?
+	public var latest: Bool?
+
+	public init(
+		id: String, kind: String, version: Int? = nil, label: String? = nil, vm: String? = nil,
+		addedAt: Date? = nil, latest: Bool? = nil
+	) {
+		self.id = id
+		self.kind = kind
+		self.version = version
+		self.label = label
+		self.vm = vm
+		self.addedAt = addedAt
+		self.latest = latest
+	}
+
+	public init(from decoder: Decoder) throws {
+		let c = try decoder.container(keyedBy: CodingKeys.self)
+		self.id = try c.decode(String.self, forKey: .id)
+		self.kind = try c.decodeIfPresent(String.self, forKey: .kind)
+			?? GuestSetupScriptKind.custom
+		self.version = try c.decodeIfPresent(Int.self, forKey: .version)
+		self.label = try c.decodeIfPresent(String.self, forKey: .label)
+		self.vm = try c.decodeIfPresent(String.self, forKey: .vm)
+		self.addedAt = try c.decodeIfPresent(Date.self, forKey: .addedAt)
+		self.latest = try c.decodeIfPresent(Bool.self, forKey: .latest)
+	}
+}
+
 public struct GuestSetupInfo: Codable, Sendable, Equatable {
 	// A report is on file and the last run did not uninstall.
 	public var installed: Bool?
@@ -168,6 +214,13 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 	// The user asked for a reinstall/update: the installer is served again
 	// (vm.setup.serve; additive 1.0.7). nil = false.
 	public var reinstallRequested: Bool?
+	// The store of Guest Setup scripts (S67, additive; absent from an older daemon): every
+	// script the VM could serve, the id of the one it serves (its pin, or this build's while
+	// it has none), and the id of the one its last report's script matches — nil when the
+	// report named no cksum or one the store doesn't hold.
+	public var scripts: [GuestSetupScriptInfo]?
+	public var servedScript: String?
+	public var installedScript: String?
 
 	public init(
 		installed: Bool? = nil,
@@ -178,7 +231,8 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		errors: [GuestSetupError]? = nil, notes: [GuestSetupNote]? = nil,
 		features: [GuestFeatureInfo]? = nil,
 		consoles: [GuestConsoleInfo]? = nil, automounts: [GuestAutomountInfo]? = nil,
-		reinstallRequested: Bool? = nil
+		reinstallRequested: Bool? = nil, scripts: [GuestSetupScriptInfo]? = nil,
+		servedScript: String? = nil, installedScript: String? = nil
 	) {
 		self.installed = installed
 		self.guestOS = guestOS
@@ -197,6 +251,9 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 		self.consoles = consoles
 		self.automounts = automounts
 		self.reinstallRequested = reinstallRequested
+		self.scripts = scripts
+		self.servedScript = servedScript
+		self.installedScript = installedScript
 	}
 
 	// Tolerant decode; encode stays synthesized so nil optionals are omitted.
@@ -222,5 +279,8 @@ public struct GuestSetupInfo: Codable, Sendable, Equatable {
 			try c.decodeIfPresent([GuestAutomountInfo].self, forKey: .automounts)
 		self.reinstallRequested =
 			try c.decodeIfPresent(Bool.self, forKey: .reinstallRequested)
+		self.scripts = try c.decodeIfPresent([GuestSetupScriptInfo].self, forKey: .scripts)
+		self.servedScript = try c.decodeIfPresent(String.self, forKey: .servedScript)
+		self.installedScript = try c.decodeIfPresent(String.self, forKey: .installedScript)
 	}
 }
