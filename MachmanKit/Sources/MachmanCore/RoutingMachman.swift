@@ -11,7 +11,8 @@
 //  refused while hosted.
 //
 //  This file holds the state, the residence seam and the MachmanControlling facade; the
-//  responsibilities live beside it in RoutingMachman+HostSupervisor, +StartCoordinator,
+//  responsibilities live beside it: the host table in HostedVM.swift and
+//  RoutingMachman+Adoption, +Spawn, +Liveness and +Supervisor, then +StartCoordinator,
 //  +SSHPresence and +StartupReconciler.
 //
 

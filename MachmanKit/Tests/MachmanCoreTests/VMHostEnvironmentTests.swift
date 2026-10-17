@@ -109,7 +109,7 @@ struct VMHostEnvironmentTests {
 	func theAgentsLaunchStaysQuiet() throws {
 		for file in [
 			"MachmanDesktop/DaemonConnection.swift",
-			"MachmanKit/Sources/MachmanCore/RoutingMachman+HostSupervisor.swift",
+			"MachmanKit/Sources/MachmanCore/RoutingMachman+Spawn.swift",
 		] {
 			let made = try SourceScan.hits(#"OpenConfiguration\(\)"#, in: [file]).count
 			#expect(made > 0, "\(file)")

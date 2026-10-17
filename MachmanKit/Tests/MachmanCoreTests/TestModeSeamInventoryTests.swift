@@ -35,7 +35,7 @@ struct TestModeSeamInventoryTests {
 			"the predicate and LabEnvironment (MachmanTestModeTests, TB1)",
 		"MachmanKit/Sources/MachmanAPI/LabPrompts.swift":
 			"prompts answered from the answers file (LabAnswersTests, TB2)",
-		"MachmanKit/Sources/MachmanCore/RoutingMachman+HostSupervisor.swift":
+		"MachmanKit/Sources/MachmanCore/RoutingMachman+Spawn.swift":
 			"a vmhost's environment (VMHostEnvironmentTests, TB3)",
 		"MachmanKit/Sources/MachmanCore/LaunchAgentManager.swift":
 			"an autostart job's environment (LaunchAgentManagerTests, TB4)",
