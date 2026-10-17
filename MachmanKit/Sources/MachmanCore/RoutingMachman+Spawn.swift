@@ -51,10 +51,9 @@ extension RoutingMachman {
 				+ lab.forwardedVariables.keys.sorted().joined(separator: ", "))
 		}
 
-		let app: NSRunningApplication
+		let app: VMHostApp
 		do {
-			app = try await NSWorkspace.shared.openApplication(
-				at: vmhost.appURL, configuration: configuration)
+			app = try await launchVMHost(vmhost.appURL, configuration)
 		} catch {
 			throw MachmanError(
 				code: .internalError,
@@ -62,8 +61,7 @@ extension RoutingMachman {
 					+ MachmanError.userMessage(for: error))
 		}
 		let hostID = identity.id
-		let deathWatch = app.observe(\.isTerminated, options: [.new]) { [weak self] app, _ in
-			guard app.isTerminated else { return }
+		let deathWatch = app.watchTermination { [weak self] in
 			Task { @MainActor [weak self] in
 				self?.hostGone(id: hostID)
 			}

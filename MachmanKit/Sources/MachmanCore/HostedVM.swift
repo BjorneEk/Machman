@@ -3,13 +3,38 @@
 //  MachmanCore
 //
 //  What the router knows about one vmhost: its identity, fixed at spawn or adopt, and the
-//  HostedVM record the host table keeps while the host serves its VM.
+//  HostedVM record the host table keeps while the host serves its VM. Also the process a
+//  spawn launched, as a protocol a router test can stand in for.
 //
 
 import Foundation
 import AppKit
 import MachmanAPI
 import MachmanClient
+
+// The vmhost process a spawn launched: NSRunningApplication for real, a stand-in in router
+// tests, which can't launch the app (E62, E64).
+protocol VMHostApp: AnyObject {
+	var processIdentifier: pid_t { get }
+	var isTerminated: Bool { get }
+	@discardableResult func forceTerminate() -> Bool
+	// Calls `handler` once the process has exited, until the watch is invalidated.
+	func watchTermination(_ handler: @escaping @Sendable () -> Void) -> VMHostAppWatch
+}
+
+protocol VMHostAppWatch: AnyObject {
+	func invalidate()
+}
+
+extension NSKeyValueObservation: VMHostAppWatch {}
+
+extension NSRunningApplication: VMHostApp {
+	func watchTermination(_ handler: @escaping @Sendable () -> Void) -> VMHostAppWatch {
+		observe(\.isTerminated, options: [.new]) { app, _ in
+			if app.isTerminated { handler() }
+		}
+	}
+}
 
 extension RoutingMachman {
 	// Everything the daemon knows about one vmhost, fixed at spawn/adopt time. Stored, never
@@ -41,8 +66,8 @@ extension RoutingMachman {
 		// socket disconnect, same as before). deathWatch routes isTerminated to hostGone —
 		// invalidate it BEFORE forceTerminate on failure paths so a cleanup kill can't
 		// re-enter (hostGone is idempotent anyway; this keeps the sequence obviously correct).
-		let app: NSRunningApplication?
-		var deathWatch: NSKeyValueObservation?
+		let app: VMHostApp?
+		var deathWatch: VMHostAppWatch?
 		var eventTask: Task<Void, Never>?
 		// Done once the host has this daemon's subscription (E9): a start is forwarded only
 		// after it, so nothing the boot emits goes to a bus nobody hears.
@@ -95,7 +120,7 @@ extension RoutingMachman {
 
 		init(
 			identity: HostIdentity, client: RemoteMachman,
-			app: NSRunningApplication?, deathWatch: NSKeyValueObservation?
+			app: VMHostApp?, deathWatch: VMHostAppWatch?
 		) {
 			self.identity = identity
 			self.client = client

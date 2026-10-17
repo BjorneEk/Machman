@@ -123,6 +123,11 @@ public final class RoutingMachman: MachmanControlling {
 	// to nil, so it fails at "not found" on every machine instead of depending on where the
 	// test binary happens to sit (a located MachmanVMHost.app would be LAUNCHED).
 	var locateVMHost: () -> VMHostLocation? = { VMHostLocator.locate() }
+	// …and how it is launched. A seam for the same reason: a router test stands in a process
+	// of its own for the spawn's connect and peer checks, and never launches the app.
+	var launchVMHost: (URL, NSWorkspace.OpenConfiguration) async throws -> VMHostApp = {
+		try await NSWorkspace.shared.openApplication(at: $0, configuration: $1)
+	}
 
 	public init(
 		registry: VMRegistry, daemonVersion: String,
