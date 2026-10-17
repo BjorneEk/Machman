@@ -113,4 +113,75 @@ struct RoutingSpawnTests {
 		#expect(arguments.contains("--vm") && arguments.contains("alpha"))
 		#expect(arguments.contains(rig.socketPath))
 	}
+
+	// A pid that isn't this test process's: the stub hosts are served by this process, so a
+	// launched app with this pid did not bind them.
+	static let notThisProcess: pid_t = getppid()
+
+	// E62: a launch-agent vmhost for the same VM that binds first (a login boot racing a Start)
+	// answered the spawn's connect. The forwarded start's "already running" failed the start,
+	// and the cleanup unlinked that vmhost's live socket: its VM turned invisible and
+	// unstoppable, and the next Start booted a second VZ on its disks.
+	@Test("E62: a spawn answered by another vmhost adopts it and leaves its socket")
+	@MainActor func aSpawnAnsweredByAnotherVMHostAdoptsIt() async throws {
+		let rig = try Self.makeRig("foreign")
+		let (stub, server) = try Self.stubHost(rig.socketPath, state: .running)
+		defer { server.stop() }
+		let ours = StandInVMHostApp(pid: Self.notThisProcess)   // still launching
+		rig.routing.launchVMHost = { _, _ in
+			try startServing(server)   // the other vmhost, bound first
+			return ours
+		}
+
+		try await rig.routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+		let host = try #require(rig.routing.hostForTesting("alpha"))
+		#expect(host.app == nil)   // adopted: not the app this start launched
+		#expect(ours.ended == 1)
+		#expect(stub.calls.contains("start"))
+		#expect(FileManager.default.fileExists(atPath: rig.socketPath))
+	}
+
+	@Test(
+		"""
+		E62: a vmhost that quit because its socket was served hands the start to the one \
+		serving it
+		""")
+	@MainActor func aVMHostThatQuitOnAServedSocketHandsTheStartOver() async throws {
+		let rig = try Self.makeRig("quit65")
+		let (stub, server) = try Self.stubHost(rig.socketPath, state: .running)
+		defer { server.stop() }
+		// Ours found the path taken and quit (exit 65) before the spawn first asked.
+		let ours = StandInVMHostApp(pid: Self.notThisProcess, terminated: true)
+		rig.routing.launchVMHost = { _, _ in
+			try startServing(server)
+			return ours
+		}
+
+		// Before: "Machman VM for alpha didn’t start: It quit while starting".
+		try await rig.routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+		#expect(rig.routing.hostForTesting("alpha")?.app == nil)
+		#expect(stub.calls.contains("start"))
+		#expect(FileManager.default.fileExists(atPath: rig.socketPath))
+	}
+
+	@Test("E62: an abandoned spawn never unlinks a socket that still answers")
+	@MainActor func anAbandonedSpawnNeverUnlinksALiveSocket() async throws {
+		let rig = try Self.makeRig("abandon")
+		let (stub, server) = try Self.stubHost(rig.socketPath)
+		defer { server.stop() }
+		stub.fail("start", with: MachmanError(code: .internalError, message: "no boot"))
+		let ours = StandInVMHostApp()   // ours; still serving as it is ended
+		rig.routing.launchVMHost = { _, _ in
+			try startServing(server)
+			return ours
+		}
+
+		await #expect(throws: MachmanError.self) {
+			try await rig.routing.start(vm: "alpha", options: StartOptions(openWindow: false))
+		}
+		#expect(ours.ended == 1)
+		// Before: unlinked while it still answered.
+		#expect(FileManager.default.fileExists(atPath: rig.socketPath))
+		#expect(rig.routing.hostedNames.isEmpty)
+	}
 }

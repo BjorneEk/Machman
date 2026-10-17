@@ -110,7 +110,13 @@ extension RoutingMachman {
 			macInUse: vm.config.macAddress)
 		// The config the vmhost loads: nothing edits it while the start is reserved.
 		let unattached = vm.config.unattachedDiskFiles
-		let host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
+		let host: HostedVM
+		do {
+			host = try await spawnHost(identity: identity, dataDir: machmanVMDir)
+		} catch is SpawnPathHeld {
+			try await startOnHeldPath(name: name, options: options)
+			return
+		}
 		do {
 			try await forwardStart(host, name: name, options: options)
 			host.markStarted()
@@ -122,14 +128,28 @@ extension RoutingMachman {
 	}
 
 	// A spawned host whose start could not be handed over never joins the hosted map: end
-	// it (the death watch first, so the kill can't re-enter hostGone) and free its socket.
+	// it (the death watch first, so the kill can't re-enter hostGone). Its socket goes with
+	// its exit, or the next probe takes a dead one — never a bare unlink (E62): the path may
+	// already be another vmhost's, whose VM would turn invisible and unstoppable.
 	private func abandonSpawnedHost(_ host: HostedVM) async {
 		host.eventTask?.cancel()
 		host.deathWatch?.invalidate()
 		host.deathWatch = nil
 		host.app?.forceTerminate()
 		await host.client.disconnect()
-		unlink(host.identity.socketPath)
+		_ = BoundSocket.removeIfDead(host.identity.socketPath)
+	}
+
+	// The spawn met another vmhost serving the VM's socket (E62): it runs the VM, or is about
+	// to, so the start goes to it as if it had been there first (probe-adopt).
+	private func startOnHeldPath(name: String, options: StartOptions) async throws {
+		let socketPath = hostSocketPath(for: name)
+		guard try await probeAdoptAndStart(name: name, socketPath: socketPath, options: options)
+		else {
+			throw MachmanError(
+				code: .internalError,
+				message: Self.hostDidNotStart(name, reason: Self.hostQuitWhileStarting))
+		}
 	}
 
 	// A spawned host whose start returned joins the hosted map, and the router announces the
@@ -293,6 +313,11 @@ extension RoutingMachman {
 				ShadowMarker(
 					vm: name, createdAt: Date(), pid: host.app?.processIdentifier),
 				runRoot: runRoot)
+		} catch is SpawnPathHeld {
+			// Another vmhost runs the VM: the shadow is not needed.
+			try? FileManager.default.removeItem(atPath: runRoot)
+			try await startOnHeldPath(name: name, options: options)
+			return
 		} catch {
 			try? FileManager.default.removeItem(atPath: runRoot)
 			throw error

@@ -22,6 +22,11 @@ extension RoutingMachman {
 		"Machman VM for \(name) didn’t start: \(reason)"
 	}
 
+	// A spawn found the VM's socket served by another vmhost (E62) — a launch agent's for the
+	// same VM, bound a moment before the one this start launched (which then quits, its path
+	// taken). Not a failure: the start goes to the vmhost serving the VM.
+	struct SpawnPathHeld: Error {}
+
 	// The identity is minted by the CALLER (safe starts pre-set isSafe/shadowRoot) before
 	// any closure is built: termination and disconnect handlers capture the identity's id,
 	// never the (re-keyable) name. dataDir is the vmhost's scan root — the library for a
@@ -69,14 +74,24 @@ extension RoutingMachman {
 
 		var lastError = Self.hostNeverAnswered
 		var client: RemoteMachman?
-		// The launch returns before the vmhost serves: it is asked every 250 ms, for 10 s.
+		var held = false
+		// The launch returns before the vmhost serves: it is asked every 250 ms, for 10 s. Only
+		// the vmhost this spawn launched counts (E62): whoever else answers on the path, or
+		// serves it once ours quit, holds the VM.
 		_ = await poll(every: .milliseconds(250), for: spawnConnectWindow) {
 			guard !app.isTerminated else {
+				held = UDSListener.isLive(path: identity.socketPath)
 				lastError = Self.hostQuitWhileStarting
 				return true
 			}
 			do {
-				client = try await connectHost(identity: identity)
+				let answered = try await connectHost(identity: identity)
+				guard answered.peerPID.map({ $0 == app.processIdentifier }) ?? true else {
+					await answered.disconnect()
+					held = true
+					return true
+				}
+				client = answered
 				return true
 			} catch {
 				lastError = MachmanError.userMessage(for: error)
@@ -87,6 +102,12 @@ extension RoutingMachman {
 			return HostedVM(identity: identity, client: client, app: app, deathWatch: deathWatch)
 		}
 		deathWatch.invalidate()
+		if held {
+			app.forceTerminate()
+			MachmanLogger.log(.passiveWarning,
+				"another vmhost serves \(name)'s socket — the start goes to it")
+			throw SpawnPathHeld()
+		}
 		app.forceTerminate()
 		throw MachmanError(
 			code: .internalError, message: Self.hostDidNotStart(name, reason: lastError))
