@@ -184,6 +184,66 @@ struct SerialPortBridgeTests {
 		}
 	}
 
+	// E67: a log past twice its cap was read whole into memory and rewritten on the bridge's
+	// only queue — seconds at a large cap, with the guest's output undrained meanwhile. The
+	// trim copies the tail forward one chunk at a time, on its own queue.
+	@Test("E67: a trim keeps the log's last cap bytes reading at most one chunk at a time")
+	func aTrimKeepsTheTailOneChunkAtATime() throws {
+		let url = URL(fileURLWithPath: tempPath("trim", "log"))
+		defer { try? FileManager.default.removeItem(at: url) }
+		let bytes = Data((0..<10_000).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+		try bytes.write(to: url)
+		let handle = try FileHandle(forUpdating: url)
+		defer { try? handle.close() }
+		var reads: [Int] = []
+		try SerialPortBridge.trimLog(fd: handle.fileDescriptor, keeping: 1000, chunk: 256) {
+			reads.append($2)
+			return pread($0, $1, $2, $3)
+		}
+		#expect(try Data(contentsOf: url) == bytes.suffix(1000))
+		#expect(!reads.isEmpty)
+		#expect(reads.allSatisfy { $0 <= 256 })
+		#expect(reads.reduce(0, +) == 1000)
+
+		// A log within its cap stays as it is.
+		try SerialPortBridge.trimLog(fd: handle.fileDescriptor, keeping: 4096, chunk: 256)
+		#expect(try Data(contentsOf: url) == bytes.suffix(1000))
+	}
+
+	@Test("E67: the drain keeps delivering to a client while a trim runs")
+	func theDrainKeepsDeliveringWhileATrimRuns() throws {
+		let entered = DispatchSemaphore(value: 0)
+		let release = DispatchSemaphore(value: 0)
+		let toGuest = Pipe()
+		let fromGuest = Pipe()
+		let logURL = URL(fileURLWithPath: tempPath("trimdrain", "log"))
+		defer { try? FileManager.default.removeItem(at: logURL) }
+		let bridge = SerialPortBridge(
+			kind: .console, index: 0, socketPath: tempPath("trimdrain", "sock"), logURL: logURL,
+			logConfig: SerialLogConfig(mode: .resetOnBoot, maxBytes: 4096),
+			toGuest: toGuest.fileHandleForWriting, fromGuest: fromGuest.fileHandleForReading,
+			trim: { fd, keeping in
+				entered.signal()
+				release.wait()
+				try SerialPortBridge.trimLog(fd: fd, keeping: keeping)
+			})
+		bridge.start()
+		defer { bridge.stop() }
+		let client = connect(bridge.socketPath)
+		defer { close(client) }
+		Thread.sleep(forTimeInterval: 0.2)   // let accept register the client
+
+		fromGuest.fileHandleForWriting.write(Data(repeating: 0x2E, count: 9000))   // past 2x cap
+		#expect(entered.wait(timeout: .now() + 10) == .success, "the trim never started")
+		fromGuest.fileHandleForWriting.write(Data("DURING_TRIM\n".utf8))
+		// Before: the trim ran inline on the drain's queue, so nothing reached the client.
+		#expect(recv(client, until: "DURING_TRIM").contains("DURING_TRIM"))
+		release.signal()
+		let logged = logText(logURL, containing: "DURING_TRIM")
+		#expect(logged.hasSuffix("DURING_TRIM\n"))
+		#expect(logged.utf8.count <= 4096 + "DURING_TRIM\n".utf8.count)
+	}
+
 	// E25: a live retune (Max Size changed, the same mode re-picked) reopens and APPENDS — only
 	// the run's first open resets a reset-on-boot log.
 	@Test func retuneKeepsThisBootsLog() throws {

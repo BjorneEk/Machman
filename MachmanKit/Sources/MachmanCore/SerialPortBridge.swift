@@ -9,7 +9,8 @@
 //  socket-research 02-socket-bridge spike. One bridge per port.
 //
 //  All state runs on one serial queue, so there are no locks: the drain, the accept loop and the
-//  per-client reads are DispatchSources targeting `queue`. Client writes are non-blocking: what
+//  per-client reads are DispatchSources targeting `queue`. A capped log's trim runs on a queue of
+//  its own, holding only the log's handle until it hands it back (E67). Client writes are non-blocking: what
 //  a client's socket won't take waits in a bounded per-client backlog (E58), and a client that
 //  falls further behind is closed, to come back to the replay — never the shared drain, and
 //  with it the guest, stalls on it. Guest input is non-blocking too: what the guest pipe won't
@@ -64,6 +65,17 @@ final class SerialPortBridge {
 	private let clock: @Sendable () -> UInt64
 	private static let inputWarningRearm: UInt64 = 1_000_000_000
 	private var counts = Counters()
+	// A capped log's trim runs on its own queue (E67): the log's handle is the trim's until it
+	// ends, and the drain holds what the guest writes meanwhile — at most pendingLogCap; what
+	// doesn't fit misses the log and is counted. A retune that lands meanwhile reopens after.
+	private let trimQueue = DispatchQueue(
+		label: "com.gustaffranzen.Machman.serial-log-trim", qos: .utility)
+	private let trim: @Sendable (Int32, UInt64) throws -> Void
+	private var trimming = false
+	private var pendingLog = Data()
+	private var pendingLogMissed: UInt64 = 0
+	private var reopenAfterTrim = false
+	private static let pendingLogCap = 1024 * 1024
 
 	// What crossed the port this run (E58). Every typed byte is taken by the guest pipe,
 	// waiting for it, or dropped (past the buffer, or the guest end gone).
@@ -125,7 +137,10 @@ final class SerialPortBridge {
 		kind: SerialPortKind, index: Int, socketPath: String, logURL: URL,
 		logConfig: SerialLogConfig, toGuest: FileHandle, fromGuest: FileHandle,
 		keepAlive: DispatchTimeInterval = MachmanServer.keepAlive(),
-		clock: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
+		clock: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+		trim: @escaping @Sendable (Int32, UInt64) throws -> Void = {
+			try SerialPortBridge.trimLog(fd: $0, keeping: $1)
+		}
 	) {
 		self.kind = kind
 		self.index = index
@@ -136,11 +151,12 @@ final class SerialPortBridge {
 		self.fromGuest = fromGuest
 		self.keepAlive = keepAlive
 		self.clock = clock
+		self.trim = trim
 	}
 
 	// The on-disk log path when logging is enabled (nil when disabled or not yet started).
 	func currentLogPath() -> String? {
-		queue.sync { log != nil ? logURL.path : nil }
+		queue.sync { log != nil || trimming ? logURL.path : nil }
 	}
 
 	// MARK: - Lifecycle
@@ -187,6 +203,7 @@ final class SerialPortBridge {
 			self.clients.removeAll()
 			try? self.log?.close()
 			self.log = nil
+			self.pendingLog.removeAll()   // a trim in flight closes its handle as it ends
 			// The accept source's cancel handler removes the socket and closes it (E48).
 			self.listener = nil
 		}
@@ -197,6 +214,10 @@ final class SerialPortBridge {
 		queue.async { [weak self] in
 			guard let self = self, !self.stopped else { return }
 			self.logConfig = config
+			guard !self.trimming else {
+				self.reopenAfterTrim = true
+				return
+			}
 			try? self.log?.close()
 			self.log = nil
 			self.openLog()
@@ -245,12 +266,19 @@ final class SerialPortBridge {
 			}
 		}
 		logOpenedThisRun = true
-		log = FileHandle(forWritingAtPath: logURL.path)
+		// Read-write: the trim reads the tail back through the same file (E67).
+		log = FileHandle(forUpdatingAtPath: logURL.path)
 		let end = (try? log?.seekToEnd()) ?? 0
 		logBytes = end
 	}
 
 	private func appendToLog(_ data: Data) {
+		if trimming {
+			let kept = data.prefix(max(0, Self.pendingLogCap - pendingLog.count))
+			pendingLog.append(kept)
+			pendingLogMissed += UInt64(data.count - kept.count)
+			return
+		}
 		guard let log = log else { return }
 		do {
 			try log.write(contentsOf: data)
@@ -264,14 +292,58 @@ final class SerialPortBridge {
 		guard let cap = logConfig.maxBytes, cap > 0 else { return }
 		let (threshold, overflow) = cap.multipliedReportingOverflow(by: 2)
 		if !overflow, logBytes > threshold {
-			try? log.close()
-			let full = (try? Data(contentsOf: logURL)) ?? Data()
-			let tail = Data(full.suffix(Int(clamping: cap)))
-			try? tail.write(to: logURL)
-			self.log = FileHandle(forWritingAtPath: logURL.path)
-			try? self.log?.seekToEnd()
-			logBytes = UInt64(tail.count)
+			startTrim(log, keeping: cap)
 		}
+	}
+
+	// The trim reads up to 2x the cap (2 GiB at the largest) and writes it back: never on this
+	// queue, which also drains the guest — an undrained port stalls it — and never the whole
+	// log in memory (E67).
+	private func startTrim(_ handle: FileHandle, keeping cap: UInt64) {
+		trimming = true
+		log = nil
+		let trim = self.trim
+		trimQueue.async { [weak self] in
+			var failure: Error?
+			do {
+				try trim(handle.fileDescriptor, cap)
+			} catch {
+				failure = error
+			}
+			guard let self else {
+				try? handle.close()
+				return
+			}
+			self.queue.async { self.finishTrim(handle, failure: failure) }
+		}
+	}
+
+	private func finishTrim(_ handle: FileHandle, failure: Error?) {
+		trimming = false
+		guard !stopped else {
+			try? handle.close()
+			return
+		}
+		if let failure {
+			MachmanLogger.log(.passiveWarning,
+				"serial \(kind.rawValue)\(index): trimming its log failed: \(failure)")
+		}
+		if reopenAfterTrim {
+			reopenAfterTrim = false
+			try? handle.close()
+			openLog()
+		} else {
+			log = handle
+			logBytes = (try? handle.seekToEnd()) ?? 0
+		}
+		if pendingLogMissed > 0 {
+			MachmanLogger.log(.log, "serial \(kind.rawValue)\(index): \(pendingLogMissed) bytes "
+				+ "of output missed the log while it was trimmed")
+			pendingLogMissed = 0
+		}
+		let held = pendingLog
+		pendingLog = Data()
+		if !held.isEmpty { appendToLog(held) }
 	}
 
 	// MARK: - Clients
