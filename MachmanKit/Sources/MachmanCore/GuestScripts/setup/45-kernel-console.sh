@@ -188,23 +188,7 @@ kernelconsole_act() {
 	[ -n "$KC_DEVICE" ] || return 0
 	case "$BOOTLOADER" in
 	grubby)
-		_kca_old="$(kernelconsole_pending_device)"
-		[ -z "$_kca_old" ] && _kca_old="$ST_KERNEL_CONSOLE"
-		if [ -n "$_kca_old" ] && [ "$_kca_old" != "$KC_DEVICE" ]; then
-			run "removing the old kernel console" grubby --update-kernel=ALL \
-				--remove-args="console=$_kca_old console=tty0" || true
-		fi
-		if run "pointing the kernel console at $KC_DEVICE" \
-			grubby --update-kernel=ALL --args="console=$KC_DEVICE console=tty0"; then
-			ok "kernel messages -> $KC_DEVICE, display stays on tty0 (next boot)"
-			note "Rollback: grubby --update-kernel=ALL --remove-args='console=$KC_DEVICE console=tty0'"
-			KC_DEVICE_DONE="$KC_DEVICE"
-			KC_METHOD_DONE=grubby
-		else
-			step_failed kernel-console \
-				"grubby could not set console=$KC_DEVICE${R_ERROR:+: $R_ERROR}" \
-				"Run it yourself: grubby --update-kernel=ALL --args='console=$KC_DEVICE console=tty0'"
-		fi
+		kernelconsole_act_grubby
 		;;
 	update-grub|grub-mkconfig|grub2-mkconfig)
 		if ! kernelconsole_backup_cfg; then
@@ -241,6 +225,112 @@ kernelconsole_act() {
 		fi
 		;;
 	esac
+	return 0
+}
+
+# grubby keeps no file of ours: what a run did to the boot entries is in the ledger. The
+# arguments the entries carry, one per line, each once (grubby --info prints them per entry).
+kernelconsole_grubby_args() {
+	grubby --info=ALL 2>/dev/null | sed -n 's/^args=//p' | tr -d '"' | tr ' ' '\n' \
+		| awk 'NF && !seen[$0]++'
+}
+
+# Their console= arguments, in order, on one line.
+kernelconsole_grubby_consoles() {
+	kernelconsole_grubby_args | grep '^console=' | tr '\n' ' ' | sed 's/ $//'
+}
+
+# The arguments a run added (grubby-arg entries), on one line.
+kernelconsole_grubby_added() {
+	ledger_values grubby-arg | tr '\n' ' ' | sed 's/ $//'
+}
+
+# The pair goes on every entry — only its arguments no entry had count as the run's
+# (grubby-arg). grubby's add also drops the console= arguments the entries had: their list
+# from before the first run is kept (grubby-had) so the uninstall can put it back. A re-point
+# first takes back what a run added for the old device.
+kernelconsole_act_grubby() {
+	_kag_old="$(kernelconsole_pending_device)"
+	[ -z "$_kag_old" ] && _kag_old="$ST_KERNEL_CONSOLE"
+	if [ -n "$_kag_old" ] && [ "$_kag_old" != "$KC_DEVICE" ]; then
+		_kag_rm="$(kernelconsole_grubby_added)"
+		# A record from before v8 names no arguments: the old device's is the one it set.
+		[ -n "$(ledger_values grubby-device)" ] || _kag_rm="console=$_kag_old"
+		if [ -n "$_kag_rm" ]; then
+			run "removing the old kernel console" grubby --update-kernel=ALL \
+				--remove-args="$_kag_rm" || true
+		fi
+		for _kag_a in $_kag_rm; do ledger_forget grubby-arg "$_kag_a"; done
+		ledger_forget grubby-device "$_kag_old"
+	fi
+	_kag_before="$(kernelconsole_grubby_args)"
+	_kag_had="$(kernelconsole_grubby_consoles)"
+	if ! run "pointing the kernel console at $KC_DEVICE" \
+		grubby --update-kernel=ALL --args="console=$KC_DEVICE console=tty0"; then
+		step_failed kernel-console \
+			"grubby could not set console=$KC_DEVICE${R_ERROR:+: $R_ERROR}" \
+			"Run it yourself: grubby --update-kernel=ALL --args='console=$KC_DEVICE console=tty0'"
+		return 0
+	fi
+	ledger_note grubby-device "$KC_DEVICE"
+	for _kag_a in "console=$KC_DEVICE" console=tty0; do
+		printf '%s\n' "$_kag_before" | grep -qxF -- "$_kag_a" \
+			|| ledger_note grubby-arg "$_kag_a"
+	done
+	_kag_lost=""
+	_kag_after="$(kernelconsole_grubby_args)"
+	for _kag_a in $_kag_had; do
+		printf '%s\n' "$_kag_after" | grep -qxF -- "$_kag_a" \
+			|| _kag_lost="${_kag_lost:+$_kag_lost }$_kag_a"
+	done
+	ok "kernel messages -> $KC_DEVICE, display stays on tty0 (next boot)"
+	if [ -n "$_kag_lost" ]; then
+		[ -n "$(ledger_values grubby-had)" ] || ledger_note grubby-had "$_kag_had"
+		note "grubby replaced $_kag_lost in the boot entries — the uninstall puts it back."
+	fi
+	_kag_added="$(kernelconsole_grubby_added)"
+	if [ -n "$_kag_added" ]; then
+		note "Rollback: grubby --update-kernel=ALL --remove-args='$_kag_added'"
+	fi
+	KC_DEVICE_DONE="$KC_DEVICE"
+	KC_METHOD_DONE=grubby
+	return 0
+}
+
+# The uninstall's grubby arm: the arguments a run added go, and the console= arguments
+# grubby's add replaced come back in their order. A record from before v8 names no
+# arguments: the device's goes, and console=tty0 — maybe the entries' own — stays, named.
+kernelconsole_uninstall_grubby() {
+	if [ -n "$(ledger_values grubby-device)" ]; then
+		_kug_added="$(kernelconsole_grubby_added)"
+		if [ -n "$_kug_added" ]; then
+			run "removing the kernel console" grubby --update-kernel=ALL \
+				--remove-args="$_kug_added" || true
+		fi
+	elif [ -n "$1" ]; then
+		run "removing the kernel console" grubby --update-kernel=ALL \
+			--remove-args="console=$1" || true
+		if kernelconsole_grubby_args | grep -qxF console=tty0; then
+			note "console=tty0 stays in the boot entries — no record says Machman added it."
+			note "Remove it: grubby --update-kernel=ALL --remove-args='console=tty0'"
+		fi
+	fi
+	_kug_had="$(ledger_values grubby-had | head -n 1)"
+	[ -n "$_kug_had" ] || return 0
+	_kug_now="$(kernelconsole_grubby_consoles)"
+	[ "$_kug_now" != "$_kug_had" ] || return 0
+	if [ -n "$_kug_now" ]; then
+		run "clearing the console arguments" grubby --update-kernel=ALL \
+			--remove-args="$_kug_now" || true
+	fi
+	if run "putting back the console arguments" grubby --update-kernel=ALL \
+		--args="$_kug_had"; then
+		ok "put back $_kug_had in the boot entries"
+	else
+		_kug_fix="grubby --update-kernel=ALL --args='$_kug_had'"
+		warn "could not put back $_kug_had in the boot entries — add it yourself: $_kug_fix"
+		UNINSTALL_KEPT=1
+	fi
 	return 0
 }
 
@@ -291,9 +381,7 @@ kernelconsole_uninstall() {
 	_kcu_dev="${ST_KERNEL_CONSOLE:-$(kernelconsole_pending_device)}"
 	case "${ST_KERNEL_CONSOLE_METHOD:-}" in
 	grubby)
-		[ -n "$_kcu_dev" ] && run "removing the kernel console" \
-			grubby --update-kernel=ALL \
-			--remove-args="console=$_kcu_dev console=tty0" || true
+		kernelconsole_uninstall_grubby "$_kcu_dev"
 		;;
 	*)
 		if [ -f /etc/default/grub ] && grep -q "# $MARKER\$" /etc/default/grub; then

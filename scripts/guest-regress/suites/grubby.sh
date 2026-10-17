@@ -2,7 +2,7 @@
 # leave them at uninstall — also after a later run for other features, which keeps the
 # record the uninstall needs; without that record the uninstall names what it finds and
 # leaves it. The boot entry is fabricated (a container has no /boot).
-# CHECKS: KC_STATE_KEPT KC_GRUBBY_UNINSTALL KC_GRUBBY_NO_STATE
+# CHECKS: KC_STATE_KEPT KC_GRUBBY_UNINSTALL KC_GRUBBY_NO_STATE KC_GRUBBY_KEEPS_PRIOR
 . /mnt/machman/share/regress/lib.sh
 
 [ -f /etc/fstab ] || : > /etc/fstab
@@ -49,5 +49,22 @@ if [ "$rc" -eq 4 ] && grep -q 'console=hvc1 console=tty0 stays in the boot entri
 	R KC_GRUBBY_NO_STATE pass
 else
 	R KC_GRUBBY_NO_STATE "fail (exit $rc)"; tail -n 4 /tmp/unin2.log
+fi
+
+# S60: console= arguments the entry had before setup — grubby's add replaces them — come
+# back at the uninstall, in their order, and the uninstall takes only what the run added.
+E="/boot/loader/entries/$(cat /etc/machine-id)-$K.conf"
+sed -i 's/^options .*/options root=UUID=1234 ro console=ttyS0,115200 console=tty0 quiet/' "$E"
+before="$(args)"
+$SH "$S" -y --user reg --kernel-console=hvc1 --no-install --no-service >/tmp/run4.log 2>&1
+during="$(args)"
+$SH "$S" --uninstall -y >/tmp/unin4.log 2>&1
+consoles() { printf '%s\n' "$1" | tr -d '"' | tr ' ' '\n' | grep '^console=' | tr '\n' ' '; }
+if [ "$(consoles "$(args)")" = "$(consoles "$before")" ] \
+	&& printf '%s' "$during" | grep -q 'console=hvc1 console=tty0'; then
+	R KC_GRUBBY_KEEPS_PRIOR pass
+else
+	R KC_GRUBBY_KEEPS_PRIOR fail; echo "before $before"; echo "during $during"; args
+	tail -n 4 /tmp/unin4.log
 fi
 exit 0
