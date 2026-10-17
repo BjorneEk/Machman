@@ -605,17 +605,44 @@ extension VMListViewModel {
 	// Batch enable/disable everything in the tree selection that carries the flag
 	// (multi-select context menus + the multi-selection inspector), in one vm.setEnabled:
 	// one config write, all or nothing (devices ride it since 1.0.12).
-	public func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
-		// Only what still exists (T15): a stale selection must not send gone ids.
+	// The selected rows that carry an enabled flag: disks, mounts, serial ports and the VM's
+	// devices — never kernel files, SSH sessions or groups (H61). Only what still exists
+	// (T15): a stale selection must not send gone ids. The batch actions send these and
+	// title themselves by their count.
+	public func enableableSelection(vm: VMInfo) -> Set<SidebarNode> {
 		let current = vms.first { $0.name == vm.name } ?? vm
+		let live = Self.liveNodes(
+			treeSelection, in: current, openSessions: openSSHSessions(vm: current.name))
+		return live.filter { node in
+			switch node {
+			case .disk, .mount, .serial:
+				return true
+			case .device(let kind):
+				// .unknown can't name the device it stands for; leave it out.
+				return kind != .unknown && current.devices?.contains { $0.kind == kind } == true
+			default:
+				return false
+			}
+		}
+	}
+
+	// "Enable 2 Items", "Disable 1 Item": the count the batch applies to (H61).
+	public static func batchEnableTitle(_ enabled: Bool, count: Int) -> String {
+		let verb = enabled ? "Enable" : "Disable"
+		switch count {
+		case 0: return "\(verb) Items"
+		case 1: return "\(verb) 1 Item"
+		default: return "\(verb) \(count) Items"
+		}
+	}
+
+	public func setSelectionEnabled(_ enabled: Bool, vm: VMInfo) {
 		var disks: [String: Bool] = [:]
 		var mounts: [String: Bool] = [:]
 		var console: [String: Bool] = [:]
 		var uart: [String: Bool] = [:]
 		var devices: [String: Bool] = [:]
-		let live = Self.liveNodes(
-			treeSelection, in: current, openSessions: openSSHSessions(vm: current.name))
-		for node in live {
+		for node in enableableSelection(vm: vm) {
 			switch node {
 			case .disk(let id):
 				disks[id] = enabled
@@ -628,10 +655,7 @@ extension VMListViewModel {
 					uart[String(ref.index)] = enabled
 				}
 			case .device(let kind):
-				// .unknown can't name the device it stands for; leave it out.
-				if kind != .unknown, current.devices?.contains(where: { $0.kind == kind }) == true {
-					devices[kind.rawValue] = enabled
-				}
+				devices[kind.rawValue] = enabled
 			default:
 				break
 			}

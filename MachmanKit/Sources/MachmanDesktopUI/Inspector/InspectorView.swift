@@ -92,17 +92,28 @@ struct NoSelectionInspector: View {
 	}
 }
 
-// Batch actions over a multi-selection: enable/disable everything that has the flag.
+// Batch actions over a multi-selection: enable/disable everything that has the flag,
+// titled by how many do (H61).
 struct MultiSelectionInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
 	let vm: VMInfo
 
 	var body: some View {
+		let count = viewModel.enableableSelection(vm: vm).count
 		Form {
-			Section("\(viewModel.treeSelection.count) items selected") {
-				Button("Enable All") { setAll(true) }
-				Button("Disable All") { setAll(false) }
+			Section {
+				Button(VMListViewModel.batchEnableTitle(true, count: count)) { setAll(true) }
+				Button(VMListViewModel.batchEnableTitle(false, count: count)) { setAll(false) }
+			} header: {
+				Text("\(viewModel.treeSelection.count) items selected")
+			} footer: {
+				if count == 0 {
+					Text("None of these items can be enabled or disabled.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
 			}
+			.disabled(count == 0)
 		}
 	}
 

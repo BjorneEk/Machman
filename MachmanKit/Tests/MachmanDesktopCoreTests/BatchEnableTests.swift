@@ -27,4 +27,27 @@ struct BatchEnableTests {
 		#expect(after.devices?.first { $0.kind == .network }?.enabled == false)
 		#expect(after.disks.first { $0.id == disk }?.isEnabled == false)
 	}
+
+	@Test("H61: the batch actions count only the selected items that carry an enabled flag")
+	func theBatchCountsWhatCarriesTheFlag() async throws {
+		let lab = Samples.kernelBoot()
+		let h = await DesktopHarness.make([lab])
+		h.viewModel.select(name: lab.name)
+		let kernels = (lab.boot.ownedKernels ?? []).map(\.path)
+		h.viewModel.treeSelection = [.kernel(kernels[0]), .kernel(kernels[1])]
+		#expect(h.viewModel.enableableSelection(vm: lab).isEmpty)
+		h.viewModel.treeSelection = [
+			.kernel(kernels[0]), .disk("storage:system"), .group("Disks"), .device(.network),
+		]
+		#expect(h.viewModel.enableableSelection(vm: lab)
+			== [.disk("storage:system"), .device(.network)])
+		#expect(VMListViewModel.batchEnableTitle(true, count: 1) == "Enable 1 Item")
+		#expect(VMListViewModel.batchEnableTitle(false, count: 2) == "Disable 2 Items")
+
+		// Two kernel files send nothing, so nothing is offered.
+		h.viewModel.treeSelection = [.kernel(kernels[0]), .kernel(kernels[1])]
+		h.viewModel.setSelectionEnabled(false, vm: lab)
+		try await Task.sleep(for: .milliseconds(50))
+		#expect(!h.stub.calls.contains("setEnabled"))
+	}
 }

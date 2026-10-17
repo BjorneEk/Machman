@@ -37,12 +37,16 @@ extension TreeContext {
 					EntityClipboard.write(copyable)
 				}
 			}
-			Button("Enable \(viewModel.treeSelection.count) Items") {
+			// Titled by what carries the flag, not by the selection (H61).
+			let count = viewModel.enableableSelection(vm: vm).count
+			Button(VMListViewModel.batchEnableTitle(true, count: count)) {
 				viewModel.setSelectionEnabled(true, vm: vm)
 			}
-			Button("Disable \(viewModel.treeSelection.count) Items") {
+			.disabled(count == 0)
+			Button(VMListViewModel.batchEnableTitle(false, count: count)) {
 				viewModel.setSelectionEnabled(false, vm: vm)
 			}
+			.disabled(count == 0)
 			Divider()
 		}
 	}

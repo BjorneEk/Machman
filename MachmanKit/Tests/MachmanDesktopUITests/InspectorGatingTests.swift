@@ -245,4 +245,30 @@ struct InspectorGatingTests {
 		#expect(tree.find(text: "Allow nested virtualization") == nil)
 		#expect(!tree.all.contains { $0.role == "AXPopUpButton" && $0.text == "EFI" })
 	}
+
+	@Test("H61: two kernel files offer no batch Enable or Disable, and say why")
+	func kernelFilesOfferNoBatchEnable() async throws {
+		let lab = Samples.kernelBoot()
+		let kernels = (lab.boot.ownedKernels ?? []).map(\.path)
+		let h = await UIHarness.make([lab])
+		h.viewModel.select(name: lab.name)
+		h.viewModel.treeSelection = [.kernel(kernels[0]), .kernel(kernels[1])]
+		let none = try await h.snapshot(
+			InspectorView(
+				viewModel: h.viewModel, sessions: h.terminals, profiles: h.profiles,
+				vm: h.vm(lab.name)),
+			width: 320, height: 820)
+		#expect(try !element(none, "Enable Items", role: "AXButton").isEnabled)
+		#expect(try !element(none, "Disable Items", role: "AXButton").isEnabled)
+		#expect(none.find(text: "None of these items can be enabled or disabled.") != nil,
+			"\(none.dump())")
+
+		h.viewModel.treeSelection = [.kernel(kernels[0]), .disk("storage:system")]
+		let one = try await h.snapshot(
+			InspectorView(
+				viewModel: h.viewModel, sessions: h.terminals, profiles: h.profiles,
+				vm: h.vm(lab.name)),
+			width: 320, height: 820)
+		#expect(try element(one, "Disable 1 Item", role: "AXButton").isEnabled)
+	}
 }
