@@ -146,4 +146,21 @@ struct RoutingOrphanTests {
 					+ "choose another name")
 		}
 	}
+
+	// A Finder rename of the running alpha to beta, then another folder renamed alpha: the
+	// orphan answers on alpha's socket and serves beta's folder. Adoption keyed a vmhost that
+	// didn't serve the VM it was asked for by the VM it said it served (E27) — alpha again,
+	// whose folder it doesn't serve.
+	@Test("E11: an orphan is never re-keyed as a VM whose folder it doesn't serve")
+	@MainActor func anOrphanIsNeverRekeyedAsAnotherFoldersVM() async throws {
+		let rig = try makeRig(["alpha", "beta"])
+		let (_, server) = try orphan(rig, vm: "alpha", folder: rig.library + "/beta")
+		defer { server.stop() }
+
+		await #expect(throws: MachmanError.self) { try await rig.routing.adoptLiveHost("alpha") }
+		#expect(rig.routing.orphanSockets == ["beta": rig.runtime + "/vm-alpha.sock"])
+		await #expect(throws: MachmanError.self) { try await rig.routing.adoptLiveHost("beta") }
+		#expect(rig.routing.hostForTesting("alpha") == nil)
+		#expect(rig.routing.hostForTesting("beta") == nil)
+	}
 }

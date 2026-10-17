@@ -117,10 +117,13 @@ extension RoutingMachman {
 		} catch let error as MachmanError where error.code == .notFound {
 			// E27: the host serves another VM — a vmhost from before the socket followed
 			// Save as New VM still answers on its original's path. Key it by what it
-			// serves; never adopt a host as a VM it does not run.
+			// serves; never adopt a host as a VM it does not run — nor as one whose folder it
+			// says it doesn't serve (E11: an orphan whose VM's name another folder took).
 			let served = (try? await client.listVMs(deadline: hostProbeDeadline)) ?? []
+			let folder = client.hello.host?.vmDir
 			guard served.count == 1, let actual = served.first, actual.name != name,
-				registry.vm(named: actual.name) != nil else {
+				registry.vm(named: actual.name) != nil,
+				folder.map({ isSameFile($0, libraryDir() + "/" + actual.name) }) ?? true else {
 				await client.disconnect()
 				throw MachmanError(
 					code: .invalidState,
