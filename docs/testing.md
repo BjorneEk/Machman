@@ -49,7 +49,9 @@ in; `-v` (the lab log) and `-vv` (the guest consoles too) fill it with a window 
 its first two lines, how many lines have gone by since, and the newest. Only a test's end
 moves the screen: its result line, cut to the terminal's width (only its mark and number in
 colour, its duration at the right edge), with its issues (laid out the same way; a known
-issue by its title) or skip reason hung under it, dimmed (`├─`, `└─`). Piped, redirected or
+issue by its title, a warning by its `!`) or skip reason hung under it, dimmed (`├─`, `└─`); a
+warning (a retry the harness rode over, a kept start failure) never fails its test and is listed
+again at the run's end (`lab: warnings`). Piped, redirected or
 with `--plain`, every line is printed with its time, and a quiet minute gets a stall line
 naming the running test, its step and the last console line. Harness waits that run past 5 s
 narrate themselves (`LabStep`). Every run keeps `report/progress.log` (the `-vv` stream) and

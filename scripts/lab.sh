@@ -780,7 +780,7 @@ run)
 	# The self-check's injected passes (lab_selfcheck_audits, lab_selfcheck_runner) need no
 	# products, like --self-check.
 	knobs="${MACHMAN_LAB_SELFCHECK_INJECT:-}${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}"
-	knobs="$knobs${MACHMAN_LAB_SELFCHECK_NO_EVENTS:-}"
+	knobs="$knobs${MACHMAN_LAB_SELFCHECK_NO_EVENTS:-}${MACHMAN_LAB_SELFCHECK_WARN:-}"
 	if [[ -n "$knobs" && "$(lab_tiers)" == harness ]]; then
 		lab_run harness 1
 	fi

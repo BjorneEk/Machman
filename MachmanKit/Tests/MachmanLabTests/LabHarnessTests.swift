@@ -302,3 +302,24 @@ struct LabHarnessTests {
 		#expect((mode as? NSNumber)?.intValue == 0o644)
 	}
 }
+
+// MARK: lab.sh --self-check only (MACHMAN_LAB_SELFCHECK_WARN)
+
+extension LabHarnessTests {
+	/// A retry noted on purpose, so the runner's self-check can prove a warning reaches the run's
+	/// output, at the line of the note and with the argument it ran with (Q42). Every other run
+	/// skips it, saying so.
+	@Suite(
+		"Lab self-check warnings",
+		.enabled(
+			if: Lab.environment["MACHMAN_LAB_SELFCHECK_WARN"] == "1",
+			Comment(rawValue: "only lab.sh --self-check runs it")))
+	struct SelfCheck {
+		@Test(
+			"Q42: a retry the harness rides over shows as a warning on its test",
+			arguments: ["q42"])
+		func warns(case name: String) {
+			LabRetry.note("\(name) self-check: a retry the harness rode over")
+		}
+	}
+}

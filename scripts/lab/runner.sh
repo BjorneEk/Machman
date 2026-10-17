@@ -90,6 +90,10 @@ lab_test_fallback_log() {
 # it, not inherited: the system strips DYLD_* from what passes through caffeinate, which keeps
 # the Mac awake while it runs (sandbox_awake). Exit status: 0 passed, 1 failed, 69 no test
 # matched the filter (swift test's warning for it is read as 69 too), else the process died.
+# The event stream is version 6.3, the first that carries warnings (a retry the harness rode
+# over, a kept start failure; 0 leaves them out of the stream and the test's console both), with
+# Swift Testing's experimental fields on: their _testCase names a parameterized test's argument,
+# which 6.3 alone leaves out (Q42).
 lab_test() {
 	local args=() pid st log lib="$LAB_TEST_PLATFORM/Library"
 	if [[ "$1" == --list ]]; then
@@ -97,7 +101,7 @@ lab_test() {
 	else
 		args=(--no-parallel --filter "$2")
 		[[ -n "$1" && -z "${MACHMAN_LAB_SELFCHECK_NO_EVENTS:-}" ]] &&
-			args+=(--event-stream-output-path "$1" --event-stream-version 0)
+			args+=(--event-stream-output-path "$1" --event-stream-version 6.3)
 	fi
 	if [[ -z "$LAB_TEST_HELPER" ]]; then
 		if [[ "$1" == --list ]]; then
@@ -106,8 +110,8 @@ lab_test() {
 			# SwiftPM answers a filter that matched no test with a warning and exit 0.
 			log="$(lab_test_fallback_log)"
 			mkdir -p "${log%/*}"
-			sandbox_awake swift test --skip-build --disable-xctest --package-path "$pkg" \
-				"${args[@]}" 2>&1 | tee "$log"
+			sandbox_awake env SWT_EXPERIMENTAL_EVENT_STREAM_FIELDS_ENABLED=1 swift test \
+				--skip-build --disable-xctest --package-path "$pkg" "${args[@]}" 2>&1 | tee "$log"
 			st=${PIPESTATUS[0]}
 			if ((st == 0)) && grep -qF "No matching test cases were run" "$log"; then st=69; fi
 			rm -f "$log"
@@ -117,6 +121,7 @@ lab_test() {
 	fi
 	DYLD_FRAMEWORK_PATH="$lib/Frameworks:$lib/PrivateFrameworks" \
 		DYLD_LIBRARY_PATH="$LAB_TEST_PLATFORM/usr/lib" SDKROOT="$LAB_TEST_SDK" NO_COLOR=1 \
+		SWT_EXPERIMENTAL_EVENT_STREAM_FIELDS_ENABLED=1 \
 		"$LAB_TEST_HELPER" --test-bundle-path "$LAB_TEST_BUNDLE" "${args[@]}" "$LAB_TEST_BUNDLE" \
 		--testing-library swift-testing &
 	pid=$!
@@ -190,8 +195,10 @@ lab_stop_follower() {
 
 # The runner's self-check knobs: each makes a pass misbehave on purpose (lab_selfcheck_runner).
 # MACHMAN_LAB_SELFCHECK_NO_EVENTS: lab_test leaves out the event stream, as a helper ignoring
-# its path would.
-LAB_SELFCHECK_KNOBS=(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE MACHMAN_LAB_SELFCHECK_NO_EVENTS)
+# its path would. MACHMAN_LAB_SELFCHECK_WARN: LabHarnessTests' SelfCheck suite runs, a test that
+# notes a retry on purpose.
+LAB_SELFCHECK_KNOBS=(MACHMAN_LAB_SELFCHECK_EMPTY_SUITE MACHMAN_LAB_SELFCHECK_NO_EVENTS
+	MACHMAN_LAB_SELFCHECK_WARN)
 
 # lab_selfcheck_knobs <self-check pass 0|1>: outside a self-check pass (lab_run's, harness tier
 # only) every knob is dropped, said once: a leftover export must never fail a real run.
@@ -316,7 +323,8 @@ lab_run_serial() {
 # processes side by side, each in a scratch sandbox of its own, all report their test (eight
 # swift test --ignore-lock lost about one in three to SwiftPM's locked build database); a
 # toolchain without the testing helper runs swift test instead; and an armed two-shard harness
-# pass with a planned suite that runs nothing fails, naming it where failcheck reads it.
+# pass with a planned suite that runs nothing fails, naming it where failcheck reads it. And a
+# warning a lab test records reaches the run's output, at its line, with its argument (Q42).
 # Prints "ok   <check>" or "FAIL <check>: <why>"; returns the failure count.
 lab_selfcheck_runner() {
 	local failures=0 sc k t lost="" check why out rc
@@ -413,15 +421,17 @@ lab_selfcheck_runner() {
 	fi
 	rm -rf "$sc"
 	check="Q27: a self-check knob left in the environment is dropped outside a self-check pass"
-	out="$(export MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1; lab_selfcheck_knobs 0
-		echo "left=${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}")"
-	why="$(export MACHMAN_LAB_SELFCHECK_EMPTY_SUITE=1; lab_selfcheck_knobs 1
-		echo "left=${MACHMAN_LAB_SELFCHECK_EMPTY_SUITE:-}")"
-	local said="lab: ignored MACHMAN_LAB_SELFCHECK_EMPTY_SUITE (it acts in a self-check pass only)"
-	if [[ "$out" == "$said"$'\n'"left=" && "$why" == "left=1" ]]; then
+	local knob left=""
+	for knob in "${LAB_SELFCHECK_KNOBS[@]}"; do
+		out="$(export "$knob=1"; lab_selfcheck_knobs 0; echo "left=${!knob:-}")"
+		why="$(export "$knob=1"; lab_selfcheck_knobs 1; echo "left=${!knob:-}")"
+		[[ "$out" == "lab: ignored $knob (it acts in a self-check pass only)"$'\n'"left=" &&
+			"$why" == "left=1" ]] || left="$left $knob (outside: $out; inside: $why)"
+	done
+	if [[ -z "$left" ]]; then
 		echo "ok   $check"
 	else
-		echo "FAIL $check: outside: $out; inside: $why"
+		echo "FAIL $check:$left"
 		failures=$((failures + 1))
 	fi
 	check="Q27: a parallel run with a planned suite that runs nothing fails and names it"
@@ -450,6 +460,24 @@ lab_selfcheck_runner() {
 		echo "ok   $check"
 	else
 		echo "FAIL $check: exit $rc: $(grep -E '^lab|✘|Test run' <<<"$out" | tr '\n' ' ')"
+		failures=$((failures + 1))
+	fi
+	check="Q42: a warning a lab test records shows under it in the run's output, its argument named"
+	local at noted="q42 self-check: a retry the harness rode over"
+	at="LabHarnessTests.swift:$(grep -n -F "self-check: a retry the harness rode over" \
+		"$pkg/Tests/MachmanLabTests/LabHarnessTests.swift" | head -n 1 | cut -d: -f1)"
+	out="$(MACHMAN_LAB_SELFCHECK_WARN=1 "$repo/scripts/lab.sh" --harness --no-build --plain \
+		--filter 'LabHarnessTests/SelfCheck' 2>&1)"
+	rc=$?
+	# Once under its test, once in the run's closing list of warnings.
+	if [[ $rc == 0 ]] && grep -qxF "lab: tests passed" <<<"$out" &&
+		grep -qF "  ! $at [\"q42\"]: $noted" <<<"$out" && grep -q " lab: warnings$" <<<"$out" &&
+		[[ "$(grep -cF "$at [\"q42\"]: $noted" <<<"$out")" == 2 ]] &&
+		grep -qxF "lab: audits: 0 breaches, 0 warnings" <<<"$out"; then
+		echo "ok   $check"
+	else
+		echo "FAIL $check: exit $rc, expected $at: $(grep -E '^lab|!|✘|✔|Test run' <<<"$out" |
+			tr '\n' ' ')"
 		failures=$((failures + 1))
 	fi
 	return "$failures"

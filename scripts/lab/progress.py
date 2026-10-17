@@ -21,7 +21,8 @@ running test, its step and the last console line.
   level 2  + the guest consoles, line by line
 
 Inputs (lab.sh's run dir ROOT): report/events.jsonl (the test process's
---event-stream-output-path, version 0), logs/unified.ndjson (log stream --style ndjson),
+--event-stream-output-path, version 6.3 with the experimental fields on: warnings, and the
+argument of a parameterized test's issue, Q42), logs/unified.ndjson (log stream --style ndjson),
 transcripts/*.log, pids/*.pid. A parallel run (--shard, --planned) reads each shard's
 report/events/<suite>.jsonl; with --suites (plan.py's suites file) a planned suite that reported
 no test is a failure line at its place, with its exit status (ROOT's report/suite-runs.tsv) and
