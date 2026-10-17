@@ -81,8 +81,13 @@ final class MacInstaller {
 	var onDownloadProgress: ((Progress) -> Void)?
 	var onInstallProgress: ((Progress) -> Void)?
 
-	init(config: VMConfig) {
+	// The disk the user picked to install onto (D32): erased and moved first. nil: a new first
+	// disk, or a retry's own (VMConfig.ensureMacSystemDisk).
+	let systemDisk: String?
+
+	init(config: VMConfig, systemDisk: String? = nil) {
 		self.config = config
+		self.systemDisk = systemDisk
 	}
 
 	// The downloaded image's last move, into the VM folder (D33): a rename on the library's
@@ -130,7 +135,7 @@ final class MacInstaller {
 		try config.persistMacHardwareModel(hwModel)
 		try config.createMacMachineIdentifier()
 		try config.createMacAuxiliaryStorage(hardwareModel: hwModel)
-		try config.ensureMacSystemDisk()
+		try config.ensureMacSystemDisk(onto: systemDisk)
 		if config.cpuCount < minCPU { config.cpuCount = minCPU }
 		if config.memorySize < minMem { config.memorySize = minMem }
 

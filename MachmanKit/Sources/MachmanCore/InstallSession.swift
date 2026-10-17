@@ -76,7 +76,8 @@ final class InstallSession {
 		}
 	}
 
-	func startInstall(source: InstallSource) throws {
+	// `diskID`: the disk the user picked for macOS (D32), checked by the caller.
+	func startInstall(source: InstallSource, diskID: String? = nil) throws {
 		// A second start used to answer success while the first install kept running (E15b).
 		guard installer == nil else {
 			throw MachmanError(
@@ -100,7 +101,7 @@ final class InstallSession {
 			}
 			installerSource = .localIPSW(URL(fileURLWithPath: path))
 		}
-		let installer = MacInstaller(config: config)
+		let installer = MacInstaller(config: config, systemDisk: diskID)
 		self.installer = installer
 		let isRemote = source.kind == .latest
 		installer.onResolved = { [weak self] version, build in

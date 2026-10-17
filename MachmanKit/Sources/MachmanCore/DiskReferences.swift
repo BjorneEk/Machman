@@ -131,6 +131,32 @@ extension VMRegistry {
 		try vm.config.renameStorageDisk(id: id, to: newName)
 	}
 
+	// vm.install.start's picked disk (D32, K4), checked before the install starts: one of the
+	// VM's own disks that can hold macOS, whose file no other VM's config names — the install
+	// erases it, and erasing a file another VM attaches or references would destroy that VM's
+	// disk. Its size is never a reason (K15: the switch sheet warns about a small one).
+	func macInstallTargetRefusal(_ diskID: String, of vm: VirtualMachine) -> MachmanError? {
+		let config = vm.config
+		guard let disk = config.disks.first(where: { $0.id == diskID }) else {
+			return MachmanError(code: .notFound, message: "\(config.name) no longer has that disk")
+		}
+		if let refusal = VMConfig.macSystemDiskRefusal(disk) { return refusal }
+		guard let file = config.attachedFile(of: disk) else { return nil }
+		let target = (file as NSString).standardizingPath
+		for other in vms.keys.sorted() where other != config.name {
+			guard let otherConfig = vms[other]?.config else { continue }
+			let used = otherConfig.everyWritableDiskFile
+				.union(otherConfig.referencedPaths.map { ($0 as NSString).standardizingPath })
+			if used.contains(target) {
+				return MachmanError(
+					code: .invalidState,
+					message: "\(other) also uses \u{201C}\((file as NSString).lastPathComponent)"
+						+ "\u{201D}, so macOS can’t be installed on it")
+			}
+		}
+		return nil
+	}
+
 	private func refuseForeignUse(of file: String?, in vm: VirtualMachine) throws {
 		let owner = vm.config.name
 		guard let file, let ref = foreignReference(to: file, excluding: owner) else { return }

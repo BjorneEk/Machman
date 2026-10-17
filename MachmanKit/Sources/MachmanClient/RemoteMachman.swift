@@ -438,8 +438,11 @@ public final class RemoteMachman: MachmanControlling {
 		return result.flatMap { Data(base64Encoded: $0.jpegBase64) }
 	}
 
-	public func startMacInstall(vm name: String, source: InstallSource) async throws {
-		try await void(.installStart, RPCParams.InstallStart(name: name, source: source))
+	public func startMacInstall(
+		vm name: String, source: InstallSource, diskID: String?
+	) async throws {
+		try await void(
+			.installStart, RPCParams.InstallStart(name: name, source: source, diskID: diskID))
 	}
 
 	public func cancelMacInstall(vm name: String) async throws {

@@ -128,7 +128,7 @@ keep working — nothing is rejected at load.
 | `vm.window.open` | `{name}` | `{}` (the VM's vmhost shows its window) |
 | `vm.window.close` | `{name}` | `{}` (VM keeps running) |
 | `vm.preview` | `{name, maxWidth?}` | `{jpegBase64}` or `null` |
-| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}}` | `{}` (refused with `invalidState` once macOS is installed, while that VM's install is already running, or when a newer Machman set its boot mode; a retry after a failed or cancelled install starts over) |
+| `vm.install.start` | `{name, source: {kind:"latest"} \| {kind:"ipsw", path}, diskID?}` | `{}` (refused with `invalidState` once macOS is installed, while that VM's install is already running, or when a newer Machman set its boot mode or added one of its enabled disks; a retry after a failed or cancelled install starts over. macOS installs onto the first disk the VM attaches: without `diskID` a new 64 GB disk goes first and the VM's other disks stay after it, except on a retry (the VM in macOS mode already), which reuses its own first disk when that one is writable. `diskID` (additive; older daemons ignore it) names one of the VM's disks to install onto instead — it is erased, moved first and enabled; an ISO or a disk a newer Machman added answers `invalidArgument`, a file another VM's config names answers `invalidState`, a disk the VM no longer has `notFound`; a small disk is never refused) |
 | `vm.install.cancel` | `{name}` | `{}` |
 | `vm.install.phase` | `{name}` | `InstallPhase` |
 | `vm.device.add` | `{name, kind}` | `VMInfo` (1.0.4+; one device per kind; kind validity depends on boot mode — trackpad needs macOS, clipboard/rosetta refuse macOS; takes effect next boot) |

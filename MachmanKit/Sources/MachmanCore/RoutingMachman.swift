@@ -665,9 +665,11 @@ public final class RoutingMachman: MachmanControlling {
 		}
 	}
 
-	public func startMacInstall(vm name: String, source: InstallSource) async throws {
+	public func startMacInstall(
+		vm name: String, source: InstallSource, diskID: String?
+	) async throws {
 		try await requireStopped(name, "installing macOS")
-		try await local.startMacInstall(vm: name, source: source)
+		try await local.startMacInstall(vm: name, source: source, diskID: diskID)
 	}
 
 	public func cancelMacInstall(vm name: String) async throws {

@@ -312,13 +312,18 @@ public enum RPCParams {
 		}
 	}
 
+	// diskID (D32, additive): one of the VM's disks to install onto, erased and moved first;
+	// absent, a new disk goes first — except on a retry, which reuses its own first disk. An
+	// older daemon ignores it.
 	public struct InstallStart: Codable, Equatable, Sendable {
 		public var name: String
 		public var source: InstallSource
+		public var diskID: String?
 
-		public init(name: String, source: InstallSource) {
+		public init(name: String, source: InstallSource, diskID: String? = nil) {
 			self.name = name
 			self.source = source
+			self.diskID = diskID
 		}
 	}
 

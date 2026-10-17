@@ -177,6 +177,57 @@ struct NewStorageDiskTests {
 		}
 	}
 
+	// D32 (review 4), K4: the switch sheet may name one of the VM's disks for macOS instead.
+	// The install erases it: it goes first (VZ restores onto the first disk), switched on.
+	@Test("D32: a disk picked for macOS goes first and is switched on")
+	func aPickedDiskGoesFirst() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try makeVM("picked")
+			try vm.addNewStorageDisk(name: "system", size: mib)
+			try vm.addNewStorageDisk(name: "spare", size: mib)
+			try vm.setEnabled(
+				disks: ["storage:spare": false], mounts: [:], console: [:], uart: [:])
+			try vm.ensureMacSystemDisk(onto: "storage:spare", minimumSize: mib)
+			#expect(vm.disks.map(\.id) == ["storage:spare", "storage:system"])
+			#expect(vm.disks.first?.enabled == true)
+			let saved = try VMConfig.load(name: "picked")
+			#expect(saved.disks.map(\.id) == ["storage:spare", "storage:system"])
+		}
+	}
+
+	// The picked disk is one of this VM's own that can hold macOS, and no other VM's config
+	// names its file: erasing it would destroy that VM's disk. Its size is never a reason —
+	// the sheet warns about a small disk (K15), and these are 1 MiB.
+	@Test("D32: macOS refuses an ISO, a newer Machman's disk, another VM's disk or a gone one")
+	func aPickedDiskIsOnlyThisVMs() throws {
+		try VMTestDir.withRedirectedDir {
+			let owner = try makeVM("owner")
+			try owner.addNewStorageDisk(name: "system", size: mib)
+			try owner.addNewStorageDisk(name: "shared", size: mib)
+			try owner.addIsoDisk(isoUrl: URL(fileURLWithPath: "/isos/installer.iso"))
+			let newer = try JSONDecoder().decode(
+				VMDisk.self, from: Data(#"{"kind":{"nvme":{"_0":"fast"}}}"#.utf8))
+			owner.disks.append(newer)
+			try owner.saveVMConfig()
+			let other = try makeVM("other")
+			try other.addDisk(disk: VMDisk(kind: .fromUrl(
+				URL(fileURLWithPath: owner.configFilePath(file: "shared.raw")))))
+			let registry = VMRegistry()
+			let vm = try #require(registry.vm(named: "owner"))
+			@MainActor func refusal(_ id: String) -> MachmanError? {
+				registry.macInstallTargetRefusal(id, of: vm)
+			}
+			#expect(refusal("storage:system") == nil)
+			#expect(refusal("iso:file:///isos/installer.iso")?.message
+				== "macOS can\u{2019}t be installed on an ISO")
+			#expect(refusal(newer.id)?.message
+				== "macOS can\u{2019}t be installed on a disk a newer Machman added")
+			#expect(refusal("storage:shared")?.message == "other also uses \u{201C}shared.raw"
+				+ "\u{201D}, so macOS can\u{2019}t be installed on it")
+			#expect(refusal("storage:gone")?.code == .notFound)
+		}
+	}
+
 	// D34 (review 4): vm.disk.add appended any image or iso path, so the same raw picked twice
 	// (or the VM's own raw by reference) made two entries with one id — the inspector couldn't
 	// tell them apart, removing one removed both — and both attached writable at a start.

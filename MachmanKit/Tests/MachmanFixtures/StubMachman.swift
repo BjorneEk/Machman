@@ -719,12 +719,14 @@ public final class StubMachman: MachmanControlling {
 		let vm = try get(name)
 		return vm.state.isRunning ? previewPayload : nil
 	}
-	// macOS installs started, in order (the New VM picker's macOS template).
-	public private(set) var installs: [(vm: String, source: InstallSource)] = []
-	public func startMacInstall(vm name: String, source: InstallSource) async throws {
+	// macOS installs started, in order (the New VM picker's macOS template, the switch sheet).
+	public private(set) var installs: [(vm: String, source: InstallSource, diskID: String?)] = []
+	public func startMacInstall(
+		vm name: String, source: InstallSource, diskID: String?
+	) async throws {
 		try gate()
 		_ = try get(name)
-		installs.append((name, source))
+		installs.append((name, source, diskID))
 	}
 	public func cancelMacInstall(vm name: String) async throws {
 		try gate()

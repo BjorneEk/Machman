@@ -158,7 +158,9 @@ public protocol MachmanControlling: AnyObject {
 	func preview(vm name: String, maxWidth: Int?) async throws -> Data?
 
 	// MARK: macOS install
-	func startMacInstall(vm name: String, source: InstallSource) async throws
+	// `diskID`: one of the VM's disks to install onto, erased (D32, K4); nil installs onto a
+	// new first disk, or a retry's own first disk.
+	func startMacInstall(vm name: String, source: InstallSource, diskID: String?) async throws
 	func cancelMacInstall(vm name: String) async throws
 	func macInstallPhase(vm name: String) async throws -> InstallPhase
 
@@ -179,6 +181,11 @@ public protocol MachmanControlling: AnyObject {
 }
 
 extension MachmanControlling {
+	// An install onto a new disk (or a retry's own) — every install before D32's choice.
+	public func startMacInstall(vm name: String, source: InstallSource) async throws {
+		try await startMacInstall(vm: name, source: source, diskID: nil)
+	}
+
 	// vm.setEnabled before devices joined the batch.
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,

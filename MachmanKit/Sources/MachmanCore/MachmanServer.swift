@@ -312,7 +312,7 @@ public final class MachmanServer {
 				}
 			case .installStart:
 				let p: RPCParams.InstallStart = try params(line)
-				try await api.startMacInstall(vm: p.name, source: p.source)
+				try await api.startMacInstall(vm: p.name, source: p.source, diskID: p.diskID)
 				reply(client, id, RPCEmpty())
 			case .installCancel:
 				let p: RPCParams.Name = try params(line)

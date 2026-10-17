@@ -8,6 +8,7 @@
 
 import Foundation
 import Virtualization
+import MachmanAPI
 
 extension VMConfig {
 
@@ -87,8 +88,15 @@ extension VMConfig {
 	// switched on if it was off. Anything else (a switch from EFI or kernel boot, the mac
 	// template) gets a NEW first disk, and the VM's other disks stay after it (K4): "disk", or
 	// "disk-2", "disk-3"… when an orphan image (a .raw no config entry names) already holds
-	// the name — creation never replaces a file.
-	func ensureMacSystemDisk(minimumSize: UInt64 = 64 * 1024 * 1024 * 1024) throws {
+	// the name — creation never replaces a file. `diskID`: the disk the user picked instead
+	// (K4), checked again here — the download took minutes — then moved first and switched on.
+	func ensureMacSystemDisk(
+		onto diskID: String? = nil, minimumSize: UInt64 = MacSystemDisk.newDiskBytes
+	) throws {
+		if let diskID {
+			try placeMacSystemDisk(diskID)
+			return
+		}
 		if case .macOS = boot, let first = disks.first, Self.canHoldMacOS(first) {
 			if !first.enabled {
 				disks[0].enabled = true
@@ -105,11 +113,41 @@ extension VMConfig {
 		try addNewStorageDisk(name: name, size: minimumSize, first: true)
 	}
 
+	private func placeMacSystemDisk(_ diskID: String) throws {
+		guard let index = disks.firstIndex(where: { $0.id == diskID }) else {
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
+		}
+		if let refusal = Self.macSystemDiskRefusal(disks[index]) { throw refusal }
+		let before = disks
+		var disk = disks.remove(at: index)
+		disk.enabled = true
+		disks.insert(disk, at: 0)
+		do {
+			try saveVMConfig()
+		} catch {
+			disks = before
+			throw error
+		}
+	}
+
 	// A disk macOS can be restored onto: a writable one this build knows.
 	static func canHoldMacOS(_ disk: VMDisk) -> Bool {
+		macSystemDiskRefusal(disk) == nil
+	}
+
+	// Why macOS can't be installed on a disk — its kind only. Its size is never a reason: the
+	// switch sheet warns about a small one, and the install says if macOS doesn't fit (K15).
+	static func macSystemDiskRefusal(_ disk: VMDisk) -> MachmanError? {
 		switch disk.kind {
-		case .storage, .fromUrl: return true
-		case .iso, .unknown: return false
+		case .storage, .fromUrl:
+			return nil
+		case .iso:
+			return MachmanError(
+				code: .invalidArgument, message: "macOS can’t be installed on an ISO")
+		case .unknown:
+			return MachmanError(
+				code: .invalidArgument,
+				message: "macOS can’t be installed on a disk a newer Machman added")
 		}
 	}
 }
