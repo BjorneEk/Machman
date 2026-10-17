@@ -35,7 +35,7 @@ struct TreeRenameTests {
 		let vm = try alpine(h)
 		#expect(h.viewModel.treeRenameProblem(disk, draft: "system", on: vm) == nil)
 		#expect(!submit(h, disk, " system ", on: vm))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameDisk"))
 		#expect(h.viewModel.toasts.isEmpty)
 	}
@@ -55,7 +55,7 @@ struct TreeRenameTests {
 		#expect(h.viewModel.treeRenameProblem(disk, draft: ".x", on: vm)
 			== "A disk name can’t start with a dot")
 		#expect(!submit(h, disk, ".x", on: vm))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameDisk"))
 	}
 
@@ -78,7 +78,7 @@ struct TreeRenameTests {
 		#expect(!submit(h, node, "6.12", on: vm))
 		#expect(h.viewModel.treeRenameProblem(node, draft: "a/b", on: vm) != nil)
 		#expect(!submit(h, node, "a/b", on: vm))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameKernelFile"))
 		#expect(submit(h, node, "6.13", on: vm))
 		#expect(await eventually { h.stub.calls.contains("renameKernelFile") })
@@ -90,7 +90,7 @@ struct TreeRenameTests {
 		#expect(!submit(h, .vmRoot, "Alpine ", on: vm))
 		#expect(h.viewModel.treeRenameProblem(.vmRoot, draft: "Sequoia", on: vm)
 			== "A VM named \u{201C}Sequoia\u{201D} already exists")
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameVM"))
 	}
 }

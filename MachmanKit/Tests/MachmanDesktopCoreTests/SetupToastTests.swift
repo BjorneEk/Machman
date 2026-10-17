@@ -37,7 +37,7 @@ struct SetupToastTests {
 		_ = await eventually {
 			h.store.vms.first?.setup?.lastReportAt == Samples.epoch.addingTimeInterval(3_600)
 		}
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 	}
 
 	private func setupToasts(_ h: DesktopHarness) -> [String] {
@@ -86,7 +86,7 @@ struct SetupToastTests {
 		h.stub.vms["Debian"] = debian
 		h.stub.emit(.sshChanged(vm: "Debian"))
 		_ = await eventually { h.store.vms.first?.ssh?.guestHostname == "debian-13" }
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(!h.viewModel.toasts.contains { $0.message.contains("SSH set up") })
 	}
 

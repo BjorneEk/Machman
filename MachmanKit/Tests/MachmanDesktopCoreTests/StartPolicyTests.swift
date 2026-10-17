@@ -36,7 +36,7 @@ struct StartPolicyTests {
 		#expect(!h.viewModel.canStart(sequoia))
 		h.viewModel.startPolicyDriven(sequoia)
 		#expect(!h.viewModel.isStartPending("Sequoia"))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(h.stub.starts.isEmpty)
 	}
 

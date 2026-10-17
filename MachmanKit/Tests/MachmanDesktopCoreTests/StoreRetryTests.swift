@@ -81,6 +81,8 @@ struct StoreRetryTests {
 		#expect(await eventually { store.listProblem != nil })
 		store.detach()
 		let calls = stub.calls.filter { $0 == "listVMs" }.count
+		// Waits out the 50 ms retry a detached store must not run: a timer, which settled()
+		// doesn't wait for by design (Q34), so this check keeps its sleep.
 		try? await Task.sleep(for: .milliseconds(300))
 		#expect(stub.calls.filter { $0 == "listVMs" }.count == calls)
 	}

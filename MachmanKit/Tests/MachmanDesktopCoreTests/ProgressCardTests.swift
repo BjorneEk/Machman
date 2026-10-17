@@ -26,7 +26,7 @@ struct ProgressCardTests {
 		})
 		h.viewModel.closeProgressCard("op-import-done")
 		#expect(h.operations.operations.isEmpty)
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("cancelOperation"))
 		#expect(h.viewModel.presentedError == nil)
 	}
@@ -58,7 +58,7 @@ struct ProgressCardTests {
 		#expect(await eventually(timeout: .seconds(5)) {
 			h.stub.calls.contains("cancelOperation")
 		})
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(h.viewModel.presentedError == nil)
 	}
 
@@ -77,7 +77,7 @@ struct ProgressCardTests {
 		#expect(await eventually(timeout: .seconds(5)) {
 			h.stub.calls.filter { $0 == "operations" }.count > resyncs
 		})
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(h.operations.operations.isEmpty)
 	}
 
@@ -94,7 +94,7 @@ struct ProgressCardTests {
 			h.operations.operations.map(\.id) == [op.id]
 		})
 		h.viewModel.closeProgressCard(op.id)
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("cancelOperation"))
 		#expect(h.viewModel.presentedError == nil)
 		#expect(h.operations.operations.map(\.id) == [op.id])

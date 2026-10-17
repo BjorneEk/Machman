@@ -40,7 +40,7 @@ struct NewDiskFormTests {
 		#expect(h.viewModel.newDiskProblem(on: debian, name: "system", sizeText: "8")
 			== "This VM already has a disk named \u{201C}system\u{201D}")
 		#expect(!h.viewModel.createDisk(on: debian, name: "system", sizeText: "8"))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("addDisk"))
 	}
 

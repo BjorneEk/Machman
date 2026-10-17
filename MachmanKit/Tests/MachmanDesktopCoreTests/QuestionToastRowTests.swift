@@ -31,7 +31,7 @@ struct QuestionToastRowTests {
 		#expect(pending.mode == .force)
 		#expect(pending.title == "Force stop \u{201C}Debian\u{201D}?")
 		#expect(pending.confirmLabel == "Force Stop")
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("stop"))
 		#expect(h.stub.vms["Debian"]?.state == .running)
 		h.viewModel.confirmStop(pending)
@@ -69,7 +69,7 @@ struct QuestionToastRowTests {
 		let lists = h.stub.calls.filter { $0 == "listVMs" }.count
 		h.stub.emit(.sshChanged(vm: "Debian"))
 		#expect(await eventually { h.stub.calls.filter { $0 == "listVMs" }.count > lists })
-		try await Task.sleep(for: .milliseconds(100))
+		#expect(await h.settled())
 		#expect(h.viewModel.toasts.filter { $0.message == message }.count == 1)
 		let asks = h.viewModel.activity.entries.filter {
 			$0.detail == "Asks to log in to this Mac \u{2014} approve it in the SSH section"

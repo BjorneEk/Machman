@@ -23,7 +23,7 @@ struct StopConfirmTests {
 		h.viewModel.requestStop(debian, mode: .soft)
 		#expect(h.viewModel.pendingStop?.vm == "Debian")
 		#expect(h.viewModel.pendingStop?.mode == .soft)
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("stop"))
 		#expect(h.stub.vms["Debian"]?.state == .running)
 	}
@@ -44,7 +44,7 @@ struct StopConfirmTests {
 		let h = await DesktopHarness.make(Samples.libraryWithStalledHost())
 		h.viewModel.stopVM("Debian", mode: .force)
 		#expect(h.viewModel.pendingEndProcess?.vm == "Debian")
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("stop"))   // the daemon's bounded wait is skipped
 		#expect(!h.stub.calls.contains("endProcess"))
 
@@ -86,7 +86,7 @@ struct StopConfirmTests {
 		#expect(await eventually {
 			h.stub.calls.contains("start") && !h.viewModel.pendingStarts.contains("Debian")
 		})
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(h.viewModel.presentedError == nil)
 	}
 

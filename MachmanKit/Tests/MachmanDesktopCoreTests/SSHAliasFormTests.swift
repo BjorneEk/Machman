@@ -23,7 +23,7 @@ struct SSHAliasFormTests {
 		#expect(problem != nil)
 		#expect(problem == SSHAliasRule.problem("dev box"))
 		#expect(!h.viewModel.submitSSHAlias(debian, draft: "dev box"))
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("setSSH"))
 	}
 

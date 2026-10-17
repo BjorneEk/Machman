@@ -44,7 +44,7 @@ struct PreviewTargetsTests {
 		let previews = previews(h)
 		h.tornTabs.open.insert(
 			TornTab(vm: "Debian", tab: .terminal(SerialPortRef(kind: .console, index: 0))))
-		try? await Task.sleep(for: .milliseconds(100))
+		#expect(await settled { previews.pollingNames })
 		#expect(previews.pollingNames.isEmpty)
 		previews.detach()
 	}
@@ -138,11 +138,12 @@ struct PreviewTargetsTests {
 		h.viewModel.migrateClientState(from: "Debian", to: "Debian 2", .renamed)   // the reply
 		h.stub.emit(.stateChanged(vm: "Alpine", state: .running))
 		#expect(await eventually { h.store.vms.first { $0.name == "Alpine" }?.state == .running })
-		try await Task.sleep(for: .milliseconds(50))   // the prune runs a turn after the list
+		// The prune runs a turn after the list.
+		#expect(await settled { previews.images.images.keys.sorted() })
 		#expect(previews.images.images["Debian 2"] != nil)
 		try await h.stub.renameVM(named: "Debian", to: "Debian 2")
 		#expect(await eventually { h.store.vms.contains { $0.name == "Debian 2" } })
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await settled { previews.images.images.keys.sorted() })
 		#expect(previews.images.images["Debian 2"] != nil)
 		previews.detach()
 	}

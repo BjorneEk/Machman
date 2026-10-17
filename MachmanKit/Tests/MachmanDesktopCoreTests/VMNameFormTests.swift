@@ -54,7 +54,7 @@ struct VMNameFormTests {
 		#expect(h.viewModel.presentedError?.message
 			== "A VM name can’t contain \u{201C}/\u{201D}")
 		#expect(h.viewModel.presentedError?.title == "Renaming \u{201C}Alpine\u{201D} failed")
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(!h.stub.calls.contains("renameVM"))
 	}
 
@@ -80,7 +80,7 @@ struct VMNameFormTests {
 		var reverts = 0
 		h.viewModel.requestRename(alpine, to: "Alpine 2") { reverts += 1 }
 		#expect(await eventually { h.viewModel.selectedName == "Alpine 2" })
-		try await Task.sleep(for: .milliseconds(50))
+		#expect(await h.settled())
 		#expect(reverts == 0)
 	}
 

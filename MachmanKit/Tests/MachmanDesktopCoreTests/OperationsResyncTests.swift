@@ -45,7 +45,7 @@ struct OperationsResyncTests {
 		#expect(await eventually(timeout: .seconds(5)) {
 			stub.calls.filter { $0 == "operations" }.count > resyncs
 		})
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await settled { operations.operations.map(\.id) })
 		#expect(operations.operations.isEmpty)
 		operations.detach()
 	}
@@ -59,7 +59,7 @@ struct OperationsResyncTests {
 		#expect(await eventually(timeout: .seconds(5)) {
 			operations.operations.map(\.id) == ["op-1"]
 		})
-		try? await Task.sleep(for: .milliseconds(300))
+		#expect(await settled { operations.operations.map(\.id) })
 		#expect(operations.operations.map(\.id) == ["op-1"])
 		operations.detach()
 	}
