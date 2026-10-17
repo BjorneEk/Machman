@@ -199,7 +199,9 @@ final class DaemonConnection: ObservableObject {
 	// 1.0.12: vm.setEnabled gained devices (an older daemon drops the key, so a batch toggle
 	// silently skips devices), and the daemon refuses setting changes on VMs still run by an
 	// older vmhost (E22) — whose floor is the daemon's own version.
-	static let oldestCompatibleDaemonVersion = "1.0.12"
+	// 1.0.13: vm.install.start gained diskID (D32) — an older daemon drops it and installs
+	// macOS on a new first disk instead of the disk the user picked to erase.
+	static let oldestCompatibleDaemonVersion = "1.0.13"
 
 	// The embedded agent, the one Replace starts in an older one's place (the id check
 	// guards against a half-built bundle).
