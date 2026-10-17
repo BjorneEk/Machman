@@ -19,8 +19,9 @@ struct TreeDevicesSection: View {
 	}
 
 	// Installer devices (share-served guest-setup payloads): their own section — they
-	// configure the guest rather than being hardware. Add actions live in the group's
-	// context menu, the Disks convention.
+	// configure the guest rather than being hardware. Guest Setup is the one installer and
+	// the group shows only while it is attached, so its label has no menu: the toolbar's +
+	// and the SSH inspector add it (Q30).
 	@ViewBuilder
 	private var installerGroup: some View {
 		let installers = (ctx.vm.devices ?? []).filter(\.kind.isInstaller)
@@ -29,13 +30,7 @@ struct TreeDevicesSection: View {
 		if ctx.shows(.installers, rows: rows.count) {
 			TreeGroup(.group("Installers"), symbol: MachmanSymbols.installerGroup,
 				title: "Installers", count: installers.count,
-				isExpanded: ctx.groupBinding(.group("Installers")), menu: {
-				if ctx.vm.canAddGuestSetup {
-					Button("Add Guest Setup") {
-						ctx.viewModel.addDevice(ctx.vm.name, kind: .guestSetup)
-					}
-				}
-			}) {
+				isExpanded: ctx.groupBinding(.group("Installers"))) {
 				ForEach(rows) { device in
 					deviceRow(device)
 				}

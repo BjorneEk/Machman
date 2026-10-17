@@ -11,6 +11,7 @@
 import Testing
 import Foundation
 import MachmanAPI
+import MachmanUI
 import MachmanFixtures
 import MachmanTestSupport
 @testable import MachmanDesktopCore
@@ -53,6 +54,20 @@ struct MenuRulesTests {
 		disabled.devices = (disabled.devices ?? [])
 			+ [DeviceInfo(kind: .guestSetup, enabled: false)]
 		#expect(!disabled.canAddGuestSetup)
+	}
+
+	@Test("Q30: the Installers group shows only once Guest Setup is attached, nothing to add")
+	func theInstallersGroupHasNothingToAdd() {
+		var disabled = Samples.linux("Debian")
+		disabled.devices = (disabled.devices ?? []).map {
+			$0.kind == .guestSetup ? DeviceInfo(kind: .guestSetup, enabled: false) : $0
+		}
+		for vm in Samples.library() + [disabled, Samples.macOS("Sequoia")] {
+			let installers = (vm.devices ?? []).filter(\.kind.isInstaller).count
+			if TreeSection.isVisible(.installers, rows: installers, filtering: false) {
+				#expect(!vm.canAddGuestSetup, "\(vm.name)")
+			}
+		}
 	}
 
 	// Decision 16: a tooltip is one short sentence.
