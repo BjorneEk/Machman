@@ -124,7 +124,11 @@ struct RoutingAdoptionTests {
 	// Q40: this waited for the list to say so on an 8 s wall clock, which load outran. The
 	// router runs on a TestClock: the adoption's hello is armed at its 200 ms deadline (an
 	// adoption on the 10 s default would arm that), and one advance past it fails the adoption.
-	@Test("E21: a vmhost that never answers hello lists not responding once its hello deadline passes")
+	@Test(
+		"""
+		E21: a vmhost that never answers hello lists not responding once its hello deadline \
+		passes
+		""")
 	@MainActor func aVMHostThatNeverAnswersListsAsNotResponding() async throws {
 		let (routing, socketPath) = try makeRouting(
 			helloDeadline: .milliseconds(200), probeDeadline: .milliseconds(300))
