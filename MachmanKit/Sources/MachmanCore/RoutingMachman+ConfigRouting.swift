@@ -157,6 +157,12 @@ extension RoutingMachman {
 			vm: name, path: path, commandLine: commandLine, overrideEnabled: overrideEnabled)
 	}
 
+	public func clearKernelSettings(vm name: String) async throws -> VMInfo {
+		// It deletes files in the VM's folder: never under a vmhost, a start or a copy (H54).
+		try await requireStopped(name, "removing its kernel settings")
+		return try await local.clearKernelSettings(vm: name)
+	}
+
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
 		let target = try await settingsOwner(name)

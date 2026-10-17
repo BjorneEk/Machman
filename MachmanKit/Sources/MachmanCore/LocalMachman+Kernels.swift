@@ -101,6 +101,17 @@ extension LocalMachman {
 		return info(for: vm)
 	}
 
+	public func clearKernelSettings(vm name: String) async throws -> VMInfo {
+		let vm = try lookup(name)
+		guard !vm.state.isRunning else {
+			throw MachmanError(
+				code: .invalidState, message: "Stop \(name) before removing its kernel settings")
+		}
+		defer { registry.events.emit(.listChanged) }
+		try vm.config.clearKernelSettings()
+		return info(for: vm)
+	}
+
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {

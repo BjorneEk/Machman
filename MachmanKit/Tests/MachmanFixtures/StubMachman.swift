@@ -529,6 +529,32 @@ public final class StubMachman: MachmanControlling {
 		emit(.listChanged)
 		return vm
 	}
+	// Like the engine (VMConfig.clearKernelSettings, H54): the draft and every kernel file go;
+	// refused while kernel boot is on, while the VM runs and in a newer Machman's boot mode.
+	public func clearKernelSettings(vm name: String) async throws -> VMInfo {
+		try gate()
+		var vm = try get(name)
+		guard !vm.state.isRunning else {
+			throw MachmanError(
+				code: .invalidState, message: "Stop \(name) before removing its kernel settings")
+		}
+		switch vm.boot.mode {
+		case .linuxKernel:
+			throw MachmanError(
+				code: .invalidState,
+				message: "Choose another bootloader for \(name) before removing its kernel "
+					+ "settings")
+		case .unknown:
+			throw MachmanError(code: .invalidState, message: BootInfo.newerModeReason)
+		case .efi, .macOS:
+			break
+		}
+		vm.boot.kernel = nil
+		vm.boot.ownedKernels = nil
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
+	}
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		try gate()
 		var vm = try get(name)

@@ -121,6 +121,43 @@ struct StubParityTests {
 		#expect(Served(after.boot) == engine)
 	}
 
+	// H54: the draft and the kernel files go, the boot mode stays.
+	@Test("Q29: the stub's kernel clear serves what the engine serves")
+	func kernelClear() async throws {
+		var engine: (served: Served, files: Int)?
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			let kernelsDir = vm.config.kernelsDirPath()
+			let path = kernelsDir + "/kernel/v1/vmlinuz"
+			try FileManager.default.createDirectory(
+				atPath: kernelsDir + "/kernel/v1", withIntermediateDirectories: true)
+			try Data("kern".utf8).write(to: URL(fileURLWithPath: path))
+			try vm.config.setKernelBoot(enabled: true)
+			try vm.config.updateKernelSettings(LinuxKernelBoot(
+				kernelPath: path, initialRamdiskPath: nil, commandLine: "console=hvc0"))
+			try vm.config.setKernelBoot(enabled: false)
+			// LocalMachman.clearKernelSettings' config step, synchronously.
+			try vm.config.clearKernelSettings()
+			let boot = api.info(for: vm).boot
+			engine = (Served(boot), boot.ownedKernels?.count ?? 0)
+		}
+		let path = "/vm/Parity/kernels/kernel/v1/vmlinuz"
+		var info = StubMachman.makeInfo("Parity")
+		info.boot = BootInfo(
+			mode: .efi,
+			kernel: KernelSettings(kernelPath: path, initrdPath: nil, commandLine: "console=hvc0"),
+			macInstallState: nil, minCPUCount: nil, minMemoryBytes: nil,
+			ownedKernels: [OwnedKernelFile(role: .kernel, tag: "v1", fileName: "vmlinuz",
+				path: path)])
+		let stub = StubMachman.serving([info])
+		let after = try await stub.clearKernelSettings(vm: "Parity")
+		#expect(Served(after.boot) == engine?.served)
+		#expect((after.boot.ownedKernels?.count ?? 0) == engine?.files)
+		#expect(engine?.served.kernel == nil)
+	}
+
 	// A disk as both serve it, past what only the engine can know (its library paths, sizes).
 	struct ServedDisk: Equatable, CustomStringConvertible {
 		let id: String

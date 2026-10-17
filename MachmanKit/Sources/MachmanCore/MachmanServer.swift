@@ -248,6 +248,9 @@ public final class MachmanServer {
 			case .kernelDelete:
 				let p: RPCParams.DeleteKernel = try params(line)
 				reply(client, id, try await api.deleteKernelFile(vm: p.name, path: p.path))
+			case .kernelClear:
+				let p: RPCParams.Name = try params(line)
+				reply(client, id, try await api.clearKernelSettings(vm: p.name))
 			case .setStartPolicy:
 				let p: RPCParams.SetStartPolicy = try params(line)
 				try await api.setStartPolicy(vm: p.name, policy: p.policy)

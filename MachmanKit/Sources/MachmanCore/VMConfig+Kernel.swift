@@ -136,6 +136,34 @@ extension VMConfig {
 		}
 	}
 
+	// vm.kernel.clear (H54): the draft kept while kernel boot is off, the per-file overrides
+	// and every kernel file the VM owns go in one call. Kernel boot reads the draft, so it
+	// refuses while kernel boot is on, and a newer Machman's mode keeps what it may need
+	// (C11); the boot mode stays (a macOS VM stays macOS, K3). The config is saved first and
+	// the files deleted after, all synchronously: nothing interleaves, and a delete that fails
+	// leaves its file listed for the next try.
+	func clearKernelSettings() throws {
+		switch boot {
+		case .linuxKernel:
+			throw MachmanError(
+				code: .invalidState,
+				message: "Choose another bootloader for \(name) before removing its kernel "
+					+ "settings")
+		case .unknown:
+			throw BootConfig.newerModeRefusal
+		case .efi, .macOS:
+			break
+		}
+		let kernelsDir = kernelsDirPath()
+		let files = ownedKernelFiles().map(\.path)
+		kernelSettings = nil
+		kernelOverrides = [:]
+		try saveVMConfig()
+		for path in files {
+			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
+		}
+	}
+
 	// Re-tag an owned kernel/initramfs file: moves it on disk and migrates the kernel-boot
 	// references and the per-file override to the new path/key. Returns the new path. A
 	// failed save re-tags the file back (D22's shape: the config still names the old path).

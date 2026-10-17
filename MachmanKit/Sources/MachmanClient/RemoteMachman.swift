@@ -392,6 +392,10 @@ public final class RemoteMachman: MachmanControlling {
 			.kernelDelete, RPCParams.DeleteKernel(name: name, path: path), expecting: VMInfo.self)
 	}
 
+	public func clearKernelSettings(vm name: String) async throws -> VMInfo {
+		try await connection.call(.kernelClear, RPCParams.Name(name: name), expecting: VMInfo.self)
+	}
+
 	public func start(vm name: String, options: StartOptions) async throws {
 		// Covers the daemon's whole start: spawn + forwarded boot, and for safe runs a
 		// shadow build that byte-copies external images — slow-class by construction.

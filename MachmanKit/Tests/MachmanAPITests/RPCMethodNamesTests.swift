@@ -74,6 +74,7 @@ struct RPCMethodNamesTests {
 		"eventsSubscribe": "events.subscribe",
 		"daemonRetire": "daemon.retire",
 		"processEnd": "vm.process.end",
+		"kernelClear": "vm.kernel.clear",
 		"event": "event",
 	]
 

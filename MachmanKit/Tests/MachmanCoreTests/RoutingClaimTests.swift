@@ -59,6 +59,8 @@ struct RoutingClaimTests {
 					vm: "alpha", diskID: "storage:disk") }),
 				("installStart", { try await routing.startMacInstall(
 					vm: "alpha", source: .latest) }),
+				("clearKernelSettings", { _ = try await routing.clearKernelSettings(
+					vm: "alpha") }),
 			]
 			for (label, op) in ops {
 				do {

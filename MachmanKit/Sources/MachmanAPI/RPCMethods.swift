@@ -71,6 +71,8 @@ public enum RPCMethod: String, Sendable {
 	case daemonRetire = "daemon.retire"
 	// Ends a vmhost that doesn't answer, once the user confirmed it (C9).
 	case processEnd = "vm.process.end"
+	// Removes the kernel draft kept while kernel boot is off, with the VM's kernel files (H54).
+	case kernelClear = "vm.kernel.clear"
 	// Server -> client notification carrying a VMEvent as params.
 	case event = "event"
 }

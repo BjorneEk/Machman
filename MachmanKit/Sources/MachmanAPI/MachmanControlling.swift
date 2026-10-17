@@ -95,6 +95,9 @@ public protocol MachmanControlling: AnyObject {
 	// Re-tag an owned kernel/initramfs file (path + override key migrate); refused while
 	// the VM runs.
 	func renameKernelFile(vm name: String, path: String, tag: String) async throws -> VMInfo
+	// Remove the kernel draft kept while kernel boot is off, every owned kernel file and their
+	// overrides, in one call (H54); refused while kernel boot is on and while the VM runs.
+	func clearKernelSettings(vm name: String) async throws -> VMInfo
 
 	// MARK: SSH (1.0.5, alias 1.0.6)
 	// Per-VM SSH switches: the managed ~/.ssh entry (integrationEnabled), reverse
