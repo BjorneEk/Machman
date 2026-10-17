@@ -7,6 +7,9 @@
 //  daemon keeps one behind RoutingMachman for the VMs no vmhost runs; clients reach either only
 //  over a socket.
 //
+//  This file holds the host, lifecycle, configuration, SSH, run and install calls; beside it
+//  are LocalMachman+Disks, +Devices, +Kernels and +VMInfo (the config → wire mapping).
+//
 
 import Foundation
 import AppKit
@@ -227,130 +230,6 @@ public final class LocalMachman: MachmanControlling {
 		return info(for: vm)
 	}
 
-	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
-		// A referenced image or ISO passes the import's format gate first (D29): off the actor,
-		// like the import's sniff, and before the lookup, so nothing awaits between finding the
-		// VM and changing its config.
-		if disk.type == .image || disk.type == .iso, let path = disk.path, !path.isEmpty {
-			_ = try await Task.detached(priority: .userInitiated) {
-				try DiskImport.attachable(path: path)
-			}.value
-		}
-		let vm = try lookup(name)
-		switch disk.type {
-		case .storage:
-			guard let diskName = disk.name, !diskName.isEmpty, let size = disk.sizeBytes else {
-				throw MachmanError(
-					code: .invalidArgument, message: "A new disk needs a name and a size")
-			}
-			try vm.config.addNewStorageDisk(name: diskName, size: size)
-		case .iso:
-			guard let path = disk.path, !path.isEmpty else {
-				throw MachmanError(code: .invalidArgument, message: "An ISO disk needs a path")
-			}
-			try vm.config.addIsoDisk(isoUrl: URL(fileURLWithPath: path))
-		case .image:
-			guard let path = disk.path, !path.isEmpty else {
-				throw MachmanError(code: .invalidArgument, message: "A disk image needs a path")
-			}
-			try vm.config.addDisk(disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: path))))
-		case .unknown:
-			throw MachmanError(code: .invalidArgument, message: "Unknown disk type")
-		}
-		registry.events.emit(.listChanged)
-	}
-
-	public func removeDisk(vm name: String, diskID: String) async throws {
-		let vm = try lookup(name)
-		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
-			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
-		}
-		try registry.removeDisk(disk, from: vm)
-		registry.events.emit(.listChanged)
-	}
-
-	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
-		let vm = try lookup(name)
-		let imported = try await copyIntoVM(
-			vm, name: name, sourcePath: path, kind: OperationInfo.Kind.importDisk)
-		try vm.config.addDisk(disk: imported)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	public func promoteDisk(vm name: String, diskID: String) async throws -> VMInfo {
-		let vm = try lookup(name)
-		guard let disk = vm.config.disks.first(where: { $0.id == diskID }) else {
-			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
-		}
-		let vmDir = vm.config.vmDirPath()
-		let sourcePath: String
-		switch disk.kind {
-		case .storage:
-			throw MachmanError(
-				code: .invalidState, message: "This disk is already owned by the VM")
-		case .iso(let url):
-			guard !url.path.hasPrefix(vmDir + "/") else {
-				throw MachmanError(
-					code: .invalidState, message: "This disk is already owned by the VM")
-			}
-			sourcePath = url.path
-		case .fromUrl(let url):
-			sourcePath = url.path
-		}
-		let promoted = try await copyIntoVM(
-			vm, name: name, sourcePath: sourcePath, kind: OperationInfo.Kind.promoteDisk)
-		try vm.config.replaceDisk(id: diskID, kind: promoted.kind)   // the flags carry
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	// The shared import mechanics: gather taken names on-actor, then detach the sniff+copy
-	// (external images can be real cross-volume byte copies). Progress reuses copyProgress
-	// AND registers an operation (dual-emitted for older clients).
-	private func copyIntoVM(
-		_ vm: VirtualMachine, name: String, sourcePath: String, kind: String
-	) async throws -> VMDisk {
-		let vmDir = vm.config.vmDirPath()
-		let taken = Set(vm.config.disks.compactMap { disk -> String? in
-			if case .storage(let storageName, _) = disk.kind { return storageName }
-			return nil
-		})
-		let events = registry.events
-		let center = operationCenter
-		let cancelFlag = CancelFlag()
-		let file = (sourcePath as NSString).lastPathComponent
-		let verb = kind == OperationInfo.Kind.promoteDisk ? "Promoting" : "Importing"
-		let opID = center.begin(
-			kind: kind, vm: name, label: "\(verb) \(file)", cancel: { cancelFlag.set() })
-		do {
-			let disk = try await Task.detached(priority: .userInitiated) {
-				try DiskImport.importFile(
-					src: sourcePath, vmDir: vmDir, takenStorageNames: taken,
-					progress: { copied, total in
-						Task { @MainActor in
-							events.emit(.copyProgress(
-								vm: name, copiedBytes: copied, totalBytes: total))
-							center.update(
-								opID,
-								fraction: total > 0 ? Double(copied) / Double(total) : nil,
-								completedBytes: Int64(copied), totalBytes: Int64(total))
-						}
-					},
-					isCancelled: { cancelFlag.get() })
-			}.value
-			center.finish(opID, state: OperationInfo.State.succeeded)
-			return disk
-		} catch {
-			center.finish(
-				opID,
-				state: cancelFlag.get()
-					? OperationInfo.State.cancelled : OperationInfo.State.failed,
-				message: MachmanError.userMessage(for: error))
-			throw error
-		}
-	}
-
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
 		let vm = try lookup(name)
 		let kind = kind ?? MountKind.virtiofs
@@ -382,77 +261,6 @@ public final class LocalMachman: MachmanControlling {
 		registry.events.emit(.listChanged)
 	}
 
-	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
-		let vm = try lookup(name)
-		do {
-			try vm.config.setKernelBoot(enabled: enabled)
-		} catch is BootConfigError {
-			throw MachmanError(
-				code: .invalidState,
-				message: "This VM has macOS installed, so its boot mode can’t change")
-		}
-		registry.events.emit(.listChanged)
-	}
-
-	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
-		let vm = try lookup(name)
-		try vm.config.updateKernelSettings(LinuxKernelBoot(
-			kernelPath: settings.kernelPath,
-			initialRamdiskPath: settings.initrdPath,
-			commandLine: settings.commandLine))
-		registry.events.emit(.listChanged)
-	}
-
-	public func promoteKernelFile(
-		vm name: String, role: KernelRole, sourcePath: String, tag: String
-	) async throws -> VMInfo {
-		guard role != .unknown else {
-			throw MachmanError(code: .invalidArgument, message: "Unknown kernel role")
-		}
-		let vm = try lookup(name)
-		let kernelsDir = vm.config.kernelsDirPath()
-		// Copies can be tens of MiB — detach so the main actor doesn't freeze. Indeterminate
-		// operation (KernelStore reports no byte progress); previously fully silent.
-		let opID = operationCenter.begin(
-			kind: OperationInfo.Kind.kernelImport, vm: name,
-			label: "Importing \(role.rawValue) \u{201C}\(tag)\u{201D}")
-		let dest: String
-		do {
-			dest = try await Task.detached(priority: .userInitiated) {
-				try KernelStore.promote(
-					role: role, sourcePath: sourcePath, kernelsDir: kernelsDir, tag: tag)
-			}.value
-		} catch {
-			operationCenter.finish(
-				opID, state: OperationInfo.State.failed,
-				message: MachmanError.userMessage(for: error))
-			throw error
-		}
-		operationCenter.finish(opID, state: OperationInfo.State.succeeded)
-		var updated = vm.config.kernelSettings
-			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
-		switch role {
-		case .kernel: updated.kernelPath = dest
-		case .initramfs: updated.initialRamdiskPath = dest
-		case .unknown: break   // rejected on entry above
-		}
-		try vm.config.updateKernelSettings(updated)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	public func renameDisk(vm name: String, diskID: String, newName: String)
-		async throws -> VMInfo {
-		let vm = try lookup(name)
-		guard !vm.state.isRunning else {
-			throw MachmanError(
-				code: .invalidState, message: "Stop \(name) before renaming its disks")
-		}
-		try registry.renameStorageDisk(id: diskID, of: vm, to: newName)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
 	public func setMountTag(vm name: String, mountID: String, tag: String)
 		async throws -> VMInfo {
 		let vm = try lookup(name)
@@ -468,177 +276,6 @@ public final class LocalMachman: MachmanControlling {
 		try vm.config.setMountKind(id: mountID, kind: kind)
 		registry.events.emit(.listChanged)
 		return info(for: vm)
-	}
-
-	public func renameKernelFile(vm name: String, path: String, tag: String)
-		async throws -> VMInfo {
-		let vm = try lookup(name)
-		guard !vm.state.isRunning else {
-			throw MachmanError(
-				code: .invalidState, message: "Stop \(name) before renaming its kernel files")
-		}
-		try vm.config.renameKernelFile(path: path, to: tag)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
-		let vm = try lookup(name)
-		let kernelsDir = vm.config.kernelsDirPath()
-		// Only a file the VM lists as owned can be deleted over the wire ("..": resolved).
-		let wanted = URL(fileURLWithPath: path).standardized.path
-		guard let owned = vm.config.ownedKernelFiles().first(where: { $0.path == wanted })
-		else {
-			throw MachmanError(code: .notFound, message: "\(name) no longer has that kernel file")
-		}
-		let ownedPath = owned.path
-		try await Task.detached(priority: .userInitiated) {
-			try KernelStore.delete(path: ownedPath, kernelsDir: kernelsDir)
-		}.value
-		try vm.config.clearKernelReference(to: ownedPath)
-		vm.config.pruneKernelOverride(forDeletedPath: ownedPath)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	// MARK: - Guest devices (1.0.4)
-
-	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		let vm = try lookup(name)
-		try attachDevice(kind, to: vm)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	// The sync core, so the ordering is testable without the async shell. The two
-	// pre-1.0.7 installer kinds map onto guestSetup, so clients that still ask for them
-	// get the unified installer rather than a refusal.
-	func attachDevice(_ kind: DeviceKind, to vm: VirtualMachine) throws {
-		var kind = kind
-		if kind == .sshInstaller || kind == .consoleLoginInstaller {
-			kind = .guestSetup
-		}
-		try Self.validateDeviceKind(kind, for: vm.config)
-		try vm.config.addDevice(GuestDevice(kind: kind))
-		// Payloads are ephemeral (1.0.7): they exist while the VM runs and appear at the
-		// next assembly otherwise. The one eager write left is attach-on-a-RUNNING VM — a
-		// guest without a virtiofs driver reaches the payload by mounting the directory
-		// over SSH from a live guest, and finding it empty is a dead end with no
-		// explanation. Runs in the process that owns the config (the vmhost proxies this
-		// call while hosted), so the single-writer rule holds.
-		if kind == .guestSetup, vm.state.isRunning {
-			try? GuestSetupInstaller.writePayload(for: vm.config)
-		}
-	}
-
-	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		guard kind != .unknown else {
-			throw MachmanError(code: .invalidArgument, message: "Unknown device kind")
-		}
-		var kind = kind
-		if kind == .sshInstaller || kind == .consoleLoginInstaller {
-			kind = .guestSetup
-		}
-		let vm = try lookup(name)
-		try detachDevice(kind, from: vm)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	// The sync core (attachDevice's twin), so the ordering is testable without the async
-	// shell. Guest setup's share dirs stop being served at the next boot and leave the disk
-	// with the device — at once when stopped, at teardown when running (D12: like
-	// vm.setup.serve off, content is never yanked from under a running guest; teardown's
-	// removePayload runs after the final report poll). The keypair and config.ssh survive
-	// re-adds — vm.ssh.reset is the deeper wipe.
-	func detachDevice(_ kind: DeviceKind, from vm: VirtualMachine) throws {
-		try vm.config.removeDevice(kind: kind)
-		if kind == .guestSetup, vm.runtime == nil {
-			GuestSetupInstaller.removePayload(for: vm.config)
-		}
-	}
-
-	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
-		let vm = try lookup(name)
-		try Self.validateDeviceSettings(device)
-		guard let stored = vm.config.devices.first(where: { $0.deviceKind == device.kind })
-		else {
-			throw MachmanError(
-				code: .notFound, message: "\(name) has no \(device.kind.displayLabel) device")
-		}
-		try vm.config.updateDevice(Self.guestDevice(from: device, replacing: stored))
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	// The wire → config half of vm.device.update: every setting is taken from the request,
-	// except a .unknown capture mode — an older client echoing back a newer daemon's mode it
-	// could not read — which keeps what is stored rather than letting the echo erase it.
-	nonisolated static func guestDevice(from device: DeviceInfo, replacing stored: GuestDevice)
-		-> GuestDevice {
-		var updated = GuestDevice(kind: device.kind)
-		updated.enabled = device.enabled
-		updated.displayWidthPixels = device.displayWidthPixels
-		updated.displayHeightPixels = device.displayHeightPixels
-		updated.displayPixelsPerInch = device.displayPixelsPerInch
-		updated.systemKeyCapture = device.systemKeyCapture == .unknown
-			? stored.systemKeyCapture : device.systemKeyCapture?.rawValue
-		updated.sharesClipboard = device.sharesClipboard
-		return updated
-	}
-
-	// Add-time validation keeps impossible configs out of the start path (which would only
-	// fail later inside VZ validate() with a far worse message).
-	static func validateDeviceKind(_ kind: DeviceKind, for config: VMConfig) throws {
-		let macGuest: Bool = { if case .macOS = config.boot { return true }; return false }()
-		switch kind {
-		case .unknown:
-			throw MachmanError(code: .invalidArgument, message: "Unknown device kind")
-		case .trackpad where !macGuest:
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "The Mac trackpad needs a macOS guest — install macOS first")
-		case .consoleLoginInstaller:
-			throw MachmanError(
-				code: .invalidArgument, message: "Replaced by Guest Setup in Machman 1.0.7")
-		case .sshInstaller:
-			throw MachmanError(
-				code: .invalidArgument, message: "Replaced by Guest Setup in Machman 1.0.7")
-		case .clipboard where macGuest, .rosetta where macGuest:
-			throw MachmanError(
-				code: .invalidArgument,
-				message: "\(kind.displayLabel) isn’t supported for macOS guests")
-		default:
-			break
-		}
-	}
-
-	private static func validateDeviceSettings(_ device: DeviceInfo) throws {
-		guard device.kind != .unknown else {
-			throw MachmanError(code: .invalidArgument, message: "Unknown device kind")
-		}
-		for value in [device.displayWidthPixels, device.displayHeightPixels] {
-			if let value, !(640...8192).contains(value) {
-				throw MachmanError(
-					code: .invalidArgument,
-					message: "Display size must be between 640 and 8192 pixels")
-			}
-		}
-		if let ppi = device.displayPixelsPerInch, !(40...300).contains(ppi) {
-			throw MachmanError(
-				code: .invalidArgument, message: "Pixels per inch must be between 40 and 300")
-		}
-	}
-
-	public func setEnabled(
-		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
-		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
-	) async throws {
-		let vm = try lookup(name)
-		try vm.config.setEnabled(
-			disks: disks ?? [:], mounts: mounts ?? [:],
-			console: console ?? [:], uart: uart ?? [:], devices: devices ?? [:])
-		registry.events.emit(.listChanged)
 	}
 
 	// MARK: - SSH (1.0.5)
@@ -692,24 +329,6 @@ public final class LocalMachman: MachmanControlling {
 			_ = try GuestSetupInstaller.writePayload(for: vm.config)
 		}
 		registry.events.emit(.setupChanged(vm: name))
-		return info(for: vm)
-	}
-
-	public func setKernelOverride(
-		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
-	) async throws -> VMInfo {
-		let vm = try lookup(name)
-		try vm.config.setKernelOverride(
-			forFileAt: path, commandLine: commandLine, enabled: overrideEnabled)
-		registry.events.emit(.listChanged)
-		return info(for: vm)
-	}
-
-	public func resizeDisk(vm name: String, diskID: String, sizeBytes: UInt64) async throws
-		-> VMInfo {
-		let vm = try lookup(name)
-		try vm.config.growStorageDisk(id: diskID, to: sizeBytes)
-		registry.events.emit(.listChanged)
 		return info(for: vm)
 	}
 
@@ -874,7 +493,7 @@ public final class LocalMachman: MachmanControlling {
 
 	// MARK: - Mapping
 
-	private func lookup(_ name: String) throws -> VirtualMachine {
+	func lookup(_ name: String) throws -> VirtualMachine {
 		guard let vm = registry.vm(named: name) else {
 			throw MachmanError.notFound(name)
 		}
