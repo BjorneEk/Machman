@@ -24,8 +24,13 @@ set -eu
 # only where a run enabled them and hvc0's automatic one read so, ASCII prose and lines
 # folded to an ASCII console, a re-run that leaves init alone under its own console, every
 # sshfs host folder through a trailing slash, NetBSD's bare address and its user-mount
-# sysctl kept for the next boot, a copy's own machine id).
-SCRIPT_VERSION=7
+# sysctl kept for the next boot, a copy's own machine id; 8: an uninstall that undoes only
+# what a run created — rc.local, openrc's local service, the mount root, grubby's arguments,
+# the console arguments grubby replaced — pre-v7 systemd login records distrusted, a copy
+# that takes over its source's entries and is told it is one, a run that stops on a copy
+# changed since Machman served it, the share's boot mount root's alone and host folders'
+# modes checked).
+SCRIPT_VERSION=8
 
 # ------------------------------------------------------------------- payload bootstrap ----
 
