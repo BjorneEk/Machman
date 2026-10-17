@@ -171,10 +171,10 @@ extension TreeContext {
 	@ViewBuilder
 	func deviceMenu(_ device: DeviceInfo) -> some View {
 		batchMenuItems(for: .device(device.kind))
+		// The flag alone, as the inspector's toggle sends it (F18): vm.device.update would
+		// re-send every setting this row last drew.
 		Button(device.enabled ? "Disable" : "Enable") {
-			var updated = device
-			updated.enabled = !device.enabled
-			viewModel.updateDevice(vm.name, device: updated)
+			viewModel.setEnabled(vm.name, devices: [device.kindSpelling: !device.enabled])
 		}
 		Button("Remove", role: .destructive) {
 			viewModel.removeDevice(vm.name, kind: device.kind)

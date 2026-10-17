@@ -5,7 +5,8 @@
 //  H58: the serial and device inspectors carry the Enabled toggle the disk and mount
 //  inspectors have, and a port's inspector offers Remove where the tree's menu does — on a
 //  kind's last port, stop-first. Read from the real inspectors hosted offscreen; what a
-//  toggle sends is the view model's setEnabled (BatchEnableTests).
+//  toggle sends is the view model's setEnabled (BatchEnableTests). The tree's device
+//  Disable sends the same setEnabled, never the device's whole settings (F18).
 //
 
 import SwiftUI
@@ -86,5 +87,22 @@ struct EnabledInspectorTests {
 		#expect(trash(keyboard)?.label == "Remove Keyboard")
 		let display = try await inspector(h, "Fedora", .device(.graphics))
 		#expect(display.control(labelled: "Enabled")?.value == "0", "\(display.dump())")
+	}
+
+	// vm.device.update re-sent every setting the row last drew, so a Disable that crossed a
+	// settings change on its way could put the old ones back.
+	@Test("F18: the tree's device Disable sends setEnabled, not the device's settings")
+	func theTreeDisablesADeviceByItsFlag() async throws {
+		let h = await UIHarness.make([Samples.linux("Alpine")])
+		let network = try #require(h.vm("Alpine").devices?.first { $0.kind == .network })
+		let pressed = try await OffscreenHost.withHost(
+			TreeMenuProbe(harness: h, vm: h.vm("Alpine")) { AnyView($0.deviceMenu(network)) }
+		) { hosted in
+			AXPress.press(label: "Disable", under: hosted.host)
+		}
+		#expect(pressed)
+		#expect(await eventually { h.stub.calls.contains("setEnabled") }, "\(h.stub.calls)")
+		#expect(!h.stub.calls.contains("updateDevice"), "\(h.stub.calls)")
+		#expect(h.stub.enabledChanges.last?.devices == ["network": false])
 	}
 }
