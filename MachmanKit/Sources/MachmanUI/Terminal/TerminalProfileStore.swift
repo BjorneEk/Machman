@@ -6,7 +6,8 @@
 //  desktop concern, so none of this touches the wire or the daemon: it persists to a JSON file in
 //  the suite-scoped app-support directory (a dev build and a release build keep separate profiles).
 //  Associations are keyed by a port's stable logical identity (vm|kind|index), never its ephemeral
-//  socket path, so they survive VM stops and restarts.
+//  socket path, so they survive VM stops and restarts; they follow their VM's name like the rest
+//  of the client state (VMKeyedState, T29).
 //
 
 import Foundation
@@ -138,19 +139,6 @@ public final class TerminalProfileStore: ObservableObject {
 		save()
 	}
 
-	// Migrate a VM's association keys when it is renamed, so a port keeps its profile.
-	public func renameVM(from old: String, to new: String) {
-		let prefix = "\(old)|"
-		var changed = false
-		for (key, id) in associations where key.hasPrefix(prefix) {
-			let suffix = key.dropFirst(prefix.count)
-			associations["\(new)|\(suffix)"] = id
-			associations[key] = nil
-			changed = true
-		}
-		if changed { save() }
-	}
-
 	// MARK: - Internals
 
 	private func ensureDefault() {
@@ -158,6 +146,25 @@ public final class TerminalProfileStore: ObservableObject {
 			profiles.insert(.oneDarkDefault, at: 0)
 			save()
 		}
+	}
+
+	// The VM an association key belongs to: everything before its last two fields (kind and
+	// index), since a VM name may itself hold "|".
+	private static func vm(ofKey key: String) -> Substring? {
+		guard let indexField = key.lastIndex(of: "|"),
+			let kindField = key[..<indexField].lastIndex(of: "|") else { return nil }
+		return key[..<kindField]
+	}
+
+	// `old`'s associations under `new` too; `move` drops them from `old`.
+	private func associate(_ old: String, as new: String, move: Bool) {
+		var changed = false
+		for (key, id) in associations where Self.vm(ofKey: key) == old[...] {
+			associations[new + key.dropFirst(old.count)] = id
+			if move { associations[key] = nil }
+			changed = true
+		}
+		if changed { save() }
 	}
 
 	private func uniqueName(basedOn base: String) -> String {
@@ -185,6 +192,28 @@ public final class TerminalProfileStore: ObservableObject {
 			profiles = c.decodeTolerantArray(of: TerminalProfile.self, forKey: .profiles)
 			associations = c.decodeTolerantDictionary(of: UUID.self, forKey: .associations)
 		}
+	}
+}
+
+extension TerminalProfileStore: VMKeyedState {
+	// A renamed VM's ports keep their profiles.
+	public func renameVM(from old: String, to new: String) {
+		associate(old, as: new, move: true)
+	}
+
+	// Save as New VM: the saved VM's ports keep the run's profiles, and so do the original's.
+	public func copyVM(from old: String, to new: String) {
+		associate(old, as: new, move: false)
+	}
+
+	// A deleted VM's ports forget theirs: a new VM under its name starts on the default.
+	public func forgetVMs(except kept: Set<String>) {
+		let next = associations.filter { key, _ in
+			Self.vm(ofKey: key).map { kept.contains(String($0)) } ?? false
+		}
+		guard next.count != associations.count else { return }
+		associations = next
+		save()
 	}
 }
 

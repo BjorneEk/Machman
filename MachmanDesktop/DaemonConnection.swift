@@ -37,6 +37,9 @@ final class DaemonConnection: ObservableObject {
 	let terminals = TerminalSessions.swiftTerm()
 	// Per-VM canvas layouts (panes/tabs/fractions), persisted to disk by the store itself.
 	let canvases = CanvasStateStore()
+	// The app's terminal profiles: each view model takes their per-port associations along
+	// with its VMs' renames, safe saves and deletions (T29).
+	let profiles: TerminalProfileStore
 	let previews: PreviewService
 	// What the menu bar's commands show, following each connection's view model.
 	let menu = MenuModel()
@@ -61,7 +64,8 @@ final class DaemonConnection: ObservableObject {
 	// RPC default lets the loop say "not answering" after two tries instead of a minute.
 	static let helloDeadline: Duration = .seconds(10)
 
-	init() {
+	init(profiles: TerminalProfileStore) {
+		self.profiles = profiles
 		// The registry the torn-off windows and the view model use: their Configuration tabs
 		// get live frames too.
 		previews = PreviewService(store: vmStore, tornTabs: .shared)
@@ -150,7 +154,7 @@ final class DaemonConnection: ObservableObject {
 		previews.attach(api: api)
 		let viewModel = VMListViewModel(
 			api: api, store: vmStore, operations: operationsStore,
-			terminals: terminals, previews: previews, canvases: canvases)
+			terminals: terminals, previews: previews, canvases: canvases, profiles: profiles)
 		viewModel.announceInterrupted(interrupted)
 		self.api = api
 		self.viewModel = viewModel

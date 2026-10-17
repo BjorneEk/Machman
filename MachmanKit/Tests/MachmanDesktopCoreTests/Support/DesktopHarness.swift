@@ -46,7 +46,7 @@ final class DesktopHarness {
 		operations.attach(api: stub)
 		viewModel = VMListViewModel(
 			api: stub, store: store, operations: operations, terminals: terminals,
-			previews: previews, canvases: canvases, tornTabs: tornTabs)
+			previews: previews, canvases: canvases, tornTabs: tornTabs, profiles: profiles)
 	}
 
 	static func make(_ vms: [VMInfo] = Samples.library()) async -> DesktopHarness {

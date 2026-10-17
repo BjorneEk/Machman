@@ -213,11 +213,12 @@ public final class VMListViewModel: ObservableObject {
 		selectedName.flatMap { name in vms.first { $0.name == name } }
 	}
 
-	// `tornTabs` defaults to the app's shared registry; tests pass their own.
+	// `tornTabs` defaults to the app's shared registry; tests pass their own. `profiles`, the
+	// app-scoped terminal profiles, follow their VMs' names (T29); renders may leave it out.
 	public init(
 		api: MachmanControlling, store: VMStore, operations: OperationsStore,
 		terminals: TerminalSessions, previews: PreviewService, canvases: CanvasStateStore,
-		tornTabs: TornTabRegistry? = nil
+		tornTabs: TornTabRegistry? = nil, profiles: TerminalProfileStore? = nil
 	) {
 		self.api = api
 		self.store = store
@@ -227,6 +228,7 @@ public final class VMListViewModel: ObservableObject {
 		self.canvases = canvases
 		self.tornTabs = tornTabs ?? .shared
 		keyedState = [terminals, canvases, previews, operations, announcerMemory]
+		if let profiles { keyedState.append(profiles) }
 		// The list is what views read through this object: forward its changes.
 		storeForwarder = store.objectWillChange.sink { [weak self] in
 			self?.objectWillChange.send()

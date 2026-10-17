@@ -29,12 +29,12 @@ struct MachmanDesktopApp: App {
 	@StateObject private var textEditing = TextEditingMonitor()
 
 	init() {
-		let connection = DaemonConnection()
-		_connection = StateObject(wrappedValue: connection)
-		AppDelegate.connection = connection   // the dock menu reads through it
 		let profiles = TerminalProfileStore()
 		_profiles = StateObject(wrappedValue: profiles)
 		AppDelegate.profiles = profiles       // flushed on quit
+		let connection = DaemonConnection(profiles: profiles)
+		_connection = StateObject(wrappedValue: connection)
+		AppDelegate.connection = connection   // the dock menu reads through it
 		connection.terminals.follow(profiles)   // edits reach every open terminal, torn windows too
 	}
 

@@ -44,7 +44,7 @@ final class UIHarness {
 		operations.attach(api: stub)
 		viewModel = VMListViewModel(
 			api: stub, store: store, operations: operations, terminals: terminals,
-			previews: previews, canvases: canvases, tornTabs: tornTabs)
+			previews: previews, canvases: canvases, tornTabs: tornTabs, profiles: profiles)
 	}
 
 	// Returns once the list has landed, with `select` (default: the first VM) selected.
