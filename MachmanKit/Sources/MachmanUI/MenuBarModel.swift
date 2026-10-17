@@ -56,7 +56,7 @@ public final class MenuBarModel: ObservableObject {
 
 	// The menu's library row: the VMs folder in Finder, never its raw path as text (H65).
 	public func showVMsInFinder() {
-		openFolder(MachmanPaths.dataDir())
+		openFolder(MachmanPaths.vmsDir())
 	}
 
 	// Lists the VMs and follows the engine's events from now on; a second call does nothing.

@@ -209,7 +209,7 @@ struct MenuBarModelTests {
 		var opened: [String] = []
 		model.openFolder = { opened.append($0) }
 		model.showVMsInFinder()
-		#expect(opened == [MachmanPaths.dataDir()])
+		#expect(opened == [MachmanPaths.vmsDir()])   // the VMs, not the data dir holding them
 	}
 
 	@Test("V16: a burst of listChanged costs at most two more lists")
