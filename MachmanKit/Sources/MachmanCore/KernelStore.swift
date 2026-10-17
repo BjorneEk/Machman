@@ -197,6 +197,8 @@ enum KernelStore {
 				message: "\u{201C}\(trimmed)\u{201D} already holds a file named "
 					+ "\u{201C}\(rel[2])\u{201D}")
 		}
+		// A tag names one kernel file, by a re-tag as by an import (D35, K13).
+		guard !holdsKernelFile(newDir) else { throw tagTaken(trimmed) }
 		try fm.createDirectory(atPath: newDir, withIntermediateDirectories: true)
 		try fm.moveItem(atPath: path, toPath: newPath)
 		if let leftovers = try? fm.contentsOfDirectory(atPath: oldDir), leftovers.isEmpty {

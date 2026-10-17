@@ -109,12 +109,14 @@ extension VMListViewModel {
 			return nil
 		}
 		if let problem = rule.problem(tag) { return problem }
-		if owned.contains(where: {
-			$0.path != path && $0.role == file.role && $0.tag == tag
-				&& $0.fileName == file.fileName
-		}) {
+		let sharing = owned.filter { $0.path != path && $0.role == file.role && $0.tag == tag }
+		if sharing.contains(where: { $0.fileName == file.fileName }) {
 			return "\u{201C}\(tag)\u{201D} already holds a file named "
 				+ "\u{201C}\(file.fileName)\u{201D}"
+		}
+		// A tag names one kernel file (D35): the agent refuses a second, and so does the field.
+		if !sharing.isEmpty {
+			return "\u{201C}\(tag)\u{201D} already holds a kernel file"
 		}
 		return nil
 	}

@@ -347,4 +347,33 @@ struct KernelStoreTests {
 		#expect(KernelStore.ownedFiles(kernelsDir: kernels).map(\.fileName) == ["Image"])
 		#expect(staging(in: dir).isEmpty)
 	}
+
+	// D35 by the rename path: a re-tag into a tag that held another file put two kernels under
+	// one tag the same way an import did. Refused with the same sentence; a file of the other
+	// role under that tag doesn't count.
+	@Test("D35: re-tagging into a tag that holds another kernel file is refused")
+	func aRetagIntoATakenTagIsRefused() throws {
+		let dir = TestEnvironment.scratch + "d35r-\(UUID().uuidString)"
+		let kernels = dir + "/kernels"
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let first = dir + "/vmlinuz"
+		let second = dir + "/Image"
+		for file in [first, second] {
+			try Data("kernel".utf8).write(to: URL(fileURLWithPath: file))
+		}
+		let stable = try KernelStore.promote(
+			role: .kernel, sourcePath: first, kernelsDir: kernels, tag: "stable")
+		let next = try KernelStore.promote(
+			role: .kernel, sourcePath: second, kernelsDir: kernels, tag: "next")
+		_ = try KernelStore.promote(
+			role: .initramfs, sourcePath: second, kernelsDir: kernels, tag: "lts")
+		let error = try #require(throws: MachmanError.self) {
+			_ = try KernelStore.rename(path: next, kernelsDir: kernels, newTag: "stable")
+		}
+		#expect(error.message == "\u{201C}stable\u{201D} already holds a kernel file")
+		#expect(FileManager.default.fileExists(atPath: next))
+		#expect(try KernelStore.rename(path: stable, kernelsDir: kernels, newTag: "lts")
+			== kernels + "/kernel/lts/vmlinuz")
+	}
 }

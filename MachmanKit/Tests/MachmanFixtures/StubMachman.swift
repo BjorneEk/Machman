@@ -319,6 +319,13 @@ public final class StubMachman: MachmanControlling {
 				code: .invalidArgument,
 				message: "\((path as NSString).lastPathComponent) isn’t a kernel file this VM owns")
 		}
+		// A tag names one kernel file (KernelStore.rename, D35).
+		if vm.boot.ownedKernels?.contains(where: {
+			$0.path != path && $0.role == file.role && $0.tag == tag
+		}) == true {
+			throw MachmanError(
+				code: .alreadyExists, message: "\u{201C}\(tag)\u{201D} already holds a kernel file")
+		}
 		let roleDir = ((path as NSString).deletingLastPathComponent as NSString)
 			.deletingLastPathComponent
 		file.tag = tag

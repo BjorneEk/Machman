@@ -146,7 +146,8 @@ struct RenameFieldTests {
 		#expect(tag("6.12") == nil)
 		#expect(tag("6.13/rc1") == "A kernel tag can’t contain \u{201C}/\u{201D}")
 		#expect(tag(".x") == "A kernel tag can’t start with a dot")
-		#expect(tag("6.6-lts") == nil)   // that tag holds "Image", not "vmlinuz"
+		// D35: that tag holds "Image" — a tag names one kernel file.
+		#expect(tag("6.6-lts") == "\u{201C}6.6-lts\u{201D} already holds a kernel file")
 		#expect(!h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: ".x") { _ in })
 		#expect(!h.viewModel.submitKernelTag(lab, path: vmlinuz, draft: " 6.12 ") { _ in })
 		var got: String?
