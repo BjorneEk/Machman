@@ -112,7 +112,7 @@ vfsauto_act() {
 		acting "would add '$SHARE_TAG $SHARE_ROOT virtiofs rw,nofail' to /etc/fstab"
 		return 0
 	fi
-	mkdir -p "$SHARE_ROOT" 2>/dev/null || {
+	make_dir "$SHARE_ROOT" || {
 		step_failed automount-virtiofs "could not create $SHARE_ROOT" \
 			"Create it yourself, then re-run."
 		return 0

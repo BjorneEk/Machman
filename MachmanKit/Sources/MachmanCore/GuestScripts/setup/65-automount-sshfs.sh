@@ -217,12 +217,15 @@ sshfsauto_act() {
 				"Remove it, then re-run."
 			continue
 		fi
-		mkdir -p "$_sa_where" 2>/dev/null || {
+		make_dir "$_sa_where" || {
 			step_failed automount-sshfs "could not create $_sa_where" \
 				"Create it yourself and re-run."
 			continue
 		}
-		chown -h "$U:$GROUP" "$_sa_where" 2>/dev/null || true
+		# A folder this run made is the user's; one that was there keeps its owner.
+		if [ "$R_MADE" -eq 1 ]; then
+			chown -h "$U:$GROUP" "$_sa_where" 2>/dev/null || true
+		fi
 		if [ "$INIT" = systemd ]; then
 			_sa_fstab="$_sa_fstab$(fstab_escape "$_sa_what") $(fstab_escape "$_sa_where")"
 			_sa_fstab="$_sa_fstab fuse.sshfs noauto,x-systemd.automount,nofail,_netdev,$_sa_opts 0 0

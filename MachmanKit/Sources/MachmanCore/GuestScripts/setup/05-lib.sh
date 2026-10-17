@@ -38,6 +38,7 @@ R_KEY=""             # key_read result
 R_MOUNT_WHAT=""      # sshfsauto_entry results: source and mountpoint, two slots —
 R_MOUNT_WHERE=""     # host paths carry spaces, so they are never packed into one
 R_TEXT=""            # ascii_of result
+R_MADE=0             # make_dir result: 1 when the directory itself is new
 
 # Styling defaults so `set -u` is safe before (and without) ui_detect.
 C_RESET=""; C_DIM=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""

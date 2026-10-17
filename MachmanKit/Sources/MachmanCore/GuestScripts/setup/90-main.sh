@@ -51,7 +51,8 @@ uninstall_release_dir() {
 # The uninstall's last pass: stripping fstab/boot entries leaves live mounts and their
 # dirs behind. Runs AFTER the report is written (the share may be the transport under
 # this very script), releases exactly what the state file says this script mounts, and
-# drops the mount root it created once it empties.
+# drops every directory a run made once it empties — the mount root among them, never one
+# a run found there.
 uninstall_unmount_and_prune() {
 	_uup_root="${ST_MOUNTPOINT:-$MOUNTPOINT}"
 	# Mount names are host text, TAB-separated: never split at a space nor globbed.
@@ -66,7 +67,6 @@ uninstall_unmount_and_prune() {
 		[ "$_uup_n" = "@share" ] && continue
 		uninstall_release_dir "$_uup_root/$_uup_n"
 	done
-	[ -n "$_uup_root" ] && rmdir "$_uup_root" 2>/dev/null || true
 	if state_was_configured vfsauto || has_item "@share" "$ST_AUTOMOUNT_SSHFS"; then
 		case "$PAYLOAD_DIR" in
 		"$SHARE_ROOT"/*)
@@ -77,6 +77,7 @@ uninstall_unmount_and_prune() {
 			;;
 		esac
 	fi
+	prune_made_dirs
 	return 0
 }
 

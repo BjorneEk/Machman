@@ -56,7 +56,11 @@ sshfs_decide() {
 		SSHFS_PLAN="install ($(pkg_for_sshfs))"
 	fi
 	MOUNT_PLAN="$MOUNTPOINT"
-	[ -d "$MOUNTPOINT" ] && MOUNT_PLAN="$MOUNT_PLAN (exists)"
+	if dir_made_by_run "$MOUNTPOINT"; then
+		MOUNT_PLAN="$MOUNT_PLAN (exists)"
+	elif [ -d "$MOUNTPOINT" ]; then
+		MOUNT_PLAN="$MOUNT_PLAN (exists — its owner stays)"
+	fi
 	if ! fuse_loaded; then
 		MOUNT_PLAN="$MOUNT_PLAN, load fusefs"
 	fi
@@ -107,13 +111,23 @@ sshfs_act_fuse_ready() {
 					"Add it yourself: sysrc kld_list+=fusefs"
 		fi
 	fi
+	_saf_made=0
 	if [ ! -d "$MOUNTPOINT" ]; then
-		run "creating $MOUNTPOINT" mkdir -p "$MOUNTPOINT" \
-			|| step_failed sshfs "could not create $MOUNTPOINT" \
+		_saf_new="$(path_missing "$MOUNTPOINT")"
+		if run "creating $MOUNTPOINT" mkdir -p "$MOUNTPOINT"; then
+			_saf_made=1
+			[ "$DRY_RUN" -eq 1 ] || made_dirs_note "$_saf_new"
+		else
+			step_failed sshfs "could not create $MOUNTPOINT" \
 				"Create it yourself, or pass --mountpoint <path>."
+		fi
 	fi
-	if [ -d "$MOUNTPOINT" ] || [ "$DRY_RUN" -eq 1 ]; then
-		run "giving $U the mount point" chown -h "$U:$GROUP" "$MOUNTPOINT" || true
+	# The root is the user's only when a run made it: one that was there (--mountpoint /mnt)
+	# keeps its owner, and the uninstall leaves it.
+	if [ "$_saf_made" -eq 1 ] || dir_made_by_run "$MOUNTPOINT"; then
+		if [ -d "$MOUNTPOINT" ] || [ "$DRY_RUN" -eq 1 ]; then
+			run "giving $U the mount point" chown -h "$U:$GROUP" "$MOUNTPOINT" || true
+		fi
 	fi
 	# Ready only when it is: a failed module load or mkdir said why above.
 	if [ "$DRY_RUN" -eq 0 ] && [ -d "$MOUNTPOINT" ] && fuse_loaded; then

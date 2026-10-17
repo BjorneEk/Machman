@@ -256,6 +256,56 @@ ledger_forget() {
 	return 0
 }
 
+# Directories a run made: every one a mkdir -p created is a made-dir entry. A directory that
+# was there — a --mountpoint /mnt — is never chowned nor removed. The loops read a
+# here-document, never a pipe: ksh runs a pipeline's last part in this shell.
+
+# path_missing <dir> — the directories a mkdir -p of <dir> would create, one per line.
+path_missing() {
+	_pm_dir="$1"
+	while [ -n "$_pm_dir" ] && [ ! -d "$_pm_dir" ]; do
+		printf '%s\n' "$_pm_dir"
+		_pm_dir="${_pm_dir%/*}"
+	done
+	return 0
+}
+
+# made_dirs_note <directories, one per line> — each one a run made.
+made_dirs_note() {
+	while IFS= read -r _mdn_dir; do
+		[ -z "$_mdn_dir" ] || ledger_note made-dir "$_mdn_dir"
+	done <<EOF
+$1
+EOF
+	return 0
+}
+
+# make_dir <dir> — mkdir -p, recording what it made; R_MADE=1 when <dir> itself is new.
+make_dir() {
+	R_MADE=0
+	[ -d "$1" ] && return 0
+	_mkd_new="$(path_missing "$1")"
+	mkdir -p "$1" 2>/dev/null || return 1
+	R_MADE=1
+	made_dirs_note "$_mkd_new"
+}
+
+# Is <dir> one a run made?
+dir_made_by_run() {
+	ledger_has made-dir "$1"
+}
+
+# Every directory a run made, deepest first, removed while it is empty: the uninstall's
+# last word on directories, after the mounts in them were released.
+prune_made_dirs() {
+	while IFS= read -r _pmd_dir; do
+		[ -z "$_pmd_dir" ] || rmdir "$_pmd_dir" 2>/dev/null || true
+	done <<EOF
+$(ledger_values made-dir | awk '{ print gsub("/", "/") "\t" $0 }' | sort -rn | cut -f 2-)
+EOF
+	return 0
+}
+
 # ---------------------------------------------------------------- FreeBSD kld_list ----
 
 # A kld_list entry carries no marker, so a run records the ones it adds, and the uninstall

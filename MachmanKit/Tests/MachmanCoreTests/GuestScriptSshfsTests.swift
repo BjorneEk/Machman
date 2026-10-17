@@ -335,9 +335,59 @@ struct GuestScriptSshfsTests {
 				if [ -d "$D/mnt" ]; then echo kept; else echo removed; fi
 				""", under: shell)
 			#expect(r.status == 0, "\(shell): \(r.out)")
-			// Fails until the open bug S66 (the uninstall removes a mount root it didn't
-			// create) is fixed.
 			#expect(r.out == "kept\n", "\(shell): \(r.out)")
+		}
+	}
+
+	// S66: a run records the directories its mkdir made (made-dir) and chowns only those; a
+	// --mountpoint that was there keeps its owner through setup and stays after the
+	// uninstall, while a root a run made goes with every parent it made, once empty.
+	@Test("S66: a mount root setup made goes with its parents, and a found one keeps its owner")
+	func onlyAMountRootARunMadeIsChownedAndRemoved() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(GuestScriptStateTests.stateHere + #"""
+				UI_COLS=1000
+				OS_FAMILY=debian
+				U="$(id -un)"
+				GROUP="$(id -gn)"
+				chown() { printf 'chown %s\n' "$*" >> "$D/chown.log"; }
+				mount() { :; }
+				show() { sed "s|$D|D|g; s|$U:$GROUP|U:G|g" "$@"; }
+				mkdir "$D/found"
+				MOUNTPOINT="$D/found"
+				sshfs_decide >/dev/null 2>&1
+				echo "plan: $MOUNT_PLAN" > "$D/out"
+				sshfs_act_fuse_ready >> "$D/out"
+				MOUNTPOINT="$D/made/machman/mounts"
+				sshfs_act_fuse_ready >> "$D/out"
+				show "$D/out" "$D/chown.log"
+				ledger_values made-dir | show
+				write_state sshfs
+				read_state
+				LEDGER_DONE=""
+				sshfs_decide >/dev/null 2>&1
+				echo "plan: $MOUNT_PLAN" | show
+				ST_MOUNTPOINT="$MOUNTPOINT"
+				uninstall_unmount_and_prune
+				[ -d "$D/made" ] || echo "made: gone"
+				ST_MOUNTPOINT="$D/found"
+				uninstall_unmount_and_prune
+				[ -d "$D/found" ] && echo "found: kept"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == """
+				plan: D/found (exists — its owner stays)
+				[ok] D/found is ready for host folders
+				[ok] D/made/machman/mounts is ready for host folders
+				chown -h U:G D/made/machman/mounts
+				D/made/machman/mounts
+				D/made/machman
+				D/made
+				plan: D/made/machman/mounts (exists)
+				made: gone
+				found: kept
+
+				""", "\(shell): \(r.out)")
 		}
 	}
 
