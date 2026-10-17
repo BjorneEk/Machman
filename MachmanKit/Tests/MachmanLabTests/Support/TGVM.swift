@@ -169,7 +169,12 @@ final class TGVM: @unchecked Sendable {
 	func start(_ options: StartOptions, timeout: Duration = .seconds(90)) async throws {
 		let running = LabProcesses.liveGuestCount()
 		if running >= 2 { throw LabError.guestCap(running: running) }
-		try await api.start(vm: name, options: options)
+		do {
+			try await api.start(vm: name, options: options)
+		} catch {
+			await TFStartFailure.record(vm: name, api: api, error: error)
+			throw error
+		}
 		try await waitForState(.running, timeout: timeout)
 		try fileHostPid(try await hostPID())
 	}

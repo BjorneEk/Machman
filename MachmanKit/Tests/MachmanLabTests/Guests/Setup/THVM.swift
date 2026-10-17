@@ -43,7 +43,12 @@ final class THVM: @unchecked Sendable {
 	func start(timeout: Duration = .seconds(120)) async throws {
 		let running = LabProcesses.liveGuestCount()
 		if running >= 2 { throw LabError.guestCap(running: running) }
-		try await api.start(vm: name, options: StartOptions(openWindow: false))
+		do {
+			try await api.start(vm: name, options: StartOptions(openWindow: false))
+		} catch {
+			await TFStartFailure.record(vm: name, api: api, error: error)
+			throw error
+		}
 		try await waitForState(.running, timeout: timeout)
 		try LabProcesses.writePid(try await hostPID(), kind: "vmhost", name: pidName)
 	}

@@ -33,7 +33,12 @@ enum TFVM {
 	) async throws {
 		let running = LabProcesses.liveGuestCount()
 		if running >= 2 { throw LabError.guestCap(running: running) }
-		try await agent.api.start(vm: name, options: options)
+		do {
+			try await agent.api.start(vm: name, options: options)
+		} catch {
+			await TFStartFailure.record(vm: name, api: agent.api, error: error)
+			throw error
+		}
 		try await TFWait.state(agent.api, name, .running, timeout: timeout)
 		_ = try await recordHost(agent, name)
 	}

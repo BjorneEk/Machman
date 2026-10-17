@@ -540,6 +540,7 @@ lab_run() {
 	else
 		echo "lab: tests passed"
 	fi
+	lab_start_failures "$root" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}
 	if [[ -n "$out" ]]; then
 		local dest="$out/lab-$(date +%Y%m%d-%H%M%S)-$token"
 		lab_keep_report "$dest" "$root" ${SHARD_ROOTS[@]+"${SHARD_ROOTS[@]}"}
@@ -645,6 +646,24 @@ lab_doctor() {
 	exit $((missing ? 69 : 0))
 }
 
+# lab_start_failures <root> [shard roots…]: a line for each failed start's record (Q28:
+# MachmanLabTests' TFStartFailure keeps the error and the disks' state in report/start-failures/),
+# by its path in the kept report.
+lab_start_failures() {
+	local k=1 r f where
+	for r in "$@"; do
+		where=""
+		((k > 1)) && where="shard-$k/"
+		for f in "$r"/report/start-failures/*.txt; do
+			if [[ -f "$f" ]]; then
+				echo "lab: start failure recorded: ${where}report/start-failures/${f##*/}"
+			fi
+		done
+		k=$((k + 1))
+	done
+	return 0
+}
+
 # lab_keep_report <dest> <root> [shard roots…]: <dest> becomes a copy of the run's report, logs
 # and transcripts, each shard's under shard-2, shard-3, … (the numbering progress.py prints).
 lab_keep_report() {
@@ -709,6 +728,16 @@ lab_selfcheck_audits() {
 	else
 		fail "report kept: a run's report, logs, transcripts and shards replace the last" \
 			"$(find "$sc/kept" | sed "s|$sc/||" | tr '\n' ' ')"
+	fi
+	mkdir -p "$sc/run/report/start-failures" "$sc/shard/report/start-failures"
+	touch "$sc/run/report/start-failures/1-a.txt" "$sc/shard/report/start-failures/2-b.txt"
+	out="$(lab_start_failures "$sc/run" "$sc/shard" | sed 's/^lab: start failure recorded: //')"
+	if [[ "$out" == "report/start-failures/1-a.txt"$'\n'"shard-2/report/start-failures/2-b.txt" ]]
+	then
+		ok "Q28: every shard's start-failure record is named by its place in the kept report"
+	else
+		fail "Q28: every shard's start-failure record is named by its place in the kept report" \
+			"$out"
 	fi
 	rm -rf "$sc"
 	out="$(MACHMAN_LAB_SELFCHECK_INJECT=window "$repo/scripts/lab.sh" --harness --no-build \
