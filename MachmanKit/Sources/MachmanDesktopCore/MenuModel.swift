@@ -334,7 +334,8 @@ public final class MenuModel: ObservableObject {
 	@Published public private(set) var facts = MenuFacts()
 	private weak var viewModel: VMListViewModel?
 	private var sinks: [AnyCancellable] = []
-	private var recomputeScheduled = false
+	// objectWillChange fires before the change lands: read it a turn later, once for a burst.
+	private lazy var recomputes = NextTurnCoalescer { [weak self] in self?.recompute() }
 
 	public init() {}
 
@@ -347,7 +348,7 @@ public final class MenuModel: ObservableObject {
 				viewModel.objectWillChange, viewModel.canvases.objectWillChange,
 				viewModel.terminals.objectWillChange, viewModel.tornTabs.objectWillChange,
 			]
-			sinks = changes.map { $0.sink { [weak self] in self?.scheduleRecompute() } }
+			sinks = changes.map { $0.sink { [weak self] in self?.recomputes.schedule() } }
 		}
 		recompute()
 	}
@@ -407,17 +408,6 @@ public final class MenuModel: ObservableObject {
 			return target.terminal.map { .saveTerminal($0) }
 		}
 		return nil
-	}
-
-	// objectWillChange fires before the change lands: read it a turn later, once for a burst.
-	private func scheduleRecompute() {
-		guard !recomputeScheduled else { return }
-		recomputeScheduled = true
-		DispatchQueue.main.async { [weak self] in
-			guard let self else { return }
-			recomputeScheduled = false
-			recompute()
-		}
 	}
 
 	private func recompute() {

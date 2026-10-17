@@ -17,7 +17,7 @@ public final class FocusMonitor {
 	private let onChange: @MainActor (Bool) -> Void
 	private let observers: ObserverTokens
 	private var last: Bool?
-	private var pending = false
+	private lazy var reports = NextTurnCoalescer { [weak self] in self?.report() }
 
 	public init(
 		center: NotificationCenter = .default, names: [Notification.Name],
@@ -31,21 +31,11 @@ public final class FocusMonitor {
 			observers.add(center.addObserver(forName: name, object: nil, queue: nil) {
 				[weak self] _ in
 				Task { @MainActor [weak self] in
-					self?.schedule()
+					self?.reports.schedule()
 				}
 			})
 		}
 		report()
-	}
-
-	private func schedule() {
-		guard !pending else { return }
-		pending = true
-		Task { @MainActor [weak self] in
-			guard let self else { return }
-			self.pending = false
-			self.report()
-		}
 	}
 
 	private func report() {

@@ -37,7 +37,13 @@ public final class TerminalSessions: ObservableObject {
 	// nothing to it (P38).
 	private var appliedLive: [String: [VMPaneTab: TerminalLiveSettings]] = [:]
 	private var profileWatch: AnyCancellable?
-	private var reapplyScheduled = false
+	private weak var followed: TerminalProfileStore?
+	// objectWillChange fires before the change lands: read it a turn later, once however
+	// many fields changed in this one.
+	private lazy var reapply = NextTurnCoalescer { [weak self] in
+		guard let self, let profiles = self.followed else { return }
+		self.reapplyLiveProfiles(profiles)
+	}
 
 	public init(makeController: @escaping @MainActor (TerminalProfile) -> any TerminalController) {
 		self.makeController = makeController
@@ -138,16 +144,9 @@ public final class TerminalSessions: ObservableObject {
 	// Keeps every open serial terminal on its profile as the store changes, whichever window
 	// shows it, or none: the registry listens itself, for the app's lifetime, never a view.
 	public func follow(_ profiles: TerminalProfileStore) {
-		profileWatch = profiles.objectWillChange.sink { [weak self, weak profiles] _ in
-			// objectWillChange fires before the change lands: read it a turn later, once
-			// however many fields changed in this one.
-			guard let self, !self.reapplyScheduled else { return }
-			self.reapplyScheduled = true
-			DispatchQueue.main.async { [weak self, weak profiles] in
-				guard let self else { return }
-				self.reapplyScheduled = false
-				if let profiles { self.reapplyLiveProfiles(profiles) }
-			}
+		followed = profiles
+		profileWatch = profiles.objectWillChange.sink { [weak self] _ in
+			self?.reapply.schedule()
 		}
 	}
 
