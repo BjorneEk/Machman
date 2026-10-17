@@ -24,10 +24,13 @@ struct SSHSessionInspector: View {
 	var body: some View {
 		Form {
 			Section("SSH session") {
-				TextField("Name", text: $draftName)
-					.onSubmit {
-						sessions.renameSSHSession(vm: vm.name, ref: ref, to: draftName)
+				VStack(alignment: .leading, spacing: 3) {
+					TextField("Name", text: $draftName)
+						.onSubmit { commitName() }
+					if let problem = TerminalSessions.sshSessionNameProblem(draftName) {
+						FieldProblem(problem)
 					}
+				}
 				if let user = vm.ssh?.guestUser, let address = vm.ssh?.address {
 					LabeledContent("Target") {
 						Text("\(user)@\(address)")
@@ -74,6 +77,13 @@ struct SSHSessionInspector: View {
 		// A rename in the tree or a tab reaches the field too (Q2).
 		.servedDraft($draftName, of: sessions.sshSessionName(vm: vm.name, ref: ref))
 		.id(ref)   // a different session re-seeds the name draft on appear
+	}
+
+	// PR8's pattern, as the disk and kernel tag fields do: the reason under the field while
+	// it can't be used, and Return tidies it back to the name the session keeps (H64).
+	private func commitName() {
+		sessions.renameSSHSession(vm: vm.name, ref: ref, to: draftName)
+		draftName = sessions.sshSessionName(vm: vm.name, ref: ref)
 	}
 
 	private func reconnect() {

@@ -27,6 +27,17 @@ enum FieldTyping {
 		return true
 	}
 
+	// Return in the text field at `frame`, the way AppKit reports it: the field sends its
+	// action (SwiftUI's onSubmit), then settles. False when no field is there.
+	@discardableResult
+	static func submit(fieldAt frame: CGRect, in hosted: HostedView) async -> Bool {
+		let centre = CGPoint(x: frame.midX, y: frame.midY)
+		guard let field = textField(at: centre, in: hosted.host) else { return false }
+		field.sendAction(field.action, to: field.target)
+		await hosted.settle()
+		return true
+	}
+
 	// The innermost text field under `point` (host coordinates).
 	static func textField(at point: CGPoint, in host: NSView) -> NSTextField? {
 		var found: NSTextField?

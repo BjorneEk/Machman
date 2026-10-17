@@ -75,4 +75,15 @@ struct SessionNamesTests {
 		#expect(torn.windowTitle(vms: h.viewModel.vms, terminals: h.terminals) == "Debian")
 		#expect(torn.windowTitle(vms: nil, terminals: h.terminals) == "Debian")
 	}
+
+	@Test("H64: an empty session name is refused, and the session keeps its name")
+	func anEmptyNameIsRefused() async {
+		let h = await DesktopHarness.make()
+		#expect(h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "Build"))
+		#expect(TerminalSessions.sshSessionNameProblem(" \t") == "A session needs a name")
+		#expect(!h.terminals.renameSSHSession(vm: "Debian", ref: session, to: "   "))
+		#expect(h.terminals.sshSessionName(vm: "Debian", ref: session) == "Build")
+		#expect(h.terminals.renameSSHSession(vm: "Debian", ref: session, to: " Deploy "))
+		#expect(h.terminals.sshSessionName(vm: "Debian", ref: session) == "Deploy")
+	}
 }

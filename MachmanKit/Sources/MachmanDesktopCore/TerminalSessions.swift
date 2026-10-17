@@ -192,12 +192,20 @@ public final class TerminalSessions: ObservableObject {
 		sshMeta[vm]?[ref]?.startedAt
 	}
 
-	public func renameSSHSession(vm: String, ref: SSHSessionRef, to name: String) {
-		let trimmed = name.trimmingCharacters(in: .whitespaces)
-		guard !trimmed.isEmpty else { return }
+	// Why `draft` can't name a session, or nil: the inspector says it under the field (H64).
+	public static func sshSessionNameProblem(_ draft: String) -> String? {
+		draft.trimmingCharacters(in: .whitespaces).isEmpty ? "A session needs a name" : nil
+	}
+
+	// False when the name is refused (sshSessionNameProblem): the session keeps its name.
+	@discardableResult
+	public func renameSSHSession(vm: String, ref: SSHSessionRef, to name: String) -> Bool {
+		guard Self.sshSessionNameProblem(name) == nil else { return false }
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
-			name: ref.title, startedAt: MachmanClock.now())].name = trimmed
+			name: ref.title, startedAt: MachmanClock.now())].name =
+			name.trimmingCharacters(in: .whitespaces)
 		objectWillChange.send()
+		return true
 	}
 
 	public func sshSessionProfileID(vm: String, ref: SSHSessionRef) -> UUID? {
