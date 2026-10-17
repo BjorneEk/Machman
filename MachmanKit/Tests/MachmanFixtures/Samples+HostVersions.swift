@@ -21,4 +21,23 @@ extension Samples {
 	public static func libraryWithOutdatedHost() -> [VMInfo] {
 		library().map { $0.name == "Debian" ? outdatedHost("Debian") : $0 }
 	}
+
+	// Debian outdated as above, its last Guest Setup run failed with a note and a feature
+	// this guest can't do: every disclosure of the Guest Setup inspector has something in it.
+	public static func libraryWithOutdatedSetupReport() -> [VMInfo] {
+		library().map { vm in
+			guard vm.name == "Debian" else { return vm }
+			var debian = failedSetupRun("Debian")
+			debian.outdatedHost = true
+			debian.setup?.notes = setupNotes("Debian").setup?.notes
+			debian.setup?.features = [
+				GuestFeatureInfo(
+					id: GuestFeature.ssh, available: true, configured: true, detail: "demo"),
+				GuestFeatureInfo(
+					id: GuestFeature.kernelConsole, available: false,
+					reason: "no known bootloader tool on this guest", configured: false),
+			]
+			return debian
+		}
+	}
 }

@@ -6,7 +6,8 @@
 //  last run + script version, the errors and notes popdowns), the per-feature list, and
 //  the setup commands per boot mode — auto-collapsed behind a checkmark once installed,
 //  with an Allow-reinstall toggle to bring them back. Inspector text rule: nothing longer
-//  than one sentence — details live in the Setup Guide sheet, never here.
+//  than one sentence — details live in the Setup Guide sheet, never here. The report's and
+//  the commands' disclosures change nothing, so they stay live under a settings lock (H62).
 //
 
 import SwiftUI
@@ -171,6 +172,7 @@ struct GuestSetupInspector: View {
 			DisclosureGroup("Errors (\(errors.count))") {
 				reportLines(errors)
 			}
+			.liveWhileSettingsLocked()
 		}
 	}
 
@@ -181,6 +183,7 @@ struct GuestSetupInspector: View {
 			DisclosureGroup("Notes (\(notes.count))") {
 				reportLines(notes)
 			}
+			.liveWhileSettingsLocked()
 		}
 	}
 
@@ -231,6 +234,7 @@ struct GuestSetupInspector: View {
 							}
 						}
 					}
+					.liveWhileSettingsLocked()
 				}
 			}
 		}
@@ -331,6 +335,7 @@ struct GuestSetupInspector: View {
 				}
 				.padding(.vertical, 2)
 			}
+			.liveWhileSettingsLocked()
 			DisclosureGroup("FreeBSD / OpenBSD") {
 				VStack(alignment: .leading, spacing: 6) {
 					Text(shareAutomounted
@@ -344,6 +349,7 @@ struct GuestSetupInspector: View {
 				}
 				.padding(.vertical, 2)
 			}
+			.liveWhileSettingsLocked()
 		}
 	}
 }

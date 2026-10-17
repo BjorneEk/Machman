@@ -172,6 +172,21 @@ struct InspectorGatingTests {
 		#expect(!stepper.isEnabled)
 	}
 
+	// H62: the lock disabled the whole Guest Setup inspector, so the last run's errors and
+	// notes, the features it couldn't set up and the setup commands couldn't be opened until
+	// the VM restarted — reads that change nothing. They stay live; its setting stays locked.
+	@Test("H62: an outdated VM's Guest Setup report and commands stay readable")
+	func anOutdatedVMsGuestSetupReportStaysReadable() async throws {
+		let h = await UIHarness.make(Samples.libraryWithOutdatedSetupReport())
+		let tree = try await inspector(h, "Debian", .device(.guestSetup))
+		let reason = try #require(h.vm("Debian").restartToUpdate)
+		#expect(tree.all.contains { $0.text == reason }, "no lock banner: \(tree.dump())")
+		for title in ["Errors (1)", "Notes (1)", "Unavailable (1)", "Linux", "FreeBSD / OpenBSD"] {
+			#expect(try element(tree, title).isEnabled, "\(title) is locked: \(tree.dump())")
+		}
+		#expect(!(try control(tree, labelled: "Allow reinstall or update").isEnabled))
+	}
+
 	@Test("H40: a torn configuration window's inspector shows the restart banner and locks")
 	func aTornInspectorLocksLikeTheMainOne() async throws {
 		let h = await UIHarness.make(Samples.libraryWithOutdatedHost())

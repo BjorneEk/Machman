@@ -419,5 +419,10 @@ enum InspectorScenes {
 			"device.graphics.host", "GraphicsInspector, the host display's size",
 			vms: { [Samples.linuxDisplay(width: 3024, height: 1964)] },
 			node: .device(.graphics)),
+		// H62: under an older vmhost's lock the report's and the commands' disclosures stay
+		// live (drawn open by no one: their titles show undimmed).
+		inspector(
+			"guest-setup.locked", "GuestSetupInspector under an older vmhost, a failed run",
+			vms: Samples.libraryWithOutdatedSetupReport, node: .device(.guestSetup)),
 	]
 }
