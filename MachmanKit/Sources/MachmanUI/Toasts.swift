@@ -8,7 +8,8 @@
 //  cancel it — and dismisses a finished one). The
 //  HIG feedback pattern: passive status near the corner beats interrupting dialogs; a small
 //  indicator stays near the control that started the work while the detailed card lives
-//  here.
+//  here. What lands here is also said to VoiceOver as it arrives (H56): a transient toast is
+//  gone before anyone could navigate to it.
 //
 
 import SwiftUI
@@ -40,6 +41,15 @@ public struct MachmanToast: Identifiable, Equatable {
 		self.key = key
 		self.spinner = spinner
 		self.sticky = sticky
+	}
+}
+
+extension MachmanToast {
+	// A problem worth interrupting for: every problem toast (pushProblem, engine warnings,
+	// the stale list) carries the warning tint, and only problems do.
+	public var isProblem: Bool {
+		tint == MachmanColors.warning || tint == MachmanColors.problem
+			|| tint == MachmanColors.stateError
 	}
 }
 
@@ -88,6 +98,7 @@ public struct ToastStack: View {
 	private let progress: [ProgressCardModel]
 	private let dismissProgress: (String) -> Void
 	private let hoverToast: (UUID, Bool) -> Void
+	@Environment(\.toastAnnouncer) private var announcer
 
 	public init(
 		toasts: [MachmanToast], progress: [ProgressCardModel] = [],
@@ -136,6 +147,79 @@ public struct ToastStack: View {
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 		.animation(.spring(duration: 0.35), value: toasts)
 		.animation(.spring(duration: 0.35), value: progress)
+		.onChange(of: toasts) { old, new in
+			for announcement in Self.announcements(from: old, to: new) {
+				announcer.post(announcement)
+			}
+		}
+		.onChange(of: progress) { old, new in
+			for announcement in Self.announcements(from: old, to: new) {
+				announcer.post(announcement)
+			}
+		}
+	}
+
+	// The toasts that arrived: each new one once, except a keyed slot replaced with the same
+	// words (a wait re-pushed says nothing new). A toast leaving says nothing.
+	public static func announcements(
+		from old: [MachmanToast], to new: [MachmanToast]
+	) -> [ToastAnnouncement] {
+		let shown = Set(old.map(\.id))
+		let slots = Dictionary(
+			old.compactMap { toast in toast.key.map { ($0, toast.message) } },
+			uniquingKeysWith: { first, _ in first })
+		return new
+			.filter { !shown.contains($0.id) }
+			.filter { toast in toast.key.map { slots[$0] != toast.message } ?? true }
+			.map { ToastAnnouncement(text: $0.message, urgent: $0.isProblem) }
+	}
+
+	// The cards that finished (or arrived finished): the outcome, once. Running work is
+	// shown, not said.
+	public static func announcements(
+		from old: [ProgressCardModel], to new: [ProgressCardModel]
+	) -> [ToastAnnouncement] {
+		let finished = Set(old.filter(\.finished).map(\.id))
+		return new
+			.filter { $0.finished && !finished.contains($0.id) }
+			.map { ToastAnnouncement(text: "\($0.title): \($0.phase)", urgent: false) }
+	}
+}
+
+// One thing the corner says to VoiceOver; an urgent one interrupts what it is saying.
+public struct ToastAnnouncement: Equatable, Sendable {
+	public let text: String
+	public let urgent: Bool
+
+	public init(text: String, urgent: Bool) {
+		self.text = text
+		self.urgent = urgent
+	}
+}
+
+// Who hears the corner: VoiceOver, through the system's announcement, or a test's recorder.
+public struct ToastAnnouncer: Sendable {
+	public let post: @MainActor @Sendable (ToastAnnouncement) -> Void
+
+	public init(post: @escaping @MainActor @Sendable (ToastAnnouncement) -> Void) {
+		self.post = post
+	}
+
+	public static let voiceOver = ToastAnnouncer { announcement in
+		var text = AttributedString(announcement.text)
+		text.accessibilitySpeechAnnouncementPriority = announcement.urgent ? .high : .default
+		AccessibilityNotification.Announcement(text).post()
+	}
+}
+
+private struct ToastAnnouncerKey: EnvironmentKey {
+	static let defaultValue = ToastAnnouncer.voiceOver
+}
+
+extension EnvironmentValues {
+	public var toastAnnouncer: ToastAnnouncer {
+		get { self[ToastAnnouncerKey.self] }
+		set { self[ToastAnnouncerKey.self] = newValue }
 	}
 }
 

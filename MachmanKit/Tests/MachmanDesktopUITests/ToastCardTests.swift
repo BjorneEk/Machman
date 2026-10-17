@@ -5,8 +5,9 @@
 //  The corner overlay's cards and toasts, hosted offscreen: a progress card's title and
 //  its failure carry their whole text as tooltips and the failure wraps to three lines
 //  (W3-40, L4), a long warning toast wraps within 340 pt and keeps the whole message on
-//  hover (W3-41, F6), and a toast offers nothing to click (W3-63). Hover itself doesn't
-//  render; the holding rule is ToastTests' (aHoveredToastStays).
+//  hover (W3-41, F6), a toast offers nothing to click (W3-63), and a pushed toast reaches
+//  VoiceOver once (H56). Hover itself doesn't render; the holding rule is ToastTests'
+//  (aHoveredToastStays).
 //
 
 import SwiftUI
@@ -72,6 +73,31 @@ struct ToastCardTests {
 		#expect(tree.all.contains { $0.help == Self.warning }, "no whole-text tooltip")
 		// The VM's name leads (F6).
 		#expect(Self.warning.hasPrefix("Debian: "))
+	}
+
+	@Test("H56: one pushed toast gives one VoiceOver announcement with its text")
+	func aPushedToastIsAnnouncedOnce() async throws {
+		let h = await UIHarness.make()
+		let heard = Heard()
+		try await OffscreenHost.withHost(
+			NotificationOverlay(viewModel: h.viewModel, operations: h.operations)
+				.environment(\.toastAnnouncer, ToastAnnouncer { heard.posts.append($0) }),
+			width: 800, height: 600
+		) { hosted in
+			#expect(heard.posts.isEmpty, "said something before any toast: \(heard.posts)")
+			h.viewModel.pushToast(
+				symbol: MachmanSymbols.serialConsole, message: "Removed console port")
+			#expect(await eventually { !heard.posts.isEmpty })
+			await hosted.settle()
+			#expect(heard.posts == [
+				ToastAnnouncement(text: "Removed console port", urgent: false),
+			])
+		}
+	}
+
+	@MainActor
+	private final class Heard {
+		var posts: [ToastAnnouncement] = []
 	}
 
 	@Test("W3-63: a toast offers nothing to click")
