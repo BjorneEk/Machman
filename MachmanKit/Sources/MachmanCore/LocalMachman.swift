@@ -430,8 +430,12 @@ public final class LocalMachman: MachmanControlling {
 	public func preview(vm name: String, maxWidth: Int?) async throws -> Data? {
 		let vm = try lookup(name)
 		guard vm.state.isRunning else { return nil }
-		let image = await registry.captureImage(name: name)
-		return Self.jpegData(from: image, maxWidth: maxWidth)
+		let frame = await registry.captureImage(name: name)
+		// Scaled and encoded off the main actor, which drives the VM window and answers the
+		// agent: a desktop polling previews cost each running VM a hitch per frame (E68).
+		return await Task.detached(priority: .utility) {
+			PreviewEncoder.jpeg(from: frame, maxWidth: maxWidth)
+		}.value
 	}
 
 	// MARK: - macOS install
@@ -498,28 +502,6 @@ public final class LocalMachman: MachmanControlling {
 			throw MachmanError.notFound(name)
 		}
 		return vm
-	}
-
-	nonisolated private static func jpegData(from image: NSImage, maxWidth: Int?) -> Data? {
-		var source = image
-		if let maxWidth = maxWidth, image.size.width > CGFloat(maxWidth), image.size.width > 0 {
-			let scale = CGFloat(maxWidth) / image.size.width
-			let newSize = NSSize(
-				width: CGFloat(maxWidth), height: (image.size.height * scale).rounded())
-			let scaled = NSImage(size: newSize)
-			scaled.lockFocus()
-			image.draw(
-				in: NSRect(origin: .zero, size: newSize),
-				from: NSRect(origin: .zero, size: image.size),
-				operation: .copy, fraction: 1.0)
-			scaled.unlockFocus()
-			source = scaled
-		}
-		guard let tiff = source.tiffRepresentation,
-			let rep = NSBitmapImageRep(data: tiff) else {
-			return nil
-		}
-		return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7])
 	}
 }
 

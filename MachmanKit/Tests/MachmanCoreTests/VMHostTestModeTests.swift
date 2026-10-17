@@ -119,8 +119,7 @@ struct VMHostTestModeTests {
 		presenter.lab = lab
 		var failures: [WindowPresenter.CaptureFailure] = []
 		presenter.onCaptureFailed = { failures.append($0) }
-		let image = await presenter.captureImage(name: "dev")
-		#expect(image.size == NSSize(width: 300, height: 200))
+		#expect(await presenter.captureImage(name: "dev") == nil)
 		#expect(failures.isEmpty)
 		#expect(presenter.window(for: "dev") == nil)
 	}

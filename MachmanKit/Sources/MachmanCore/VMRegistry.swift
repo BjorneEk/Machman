@@ -264,7 +264,7 @@ public final class VMRegistry {
 		presenter.window(for: vm.config.name) != nil
 	}
 
-	func captureImage(name: String) async -> NSImage {
+	func captureImage(name: String) async -> CGImage? {
 		await presenter.captureImage(name: name)
 	}
 

@@ -374,36 +374,26 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 
 	// MARK: - Window capture (previews)
 
-	static func blackImage(size: NSSize) -> NSImage {
-		let image = NSImage(size: size)
-		image.lockFocus()
-		NSColor.black.setFill()
-		NSRect(origin: .zero, size: size).fill()
-		image.unlockFocus()
-		return image
-	}
-
 	// One frame of the VM window via SCScreenshotManager: a one-shot capture (no stream
 	// lifecycle churning the system's recording indicator), and onScreenWindowsOnly: false +
-	// desktopIndependentWindow so windows parked on other Spaces still resolve. Always returns
-	// an image (black fallback). Ceiling note: any ScreenCaptureKit path shows the system
+	// desktopIndependentWindow so windows parked on other Spaces still resolve. nil when there
+	// is no frame (PreviewEncoder sends a black one). Ceiling note: any ScreenCaptureKit path shows the system
 	// capture indicator and needs Screen Recording permission — the plan to escape both is the
 	// private-framebuffer PreviewSource (researched, deferred).
-	func captureImage(name: String) async -> NSImage {
-		let fallback = Self.blackImage(size: NSSize(width: 300, height: 200))
+	func captureImage(name: String) async -> CGImage? {
 		guard Self.capturesPreviews(lab: lab) else {
 			if reportedLabPreviews.insert(name).inserted {
 				MachmanLogger.log(.log, "test mode: no preview for \(name) under the test suite")
 			}
-			return fallback
+			return nil
 		}
-		guard let window = windows[name] else { return fallback }
+		guard let window = windows[name] else { return nil }
 		// One capture at a time. This process is its own TCC responsible process now, so
 		// preflight would answer honestly — but an undetermined grant still blocks the call on
 		// the system's permission dialog, and every poll landing meanwhile would stack another
 		// copy of it. Serialising stops the pile-up; we still never GATE on preflight —
 		// attempting is what raises the prompt the user needs to see.
-		guard !captureInFlight else { return fallback }
+		guard !captureInFlight else { return nil }
 		captureInFlight = true
 		defer { captureInFlight = false }
 
@@ -414,11 +404,11 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 				.excludingDesktopWindows(false, onScreenWindowsOnly: false)
 		} catch {
 			report(.noPermission)
-			return fallback
+			return nil
 		}
 		guard let target = content.windows.first(where: { $0.windowID == windowID }) else {
 			report(.windowNotFound(windowID))
-			return fallback
+			return nil
 		}
 		let config = SCStreamConfiguration()
 		config.width = Int(target.frame.width)
@@ -427,11 +417,9 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
 		guard let cgImage = try? await SCScreenshotManager.captureImage(
 			contentFilter: filter, configuration: config) else {
 			report(.captureReturnedNothing)
-			return fallback
+			return nil
 		}
-		return NSImage(
-			cgImage: cgImage,
-			size: NSSize(width: cgImage.width, height: cgImage.height))
+		return cgImage
 	}
 
 	// Logged as well as sent on the event bus, so the failure is visible even with no client
