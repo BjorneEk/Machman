@@ -265,6 +265,29 @@ struct RoutingOrphanTests {
 		#expect(try await rig.routing.vm(named: "beta").state == .stopped)
 	}
 
+	// Review F21: a vmhost that ran a safe run and saved it as a new VM still holds the
+	// original's folder, so both entries were placed and End Process on the original ended the
+	// saved VM's run. A hello names one VM: the folders a silent vmhost holds place it only when
+	// exactly one library entry's folder is among them; with more it is asked again.
+	@Test("E70: a silent vmhost holding two VMs' folders is placed by neither and asked again")
+	@MainActor func aSilentVMHostHoldingTwoFoldersIsAskedAgain() async throws {
+		let rig = try makeRig(["saved", "original"])
+		let orphanSocket = rig.runtime + "/vm-gone.sock"
+		let host = try SilentHost(path: orphanSocket)
+		defer { host.shutdown() }
+		rig.routing.adoptionRetryInterval = .seconds(60)
+		rig.routing.whomItServesForTesting = { _ in .silent }
+		let held = ["saved", "original"].compactMap {
+			VMHostProcess.HeldFolder(at: rig.library + "/" + $0)
+		}
+		rig.routing.foldersHeldAtSocket = { path in path == orphanSocket ? held : [] }
+
+		await rig.routing.identifyOrphanedHosts(in: rig.runtime)
+		#expect(rig.routing.orphanSockets.isEmpty)   // before: both
+		#expect(rig.routing.orphanQuestions[orphanSocket] != nil)
+		rig.routing.orphanQuestions[orphanSocket]?.cancel()
+	}
+
 	@Test("E70: a silent vmhost whose folder can't be read is asked again, as before")
 	@MainActor func aSilentVMHostWhoseFolderCantBeReadIsAskedAgain() async throws {
 		let rig = try makeRig(["beta"])

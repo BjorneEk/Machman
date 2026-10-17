@@ -86,23 +86,24 @@ extension RoutingMachman {
 	}
 
 	// A vmhost on an unclaimed socket that didn't say whom it serves (E70), placed by the
-	// folders its process holds open: every entry whose folder is one of them answers through
-	// that socket until it exits, as if it had said so. False when none is (nothing changes).
+	// folders its process holds open: the one library entry whose folder is among them answers
+	// through that socket until it exits, as if it had said so. A hello names one VM, so with
+	// none or more than one — a safe run saved as a new VM still holds the original's folder
+	// (review F21) — nothing is placed and it is asked again.
 	private func placeByHeldFolder(_ path: String) -> Bool {
 		let library = libraryDir()
 		let held = foldersHeldAtSocket(path)
 		let entries = registry.list().map(\.name).filter { name in
 			held.contains { $0.isFolder(at: library + "/" + name) }
 		}
-		var placed = false
-		for entry in entries where place(entry, at: path) {
-			placed = true
-			MachmanLogger.log(.passiveWarning,
-				"\(entry) still runs on another name's socket (\(path)), whose vmhost didn't say "
-					+ "whom it serves but holds \(entry)'s folder open: its folder was renamed "
-					+ "while it ran")
+		guard entries.count == 1, let entry = entries.first, place(entry, at: path) else {
+			return false
 		}
-		return placed
+		MachmanLogger.log(.passiveWarning,
+			"\(entry) still runs on another name's socket (\(path)), whose vmhost didn't say "
+				+ "whom it serves but holds \(entry)'s folder open: its folder was renamed "
+				+ "while it ran")
+		return true
 	}
 
 	// What a vmhost on an unclaimed socket said when asked whom it serves (E11).
