@@ -75,8 +75,11 @@ struct TerminalSessionsTests {
 		#expect(h.controllers.allSatisfy { $0.disconnects == 0 })
 	}
 
-	// Sessions keep their own per-session profile; a profile edit re-applies serial tabs only.
-	@Test func profileEditsSkipSSHSessions() async throws {
+	// K7: a session keeps its own pick, and follows edits of the profile it uses — the
+	// default while it picked none — and of no other. It used to skip every edit, although
+	// Settings promises that open terminals pick up the changes at once.
+	@Test("T30: an SSH session follows edits of the profile it uses, not of others")
+	func sshSessionsFollowTheirOwnProfile() async throws {
 		let h = await harnessWithBothKinds()
 		let serial = try #require(
 			h.terminals.controller(vm: "Debian", ref: console) as? FakeTerminalController)
@@ -87,7 +90,38 @@ struct TerminalSessionsTests {
 		h.profiles.update(edited)
 		h.terminals.reapplyLiveProfiles(h.profiles)
 		#expect(serial.liveApplies == 1)
-		#expect(ssh.liveApplies == 0)
+		#expect(ssh.liveApplies == 1)
+
+		// Its own pick: edits of that profile reach it, edits of the default no longer do.
+		var picked = h.profiles.addProfile()
+		h.terminals.applySSHProfile(vm: "Debian", ref: session, id: picked.id, profile: picked)
+		#expect(ssh.liveApplies == 2)
+		edited.fontSize += 2
+		h.profiles.update(edited)
+		h.terminals.reapplyLiveProfiles(h.profiles)
+		#expect(ssh.liveApplies == 2)
+		#expect(serial.liveApplies == 2)
+		picked.colors.background = "#123456"
+		h.profiles.update(picked)
+		h.terminals.reapplyLiveProfiles(h.profiles)
+		#expect(ssh.liveApplies == 3)
+		#expect(serial.liveApplies == 2)
+	}
+
+	@Test("T30: a session whose profile is deleted falls back to the default")
+	func aSessionsDeletedProfileFallsBackToTheDefault() async throws {
+		let h = await harnessWithBothKinds()
+		let ssh = try #require(
+			h.terminals.sshController(vm: "Debian", ref: session) as? FakeTerminalController)
+		var picked = h.profiles.addProfile()
+		picked.colors.background = "#123456"
+		h.profiles.update(picked)
+		h.terminals.applySSHProfile(vm: "Debian", ref: session, id: picked.id, profile: picked)
+		#expect(ssh.liveApplies == 1)
+		h.profiles.delete(id: picked.id)
+		h.terminals.reapplyLiveProfiles(h.profiles)
+		#expect(ssh.liveApplies == 2)   // back on the default's colours
+		#expect(h.terminals.sshSessionProfileID(vm: "Debian", ref: session) == nil)
 	}
 
 	// Runs once everything the main queue already holds has run (the registry's deferred
@@ -131,7 +165,7 @@ struct TerminalSessionsTests {
 		h.profiles.associate(vm: "Debian", ref: console, to: twin.id)
 		await mainQueueTurn()
 		#expect(serial.liveApplies == 2)
-		#expect(ssh.liveApplies == 0)
+		#expect(ssh.liveApplies == 1)   // the session uses the default: its font edit only (T30)
 	}
 
 	// MARK: - Serial reconnect (T25: a closed or refused socket, the tab's banner)

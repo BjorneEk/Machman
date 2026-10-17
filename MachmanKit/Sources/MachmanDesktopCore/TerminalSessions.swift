@@ -141,8 +141,8 @@ public final class TerminalSessions: ObservableObject {
 		objectWillChange.send()
 	}
 
-	// Keeps every open serial terminal on its profile as the store changes, whichever window
-	// shows it, or none: the registry listens itself, for the app's lifetime, never a view.
+	// Keeps every open terminal on its profile as the store changes, whichever window shows
+	// it, or none: the registry listens itself, for the app's lifetime, never a view.
 	public func follow(_ profiles: TerminalProfileStore) {
 		followed = profiles
 		profileWatch = profiles.objectWillChange.sink { [weak self] _ in
@@ -150,15 +150,19 @@ public final class TerminalSessions: ObservableObject {
 		}
 	}
 
-	// Re-apply live profile settings to every open serial controller whose resolved profile's
-	// live settings changed — an edit, a port's new profile, a deleted one. Covers hidden VMs
-	// too, so an edit is reflected everywhere at once. SSH sessions keep their own
-	// per-session pick (applySSHProfile).
+	// Re-apply live profile settings to every open controller whose resolved profile's live
+	// settings changed — an edit, a port's new profile, a deleted one. A serial tab resolves
+	// through its port's association, an SSH session through its own pick (K7, T30). Covers
+	// hidden VMs too, so an edit is reflected everywhere at once.
 	public func reapplyLiveProfiles(_ store: TerminalProfileStore) {
 		for (vm, byTab) in live {
 			for (tab, c) in byTab {
-				guard case .terminal(let ref) = tab else { continue }
-				let profile = store.profile(vm: vm, ref: ref)
+				let profile: TerminalProfile
+				switch tab {
+				case .terminal(let ref): profile = store.profile(vm: vm, ref: ref)
+				case .ssh(let ref): profile = sessionProfile(vm: vm, ref: ref, in: store)
+				case .config: continue
+				}
 				guard appliedLive[vm]?[tab] != profile.liveSettings else { continue }
 				c.applyLive(profile)
 				appliedLive[vm, default: [:]][tab] = profile.liveSettings
@@ -211,6 +215,19 @@ public final class TerminalSessions: ObservableObject {
 		sshMeta[vm]?[ref]?.profileID
 	}
 
+	// The profile a session uses: its own pick, else the default. A pick whose profile was
+	// deleted goes, so the inspector's picker shows Default rather than nothing.
+	private func sessionProfile(
+		vm: String, ref: SSHSessionRef, in store: TerminalProfileStore
+	) -> TerminalProfile {
+		if let id = sshMeta[vm]?[ref]?.profileID {
+			if let picked = store.profile(id: id) { return picked }
+			sshMeta[vm]?[ref]?.profileID = nil
+			objectWillChange.send()
+		}
+		return store.defaultProfile
+	}
+
 	// Live-apply a profile to one session (font/colors/behaviour) and remember the pick.
 	// Startup-only settings can't change on a live remote session — they apply to the
 	// NEXT session; there is deliberately no ssh "reload".
@@ -219,7 +236,10 @@ public final class TerminalSessions: ObservableObject {
 	) {
 		sshMeta[vm, default: [:]][ref, default: SSHSessionMeta(
 			name: ref.title, startedAt: MachmanClock.now())].profileID = id
-		live[vm]?[.ssh(ref)]?.applyLive(profile)
+		if let c = live[vm]?[.ssh(ref)] {
+			c.applyLive(profile)
+			appliedLive[vm, default: [:]][.ssh(ref)] = profile.liveSettings
+		}
 		objectWillChange.send()
 	}
 
@@ -262,8 +282,7 @@ public final class TerminalSessions: ObservableObject {
 		vm: VMInfo, ref: SSHSessionRef, profiles: TerminalProfileStore
 	) -> Bool {
 		guard let arguments = SSHCommand.arguments(for: vm) else { return false }
-		let profile = sshSessionProfileID(vm: vm.name, ref: ref)
-			.flatMap { profiles.profile(id: $0) } ?? profiles.defaultProfile
+		let profile = sessionProfile(vm: vm.name, ref: ref, in: profiles)
 		reconnectSSHSession(vm: vm.name, ref: ref, arguments: arguments, profile: profile)
 		return true
 	}
