@@ -750,6 +750,13 @@ class Follower:
                 "%s (%s)" % (r[1], ", ".join(
                     at for known, at in self.issues.get(r[0], []) if not known) or "?")
                 for r in failed), "result"))
+        # Each warning once more (a retry the harness rode over, a kept start failure): one that
+        # starts to recur reads as what it may be, a product bug, at the end of a long run.
+        warned = ["%s — %s: %s" % (self.name(test_id), at, fit(text.split("\n", 1)[0], 160))
+                  for test_id, items in self.details.items()
+                  for glyph, at, text, _ in items if glyph == "!"]
+        if warned:
+            out.append((now, 0, "lab: warnings\n" + "\n".join(warned), "result"))
         self.emit(out, now)
         with open(os.path.join(self.root, "report", "test-times.tsv"), "w") as f:
             f.write("seconds\tstatus\ttest\n")
@@ -1271,6 +1278,9 @@ def self_check():
               "! Retry.swift:12: retried once: a stop settled\n" in text
               and "✔ 1/2 a retry warns · " in text
               and "✘ Retry.swift:22: no console\n" in text and "Issue recorded" not in text)
+        check("Q42: a run's warnings are listed once more at its end",
+              "lab: warnings\n" + " " * 13 + "a retry warns — Retry.swift:12: retried once: a stop "
+              "settled\n" in text and text.count("Retry.swift:12") == 2)
 
     print("progress.py self-check: %s" % ("FAIL (%d)" % len(fails) if fails else "ok"))
     return 1 if fails else 0
