@@ -95,7 +95,7 @@ struct ToastCardTests {
 		}
 	}
 
-	@Test("F16: an install's card leaves with one announcement of its outcome")
+	@Test("H56: an install's card leaves with one announcement of its outcome")
 	func anEndedInstallIsAnnounced() async throws {
 		let h = await UIHarness.make()
 		let heard = Heard()

@@ -244,7 +244,7 @@ struct InspectorGatingTests {
 		#expect(tree.all.contains { $0.help == BootInfo.newerModeReason }, "\(tree.dump())")
 		#expect(tree.find(text: "Allow nested virtualization") == nil)
 		// A Bootloader picker drawn for a mode it has no row for would show no value at all
-		// (F19): no popup may carry the Bootloader name, whatever it shows.
+		// (review F19): no popup may carry the Bootloader name, whatever it shows.
 		let picker = tree.all.first {
 			$0.role == "AXPopUpButton" && ($0.label == "Bootloader" || $0.text == "Bootloader")
 		}

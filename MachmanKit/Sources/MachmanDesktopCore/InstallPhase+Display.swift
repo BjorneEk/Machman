@@ -3,7 +3,7 @@
 //  MachmanDesktopCore
 //
 //  A running macOS install's phase as people read it, the same on the canvas banner and on
-//  its corner card, and what VoiceOver hears as that card leaves (F16).
+//  its corner card, and what VoiceOver hears as that card leaves (H56, review F16).
 //
 
 import Foundation
@@ -24,7 +24,7 @@ extension InstallPhase {
 	// The corner card a running install shows.
 	public static func cardTitle(vm: String) -> String { "\(vm) — Installing macOS" }
 
-	// The card shows only while the install runs; an ended one simply leaves (F16).
+	// The card shows only while the install runs; an ended one simply leaves (H56, review F16).
 	public var isRunning: Bool {
 		kind == .resolving || kind == .downloading || kind == .installing
 	}

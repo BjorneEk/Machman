@@ -209,7 +209,7 @@ public struct ToastAnnouncer: Sendable {
 		AccessibilityNotification.Announcement(speech(for: announcement)).post()
 	}
 
-	// What VoiceOver is handed (F17): a routine announcement queued behind the current
+	// What VoiceOver is handed (H56, review F17): a routine announcement queued behind the current
 	// speech, so a burst keeps every one; a problem interrupts. (.default would interrupt
 	// and be cut off by the next post.)
 	public static func speech(for announcement: ToastAnnouncement) -> AttributedString {

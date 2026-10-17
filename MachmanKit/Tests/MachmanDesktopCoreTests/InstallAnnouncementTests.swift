@@ -24,7 +24,7 @@ struct InstallAnnouncementTests {
 			from: old.map { [vm: $0] } ?? [:], to: new.map { [vm: $0] } ?? [:])
 	}
 
-	@Test("F16: an install's card leaves saying Installed, or Failed with its reason")
+	@Test("H56: an install's card leaves saying Installed, or Failed with its reason")
 	func anEndedInstallSaysItsOutcome() {
 		#expect(Self.said(Self.installing, InstallPhase(kind: .installed)) == [
 			ToastAnnouncement(text: "Sequoia — Installing macOS: Installed", urgent: false),
@@ -44,7 +44,7 @@ struct InstallAnnouncementTests {
 			== ["Sequoia — Installing macOS: Canceled"])
 	}
 
-	@Test("F16: only a card that leaves says anything, and only once")
+	@Test("H56: only a card that leaves says anything, and only once")
 	func onlyALeavingCardSpeaks() {
 		// Still running, moving between running phases, or first seen: the card shows it.
 		#expect(Self.said(Self.installing, Self.installing).isEmpty)

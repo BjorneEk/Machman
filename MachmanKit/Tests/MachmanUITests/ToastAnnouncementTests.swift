@@ -72,7 +72,7 @@ struct ToastAnnouncementTests {
 	}
 
 	// .default would interrupt the current speech and be cut off by the next post.
-	@Test("F17: a routine announcement waits its turn, a problem interrupts")
+	@Test("H56: a routine announcement waits its turn, a problem interrupts")
 	func routineSpeechIsQueued() {
 		let routine = ToastAnnouncer.speech(
 			for: ToastAnnouncement(text: "Removed console port", urgent: false))

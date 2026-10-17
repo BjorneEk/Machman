@@ -8,7 +8,7 @@
 //  math from ProgressETA). A running card's ✕ cancels (op.cancel / vm.install.cancel);
 //  finished operations linger a few seconds showing their outcome, then prune from the
 //  store, and their ✕ only dismisses them. An install's card leaves when its phase ends,
-//  saying the outcome to VoiceOver (F16).
+//  saying the outcome to VoiceOver (H56, review F16).
 //
 
 import SwiftUI
