@@ -61,4 +61,16 @@ final class DesktopHarness {
 		canvas.open(tab)
 		canvases.setCanvas(canvas, for: vm)
 	}
+
+	// For a negative check: true once what the view model and the stub show has held still
+	// (MachmanTestSupport's settled) — the calls sent, the alert or question showing, the
+	// toasts — never after a fixed sleep (Q34).
+	func settled() async -> Bool {
+		await MachmanTestSupport.settled { [self] in
+			[
+				AnyHashable(stub.calls.count), AnyHashable(viewModel.presentedError?.id),
+				AnyHashable(viewModel.toasts.map(\.id)),
+			]
+		}
+	}
 }
