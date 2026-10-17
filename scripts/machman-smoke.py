@@ -4,7 +4,7 @@
 Usage:
   machman-smoke.py [--socket PATH] [info]        hello + list VMs (default)
   machman-smoke.py [--socket PATH] watch         subscribe and stream events (^C to stop)
-  machman-smoke.py [--socket PATH] start NAME [--headless]
+  machman-smoke.py [--socket PATH] start NAME [--headless] [--safe]
   machman-smoke.py [--socket PATH] stop NAME [--force]
 
 Socket resolution: --socket, else $TMPDIR/<suite>/machman.sock, where <suite> is
@@ -28,6 +28,18 @@ def socket_path(argv):
     suite = os.environ.get("MACHMAN_SUITE_ID") or DEFAULT_SUITE
     runtime = os.path.join(os.environ.get("TMPDIR", "/tmp"), suite)
     return os.path.join(runtime, "machman.sock"), argv
+
+
+def start_options(vm, argv):
+    """vm.start's options for `vm` (a vm.get answer): the daemon takes explicit options only,
+    so every client applies the VM's start policy itself. A plain start follows it whole;
+    --headless drops the window and --safe adds a safe run, each keeping the other half
+    (StartIntent in MachmanUI, docs/ipc-protocol.md's vm.start)."""
+    policy = vm.get("startPolicy") or {}
+    return {
+        "openWindow": policy.get("windowed", True) and "--headless" not in argv,
+        "safe": policy.get("safe", False) or "--safe" in argv,
+    }
 
 
 class Client:
@@ -93,9 +105,8 @@ def main():
         except KeyboardInterrupt:
             pass
     elif command == "start":
-        client.call("vm.start", {
-            "name": argv[1],
-            "options": {"openWindow": "--headless" not in argv}})
+        vm = client.call("vm.get", {"name": argv[1]})
+        client.call("vm.start", {"name": argv[1], "options": start_options(vm, argv)})
         print(f"started {argv[1]}")
     elif command == "stop":
         mode = "force" if "--force" in argv else "soft"
