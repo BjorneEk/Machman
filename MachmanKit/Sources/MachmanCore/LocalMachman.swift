@@ -24,6 +24,14 @@ public final class LocalMachman: MachmanControlling {
 	// Rosetta installs) in the same place.
 	let operationCenter: OperationCenter
 
+	// The format gate a referenced image or ISO passes before it is attached (D29): off the
+	// actor, like the import's sniff. A seam: a test holds it to stage an edit in flight.
+	var checkAttachable: @Sendable (String) async throws -> Void = { path in
+		_ = try await Task.detached(priority: .userInitiated) {
+			try DiskImport.attachable(path: path)
+		}.value
+	}
+
 	public init(registry: VMRegistry) {
 		self.registry = registry
 		self.operationCenter = OperationCenter(events: registry.events)

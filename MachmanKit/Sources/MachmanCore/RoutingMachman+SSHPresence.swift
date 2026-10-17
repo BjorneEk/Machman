@@ -293,32 +293,33 @@ extension RoutingMachman {
 		vm name: String, integrationEnabled: Bool?, reverseApproved: Bool?, alias: String?
 	) async throws -> VMInfo {
 		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
-		let target = try await settingsOwner(name)
-		try refuseSSHWhileSafe(name)
-		// Uniqueness is checkable only here: a vmhost sees exactly one VM, and two VMs
-		// sharing a Host name would make `ssh <alias>` reach whichever block came first.
-		if let alias {
-			let wanted = alias.trimmingCharacters(in: .whitespaces)
-			if !wanted.isEmpty {
-				try requireSSHAliasFree(wanted, for: name)
+		let info = try await editSettings(name) { target -> VMInfo in
+			try refuseSSHWhileSafe(name)
+			// Uniqueness is checkable only here: a vmhost sees exactly one VM, and two VMs
+			// sharing a Host name would make `ssh <alias>` reach whichever block came first.
+			if let alias {
+				let wanted = alias.trimmingCharacters(in: .whitespaces)
+				if !wanted.isEmpty {
+					try requireSSHAliasFree(wanted, for: name)
+				}
 			}
-		}
-		let record = {
-			try await target.setSSH(
-				vm: name, integrationEnabled: integrationEnabled,
-				reverseApproved: reverseApproved, alias: alias)
-		}
-		// The host-side line reads the OWNER's state, never the registry copy — stale while
-		// the VM is hosted (setStartPolicy precedent).
-		let marker = existingSSHMarker(name)
-		let info: VMInfo
-		if reverseApproved == true, let marker {
-			info = try await approveReverseKey(vm: name, marker: marker, on: target, record: record)
-		} else {
-			info = try await record()
+			let record = {
+				try await target.setSSH(
+					vm: name, integrationEnabled: integrationEnabled,
+					reverseApproved: reverseApproved, alias: alias)
+			}
+			// The host-side line reads the OWNER's state, never the registry copy — stale
+			// while the VM is hosted (setStartPolicy precedent).
+			let marker = existingSSHMarker(name)
+			if reverseApproved == true, let marker {
+				return try await approveReverseKey(
+					vm: name, marker: marker, on: target, record: record)
+			}
+			let info = try await record()
 			if reverseApproved == false, let marker {
 				revokeReverseKey(marker: marker, vmName: name, announce: .always)
 			}
+			return info
 		}
 		await writeSSHHostConfig()
 		return info
@@ -377,12 +378,14 @@ extension RoutingMachman {
 	}
 
 	public func resetSSH(vm name: String) async throws -> VMInfo {
-		let target = try await settingsOwner(name)
-		try refuseSSHWhileSafe(name)
-		let marker = existingSSHMarker(name)
-		let info = try await target.resetSSH(vm: name)
-		if let marker {
-			revokeReverseKey(marker: marker, vmName: name, announce: .always)
+		let info = try await editSettings(name) { target -> VMInfo in
+			try refuseSSHWhileSafe(name)
+			let marker = existingSSHMarker(name)
+			let info = try await target.resetSSH(vm: name)
+			if let marker {
+				revokeReverseKey(marker: marker, vmName: name, announce: .always)
+			}
+			return info
 		}
 		await writeSSHHostConfig()
 		return info

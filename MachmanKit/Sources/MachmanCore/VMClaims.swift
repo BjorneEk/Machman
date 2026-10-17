@@ -3,8 +3,8 @@
 //  MachmanCore
 //
 //  What holds a VM's files in the daemon besides the host serving it (PR14): a start in
-//  flight, Save as New VM taking a name, and the long copies that write into a VM's folder
-//  or read it whole. The router's guards read this one table, so a booting VM is visible to
+//  flight, Save as New VM taking a name, the long copies that write into a VM's folder or
+//  read it whole, and a setting change the daemon makes (PR22). The router's guards read this one table, so a booting VM is visible to
 //  every one of them before anything is hosted, and no copy can be undone by a start or
 //  pulled away by a rename, delete or copy while it runs (E33, D20).
 //
@@ -25,14 +25,27 @@ final class VMClaims {
 		case importingDisk
 		case promotingDisk
 		case importingKernel
+		// A setting change the daemon makes, for its whole run: a format check or a file
+		// delete it awaits must land before a start hands the config to a vmhost (E65).
+		case editing
 
 		// An exclusive claim holds the VM alone. The copies that only add files coexist —
 		// each names its file as it lands (D18) — but never beside an exclusive one.
 		var isExclusive: Bool {
 			switch self {
 			case .starting, .saving, .copying: return true
-			case .importingDisk, .promotingDisk, .importingKernel: return false
+			case .importingDisk, .promotingDisk, .importingKernel, .editing: return false
 			}
+		}
+
+		// Whether this claim and one of `other` may hold a VM together. A setting change runs
+		// beside the copies, a copy of the whole VM among them, as it did before it held a
+		// claim (a save replaces the config at once), but never beside a start or a save.
+		func admits(_ other: Kind) -> Bool {
+			if self == .editing || other == .editing {
+				return ![self, other].contains { $0 == .starting || $0 == .saving }
+			}
+			return !isExclusive && !other.isExclusive
 		}
 
 		// What the VM is doing, after its name: "alpha is importing a disk".
@@ -43,6 +56,7 @@ final class VMClaims {
 			case .importingDisk: return "is importing a disk"
 			case .promotingDisk: return "is promoting a disk"
 			case .importingKernel: return "is importing a kernel file"
+			case .editing: return "is changing its settings"
 			}
 		}
 	}
@@ -75,7 +89,7 @@ final class VMClaims {
 	func claim(
 		_ name: String, _ kind: Kind, mac: String? = nil, inDaemon: Bool = true
 	) throws -> Token {
-		if let held = table[name]?.first, held.kind.isExclusive || kind.isExclusive {
+		if let held = table[name]?.first(where: { !$0.kind.admits(kind) }) {
 			throw Self.refusal(name, held.kind)
 		}
 		return insert(name, kind, mac: mac, inDaemon: inDaemon)
@@ -157,7 +171,7 @@ final class VMClaims {
 		switch kind {
 		case .starting, .saving:
 			return MachmanError(code: .invalidState, message: "\(name) is already starting")
-		case .copying, .importingDisk, .promotingDisk, .importingKernel:
+		case .copying, .importingDisk, .promotingDisk, .importingKernel, .editing:
 			return MachmanError(
 				code: .invalidState,
 				message: "\(name) \(kind.activity) — try again when it finishes")

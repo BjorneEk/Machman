@@ -181,4 +181,91 @@ struct RoutingClaimTests {
 		try await routing.start(vm: "alpha", options: StartOptions(openWindow: false))
 		#expect(stub.starts.count == 1)
 	}
+	// E65: a daemon-local edit that awaits — the format check of an image or ISO added by
+	// reference, a kernel file's delete — was routed and then suspended with no claim, so a
+	// start in that gap handed the config to a vmhost whose saves dropped the edit. Every
+	// setting change the daemon makes holds the VM for its whole run now (PR22).
+	@Test("E65: a start while a daemon-local image add awaits its format check is refused")
+	@MainActor func aStartDuringALocalImageAddsCheckIsRefused() async throws {
+		let routing = try makeRouting()
+		let image = TestEnvironment.scratch + "e65-\(UUID().uuidString).img"
+		FileManager.default.createFile(atPath: image, contents: Data(count: 4096))
+		defer { try? FileManager.default.removeItem(atPath: image) }
+		let check = CheckGate()
+		routing.local.checkAttachable = { await check.wait($0) }
+
+		let add = Task { @MainActor in
+			try await routing.addDisk(vm: "alpha", NewDisk(type: .image, path: image))
+		}
+		#expect(await eventually { check.waiting })
+		do {
+			try await routing.start(vm: "alpha", options: StartOptions())
+			Issue.record("a start went through while the add was in flight")
+		} catch let error as MachmanError {
+			#expect(error.code == .invalidState)
+			#expect(error.message
+				== "alpha is changing its settings \u{2014} try again when it finishes")
+		}
+		check.open()
+		// The add then saves outside the test's redirected library, so its result is not
+		// this test's; the claim goes with it either way.
+		_ = await add.result
+		#expect(routing.claims.claims(on: "alpha").isEmpty)
+		#expect(check.checked == [image])
+	}
+
+	// A setting change runs beside a copy of the VM, as it did before it held a claim, and
+	// never beside a start or a save.
+	@Test("E65: a setting change's claim coexists with the copies and never with a start")
+	@MainActor func aSettingChangesClaimCoexistsWithTheCopies() throws {
+		let claims = VMClaims()
+		let editing = try claims.claim("alpha", .editing)
+		_ = try claims.claim("alpha", .copying)
+		_ = try claims.claim("alpha", .editing)
+		#expect(throws: MachmanError.self) { _ = try claims.claim("alpha", .starting) }
+		claims.release(editing)
+
+		let other = VMClaims()
+		_ = try other.claim("beta", .starting)
+		let error = try #require(throws: MachmanError.self) {
+			_ = try other.claim("beta", .editing)
+		}
+		#expect(error.message == "beta is already starting")
+	}
+
+	@Test("E65: every per-VM setting change is routed through editSettings")
+	func everySettingChangeIsRoutedThroughEditSettings() throws {
+		let files = ["ConfigRouting", "SSHPresence"]
+			.map { "MachmanKit/Sources/MachmanCore/RoutingMachman+\($0).swift" }
+		for file in files {
+			let lines = try SourceScan.lines(of: file)
+			for (index, line) in lines.enumerated()
+			where SourceScan.code(line).contains("settingsOwner(") {
+				// The copies hold their own claim, taken on the next line.
+				let next = index + 1 < lines.count ? lines[index + 1] : ""
+				#expect(
+					next.contains("withClaim("),
+					"\(file):\(index + 1): route it through editSettings: \(line)")
+			}
+		}
+	}
+}
+
+// The image add's format check, held until the test opens it.
+@MainActor
+private final class CheckGate {
+	private(set) var waiting = false
+	private(set) var checked: [String] = []
+	private var continuation: CheckedContinuation<Void, Never>?
+
+	func wait(_ path: String) async {
+		checked.append(path)
+		waiting = true
+		await withCheckedContinuation { continuation = $0 }
+	}
+
+	func open() {
+		continuation?.resume()
+		continuation = nil
+	}
 }

@@ -12,13 +12,12 @@ import MachmanAPI
 
 extension LocalMachman {
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
-		// A referenced image or ISO passes the import's format gate first (D29): off the actor,
-		// like the import's sniff, and before the lookup, so nothing awaits between finding the
-		// VM and changing its config.
+		// A referenced image or ISO passes the import's format gate first (D29), before the
+		// lookup, so nothing awaits between finding the VM and changing its config. The wait
+		// between the router choosing this process and the change landing is guarded by the
+		// router's claim on the VM (E65): no start hands the config to a vmhost meanwhile.
 		if disk.type == .image || disk.type == .iso, let path = disk.path, !path.isEmpty {
-			_ = try await Task.detached(priority: .userInitiated) {
-				try DiskImport.attachable(path: path)
-			}.value
+			try await checkAttachable(path)
 		}
 		let vm = try lookup(name)
 		switch disk.type {

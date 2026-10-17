@@ -3,9 +3,10 @@
 //  MachmanCore
 //
 //  The per-VM setting changes. Each goes to the process that owns the VM's config
-//  (settingsOwner, refused while an outdated vmhost runs it), or, where the framework fixes the
-//  setting at start, is refused until the VM is stopped (requireStopped): hardware and MAC,
-//  disks, mounts, serial ports, kernel boot, run defaults and safety, devices, and Guest Setup.
+//  (editSettings: refused while an outdated vmhost runs it, held against a start while the
+//  daemon makes it), or, where the framework fixes the setting at start, is refused until the
+//  VM is stopped (requireStopped): hardware and MAC, disks, mounts, serial ports, kernel boot,
+//  run defaults and safety, devices, and Guest Setup.
 //
 
 import Foundation
@@ -15,9 +16,11 @@ extension RoutingMachman {
 	public func setHardware(
 		vm name: String, cpuCount: Int?, memoryBytes: UInt64?, nestedVirtualization: Bool?
 	) async throws {
-		try await settingsOwner(name).setHardware(
-			vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
-			nestedVirtualization: nestedVirtualization)
+		try await editSettings(name) {
+			try await $0.setHardware(
+				vm: name, cpuCount: cpuCount, memoryBytes: memoryBytes,
+				nestedVirtualization: nestedVirtualization)
+		}
 	}
 
 	// Refused while hosted, not proxied: the running guest keeps the old MAC, and conflict
@@ -28,7 +31,9 @@ extension RoutingMachman {
 	}
 
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
-		try await settingsOwner(name).addDisk(vm: name, disk)
+		try await editSettings(name) {
+			try await $0.addDisk(vm: name, disk)
+		}
 	}
 
 	public func removeDisk(vm name: String, diskID: String) async throws {
@@ -73,23 +78,31 @@ extension RoutingMachman {
 	}
 
 	public func addMount(vm name: String, path: String, tag: String, kind: String?) async throws {
-		try await settingsOwner(name).addMount(vm: name, path: path, tag: tag, kind: kind)
+		try await editSettings(name) {
+			try await $0.addMount(vm: name, path: path, tag: tag, kind: kind)
+		}
 	}
 
 	public func removeMount(vm name: String, mountID: String) async throws {
-		try await settingsOwner(name).removeMount(vm: name, mountID: mountID)
+		try await editSettings(name) {
+			try await $0.removeMount(vm: name, mountID: mountID)
+		}
 	}
 
 	public func setMountTag(vm name: String, mountID: String, tag: String) async throws
 		-> VMInfo {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
-		try await settingsOwner(name).setMountTag(vm: name, mountID: mountID, tag: tag)
+		try await editSettings(name) {
+			try await $0.setMountTag(vm: name, mountID: mountID, tag: tag)
+		}
 	}
 
 	public func setMountKind(vm name: String, mountID: String, kind: String) async throws
 		-> VMInfo {
 		// Next-boot effect: safe to record on a hosted VM, like other mount edits.
-		try await settingsOwner(name).setMountKind(vm: name, mountID: mountID, kind: kind)
+		try await editSettings(name) {
+			try await $0.setMountKind(vm: name, mountID: mountID, kind: kind)
+		}
 	}
 
 	// Serial ports are fixed at VM start, so add/remove is refused while hosted (like MAC), but
@@ -117,16 +130,22 @@ extension RoutingMachman {
 	public func setSerialLogging(
 		vm name: String, kind: SerialPortKind, index: Int, config: SerialLogConfig
 	) async throws {
-		try await settingsOwner(name).setSerialLogging(
-			vm: name, kind: kind, index: index, config: config)
+		try await editSettings(name) {
+			try await $0.setSerialLogging(
+				vm: name, kind: kind, index: index, config: config)
+		}
 	}
 
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
-		try await settingsOwner(name).setKernelBoot(vm: name, enabled: enabled)
+		try await editSettings(name) {
+			try await $0.setKernelBoot(vm: name, enabled: enabled)
+		}
 	}
 
 	public func updateKernelSettings(vm name: String, _ settings: KernelSettings) async throws {
-		try await settingsOwner(name).updateKernelSettings(vm: name, settings)
+		try await editSettings(name) {
+			try await $0.updateKernelSettings(vm: name, settings)
+		}
 	}
 
 	public func promoteKernelFile(
@@ -140,7 +159,9 @@ extension RoutingMachman {
 	}
 
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
-		try await settingsOwner(name).deleteKernelFile(vm: name, path: path)
+		try await editSettings(name) {
+			try await $0.deleteKernelFile(vm: name, path: path)
+		}
 	}
 
 	public func renameKernelFile(vm name: String, path: String, tag: String) async throws
@@ -153,8 +174,10 @@ extension RoutingMachman {
 	public func setKernelOverride(
 		vm name: String, path: String, commandLine: String?, overrideEnabled: Bool?
 	) async throws -> VMInfo {
-		try await settingsOwner(name).setKernelOverride(
-			vm: name, path: path, commandLine: commandLine, overrideEnabled: overrideEnabled)
+		try await editSettings(name) {
+			try await $0.setKernelOverride(
+				vm: name, path: path, commandLine: commandLine, overrideEnabled: overrideEnabled)
+		}
 	}
 
 	public func clearKernelSettings(vm name: String) async throws -> VMInfo {
@@ -165,16 +188,17 @@ extension RoutingMachman {
 
 	public func setStartPolicy(vm name: String, policy: StartPolicy) async throws {
 		// Resolved first: reaching the owner can adopt a host, and with it a safe run.
-		let target = try await settingsOwner(name)
-		// Policy has a daemon-side launchd side effect.
-		try refuseWhileSafe(name, "Run defaults")
-		// C8: never two VMs starting at login on one disk file or MAC. Read from the configs
-		// on disk — a hosted VM's policy and disks are its vmhost's, saved there.
-		if policy.autostart,
-			let conflict = BootGuard.autostartConflict(turningOn: name, library: machmanVMDir) {
-			throw conflict
+		try await editSettings(name) { target in
+			// Policy has a daemon-side launchd side effect.
+			try refuseWhileSafe(name, "Run defaults")
+			// C8: never two VMs starting at login on one disk file or MAC. Read from the
+			// configs on disk — a hosted VM's policy and disks are its vmhost's, saved there.
+			if policy.autostart,
+				let conflict = BootGuard.autostartConflict(turningOn: name, library: machmanVMDir) {
+				throw conflict
+			}
+			try await target.setStartPolicy(vm: name, policy: policy)
 		}
-		try await target.setStartPolicy(vm: name, policy: policy)
 		// Agent bookkeeping reads the ARGUMENT, never the registry: while the VM is hosted
 		// the daemon's config copy is stale until the host exits.
 		guard let launchAgents else { return }
@@ -193,42 +217,56 @@ extension RoutingMachman {
 	public func setSafety(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?
 	) async throws {
-		try await settingsOwner(name).setSafety(vm: name, disks: disks, mounts: mounts)
+		try await editSettings(name) {
+			try await $0.setSafety(vm: name, disks: disks, mounts: mounts)
+		}
 	}
 
 	// MARK: - Guest devices (1.0.4) — config-plane edits proxy like disks (next-boot effect).
 
 	public func addDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		try await settingsOwner(name).addDevice(vm: name, kind: kind)
+		try await editSettings(name) {
+			try await $0.addDevice(vm: name, kind: kind)
+		}
 	}
 
 	public func removeDevice(vm name: String, kind: DeviceKind) async throws -> VMInfo {
-		try await settingsOwner(name).removeDevice(vm: name, kind: kind)
+		try await editSettings(name) {
+			try await $0.removeDevice(vm: name, kind: kind)
+		}
 	}
 
 	public func updateDevice(vm name: String, device: DeviceInfo) async throws -> VMInfo {
-		try await settingsOwner(name).updateDevice(vm: name, device: device)
+		try await editSettings(name) {
+			try await $0.updateDevice(vm: name, device: device)
+		}
 	}
 
 	public func setEnabled(
 		vm name: String, disks: [String: Bool]?, mounts: [String: Bool]?,
 		console: [String: Bool]?, uart: [String: Bool]?, devices: [String: Bool]?
 	) async throws {
-		try await settingsOwner(name).setEnabled(
-			vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
-			devices: devices)
+		try await editSettings(name) {
+			try await $0.setEnabled(
+				vm: name, disks: disks, mounts: mounts, console: console, uart: uart,
+				devices: devices)
+		}
 	}
 
 	// MARK: - Guest setup (1.0.7)
 
 	public func resetSetup(vm name: String) async throws -> VMInfo {
 		// Config-plane only (no daemon-side effects) — plain proxy, like device edits.
-		try await settingsOwner(name).resetSetup(vm: name)
+		try await editSettings(name) {
+			try await $0.resetSetup(vm: name)
+		}
 	}
 
 	public func setSetupServed(vm name: String, serve: Bool) async throws -> VMInfo {
 		// Routed to the vmhost while running: it owns the config there AND does the
 		// live fill when serving turns on.
-		try await settingsOwner(name).setSetupServed(vm: name, serve: serve)
+		try await editSettings(name) {
+			try await $0.setSetupServed(vm: name, serve: serve)
+		}
 	}
 }

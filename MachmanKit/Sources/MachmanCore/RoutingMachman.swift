@@ -248,6 +248,19 @@ public final class RoutingMachman: MachmanControlling {
 		return target
 	}
 
+	// A setting change, sent to the process that owns the VM's config (settingsOwner). One the
+	// daemon makes itself holds the VM for its whole run (PR22): a format check or a file
+	// delete it awaits would otherwise let a start hand the config to a vmhost before the
+	// change lands, and that vmhost's whole-file saves revert it (E65). Claimed in the same
+	// main-actor turn the owner was resolved in, so nothing slips between.
+	func editSettings<Value>(
+		_ name: String, _ edit: (MachmanControlling) async throws -> Value
+	) async throws -> Value {
+		let target = try await settingsOwner(name)
+		guard target === local else { return try await edit(target) }
+		return try await withClaim(name, .editing, inDaemon: true) { try await edit(target) }
+	}
+
 	// Whole-VM edits the framework fixes at start (files moved, ports, MAC) refuse rather
 	// than proxy unless the VM is stopped — and stopped means no start in flight and no
 	// vmhost answering on its socket either, whether this daemon adopted it or not — and
