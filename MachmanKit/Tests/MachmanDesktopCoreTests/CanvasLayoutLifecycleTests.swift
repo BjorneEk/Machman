@@ -62,13 +62,13 @@ struct CanvasLayoutLifecycleTests {
 	// A layouts file from before records no dates: it reads, and learns each from a list.
 	@Test("T33: a layouts file without created dates reads, and learns them from a list")
 	func anOlderFileLearnsItsDates() async throws {
-		let url = TestEnvironment.scratchURL.appendingPathComponent(UUID().uuidString)
-			.appendingPathComponent("Canvas.json")
-		let older = CanvasStateStore(fileURL: url, saveDelay: .zero)
+		let dir = TestEnvironment.scratchURL.appendingPathComponent(UUID().uuidString)
+		try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		let url = dir.appendingPathComponent("Canvas.json")
 		var canvas = CanvasState()
 		canvas.open(Self.console)
-		older.setCanvas(canvas, for: "Alpine")
-		older.flush()
+		// The file as a build before T33 wrote it: no "created" key at all.
+		try JSONEncoder().encode(["canvases": ["Alpine": canvas]]).write(to: url)
 		let alpine = try #require(Samples.library().first { $0.name == "Alpine" })
 		let store = CanvasStateStore(fileURL: url, saveDelay: .zero)
 		store.listed([alpine])
