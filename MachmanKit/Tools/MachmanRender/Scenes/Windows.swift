@@ -691,6 +691,14 @@ enum WindowScenes {
 		) { ctx in
 			tree(ctx)
 		},
+		// H55: back to EFI with the files kept, the kernel sections park — dimmed, and their
+		// labels say why to the pointer and VoiceOver.
+		RenderScene(
+			"sidebar.tree.kernel-parked", "VMDeviceTreeView, kernel files kept after kernel boot",
+			widths: [270], height: 1000, vms: { [Samples.kernelParked()] }
+		) { ctx in
+			tree(ctx)
+		},
 		// N2: a section that stays empty is a leaf row — SSH with no session open, Kernel and
 		// Initramfs before their first file — and gains its chevron with a row or a drag.
 		RenderScene(

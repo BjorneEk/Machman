@@ -110,6 +110,14 @@ extension VMInfo {
 
 	public var kernelSectionParked: Bool { boot.mode != .linuxKernel }
 
+	// Why the kernel sections are dimmed, for the pointer and VoiceOver (H55); nil while
+	// kernel boot is on.
+	public var kernelParkedReason: String? {
+		kernelSectionParked ? Self.kernelParkedReason : nil
+	}
+
+	public static let kernelParkedReason = "Used when the bootloader is Kernel Boot"
+
 	// The rows a section lists on this VM before any filter, or nil while the section can't
 	// show at all (SSH not set up, the kernel sections while showsKernelSections is false):
 	// what the sections' views start from, for the selection prune (T28). `openSessions`

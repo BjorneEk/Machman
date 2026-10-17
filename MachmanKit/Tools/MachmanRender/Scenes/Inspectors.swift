@@ -315,6 +315,9 @@ enum InspectorScenes {
 		inspector(
 			"kernel", "KernelParentInspector", select: "Kernel Lab", node: .group("Kernel")),
 		inspector(
+			"kernel.parked", "KernelParentInspector, kernel boot switched off",
+			vms: { [Samples.kernelParked()] }, select: "Kernel Lab", node: .group("Kernel")),
+		inspector(
 			"kernel.entry", "KernelEntryInspector, active kernel with an override",
 			select: "Kernel Lab", node: .kernel(kernelLab.boot.ownedKernels![0].path)),
 		RenderScene(

@@ -55,6 +55,13 @@ extension Samples {
 		return vm
 	}
 
+	// Back to EFI with the kernel files kept: Kernel and Initramfs parked (H55).
+	public static func kernelParked(_ name: String = "Kernel Lab") -> VMInfo {
+		var vm = kernelBoot(name)
+		vm.boot.mode = .efi
+		return vm
+	}
+
 	// Back to EFI with only a command line kept from kernel boot (K1): Kernel and Initramfs
 	// show parked, with no rows.
 	public static func kernelParkedCommandLineOnly(_ name: String = "Kernel Lab") -> VMInfo {

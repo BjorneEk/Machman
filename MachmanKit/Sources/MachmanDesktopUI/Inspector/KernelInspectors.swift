@@ -30,6 +30,14 @@ struct KernelParentInspector: View {
 
 	var body: some View {
 		Form {
+			// While kernel boot is off the draft only waits for it (H55).
+			if let parked = vm.kernelParkedReason {
+				Section {
+					Text(parked + ".")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			}
 			Section("Active kernel") {
 				Picker("Kernel", selection: activeBinding) {
 					Text("None").tag(String?.none)

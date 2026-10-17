@@ -15,8 +15,9 @@ import MachmanDesktopCore
 // actions live in a row-level context menu on the label. `accessory` renders as a trailing
 // control before the count (the SSH group's +). `selectable` is for the groups that ARE a
 // thing in their own right and carry an inspector (Kernel, SSH): they keep a tag and full
-// opacity. `parked` dims a whole group further (Kernel and Initramfs while kernel boot is
-// off); a nil `count` draws none. `folds` false (nothing in it, TreeSection.folds) draws the
+// opacity. `parked` — the reason a group waits — dims a whole group further (Kernel and
+// Initramfs while kernel boot is off) and is its label's tooltip and VoiceOver value (H55); a
+// nil `count` draws none. `folds` false (nothing in it, TreeSection.folds) draws the
 // label as a leaf: no chevron, nothing below it.
 // Plain List rows, not a DisclosureGroup (T26): SwiftUI expands an outline group lazily as
 // its row comes into view, and AppKit's row-height estimate re-enters itself under that
@@ -27,7 +28,7 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 	private let title: String
 	private let count: Int?
 	private let selectable: Bool
-	private let parked: Bool
+	private let parked: String?
 	private let folds: Bool
 	@Binding private var isExpanded: Bool
 	private let icon: () -> Icon
@@ -37,7 +38,7 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 
 	init(
 		_ node: SidebarNode, title: String, count: Int?, selectable: Bool = false,
-		parked: Bool = false, folds: Bool = true, isExpanded: Binding<Bool>,
+		parked: String? = nil, folds: Bool = true, isExpanded: Binding<Bool>,
 		@ViewBuilder icon: @escaping () -> Icon,
 		@ViewBuilder menu: @escaping () -> MenuItems = { EmptyView() },
 		@ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
@@ -68,15 +69,15 @@ struct TreeGroup<Icon: View, MenuItems: View, Accessory: View, Content: View>: V
 					.environment(\.treeRowIndent, TreeIndent.rows)
 			}
 		}
-		.opacity(parked ? 0.45 : 1)
+		.opacity(parked != nil ? MachmanColors.parkedGroupOpacity : 1)
 	}
 
 	@ViewBuilder
 	private var label: some View {
 		let row = TreeGroupLabel(
-			title: title, count: count, isExpanded: folds ? $isExpanded : nil, icon: icon,
-			menu: menu, accessory: accessory)
-			.opacity(selectable || parked ? 1 : MachmanColors.dimmedRowOpacity)
+			title: title, count: count, isExpanded: folds ? $isExpanded : nil, parked: parked,
+			icon: icon, menu: menu, accessory: accessory)
+			.opacity(selectable || parked != nil ? 1 : MachmanColors.dimmedRowOpacity)
 		if selectable {
 			row
 				.treeRowHover(node)
@@ -157,11 +158,13 @@ extension View {
 }
 
 // A group's label row: chevron, icon, title, the trailing accessory and count, the add menu.
-// A leaf (nil `isExpanded`) keeps the chevron's room, so its icon lines up with the others.
+// A leaf (nil `isExpanded`) keeps the chevron's room, so its icon lines up with the others. A
+// parked group's reason is the row's tooltip and its title's VoiceOver value.
 struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 	let title: String
 	let count: Int?
 	let isExpanded: Binding<Bool>?
+	var parked: String?
 	let icon: () -> Icon
 	let menu: () -> MenuItems
 	let accessory: () -> Accessory
@@ -177,6 +180,7 @@ struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 			HStack(spacing: 6) {
 				icon()
 				Text(title).fontWeight(.medium)
+					.parkedReason(parked)
 				Spacer()
 				accessory()
 				if let count {
@@ -190,7 +194,30 @@ struct TreeGroupLabel<Icon: View, MenuItems: View, Accessory: View>: View {
 		.padding(.leading, TreeIndent.chevron)
 		.font(.system(size: theme.metrics.rowFontSize))
 		.frame(height: theme.metrics.treeRowHeight)
+		.parkedHelp(parked)
 		.contextMenu { menu() }
+	}
+}
+
+extension View {
+	// A parked group's title reads its reason as its VoiceOver value (H55).
+	@ViewBuilder
+	fileprivate func parkedReason(_ reason: String?) -> some View {
+		if let reason {
+			accessibilityValue(reason)
+		} else {
+			self
+		}
+	}
+
+	// A parked group's row shows its reason as its tooltip (H55).
+	@ViewBuilder
+	fileprivate func parkedHelp(_ reason: String?) -> some View {
+		if let reason {
+			help(reason)
+		} else {
+			self
+		}
 	}
 }
 

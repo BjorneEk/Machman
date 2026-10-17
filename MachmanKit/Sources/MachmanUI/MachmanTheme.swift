@@ -39,6 +39,7 @@ public enum MachmanColors {
 	public static let fieldFill = Color.primary.opacity(0.05)   // a plain field's background
 	public static let inactiveEntryOpacity = 0.55          // non-active kernels, disabled rows
 	public static let dimmedRowOpacity = 0.7               // group parents, config-less devices
+	public static let parkedGroupOpacity = 0.45            // sections waiting on a boot mode
 }
 
 // MARK: - Metrics -----------------------------------------------------------------------------
