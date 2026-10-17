@@ -411,6 +411,11 @@ key, so a batch toggle silently skips devices), and the daemon refuses setting c
 still run by an older vmhost (`outdatedHost`), which is why the vmhost floor is the daemon's
 own version. Hence the floor bump; the other 1.0.12 changes above are additive.
 
+**1.0.13 compatibility note**: `vm.install.start` gained `diskID` (an older daemon ignores
+the key and installs macOS on a new first disk instead of the disk the user picked to erase).
+Hence the floor bump; `DiskInfo` type `"unknown"` for a newer Machman's disk, the
+unreadable-folder warning and `machman.hello`'s `host` are additive.
+
 ## Safe runs (invisible on the wire except `safeRun`)
 
 `vm.start {safe: true}` clones the VM into a hidden shadow (safe disks → discardable
