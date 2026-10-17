@@ -234,14 +234,17 @@ struct SSHInspector: View {
 	var body: some View {
 		Form {
 			NetworkSSHSection(viewModel: viewModel, vm: vm, initialAliasDraft: aliasDraft)
-			Section("Keys") {
-				if let publicKey {
-					LabeledContent("Public key") {
-						CopyToClipboardButton(publicKey, tooltip: "Copy this Mac’s public key")
+			// Only with a row: a bare header would sit on the reset below as if it owned it (N4).
+			if publicKey != nil || vm.ssh?.sshfsAvailable != nil {
+				Section("Keys") {
+					if let publicKey {
+						LabeledContent("Public key") {
+							CopyToClipboardButton(publicKey, tooltip: "Copy this Mac’s public key")
+						}
 					}
-				}
-				if vm.ssh?.sshfsAvailable != nil {
-					LabeledContent("sshfs") { Text(sshfsSummary) }
+					if vm.ssh?.sshfsAvailable != nil {
+						LabeledContent("sshfs") { Text(sshfsSummary) }
+					}
 				}
 			}
 			Section {
