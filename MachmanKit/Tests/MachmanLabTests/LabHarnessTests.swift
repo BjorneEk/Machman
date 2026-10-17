@@ -316,7 +316,7 @@ extension LabHarnessTests {
 			Comment(rawValue: "only lab.sh --self-check runs it")))
 	struct SelfCheck {
 		@Test(
-			"Q42: a retry the harness rides over shows as a warning on its test",
+			"Q42: notes a retry on purpose for the runner's self-check",
 			arguments: ["q42"])
 		func warns(case name: String) {
 			LabRetry.note("\(name) self-check: a retry the harness rode over")
