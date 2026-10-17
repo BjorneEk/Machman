@@ -70,6 +70,8 @@ public final class RoutingMachman: MachmanControlling {
 	var hostProbeDeadline: Duration = .seconds(3)
 	var recoveryInterval: Duration = .seconds(2)
 	var helloDeadline: Duration = .seconds(10)
+	// How long a spawn asks the vmhost it launched to serve its socket.
+	var spawnConnectWindow: Duration = .seconds(10)
 	// How long a start waits for a host that is exiting after its VM stopped (E12).
 	var hostExitGrace: Duration = .seconds(3)
 	// How long a vmhost may take to answer a force stop (E36): the quit path's bound, and

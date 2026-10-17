@@ -93,9 +93,8 @@ extension RoutingMachman {
 						"quit: soft stop of \(name) failed (\(error)) — leaving it running")
 				}
 			}
-			let deadline = Date().addingTimeInterval(graceSeconds)
-			while Date() < deadline, !hosted.isEmpty {
-				try? await Task.sleep(for: .milliseconds(500))
+			_ = await poll(every: .milliseconds(500), for: .seconds(graceSeconds)) {
+				hosted.isEmpty
 			}
 		}
 		var failed: Set<String> = []
@@ -109,21 +108,29 @@ extension RoutingMachman {
 					"quit: force stop of \(name) failed (\(error)) — leaving it running")
 			}
 		}
-		let deadline = Date().addingTimeInterval(10)
-		while Date() < deadline, !Set(hosted.keys).subtracting(failed).isEmpty {
-			try? await Task.sleep(for: .milliseconds(250))
+		_ = await poll(every: .milliseconds(250), for: .seconds(10)) {
+			Set(hosted.keys).subtracting(failed).isEmpty
 		}
 		return failed.filter { hosted[$0] != nil }.sorted()
 	}
 
-	func waitForHostGone(id: UUID, timeout: Duration) async -> Bool {
+	// The one wait loop of the host table (Q36): looks at `done` every `interval` until it
+	// holds or `timeout` has passed on ContinuousClock, and says which. `done` looks first,
+	// so a wait that is already over costs nothing; it may throw to end the wait early.
+	func poll(
+		every interval: Duration, for timeout: Duration, until done: () async throws -> Bool
+	) async rethrows -> Bool {
 		let clock = ContinuousClock()
 		let deadline = clock.now.advanced(by: timeout)
-		while host(withID: id) != nil {
+		while true {
+			if try await done() { return true }
 			guard clock.now < deadline else { return false }
-			try? await Task.sleep(for: .milliseconds(50))
+			try? await Task.sleep(for: interval)
 		}
-		return true
+	}
+
+	func waitForHostGone(id: UUID, timeout: Duration) async -> Bool {
+		await poll(every: .milliseconds(50), for: timeout) { host(withID: id) == nil }
 	}
 
 	// The wait for a host to be gone (E12): a start meeting one that ran and stopped, and the
@@ -162,14 +169,17 @@ extension RoutingMachman {
 	// shutting down; one leaving only because its connection dropped is not responding — at
 	// once when it is listed so, else once the grace runs out (its VM still runs).
 	func waitOutLeaving(_ host: HostedVM, name: String) async throws {
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: hostExitGrace)
-		while let current = self.host(withID: host.identity.id), isWaitedOut(current) {
-			if current.unresponsive, current.reconnectTask != nil { throw notResponding(name) }
-			guard clock.now < deadline else {
-				throw current.exitingAfterRun ? stillShuttingDown(name) : notResponding(name)
+		let settled = try await poll(every: .milliseconds(50), for: hostExitGrace) {
+			guard let current = self.host(withID: host.identity.id), isWaitedOut(current) else {
+				return true
 			}
-			try? await Task.sleep(for: .milliseconds(50))
+			if current.unresponsive, current.reconnectTask != nil { throw notResponding(name) }
+			return false
+		}
+		// Out of time: nothing suspended since the last look, so the host is still leaving.
+		guard settled else {
+			let exiting = self.host(withID: host.identity.id)?.exitingAfterRun ?? false
+			throw exiting ? stillShuttingDown(name) : notResponding(name)
 		}
 	}
 
@@ -231,10 +241,8 @@ extension RoutingMachman {
 		MachmanLogger.log(.passiveWarning,
 			"ended the vmhost on \(name)'s socket: it didn't answer, and the user confirmed it")
 		registry.events.emit(.log(vm: name, level: .warning, message: Self.endedProcessWarning))
-		let clock = ContinuousClock()
-		let deadline = clock.now.advanced(by: hostExitGrace)
-		while UDSListener.isLive(path: path), clock.now < deadline {
-			try? await Task.sleep(for: .milliseconds(50))
+		_ = await poll(every: .milliseconds(50), for: hostExitGrace) {
+			!UDSListener.isLive(path: path)
 		}
 		unadoptable.remove(name)
 		registry.events.emit(.stateChanged(vm: name, state: .stopped))

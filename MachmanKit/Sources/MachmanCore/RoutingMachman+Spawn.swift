@@ -70,19 +70,23 @@ extension RoutingMachman {
 		}
 
 		var lastError = Self.hostNeverAnswered
-		for _ in 0..<40 {
-			try? await Task.sleep(for: .milliseconds(250))
+		var client: RemoteMachman?
+		// The launch returns before the vmhost serves: it is asked every 250 ms, for 10 s.
+		_ = await poll(every: .milliseconds(250), for: spawnConnectWindow) {
 			guard !app.isTerminated else {
 				lastError = Self.hostQuitWhileStarting
-				break
+				return true
 			}
 			do {
-				let client = try await connectHost(identity: identity)
-				return HostedVM(
-					identity: identity, client: client, app: app, deathWatch: deathWatch)
+				client = try await connectHost(identity: identity)
+				return true
 			} catch {
 				lastError = MachmanError.userMessage(for: error)
+				return false
 			}
+		}
+		if let client {
+			return HostedVM(identity: identity, client: client, app: app, deathWatch: deathWatch)
 		}
 		deathWatch.invalidate()
 		app.forceTerminate()
