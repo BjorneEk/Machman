@@ -28,7 +28,6 @@ struct VMDeviceTreeView: View {
 	@ObservedObject private var tornTabs: TornTabRegistry
 	// What Paste can take (H25): re-read when the pasteboard changes, not on every render.
 	@ObservedObject private var pasteboard: PasteboardWatch
-	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var renamingRoot = false
 	// Entry being renamed in place (owned storage disks + owned kernel files).
@@ -60,7 +59,7 @@ struct VMDeviceTreeView: View {
 
 	init(
 		viewModel: VMListViewModel, sessions: TerminalSessions, canvases: CanvasStateStore,
-		profiles: TerminalProfileStore, vm: VMInfo, dragPreview: TreeDragPreview? = nil,
+		vm: VMInfo, dragPreview: TreeDragPreview? = nil,
 		filter: String = "", hovered: Set<SidebarNode> = [], renaming: SidebarNode? = nil,
 		renameDraft: String? = nil, pasteboard: PasteboardWatch? = nil
 	) {
@@ -69,7 +68,6 @@ struct VMDeviceTreeView: View {
 		_pasteboard = ObservedObject(wrappedValue: pasteboard ?? .general)
 		self.sessions = sessions
 		self.canvases = canvases
-		self.profiles = profiles
 		self.vm = vm
 		_dragPreview = State(initialValue: dragPreview)
 		_filter = State(initialValue: filter)
@@ -90,7 +88,7 @@ struct VMDeviceTreeView: View {
 	private var context: TreeContext {
 		TreeContext(
 			viewModel: viewModel, sessions: sessions, canvases: canvases, tornTabs: tornTabs,
-			pasteboard: pasteboard, profiles: profiles, vm: vm, filter: filter,
+			pasteboard: pasteboard, vm: vm, filter: filter,
 			renamingRoot: $renamingRoot, renamingNode: $renamingNode, renameDraft: renameDraft,
 			dragPreview: $dragPreview, expanded: $expanded,
 			dragTouched: { dragGeneration &+= 1 }, openWindow: openWindow)

@@ -42,7 +42,7 @@ struct TreeSectionProbe: View {
 		let context = TreeContext(
 			viewModel: harness.viewModel, sessions: harness.terminals,
 			canvases: harness.canvases, tornTabs: harness.tornTabs,
-			pasteboard: harness.pasteboard, profiles: harness.profiles, vm: vm, filter: "",
+			pasteboard: harness.pasteboard, vm: vm, filter: "",
 			renamingRoot: $renamingRoot, renamingNode: $renamingNode, renameDraft: nil,
 			dragPreview: $dragPreview, expanded: $expanded, dragTouched: {},
 			openWindow: openWindow)

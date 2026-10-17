@@ -184,7 +184,7 @@ public struct TornTabWindowView<Connection: TornTabConnection>: View {
 			InspectorChrome(vm: vm, session: showsSession) {
 				switch payload.tab {
 				case .config:
-					VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
+					VMInspector(viewModel: viewModel, vm: vm)
 				case .terminal(let ref):
 					SerialInspector(
 						vm: vm, ref: ref, viewModel: viewModel,

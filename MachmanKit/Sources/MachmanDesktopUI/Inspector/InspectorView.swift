@@ -50,7 +50,7 @@ struct InspectorView: View {
 		case .initramfs(let path):
 			InitramfsEntryInspector(viewModel: viewModel, vm: vm, path: path)
 		case .vmRoot, nil, .group:
-			VMInspector(viewModel: viewModel, profiles: profiles, vm: vm)
+			VMInspector(viewModel: viewModel, vm: vm)
 		case .sshSession(let ref):
 			SSHSessionInspector(
 				viewModel: viewModel, sessions: viewModel.terminals,
@@ -126,7 +126,6 @@ struct MultiSelectionInspector: View {
 
 struct VMInspector: View {
 	@ObservedObject var viewModel: VMListViewModel
-	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	@State private var draftName = ""
 	// The daemon's reason for refusing the last rename, until the next edit.
@@ -142,11 +141,10 @@ struct VMInspector: View {
 	// `nameDraft` opens the Name field on an unsent draft and `memoryNote` the memory row
 	// with a note under it (render scenes).
 	init(
-		viewModel: VMListViewModel, profiles: TerminalProfileStore, vm: VMInfo,
-		nameDraft: String? = nil, memoryNote: String? = nil
+		viewModel: VMListViewModel, vm: VMInfo, nameDraft: String? = nil,
+		memoryNote: String? = nil
 	) {
 		self.viewModel = viewModel
-		self.profiles = profiles
 		self.vm = vm
 		initialNameDraft = nameDraft
 		_memoryNote = State(initialValue: memoryNote)

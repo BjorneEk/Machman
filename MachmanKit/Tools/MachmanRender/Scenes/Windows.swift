@@ -20,7 +20,7 @@ enum WindowScenes {
 	static func tree(_ ctx: SceneContext) -> AnyView {
 		AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, pasteboard: ctx.pasteboard))
+			vm: ctx.vm, pasteboard: ctx.pasteboard))
 	}
 
 	// The tree with text in its filter field.
@@ -28,7 +28,7 @@ enum WindowScenes {
 	static func filteredTree(_ ctx: SceneContext, _ filter: String) -> AnyView {
 		AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, filter: filter, pasteboard: ctx.pasteboard))
+			vm: ctx.vm, filter: filter, pasteboard: ctx.pasteboard))
 	}
 
 	// The tree with `hovered` drawn under a pointer (hover itself doesn't render).
@@ -36,7 +36,7 @@ enum WindowScenes {
 	static func hoveredTree(_ ctx: SceneContext, _ hovered: Set<SidebarNode>) -> AnyView {
 		AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, hovered: hovered,
+			vm: ctx.vm, hovered: hovered,
 			pasteboard: ctx.pasteboard))
 	}
 
@@ -50,7 +50,7 @@ enum WindowScenes {
 			section: section, urls: urls, isDirectory: { $0.hasDirectoryPath })
 		return AnyView(VMDeviceTreeView(
 			viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-			profiles: ctx.profiles, vm: ctx.vm, dragPreview: preview,
+			vm: ctx.vm, dragPreview: preview,
 			pasteboard: ctx.pasteboard))
 	}
 
@@ -442,8 +442,7 @@ enum WindowScenes {
 			panels: { ctx in
 				// The inspector column's glass, painted with the torn window's own inspector.
 				[AnyView(InspectorChrome(vm: ctx.vm("Debian"), session: false) {
-					VMInspector(
-						viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm("Debian"))
+					VMInspector(viewModel: ctx.viewModel, vm: ctx.vm("Debian"))
 				}.padding(.top, 52))]
 			}
 		) { ctx in
@@ -743,7 +742,7 @@ enum WindowScenes {
 		) { ctx in
 			AnyView(VMDeviceTreeView(
 				viewModel: ctx.viewModel, sessions: ctx.terminals, canvases: ctx.canvases,
-				profiles: ctx.profiles, vm: ctx.vm, renaming: .disk("storage:system"),
+				vm: ctx.vm, renaming: .disk("storage:system"),
 				renameDraft: ".system", pasteboard: ctx.pasteboard))
 		},
 		RenderScene(

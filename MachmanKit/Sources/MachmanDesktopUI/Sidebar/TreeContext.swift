@@ -24,7 +24,6 @@ struct TreeContext: DynamicProperty {
 	@ObservedObject var canvases: CanvasStateStore
 	@ObservedObject var tornTabs: TornTabRegistry
 	@ObservedObject var pasteboard: PasteboardWatch
-	let profiles: TerminalProfileStore
 	let vm: VMInfo
 	let filter: String
 	@Binding var renamingRoot: Bool

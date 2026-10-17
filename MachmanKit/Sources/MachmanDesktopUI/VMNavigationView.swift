@@ -44,8 +44,7 @@ public struct VMNavigationView: View {
 				if let vm = viewModel.selected {
 					VMDeviceTreeView(
 						viewModel: viewModel, sessions: viewModel.terminals,
-						canvases: viewModel.canvases, profiles: profiles, vm: vm,
-						pasteboard: pasteboard)
+						canvases: viewModel.canvases, vm: vm, pasteboard: pasteboard)
 				} else {
 					NoVMSidebar(viewModel: viewModel)
 				}

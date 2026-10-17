@@ -103,7 +103,7 @@ enum InspectorScenes {
 			ctx.viewModel.select(name: "Alpine")
 			return AnyView(
 				VMInspector(
-					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
+					viewModel: ctx.viewModel, vm: ctx.vm,
 					memoryNote: "Lowered to this Mac’s maximum")
 					.formStyle(.grouped))
 		},
@@ -116,7 +116,7 @@ enum InspectorScenes {
 			ctx.viewModel.select(name: "Alpine")
 			return AnyView(
 				VMInspector(
-					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
+					viewModel: ctx.viewModel, vm: ctx.vm,
 					memoryNote: ctx.viewModel.memoryEntry("2048", floor: 0).note)
 					.formStyle(.grouped))
 		},
@@ -127,7 +127,7 @@ enum InspectorScenes {
 			ctx.viewModel.select(name: "Alpine")
 			return AnyView(
 				VMInspector(
-					viewModel: ctx.viewModel, profiles: ctx.profiles, vm: ctx.vm,
+					viewModel: ctx.viewModel, vm: ctx.vm,
 					nameDraft: "Sequoia")
 					.formStyle(.grouped))
 		},
