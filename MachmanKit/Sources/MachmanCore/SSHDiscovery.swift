@@ -112,14 +112,22 @@ enum SSHDiscovery {
 	}
 
 	static func leaseIP(for mac: String, in leases: [Lease]) -> String? {
+		lease(for: mac, in: leases)?.ip
+	}
+
+	private static func lease(for mac: String, in leases: [Lease]) -> Lease? {
 		let wanted = normalizedMAC(mac)
-		return newest(leases) { $0.hardware == wanted }?.ip
+		return newest(leases) { $0.hardware == wanted }
 	}
 
 	// The address of the lease kept under a client id the guest was seen with (E56).
 	static func leaseIP(forClientID id: String, in leases: [Lease]) -> String? {
+		lease(forClientID: id, in: leases)?.ip
+	}
+
+	private static func lease(forClientID id: String, in leases: [Lease]) -> Lease? {
 		let wanted = normalizedClientID(id)
-		return newest(leases) { $0.identifier == wanted }?.ip
+		return newest(leases) { $0.identifier == wanted }
 	}
 
 	// The client id of the lease that holds `ip`, when that lease is kept under one rather
@@ -312,8 +320,9 @@ enum SSHDiscovery {
 
 	// The MAC's lease first, ARP as fallback (needs recent guest traffic) — each unless
 	// another client holds a live lease on that address. bootpd keeps a MAC-keyed lease for
-	// good once the guest's DHCP client moved to a client id, and vmnet may have given its
-	// address to another VM since (C32); the Mac keeps an ARP entry about 20 minutes, so a
+	// good once the guest's DHCP client moved to a client id, so a newer lease under the
+	// client id the VM learned wins over it, and vmnet may have given its address to another
+	// VM since (C32); the Mac keeps an ARP entry about 20 minutes, so a
 	// copy that held its source's address in its last run still finds it under its own MAC
 	// after the reboot that gave it a lease of its own (review F12). A guest whose DHCP
 	// client sends a client id has no lease under its MAC (E56): next the lease kept under the
@@ -332,9 +341,13 @@ enum SSHDiscovery {
 		now: Date = Date(), taken: Set<String> = []
 	) -> Answer? {
 		let table = leasesText.map(leases(inText:)) ?? []
-		if let ip = leaseIP(for: mac, in: table),
-			!heldByAnother(ip, mac: mac, clientID: hints.clientID, in: table, at: now) {
-			return Answer(address: ip, source: "dhcp")
+		if let lease = lease(for: mac, in: table),
+			!heldByAnother(lease.ip, mac: mac, clientID: hints.clientID, in: table, at: now) {
+			if let id = hints.clientID, let own = Self.lease(forClientID: id, in: table),
+				own.expiry > lease.expiry, !taken.contains(own.ip) {
+				return Answer(address: own.ip, source: "dhcp")
+			}
+			return Answer(address: lease.ip, source: "dhcp")
 		}
 		if let arpText, let ip = arpIP(for: mac, inARPOutput: arpText),
 			!heldByAnother(ip, mac: mac, clientID: hints.clientID, in: table, at: now) {

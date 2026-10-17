@@ -310,18 +310,28 @@ struct SSHDiscoveryTests {
 			}
 			"""
 		let later = Date(timeIntervalSince1970: TimeInterval(0x66ab0000))
-		func answer(_ entries: String..., at now: Date = later) -> SSHDiscovery.Answer? {
+		func answer(
+			_ entries: String..., at now: Date = later, taken: Set<String> = []
+		) -> SSHDiscovery.Answer? {
 			SSHDiscovery.discover(
 				mac: vmMAC, leasesText: entries.joined(separator: "\n"), arpText: "",
-				hints: SSHDiscovery.Hints(clientID: ownID), interfaces: net, now: now)
+				hints: SSHDiscovery.Hints(clientID: ownID), interfaces: net, now: now,
+				taken: taken)
 		}
+		let earlier = Date(timeIntervalSince1970: TimeInterval(0x66aa0000))
 		#expect(answer(mac, other, own)
 			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
-		// Expired, but nobody else holds the address: still the guest's last word.
-		#expect(answer(mac) == SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
-		// Live, it answers first.
-		let earlier = Date(timeIntervalSince1970: TimeInterval(0x66aa0000))
+		// The VM's own client-id lease is newer: its DHCP client moved, live MAC lease or not.
+		#expect(answer(mac, own) == SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
 		#expect(answer(mac, own, at: earlier)
+			== SSHDiscovery.Answer(address: "192.168.64.21", source: "dhcp"))
+		// Unless another running VM answers that address.
+		#expect(answer(mac, own, taken: ["192.168.64.21"])
+			== SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
+		// Expired, with nothing newer and nobody else on the address: still the guest's last word.
+		#expect(answer(mac) == SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
+		// Live and alone, it answers first.
+		#expect(answer(mac, at: earlier)
 			== SSHDiscovery.Answer(address: "192.168.64.17", source: "dhcp"))
 	}
 
