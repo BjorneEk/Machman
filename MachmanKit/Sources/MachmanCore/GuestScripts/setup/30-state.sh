@@ -23,6 +23,7 @@ ST_LAST_NOTE=""            # …with its one-sentence note, failed steps, and th
 ST_LAST_FAILED_STEPS=""    # note lines ("step: message", newline-separated) that explain
 ST_ERR_LINES=""            # it
 ST_NOTE_LINES=""
+ST_LEDGER=""               # earlier runs' created-vs-found entries, one per line
 CLONED=0                   # the state was another VM's: this guest is a copy of it
 
 state_paths() {
@@ -101,6 +102,7 @@ read_state() {
 	ST_LAST_FAILED_STEPS="$(state_get LAST_FAILED_STEPS)"
 	ST_ERR_LINES="$(state_list ERROR_)"
 	ST_NOTE_LINES="$(state_list NOTE_)"
+	ST_LEDGER="$(state_list LEDGER_)"
 	verbose state "v${ST_SCRIPT_VERSION:-?} configured=[${ST_CONFIGURED:-}]"
 	# Repairs for older layouts land here as the versions accumulate. v3 is the first
 	# version writing state at all (v2 left only marker-tagged artifacts), so there is
@@ -195,6 +197,7 @@ write_state() {
 			has_word "$_ws_m" "$_ws_kld" || _ws_kld="${_ws_kld:+$_ws_kld }$_ws_m"
 		done
 		[ -n "$_ws_kld" ] && state_line KLD_ADDED "$_ws_kld"
+		state_lines LEDGER_ "$(ledger_entries)"
 		:
 	} > "$_ws_tmp"
 	if ! write_file -m 600 "$STATE_FILE" < "$_ws_tmp"; then
@@ -205,6 +208,51 @@ write_state() {
 	fi
 	rm -f "$_ws_tmp"
 	verbose state "wrote $STATE_FILE"
+	return 0
+}
+
+# ---------------------------------------------------------- created-vs-found ledger ----
+
+# What a run created or changed that was not there before — an rc.local, a service it
+# enabled, a mount root, boot arguments — one "<kind> <value>" entry each (the kind one
+# word, the value any text but a line break), kept across runs as LEDGER_<n> in the state:
+# the uninstall reverts exactly what a run did, never what it found. A later run that finds
+# an entry's artifact in place keeps the entry. (KLD_ADDED below is the same kind of record,
+# older than the ledger, and keeps its own key.)
+LEDGER_DONE=""             # this run's new entries, one per line
+LEDGER_FORGOT=""           # entries a run undid, one per line
+
+# The entries now: every earlier run's and this run's, without those undone, each once.
+ledger_entries() {
+	printf '%s\n%s\n' "$ST_LEDGER" "$LEDGER_DONE" | _LG_FORGOT="$LEDGER_FORGOT" awk '
+		BEGIN { n = split(ENVIRON["_LG_FORGOT"], f, "\n"); for (i = 1; i <= n; i++) gone[f[i]] = 1 }
+		$0 != "" && !($0 in gone) && !seen[$0]++'
+}
+
+# ledger_note <kind> [value] — this run created it (once, however often it is said).
+ledger_note() {
+	_ln_entry="$1${2:+ $2}"
+	LEDGER_FORGOT="$(printf '%s\n' "$LEDGER_FORGOT" | grep -vxF -- "$_ln_entry" || true)"
+	ledger_has "$1" "${2:-}" && return 0
+	LEDGER_DONE="${LEDGER_DONE:+$LEDGER_DONE
+}$_ln_entry"
+	return 0
+}
+
+# ledger_has <kind> [value] — the entry, matched whole, is in the ledger.
+ledger_has() {
+	ledger_entries | grep -qxF -- "$1${2:+ $2}"
+}
+
+# ledger_values <kind> — the values of that kind's entries, one per line.
+ledger_values() {
+	ledger_entries | sed -n "s/^$1 //p"
+}
+
+# ledger_forget <kind> [value] — a run undid it: the entry goes from the state.
+ledger_forget() {
+	LEDGER_FORGOT="${LEDGER_FORGOT:+$LEDGER_FORGOT
+}$1${2:+ $2}"
 	return 0
 }
 

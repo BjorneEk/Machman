@@ -171,6 +171,47 @@ struct GuestScriptStateTests {
 		}
 	}
 
+	// PR28: what a run created that was not there before (an rc.local, a service it enabled,
+	// a mount root, boot arguments) is one ledger in the state, so the uninstall reverts
+	// exactly that. A later run keeps every earlier run's entries and adds its own, an entry
+	// a run undid goes, and values come back whole — spaces, apostrophes and all.
+	@Test("PR28: the state's ledger keeps what every run created, spaces and all")
+	func theLedgerKeepsWhatEveryRunCreated() async throws {
+		for shell in GuestScriptHarness.shells {
+			let r = try await GuestScriptHarness.run(Self.stateHere + #"""
+				ledger_note rc-local created
+				ledger_note mount-root "/mnt/it's my root"
+				ledger_note rc-local created
+				write_state ""
+				grep '^LEDGER_' "$STATE_FILE"
+				echo --
+				read_state
+				LEDGER_DONE=""
+				ledger_has rc-local created && echo "has rc.local"
+				ledger_has mount-root || echo "an entry matches whole"
+				ledger_values mount-root
+				ledger_note openrc-local
+				ledger_forget rc-local created
+				ledger_has rc-local created || echo "rc.local forgotten"
+				write_state ""
+				grep '^LEDGER_' "$STATE_FILE"
+				"""#, under: shell)
+			#expect(r.status == 0, "\(shell): \(r.out)")
+			#expect(r.out == #"""
+				LEDGER_1='rc-local created'
+				LEDGER_2='mount-root /mnt/it'\''s my root'
+				--
+				has rc.local
+				an entry matches whole
+				/mnt/it's my root
+				rc.local forgotten
+				LEDGER_1='mount-root /mnt/it'\''s my root'
+				LEDGER_2='openrc-local'
+
+				"""#, "\(shell): \(r.out)")
+		}
+	}
+
 	// S59: the uninstall said kld_list keeps fusefs and virtio_console, with a revert,
 	// whenever kld_list held them — the admin's own entries too. A run now records the
 	// entries it adds (a later run that finds them in place keeps the record), and the
