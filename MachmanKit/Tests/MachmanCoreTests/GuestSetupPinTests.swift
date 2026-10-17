@@ -97,6 +97,40 @@ struct GuestSetupPinTests {
 		}
 	}
 
+	@Test("S67: an unpinned VM is pinned to the script its first served start wrote")
+	func theFirstServePins() throws {
+		try VMTestDir.withRedirectedDir {
+			let root = URL(fileURLWithPath: machmanSetupScriptsDir, isDirectory: true)
+			let older = GuestSetupStore(
+				root: root, builtIn: GuestSetupStore.Script(data: Self.script(7, "echo older")))
+			let vm = try Self.makeVM("unpinned")
+			#expect(vm.setup?.script == nil)
+			_ = try GuestSetupInstaller.writePayload(for: vm, store: older)
+			#expect(vm.setup?.script == older.builtIn.entry.id)
+			#expect(try VMConfig.load(name: "unpinned").setup?.script == older.builtIn.entry.id)
+			// The next build serves it what its first start served.
+			let (payload, _) = try GuestSetupInstaller.writePayload(
+				for: vm, store: GuestSetupStore(root: root))
+			#expect(try Self.served(payload) == older.builtIn.data)
+			#expect(vm.setup?.script == older.builtIn.entry.id)
+		}
+	}
+
+	@Test("S67: a pin this Mac's store lacks serves this build's script and is pinned to it")
+	func aLostPinServesThisBuild() throws {
+		try VMTestDir.withRedirectedDir {
+			let vm = try Self.makeVM("moved")
+			var setup = GuestSetupConfig()
+			setup.script = "custom-0123456789ab"   // stored on the Mac it came from
+			vm.setup = setup
+			let (payload, _) = try GuestSetupInstaller.writePayload(for: vm)
+			#expect(try Self.served(payload) == GuestSetupStore.thisBuild.data)
+			#expect(vm.setup?.script == GuestSetupStore.thisBuild.entry.id)
+			#expect(GuestSetupStore.current.entry(id: GuestSetupStore.thisBuild.entry.id)?
+				.addedAt != nil, "this build's script was not stored as it was served")
+		}
+	}
+
 	@Test("S67: resetting setup state keeps the VM's pin")
 	func resetKeepsThePin() throws {
 		try VMTestDir.withRedirectedDir {

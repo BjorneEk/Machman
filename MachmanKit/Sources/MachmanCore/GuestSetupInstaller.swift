@@ -260,6 +260,18 @@ enum GuestSetupInstaller: GuestInstallerPayload {
 		if script.entry.id == store.builtIn.entry.id {
 			store.ensureBuiltIn()
 		}
+		// A VM is pinned to what its first served start gave it: this build's script while it
+		// had no pin — or a pin this Mac's store can't serve (a VM brought from another Mac).
+		if config.setup?.script != script.entry.id {
+			if let lost = config.setup?.script {
+				MachmanLogger.log(.log, "\(config.name): Guest Setup script \(lost) isn’t in "
+					+ "this Mac’s store — serving \(script.entry.id) from now on")
+			}
+			var state = config.setup ?? GuestSetupConfig()
+			state.script = script.entry.id
+			config.setup = state
+			try config.saveVMConfig()
+		}
 		let payload = try GuestInstallerWriter.write(Self.self, for: config, script: script.data)
 		// The alias (and so the pin's key) can have changed while the VM was stopped.
 		SSHSetupInstaller.writeKnownHosts(for: config)
