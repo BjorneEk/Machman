@@ -44,6 +44,36 @@ struct WordingLintTests {
 		#expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
 	}
 
+	// Short words a Title Case button or menu item keeps lowercase mid-title (HIG): "Add
+	// from Disk…", "Show in Finder", "Move to New Window". Particles of a phrasal verb ("Log
+	// In", "Turn On", "Shut Down") are not in the list.
+	static let shortWords: Set<String> = [
+		"A", "An", "And", "As", "At", "By", "For", "From", "Into", "Of", "Or", "The", "To",
+		"With",
+	]
+
+	@Test("W9: button and menu titles keep short prepositions lowercase")
+	func titleCaseKeepsShortWordsLowercase() throws {
+		var read = 0
+		var problems: [String] = []
+		for file in RepoFiles.files(under: Self.surfaces, extension: "swift") {
+			let source = try String(contentsOf: file, encoding: .utf8)
+			let path = RepoFiles.relativePath(file)
+			for marker in ["Button(", "Label("] {
+				for (line, text) in SwiftCallStrings.arguments(of: marker, in: source)
+				where Self.says(text) {
+					read += 1
+					let words = SwiftCallStrings.words(text).split(separator: " ").map(String.init)
+					if words.dropFirst().dropLast().contains(where: Self.shortWords.contains) {
+						problems.append("\(path):\(line): \(text)")
+					}
+				}
+			}
+		}
+		#expect(read > 80, "the scan read only \(read) titles")
+		#expect(problems.isEmpty, "\(problems.joined(separator: "\n"))")
+	}
+
 	@Test("W4-4: the regenerate-MAC question names the VM once, in one sentence")
 	func regenerateMACNamesTheVMOnce() throws {
 		let source = try RepoFiles.text(

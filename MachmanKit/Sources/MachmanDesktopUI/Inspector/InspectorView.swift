@@ -209,8 +209,8 @@ struct VMInspector: View {
 					.help(BootInfo.newerModeReason)
 				} else {
 					Picker("Bootloader", selection: bootBinding) {
-						Text("EFI").tag(BootInfo.Mode.efi)
-						Text("Kernel Boot").tag(BootInfo.Mode.linuxKernel)
+						Text(BootInfo.Mode.efi.menuTitle).tag(BootInfo.Mode.efi)
+						Text(BootInfo.Mode.linuxKernel.menuTitle).tag(BootInfo.Mode.linuxKernel)
 						// Installing is stop-first (H41): the row waits while the VM runs, as
 						// the sheet's buttons and Install macOS… do.
 						Text("macOS…").tag(BootInfo.Mode.macOS)

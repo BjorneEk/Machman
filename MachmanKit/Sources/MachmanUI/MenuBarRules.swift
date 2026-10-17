@@ -54,10 +54,10 @@ public struct MenuBarFailure: Equatable, Sendable {
 				? "Couldn’t force stop \(quoted)" : "Couldn’t shut down \(quoted)"
 			forceStart = nil
 		case .openWindow:
-			title = "Couldn’t open \(vm)’s window"
+			title = "Couldn’t open the \(quoted) window"
 			forceStart = nil
 		case .closeWindow:
-			title = "Couldn’t close \(vm)’s window"
+			title = "Couldn’t close the \(quoted) window"
 			forceStart = nil
 		case .endProcess:
 			title = "Couldn’t end the process of \(quoted)"

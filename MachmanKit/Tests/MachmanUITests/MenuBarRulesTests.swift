@@ -30,10 +30,19 @@ struct MenuBarRulesTests {
 			== "Couldn’t shut down \u{201C}Debian\u{201D}")
 		#expect(MenuBarFailure(vm: "Debian", action: .stop(.force), error: refused).title
 			== "Couldn’t force stop \u{201C}Debian\u{201D}")
+		// W9: one VM-name style in every title, curly-quoted as the desktop's own dialogs.
 		#expect(MenuBarFailure(vm: "Debian", action: .openWindow, error: refused).title
-			== "Couldn’t open Debian’s window")
+			== "Couldn’t open the \u{201C}Debian\u{201D} window")
 		#expect(MenuBarFailure(vm: "Debian", action: .closeWindow, error: refused).title
-			== "Couldn’t close Debian’s window")
+			== "Couldn’t close the \u{201C}Debian\u{201D} window")
+	}
+
+	@Test("W9: the boot mode reads Title Case in menus and sentence case in labels")
+	func theBootModeFollowsTheSurfacesRule() {
+		#expect(BootInfo.Mode.linuxKernel.menuTitle == "Kernel Boot")
+		#expect(BootInfo.Mode.linuxKernel.displayLabel == "Kernel boot")
+		#expect(BootInfo.Mode.efi.menuTitle == "EFI")
+		#expect(BootInfo.Mode.macOS.menuTitle == "macOS")
 	}
 
 	// C9 (E36): a Force Stop the vmhost didn't answer in time is the cue to ask about ending

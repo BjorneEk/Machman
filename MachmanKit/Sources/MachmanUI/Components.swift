@@ -115,6 +115,12 @@ extension BootInfo.Mode {
 		case .unknown: return "Unknown"
 		}
 	}
+
+	// The mode as a menu item (the Bootloader picker): Title Case, where labels and badges
+	// take displayLabel's sentence case (W9).
+	public var menuTitle: String {
+		self == .linuxKernel ? "Kernel Boot" : displayLabel
+	}
 }
 
 // Boot-kind icon + label (the VM indicator subtitle and picker rows). The label names the

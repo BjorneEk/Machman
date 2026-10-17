@@ -55,7 +55,7 @@ struct TreeKernelSection: View {
 				role == .kernel ? TreeIcon.tux : TreeIcon(symbol: MachmanSymbols.initramfs)
 			},
 			menu: {
-				Button("Add From Disk…") {
+				Button("Add from Disk…") {
 					AddFlows.chooseKernelFile(
 						viewModel: ctx.viewModel, vm: ctx.vm.name, role: role)
 				}
