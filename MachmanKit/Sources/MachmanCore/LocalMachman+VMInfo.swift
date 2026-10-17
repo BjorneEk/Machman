@@ -276,9 +276,12 @@ extension LocalMachman {
 				state = MachmanAPI.MacInstallState(
 					kind: registry.isInstalling(vm) ? .installing : .interrupted)
 			}
+			// A switch to macOS keeps the kernel files and draft (K3, D31): listed, so they
+			// stay deletable.
 			return BootInfo(
 				mode: .macOS, kernel: kernel, macInstallState: state,
-				minCPUCount: m.minimumCPUCount, minMemoryBytes: m.minimumMemorySize)
+				minCPUCount: m.minimumCPUCount, minMemoryBytes: m.minimumMemorySize,
+				ownedKernels: ownedKernels)
 		case .unknown:
 			// A mode a newer Machman wrote (D26): listed, never started or replaced here.
 			return BootInfo(

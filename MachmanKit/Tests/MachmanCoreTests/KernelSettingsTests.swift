@@ -141,6 +141,44 @@ struct KernelSettingsTests {
 		}
 	}
 
+	// D31 (review 4): a switch to macOS kept the kernel files and draft but listed neither, so
+	// <vm>/kernels stayed with no way to delete it. Both are listed in macOS mode now (K3: kept,
+	// deletable), and a delete there clears the field that named the file like anywhere else.
+	@Test("D31: a macOS VM keeps and lists its kernel files and draft") @MainActor
+	func aMacOSVMListsItsKernelFiles() throws {
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			let src = TestEnvironment.scratch + "mac-kernel-\(UUID().uuidString).bin"
+			try Data("KERNEL".utf8).write(to: URL(fileURLWithPath: src))
+			defer { try? FileManager.default.removeItem(atPath: src) }
+			let kernelsDir = vm.config.kernelsDirPath()
+			let path = try KernelStore.promote(
+				role: .kernel, sourcePath: src, kernelsDir: kernelsDir, tag: "6.12")
+			try vm.config.setKernelBoot(enabled: true)
+			try vm.config.updateKernelSettings(
+				LinuxKernelBoot(kernelPath: path, initialRamdiskPath: nil, commandLine: "quiet"))
+			vm.config.boot = .macOS(
+				MacOSBoot(installState: .installed, minimumCPUCount: 4, minimumMemorySize: 8))
+			try vm.config.saveVMConfig()
+
+			let listed = api.info(for: vm).boot
+			#expect(listed.mode == .macOS)
+			#expect(listed.ownedKernels?.map(\.path) == [path])
+			#expect(listed.kernel?.kernelPath == path)
+
+			// LocalMachman.deleteKernelFile's config steps.
+			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
+			try vm.config.clearKernelReference(to: path)
+			let after = api.info(for: vm).boot
+			#expect(after.mode == .macOS)
+			#expect(after.ownedKernels == nil)
+			#expect(after.kernel
+				== KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "quiet"))
+		}
+	}
+
 	// C1: a rename moves the directory the owned kernel paths embed — they must follow, in
 	// the draft AND the live boot payload, while external paths stay put.
 	@Test func renameRepointsOwnedKernelPaths() throws {

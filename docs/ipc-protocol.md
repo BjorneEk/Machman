@@ -159,7 +159,7 @@ keep working — nothing is rejected at load.
 mounts: [{id, path, tag, safe, enabled?, kind?, automounted?, automountedAt?}],
 boot: {mode: "efi"|"linuxKernel"|"macOS"|"unknown", kernel?,
 macInstallState?, minCPUCount?, minMemoryBytes?, ownedKernels?: [{role, tag, fileName, path,
-overrideCommandLine?, overrideEnabled?}]}, windowOpen, startPolicy?:
+overrideCommandLine?, overrideEnabled?}] (in every boot mode — a macOS VM keeps its kernel files)}, windowOpen, startPolicy?:
 {windowed, safe, autostart}, safeRun?, totalRuntimeSeconds?, consolePorts?, uartPorts?,
 devices?, nestedVirtualization?, ssh?, setup?, unresponsive?, outdatedHost?}`.
 
