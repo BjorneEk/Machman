@@ -43,6 +43,8 @@ public enum VMHostBootstrap {
 		autostart: Bool = false, library: String? = nil
 	) -> Never {
 		machmanVMDir = dataDir
+		// The Guest Setup scripts sit beside the library, which a safe run's dataDir isn't.
+		machmanSetupScriptsDir = GuestSetupStore.directory(forLibrary: library ?? dataDir)
 		let lab = LabEnvironment.current
 
 		// The first NSApp access, so the shared application IS the subclass: its sendEvent

@@ -14,22 +14,27 @@ enum VMTestDir {
 		defer { lock.unlock() }
 		let original = machmanVMDir
 		let originalSafe = machmanSafeDir
+		let originalScripts = machmanSetupScriptsDir
 		// Backstop behind MachmanTestGuard: the lazily resolved globals must sit inside this
 		// run's sandbox before anything is swapped (a test never sees a real library).
 		precondition(
 			original.hasPrefix(TestEnvironment.dataDir)
-				&& originalSafe.hasPrefix(TestEnvironment.dataDir),
+				&& originalSafe.hasPrefix(TestEnvironment.dataDir)
+				&& originalScripts.hasPrefix(TestEnvironment.dataDir),
 			"machmanVMDir/machmanSafeDir resolved outside the test sandbox: \(original)")
 		let tmp = TestEnvironment.scratch + "vmdir-\(UUID().uuidString)"
 		machmanVMDir = tmp
-		// Both globals swap under the ONE lock, so no test can sweep another's shadows —
-		// or worse, the real safe dir.
+		// The globals swap under the ONE lock, so no test can sweep another's shadows — or
+		// worse, the real safe dir — or serve another's Guest Setup scripts.
 		machmanSafeDir = tmp + ".safe"
+		machmanSetupScriptsDir = tmp + ".scripts"
 		defer {
 			machmanVMDir = original
 			machmanSafeDir = originalSafe
+			machmanSetupScriptsDir = originalScripts
 			try? FileManager.default.removeItem(atPath: tmp)
 			try? FileManager.default.removeItem(atPath: tmp + ".safe")
+			try? FileManager.default.removeItem(atPath: tmp + ".scripts")
 		}
 		return try body()
 	}
