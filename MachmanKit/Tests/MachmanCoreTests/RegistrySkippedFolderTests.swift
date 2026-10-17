@@ -120,4 +120,27 @@ struct RegistrySkippedFolderTests {
 		#expect(await eventually { after.warnings.contains { $0.message == "marker" } })
 		#expect(after.warnings.map(\.message) == ["marker"], "\(after.warnings)")
 	}
+
+	// D38 (review 4, from the wave's final pass): the registry scans only at startup, so a
+	// folder whose settings the user fixed stayed out of the list until the agent restarted —
+	// and its warning stopped, so nothing said why. The next client to connect finds it listed.
+	@Test("D38: a folder whose settings are fixed is listed when the next client connects")
+	func aFixedFolderIsListedAtTheNextConnect() async throws {
+		let readable = #"{"memorySize":1073741824,"cpuCount":2,"created":1000}"#
+		let (after, listedBefore, listedAfter) = try VMTestDir.withRedirectedDir {
+			try write("[", as: "fixed")
+			let registry = VMRegistry()
+			try write(readable, as: "fixed")
+			let listedBefore = registry.vm(named: "fixed") != nil
+			let after = WarningTap(registry.events.stream())
+			let listedAfter = registry.vm(named: "fixed") != nil
+			registry.events.emit(.log(vm: nil, level: .warning, message: "marker"))
+			return (after, listedBefore, listedAfter)
+		}
+		defer { after.stop() }
+		#expect(!listedBefore)
+		#expect(listedAfter)
+		#expect(await eventually { after.warnings.contains { $0.message == "marker" } })
+		#expect(after.warnings.map(\.message) == ["marker"], "\(after.warnings)")
+	}
 }

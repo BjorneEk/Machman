@@ -23,10 +23,11 @@ final class EventBus {
 	// A client that stops reading backs up in its connection's write queue instead, which is
 	// bounded in time and bytes (E17, UDSConnection).
 	func stream() -> AsyncStream<VMEvent> {
-		AsyncStream { continuation in
+		let (standing, lapsed) = takeStandingNotices()
+		let stream = AsyncStream { continuation in
 			let id = UUID()
 			self.continuations[id] = continuation
-			for notice in self.standingNotices {
+			for notice in standing {
 				continuation.yield(notice)
 			}
 			continuation.onTermination = { _ in
@@ -35,13 +36,16 @@ final class EventBus {
 				}
 			}
 		}
+		lapsed.forEach { $0() }
+		return stream
 	}
 
 	func lineStream() -> AsyncStream<EventLine> {
-		AsyncStream { continuation in
+		let (standing, lapsed) = takeStandingNotices()
+		let stream = AsyncStream { continuation in
 			let id = UUID()
 			self.lineContinuations[id] = continuation
-			for notice in self.standingNotices {
+			for notice in standing {
 				continuation.yield(EventLine(event: notice, line: nil))
 			}
 			continuation.onTermination = { _ in
@@ -50,32 +54,39 @@ final class EventBus {
 				}
 			}
 		}
+		lapsed.forEach { $0() }
+		return stream
 	}
 
 	// Standing notices (D38): what stays true for a while — a VM folder whose settings
 	// couldn't be read — reaches every subscriber, the ones that subscribe later included (the
 	// registry scans before any client connects). One per key; a new stream gets the ones that
 	// still stand, in key order. `stands` is asked then: a notice no longer true goes, as does
-	// one withdrawn.
+	// one withdrawn, and its `lapsed` runs once the new stream is in place — a lapse may emit
+	// (the registry lists a folder that reads again), and the new subscriber hears that too.
 	private struct Notice {
 		let event: VMEvent
 		let stands: @MainActor () -> Bool
+		let lapsed: @MainActor () -> Void
 	}
 
 	private var notices: [String: Notice] = [:]
 
-	private var standingNotices: [VMEvent] {
+	private func takeStandingNotices() -> (standing: [VMEvent], lapsed: [@MainActor () -> Void]) {
+		var lapsed: [@MainActor () -> Void] = []
 		for (key, notice) in notices where !notice.stands() {
 			notices[key] = nil
+			lapsed.append(notice.lapsed)
 		}
-		return notices.keys.sorted().compactMap { notices[$0]?.event }
+		return (notices.keys.sorted().compactMap { notices[$0]?.event }, lapsed)
 	}
 
 	func post(
 		notice event: VMEvent, key: String,
-		while stands: @escaping @MainActor () -> Bool = { true }
+		while stands: @escaping @MainActor () -> Bool = { true },
+		lapsed: @escaping @MainActor () -> Void = {}
 	) {
-		notices[key] = Notice(event: event, stands: stands)
+		notices[key] = Notice(event: event, stands: stands, lapsed: lapsed)
 		emit(event)
 	}
 

@@ -568,7 +568,23 @@ public final class VMRegistry {
 		events.post(
 			notice: .log(vm: name, level: .warning, message: Self.unreadableWarning),
 			key: Self.unreadableKey(name),
-			while: { Self.isUnreadable(config) })
+			while: { Self.isUnreadable(config) },
+			lapsed: { [weak self] in self?.listIfReadable(name, library: library) })
+	}
+
+	// A skipped folder whose config reads again — fixed by hand — joins the list when the next
+	// client connects (D38): the scan ran only at startup, and the notice that said why the VM
+	// was missing just lapsed. A folder that went stays gone.
+	private func listIfReadable(_ name: String, library: String) {
+		let config = "\(library)/\(name)/config"
+		guard restrictedName == nil, vms[name] == nil, FileManager.default.fileExists(atPath: config)
+		else { return }
+		do {
+			_ = try adoptFromDisk(name: name, library: library)
+		} catch {
+			MachmanLogger.log(.passiveError, "couldn’t list '\(name)' again: \(error)")
+			announceUnreadable(name, library: library)
+		}
 	}
 
 	// A config file that is there and doesn't decode. Decode only: nothing migrates or saves.
