@@ -86,4 +86,38 @@ struct RegistrySkippedFolderTests {
 		#expect(await eventually { later.warnings.count == 2 })
 		#expect(later.warnings.map(\.vm) == ["broken", "fine"])
 	}
+
+	// D38 (review 4, from the wave's review): the warning reached every client that connected
+	// later even once the folder was gone or its settings read again — a VM listed again under
+	// the name heard that it isn't in the list. It now stands only while it holds.
+	@Test("D38: the warning stops once the folder is gone or its settings read again")
+	func theWarningStopsWhenItNoLongerHolds() async throws {
+		let readable = #"{"memorySize":1073741824,"cpuCount":2,"created":1000}"#
+		let (before, after) = try VMTestDir.withRedirectedDir {
+			try write("[", as: "fixed")
+			try write("[", as: "deleted")
+			try VMConfig.createNewVMDirectory(name: "relisted")
+			_ = try VMConfig(name: "relisted", memorySize: 1 << 30, cpuCount: 2)
+			let registry = VMRegistry()
+			try write("[", as: "relisted")
+			registry.reload(name: "relisted")
+			let before = WarningTap(registry.events.stream())
+			// Fixed by hand, deleted, and deleted then made again as a VM the list takes.
+			try write(readable, as: "fixed")
+			try FileManager.default.removeItem(atPath: "\(machmanVMDir)/deleted")
+			try FileManager.default.removeItem(atPath: "\(machmanVMDir)/relisted")
+			try VMConfig.createNewVMDirectory(name: "relisted")
+			_ = try VMConfig(name: "relisted", memorySize: 1 << 30, cpuCount: 2)
+			_ = try registry.adoptFromDisk(name: "relisted")
+			let after = WarningTap(registry.events.stream())
+			// What both streams hear last, so a missing notice is seen missing, not awaited.
+			registry.events.emit(.log(vm: nil, level: .warning, message: "marker"))
+			return (before, after)
+		}
+		defer { [before, after].forEach { $0.stop() } }
+		#expect(await eventually { before.warnings.contains { $0.message == "marker" } })
+		#expect(Set(before.warnings.compactMap(\.vm)) == ["fixed", "deleted", "relisted"])
+		#expect(await eventually { after.warnings.contains { $0.message == "marker" } })
+		#expect(after.warnings.map(\.message) == ["marker"], "\(after.warnings)")
+	}
 }

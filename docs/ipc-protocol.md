@@ -326,9 +326,10 @@ After `events.subscribe`, the daemon pushes id-less notifications on the same co
 and safe-run shadow builds with vm = the affected VM). Unknown types: skip.
 
 A VM folder whose config can't be read is left out of `vm.list`, and the daemon says so: a
-warning `log` with vm = the folder's name, sent to every subscriber right after it subscribes,
-for as long as the daemon runs, and when a listed VM's config stops reading (a folder without
-a config is no VM and stays quiet).
+warning `log` with vm = the folder's name, sent to every subscriber right after it subscribes
+while the config still can't be read — not once the folder is gone, its config reads again or a
+VM is listed under the name — and when a listed VM's config stops reading (a folder without a
+config is no VM and stays quiet).
 
 The daemon passes each event a vmhost emits on in the line the vmhost sent it (1.0.12+), so
 event types and fields the daemon itself doesn't know reach clients unchanged; older daemons

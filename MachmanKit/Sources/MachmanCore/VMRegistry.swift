@@ -61,7 +61,15 @@ public final class VMRegistry {
 
 	let events = EventBus()
 	let presenter = WindowPresenter()
-	private(set) var vms: [String: VirtualMachine] = [:]
+	private(set) var vms: [String: VirtualMachine] = [:] {
+		// A name listed — loaded, reloaded, created, copied, renamed or saved onto — reads:
+		// whatever said its folder couldn't be read no longer holds (D38).
+		didSet {
+			for name in vms.keys where oldValue[name] == nil {
+				events.withdraw(noticeKey: Self.unreadableKey(name))
+			}
+		}
+	}
 	// Sessions live here (not in a view) so a running install keeps its phase and progress
 	// when the user navigates away, and a second install of the same VM can't start.
 	private var installSessions: [String: InstallSession] = [:]
@@ -543,17 +551,30 @@ public final class VMRegistry {
 	}
 
 	// A VM folder whose config doesn't read stays the user's — create() never takes its name —
-	// but no client lists it: each client hears so, as "<folder>: …", whenever it subscribes
-	// (D38). A folder without a config (a stray folder, or what a failed delete left) is no
-	// VM and stays quiet.
+	// but no client lists it: each client hears so, as "<folder>: …", when it subscribes while
+	// that holds — until the folder goes, its config reads again or a VM is listed under the
+	// name (D38). A folder without a config (a stray folder, or what a failed delete left) is
+	// no VM and stays quiet.
 	nonisolated static let unreadableWarning =
 		"Its settings file couldn’t be read, so it isn’t in the list."
 
+	private nonisolated static func unreadableKey(_ name: String) -> String {
+		"unreadable:\(name)"
+	}
+
 	private func announceUnreadable(_ name: String, library: String) {
-		guard FileManager.default.fileExists(atPath: "\(library)/\(name)/config") else { return }
+		let config = "\(library)/\(name)/config"
+		guard Self.isUnreadable(config) else { return }
 		events.post(
 			notice: .log(vm: name, level: .warning, message: Self.unreadableWarning),
-			key: "unreadable:\(name)")
+			key: Self.unreadableKey(name),
+			while: { Self.isUnreadable(config) })
+	}
+
+	// A config file that is there and doesn't decode. Decode only: nothing migrates or saves.
+	private nonisolated static func isUnreadable(_ config: String) -> Bool {
+		guard let data = FileManager.default.contents(atPath: config) else { return false }
+		return (try? JSONDecoder().decode(VMConfig.self, from: data)) == nil
 	}
 
 	func create() throws -> VirtualMachine {

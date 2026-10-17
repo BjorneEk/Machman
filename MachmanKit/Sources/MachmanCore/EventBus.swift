@@ -52,19 +52,35 @@ final class EventBus {
 		}
 	}
 
-	// Standing notices (D38): what stays true while this process runs — a VM folder whose
-	// settings couldn't be read — reaches every subscriber, the ones that subscribe later
-	// included (the registry scans before any client connects). One per key; a new stream
-	// gets them first, in key order.
-	private var notices: [String: VMEvent] = [:]
-
-	private var standingNotices: [VMEvent] {
-		notices.keys.sorted().compactMap { notices[$0] }
+	// Standing notices (D38): what stays true for a while — a VM folder whose settings
+	// couldn't be read — reaches every subscriber, the ones that subscribe later included (the
+	// registry scans before any client connects). One per key; a new stream gets the ones that
+	// still stand, in key order. `stands` is asked then: a notice no longer true goes, as does
+	// one withdrawn.
+	private struct Notice {
+		let event: VMEvent
+		let stands: @MainActor () -> Bool
 	}
 
-	func post(notice event: VMEvent, key: String) {
-		notices[key] = event
+	private var notices: [String: Notice] = [:]
+
+	private var standingNotices: [VMEvent] {
+		for (key, notice) in notices where !notice.stands() {
+			notices[key] = nil
+		}
+		return notices.keys.sorted().compactMap { notices[$0]?.event }
+	}
+
+	func post(
+		notice event: VMEvent, key: String,
+		while stands: @escaping @MainActor () -> Bool = { true }
+	) {
+		notices[key] = Notice(event: event, stands: stands)
 		emit(event)
+	}
+
+	func withdraw(noticeKey key: String) {
+		notices[key] = nil
 	}
 
 	// Where a log event is written: the unified log. A seam for tests.
