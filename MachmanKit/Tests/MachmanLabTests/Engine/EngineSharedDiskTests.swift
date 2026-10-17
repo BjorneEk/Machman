@@ -37,6 +37,16 @@ struct EngineSharedDiskTests {
 		}
 	}
 
+	/// Whether `host` still ran when `vm`'s vmhost first served its socket; false for a start
+	/// that never got that far (the watch is cancelled).
+	private static func hostAlive(_ host: pid_t, whenServing vm: TGVM) async -> Bool {
+		while !Task.isCancelled {
+			if await TG.isSocketLive(vm.socketPath) { return LabProcesses.isAlive(host) }
+			try? await Task.sleep(for: .milliseconds(5))
+		}
+		return false
+	}
+
 	@Test("E71: a start right after a disk sharer's force stop and exit is never refused")
 	func startAfterTheSharersExit() async throws {
 		try await TG.withAgent { agent in
@@ -58,6 +68,8 @@ struct EngineSharedDiskTests {
 		}
 	}
 
+	// …and never two writers: the other VM's vmhost serves only once the stopped VM's, still
+	// in its stop flush when the stop returned, is gone.
 	@Test("E71: a start sent the moment a disk sharer's force stop returns is never refused")
 	func startTheMomentTheStopReturns() async throws {
 		try await TG.withAgent { agent in
@@ -65,10 +77,16 @@ struct EngineSharedDiskTests {
 			try await running.start(Self.headless)
 			let turns = 20
 			var refused: [String] = []
+			var overlapped: [String] = []
 			for turn in 1...turns {
 				let host = try await running.hostPID()
 				try await agent.api.stop(vm: running.name, mode: .force)
+				let watch = Task { [next] in await Self.hostAlive(host, whenServing: next) }
 				let error = try await Self.refusal(starting: next)
+				watch.cancel()
+				if await watch.value {
+					overlapped.append("\(turn): \(running.name)'s vmhost \(host)")
+				}
 				// The stopped VM's vmhost exits after its stop flush; its pid file goes then.
 				try await running.stopped(host: host)
 				if let error {
@@ -80,6 +98,9 @@ struct EngineSharedDiskTests {
 			}
 			try await running.forceStop()
 			#expect(refused.isEmpty, "\(refused.count) of \(turns) starts refused: \(refused)")
+			#expect(
+				overlapped.isEmpty,
+				"\(overlapped.count) of \(turns) starts ran beside the old vmhost: \(overlapped)")
 		}
 	}
 }
