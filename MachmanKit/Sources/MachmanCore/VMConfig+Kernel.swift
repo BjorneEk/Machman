@@ -25,16 +25,16 @@ extension VMConfig {
 	}
 
 	// The kernel-boot checkbox: on -> boot from the persisted kernel draft, off -> EFI.
-	// The draft (`kernelSettings`) survives toggling off so the fields keep their values.
+	// The draft (`kernelSettings`) survives toggling off while it holds something — a file or
+	// a command line keeps its value for the next kernel boot — and goes once it holds
+	// nothing (N3): an empty draft kept the tree's parked kernel sections for good.
 	func setKernelBoot(enabled: Bool) throws {
 		let settings = kernelSettings
 			?? LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
 		let newBoot: BootConfig = enabled ? .linuxKernel(settings) : .efi
 		try BootConfig.validateTransition(from: boot, to: newBoot)
-		if enabled {
-			kernelSettings = settings
-		}
 		boot = newBoot
+		applyKernelSettings(settings)
 		try saveVMConfig()
 	}
 
@@ -46,9 +46,11 @@ extension VMConfig {
 
 	// The one way kernel settings change (D21): the draft, and the live boot payload while
 	// kernel boot is on — a start reads boot (makeBootLoader), so an edit that missed it
-	// would boot the old files. No save; callers batch it into theirs.
+	// would boot the old files. While kernel boot is off a draft that holds nothing goes
+	// (N3); while it is on, the draft is what the boot reads and stays. No save; callers
+	// batch it into theirs.
 	func applyKernelSettings(_ settings: LinuxKernelBoot) {
-		kernelSettings = settings
+		kernelSettings = !isKernelBoot && settings.holdsNothing ? nil : settings
 		if isKernelBoot { boot = .linuxKernel(settings) }
 	}
 
@@ -121,7 +123,8 @@ extension VMConfig {
 		applyKernelSettings(settings)
 	}
 
-	// After deleting an owned kernel file, clear any kernel field that pointed at it.
+	// After deleting an owned kernel file, clear any kernel field that pointed at it (a
+	// parked draft left holding nothing goes with it, applyKernelSettings).
 	func clearKernelReference(to path: String) throws {
 		guard var settings = kernelSettings else { return }
 		var changed = false
@@ -224,5 +227,15 @@ extension VMConfig {
 		if kernelOverrides.removeValue(forKey: key) != nil {
 			try? saveVMConfig()
 		}
+	}
+}
+
+extension LinuxKernelBoot {
+	// The wire's content rule for a draft (KernelSettings.holdsNothing, K1): no file and no
+	// command line.
+	var holdsNothing: Bool {
+		KernelSettings(
+			kernelPath: kernelPath, initrdPath: initialRamdiskPath, commandLine: commandLine
+		).holdsNothing
 	}
 }

@@ -387,8 +387,8 @@ public final class StubMachman: MachmanControlling {
 		_ = try get(name)
 	}
 	// The engine's effect (VMConfig.setKernelBoot, Q29): on boots the persisted draft,
-	// creating an empty one; off goes back to EFI and keeps the draft. StubParityTests holds
-	// the two together.
+	// creating an empty one; off goes back to EFI and keeps the draft while it holds
+	// something (N3). StubParityTests holds the two together.
 	public func setKernelBoot(vm name: String, enabled: Bool) async throws {
 		try gate()
 		var vm = try get(name)
@@ -401,8 +401,14 @@ public final class StubMachman: MachmanControlling {
 			vm.boot.kernel = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
 		}
 		vm.boot.mode = enabled ? .linuxKernel : .efi
+		vm.boot.kernel = vm.boot.kernel.flatMap { Self.draft($0, on: vm) }
 		vms[name] = vm
 		emit(.listChanged)
+	}
+	// What the engine keeps of a draft (VMConfig.applyKernelSettings): all of it while kernel
+	// boot is on, else only one that holds something.
+	private static func draft(_ settings: KernelSettings, on vm: VMInfo) -> KernelSettings? {
+		vm.boot.mode != .linuxKernel && settings.holdsNothing ? nil : settings
 	}
 	// vm.kernel.update requests, in order: a full replace of the VM's kernel settings (P41).
 	public private(set) var kernelSettingsSent: [(vm: String, settings: KernelSettings)] = []
@@ -410,7 +416,7 @@ public final class StubMachman: MachmanControlling {
 		try gate()
 		var vm = try get(name)
 		kernelSettingsSent.append((name, settings))
-		vm.boot.kernel = settings
+		vm.boot.kernel = Self.draft(settings, on: vm)
 		vms[name] = vm
 		emit(.listChanged)
 	}
@@ -437,7 +443,7 @@ public final class StubMachman: MachmanControlling {
 		return vm
 	}
 	// Like the engine (VMConfig.clearKernelReference, Q29): a field that pointed at the deleted
-	// file is cleared, the draft itself stays.
+	// file is cleared, and a parked draft left holding nothing goes.
 	public func deleteKernelFile(vm name: String, path: String) async throws -> VMInfo {
 		try gate()
 		var vm = try get(name)
@@ -445,7 +451,7 @@ public final class StubMachman: MachmanControlling {
 		if var kernel = vm.boot.kernel {
 			if kernel.kernelPath == path { kernel.kernelPath = "" }
 			if kernel.initrdPath == path { kernel.initrdPath = nil }
-			vm.boot.kernel = kernel
+			vm.boot.kernel = Self.draft(kernel, on: vm)
 		}
 		vms[name] = vm
 		emit(.listChanged)

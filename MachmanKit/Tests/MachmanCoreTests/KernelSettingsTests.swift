@@ -69,9 +69,7 @@ struct KernelSettingsTests {
 			try cfg.setKernelBoot(enabled: true)
 			try cfg.setKernelBoot(enabled: false)
 			#expect(cfg.boot == .efi)
-			// Fails until the open bug N3 (an empty kernel draft outlives kernel boot) is fixed.
 			#expect(cfg.kernelSettings == nil)
-			// Fails until the open bug N3 (an empty kernel draft outlives kernel boot) is fixed.
 			#expect(try VMConfig.load(name: "blank").kernelSettings == nil)
 		}
 	}
@@ -94,8 +92,52 @@ struct KernelSettingsTests {
 			// LocalMachman.deleteKernelFile's config steps.
 			try KernelStore.delete(path: path, kernelsDir: kernelsDir)
 			try cfg.clearKernelReference(to: path)
-			// Fails until the open bug N3 (an empty kernel draft outlives kernel boot) is fixed.
 			#expect(cfg.kernelSettings == nil)
+		}
+	}
+
+	// K1 (review 4): a command line is something kept — the draft outlives kernel boot with it,
+	// for the next kernel boot — while a line of only whitespace is no more than an empty one.
+	@Test("N3: a parked draft that holds only a command line is kept")
+	func aCommandLineKeepsTheParkedDraft() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "line")
+			let cfg = try VMConfig(name: "line", memorySize: 2048, cpuCount: 2)
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(
+				LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "quiet"))
+			try cfg.setKernelBoot(enabled: false)
+			#expect(cfg.kernelSettings?.commandLine == "quiet")
+			#expect(try VMConfig.load(name: "line").kernelSettings?.commandLine == "quiet")
+
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(
+				LinuxKernelBoot(kernelPath: "", initialRamdiskPath: "", commandLine: " \n\t"))
+			try cfg.setKernelBoot(enabled: false)
+			#expect(cfg.kernelSettings == nil)
+		}
+	}
+
+	// A parked draft emptied by a settings write (the last path deselected, the line blanked)
+	// goes too; while kernel boot is on an empty draft stays — it is what the boot reads.
+	@Test("N3: a settings write that empties a parked draft drops it")
+	func emptyingAParkedDraftDropsIt() throws {
+		try VMTestDir.withRedirectedDir {
+			try VMConfig.createNewVMDirectory(name: "emptied")
+			let cfg = try VMConfig(name: "emptied", memorySize: 2048, cpuCount: 2)
+			let empty = LinuxKernelBoot(kernelPath: "", initialRamdiskPath: nil, commandLine: "")
+			try cfg.setKernelBoot(enabled: true)
+			try cfg.updateKernelSettings(empty)
+			#expect(cfg.kernelSettings == empty)
+			#expect(cfg.boot == .linuxKernel(empty))
+			try cfg.updateKernelSettings(
+				LinuxKernelBoot(kernelPath: "/vmlinuz", initialRamdiskPath: nil, commandLine: ""))
+			try cfg.setKernelBoot(enabled: false)
+			#expect(cfg.kernelSettings?.kernelPath == "/vmlinuz")
+			try cfg.updateKernelSettings(empty)
+			#expect(cfg.boot == .efi)
+			#expect(cfg.kernelSettings == nil)
+			#expect(try VMConfig.load(name: "emptied").kernelSettings == nil)
 		}
 	}
 

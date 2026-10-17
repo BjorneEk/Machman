@@ -27,7 +27,6 @@ struct KernelSectionsFlowTests {
 		#expect(debian()?.showsKernelSections == true)   // its add path while kernel boot is on
 		#expect(await h.viewModel.setKernelBoot("Debian", enabled: false))
 		#expect(await eventually { debian()?.boot.mode == .efi })
-		// Fails until the open bug N3 (an empty kernel draft keeps the parked sections) is fixed.
 		#expect(debian()?.showsKernelSections == false)
 	}
 }

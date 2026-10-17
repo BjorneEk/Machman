@@ -51,6 +51,43 @@ struct StubParityTests {
 		#expect(served == engine)
 	}
 
+	// N3: a parked draft emptied by a settings write goes; one that keeps a command line stays.
+	@Test("Q29: an emptied parked draft goes on the stub as on the engine")
+	func emptiedParkedDraft() async throws {
+		let line = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "quiet")
+		let empty = KernelSettings(kernelPath: "", initrdPath: nil, commandLine: "")
+		enum Step { case boot(Bool), write(KernelSettings) }
+		let steps: [Step] = [.boot(true), .write(line), .boot(false), .write(empty)]
+		var engine: [Served] = []
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			for step in steps {
+				switch step {
+				case .boot(let enabled):
+					try vm.config.setKernelBoot(enabled: enabled)
+				case .write(let settings):
+					try vm.config.updateKernelSettings(LinuxKernelBoot(
+						kernelPath: settings.kernelPath, initialRamdiskPath: settings.initrdPath,
+						commandLine: settings.commandLine))
+				}
+				engine.append(Served(api.info(for: vm).boot))
+			}
+		}
+		let stub = StubMachman.serving([StubMachman.makeInfo("Parity")])
+		var served: [Served] = []
+		for step in steps {
+			switch step {
+			case .boot(let enabled): try await stub.setKernelBoot(vm: "Parity", enabled: enabled)
+			case .write(let settings): try await stub.updateKernelSettings(vm: "Parity", settings)
+			}
+			served.append(Served(try await stub.vm(named: "Parity").boot))
+		}
+		#expect(served == engine)
+		#expect(served.last?.kernel == nil)
+	}
+
 	@Test("Q29: the stub's kernel delete clears the field that named the file, like the engine")
 	func kernelDeleteClearsTheReference() async throws {
 		var engine: Served?
