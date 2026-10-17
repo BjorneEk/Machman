@@ -387,8 +387,10 @@ struct LoopbackTests {
 		let stub = StubMachman()
 		stub.vms["Debian"] = StubMachman.makeInfo("Debian", state: .running)
 		// 2 MiB of noise ≈ a real VM-window JPEG after base64 — far beyond the socket
-		// buffer, so the server must handle partial writes.
-		stub.previewPayload = Data((0..<(2 * 1024 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
+		// buffer, so the server must handle partial writes. Built off the main actor (Q43).
+		stub.previewPayload = await onOwnThread {
+			Data((0..<(2 * 1024 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
+		}
 		let server = MachmanServer(api: stub, socketPath: socketPath, daemonVersion: "test")
 		try startServing(server)
 		defer { server.stop() }

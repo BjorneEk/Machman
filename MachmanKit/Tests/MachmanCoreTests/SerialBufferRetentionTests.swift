@@ -16,7 +16,7 @@ import MachmanAPI
 struct SerialBufferRetentionTests {
 	private static let cap = 4096
 
-	private func chunk(_ n: Int, _ seed: Int) -> Data {
+	private static func chunk(_ n: Int, _ seed: Int) -> Data {
 		Data((0..<n).map { UInt8(truncatingIfNeeded: seed &+ $0) })
 	}
 
@@ -26,7 +26,7 @@ struct SerialBufferRetentionTests {
 		var all = Data()
 		var peak = 0
 		for i in 0..<500 {
-			let piece = chunk(700, i)
+			let piece = Self.chunk(700, i)
 			ring.append(piece)
 			all.append(piece)
 			if ring.count > Self.cap { ring.dropHead(ring.count - Self.cap, live: Self.cap) }
@@ -43,7 +43,7 @@ struct SerialBufferRetentionTests {
 		var received = Data()
 		var peak = 0
 		for i in 0..<2000 {
-			let piece = chunk(1 + i % 900, i)
+			let piece = Self.chunk(1 + i % 900, i)
 			queue.append(piece)
 			sent.append(piece)
 			let taken = i % 7 == 0 ? queue.count : min(queue.count, 600)
@@ -69,7 +69,7 @@ struct SerialBufferRetentionTests {
 		bridge.start()
 		defer { bridge.stop() }
 		let guestOut = fromGuest.fileHandleForWriting
-		let output = chunk(4 << 20, 7)
+		let output = await onOwnThread { Self.chunk(4 << 20, 7) }   // off the main actor (Q43)
 		// A blocking pipe write, off the main actor: it returns once the drain took all but
 		// the pipe's own buffer.
 		await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in

@@ -31,12 +31,14 @@ struct PersistedJSONFileTests {
 		#expect(file(url).load() == ["panes": 2])
 	}
 
-	@Test func anEarlierBackupIsNeverOverwritten() throws {
+	@Test func anEarlierBackupIsNeverOverwritten() async throws {
 		let dir = try freshDir()
 		let url = dir.appendingPathComponent("Settings.json")
 		let first = dir.appendingPathComponent("Settings.json.bak")
-		try Data("old".utf8).write(to: first)
-		try Data("garbage".utf8).write(to: url)
+		try await onOwnThread {   // the test's own writes, off the main actor (Q43)
+			try Data("old".utf8).write(to: first)
+			try Data("garbage".utf8).write(to: url)
+		}
 		let persisted = file(url)
 		#expect(persisted.load() == nil)
 		#expect(persisted.backupURL?.lastPathComponent == "Settings.json.bak.2")
