@@ -66,6 +66,26 @@ public struct VMOwnerDates: Equatable, Sendable {
 		return (stale, changed)
 	}
 
+	// Renames made elsewhere (another desktop, a script, Finder while the agent was away, T34):
+	// a listed name holding no state whose created date is the recorded date of exactly one
+	// owner the list doesn't show is that owner, renamed. A date two listed VMs share (a
+	// folder duplicated in Finder keeps its config) proves nothing and moves nothing. The
+	// store moves the state, then reconciles as usual.
+	public func renames(in vms: [VMInfo], owners: Set<String>) -> [(from: String, to: String)] {
+		let listed = Set(vms.map(\.name))
+		let away = owners.subtracting(listed).compactMap { name in dates[name].map { (name, $0) } }
+		var taken: Set<String> = []
+		var pairs: [(from: String, to: String)] = []
+		for vm in vms where !owners.contains(vm.name) {
+			guard vms.filter({ Self.sameVM($0.created, vm.created) }).count == 1 else { continue }
+			let matches = away.filter { Self.sameVM($0.1, vm.created) && !taken.contains($0.0) }
+			guard matches.count == 1, let old = matches.first?.0 else { continue }
+			taken.insert(old)
+			pairs.append((from: old, to: vm.name))
+		}
+		return pairs
+	}
+
 	// A rename keeps the VM, so its date goes along.
 	public mutating func move(from old: String, to new: String) {
 		dates[new] = dates.removeValue(forKey: old)

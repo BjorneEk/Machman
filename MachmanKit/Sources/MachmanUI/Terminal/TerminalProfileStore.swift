@@ -176,6 +176,11 @@ public final class TerminalProfileStore: ObservableObject {
 		if changed || moved { save() }
 	}
 
+	// The VM names holding associations.
+	private var owners: Set<String> {
+		Set(associations.keys.compactMap { Self.vm(ofKey: $0).map(String.init) })
+	}
+
 	// Forget `vm`'s associations and its date; true when there was something to forget.
 	@discardableResult
 	private func drop(_ vm: String) -> Bool {
@@ -240,9 +245,11 @@ extension TerminalProfileStore: VMKeyedState {
 
 	// A VM of a name with associations: the one they belong to, whose created date is
 	// recorded the first time a list shows it — or a new VM under that name, which starts on
-	// the default (T29).
+	// the default (T29). Associations whose VM shows up under another name follow it (T34).
 	public func listed(_ vms: [VMInfo]) {
-		let owners = Set(associations.keys.compactMap { Self.vm(ofKey: $0).map(String.init) })
+		for rename in created.renames(in: vms, owners: owners) {
+			associate(rename.from, as: rename.to, move: true)
+		}
 		let (stale, changed) = created.reconcile(vms, owners: owners)
 		for vm in stale { drop(vm) }
 		if changed { save() }

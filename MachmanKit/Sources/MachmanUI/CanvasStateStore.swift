@@ -130,7 +130,11 @@ extension CanvasStateStore: VMKeyedState {
 
 	// A listed VM under a name with a layout: the one it belongs to, whose created date is
 	// recorded the first time a list shows it — or a new VM, which starts on a fresh layout.
+	// A layout whose VM shows up under another name follows it there first (T34).
 	public func listed(_ vms: [VMInfo]) {
+		for rename in created.renames(in: vms, owners: Set(canvases.keys)) {
+			renameVM(from: rename.from, to: rename.to)
+		}
 		let (stale, changed) = created.reconcile(vms, owners: Set(canvases.keys))
 		for vm in stale { canvases[vm] = nil }
 		if changed { save() }
