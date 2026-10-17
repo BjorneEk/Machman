@@ -76,25 +76,16 @@ real_window() {
 # window_row_ok: the helper's window is a breach and nothing of the run took focus: no lab
 # process with a Dock icon, active or frontmost. Another app coming to the front is the user's,
 # only a note, as in every lab run (Q44: requiring the front unchanged failed on a user's switch).
-# Focus is judged only from the watch summary: 3b's switch reaches it and lsappinfo (a PATH
-# shim), and no other live read of the front app.
+# Focus is judged only from the watch summary: rows 3-3c run under the lsappinfo shim below and
+# 3b's switch reaches the watch, but no other live read of the front app is within their reach.
 window_row_ok() {
 	[[ "$summary" == *"BREACH window pid $probe "* && "$summary" != *"BREACH policy"* &&
 		"$summary" != *"BREACH active"* && "$summary" != *"BREACH frontmost"* ]]
 }
 
-# 3: a real window, off every screen, ordered for ~1.2 s by a helper under the test suite
-real_window real
-if window_row_ok; then
-	ok "audit window: a real off-screen window of a lab process is a breach"
-else
-	fail "audit window: a real off-screen window of a lab process is a breach" "$summary"
-fi
-
-# 3b: the user brings another app to the front during it and stays there: only a note, never
-# the run's breach. The switch shows wherever a rule could look: in the watch (a real process
-# outside the run, injected as frontmost to the end) and in `lsappinfo front`, which a PATH shim,
-# first on PATH in this row's subshell only, answers with another app on every call.
+# Rows 3-3c run with a PATH shim first on PATH, whose `lsappinfo front` names another app on
+# every call (a user who keeps switching apps), so a rule that reads the front app live instead
+# of from the watch fails them: 7e6ae5e0's row 3 compared lsappinfo before and after (Q44).
 shim="$root/shim"
 mkdir -p "$shim"
 cat >"$shim/lsappinfo" <<'SHIM'
@@ -105,20 +96,30 @@ echo $((n + 1)) >"$0.calls"
 echo "ASN:0x0-0x$((n + 1)):"
 SHIM
 chmod +x "$shim/lsappinfo"
+path_outside="$PATH"
+PATH="$shim:$PATH"
+
+# 3: a real window, off every screen, ordered for ~1.2 s by a helper under the test suite
+real_window real
+if window_row_ok; then
+	ok "audit window: a real off-screen window of a lab process is a breach"
+else
+	fail "audit window: a real off-screen window of a lab process is a breach" "$summary"
+fi
+
+# 3b: the user brings another app to the front during it and stays there (a real process
+# outside the run, injected as frontmost to the end, besides the shim): only a note, never the
+# run's breach
 env -i "$hw" idle --seconds 6 &
 user=$!
-if (
-	PATH="$shim:$PATH"
-	real_window user --inject "front=$user" --inject-after 6
-	echo "$summary"
-	window_row_ok && [[ "$summary" == *"NOTE frontmost injected ($user)"* ]]
-) >"$root/user-row.txt"; then
+real_window user --inject "front=$user" --inject-after 6
+wait "$user"
+if window_row_ok && [[ "$summary" == *"NOTE frontmost injected ($user)"* ]]; then
 	ok "Q44: the user's app coming to the front during the real-window row is only a note"
 else
 	fail "Q44: the user's app coming to the front during the real-window row is only a note" \
-		"pid $user: $(cat "$root/user-row.txt")"
+		"pid $user: $summary"
 fi
-wait "$user"
 
 # 3c: the run's own window taking the front (its helper injected as frontmost) fails the row
 real_window steal --inject front=lab-window
@@ -128,6 +129,7 @@ else
 	fail "Q44: the run's own window coming to the front fails the real-window row" \
 		"pid $probe: $summary"
 fi
+PATH="$path_outside"
 
 # 4
 watch policy --inject policy --inject-after 2
