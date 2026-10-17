@@ -300,6 +300,9 @@ struct ActionRunnerTests {
 			Case("renameDisk", "Renamed to \(q("data"))") {
 				$0.renameDisk("Alpine", diskID: "storage:system", newName: "data")
 			},
+			Case("renameKernelFile", "Renamed to \(q("6.13"))") {
+				$0.renameKernelTag("Kernel Lab", path: kernel, tag: "6.13")
+			},
 		]
 	}
 
@@ -343,11 +346,6 @@ struct ActionRunnerTests {
 					"Kernel Lab", role: .kernel, sourcePath: "/Users/demo/vmlinuz", tag: "6.13")
 			},
 			Case("deleteKernelFile", "") { $0.deleteKernel("Kernel Lab", path: kernel) },
-			// The reply doesn't hold a file under the new tag (the stub keeps the old one), so
-			// there is nothing to say it was renamed to.
-			Case("renameKernelFile", "") {
-				$0.renameKernelTag("Kernel Lab", path: kernel, tag: "6.13")
-			},
 			Case("setSerialLogging", "") {
 				$0.setSerialLogging(
 					"Alpine", kind: .console, index: 0, config: SerialLogConfig())

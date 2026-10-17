@@ -32,11 +32,10 @@ struct ToastWordingTests {
 		h.viewModel.setMountTag("Debian", mountID: mount.id, tag: "code")
 		#expect(await toasted(h, "Renamed to \u{201C}code\u{201D}"))
 
-		// The stub keeps the file where it was, so a re-tag to its own tag finds it.
 		let kernel = try #require(h.viewModel.vms.first { $0.name == "Kernel Lab" }?
 			.boot.ownedKernels?.first { $0.tag == "6.12" && $0.role == .kernel })
-		h.viewModel.renameKernelTag("Kernel Lab", path: kernel.path, tag: "6.12")
-		#expect(await toasted(h, "Renamed to \u{201C}6.12\u{201D}"))
+		h.viewModel.renameKernelTag("Kernel Lab", path: kernel.path, tag: "6.13")
+		#expect(await toasted(h, "Renamed to \u{201C}6.13\u{201D}"))
 
 		let debian = try #require(h.viewModel.vms.first { $0.name == "Debian" })
 		h.viewModel.requestRename(debian, to: "Debian 2", profiles: h.profiles)

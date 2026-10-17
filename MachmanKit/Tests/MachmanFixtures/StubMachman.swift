@@ -305,11 +305,33 @@ public final class StubMachman: MachmanControlling {
 		vms[name] = vm
 		return vm
 	}
+	// Like the engine (VMConfig.renameKernelFile, Q29): the file moves to <role>/<tag>/ and the
+	// kernel fields that named it follow.
 	public func renameKernelFile(
 		vm name: String, path: String, tag: String
 	) async throws -> VMInfo {
 		try gate()
-		return try get(name)
+		var vm = try get(name)
+		guard let index = vm.boot.ownedKernels?.firstIndex(where: { $0.path == path }),
+			var file = vm.boot.ownedKernels?[index]
+		else {
+			throw MachmanError(
+				code: .invalidArgument,
+				message: "\((path as NSString).lastPathComponent) isn’t a kernel file this VM owns")
+		}
+		let roleDir = ((path as NSString).deletingLastPathComponent as NSString)
+			.deletingLastPathComponent
+		file.tag = tag
+		file.path = roleDir + "/" + tag + "/" + file.fileName
+		vm.boot.ownedKernels?[index] = file
+		if var kernel = vm.boot.kernel {
+			if kernel.kernelPath == path { kernel.kernelPath = file.path }
+			if kernel.initrdPath == path { kernel.initrdPath = file.path }
+			vm.boot.kernel = kernel
+		}
+		vms[name] = vm
+		emit(.listChanged)
+		return vm
 	}
 	public var ops: [OperationInfo] = []
 	public func operations() async throws -> [OperationInfo] {
@@ -339,14 +361,52 @@ public final class StubMachman: MachmanControlling {
 	}
 	// Disk adds as the client sent them, in order (the Add flows' assertions).
 	public private(set) var addedDisks: [(vm: String, disk: NewDisk)] = []
+	// Like the engine (LocalMachman.addDisk, Q29): the disk joins the list under the id the
+	// engine gives it; a disk name or a file the VM already uses refuses.
 	public func addDisk(vm name: String, _ disk: NewDisk) async throws {
 		try gate()
-		_ = try get(name)
+		var vm = try get(name)
 		addedDisks.append((name, disk))
+		let entry: DiskInfo
+		switch disk.type {
+		case .storage:
+			let diskName = disk.name ?? ""
+			guard !vm.disks.contains(where: { $0.type == .storage && $0.name == diskName }) else {
+				throw MachmanError(
+					code: .alreadyExists,
+					message: "This VM already has a disk named \u{201C}\(diskName)\u{201D}")
+			}
+			entry = DiskInfo(
+				id: "storage:\(diskName)", type: .storage, name: diskName,
+				path: "/vm/\(name)/\(diskName).raw", sizeBytes: disk.sizeBytes, owned: true)
+		case .image, .iso:
+			let path = disk.path ?? ""
+			guard !vm.disks.contains(where: { $0.path == path }) else {
+				throw MachmanError(
+					code: .alreadyExists,
+					message: "\(name) already uses “\((path as NSString).lastPathComponent)”")
+			}
+			let url = URL(fileURLWithPath: path).absoluteString
+			entry = DiskInfo(
+				id: (disk.type == .iso ? "iso:" : "url:") + url, type: disk.type, name: nil,
+				path: path, sizeBytes: nil, owned: false)
+		case .unknown:
+			throw MachmanError(code: .invalidArgument, message: "Unknown disk type")
+		}
+		vm.disks.append(entry)
+		vms[name] = vm
+		emit(.listChanged)
 	}
+	// Like the engine (Q29): the entry leaves the list, or a gone one answers notFound.
 	public func removeDisk(vm name: String, diskID: String) async throws {
 		try gate()
-		_ = try get(name)
+		var vm = try get(name)
+		guard vm.disks.contains(where: { $0.id == diskID }) else {
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that disk")
+		}
+		vm.disks.removeAll { $0.id == diskID }
+		vms[name] = vm
+		emit(.listChanged)
 	}
 	public func importDisk(vm name: String, path: String) async throws -> VMInfo {
 		try gate()
@@ -382,9 +442,16 @@ public final class StubMachman: MachmanControlling {
 			id: UUID().uuidString, path: path, tag: tag, kind: kind))
 		vms[name] = vm
 	}
+	// Like the engine (Q29): the mount leaves the list, or a gone one answers notFound.
 	public func removeMount(vm name: String, mountID: String) async throws {
 		try gate()
-		_ = try get(name)
+		var vm = try get(name)
+		guard vm.mounts.contains(where: { $0.id == mountID }) else {
+			throw MachmanError(code: .notFound, message: "\(name) no longer has that mount")
+		}
+		vm.mounts.removeAll { $0.id == mountID }
+		vms[name] = vm
+		emit(.listChanged)
 	}
 	// The engine's effect (VMConfig.setKernelBoot, Q29): on boots the persisted draft,
 	// creating an empty one; off goes back to EFI and keeps the draft while it holds

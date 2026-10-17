@@ -6,7 +6,7 @@
 //  stub's mutators disagree with what the daemon serves, a desktop bug that lives in that
 //  state can't be reproduced headless (review 4 found the stuck kernel sections that way).
 //  Each case runs the same steps on a real VMConfig and on the stub and compares what both
-//  serve for the boot.
+//  serve: the boot, the disks, the mounts and the kernel files.
 //
 
 import Foundation
@@ -119,5 +119,176 @@ struct StubParityTests {
 		let stub = StubMachman.serving([info])
 		let after = try await stub.deleteKernelFile(vm: "Parity", path: path)
 		#expect(Served(after.boot) == engine)
+	}
+
+	// A disk as both serve it, past what only the engine can know (its library paths, sizes).
+	struct ServedDisk: Equatable, CustomStringConvertible {
+		let id: String
+		let type: DiskType
+		let name: String?
+		let owned: Bool?
+		init(_ disk: DiskInfo) {
+			id = disk.id
+			type = disk.type
+			name = disk.name
+			owned = disk.owned
+		}
+		var description: String { id }
+	}
+
+	@Test("Q29: the stub's disk add and remove serve what the engine serves")
+	func diskAddAndRemove() async throws {
+		let dir = TestEnvironment.scratch + "parity-\(UUID().uuidString)"
+		try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+		defer { try? FileManager.default.removeItem(atPath: dir) }
+		let image = dir + "/extra.img"
+		let iso = dir + "/install.iso"
+		try Data(count: 1024).write(to: URL(fileURLWithPath: image))
+		try Data(count: 1024).write(to: URL(fileURLWithPath: iso))
+		enum Step { case add(NewDisk), remove(String) }
+		let steps: [Step] = [
+			.add(.storage(name: "data", sizeBytes: 1 << 20)), .add(.image(path: image)),
+			.add(.iso(path: iso)), .add(.storage(name: "data", sizeBytes: 1 << 20)),
+			.add(.image(path: image)), .remove("storage:data"),
+			.remove("url:" + URL(fileURLWithPath: image).absoluteString),
+		]
+		var start: VMInfo?
+		var engine: [[ServedDisk]] = []
+		var engineRefused: [Bool] = []
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			start = api.info(for: vm)
+			for step in steps {
+				// LocalMachman.addDisk's and removeDisk's config steps, synchronously.
+				do {
+					switch step {
+					case .add(let disk) where disk.type == .storage:
+						try vm.config.addNewStorageDisk(
+							name: disk.name ?? "", size: disk.sizeBytes ?? 0)
+					case .add(let disk) where disk.type == .iso:
+						try vm.config.addIsoDisk(isoUrl: URL(fileURLWithPath: disk.path ?? ""))
+					case .add(let disk):
+						try vm.config.addDisk(
+							disk: VMDisk(kind: .fromUrl(URL(fileURLWithPath: disk.path ?? ""))))
+					case .remove(let id):
+						let disk = try #require(vm.config.disks.first { $0.id == id })
+						try registry.removeDisk(disk, from: vm)
+					}
+					engineRefused.append(false)
+				} catch is MachmanError {
+					engineRefused.append(true)
+				}
+				engine.append(api.info(for: vm).disks.map(ServedDisk.init))
+			}
+		}
+		let first = try #require(start)
+		let stub = StubMachman.serving([first])
+		var served: [[ServedDisk]] = []
+		var stubRefused: [Bool] = []
+		for step in steps {
+			do {
+				switch step {
+				case .add(let disk): try await stub.addDisk(vm: first.name, disk)
+				case .remove(let id): try await stub.removeDisk(vm: first.name, diskID: id)
+				}
+				stubRefused.append(false)
+			} catch is MachmanError {
+				stubRefused.append(true)
+			}
+			served.append(try await stub.vm(named: first.name).disks.map(ServedDisk.init))
+		}
+		#expect(served == engine)
+		#expect(stubRefused == engineRefused)
+		#expect(engineRefused == [false, false, false, true, true, false, false])
+		// A disk already gone answers notFound, as LocalMachman.removeDisk does.
+		let gone = try await #require(throws: MachmanError.self) {
+			try await stub.removeDisk(vm: first.name, diskID: "storage:data")
+		}
+		#expect(gone.code == .notFound)
+	}
+
+	@Test("Q29: the stub's mount remove serves what the engine serves")
+	func mountAddAndRemove() async throws {
+		let paths = ["/Users/demo/src", "/Users/demo/data"]
+		var start: VMInfo?
+		var engine: [[String]] = []
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			start = api.info(for: vm)
+			// LocalMachman.addMount's and removeMount's config steps.
+			for path in paths {
+				try vm.config.addMountPoint(HostMountPoint(
+					path: path, tag: (path as NSString).lastPathComponent,
+					kind: MountKind.virtiofs))
+				engine.append(api.info(for: vm).mounts.map(\.tag))
+			}
+			let src = try #require(vm.config.mountPoints.first { $0.tag == "src" })
+			try vm.config.removeMountPoint(src)
+			engine.append(api.info(for: vm).mounts.map(\.tag))
+		}
+		let first = try #require(start)
+		let stub = StubMachman.serving([first])
+		var served: [[String]] = []
+		for path in paths {
+			try await stub.addMount(
+				vm: first.name, path: path, tag: (path as NSString).lastPathComponent, kind: nil)
+			served.append(try await stub.vm(named: first.name).mounts.map(\.tag))
+		}
+		let src = try #require(try await stub.vm(named: first.name).mounts.first {
+			$0.tag == "src"
+		})
+		try await stub.removeMount(vm: first.name, mountID: src.id)
+		served.append(try await stub.vm(named: first.name).mounts.map(\.tag))
+		#expect(served == engine)
+		let gone = try await #require(throws: MachmanError.self) {
+			try await stub.removeMount(vm: first.name, mountID: src.id)
+		}
+		#expect(gone.code == .notFound)
+	}
+
+	// The file moves to the new tag and the field that named it follows (engine paths live in
+	// a library, the stub's under /vm: both compare by role/tag/file).
+	@Test("Q29: the stub's kernel re-tag serves what the engine serves")
+	func kernelRetag() async throws {
+		func files(_ boot: BootInfo) -> [String] {
+			(boot.ownedKernels ?? []).map { "\($0.role.rawValue)/\($0.tag)/\($0.fileName)" }
+		}
+		func activeTag(_ boot: BootInfo) -> String? {
+			boot.ownedKernels?.first { $0.path == boot.kernel?.kernelPath }?.tag
+		}
+		var engine: (files: [String], active: String?)?
+		try VMTestDir.withRedirectedDir {
+			let registry = VMRegistry()
+			let vm = try registry.create()
+			let api = LocalMachman(registry: registry)
+			let kernelsDir = vm.config.kernelsDirPath()
+			let path = kernelsDir + "/kernel/v1/vmlinuz"
+			try FileManager.default.createDirectory(
+				atPath: kernelsDir + "/kernel/v1", withIntermediateDirectories: true)
+			try Data("kern".utf8).write(to: URL(fileURLWithPath: path))
+			try vm.config.setKernelBoot(enabled: true)
+			try vm.config.updateKernelSettings(LinuxKernelBoot(
+				kernelPath: path, initialRamdiskPath: nil, commandLine: ""))
+			try vm.config.renameKernelFile(path: path, to: "v2")
+			let boot = api.info(for: vm).boot
+			engine = (files(boot), activeTag(boot))
+		}
+		let path = "/vm/Parity/kernels/kernel/v1/vmlinuz"
+		var info = StubMachman.makeInfo("Parity")
+		info.boot = BootInfo(
+			mode: .linuxKernel,
+			kernel: KernelSettings(kernelPath: path, initrdPath: nil, commandLine: ""),
+			macInstallState: nil, minCPUCount: nil, minMemoryBytes: nil,
+			ownedKernels: [OwnedKernelFile(role: .kernel, tag: "v1", fileName: "vmlinuz",
+				path: path)])
+		let stub = StubMachman.serving([info])
+		let after = try await stub.renameKernelFile(vm: "Parity", path: path, tag: "v2")
+		#expect(files(after.boot) == engine?.files)
+		#expect(activeTag(after.boot) == engine?.active)
+		#expect(engine?.active == "v2")
 	}
 }
