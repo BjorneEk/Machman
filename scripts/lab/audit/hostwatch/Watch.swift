@@ -119,6 +119,8 @@ final class Watcher {
 	var baselineCount = NSPasteboard.general.changeCount
 	var pasteboardOffset = 0
 	var lastFront: Int32?
+	/// The process a lasting front= injection keeps frontmost, once it is known.
+	var frontTarget: Int32?
 	var finished = false
 	var classifier: LabClassifier
 	var timer: Timer?
@@ -199,8 +201,28 @@ final class Watcher {
 		}
 	}
 
+	/// The lasting injections, from tick `injectAfter` to the end of the watch. front=<pid>:
+	/// that process is frontmost (an app switch that stays). front=lab-window: the owner of the
+	/// first lab window seen from then on is (the run's own window taking focus). The rules
+	/// judge the process as they would a real front change.
+	func injectFront(_ sample: inout Sample) {
+		guard ticks >= injectAfter else { return }
+		for kind in injections where kind.hasPrefix("front=") && frontTarget == nil {
+			let target = kind.dropFirst("front=".count)
+			if target == "lab-window" {
+				frontTarget = sample.windows.first { sample.labPids.contains($0.pid) }?.pid
+			} else {
+				frontTarget = Int32(target)
+			}
+		}
+		guard let pid = frontTarget else { return }
+		sample.frontmost = Frontmost(pid: pid, name: sample.apps[pid]?.name ?? "injected")
+		sample.injected.insert("frontmost")
+	}
+
 	/// The injection layer: provoked breaches, once each, after `injectAfter` ticks.
 	func inject(_ sample: inout Sample) {
+		injectFront(&sample)
 		if ticks == injectAfter {
 			for kind in injections {
 				switch kind {
@@ -357,7 +379,8 @@ final class Watcher {
 }
 
 /// `watch --token T... --run R... --out DIR [--interval 0.5] [--inject KIND]...
-/// [--inject-after 2]` (a token and a run dir per shard of a parallel run).
+/// [--inject-after 2]` (a token and a run dir per shard of a parallel run; KIND front=<pid>
+/// or front=lab-window lasts, see injectFront).
 func runWatch(_ args: [String]) {
 	let tokens = values("--token", in: args), runs = values("--run", in: args)
 	guard !tokens.isEmpty, !runs.isEmpty, let out = value("--out", in: args) else { exit(64) }

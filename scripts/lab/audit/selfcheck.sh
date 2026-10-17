@@ -57,26 +57,58 @@ else
 		"status $WATCH_STATUS: $summary"
 fi
 
+# real_window <dir> [hostwatch args...]: a watch while a helper under the test suite orders one
+# real window, off every screen, for ~1.2 s; sets summary and probe (the helper's pid).
+real_window() {
+	local dir="$root/w-$1" wpid
+	shift
+	"$hw" watch --token "$token" --run "$root" --out "$dir" --interval 0.25 "$@" &
+	wpid=$!
+	sleep 1
+	env MACHMAN_SUITE_ID="$suite" "$hw" window-probe --seconds 4 &
+	probe=$!
+	wait "$probe"
+	touch "$dir/stop"
+	wait "$wpid"
+	summary="$(cat "$dir/summary.txt" 2>/dev/null)"
+}
+
+# window_row_ok: the helper's window is a breach and nothing of the run took focus: no lab
+# process with a Dock icon, active or frontmost. Another app coming to the front is the user's,
+# only a note, as in every lab run (Q44: requiring the front unchanged failed on a user's switch).
+window_row_ok() {
+	[[ "$summary" == *"BREACH window pid $probe "* && "$summary" != *"BREACH policy"* &&
+		"$summary" != *"BREACH active"* && "$summary" != *"BREACH frontmost"* ]]
+}
+
 # 3: a real window, off every screen, ordered for ~1.2 s by a helper under the test suite
-front_before="$(lsappinfo front 2>/dev/null)"
-dir="$root/w-real"
-"$hw" watch --token "$token" --run "$root" --out "$dir" --interval 0.25 &
-wpid=$!
-sleep 1
-env MACHMAN_SUITE_ID="$suite" "$hw" window-probe --seconds 4 &
-ppid_probe=$!
-wait "$ppid_probe"
-touch "$dir/stop"
-wait "$wpid"
-summary="$(cat "$dir/summary.txt" 2>/dev/null)"
-front_after="$(lsappinfo front 2>/dev/null)"
-if [[ "$summary" == *"BREACH window pid $ppid_probe"* && "$summary" != *"BREACH policy"* &&
-	"$summary" != *"BREACH active"* && "$summary" != *"BREACH frontmost"* &&
-	"$front_before" == "$front_after" ]]; then
+real_window real
+if window_row_ok; then
 	ok "audit window: a real off-screen window of a lab process is a breach"
 else
-	fail "audit window: a real off-screen window of a lab process is a breach" \
-		"front $front_before -> $front_after: $summary"
+	fail "audit window: a real off-screen window of a lab process is a breach" "$summary"
+fi
+
+# 3b: the user brings another app to the front during it and stays there (a real process
+# outside the run, injected as frontmost to the end): only a note, never the run's breach
+env -i "$hw" idle --seconds 6 &
+user=$!
+real_window user --inject "front=$user" --inject-after 6
+wait "$user"
+if window_row_ok && [[ "$summary" == *"NOTE frontmost injected ($user)"* ]]; then
+	ok "Q44: the user's app coming to the front during the real-window row is only a note"
+else
+	fail "Q44: the user's app coming to the front during the real-window row is only a note" \
+		"pid $user: $summary"
+fi
+
+# 3c: the run's own window taking the front (its helper injected as frontmost) fails the row
+real_window steal --inject front=lab-window
+if ! window_row_ok && [[ "$summary" == *"BREACH frontmost pid $probe "* ]]; then
+	ok "Q44: the run's own window coming to the front fails the real-window row"
+else
+	fail "Q44: the run's own window coming to the front fails the real-window row" \
+		"pid $probe: $summary"
 fi
 
 # 4
