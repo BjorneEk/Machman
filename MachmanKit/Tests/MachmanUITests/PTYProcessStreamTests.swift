@@ -11,13 +11,6 @@ import Foundation
 @testable import MachmanUI
 import MachmanTestSupport
 
-// connect() forks the stream's child: on the own thread, never the main thread (Q43). The
-// stream is its test's alone, so handing it across is safe.
-private func connected(_ stream: PTYProcessStream) async -> Bool {
-	nonisolated(unsafe) let stream = stream
-	return await onOwnThread { stream.connect() }
-}
-
 struct PTYProcessStreamTests {
 
 	@Test @MainActor func catEchoesThroughThePTY() async throws {
@@ -25,7 +18,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		stream.setWindowSize(cols: 80, rows: 24)   // safe while connected
 		stream.send(Data("hello\n".utf8))
 		for _ in 0..<250 where sink.received.isEmpty {
@@ -44,7 +37,7 @@ struct PTYProcessStreamTests {
 		let stream = PTYProcessStream(executablePath: "/usr/bin/true", arguments: [])
 		let sink = StreamSink()
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		for _ in 0..<250 where !sink.isClosed {
 			try await Task.sleep(for: .milliseconds(20))
 		}
@@ -57,7 +50,7 @@ struct PTYProcessStreamTests {
 			environmentOverrides: ["TERM": "xterm-machman-test"])
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		for _ in 0..<250 where !String(decoding: sink.received, as: UTF8.self)
 			.contains("xterm-machman-test") {
 			try await Task.sleep(for: .milliseconds(20))
@@ -81,7 +74,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		defer { stream.stop() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		for _ in 0..<250 where !sink.text.contains("READY") {
 			try await Task.sleep(for: .milliseconds(20))
 		}
@@ -100,7 +93,7 @@ struct PTYProcessStreamTests {
 			executablePath: "/bin/sh", arguments: ["-c", "head -c 20971520 /dev/zero; printf END"])
 		let sink = StreamSink()
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually(timeout: .seconds(20)) { sink.isClosed })
 		let transcript = stream.transcriptData()
 		#expect(transcript.count == 8 << 20)
@@ -119,7 +112,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		defer { stream.stop() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually { sink.text.contains("READY") })
 		// The child starts reading 2 s from now, whatever send() does meanwhile.
 		DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
@@ -139,7 +132,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually { sink.isClosed })
 		#expect(sink.textWhenClosed.contains("LAST"))
 		try await Task.sleep(for: .milliseconds(200))
@@ -153,7 +146,7 @@ struct PTYProcessStreamTests {
 			let stream = PTYProcessStream(executablePath: "/usr/bin/yes", arguments: [])
 			let sink = StreamSink()
 			stream.onData = { sink.append($0) }
-			#expect(await connected(stream))
+			#expect(stream.connect())
 			#expect(await eventually { sink.received.count > 10_000 })
 			stream.send(Data("q".utf8))
 			stream.stop()
@@ -171,7 +164,7 @@ struct PTYProcessStreamTests {
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
 		stream.setWindowSize(cols: 123, rows: 45)
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually { sink.isClosed })
 		#expect(sink.text.contains("45 123"), "got \(sink.text)")
 	}
@@ -194,6 +187,9 @@ struct PTYProcessStreamTests {
 	// leads one. The /bin/sh resize tests can't tell — sh takes the tty on its own.
 	@Test("P42: a child that is no shell leads its pty's foreground group")
 	@MainActor func aChildThatIsNoShellLeadsTheForegroundGroup() async throws {
+		// The fork on the own thread (Q43): a bare PTYChild holds no stream state. A stream's
+		// connect() stays on the main actor — the stream is main-confined (its exit and channel
+		// callbacks run there).
 		let spawned = await onOwnThread {
 			PTYChild.spawn(
 				executablePath: "/bin/sleep", arguments: ["30"], environment: [:], size: nil,
@@ -214,7 +210,7 @@ struct PTYProcessStreamTests {
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
 		stream.setWindowSize(cols: 123, rows: 45)
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually { sink.isClosed })
 		#expect(sink.text.contains("45 123"), "got \(sink.text)")
 	}
@@ -230,7 +226,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		defer { stream.stop() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually { sink.text.contains("READY") })
 		for step in 0..<20 { stream.setWindowSize(cols: 80 + step, rows: 30) }
 		#expect(stream.windowSizeWrites == 0)
@@ -239,12 +235,12 @@ struct PTYProcessStreamTests {
 		#expect(await eventually { sink.text.contains("WINCH 30 99") }, "got \(sink.text)")
 	}
 
-	@Test @MainActor func aSizeStillSettlingWhenStoppedNeverReachesThePTY() async {
+	@Test @MainActor func aSizeStillSettlingWhenStoppedNeverReachesThePTY() {
 		var due: [() -> Void] = []
 		let stream = PTYProcessStream(
 			executablePath: "/bin/cat", arguments: [], environmentOverrides: [:],
 			schedule: { _, body in due.append(body) })
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		stream.setWindowSize(cols: 100, rows: 30)
 		stream.stop()
 		due.forEach { $0() }
@@ -261,7 +257,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		#expect(await eventually { sink.isClosed })
 		#expect(sink.text.contains("CLEAN"), "got \(sink.text)")
 	}
@@ -271,7 +267,7 @@ struct PTYProcessStreamTests {
 		let stream = PTYProcessStream(executablePath: "/usr/bin/true", arguments: [])
 		let sink = StreamSink()
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		let pid = try #require(stream.childPID)
 		#expect(await eventually { sink.isClosed })
 		#expect(await eventually { kill(pid, 0) == -1 && errno == ESRCH })
@@ -285,7 +281,7 @@ struct PTYProcessStreamTests {
 		let sink = StreamSink()
 		stream.onData = { sink.append($0) }
 		stream.onClose = { sink.markClosed() }
-		#expect(await connected(stream))
+		#expect(stream.connect())
 		let pid = try #require(stream.childPID)
 		#expect(await eventually { sink.text.contains("UP") })
 		stream.stop()
