@@ -4,7 +4,8 @@
 //
 //  L2 — the agent's own life: its sockets' keep-alive (E10), a start cut off by the agent's
 //  death (E12), and its quit decisions for a log out, a restart and the user's quit with VMs
-//  running (V7). Quits come through the lab control socket with their reason; nothing logs
+//  running (V7), and a running VM whose folder was renamed while it was away (E11). Quits
+//  come through the lab control socket with their reason; nothing logs
 //  out the real session. The VM's own log-out alert is its vmhost's, quit the same way on the
 //  vmhost's own control socket (Q23).
 //
@@ -253,6 +254,55 @@ struct EngineAgentLifecycleTests {
 					#expect(try await vm.info().state == .running)
 					#expect(LabProcesses.isAlive(host))
 				}
+			}
+		}
+	}
+
+	// E11: a running VM's folder renamed in Finder while Machman Agent was away left its
+	// vmhost on the old name's socket, which the agent never asked: the renamed entry listed
+	// stopped, and a Start booted a second VZ on the same disks. The new agent asks that
+	// vmhost whom it serves: the renamed entry lists not responding, its Start is refused,
+	// and End Process ends the old vmhost.
+	@Test(
+		"""
+		E11: a running VM whose folder was renamed while Machman Agent was away lists Not \
+		responding and never starts twice
+		""")
+	func aFolderRenamedWhileTheAgentWasAway() async throws {
+		try await Lab.withAgent { agent in
+			try await agent.withVM(LabVMSpec(name: "renamed-away", boot: .alpine())) { vm in
+				let host = try await vm.hostPID()
+				try agent.setAnswers(["agent.vmsStillRunning": "Quit, Leave VMs Running"])
+				guard try await TFAgents.quit(agent, reason: "userQuit", timeout: .seconds(30))
+				else {
+					throw TFError.precondition("the agent stayed after Quit, Leave VMs Running")
+				}
+				try agent.setAnswers([:])
+				let renamed = "renamed-later"
+				try FileManager.default.moveItem(
+					atPath: TG.vmDir(agent.scope, vm.name), toPath: TG.vmDir(agent.scope, renamed))
+				try await agent.relaunch()
+
+				let listed = try await TFWait.vm(
+					agent.api, renamed, "not responding", timeout: .seconds(45)
+				) {
+					$0.isUnresponsive
+				}
+				#expect(listed.state == .unknown)
+				await #expect(throws: MachmanError.self) {
+					try await agent.api.start(vm: renamed, options: StartOptions(openWindow: false))
+				}
+				#expect(!FileManager.default.fileExists(
+					atPath: MachmanPaths.vmSocketPath(vm: renamed)))   // no second vmhost
+				#expect(try await vm.hostPID() == host)
+
+				try await agent.api.endProcess(vm: renamed)
+				#expect(await LabProcesses.waitForExit(host, timeout: .seconds(20)))
+				try await TFWait.vm(agent.api, renamed, "stopped", timeout: .seconds(20)) {
+					$0.state == .stopped
+				}
+				TFVM.forget(agent, vm.name)
+				try? await agent.api.deleteVM(named: renamed)
 			}
 		}
 	}

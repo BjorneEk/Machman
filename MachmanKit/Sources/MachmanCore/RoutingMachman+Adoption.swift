@@ -95,9 +95,25 @@ extension RoutingMachman {
 		var identity = HostIdentity(id: UUID(), name: name, socketPath: socketPath)
 		adoptionAttempts += 1
 		let client = try await connectHost(identity: identity)
+		// E11: a vmhost that says which folder it serves is this VM's only when that is the
+		// VM's folder. One serving a folder under another name is a saved run on its
+		// original's socket (E27), adopted as what it serves; any other is an orphan, never
+		// adopted as this VM — its saves would land in this VM's folder.
+		if let served = client.hello.host, !served.shadow, let folder = served.vmDir,
+			!isSameFile(folder, libraryDir() + "/" + name) {
+			guard served.vm != name, registry.vm(named: served.vm) != nil,
+				isSameFile(folder, libraryDir() + "/" + served.vm) else {
+				await client.disconnect()
+				noteOrphan(served, at: socketPath)
+				throw MachmanError(
+					code: .invalidState,
+					message: "Another VM’s process answers on \(name)’s socket")
+			}
+			identity.name = served.vm
+		}
 		var reply: VMInfo?
 		do {
-			reply = try await client.vm(named: name, deadline: hostProbeDeadline)
+			reply = try await client.vm(named: identity.name, deadline: hostProbeDeadline)
 		} catch let error as MachmanError where error.code == .notFound {
 			// E27: the host serves another VM — a vmhost from before the socket followed
 			// Save as New VM still answers on its original's path. Key it by what it

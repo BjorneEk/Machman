@@ -147,8 +147,22 @@ public final class RoutingMachman: MachmanControlling {
 	// 104-byte limit, so routing tests point this into their scratch dir.
 	var socketPathForVM: (String) -> String = { machmanVMSocketPath(vm: $0) }
 
+	// Orphaned vmhosts (E11): a VM still running whose folder was renamed in Finder while no
+	// daemon watched serves on its old name's socket. Keyed by the library entry its folder
+	// is now, the socket it serves on, while that socket lives. Internal for tests.
+	var orphanSockets: [String: String] = [:]
+	// The library a vmhost's folder is matched in (E11). A seam: routing tests keep their VMs'
+	// folders in a scratch library of their own.
+	var libraryDir: () -> String = { machmanVMDir }
+
+	// Where a VM's vmhost answers: its name's socket, or an orphan's that serves its folder.
+	// A spawn always binds the name's own (socketPathForVM).
 	func hostSocketPath(for name: String) -> String {
-		socketPathForVM(name)
+		if let orphan = orphanSockets[name] {
+			if UDSListener.isLive(path: orphan) { return orphan }
+			orphanSockets[name] = nil   // it exited
+		}
+		return socketPathForVM(name)
 	}
 
 	// Who owns a VM's files right now — the ONE table every per-VM entry point reads (PR1),
@@ -419,6 +433,14 @@ public final class RoutingMachman: MachmanControlling {
 
 	public func renameVM(named name: String, to newName: String) async throws {
 		try await requireStopped(name, "renaming it")
+		// A vmhost still answers as newName — an orphan whose VM was renamed or moved away in
+		// Finder (E11): a VM renamed to it would meet that vmhost on its socket.
+		if hosted[newName] == nil, UDSListener.isLive(path: socketPathForVM(newName)) {
+			throw MachmanError(
+				code: .invalidState,
+				message: "\u{201C}\(newName)\u{201D} is still in use by a running Machman VM "
+					+ "\u{2014} choose another name")
+		}
 		try await local.renameVM(named: name, to: newName)
 		// The managed ssh alias is name-keyed; regeneration re-keys the block (the
 		// marker — and with it the reverse authorized_keys label — never changes).

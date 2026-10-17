@@ -106,7 +106,7 @@ extension RoutingMachman {
 			return
 		}
 		let identity = HostIdentity(
-			id: UUID(), name: name, socketPath: hostSocketPath(for: name),
+			id: UUID(), name: name, socketPath: socketPathForVM(name),
 			macInUse: vm.config.macAddress)
 		// The config the vmhost loads: nothing edits it while the start is reserved.
 		let unattached = vm.config.unattachedDiskFiles
@@ -298,7 +298,7 @@ extension RoutingMachman {
 			throw error
 		}
 		var identity = HostIdentity(
-			id: UUID(), name: name, socketPath: hostSocketPath(for: name),
+			id: UUID(), name: name, socketPath: socketPathForVM(name),
 			macInUse: vm.config.macAddress)
 		identity.isSafe = true
 		identity.shadowRoot = runRoot

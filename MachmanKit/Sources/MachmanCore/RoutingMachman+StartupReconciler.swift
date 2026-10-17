@@ -21,6 +21,7 @@ extension RoutingMachman {
 	// (E43): one at a time, two or three busy hosts outlasted a client's first vm.list.
 	public func adoptExistingHosts() async {
 		pruneDeadHostSockets()
+		await identifyOrphanedHosts(in: machmanRuntimeDir)
 		let names = registry.list().map(\.name).filter { name in
 			let socketPath = hostSocketPath(for: name)
 			return hosted[name] == nil && FileManager.default.fileExists(atPath: socketPath)
@@ -46,6 +47,62 @@ extension RoutingMachman {
 				break
 			}
 		}
+	}
+
+	// A running VM whose folder was renamed or moved away while no daemon watched still serves
+	// on its old name's socket, which adoption — asking only the current names' sockets —
+	// never asks (E11): invisible and unstoppable, its renamed entry listed stopped, and a
+	// Start booted a second VZ on the same disks. Every live vmhost socket no VM accounts for
+	// is asked whom it serves (hello), all at once: one serving an entry's folder makes that
+	// entry Not responding until it exits (a Start is refused, End Process ends it); any other
+	// is logged and left running. A vmhost from before hello said so can't be placed.
+	func identifyOrphanedHosts(in dir: String) async {
+		let entries = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+		let known = Set(registry.list().map { socketPathForVM($0.name) })
+			.union(hosted.values.map(\.identity.socketPath))
+		let unclaimed = entries.filter { $0.hasPrefix("vm-") && $0.hasSuffix(".sock") }
+			.map { dir + "/" + $0 }
+			.filter { !known.contains($0) && UDSListener.isLive(path: $0) }
+		let asks = unclaimed.map { path in (path, Task { await self.whomItServes(path) }) }
+		for (path, ask) in asks {
+			guard let served = await ask.value else {
+				MachmanLogger.log(.passiveWarning,
+					"a vmhost answers on \(path), for no VM in the library — leaving it running")
+				continue
+			}
+			noteOrphan(served, at: path)
+		}
+	}
+
+	private func whomItServes(_ path: String) async -> RPCResults.Hello.Host? {
+		guard let client = try? await RemoteMachman(
+			socketPath: path, clientName: "machman-agent-router", helloDeadline: helloDeadline)
+		else { return nil }
+		await client.disconnect()
+		return client.hello.host
+	}
+
+	// Places a vmhost that serves `served` on a socket that isn't its VM's (E11): the library
+	// entry whose folder it serves answers through it until it exits.
+	func noteOrphan(_ served: RPCResults.Hello.Host, at path: String) {
+		let library = libraryDir()
+		let entry = served.shadow ? nil : served.vmDir.flatMap { folder in
+			registry.list().first { isSameFile(folder, library + "/" + $0.name) }?.name
+		}
+		guard let entry else {
+			MachmanLogger.log(.passiveWarning,
+				"the vmhost for \(served.vm) (pid \(served.pid)) serves "
+					+ "\(served.vmDir ?? "a deleted folder"), not a VM in the library — "
+					+ "leaving it running")
+			return
+		}
+		guard hosted[entry] == nil, orphanSockets[entry] == nil,
+			!UDSListener.isLive(path: socketPathForVM(entry)) else { return }
+		orphanSockets[entry] = path
+		MachmanLogger.log(.passiveWarning,
+			"\(entry) still runs as \(served.vm) (pid \(served.pid)) on that name's socket: "
+				+ "its folder was renamed while it ran")
+		registry.events.emit(.listChanged)
 	}
 
 	// A late adoption's half of the startup sweep: the run root whose marker names this VM
