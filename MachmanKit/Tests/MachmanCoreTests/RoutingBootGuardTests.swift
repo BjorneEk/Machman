@@ -127,7 +127,9 @@ struct RoutingBootGuardTests {
 	// again by every start of any other VM — its hello deadline, under the start claim.
 	@Test @MainActor func aKnownUnadoptableHostCostsAStartNothing() async throws {
 		let rig = try makeRig(shareDisk: false)
-		rig.routing.helloDeadline = .seconds(10)
+		// A hello the start would wait out is far longer than anything the start itself costs
+		// under load (an 8.9 s spawn path was seen at load 80 against the old 5 s bound).
+		rig.routing.helloDeadline = .seconds(60)
 		let silent = try SilentHost(path: rig.betaSocket)
 		defer { silent.close() }
 		rig.routing.unadoptable.insert("beta")   // an earlier adoption failed
@@ -136,7 +138,7 @@ struct RoutingBootGuardTests {
 		let started = clock.now
 		let error = try await refusal(rig.routing, force: false)
 		#expect(error.message.contains("reinstall Machman"))   // on to the spawn
-		#expect(clock.now - started < .seconds(5))   // before: the 10 s hello first
+		#expect(clock.now - started < .seconds(30))   // before: the 60 s hello first
 		#expect(rig.routing.adoptionAttempts == 0)
 	}
 
