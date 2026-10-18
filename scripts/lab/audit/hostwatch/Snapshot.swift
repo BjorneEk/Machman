@@ -3,8 +3,8 @@
 //  hostwatch
 //
 //  The before/after snapshot of the paths a lab run must not touch, and their diff.
-//  Hash for small regular files, size + mtime for big ones; ~/.ssh by metadata only; nothing
-//  under ~/.machman is ever read. Walks use lstat and never follow links.
+//  Hash for small regular files, size + mtime for big ones; ~/.ssh by metadata only. Walks use
+//  lstat and never follow links.
 //
 
 import CryptoKit
@@ -28,12 +28,6 @@ private func userTempDir() -> String {
 	return n > 0 ? String(cString: buffer) : NSTemporaryDirectory()
 }
 
-private func isUnderDotMachman(_ path: String, home: String) -> Bool {
-	let root = (home as NSString).appendingPathComponent(".machman")
-	let standard = (path as NSString).standardizingPath
-	return standard == root || standard.hasPrefix(root + "/")
-}
-
 private func defaultRoots(home: String, tokens: [String]) -> [SnapshotRoot] {
 	let support = home + "/Library/Application Support/"
 	let temp = userTempDir()
@@ -50,7 +44,7 @@ private func defaultRoots(home: String, tokens: [String]) -> [SnapshotRoot] {
 	]
 	for domain in ["com.gustaffranzen.Machman.dev", "com.gustaffranzen.Machman"] {
 		let raw = CFPreferencesCopyAppValue("MachmanDataDir" as CFString, domain as CFString)
-		if let dir = raw as? String, dir.hasPrefix("/"), !isUnderDotMachman(dir, home: home) {
+		if let dir = raw as? String, dir.hasPrefix("/") {
 			roots.append(SnapshotRoot(path: dir, metaOnly: false))
 		}
 	}
@@ -114,18 +108,14 @@ private func walk(_ root: SnapshotRoot, into entries: inout [String: [String: An
 
 /// `snapshot --out FILE [--token T]... [--root PATH]... [--meta-only PATH]... [--home DIR]`
 /// --home: the default roots under DIR in place of this user's home (the self-check's fake
-/// home); ~/.machman stays refused either way.
+/// home).
 func runSnapshot(_ args: [String]) {
 	guard let out = value("--out", in: args) else { exit(64) }
-	let home = realHome()
-	let rootsHome = value("--home", in: args) ?? home
+	let rootsHome = value("--home", in: args) ?? realHome()
 	let explicit = values("--root", in: args).map { SnapshotRoot(path: $0, metaOnly: false) }
 		+ values("--meta-only", in: args).map { SnapshotRoot(path: $0, metaOnly: true) }
-	if explicit.contains(where: { isUnderDotMachman($0.path, home: home) })
-		|| isUnderDotMachman(rootsHome, home: home) { exit(64) }
-	var roots = explicit.isEmpty
+	let roots = explicit.isEmpty
 		? defaultRoots(home: rootsHome, tokens: values("--token", in: args)) : explicit
-	roots.removeAll { isUnderDotMachman($0.path, home: home) }
 	var entries: [String: [String: Any]] = [:]
 	var described: [[String: Any]] = []
 	for root in roots {

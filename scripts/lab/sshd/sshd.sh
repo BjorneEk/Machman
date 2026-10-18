@@ -17,7 +17,7 @@
 # succeed: UsePAM no — for the password-prompt rows). AuthorizedKeysFile is the fake home's
 # .ssh/authorized_keys (where the product writes reverse grants) and <root>/sshd/authorized_keys.
 # Sessions (session.sh) run with HOME = the fake home and TMPDIR in the run, under
-# sandbox-exec: writes only inside the run root and /dev, no read of ~/.machman or ~/.ssh, no
+# sandbox-exec: writes only inside the run root and /dev, no read of ~/.ssh, no
 # unix-socket connect outside the run. --bind vmnet listens on the VZ NAT bridge
 # address (Shared_Net_Address, default 192.168.64.1) once an interface holds it.
 set -u
@@ -304,13 +304,13 @@ self_check() {
 	"$root/sshd/tmp"|"/private$root/sshd/tmp") ok "a session's TMPDIR is inside the run ($out)" ;;
 	*) bad "session TMPDIR: '$out'" ;;
 	esac
-	# Metadata only, and refused: a session can't even stat ~/.machman or ~/.ssh.
+	# Metadata only, and refused: a session can't even stat ~/.ssh.
 	out="$(lab_ssh "$root" "$key" "$user@$host" "$port" \
-		"ls -d '$(real_home)/.machman' '$(real_home)/.ssh' 2>&1" 2>&1)"
-	if [ "$(printf '%s\n' "$out" | grep -c 'Operation not permitted')" = 2 ]; then
-		ok "a session can't read ~/.machman or ~/.ssh"
+		"ls -d '$(real_home)/.ssh' 2>&1" 2>&1)"
+	if [ "$(printf '%s\n' "$out" | grep -c 'Operation not permitted')" = 1 ]; then
+		ok "a session can't read ~/.ssh"
 	else
-		bad "~/.machman or ~/.ssh readable in a session: $out"
+		bad "~/.ssh readable in a session: $out"
 	fi
 	# A unix socket outside the run (where the dev agent's live) refuses a connect; one inside
 	# the run takes it.

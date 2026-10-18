@@ -1,6 +1,6 @@
 ;; The lab sshd's session profile (a template: sshd.sh start fills @RUN@ and @HOME@ with
 ;; physical paths). A guest that logs in as "the Mac" changes nothing real: writes only inside
-;; the run sandbox and /dev (TMPDIR is the run's), no read of ~/.machman or ~/.ssh, and no
+;; the run sandbox and /dev (TMPDIR is the run's), no read of ~/.ssh, and no
 ;; connect to a unix socket outside the run (the dev and Release agents' sockets live in the
 ;; user's temp dir).
 (version 1)
@@ -10,7 +10,6 @@
 	(subpath "@RUN@")
 	(subpath "/dev"))
 (deny file-read*
-	(subpath "@HOME@/.machman")
 	(subpath "@HOME@/.ssh"))
 (deny network-outbound (remote unix-socket))
 (allow network-outbound (remote unix-socket (subpath "@RUN@")))

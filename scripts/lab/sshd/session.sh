@@ -1,7 +1,7 @@
 #!/bin/sh
 # The lab sshd's ForceCommand (copied into <run>/sshd/ at start): every session runs in the
 # fake home with HOME pointing there and TMPDIR inside the run, under sandbox-exec (session.sb:
-# writes only inside the run sandbox and /dev, no ~/.machman or ~/.ssh, no unix socket outside
+# writes only inside the run sandbox and /dev, no ~/.ssh, no unix socket outside
 # the run). sftp is served the same way.
 # (sshd starts it through the account's login shell, which reads that shell's startup files
 # from the real home: reads only, never a write outside the sandbox.)

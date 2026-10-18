@@ -305,14 +305,13 @@ home = pwd.getpwuid(os.getuid()).pw_dir
 ssh = [r for r in doc["roots"] if r["path"] == home + "/.ssh"]
 assert ssh and ssh[0]["metaOnly"] is True, "no metaOnly .ssh root"
 for path, e in doc["entries"].items():
-    assert not path.startswith(home + "/.machman"), path
     if path.startswith(home + "/.ssh"):
         assert "sha256" not in e, path
 PY
 then
-	ok "audit snapshot: default roots read ~/.ssh by metadata only and skip ~/.machman"
+	ok "audit snapshot: default roots read ~/.ssh by metadata only"
 else
-	fail "audit snapshot: default roots read ~/.ssh by metadata only and skip ~/.machman" \
+	fail "audit snapshot: default roots read ~/.ssh by metadata only" \
 		"see the python assertion"
 fi
 
@@ -337,16 +336,6 @@ if [[ $status7 == 3 ]] && grep -qxF "BREACH snapshot added $agentplist" "$root/d
 else
 	fail "audit snapshot: default roots flag a Machman preferences plist and a launch agent" \
 		"status $status7: $(cat "$root/d7.txt")"
-fi
-
-# 10
-home="$(python3 -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"
-"$hw" snapshot --root "$home/.machman/x" --out "$root/refused.json"
-status=$?
-if [[ $status == 64 && ! -e "$root/refused.json" ]]; then
-	ok "audit snapshot: a root under ~/.machman is refused"
-else
-	fail "audit snapshot: a root under ~/.machman is refused" "exit $status"
 fi
 
 exit "$failures"

@@ -118,8 +118,7 @@ the login up: `@Test("G6: Alpine's getty lines sit between the markers and HUP b
   is in front is only noted); no permission prompt (no audio devices, no screen capture, no TCP
   from a lab process to a guest on the VM network unless `MACHMAN_LAB_LOCAL_NETWORK=1`).
 - Nothing real is written: the dev and Release data dirs, `~/.ssh`, `~/Library/LaunchAgents`
-  and Machman's preference plists are snapshotted before and after every run; `~/.machman`
-  (production) is never read.
+  and Machman's preference plists are snapshotted before and after every run.
 - Test behavior exists only in Debug builds under a `.test-<token>` suite: one predicate,
   `MachmanTestMode`, and one reader of the lab's variables, `LabEnvironment`. Every product file
   that asks them is listed in `TestModeSeamInventoryTests` with a test proving the seam inert
