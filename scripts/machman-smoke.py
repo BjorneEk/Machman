@@ -6,6 +6,10 @@ Usage:
   machman-smoke.py [--socket PATH] watch         subscribe and stream events (^C to stop)
   machman-smoke.py [--socket PATH] start NAME [--headless] [--safe]
   machman-smoke.py [--socket PATH] stop NAME [--force]
+  machman-smoke.py [--socket PATH] call METHOD [PARAMS]
+                                                send any request (PARAMS: a JSON object) and
+                                                print its result, e.g.
+                                                call vm.get '{"name": "Debian"}'
 
 Socket resolution: --socket, else $TMPDIR/<suite>/machman.sock, where <suite> is
 $MACHMAN_SUITE_ID, else com.gustaffranzen.Machman (a Debug build is ...Machman.dev).
@@ -68,7 +72,10 @@ class Client:
             msg = self.read_line()
             if msg.get("id") == req["id"]:
                 if "error" in msg:
-                    raise RuntimeError(f"{method}: {msg['error']['message']}")
+                    error = msg["error"]
+                    # Machman's own code (notFound, invalidState, …) when it sent one.
+                    code = (error.get("data") or {}).get("machmanCode") or error["code"]
+                    raise RuntimeError(f"{method}: {error['message']} ({code})")
                 return msg.get("result")
             # Anything else (events) while waiting: ignore here.
 
@@ -80,9 +87,17 @@ class Client:
                 yield msg["params"]
 
 
-def main():
-    path, argv = socket_path(sys.argv[1:])
+def main(args=None):
+    path, argv = socket_path(sys.argv[1:] if args is None else args)
     command = argv[0] if argv else "info"
+    params = None
+    if command == "call":
+        try:
+            method = argv[1]
+            params = json.loads(argv[2]) if len(argv) > 2 else None
+        except (IndexError, json.JSONDecodeError):
+            print(__doc__)
+            return 2
     try:
         client = Client(path)
     except (FileNotFoundError, ConnectionRefusedError):
@@ -112,6 +127,13 @@ def main():
         mode = "force" if "--force" in argv else "soft"
         client.call("vm.stop", {"name": argv[1], "mode": mode})
         print(f"stop ({mode}) sent to {argv[1]}")
+    elif command == "call":
+        try:
+            result = client.call(method, params)
+        except RuntimeError as error:
+            print(error, file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print(__doc__)
         return 2
