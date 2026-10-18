@@ -26,17 +26,10 @@ DerivedData/
 *.swp
 *~.nib
 
-# Machman test/dev VM data (MACHMAN_DATA_DIR)
-machman_data/
-
-# Git worktrees (machmand refactor lives in .worktrees/machmand-refactor)
+# Linked git worktrees (.worktrees/<name>)
 /.worktrees/
 
-# Superseded dev data dir. The library now lives at
-# ~/Library/Application Support/com.gustaffranzen.Machman.dev/VMs (derived from the bundle id).
-/.machman/
-
-# Local scratch notes (was "docks/local" — the typo meant this was never actually ignored)
+# Local notes, never committed: manual tests, open review items, research
 docs/local/
 
 # Coverage artifact xcodebuild drops in the CWD
