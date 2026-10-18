@@ -3,11 +3,13 @@
 # shellcheck and the docker harness — byte for byte (EmbeddedScriptTests holds it there),
 # so a line number in the output is the guest's line number. Each part is followed by a
 # newline only when it lacks a final one.
-#   sh assemble.sh [output]      default GuestScripts/dist/install.sh (gitignored)
+#   sh assemble.sh [output]      default MachmanKit/.build/guest-setup/install.sh (gitignored,
+#                                outside the package's sources)
 set -eu
 
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-OUT="${1:-$HERE/dist/install.sh}"
+KIT="$(CDPATH= cd -- "$HERE/../../.." && pwd)"
+OUT="${1:-$KIT/.build/guest-setup/install.sh}"
 mkdir -p "$(dirname -- "$OUT")"
 
 : > "$OUT"

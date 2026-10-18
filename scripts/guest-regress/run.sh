@@ -231,13 +231,11 @@ backend_docker() {
 	done
 	command -v docker >/dev/null 2>&1 || { echo "Docker is not installed" >&2; exit 69; }
 
-	sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" >/dev/null \
-		|| { echo "assemble failed" >&2; exit 1; }
-
 	TMP="$(mktemp -d)"
 	trap 'rm -rf "$TMP"' EXIT
-	stage_payload "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/dist/install.sh" \
-		"$TMP/payload"
+	sh "$ROOT/MachmanKit/Sources/MachmanCore/GuestScripts/assemble.sh" "$TMP/install.sh" \
+		>/dev/null || { echo "assemble failed" >&2; exit 1; }
+	stage_payload "$TMP/install.sh" "$TMP/payload"
 	# A read-only stand-in for /nix/store, mounted into every container (the nixos suite links
 	# /etc/fstab and /etc/systemd/system into it, as NixOS does).
 	mkdir -p "$TMP/store/systemd-system"

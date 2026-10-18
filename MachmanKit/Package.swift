@@ -46,7 +46,6 @@ let package = Package(
 			dependencies: ["MachmanAPI", "MachmanClient"],
 			exclude: [
 				"GuestScripts/assemble.sh",   // the dev-loop assembler, not a payload
-				"GuestScripts/dist",          // its (gitignored) output
 			],
 			resources: [
 				// The unified installer, one module per concern; EmbeddedScript.assembled

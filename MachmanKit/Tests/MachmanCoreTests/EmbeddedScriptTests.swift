@@ -36,7 +36,7 @@ struct EmbeddedScriptTests {
 	}
 
 	// S16: the dev-loop assembler (scripts/guest-regress, shellcheck) builds exactly the bytes
-	// the app ships, so a line number from dist/install.sh is the guest's line number — and
+	// the app ships, so a line number in its output is the guest's line number — and
 	// both take the same modules: a part missing from Package.swift fails here.
 	@Test func assembleShMatchesTheSwiftAssembly() async throws {
 		let here = URL(fileURLWithPath: #filePath)
