@@ -114,8 +114,8 @@ public struct SerialLogConfig: Codable, Sendable, Equatable {
 // The macOS release at which Virtualization.framework began gating the private PL011/16550 serial
 // devices behind the com.apple.private.virtualization entitlement. At or above this version an
 // unentitled host (Machman) can no longer attach them, so configured uart ports are inert and are
-// reported with a SerialPortInfo.unavailable reason. See
-// docs/local/socket-research/research-findings.md §3.
+// reported with a SerialPortInfo.unavailable reason. Why, and what would bring them back:
+// VMConfig.privateSerialRejected in MachmanCore.
 public enum SerialPortSupport {
 	public static let privateUARTGatedSince = OperatingSystemVersion(
 		majorVersion: 26, minorVersion: 6, patchVersion: 1)
