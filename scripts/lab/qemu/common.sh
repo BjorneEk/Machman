@@ -36,13 +36,6 @@ lab_tool() {
 	printf '%s\n' "$p"
 }
 
-# Refuse the main checkout (production builds there; its .git is a directory, a linked
-# worktree's a file).
-lab_refuse_main_checkout() {
-	sandbox_refuse_main_checkout "$LAB_REPO" 2>/dev/null \
-		|| lab_die 64 "refusing to run from the main checkout ($LAB_REPO)."
-}
-
 # A run root is /tmp/mml.<token> (the lab's sandbox), never anything else.
 lab_is_run_root() { # <path>
 	case "$1" in
@@ -58,7 +51,8 @@ lab_check_run_root() { # <path>
 	[ -d "$1" ] || lab_die 64 "the run root $1 does not exist."
 }
 
-# The lab cache (T3, C-1): MACHMAN_LAB_CACHE, else this worktree's gitignored scripts/lab/cache.
+# The lab cache (T3, C-1): MACHMAN_LAB_CACHE (lab.sh sets it), else this checkout's
+# gitignored scripts/lab/cache.
 lab_cache_dir() {
 	printf '%s\n' "${MACHMAN_LAB_CACHE:-$LAB_REPO/scripts/lab/cache}"
 }
@@ -132,7 +126,6 @@ lab_end_run() {
 lab_session() {
 	local keep=0
 	[ "${1:-}" = --keep ] && { keep=1; shift; }
-	lab_refuse_main_checkout
 	sandbox_sweep_stale mml
 	SANDBOX_SLOT_LABEL="$LAB_REPO ($(basename "$0"))" \
 		sandbox_take_slot "$(sandbox_slot_dir "$LAB_REPO")" lab.1

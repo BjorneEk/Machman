@@ -45,7 +45,7 @@
 # (watch/summary.txt, watch/lab-processes.txt, watch/non-lab-machman.txt, snapshot-summary.txt,
 # worktree.txt, swift-test.log, events.jsonl, progress.log (the -vv stream), test-times.tsv).
 #
-# One lab run machine-wide: the slot <review-fix>/locks/lab.1 (or <cache>/locks/lab.1).
+# One lab run machine-wide: the slot <cache>/locks/lab.1, in the cache every checkout shares.
 #
 set -euo pipefail
 
@@ -339,7 +339,6 @@ lab_count_audits() {
 lab_run() {
 	local tiers="$1" seams=0 xcb filt hw ts breaches=0 warns=0 report inject=()
 	local teststatus="${3:-0}" watchstatus=0 need_slot=0 selfcheck="${2:-0}"
-	sandbox_refuse_main_checkout "$repo" || exit 64
 	lab_selfcheck_knobs "$selfcheck"
 	if [[ -n "$jobs" && ! "$jobs" =~ ^[1-9][0-9]?$ ]]; then
 		echo "lab.sh: --jobs takes a number from 1 to 99, not '$jobs'" >&2
@@ -365,10 +364,6 @@ lab_run() {
 	if ((build)); then
 		if ((!selfcheck)); then
 			xcb="${MACHMAN_LAB_XCBUILD:-}"
-			if [[ -z "$xcb" ]]; then
-				xcb="$(sandbox_review_fix_dir "$repo")/bin/xcbuild"
-				[[ -x "$xcb" ]] || xcb=""
-			fi
 			if [[ -n "$xcb" ]]; then
 				"$xcb" "$repo"
 			else
@@ -757,7 +752,6 @@ lab_selfcheck_audits() {
 
 case "$mode" in
 selfcheck)
-	sandbox_refuse_main_checkout "$repo" || exit 64
 	tiers_mode=harness
 	# The test bundle first: the runner's self-check runs it (the armed pass then skips the build).
 	if ((build)); then swift build --build-tests --package-path "$pkg"; fi

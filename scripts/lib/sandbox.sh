@@ -199,62 +199,43 @@ sandbox_lab_teardown() {
 	return 0
 }
 
-# sandbox_refuse_main_checkout <repo>: the main checkout (a .git directory, not a linked
-# worktree's .git file) builds the products the user runs; no lab run may start there.
-sandbox_refuse_main_checkout() {
-	if [[ -d "$1/.git" ]]; then
-		echo "lab.sh: refusing to run in the main checkout ($1): it builds the products you" \
-			"run; use a linked worktree (git worktree add)" >&2
-		return 64
-	fi
-	return 0
-}
-
-# sandbox_review_fix_dir <repo>: the orchestrator's review-fix dir (slot locks, xcbuild),
-# reached through the git common dir; prints nothing when this clone has none.
-sandbox_review_fix_dir() {
+# sandbox_main_checkout <repo>: the main checkout of <repo>'s repository (the directory that
+# holds the common .git), reached through git so a linked worktree finds it too; prints
+# nothing outside a git checkout.
+sandbox_main_checkout() {
 	local common
 	common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ||
 		return 0
-	common="${common%/.git}/.worktrees/machmand-refactor/docs/local/review-fix"
-	[[ -d "$common" ]] && echo "$common"
-	return 0
+	echo "${common%/.git}"
 }
 
-# sandbox_lab_cache: the fixture cache (several GB): this worktree's git-ignored
-# scripts/lab/cache, unless MACHMAN_LAB_CACHE says otherwise. A fix wave's lane worktree
-# (claude-lane-*) shares the branch worktree's cache instead: the prepared guests, the
-# hand-copied vzfreebsd image and the suite times a parallel run plans by live there.
+# sandbox_lab_cache: the fixture cache (several GB, git-ignored): the main checkout's
+# scripts/lab/cache, which every linked worktree shares — the prepared guests, the
+# hand-copied vzfreebsd image and the suite times a parallel run plans by live there —
+# unless MACHMAN_LAB_CACHE says otherwise. A linked worktree whose main checkout has no
+# cache keeps its own.
 sandbox_lab_cache() {
 	if [[ -n "${MACHMAN_LAB_CACHE:-}" ]]; then
 		echo "$MACHMAN_LAB_CACHE"
 		return 0
 	fi
-	local rf main
-	if [[ "${SANDBOX_LIB_REPO##*/}" == claude-lane-* ]]; then
-		rf="$(sandbox_review_fix_dir "$SANDBOX_LIB_REPO")"
-		main="${rf%/docs/local/review-fix}"
-		if [[ -n "$rf" && -d "$main/scripts/lab/cache" ]]; then
-			echo "$main/scripts/lab/cache"
-			return 0
-		fi
+	local main
+	main="$(sandbox_main_checkout "$SANDBOX_LIB_REPO")"
+	if [[ -n "$main" && -d "$main/scripts/lab/cache" ]]; then
+		echo "$main/scripts/lab/cache"
+		return 0
 	fi
 	echo "$SANDBOX_LIB_REPO/scripts/lab/cache"
 }
 
-# sandbox_slot_dir <repo>: where the machine-wide lab slot lives.
+# sandbox_slot_dir <repo>: where the machine-wide lab slot lives: the shared cache's locks/,
+# unless MACHMAN_LAB_SLOT_DIR says otherwise.
 sandbox_slot_dir() {
-	local rf
 	if [[ -n "${MACHMAN_LAB_SLOT_DIR:-}" ]]; then
 		echo "$MACHMAN_LAB_SLOT_DIR"
 		return 0
 	fi
-	rf="$(sandbox_review_fix_dir "$1")"
-	if [[ -n "$rf" && -d "$rf/locks" ]]; then
-		echo "$rf/locks"
-	else
-		echo "$(sandbox_lab_cache)/locks"
-	fi
+	echo "$(sandbox_lab_cache)/locks"
 }
 
 # sandbox_take_slot <dir> <name>: mkdir lock + owner file, stale-pid reclaim. Sets

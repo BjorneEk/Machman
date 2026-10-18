@@ -38,5 +38,5 @@ default.profraw
 # Guest-setup script dev-loop output (assemble.sh)
 MachmanKit/Sources/MachmanCore/GuestScripts/dist/
 
-# Lab fixture cache (scripts/lab/fetch.sh): several GB, per worktree
+# Lab fixture cache (scripts/lab/fetch.sh): several GB; linked worktrees share the main checkout's
 scripts/lab/cache/

@@ -83,16 +83,17 @@ A planned suite that reports no test fails the run with a `✘ <file>.swift:<lin
 `@Suite` (its exit status and first error beside it), and a `--filter` that matches no test
 fails it too.
 
-`lab.sh` builds THIS worktree's Debug products with `xcodebuild` (default DerivedData), mints
+`lab.sh` builds THIS checkout's Debug products with `xcodebuild` (default DerivedData), mints
 a sandbox (`/tmp/mml.<4-char token>`, suite `com.gustaffranzen.Machman.test-<token>`, a fake
 home and library), holds the machine-wide lab slot, runs `MachmanLabTests` under the audits
 and sweeps everything at exit. Fixtures (Alpine netboot kernel and initramfs, Debian 13 and
 FreeBSD 14/15 cloud images, prepared images) are pinned by SHA-256 in `scripts/lab/*.lock` and
-cached in the git-ignored `scripts/lab/cache/` (APFS clones between worktrees; each run boots
-clones, never the cache). The vzfreebsd image is copied in by hand, never fetched or built:
-`scripts/lab/guests/vzfreebsd/import.sh <a vzfreebsd checkout's work/out/release.raw>`; its
-tests skip, naming that command, while the cache has none. `scripts/guest-regress/run.sh --backend docker|qemu|vz` runs the
-guest-script suites in containers (Docker) or real VMs.
+cached in the main checkout's git-ignored `scripts/lab/cache/`, which linked worktrees share
+(each run boots clones, never the cache). The vzfreebsd image is copied in by hand, never fetched
+or built: `scripts/lab/guests/vzfreebsd/import.sh <a vzfreebsd checkout's work/out/release.raw>`;
+its tests skip, naming that command, while the cache has none.
+`scripts/guest-regress/run.sh --backend docker|qemu|vz` runs the guest-script suites in
+containers (Docker) or real VMs.
 
 ## One example per tier
 
@@ -123,7 +124,7 @@ the login up: `@Test("G6: Alpine's getty lines sit between the markers and HUP b
   `MachmanTestMode`, and one reader of the lab's variables, `LabEnvironment`. Every product file
   that asks them is listed in `TestModeSeamInventoryTests` with a test proving the seam inert
   for the `.dev` and Release suites.
-- Never from the main checkout; one lab run machine-wide (its shards side by side); at most 2
+- One lab run machine-wide (its shards side by side); at most 2
   guests per shard, ≤ 2 vCPU, ≤ 2 GB each. Opt-ins: `MACHMAN_LAB_LOCAL_NETWORK=1` (guest TCP), `MACHMAN_LAB_VOLUMES=0`
   (skip the disk-image volumes), `--launchd`.
 

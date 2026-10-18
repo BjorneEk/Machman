@@ -216,7 +216,6 @@ sweep_work() {
 build() {
 	local b w
 	lab_check_run_root "$RUN"
-	lab_refuse_main_checkout
 	b="$RUN/prepare-$GUEST"
 	rm -rf "$b"
 	mkdir -p "$b"

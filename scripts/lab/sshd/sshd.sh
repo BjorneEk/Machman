@@ -124,7 +124,6 @@ cmd_start() {
 		esac
 	done
 	lab_check_run_root "$root"
-	lab_refuse_main_checkout
 	[ -n "$home" ] || home="$root/home"
 	case "$home" in
 	"$root"/*) ;;

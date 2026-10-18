@@ -144,7 +144,6 @@ cmd_start() {
 		esac
 	done
 	lab_check_run_root "$root"
-	lab_refuse_main_checkout
 	valid_name "$name" || lab_die 64 "a guest name is 1-32 of a-z, 0-9 and '-', not '$name'."
 	case "$cpus" in 1|2) ;; *) lab_die 64 "--cpus is 1 or 2 (the lab's cap), not '$cpus'." ;; esac
 	case "$mem" in ''|*[!0-9]*) lab_die 64 "--mem is a number of MB, not '$mem'." ;; esac
@@ -398,14 +397,6 @@ self_check() {
 	kill "$s1" "$s2" 2>/dev/null
 	wait "$s1" "$s2" 2>/dev/null
 	rm -f "$root/pids/qemu-sc-a.pid" "$root/pids/vmhost-sc-b.pid"
-	# The main checkout: a copy of the scripts inside a fresh repository whose .git is its own.
-	local fake="$root/fake"
-	mkdir -p "$fake/scripts/lab/qemu" "$fake/scripts/lib"
-	cp "$HERE/run.sh" "$HERE/common.sh" "$HERE/console.py" "$fake/scripts/lab/qemu/"
-	cp "$LAB_REPO/scripts/lib/sandbox.sh" "$fake/scripts/lib/"
-	"$(lab_tool git)" -C "$fake" init -q >/dev/null 2>&1
-	refused "the main checkout" "$fake/scripts/lab/qemu/run.sh" start --run "$root" \
-		--name sc-x --firmware-only
 
 	# (b) a firmware-only boot reaches the UEFI shell on the serial socket; loopback forward.
 	dir="$("$me" start --run "$root" --name sc-fw --firmware-only --cpus 1 --mem 512 \

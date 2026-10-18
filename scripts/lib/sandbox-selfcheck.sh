@@ -124,17 +124,23 @@ fi
 
 # 8
 mk mmt
-mkdir -p "$root/main/.git"
-mkdir -p "$root/linked"
-echo "gitdir: /x" > "$root/linked/.git"
-sandbox_refuse_main_checkout "$root/main" 2>/dev/null
-a=$?
-sandbox_refuse_main_checkout "$root/linked"
-b=$?
-if [[ $a == 64 && $b == 0 ]]; then
-	ok "refuse: a checkout whose .git is a directory is the main checkout"
+base="$(cd "$root" && pwd -P)"
+g() { git -c user.name=selfcheck -c user.email=selfcheck@invalid "$@" >/dev/null 2>&1; }
+g init -q "$base/main" && g -C "$base/main" commit -q --allow-empty -m base &&
+	g -C "$base/main" worktree add -q "$base/linked"
+# cache_of <checkout>: the cache a lab run from <checkout> uses, MACHMAN_LAB_CACHE unset.
+cache_of() { (unset MACHMAN_LAB_CACHE; SANDBOX_LIB_REPO="$1"; sandbox_lab_cache); }
+a="$(cache_of "$base/linked")"
+mkdir -p "$base/main/scripts/lab/cache"
+b="$(cache_of "$base/linked")"
+c="$(cache_of "$base/main")"
+d="$(unset MACHMAN_LAB_SLOT_DIR; MACHMAN_LAB_CACHE="$base/elsewhere" sandbox_slot_dir "$base/linked")"
+if [[ $a == "$base/linked/scripts/lab/cache" && $b == "$base/main/scripts/lab/cache" &&
+	$c == "$base/main/scripts/lab/cache" && $d == "$base/elsewhere/locks" ]]; then
+	ok "cache: linked worktrees share the main checkout's cache and its slot, once it has one"
 else
-	fail "refuse: a checkout whose .git is a directory is the main checkout" "got $a and $b"
+	fail "cache: linked worktrees share the main checkout's cache and its slot, once it has one" \
+		"got $a, $b, $c, $d"
 fi
 
 # 9
