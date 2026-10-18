@@ -287,13 +287,13 @@ extension VMConfig {
 	// disabled + amfi_get_out_of_my_way=1; carrying it on a SIP-on machine SIGKILLs EVERY VZ start
 	// (measured), so we must never add it by default. Machman stays unentitled, so on ≥ 26.6.1 a
 	// VM must start even if its uarts cannot. Measured 2026-08-13 on 26.6.1 (25G76); 26.6.0 worked.
-	// What would bring a uart back: SIP off + amfi_get_out_of_my_way=1 with a vmhost signed for the
-	// private entitlement, a host on macOS ≤ 26.6.0, or QEMU (whose PL011 is its own, not VZ's).
-	// Nested virtualization is no way round it: VZ lets a Linux guest nest but never a macOS one, so
-	// no guest can run VZ inside. Where the device sits while it works (VZ generic platform, read
-	// from the guest's device tree): uart n at MMIO 0x20010000 + n*0x10000, GIC SPI 32 + n. Re-check
-	// the gate after each macOS update with socket-research/05-uart-availability.swift in the local
-	// notes (docs/local, never committed).
+	// What would bring a uart back: SIP off + amfi_get_out_of_my_way=1 with a vmhost signed for
+	// the private entitlement, a host on macOS ≤ 26.6.0, or QEMU (whose PL011 is its own, not
+	// VZ's). Nested virtualization is no way round it: VZ lets a Linux guest nest but never a
+	// macOS one, so no guest can run VZ inside. Where the device sits while it works (VZ generic
+	// platform, read from the guest's device tree): uart n at MMIO 0x20010000 + n*0x10000, GIC
+	// SPI 32 + n. Re-check the gate after each macOS update with
+	// socket-research/05-uart-availability.swift in the local notes (docs/local, never committed).
 	static func privateSerialRejected(
 		by v: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
 	) -> Bool {
